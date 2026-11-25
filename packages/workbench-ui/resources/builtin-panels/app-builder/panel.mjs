@@ -7,6 +7,9 @@ import {
   usePanelOutputs,
 } from "@ontomato/sdk/panel";
 
+const APPLICATION_TYPE = "platform:Application";
+const AGENT_SESSION_TYPE = "platform:AgentSession";
+
 function safeJsonArray(raw) {
   if (typeof raw !== "string" || !raw) return [];
   try {
@@ -19,14 +22,11 @@ function safeJsonArray(raw) {
 
 await mountPanel({
   setup() {
-    const panel = usePanelContext();
-    const t = (key, params) => panel.t(key, params);
+    const { instance, navigate, t } = usePanelContext();
+    const values = instance.state.values;
 
     const projectOutputs = usePanelOutputs("project");
     const chatOutputs = usePanelOutputs("chat");
-
-    const syncOp = usePanelOperation("project", "sync");
-    const restartBuildTestOp = usePanelOperation("project", "restartBuildTest");
 
     const projectsRef = ref(null);
     const projectRef = ref(null);
@@ -57,42 +57,46 @@ await mountPanel({
     });
 
     // ---- Panel state bindings ----
-    const currentAppRef = computed(() => panel.state.app ?? null);
+    const currentAppRef = computed(() => values.value.app ?? null);
     const currentAppId = computed(() => currentAppRef.value?.primaryKey ?? null);
 
-    const activeTab = computed(() => panel.state.tab || "preview");
-    const paneMode = computed(() => panel.state.pane || "side");
-    const selectedCommit = computed(() => panel.state.commit || null);
-    const diffMode = computed(() => panel.state.diffMode || "latest");
+    const activeTab = computed(() => (typeof values.value.tab === "string" && values.value.tab ? values.value.tab : "preview"));
+    const paneMode = computed(() => (typeof values.value.pane === "string" && values.value.pane ? values.value.pane : "side"));
+    const selectedCommit = computed(() => (typeof values.value.commit === "string" && values.value.commit ? values.value.commit : null));
+    const diffMode = computed(() => (typeof values.value.diffMode === "string" && values.value.diffMode ? values.value.diffMode : "latest"));
 
     const createDialogOpen = computed({
-      get: () => Boolean(panel.state.createDialogOpen),
+      get: () => values.value.createDialogOpen === true,
       set: (value) => {
-        panel.state.createDialogOpen = Boolean(value);
+        instance.state.set("createDialogOpen", Boolean(value));
       },
     });
 
     const editDialogOpen = computed({
-      get: () => Boolean(panel.state.editDialogOpen),
+      get: () => values.value.editDialogOpen === true,
       set: (value) => {
-        panel.state.editDialogOpen = Boolean(value);
+        instance.state.set("editDialogOpen", Boolean(value));
       },
     });
 
-    const editTargetRef = computed(() => panel.state.editTarget ?? null);
+    const editTargetRef = computed(() => values.value.editTarget ?? null);
 
     const publishDrawerOpen = computed({
-      get: () => Boolean(panel.state.publishDrawerOpen),
+      get: () => values.value.publishDrawerOpen === true,
       set: (value) => {
-        panel.state.publishDrawerOpen = Boolean(value);
-        if (!value) panel.state.publishCommit = null;
+        const next = Boolean(value);
+        if (next) {
+          instance.state.set("publishDrawerOpen", true);
+        } else {
+          instance.state.setState({ publishDrawerOpen: false, publishCommit: null });
+        }
       },
     });
 
     const activePreviewEntryId = computed({
-      get: () => panel.state.previewEntryId || "",
+      get: () => (typeof values.value.previewEntryId === "string" ? values.value.previewEntryId : ""),
       set: (value) => {
-        panel.state.previewEntryId = value ? String(value) : null;
+        instance.state.set("previewEntryId", value ? String(value) : null);
       },
     });
 
@@ -101,8 +105,8 @@ await mountPanel({
       [selectedCommit, diffMode],
       ([commit, mode]) => {
         const next = commit || mode || "latest";
-        if (panel.state.diffTarget !== next) {
-          panel.state.diffTarget = next;
+        if (values.value.diffTarget !== next) {
+          instance.state.set("diffTarget", next);
         }
       },
       { immediate: true },
@@ -110,13 +114,13 @@ await mountPanel({
 
     // Keep selectedSession synchronized with session string state.
     watch(
-      () => panel.state.session,
+      () => values.value.session,
       (sessionId) => {
-        const currentKey = panel.state.selectedSession?.primaryKey ?? null;
-        if (sessionId && currentKey !== sessionId) {
-          panel.state.selectedSession = { objectType: "platform:AgentSession", primaryKey: sessionId };
-        } else if (!sessionId && currentKey !== null) {
-          panel.state.selectedSession = null;
+        const currentKey = values.value.selectedSession?.primaryKey ?? null;
+        if (typeof sessionId === "string" && sessionId && currentKey !== sessionId) {
+          instance.state.set("selectedSession", { className: AGENT_SESSION_TYPE, primaryKey: sessionId });
+        } else if ((!sessionId || typeof sessionId !== "string") && currentKey !== null) {
+          instance.state.set("selectedSession", null);
         }
       },
       { immediate: true },
@@ -127,15 +131,19 @@ await mountPanel({
     watch(currentAppId, (nextAppId) => {
       if (nextAppId === previousAppId) return;
       previousAppId = nextAppId;
-      panel.state.file = null;
-      panel.state.commit = null;
-      panel.state.publishCommit = null;
-      panel.state.previewEntryId = null;
-      panel.state.previewPage = null;
       previewSelection.value = [];
-      if (panel.state.session && panel.state.selectedSession?.primaryKey !== panel.state.session) {
-        panel.state.session = null;
+      const patch = {
+        file: null,
+        commit: null,
+        publishCommit: null,
+        previewEntryId: null,
+        previewPage: null,
+      };
+      if (!instance.state.lastPatchedKeys.has("session")) {
+        patch.session = null;
+        patch.selectedSession = null;
       }
+      instance.state.setState(patch);
     });
 
     // ---- Project outputs ----
@@ -180,12 +188,12 @@ await mountPanel({
       previewEntries,
       (entries) => {
         if (entries.length === 0) {
-          if (panel.state.previewEntryId !== null) panel.state.previewEntryId = null;
+          if (values.value.previewEntryId !== null) instance.state.set("previewEntryId", null);
           return;
         }
-        const current = panel.state.previewEntryId;
+        const current = values.value.previewEntryId;
         if (!current || !entries.some((entry) => entry.id === current)) {
-          panel.state.previewEntryId = entries[0].id;
+          instance.state.set("previewEntryId", entries[0].id);
         }
       },
       { immediate: true },
@@ -233,17 +241,47 @@ await mountPanel({
       return null;
     });
 
+    // ---- Member operations (shared by human clicks and agent page_action) ----
+    function refreshWorkspaceViews() {
+      projectRef.value?.refresh?.();
+      sourceFilesRef.value?.refresh?.();
+      sourceFileRef.value?.refresh?.();
+      sourceDiffRef.value?.refresh?.();
+      sourceCommitsRef.value?.refresh?.();
+      if (publishDrawerOpen.value) {
+        publishFormRef.value?.refresh?.();
+        releasesRef.value?.refresh?.();
+      }
+    }
+
+    const syncOp = usePanelOperation("project", "sync", {
+      available: () => Boolean(currentAppId.value && projectHasDrift.value),
+      onSettled: () => {
+        refreshWorkspaceViews();
+        previewReloadKey.value += 1;
+      },
+    });
+
+    const restartBuildTestOp = usePanelOperation("project", "restartBuildTest", {
+      available: () => Boolean(currentAppId.value && buildTestCanRestart.value),
+      onSettled: () => {
+        projectRef.value?.refresh?.();
+        previewReloadKey.value += 1;
+      },
+    });
+
     // ---- AgentChat context & chips ----
     const chatSessionContext = computed(() => (currentAppId.value ? { appId: currentAppId.value } : undefined));
     const chatGreeting = computed(() => t("chat.greeting", { name: currentAppName.value }));
 
     const carriedPageChip = computed(() => {
       if (activeTab.value === "preview") {
-        const page = panel.state.previewPage || currentAppName.value;
+        const page = (typeof values.value.previewPage === "string" && values.value.previewPage) || currentAppName.value;
         return `${t("tab.preview")} · ${page}`;
       }
       if (activeTab.value === "files") {
-        return panel.state.file ? `${t("tab.files")} · ${panel.state.file}` : t("tab.files");
+        const file = typeof values.value.file === "string" ? values.value.file : "";
+        return file ? `${t("tab.files")} · ${file}` : t("tab.files");
       }
       if (activeTab.value === "changes") {
         if (selectedCommit.value) return `${t("tab.changes")} · ${shortCommit(selectedCommit.value)}`;
@@ -275,43 +313,45 @@ await mountPanel({
     }
 
     function setTab(nextTab) {
-      panel.state.tab = nextTab;
+      instance.state.set("tab", nextTab);
     }
 
     function setPane(nextPane) {
-      panel.state.pane = nextPane;
+      instance.state.set("pane", nextPane);
     }
 
     function toggleFullPane() {
-      panel.state.pane = paneMode.value === "full" ? "side" : "full";
+      instance.state.set("pane", paneMode.value === "full" ? "side" : "full");
     }
 
     function selectDiffMode(mode) {
-      panel.state.commit = null;
-      panel.state.diffMode = mode;
+      instance.state.setState({ commit: null, diffMode: mode });
     }
 
     function startNewConversation(appRef) {
+      const patch = { session: null, selectedSession: null };
       if (appRef && appRef.primaryKey) {
-        panel.state.app = { objectType: "platform:Application", primaryKey: appRef.primaryKey };
+        patch.app = { className: APPLICATION_TYPE, primaryKey: appRef.primaryKey };
       }
-      panel.state.session = null;
-      panel.state.selectedSession = null;
       if (paneMode.value === "full") {
-        panel.state.pane = "side";
+        patch.pane = "side";
       }
+      instance.state.setState(patch);
     }
 
     function onChooseSession(appRef, sessionRef) {
       if (!sessionRef || !sessionRef.primaryKey) return;
+      const patch = {
+        session: sessionRef.primaryKey,
+        selectedSession: { className: AGENT_SESSION_TYPE, primaryKey: sessionRef.primaryKey },
+      };
       if (appRef && appRef.primaryKey && currentAppId.value !== appRef.primaryKey) {
-        panel.state.app = { objectType: "platform:Application", primaryKey: appRef.primaryKey };
+        patch.app = { className: APPLICATION_TYPE, primaryKey: appRef.primaryKey };
       }
-      panel.state.session = sessionRef.primaryKey;
-      panel.state.selectedSession = { objectType: "platform:AgentSession", primaryKey: sessionRef.primaryKey };
       if (paneMode.value === "full") {
-        panel.state.pane = "side";
+        patch.pane = "side";
       }
+      instance.state.setState(patch);
     }
 
     function openCreateDialog() {
@@ -319,14 +359,15 @@ await mountPanel({
     }
 
     function onDraftCreated(saved) {
-      createDialogOpen.value = false;
+      const patch = { createDialogOpen: false };
       if (saved && saved.primaryKey) {
-        panel.state.app = { objectType: "platform:Application", primaryKey: saved.primaryKey };
-        panel.state.session = null;
-        panel.state.selectedSession = null;
-        panel.state.tab = "preview";
-        if (paneMode.value === "closed") panel.state.pane = "side";
+        patch.app = { className: APPLICATION_TYPE, primaryKey: saved.primaryKey };
+        patch.session = null;
+        patch.selectedSession = null;
+        patch.tab = "preview";
+        if (paneMode.value === "closed") patch.pane = "side";
       }
+      instance.state.setState(patch);
       projectsRef.value?.refresh?.();
     }
 
@@ -335,8 +376,10 @@ await mountPanel({
       if (id === "newChat") {
         startNewConversation(appRef);
       } else if (id === "editMeta") {
-        panel.state.editTarget = { objectType: "platform:Application", primaryKey: appRef.primaryKey };
-        editDialogOpen.value = true;
+        instance.state.setState({
+          editTarget: { className: APPLICATION_TYPE, primaryKey: appRef.primaryKey },
+          editDialogOpen: true,
+        });
       }
     }
 
@@ -347,8 +390,10 @@ await mountPanel({
     }
 
     function openPublishDrawer(commitSha = null) {
-      panel.state.publishCommit = commitSha || null;
-      publishDrawerOpen.value = true;
+      instance.state.setState({
+        publishCommit: commitSha || null,
+        publishDrawerOpen: true,
+      });
       projectRef.value?.refresh?.();
     }
 
@@ -361,11 +406,9 @@ await mountPanel({
 
     function openCommitChanges(commitSha) {
       if (!commitSha) return;
-      panel.state.commit = commitSha;
-      panel.state.tab = "changes";
-      if (paneMode.value === "closed") {
-        panel.state.pane = "side";
-      }
+      const patch = { commit: commitSha, tab: "changes" };
+      if (paneMode.value === "closed") patch.pane = "side";
+      instance.state.setState(patch);
     }
 
     function onCommitRowAction({ id, ref: commitRef }) {
@@ -382,18 +425,6 @@ await mountPanel({
       projectRef.value?.refresh?.();
     }
 
-    function refreshWorkspaceViews() {
-      projectRef.value?.refresh?.();
-      sourceFilesRef.value?.refresh?.();
-      sourceFileRef.value?.refresh?.();
-      sourceDiffRef.value?.refresh?.();
-      sourceCommitsRef.value?.refresh?.();
-      if (publishDrawerOpen.value) {
-        publishFormRef.value?.refresh?.();
-        releasesRef.value?.refresh?.();
-      }
-    }
-
     function onChatRunComplete(payload) {
       refreshWorkspaceViews();
       projectsRef.value?.refresh?.();
@@ -404,7 +435,7 @@ await mountPanel({
     }
 
     function onPreviewContextChange(ctx) {
-      panel.state.previewPage = ctx?.page ?? null;
+      instance.state.set("previewPage", ctx?.page ?? null);
       previewSelection.value = Array.isArray(ctx?.selection) ? ctx.selection : [];
     }
 
@@ -415,15 +446,11 @@ await mountPanel({
     const syncSourceRunning = computed(() => Boolean(syncOp.running.value));
     async function runSyncSource() {
       await syncOp.run();
-      refreshWorkspaceViews();
-      previewReloadKey.value += 1;
     }
 
     const restartTestRunning = computed(() => Boolean(restartBuildTestOp.running.value));
     async function runRestartBuildTest() {
       await restartBuildTestOp.run();
-      projectRef.value?.refresh?.();
-      previewReloadKey.value += 1;
     }
 
     function driftStatusLabel(status) {
@@ -433,20 +460,19 @@ await mountPanel({
     }
 
     function jumpToConflictFile(filePath) {
-      publishDrawerOpen.value = false;
-      panel.state.file = filePath;
-      panel.state.tab = "files";
-      if (paneMode.value === "closed") panel.state.pane = "side";
+      const patch = { publishDrawerOpen: false, publishCommit: null, file: filePath, tab: "files" };
+      if (paneMode.value === "closed") patch.pane = "side";
+      instance.state.setState(patch);
     }
 
     function openExternalPath(path) {
-      if (path) panel.navigate(path);
+      if (path) navigate(path);
     }
 
     function navigateInternal(path) {
       if (path) {
-        publishDrawerOpen.value = false;
-        panel.navigate(path);
+        instance.state.setState({ publishDrawerOpen: false, publishCommit: null });
+        navigate(path);
       }
     }
 

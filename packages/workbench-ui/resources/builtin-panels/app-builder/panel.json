@@ -3,11 +3,13 @@
     "state": {
       "app": {
         "type": { "kind": "object", "objectType": "platform:Application" },
-        "default": null
+        "default": null,
+        "deepLink": true
       },
       "session": {
         "type": { "kind": "scalar", "type": "string" },
-        "default": null
+        "default": null,
+        "deepLink": true
       },
       "selectedSession": {
         "type": { "kind": "object", "objectType": "platform:AgentSession" },
@@ -15,19 +17,23 @@
       },
       "tab": {
         "type": { "kind": "scalar", "type": "string" },
-        "default": "preview"
+        "default": "preview",
+        "deepLink": true
       },
       "file": {
         "type": { "kind": "scalar", "type": "string" },
-        "default": null
+        "default": null,
+        "deepLink": true
       },
       "commit": {
         "type": { "kind": "scalar", "type": "string" },
-        "default": null
+        "default": null,
+        "deepLink": true
       },
       "diffMode": {
         "type": { "kind": "scalar", "type": "string" },
-        "default": "latest"
+        "default": "latest",
+        "deepLink": true
       },
       "diffTarget": {
         "type": { "kind": "scalar", "type": "string" },
@@ -35,7 +41,8 @@
       },
       "pane": {
         "type": { "kind": "scalar", "type": "string" },
-        "default": "side"
+        "default": "side",
+        "deepLink": true
       },
       "publishDrawerOpen": {
         "type": { "kind": "scalar", "type": "boolean" },
