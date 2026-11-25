@@ -11,7 +11,9 @@ import { config } from "../../../config/application";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { ensureCoreSchemaBaseline } from "../../../infrastructure/postgres-migrations/20260827-core-schema-baseline/schema";
-import { requireProductGrant } from "../../product-governance/grants";
+import { mountCurrentProductDecisions } from "../../../__tests__/fixtures/product-grant-check";
+import { requireCurrentProduct } from "../../product-panels/current";
+import { ensureProductPanelsSchema } from "../../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { createDashboardCardReadAdapter } from "../chart-sources";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "" }));
@@ -57,6 +59,9 @@ beforeAll(async () => {
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureCoreSchemaBaseline(state.pool);
+  await ensureProductPanelsSchema(state.pool);
+  await state.pool.query(`INSERT INTO "${state.schema}".product_projections (id,domain_id,owner_id,definition)
+    VALUES ($1,$2,$3,'{}')`, [projectionId, owner.domainId, owner.userId]);
 
   const java = express();
   java.use(express.json());
@@ -64,9 +69,10 @@ beforeAll(async () => {
     metricRequests.push({ path: req.path, token: req.header("tk"), domain: req.header("X-Domain-Id"), body: req.body });
     next();
   });
-  java.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: req.body.id === projectionId && req.body.verb === "use" &&
-      [viewer.token, sharedViewer.token].includes(req.header("tk") ?? "") });
+  mountCurrentProductDecisions(java, {
+    token: "fixture-service", domain: owner.domainId,
+    allow: ({ target, verb, ownerFacts }, token) => target.id === projectionId && verb === "USE" &&
+      ownerFacts.ownerId === owner.userId && [viewer.token, sharedViewer.token].includes(token ?? ""),
   });
   java.post("/ontology/query/metrics/describe", (req, res) => {
     res.json({ id: req.body.id, revision: "current-revision", status: "PUBLISHED", name: "Metric",
@@ -76,10 +82,12 @@ beforeAll(async () => {
   server = java.listen(0, "127.0.0.1");
   await once(server, "listening");
   config.dataQuery.baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture-service");
 });
 
 afterAll(async () => {
   config.dataQuery.baseUrl = previousQueryUrl;
+  vi.unstubAllEnvs();
   if (server) await new Promise<void>(resolve => server.close(() => resolve()));
   await state.pool?.query(`DROP SCHEMA "${state.schema}" CASCADE`);
   await state.pool?.end();
@@ -123,7 +131,7 @@ it("reads the saved template and executes the current metric as the reader with 
 });
 
 it("lets a non-owner with projection use read the registered owner's source as the viewer", async () => {
-  await requireProductGrant(projectionId, "use", sharedViewer);
+  await requireCurrentProduct({ ...owner, userId: "shared-reader" }, sharedViewer, "projection", projectionId, "use");
   const reader = createDashboardCardReadAdapter({ ...owner, userId: "shared-reader" }, sharedViewer);
   expect(panelReadResultSchemas.chartTemplate.parse(await reader.chartTemplate(key, registration))).toEqual({ chartFile, parameters });
   expect(panelReadResultSchemas.metricOutput.parse(await reader.result(key, registration, {}))).toEqual(metricOutput);

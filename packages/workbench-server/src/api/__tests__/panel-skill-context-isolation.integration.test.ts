@@ -24,7 +24,7 @@ import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
-import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
+import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { installWorkbenchIdentity } from "../../identity/installed";
@@ -121,6 +121,12 @@ beforeAll(async () => {
       entryId: `${applicationId}/${useId}`, roots: { panelIds: [panelId], agentIds: [] },
     })) : [] });
   app.use(unwrapCallbackCredential);
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: domainId, kinds: ["PANEL", "PROJECTION", "SKILL"],
+    allow: ({ target, verb }, caller) => (caller === "reader" && target.id !== denied ||
+      caller === "executor" && target.id !== executorDenied) &&
+      (verb === "USE" || target.kind === "SKILL" && verb === "VIEW" || caller === "reader"),
+  });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     registered.add(req.body.id);
@@ -624,7 +630,7 @@ it("denies opening and runtime definition reads of an inaccessible panel", async
     const response = await read(broken, route);
     const body = await response.json();
     expect(response.status, JSON.stringify(body)).toBe(403);
-    expect(body.error.code).toBe("PRODUCT_FORBIDDEN");
+    expect(body.error.code).toBe("OBJECT_FORBIDDEN");
     expect(JSON.stringify(body)).not.toContain(privateOperation);
   }
 });

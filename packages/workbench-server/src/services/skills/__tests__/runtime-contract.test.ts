@@ -1,3 +1,4 @@
+import { HttpError } from "../../../utils/errors";
 import fs from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
@@ -12,6 +13,17 @@ import type { ProtectedSkillOffering, SkillPackageContext } from "../../../core/
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { ObjectDecisionRequest } from "../../product-governance/authorization";
+
+function storedSkillResources(domainId: string, resources: { panel: string[]; projection: string[] },
+  agents: { id: string; name: string }[] = [],
+) {
+  referenceQuery.mockImplementation(async (sql: string, [domain, ids]: [string, string[]]) => {
+    if (sql.includes("assistant_agents")) return { rows: agents };
+    if (domain !== domainId || !Array.isArray(ids)) throw new Error(`Unexpected resource lookup: ${sql}`);
+    const kind = sql.includes("product_panels") ? "panel" : "projection";
+    return { rows: resources[kind].filter(id => ids.includes(id)).map(id => ({ id, domainId, ownerId: "author" })) };
+  });
+}
 
 const referenceQuery = vi.hoisted(() => vi.fn());
 const decideSkill = vi.hoisted(() => vi.fn<[_request: ObjectDecisionRequest],
@@ -91,6 +103,7 @@ const panelReference = (name = "panel-skill"): RuntimeSkillRef => ({ namespace: 
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }); });
 const pageDirectory = () => Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
 beforeEach(() => {
+  referenceQuery.mockReset();
   decideSkill.mockReset().mockReturnValue({ allowed: true });
   panelOfferings = []; protectedPanelOfferings = []; conflictOfferings = []; panelCalls = []; panelListError = null;
   vi.stubGlobal("fetch", vi.fn(async () => pageDirectory()));
@@ -206,16 +219,21 @@ it("admits protected packages only through the initiator's exact entrance and ev
   }];
   let admittedEntrance = { ...entrance, pageKey: "sibling-use" };
   let ids = ["panel-a", "projection-a"];
+  storedSkillResources(domain, { panel: ["panel-a"], projection: ["projection-a"] }, [
+    { id: "readable", name: "Readable agent" }, { id: "hidden", name: "Hidden agent" },
+  ]);
+  decideSkill.mockImplementation(request => {
+    if (!("target" in request)) throw new Error("Unexpected create decision");
+    if (request.target.kind === "SKILL") return { allowed: true };
+    expect(request.ownerFacts).toEqual({ ownerId: "author", state: "PUBLISHED" });
+    return request.verb === "USE" && ids.includes(request.target.id)
+      ? { allowed: true } : { allowed: false, code: "FORBIDDEN", reason: "Denied" };
+  });
   const upstream = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (url.endsWith("/platform/page-skills"))
       return Response.json({ success: true, data: {
         pageSkills: [{ permissionCode: entrance.permissionCode }], registeredSkills: [], admittedEntrances: [admittedEntrance],
       } });
-    if (url.endsWith("/product-governance/resources")) {
-      expect(new Headers(init.headers).get("tk")).toBe(credentials.token);
-      expect(JSON.parse(String(init.body))).toEqual({ verb: "use" });
-      return Response.json({ ids });
-    }
     if (url.includes("/platform/applications/resolve-entry?")) {
       if (new URL(url, "http://owner.test").searchParams.get("useId") !== source.useId)
         return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
@@ -268,10 +286,6 @@ it("admits protected packages only through the initiator's exact entrance and ev
   expect(loadedPageSkillVersion(protectedRef, prepared.skills)).toEqual(prepared.skills[0]);
   expect(loadedPageSkillVersion(protectedSkillRef("product-panels", domain, "panel-b"), prepared.skills)).toBeNull();
 
-  referenceQuery.mockResolvedValueOnce({ rows: [
-    { id: "readable", name: "Readable agent" },
-    { id: "hidden", name: "Hidden agent" },
-  ] });
   const readableAgentIds = vi.fn(async () => new Set(["readable"]));
   await expect(skillManager.getSkillReferences(domain, protectedRef.name, { credentials, readableAgentIds }))
     .resolves.toEqual([{ id: "readable", name: "Readable agent", usesAnalysis: true, usesVisualization: false }]);
@@ -316,7 +330,7 @@ it("publishes one member across admitted entrances alongside the native permissi
   protectedPanelOfferings = [{ kind: "protected", sourceKey: "knowledge-panel", entrances, resourceIds: ["knowledge-panel"],
     readManifest: async () => offer.manifest, provide: offer.provide }];
   const published: RuntimeSkillRef[] = [];
-  const grants = vi.fn(() => Response.json({ ids: ["knowledge-panel"] }));
+  storedSkillResources(domain, { panel: ["knowledge-panel"], projection: [] });
   const uses = vi.fn((useId: string | null) => {
     const entrance = entrances.find(entry => entry.pageKey === useId);
     if (!entrance) return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
@@ -331,7 +345,6 @@ it("publishes one member across admitted entrances alongside the native permissi
       admittedEntrances: entrances, registeredSkills: [native], pageSkills: [{ permissionCode: "business-knowledge", skill: native,
         defaults: [{ pageKey: "governance-report", defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] }],
     } });
-    if (url.endsWith("/product-governance/resources")) return grants();
     if (url.includes("/platform/applications/resolve-entry?")) {
       expect(new Headers(init.headers).get("tk")).toBe(credentials.token);
       return uses(new URL(url, "http://owner.test").searchParams.get("useId"));
@@ -358,8 +371,8 @@ it("publishes one member across admitted entrances alongside the native permissi
   expect(published).toEqual([native, ref]);
   expect((await prepareAssistantSkills(domain, { kind: "custom", skills: [native] }, credentials,
     { mode: "member", locator: first, member: null })).currentPage).toBeNull();
-  grants.mockReturnValueOnce(Response.json({ unexpected: "source failure" }));
-  await expect(readAssistantSkillView(domain, credentials)).rejects.toMatchObject({ code: "PRODUCT_GOVERNANCE_UNAVAILABLE" });
+  decideSkill.mockImplementationOnce(() => { throw new HttpError(502, "Object authorization unavailable", "OBJECT_AUTHORIZATION_UNAVAILABLE"); });
+  await expect(readAssistantSkillView(domain, credentials)).rejects.toMatchObject({ code: "OBJECT_AUTHORIZATION_UNAVAILABLE" });
   const wrongApp = await uses(second.pageKey).json();
   wrongApp.data.applicationId = "other-app";
   uses.mockReturnValueOnce(Response.json(wrongApp));

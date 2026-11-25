@@ -1,3 +1,4 @@
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
@@ -341,6 +342,10 @@ beforeAll(async () => {
   app.use(express.json());
   mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === domainId
     ? [{ entryId: "app-m7/owners", roots: { panelIds: [panelId], agentIds: [] } }] : [] });
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: domainId, kinds: ["PANEL", "PROJECTION", "SKILL"],
+    allow: ({ ownerFacts }, caller) => Boolean(caller && (ownerFacts.ownerId === "owner-1" || ownerFacts.ownerId === null)),
+  });
   app.post("/product-governance/register", (req, res) => {
     resourceIds.add(req.body.id);
     res.json({ success: true });

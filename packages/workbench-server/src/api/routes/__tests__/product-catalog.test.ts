@@ -1,3 +1,4 @@
+import { objectDecisions } from "../../../__tests__/fixtures/agent-object-decisions";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import express from "express";
@@ -96,54 +97,58 @@ beforeAll(async () => {
   const { productPanelsRouter, productProjectionsRouter } = await import("../product-panels");
   const app = express();
   app.use(express.json());
-  app.post("/java/product-governance/check", (req, res) => {
-    if (req.body.target) {
-      expect(req.get("X-Ontomato-Query-Service-Token")).toBe("governance");
-      expect(req.body.target).toMatchObject({ domainId: "domain", kind: "panel" });
-      const { id } = req.body.target;
+  const objectRoute = "/java/authorization/objects";
+  function checkDefinition(req: express.Request, definition: { target: { domainId: string; kind: string; id: string }; ownerFacts: object }, state = "PUBLISHED") {
+    expect(req.get("X-Ontomato-Query-Service-Token")).toBe("governance");
+    const { target, ownerFacts } = definition;
+    expect(target.domainId).toBe("domain");
+    const row = (target.kind === "PANEL" ? records.product_panels : records.product_projections).get(target.id);
+    expect(row).toBeDefined();
+    expect(ownerFacts).toEqual({ ownerId: row!.ownerId, state });
+  }
+  app.post(objectRoute + "/decide-batch", (req, res) => {
+    res.json(objectDecisions(req.body, decision => {
+      if ("create" in decision) return ["PANEL", "PROJECTION"].includes(decision.create);
+      checkDefinition(req, decision);
       const caller = req.get("tk")!;
-      const authored = req.body.ownerFacts.ownerId === caller;
-      const editable = allowed(id, "edit", caller);
-      res.json({ allowed: authored || editable || allowed(id, "use", caller), authored, editable });
-      return;
-    }
-    res.json({ allowed: allowed(req.body.id, req.body.verb, req.get("tk")!) });
+      return decision.verb !== "VIEW" && (decision.ownerFacts.ownerId === caller ||
+        allowed(decision.target.id, decision.verb === "USE" ? "use" : "edit", caller));
+    }));
   });
-  app.post("/java/product-governance/resources", (req, res) => {
-    res.json({ ids: [...grants.keys()].filter(id => allowed(id, req.body.verb, req.get("tk")!)) });
+  app.post(objectRoute + "/first-publication", (req, res) => {
+    checkDefinition(req, req.body, "DRAFT");
+    res.json({ status: "granted" });
   });
-  app.post("/java/product-governance/register", (req, res) => {
-    expect(req.get("X-Ontomato-Query-Service-Token")).toBe("governance");
-    expect(req.body).toMatchObject({ domainId: "domain", shared: false });
-    grants.set(req.body.id, [ownerGrant(req.body.ownerId, "use"), ownerGrant(req.body.ownerId, "edit")]);
-    res.json({ success: true });
+  app.post(objectRoute + "/retire", (req, res) => {
+    checkDefinition(req, req.body);
+    deregistered.push(req.body.target.id);
+    grants.delete(req.body.target.id);
+    res.sendStatus(204);
   });
-  app.post("/java/product-governance/unregister", (req, res) => {
-    expect(req.get("X-Ontomato-Query-Service-Token")).toBe("governance");
-    expect(req.body.domainId).toBe("domain");
-    deregistered.push(req.body.id);
-    grants.delete(req.body.id);
-    res.json({ success: true });
-  });
-
   const canEdit: express.RequestHandler = (req, res, next) => {
-    if (!allowed(req.body.id, "edit", req.get("tk")!)) {
-      res.status(403).json({ message: "Product edit Grant required" });
+    checkDefinition(req, req.body);
+    if (!allowed(req.body.target.id, "edit", req.get("tk")!)) {
+      res.status(403).json({ message: "Product edit grant required" });
       return;
     }
     next();
   };
-  app.post("/java/product-governance/grants", canEdit, (req, res) => {
-    res.json({ grants: grants.get(req.body.id) });
+  app.post(objectRoute + "/product-access", canEdit, (req, res) => {
+    const current = grants.get(req.body.target.id) ?? [];
+    res.json({ shared: current.some(grant => grant.principalKind === "domain"),
+      grants: current.filter(grant => grant.principalKind !== "domain").map(grant => ({
+        policyId: grant.principalId, name: grant.principalId, verb: grant.verb.toUpperCase(),
+      })),
+    });
   });
-  app.post("/java/product-governance/grant", canEdit, (req, res) => {
-    const { id, remove, ...grant } = req.body;
-    editGrant(id, grant, remove);
-    res.json({ success: true });
+  app.post(objectRoute + "/product-grant", canEdit, (req, res) => {
+    const { target, policyId, verb, remove } = req.body;
+    editGrant(target.id, ownerGrant(policyId, verb === "USE" ? "use" : "edit"), remove);
+    res.sendStatus(204);
   });
-  app.post("/java/product-governance/share", canEdit, (req, res) => {
-    editGrant(req.body.id, { principalKind: "domain", principalId: "*", verb: "use" }, !req.body.shared);
-    res.json({ success: true });
+  app.post(objectRoute + "/product-domain-use", canEdit, (req, res) => {
+    editGrant(req.body.target.id, { principalKind: "domain", principalId: "*", verb: "use" }, !req.body.shared);
+    res.sendStatus(204);
   });
   app.get("/java/platform/applications/panel-uses/by-panel", (req, res) => {
     expect(req.get("X-Ontomato-Query-Service-Token")).toBe("governance");
@@ -198,9 +203,14 @@ beforeEach(() => {
     const table = (sql.match(/(?:FROM|INTO) (product_panels|product_projections)/)?.[1]) as Table;
     const collection = records[table];
     const id = String(values[1]);
+    if (sql.includes('SELECT id, owner_id AS "ownerId"'))
+      return { rows: [...collection.values()].filter(row => row.domainId === values[0]) };
     if (sql.startsWith("SELECT id,domain_id")) {
-      const row = collection.get(id);
-      return { rows: row?.domainId === values[0] ? [row] : [] };
+      const ids = Array.isArray(values[1]) ? values[1] : [id];
+      return { rows: ids.flatMap(key => {
+        const row = collection.get(key);
+        return row?.domainId === values[0] ? [row] : [];
+      }) };
     }
     if (table === "product_panels" && sql.startsWith("SELECT id,definition FROM")) {
       return { rows: [...records.product_panels.values()]
@@ -210,11 +220,11 @@ beforeEach(() => {
     }
     if (sql.includes('AS "sortKey"') || sql.startsWith("SELECT COUNT(*)::int AS total")) {
       const projectionCatalog = table === "product_projections";
-      const [domain, usable, scope, caller, query, template, _panelCatalog] =
-        values as [string, string[], string, string, string, boolean | null, boolean];
-      const componentId = projectionCatalog ? (values[7] as string | null) : null;
-      const objectType = projectionCatalog ? (values[8] as string | null) : null;
-      const cursorOffset = projectionCatalog ? 11 : 7;
+      const [domain, usable, scope, caller, query, template] =
+        values as [string, string[], string, string, string, boolean | null];
+      const componentId = projectionCatalog ? (values[6] as string | null) : null;
+      const objectType = projectionCatalog ? (values[7] as string | null) : null;
+      const cursorOffset = projectionCatalog ? 10 : 6;
       const [key, position, limit] = values.slice(cursorOffset) as [string | null, string | null, number];
       const sortByName = sql.includes("ORDER BY lower");
       const order = sortByName ? 1 : -1;
@@ -244,9 +254,10 @@ beforeEach(() => {
     if (sql.startsWith("SELECT id FROM") && sql.includes("UNION ALL"))
       return { rows: collection.has(id) || sql.includes("product_asset_revisions") && legacyRevisions.has(id) ? [{ id }] : [] };
     if (sql.startsWith("INSERT INTO")) {
-      seed(table, id, String(values[2]), JSON.parse(values[3] as string));
-      const row = collection.get(id)!;
-      row.revision = 1;
+      const timestamp = new Date("2026-11-20T00:00:00Z");
+      const row = { id, ownerId: String(values[2]), domainId: String(values[0]), definition: JSON.parse(values[3] as string),
+        revision: 1, createdAt: timestamp, updatedAt: timestamp };
+      collection.set(id, row);
       return { rows: [row] };
     }
     if (sql.startsWith("DELETE FROM")) {
@@ -432,7 +443,7 @@ it("requires edit and the current revision, and unregisters a chart projection a
   const path = "product-projections/remove";
   const forbidden = await request(path + "?revision=2", "DELETE", undefined, "bob");
   expect(forbidden.status).toBe(403);
-  expect(await forbidden.json()).toMatchObject({ code: "PRODUCT_FORBIDDEN" });
+  expect(await forbidden.json()).toMatchObject({ code: "OBJECT_FORBIDDEN" });
   const conflict = await request(path + "?revision=1", "DELETE");
   expect(conflict.status).toBe(409);
   expect(await conflict.json()).toMatchObject({ code: "PRODUCT_CONFLICT" });
@@ -448,7 +459,7 @@ it("requires edit and the current revision, and unregisters a chart projection a
   expect(deregistered).toEqual(["remove"]);
   expect(grants.has("remove")).toBe(false);
   expect((await reader.read()).done).toBe(true);
-  expect((await watch()).status).toBe(403);
+  expect((await watch()).status).toBe(404);
 });
 
 it("copies from use alone as a new private record owned by the copier and refuses an existing ID or a source chart", async () => {
@@ -459,7 +470,9 @@ it("copies from use alone as a new private record owned by the copier and refuse
   const result = await request("product-projections/metric/copy", "POST", proposed);
   const { projection } = productProjectionResponseSchema.parse(await result.json());
   expect(projection).toMatchObject({ ...projectionDefinition, ...proposed, ownerId: "alice", visibility: "private", revision: 1 });
-  expect(grants.get("copy")).toEqual([ownerGrant("alice", "use"), ownerGrant("alice", "edit")]);
+  expect(grants.has("copy")).toBe(false);
+  expect((await request("product-projections/copy")).status).toBe(200);
+  expect((await request("product-projections/copy", "GET", undefined, "bob")).status).toBe(403);
   const collision = await request("product-projections/metric/copy", "POST", proposed);
   expect(collision.status).toBe(409);
   expect(await collision.json()).toMatchObject({ error: { code: "PRODUCT_ID_CONFLICT" } });
@@ -480,17 +493,21 @@ it("copies from use alone as a new private record owned by the copier and refuse
 it("uses Java edit authority for grant reads and changes, with domain sharing reflected in the grant list", async () => {
   seed("product_panels", "panel", "alice", panelDefinition(), [ownerGrant("bob", "use")]);
   const path = "product-panels/panel";
-  const grant = { ...ownerGrant("carol", "edit"), remove: false };
+  const grant = { policyId: "carol", verb: "EDIT", remove: false };
   expect((await request(path + "/grants", "GET", undefined, "bob")).status).toBe(403);
   expect((await request(path + "/grants", "POST", grant, "bob")).status).toBe(403);
   await request(path + "/grants", "POST", grant);
   await request(path + "/domain-grant", "POST", { shared: true });
-  expect((await (await request(path + "/grants")).json()).grants).toEqual(expect.arrayContaining([
-    ownerGrant("carol", "edit"), { principalKind: "domain", principalId: "*", verb: "use" },
-  ]));
+  expect(await (await request(path + "/grants")).json()).toMatchObject({
+    shared: true, grants: expect.arrayContaining([{ policyId: "carol", name: "carol", verb: "EDIT" }]),
+  });
   await request(path + "/grants", "POST", { ...grant, remove: true });
   await request(path + "/domain-grant", "POST", { shared: false });
-  expect((await (await request(path + "/grants")).json()).grants).toEqual([
-    ownerGrant("alice", "use"), ownerGrant("alice", "edit"), ownerGrant("bob", "use"),
-  ]);
+  expect(await (await request(path + "/grants")).json()).toEqual({
+    shared: false, grants: [
+      { policyId: "alice", name: "alice", verb: "USE" },
+      { policyId: "alice", name: "alice", verb: "EDIT" },
+      { policyId: "bob", name: "bob", verb: "USE" },
+    ],
+  });
 });

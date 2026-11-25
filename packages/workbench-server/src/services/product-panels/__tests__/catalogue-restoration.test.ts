@@ -1,3 +1,7 @@
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  requireObject: vi.fn(),
+}));
 import { beforeAll, expect, it, vi } from "vitest";
 import { applicationCatalogueRecordSchema } from "@ontomato/contracts/application-catalogue";
 import { panelFormDescriptionSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";

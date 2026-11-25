@@ -273,7 +273,7 @@ public class OntologyQueryService {
 
   private Map<String, Object> executeQuery(JSONObject query, QueryAccessService.Access access, JSONObject predicate) throws Exception {
     validateQuery(query, access);
-    if (access.target().mode() == ExecutionTarget.Mode.SANDBOX || access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
+    if (access.target().mode() == ExecutionTarget.Mode.SANDBOX || access.grant() != null && QueryGrantService.readsThroughWriteProgram(access.grant())) {
       var definitions = classes(access);
       var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
       QueryPermissions.authorizeInputs(analysis, access.permission(), definitions);

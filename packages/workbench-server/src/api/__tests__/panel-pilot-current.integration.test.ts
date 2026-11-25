@@ -30,7 +30,7 @@ import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
-import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
+import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureOpsDiagnosisSchema } from "../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
@@ -194,6 +194,12 @@ beforeAll(async () => {
       { entryId: "ontology-pilot/graph", roots: { panelIds: [graphPanelId], agentIds: [] } },
       { entryId: "ontology-pilot/data", roots: { panelIds: [dataPanelId], agentIds: [] } },
     ] : [] });
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: "pilot", kinds: ["PANEL", "PROJECTION", "COMPONENT"],
+    allow: ({ verb, ownerFacts }, caller) => caller === "pilot-reader" &&
+      (ownerFacts.ownerId === "reader" || (verb === "USE" && ownerFacts.ownerId === null)),
+  });
+  app.post("/authorization/objects/product-access", (_req, res) => res.json({ shared: false, grants: [] }));
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     resourceIds.add(req.body.id);
