@@ -359,7 +359,7 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
   }
 
   // All 19 count projections use ObjectCount with badge appearance:
-  // 7 use count-only reads (no params), 8 ontology paged queries keep size: 1,
+  // 8 use count-only reads (no params), 7 ontology paged queries keep size: 1,
   // 3 governance paged queries pass page: { number: 1, size: 1 }, and organization units uses list.
   const countProjectionList = Object.values(frameProjections);
   expect(countProjectionList).toHaveLength(19);
@@ -369,6 +369,7 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
     "builtin-product-om-frame-relations",
     "builtin-product-om-frame-actions",
     "builtin-product-om-frame-workflows",
+    "builtin-product-om-frame-triggers",
     "builtin-product-om-frame-components",
     "builtin-product-om-frame-agents",
   ];

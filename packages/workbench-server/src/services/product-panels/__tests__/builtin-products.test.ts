@@ -185,6 +185,7 @@ describe("readBuiltinProducts", () => {
         relationships: "platform:Relationship",
         actions: "platform:Action",
         workflows: "platform:Workflow",
+        triggers: "platform:Trigger",
         sdkComponents: "platform:SDKComponent",
         agents: "platform:AgentDefinition",
       };

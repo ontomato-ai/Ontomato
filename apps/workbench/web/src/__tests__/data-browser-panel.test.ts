@@ -388,7 +388,18 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
         },
       };
     }
-    if (member === "classPicker" || member === "classCatalogProbe" || member === "graphSearchClassPicker") {
+    if (member === "graphSearchClassPicker") {
+      return {
+        status: "ready",
+        value: {
+          options: [
+            { primaryKey: "Order", value: "Order", label: "Order" },
+            { primaryKey: "Customer", value: "Customer", label: "Customer" },
+          ],
+        },
+      };
+    }
+    if (member === "classPicker" || member === "classCatalogProbe") {
       return {
         status: "ready",
         value: [

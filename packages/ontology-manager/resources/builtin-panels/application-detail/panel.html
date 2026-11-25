@@ -245,7 +245,7 @@
       </sdk-tabs>
 
       <!-- Tab 1: Basics (Identity form + standalone toggle + copyable externalLink summary) -->
-      <div v-show="tabModel === 'identity'" class="apps-tab-panel" data-tab="identity">
+      <div v-if="isTabMounted('identity')" v-show="tabModel === 'identity'" class="apps-tab-panel" data-tab="identity">
         <div v-if="canMaintain" class="apps-basics-grid">
           <section class="apps-card">
             <h2 class="apps-card-title">{{ t('detail.identityTitle') }}</h2>
@@ -265,7 +265,7 @@
       </div>
 
       <!-- Tab 2: Entries -->
-      <div v-show="tabModel === 'entries'" class="apps-tab-panel" data-tab="entries">
+      <div v-if="isTabMounted('entries')" v-show="tabModel === 'entries'" class="apps-tab-panel" data-tab="entries">
         <div v-if="entryTotal !== null || canEditEntries" class="apps-table-bar">
           <span class="apps-muted">{{ entryTotal !== null ? t('entries.count', { count: entryTotal }) : '' }}</span>
           <div v-if="canEditEntries" class="apps-table-bar-actions">
@@ -299,7 +299,7 @@
       </div>
 
       <!-- Tab 3: Panels & Projections -->
-      <div v-show="tabModel === 'assets'" class="apps-tab-panel" data-tab="assets">
+      <div v-if="isTabMounted('assets')" v-show="tabModel === 'assets'" class="apps-tab-panel" data-tab="assets">
         <div class="apps-assets-grid">
           <section class="apps-card">
             <h2 class="apps-card-title">
@@ -333,7 +333,7 @@
       </div>
 
       <!-- Tab 4: Permissions & Sharing -->
-      <div v-if="canGrant" v-show="tabModel === 'grants'" class="apps-tab-panel" data-tab="grants">
+      <div v-if="canGrant && isTabMounted('grants')" v-show="tabModel === 'grants'" class="apps-tab-panel" data-tab="grants">
         <div class="apps-share-bar">
           <div class="apps-share-left">
             <strong class="apps-card-title">{{ t('grants.shareTitle') }}</strong>

@@ -450,14 +450,14 @@
 
       <template v-if="selectedKey && recordReady && !recordUnavailable && !showEditForm && !pendingAutoEdit">
         <!-- Tab 1: Overview -->
-        <section v-show="tabModel === 'overview'" class="pd-section pd-tab-panel" data-tab="overview">
+        <section v-if="tabModel === 'overview'" class="pd-section pd-tab-panel" data-tab="overview">
           <div class="pd-card">
             <projection slot="overviewSummary"></projection>
           </div>
         </section>
 
         <!-- Tab 2: Source files (ObjectTree + ObjectTextReader) -->
-        <section v-show="tabModel === 'source'" class="pd-section pd-tab-panel" data-tab="source">
+        <section v-else-if="tabModel === 'source'" class="pd-section pd-tab-panel" data-tab="source">
           <div class="pd-source-grid">
             <div class="pd-source-tree">
               <projection slot="sourceTree"></projection>
@@ -469,7 +469,7 @@
         </section>
 
         <!-- Tab 3: Members -->
-        <section v-show="tabModel === 'members'" class="pd-section pd-tab-panel" data-tab="members">
+        <section v-else-if="tabModel === 'members'" class="pd-section pd-tab-panel" data-tab="members">
           <projection slot="membersList" @choose="onChooseMemberRow" @navigate="onNavigateReference"></projection>
           <div class="pd-member-card">
             <p v-if="!memberProjectionKey" class="pd-muted">{{ t('members.projectionEmpty') }}</p>
@@ -493,7 +493,7 @@
         </section>
 
         <!-- Tab 4: Usage -->
-        <section v-show="tabModel === 'usage'" class="pd-section pd-tab-panel" data-tab="usage">
+        <section v-else-if="tabModel === 'usage'" class="pd-section pd-tab-panel" data-tab="usage">
           <div class="pd-section-bar">
             <sdk-button size="small" @click="openAddress('/ontology/applications')">{{ t('action.allApplications') }}</sdk-button>
           </div>
@@ -514,7 +514,7 @@
         </section>
 
         <!-- Tab 5: Grants & Domain Sharing -->
-        <section v-if="canGrant" v-show="tabModel === 'grants'" class="pd-section pd-tab-panel" data-tab="grants">
+        <section v-else-if="canGrant && tabModel === 'grants'" class="pd-section pd-tab-panel" data-tab="grants">
           <div class="pd-share-bar">
             <div class="pd-share-left">
               <strong class="pd-section-title">{{ t('grants.shareTitle') }}</strong>
@@ -531,7 +531,7 @@
         </section>
 
         <!-- Tab 6: Live Inline Preview (mounted on demand only while viewing a ready, available panel on Preview tab) -->
-        <section v-if="shouldMountPreview" class="pd-section" data-tab="preview">
+        <section v-else-if="shouldMountPreview" class="pd-section" data-tab="preview">
           <h2 class="pd-section-title">{{ t('preview.live') }}</h2>
           <div class="pd-preview-box">
             <projection slot="preview"></projection>

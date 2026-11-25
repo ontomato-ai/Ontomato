@@ -1246,8 +1246,13 @@ describe("panels two-entry architecture (catalog + detail)", () => {
     });
 
     try {
-      // All 5 same-object detail tabs mounted via v-show; Preview NOT mounted until Preview tab is active.
-      await waitFor(() => mounted.element.querySelectorAll(".pd-tab-panel").length === 5, "5 detail tabs mounted");
+      // Only the active Overview tab mounts initially; hidden tabs (source, members, usage, grants, preview) stay unmounted until selected.
+      await waitFor(() => mounted.element.querySelectorAll(".pd-tab-panel").length === 1, "only active overview tab mounted");
+      expect(mounted.element.querySelector('[data-tab="overview"]')).not.toBeNull();
+      expect(mounted.element.querySelector('[data-tab="source"]')).toBeNull();
+      expect(mounted.element.querySelector('[data-tab="members"]')).toBeNull();
+      expect(mounted.element.querySelector('[data-tab="usage"]')).toBeNull();
+      expect(mounted.element.querySelector('[data-tab="grants"]')).toBeNull();
       expect(mounted.element.querySelector('[data-tab="preview"]')).toBeNull();
       expect(nestedRequests).toHaveLength(0);
 

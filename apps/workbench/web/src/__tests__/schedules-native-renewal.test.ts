@@ -330,7 +330,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       const editor = element.querySelector<HTMLElement>('[data-form="edit"]')!;
       expect(document.activeElement).toBe(editor);
       editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      await vi.waitFor(() => expect(editor.style.display).toBe("none"));
+      await vi.waitFor(() => expect(element.querySelector('[data-form="edit"]')).toBeNull());
       expect(document.activeElement).toBe(element.querySelector(".schedules-list-col .sdk-object-list-card.chosen"));
 
       const other = otherApplications.at(-1)!;

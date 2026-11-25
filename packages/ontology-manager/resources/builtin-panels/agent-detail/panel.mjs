@@ -1,4 +1,4 @@
-import { computed, nextTick, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -173,6 +173,26 @@ await mountPanel({
       { immediate: true },
     );
 
+    // Mount the heavy config form tab lazily on first visit for the current agent so deep links to
+    // `?tab=grants` skip config form/picker reads, while keeping unsaved edits across config <-> grants switches.
+    const configTabMounted = ref(false);
+    watch(
+      selectedKey,
+      (next, prev) => {
+        if (next !== prev) configTabMounted.value = false;
+      },
+      { flush: "sync" },
+    );
+    watch(
+      [detailReady, tabModel, canGrant],
+      ([ready, tab, allowed]) => {
+        if (ready && (tab === "config" || !allowed)) {
+          configTabMounted.value = true;
+        }
+      },
+      { immediate: true, flush: "sync" },
+    );
+
     // Route back to the sibling catalog entry so the platform's unified unsaved-changes leave guard runs.
     function goBack() {
       void navigate(catalogPath.value).catch(() => undefined);
@@ -228,6 +248,7 @@ await mountPanel({
       selectedKey,
       isOntologyEntry,
       tabModel,
+      configTabMounted,
       agentCategory,
       canEdit,
       canGrant,

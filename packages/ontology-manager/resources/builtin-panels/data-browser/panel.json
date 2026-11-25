@@ -142,7 +142,8 @@
         "description": "Optional object type filter narrowing instance graph search results.",
         "type": "platform:ObjectType",
         "data": {
-          "rows": "list"
+          "options": "options",
+          "selected": "resolve"
         },
         "state": {
           "selected": "graphSearchClass"
