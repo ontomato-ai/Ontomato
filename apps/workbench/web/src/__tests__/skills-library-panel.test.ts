@@ -449,18 +449,26 @@ describe("skills-library two-entry builtin panels", () => {
       // Diagnostics banner rendered by ObjectList.
       expect(element.querySelector(".sdk-object-list-diagnostics")?.textContent).toContain("broken-skill");
 
-      // Cards render title, source badge, description, and per-card Export / Delete buttons.
+      // Catalog header keeps only the primary Import Skill button with its upload icon (no extra refresh button).
+      const headerButtons = [...element.querySelectorAll<HTMLButtonElement>(".sdk-page-header-actions button")];
+      expect(headerButtons.length).toBe(1);
+      expect(headerButtons[0]!.textContent?.trim()).toBe("Import Skill");
+      expect(headerButtons[0]!.querySelector("svg")).not.toBeNull();
+
+      // Cards render title, source badge, description, and header Export / Delete icon buttons in the same header action area.
       const cards = [...element.querySelectorAll<HTMLElement>(".sdk-object-list-card")];
       expect(cards[0]!.querySelector(".sdk-object-list-card-title")?.textContent?.trim()).toBe("Domain Skill");
-      expect(cards[0]!.querySelector(".sdk-object-list-tag")?.textContent?.trim()).toBe("Domain");
+      expect(cards[0]!.querySelector(".sdk-object-list-card-head .sdk-object-list-tag")?.textContent?.trim()).toBe("Domain");
       expect(cards[0]!.querySelector(".sdk-object-list-card-sub")?.textContent?.trim()).toBe("Reusable domain skill instructions");
 
-      const domainButtons = [...cards[0]!.querySelectorAll<HTMLButtonElement>(".sdk-object-list-card-actions button")];
+      const domainButtons = [...cards[0]!.querySelectorAll<HTMLButtonElement>(".sdk-object-list-card-header-actions button")];
       expect(domainButtons.map((btn) => btn.textContent?.trim())).toEqual(["Export", "Delete"]);
+      expect(domainButtons[0]!.querySelector(".sdk-object-list-action-icon")).not.toBeNull();
+      expect(domainButtons[1]!.querySelector(".sdk-object-list-action-icon")).not.toBeNull();
       expect(domainButtons[1]!.classList.contains("is-danger")).toBe(true);
       expect(domainButtons[1]!.disabled).toBe(false);
 
-      const builtinButtons = [...cards[1]!.querySelectorAll<HTMLButtonElement>(".sdk-object-list-card-actions button")];
+      const builtinButtons = [...cards[1]!.querySelectorAll<HTMLButtonElement>(".sdk-object-list-card-header-actions button")];
       expect(builtinButtons[1]!.disabled).toBe(true);
       expect(builtinButtons[1]!.title).toBe("Built-in skills are read-only");
 
@@ -509,7 +517,7 @@ describe("skills-library two-entry builtin panels", () => {
       });
 
       // Clicking card Delete dispatches list.remove and refreshes the catalog list.
-      const firstDeleteBtn = element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-card-actions button")[1]!;
+      const firstDeleteBtn = element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-card-header-actions button")[1]!;
       firstDeleteBtn.click();
       await waitFor(() => {
         expect(deleteIntents.length).toBe(1);
@@ -874,8 +882,10 @@ describe("skills-library two-entry builtin panels", () => {
         expect(element.querySelectorAll(".sdk-page-header-actions button").length).toBe(2);
       });
 
-      // 1. Export downloads the ZIP and keeps filePath intact.
+      // 1. Export button carries a download icon, downloads the ZIP, and keeps filePath intact.
       const [exportButton, deleteButton] = [...element.querySelectorAll<HTMLButtonElement>(".sdk-page-header-actions button")];
+      expect(exportButton!.querySelector("svg")).not.toBeNull();
+      expect(deleteButton!.querySelector("svg")).not.toBeNull();
       exportButton!.click();
       await waitFor(() => {
         expect(readOperationIds).toEqual(["exportSkill.export"]);
@@ -973,6 +983,8 @@ describe("skills-library two-entry builtin panels", () => {
         "SKILL.md": "---\nname: skill-b\ndescription: Skill B\n---\n# Skill B Guide\n\nInstructions for B.",
         "references/readme.md": "# Skill B Reference\nFrom skill B.",
         "config.json": "{\n  \"enabled\": true\n}\n",
+        "data/metrics.csv": "name,value\norders,42\n",
+        "data/metrics.tsv": "name\tvalue\norders\t42\n",
       },
       "skill-no-md": {
         "scripts/entry.py": "print('first in tree')\n",
@@ -1177,6 +1189,29 @@ describe("skills-library two-entry builtin panels", () => {
         expect(editor).not.toBeNull();
         expect(editor?.textContent).toContain('"enabled": true');
         expect(editor?.getAttribute("contenteditable")).toBe("false");
+      });
+
+      // 5b. Opening CSV and TSV files renders read-only code/text instead of the table preview.
+      await display.present(
+        presentFrame({ selected: skillRef("skill-b"), filePath: "data/metrics.csv" }, display.page.value!.address),
+      );
+      await waitFor(() => {
+        const editor = element.querySelector(".package-viewer .sdk-object-text-reader-code .cm-content");
+        expect(editor).not.toBeNull();
+        expect(editor?.textContent).toContain("name,value");
+        expect(editor?.getAttribute("contenteditable")).toBe("false");
+        expect(element.querySelector(".package-viewer .sdk-object-text-reader-table")).toBeNull();
+      });
+
+      await display.present(
+        presentFrame({ selected: skillRef("skill-b"), filePath: "data/metrics.tsv" }, display.page.value!.address),
+      );
+      await waitFor(() => {
+        const editor = element.querySelector(".package-viewer .sdk-object-text-reader-code .cm-content");
+        expect(editor).not.toBeNull();
+        expect(editor?.textContent).toContain("orders");
+        expect(editor?.getAttribute("contenteditable")).toBe("false");
+        expect(element.querySelector(".package-viewer .sdk-object-text-reader-table")).toBeNull();
       });
 
       // 6. Switching without filePath to a package lacking SKILL.md selects the first file in tree order (scripts/entry.py)

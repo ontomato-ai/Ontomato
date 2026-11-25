@@ -201,29 +201,25 @@ function actionFormDescription(values: { name: string; code: string }, isCreate:
         control: { kind: "text" },
       },
       {
-        path: "/function",
-        label: "Function",
+        path: "/function/name",
+        label: "Function name",
         required: true,
         readOnly: false,
-        valueSchema: { type: "object" },
-        control: {
-          kind: "object",
-          fields: [
-            {
-              path: "/code",
-              label: "Code",
-              required: true,
-              readOnly: false,
-              valueSchema: { type: "string" },
-              control: { kind: "code", language: "python" },
-            },
-          ],
-        },
+        valueSchema: { type: "string" },
+        control: { kind: "text" },
+      },
+      {
+        path: "/function/code",
+        label: "Code",
+        required: true,
+        readOnly: false,
+        valueSchema: { type: "string" },
+        control: { kind: "code", language: "python" },
       },
     ],
     values: {
       name: values.name,
-      function: { code: values.code },
+      function: { name: "approve_order", code: values.code },
     },
     errors: [],
     revision: 1,
@@ -370,6 +366,7 @@ interface MountDetailOptions {
   headerResponse?: ProductPanelReadResponse | (() => Promise<ProductPanelReadResponse>);
   removeUnavailable?: { reason: string } | null;
   derivedData?: {
+    summary?: unknown;
     effects?: unknown[];
     parameters?: unknown[];
     conditions?: unknown[];
@@ -578,12 +575,12 @@ async function mountDetailPanel(options: MountDetailOptions = {}) {
       if (member === "derivedSummary") {
         return {
           status: "ready",
-          value: {
+          value: (options.derivedData?.summary ?? {
             primaryKey: "approve-order",
             label: "Approve order",
             fieldLabels: { declaredTarget: "Target", affects: "Affects" },
             fields: { declaredTarget: "Order", affects: "Order.status" },
-          } as never,
+          }) as never,
         };
       }
       if (member === "derivedEffects") {
@@ -657,29 +654,47 @@ describe("builtin actions catalog panel (actions)", () => {
       expect(element.textContent).toContain("Cancel order");
     });
 
-    // New action ConversationEntry lives in <page-header #actions>, not inside ObjectList toolbar.
+    // New action ConversationEntry lives in <page-header #actions>, without any extra refresh button.
     const header = element.querySelector<HTMLElement>("header.sdk-page-header")!;
+    expect(header.textContent).toContain("Define operations on business objects and how they are executed");
+    expect(header.querySelectorAll("button")).toHaveLength(1);
     const newActionBtn = header.querySelector<HTMLButtonElement>('[data-member="newAction"] button');
     expect(newActionBtn).not.toBeNull();
     expect(newActionBtn?.textContent?.trim()).toBe("New action");
     expect(element.querySelector('[data-member="catalog"] [data-member="newAction"]')).toBeNull();
+
+    // Hit count stays visible next to the search box; description stays single-line and origin is plain text.
+    expect(element.querySelector(".ac-count")?.textContent?.trim()).toBe("2 items");
+    const catalogProjection = catalogFixture.projections.get(catalogSource.manifest.members.catalog.id);
+    const catalogColumns = (catalogProjection?.config as { columns?: Array<Record<string, unknown>> } | undefined)?.columns ?? [];
+    expect(catalogColumns.find((col) => col.key === "label")?.wrap).toBeUndefined();
+    expect(catalogColumns.find((col) => col.key === "origin")?.kind).toBeUndefined();
 
     newActionBtn!.click();
     await vi.waitFor(() => {
       expect(expandPageComposer).toHaveBeenCalledTimes(1);
     });
 
-    // Batch status button is not mounted while no rows are checked.
+    // Batch status selector and button are not mounted while no rows are checked.
     expect(element.querySelector('[data-member="setStatus"]')).toBeNull();
 
-    // Checking a row reveals the batch status button inside ObjectList #batch-actions.
+    // Checking a row reveals the toolbar status selector bound to batchStatus and the batch status button.
     const firstCheckbox = element.querySelector<HTMLInputElement>('[data-member="catalog"] tbody tr input[type="checkbox"]');
     expect(firstCheckbox).not.toBeNull();
     firstCheckbox!.click();
     await vi.waitFor(() => {
       expect(instance.state.values.value.checked).toEqual([{ className: ACTION, primaryKey: "approve-order" }]);
+      expect(element.querySelector(".ac-batch-select")).not.toBeNull();
       expect(element.querySelector('[data-member="setStatus"] button')).not.toBeNull();
     });
+    const setStatusProjection = catalogFixture.projections.get(catalogSource.manifest.members.setStatus.id);
+    expect(setStatusProjection?.operations?.setStatus?.params).toEqual({
+      status: { input: "status" },
+    });
+    expect(catalogFixture.manifest.members.setStatus?.inputs?.status).toEqual({
+      state: "batchStatus",
+    });
+    expect(instance.state.values.value.batchStatus).toBe("PUBLISHED");
 
     // Search input is present and deep-links keyword state without paging state.
     expect(catalogFixture.manifest.state.keyword?.deepLink).toBe(true);
@@ -733,6 +748,7 @@ describe("builtin action-detail panel (action-detail)", () => {
     const backButton = element.querySelector<HTMLButtonElement>("button.sdk-page-header-back");
     expect(backButton?.textContent?.trim()).toBe("Back to actions");
     expect(element.querySelector(".sdk-owner-form-actions")).toBeNull();
+    expect(element.querySelectorAll('[data-member="form"] .sdk-owner-form-card')).toHaveLength(3);
     const saveButton = element.querySelector<HTMLButtonElement>(".sdk-page-header-action.primary");
     expect(saveButton?.disabled).toBe(true);
     expect(element.querySelector(".sdk-page-header-unsaved")).toBeNull();
@@ -959,17 +975,38 @@ describe("builtin action-detail panel (action-detail)", () => {
         activeTab: "derived",
       },
       derivedData: {
+        summary: {
+          primaryKey: "approve-order",
+          label: "Approve order",
+          fieldLabels: {
+            derivationStatus: "Verification",
+            declaredTarget: "Declared target",
+            affects: "Changes these object types",
+            negativeEffect: "Negative effect",
+          },
+          fields: {
+            derivationStatus: "Derived · unverified",
+            declaredTarget: "Order ← order_id",
+            negativeEffect: "Cannot be reversed once dispatched",
+          },
+          tones: {
+            derivationStatus: "info",
+            negativeEffect: "warning",
+          },
+          tags: { affects: ["Order"] },
+        },
         effects: [
           {
             primaryKey: "effect-update-0",
             label: "Mark approved",
-            fieldLabels: { group: "Category", kind: "Kind", target: "Target", fields: "Fields", guards: "Checks" },
+            fieldLabels: { group: "Category", kind: "Kind", target: "Target", fields: "Fields", guards: "Checks", locate: "Locate" },
             fields: {
               group: "Updates",
               kind: "Update object",
-              target: ["Order · Object ← ", orderParamRef],
+              target: "Order",
               fields: ["note ← ", noteParamRef],
               guards: "",
+              locate: ["Object ← ", orderParamRef],
             },
             tones: { kind: "info" },
           },
@@ -1059,14 +1096,18 @@ describe("builtin action-detail panel (action-detail)", () => {
       expect(element.querySelectorAll('[data-member="derivedConditions"] tbody tr[data-row-item="true"]')).toHaveLength(1);
     });
 
-    const paramRows = [...element.querySelectorAll<HTMLElement>('[data-member="derivedParameters"] tbody tr[data-row-item="true"]')];
-    const effectTargetCell = element.querySelector<HTMLElement>('[data-member="derivedEffects"] tbody tr[data-row-item="true"] td:nth-child(3)');
-    expect(effectTargetCell?.textContent).not.toContain(",");
+    const summaryEl = element.querySelector<HTMLElement>('[data-member="derivedSummary"]')!;
+    expect(summaryEl.textContent).toContain("Derived · unverified");
+    expect(summaryEl.textContent).toContain("Cannot be reversed once dispatched");
 
-    // 1. Clicking inline parameter button in derivedEffects selects child-object state and highlights & scrolls to row.
+    const paramRows = [...element.querySelectorAll<HTMLElement>('[data-member="derivedParameters"] tbody tr[data-row-item="true"]')];
+    const effectLocateCell = element.querySelector<HTMLElement>('[data-member="derivedEffects"] tbody tr[data-row-item="true"] td:nth-child(6)');
+    expect(effectLocateCell?.textContent).not.toContain(",");
+
+    // 1. Clicking inline parameter button in derivedEffects locate column selects child-object state and highlights & scrolls to row.
     const scrollSpy = vi.fn();
     paramRows[0]!.scrollIntoView = scrollSpy;
-    const effectParamBtn = effectTargetCell!.querySelector<HTMLButtonElement>("button.is-child-ref")!;
+    const effectParamBtn = effectLocateCell!.querySelector<HTMLButtonElement>("button.is-child-ref")!;
     expect(effectParamBtn.textContent?.trim()).toBe("order_id");
     effectParamBtn.click();
 

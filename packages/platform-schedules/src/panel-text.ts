@@ -13,15 +13,22 @@ export function scheduledTaskFieldLabels(translate: (key: string) => string) {
 }
 
 export interface ScheduledTaskPanelText {
-  form: Record<"app" | "appUnknown" | "serviceZone" | "taskZone" | "content" | "noFields" | "after" | "notifyPlaceholder", string>;
+  title: string;
+  loadFailed: string;
+  form: Record<"app" | "appUnknown" | "serviceZone" | "taskZone" | "content" | "noFields" | "after" | "notifyPlaceholder" | "formChanged", string>;
   action: { runNow: string };
+  card: { viewResult: string; viewEarlierResult: string; noResult: string };
+  notice: { applicationsFailed: string; applicationsMissing: string; noApplication: string };
+  duration: { took: string; seconds: string; minutes: string; hours: string };
   panelFields: {
     settings: string; state: string; nextRun: string; lastRun: string; lastRunAt: string; lastRunSummary: string;
-    latestResultPath: string; allApplications: string; pauseReason: string; stateOn: string; stateOff: string; statePaused: string;
+    latestResultPath: string; resultStateLabel: string; allApplications: string; pauseReason: string;
+    stateOn: string; stateOff: string; statePaused: string;
   };
   runFields: {
     status: string; trigger: string; startedAt: string; scheduledAt: string; duration: string;
     error: string; resultSummary: string; snapshotSummary: string; result: string; executionDetails: string;
+    resultPath: string;
   };
   trigger: { manual: string; schedule: string; unknown: string };
   runError: Record<
@@ -44,7 +51,10 @@ export interface ScheduledTaskPanelText {
   frequency: { every: Record<"minute" | "hour" | "day", string>; daily: string; weekly: string; monthly: string; cron: string };
   panelErrors: { revisionConflict: string; invalidDraftField: string; invalidDraftParameter: string };
   panelSettings: { title: string; frequency: string; timeZone: string; notifyEmail: string };
-  panelManagement: { save: string; create: string; setEnabled: string; delete: string; deleteImpact: string; deleted: string; renewCredential: string };
+  panelManagement: {
+    save: string; create: string; setEnabled: string; enabled: string; disabled: string;
+    delete: string; deleteImpact: string; deleted: string; renewCredential: string;
+  };
   panelRunStarted: string;
   runStatus: { running: string; completed: string; failed: string; skipped: string };
   attention: { issues: string; results: string; running: string };
@@ -53,8 +63,13 @@ export interface ScheduledTaskPanelText {
 /** Exposes the same owner messages in the Node locale pack's flat format. */
 export function scheduledTaskPanelMessages(text: ScheduledTaskPanelText): Record<string, string> {
   return {
+    "platformSchedules.title": text.title,
+    "platformSchedules.loadFailed": text.loadFailed,
     ...Object.fromEntries(Object.entries(text.form).map(([key, value]) => [`platformSchedules.form.${key}`, value])),
     "platformSchedules.action.runNow": text.action.runNow,
+    ...Object.fromEntries(Object.entries(text.card).map(([key, value]) => [`platformSchedules.card.${key}`, value])),
+    ...Object.fromEntries(Object.entries(text.notice).map(([key, value]) => [`platformSchedules.notice.${key}`, value])),
+    ...Object.fromEntries(Object.entries(text.duration).map(([key, value]) => [`platformSchedules.duration.${key}`, value])),
     "platformSchedules.panelRunStarted": text.panelRunStarted,
     "platformSchedules.panelErrors.revisionConflict": text.panelErrors.revisionConflict,
     "platformSchedules.panelErrors.invalidDraftField": text.panelErrors.invalidDraftField,
@@ -74,6 +89,8 @@ export function scheduledTaskPanelMessages(text: ScheduledTaskPanelText): Record
 }
 
 export const scheduledTaskPanelTextEn = {
+  title: "Scheduled tasks",
+  loadFailed: "Couldn't load the scheduled tasks.",
   form: {
     app: "Application",
     appUnknown: "Not installed",
@@ -83,11 +100,30 @@ export const scheduledTaskPanelTextEn = {
     noFields: "This application needs nothing more.",
     after: "After it runs",
     notifyPlaceholder: "Optional. One message after each run, success or failure.",
+    formChanged: "The application's form changed since you opened it and has been replaced; check the fields and save again.",
   },
   action: { runNow: "Run now" },
+  card: {
+    viewResult: "View result",
+    viewEarlierResult: "View earlier result",
+    noResult: "No result yet",
+  },
+  notice: {
+    applicationsFailed: "The applications that can run on a schedule could not be read, so new tasks are unavailable for now.",
+    applicationsMissing:
+      "This page has no name for the application {ids} the service declares, so new tasks are switched off. Ask an administrator to check the installation.",
+    noApplication: "No application can run on a schedule for you right now.",
+  },
+  duration: {
+    took: "Took {time}",
+    seconds: "{n} s",
+    minutes: "{m} min {s} s",
+    hours: "{h} h {m} min",
+  },
   panelFields: {
     settings: "Settings", state: "Status", nextRun: "Next run", lastRun: "Last run",
     lastRunAt: "Last run time", lastRunSummary: "Last run summary", latestResultPath: "Latest result",
+    resultStateLabel: "Result",
     allApplications: "All", pauseReason: "Pause reason",
     stateOn: "On", stateOff: "Switched off", statePaused: "Paused",
   },
@@ -102,6 +138,7 @@ export const scheduledTaskPanelTextEn = {
     snapshotSummary: "Settings when it ran",
     result: "Result",
     executionDetails: "Execution details",
+    resultPath: "Result link",
   },
   trigger: {
     manual: "Manual",
@@ -142,7 +179,9 @@ export const scheduledTaskPanelTextEn = {
   },
   panelSettings: { title: "Title", frequency: "Frequency", timeZone: "Time zone", notifyEmail: "Notification email" },
   panelManagement: {
-    save: "Save task", create: "Create task", setEnabled: "Change task status", delete: "Delete task",
+    save: "Save task", create: "Create task", setEnabled: "Change task status",
+    enabled: "The task was switched on.", disabled: "The task was switched off.",
+    delete: "Delete task",
     renewCredential: "Renew background credential",
     deleteImpact: "This deletes the task and its execution history.",
     deleted: "Task “{name}” deleted",
@@ -162,6 +201,8 @@ export const scheduledTaskPanelTextEn = {
 } satisfies ScheduledTaskPanelText;
 
 export const scheduledTaskPanelTextZhCn = {
+  title: "定时任务",
+  loadFailed: "定时任务列表加载失败。",
   form: {
     app: "应用",
     appUnknown: "未安装",
@@ -171,11 +212,29 @@ export const scheduledTaskPanelTextZhCn = {
     noFields: "这个应用不需要再填别的。",
     after: "跑完以后",
     notifyPlaceholder: "选填。跑完发一封信，成功、失败都发",
+    formChanged: "打开期间应用表单已变更，请重新加载表单核对后再保存。",
   },
   action: { runNow: "立即运行" },
+  card: {
+    viewResult: "查看结果",
+    viewEarlierResult: "查看上一次结果",
+    noResult: "没有结果",
+  },
+  notice: {
+    applicationsFailed: "未能读取可定时的应用列表，暂时无法新建任务。",
+    applicationsMissing: "页面缺少服务声明的应用 {ids} 名称，已暂停新建任务，请联系管理员检查安装配置。",
+    noApplication: "当前没有可为您定时运行的应用。",
+  },
+  duration: {
+    took: "耗时 {time}",
+    seconds: "{n} 秒",
+    minutes: "{m} 分 {s} 秒",
+    hours: "{h} 小时 {m} 分",
+  },
   panelFields: {
     settings: "配置", state: "状态", nextRun: "下次运行", lastRun: "上次运行",
     lastRunAt: "上次运行时间", lastRunSummary: "上次运行摘要", latestResultPath: "最近结果",
+    resultStateLabel: "执行结果",
     allApplications: "全部", pauseReason: "暂停原因",
     stateOn: "已启用", stateOff: "已停用", statePaused: "已暂停",
   },
@@ -190,6 +249,7 @@ export const scheduledTaskPanelTextZhCn = {
     snapshotSummary: "运行时的配置",
     result: "结果",
     executionDetails: "执行详情",
+    resultPath: "结果链接",
   },
   trigger: {
     manual: "手动",
@@ -230,7 +290,9 @@ export const scheduledTaskPanelTextZhCn = {
   },
   panelSettings: { title: "标题", frequency: "频率", timeZone: "时区", notifyEmail: "通知邮箱" },
   panelManagement: {
-    save: "保存任务", create: "新建任务", setEnabled: "更改任务状态", delete: "删除任务",
+    save: "保存任务", create: "新建任务", setEnabled: "更改任务状态",
+    enabled: "已启用任务。", disabled: "已停用任务。",
+    delete: "删除任务",
     renewCredential: "续期后台凭证",
     deleteImpact: "将删除任务和它的执行记录。",
     deleted: "任务「{name}」已删除",

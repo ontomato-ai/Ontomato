@@ -10,51 +10,45 @@
   .schedules {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-lg);
+    gap: var(--spacing-md);
     padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     min-width: 0;
-  }
-  .schedules-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--spacing-lg);
-    align-items: start;
-    min-width: 0;
-  }
-  .schedules-body.with-pane {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  }
-  @container schedules-page (max-width: 960px) {
-    .schedules-body.with-pane {
-      grid-template-columns: minmax(0, 1fr);
-    }
   }
   .schedules-list-col {
     min-width: 0;
   }
-  .schedules-pane {
+  .schedules-plus-icon {
+    margin-right: 4px;
+    flex-shrink: 0;
+  }
+  .schedules-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-2xl, 36px) var(--spacing-lg);
+    text-align: center;
+    color: var(--sdk-text-color-secondary);
+  }
+  .schedules-empty-icon {
+    color: var(--sdk-text-color-placeholder);
+  }
+  .schedules-empty-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-primary);
+  }
+  .schedules-empty-actions {
+    margin-top: var(--spacing-xs);
+  }
+  .schedules-dialog-body {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
-    padding: var(--spacing-lg);
-    border: 1px solid var(--sdk-border-color-lighter);
-    border-radius: var(--radius-lg);
-    background: var(--sdk-bg-color);
-    min-width: 0;
   }
-  .schedules-pane-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
-  }
-  .schedules-pane-head h2 {
+  .schedules-dialog-sub {
     margin: 0;
-    font-size: var(--text-lg);
-    overflow-wrap: anywhere;
-  }
-  .schedules-pane-head p {
-    margin: var(--spacing-xs) 0 0;
     font-size: var(--text-sm);
     color: var(--sdk-text-color-secondary);
   }
@@ -66,28 +60,57 @@
     font-size: var(--text-xs);
     color: var(--sdk-text-color-secondary);
   }
-  .schedules-actions {
-    display: flex;
-    flex-wrap: wrap;
+  .schedules-timezone-readonly {
+    display: inline-flex;
     align-items: center;
-    gap: var(--spacing-sm);
-  }
-  .schedules-section-title {
-    margin: var(--spacing-xs) 0 0;
+    min-height: 32px;
+    padding: 0 var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    background: var(--sdk-fill-color-light);
     font-size: var(--text-sm);
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
+    color: var(--sdk-text-color-secondary);
   }
-  .schedules-sub {
-    margin: 0;
+  .schedules-app-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    min-width: 0;
+  }
+  .schedules-app-opt-icon {
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    pointer-events: none;
+  }
+  .schedules-app-opt-desc {
+    margin-left: var(--spacing-xs);
     font-size: var(--text-xs);
     color: var(--sdk-text-color-secondary);
   }
-  .schedules-edit-pane {
+  .schedules-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+    width: 100%;
+  }
+  .schedules-form-actions-left {
+    margin-right: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  .schedules-drawer-body {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
-    outline: none;
+    min-width: 0;
+  }
+  .schedules-drawer-sub {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
   }
   .schedules-focus {
     display: flex;
@@ -123,167 +146,350 @@
     gap: var(--spacing-md);
     min-width: 0;
   }
+  .schedules-cell-muted {
+    color: var(--sdk-text-color-placeholder);
+  }
+  .schedules-hidden-projection {
+    display: none;
+  }
 </style>
 
 <div id="app" v-cloak class="schedules-shell">
-  <page-header :title="t('panel.name')">
+  <page-header :title="t('panel.name')" :description="t('intro')">
     <template #actions>
-      <sdk-button text circle :aria-label="$t('common.refresh')" :title="$t('common.refresh')" @click="refresh">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-          <path d="M3 3v5h5" />
-          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-          <path d="M16 16h5v5" />
+      <sdk-button
+        ref="createButton"
+        type="primary"
+        :disabled="!canCreate || mode === 'create'"
+        :title="createBlockedReason || undefined"
+        data-action="new-task"
+        @click="startCreate"
+      >
+        <svg class="schedules-plus-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14" />
+          <path d="M12 5v14" />
         </svg>
+        {{ t("newTask") }}
       </sdk-button>
-      <sdk-button type="primary" :disabled="mode === 'create'" @click="startCreate">{{ t("newTask") }}</sdk-button>
     </template>
   </page-header>
 
   <section ref="schedulePage" class="schedules">
+    <projection slot="pageNotice"></projection>
+
     <sdk-alert
-      v-if="renewalProblem"
+      v-if="showCredentialBanner"
       :title="t('notice.credentialRefused', { reason: renewalProblem })"
       type="warning"
       :closable="false"
       show-icon
     ></sdk-alert>
 
-    <div class="schedules-body" :class="{ 'with-pane': paneOpen }">
-      <div class="schedules-list-col">
-        <projection slot="tasks" @row-action="onTaskRowAction">
-          <template #filters>
-            <projection slot="appFilter"></projection>
+    <div class="schedules-list-col">
+      <projection
+        slot="tasks"
+        @choose="onChooseTask"
+        @row-action="onTaskRowAction"
+        @operation-done="onTaskOperationDone"
+      >
+        <template #filters>
+          <projection slot="appFilter"></projection>
+        </template>
+
+        <template #cell-resultStateLabel="{ value }">
+          <span :class="{ 'schedules-cell-muted': value === t('card.noResult') }">{{ value }}</span>
+        </template>
+
+        <template #empty="{ narrowed, clearFilters }">
+          <div class="schedules-empty">
+            <svg
+              v-if="narrowed"
+              class="schedules-empty-icon"
+              viewBox="0 0 24 24"
+              width="36"
+              height="36"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <svg
+              v-else
+              class="schedules-empty-icon"
+              viewBox="0 0 24 24"
+              width="36"
+              height="36"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect width="18" height="18" x="3" y="4" rx="2" />
+              <path d="M16 2v4" />
+              <path d="M8 2v4" />
+              <path d="M3 10h18" />
+            </svg>
+            <p class="schedules-empty-title">{{ emptyStateMessage(narrowed) }}</p>
+            <div class="schedules-empty-actions">
+              <sdk-button v-if="narrowed" size="small" @click="clearFilters">{{ t("empty.clearFilters") }}</sdk-button>
+              <sdk-button
+                v-else
+                type="primary"
+                size="small"
+                :disabled="!canCreate"
+                :title="createBlockedReason || undefined"
+                @click="startCreate"
+              >{{ t("newTask") }}</sdk-button>
+            </div>
+          </div>
+        </template>
+      </projection>
+    </div>
+  </section>
+
+  <!-- Centered dialog for creating or editing a scheduled task (SC-08, SC-09, SC-10). -->
+  <sdk-dialog
+    :model-value="formDialogOpen"
+    :title="mode === 'create' ? t('form.newTitle') : t('form.editTitle')"
+    width="640px"
+    align-center
+    destroy-on-close
+    :close-on-click-modal="false"
+    @update:model-value="onFormDialogToggle"
+    @closed="restoreFocusAfterForm"
+  >
+    <div class="schedules-dialog-body">
+      <p v-if="mode === 'create'" class="schedules-dialog-sub">{{ t("form.subtitle") }}</p>
+      <p class="schedules-note">{{ t("form.identity") }}</p>
+
+      <div v-if="mode === 'create'" data-form="create">
+        <projection slot="newForm" @saved="created" @cancel="closeFormDialog">
+          <template #field-task.appId="{ field, value, disabled, set }">
+            <sdk-select
+              :model-value="value ?? ''"
+              :disabled="disabled"
+              :placeholder="t('form.appPlaceholder')"
+              style="width: 100%"
+              @update:model-value="set($event)"
+            >
+              <sdk-option
+                v-for="opt in fieldOptions(field)"
+                :key="String(opt.value)"
+                :value="opt.value"
+                :label="opt.label"
+                :disabled="Boolean(opt.disabled)"
+              >
+                <span class="schedules-app-opt">
+                  <sdk-button
+                    v-if="opt.icon"
+                    :icon="opt.icon"
+                    text
+                    size="small"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="schedules-app-opt-icon"
+                  ></sdk-button>
+                  <span>{{ opt.label }}</span>
+                  <span v-if="opt.disabled && opt.disabledReason" class="schedules-app-opt-desc">{{ opt.disabledReason }}</span>
+                  <span v-else-if="opt.description" class="schedules-app-opt-desc">{{ opt.description }}</span>
+                </span>
+              </sdk-option>
+            </sdk-select>
+          </template>
+
+          <template #field-task.timeZone="{ value }">
+            <span class="schedules-timezone-readonly">{{ value || "—" }}</span>
+          </template>
+
+          <template #field-task.notifyEmail="{ value, disabled, set }">
+            <sdk-input
+              type="email"
+              inputmode="email"
+              autocomplete="email"
+              :model-value="value ?? ''"
+              :disabled="disabled"
+              :placeholder="t('form.notifyPlaceholder')"
+              maxlength="320"
+              clearable
+              @update:model-value="set($event)"
+            ></sdk-input>
+          </template>
+
+          <template #actions="{ saving, asking, save, cancel }">
+            <div class="schedules-form-actions">
+              <div class="schedules-form-actions-left">
+                <sdk-button
+                  text
+                  size="small"
+                  :disabled="saving || asking"
+                  data-action="reload-create-form"
+                  @click="recomputeForm('newForm')"
+                >{{ t("form.reloadForm") }}</sdk-button>
+              </div>
+              <sdk-button :disabled="saving" @click="cancel">{{ t("form.cancel") }}</sdk-button>
+              <sdk-button type="primary" :loading="saving" :disabled="asking" @click="save">
+                {{ t("form.createAndEnable") }}
+              </sdk-button>
+            </div>
           </template>
         </projection>
       </div>
 
-      <aside v-if="paneOpen" class="schedules-pane" aria-live="polite">
-        <template v-if="mode === 'create'">
-          <div class="schedules-pane-head">
-            <div>
-              <h2>{{ t("form.newTitle") }}</h2>
-              <p>{{ t("form.subtitle") }}</p>
-            </div>
-            <sdk-button text size="small" @click="closePane">{{ t("action.close") }}</sdk-button>
-          </div>
-          <p class="schedules-note">{{ t("form.identity") }}</p>
-          <div data-form="create">
-            <projection slot="newForm" @saved="created" @cancel="cancelForm"></projection>
-          </div>
-        </template>
+      <div v-else-if="mode === 'edit' && selected" data-form="edit">
+        <!-- Do not close the dialog on @discarded so reloading after FORM_CHANGED / REVISION_CONFLICT keeps the user in the editor. -->
+        <projection slot="editForm" @saved="saved" @cancel="closeFormDialog">
+          <template #field-task.appId="{ field, value, disabled, set }">
+            <sdk-select
+              :model-value="value ?? ''"
+              :disabled="disabled"
+              :placeholder="t('form.appPlaceholder')"
+              style="width: 100%"
+              @update:model-value="set($event)"
+            >
+              <sdk-option
+                v-for="opt in fieldOptions(field)"
+                :key="String(opt.value)"
+                :value="opt.value"
+                :label="opt.label"
+                :disabled="Boolean(opt.disabled)"
+              >
+                <span class="schedules-app-opt">
+                  <sdk-button
+                    v-if="opt.icon"
+                    :icon="opt.icon"
+                    text
+                    size="small"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="schedules-app-opt-icon"
+                  ></sdk-button>
+                  <span>{{ opt.label }}</span>
+                  <span v-if="opt.disabled && opt.disabledReason" class="schedules-app-opt-desc">{{ opt.disabledReason }}</span>
+                  <span v-else-if="opt.description" class="schedules-app-opt-desc">{{ opt.description }}</span>
+                </span>
+              </sdk-option>
+            </sdk-select>
+          </template>
 
-        <template v-else-if="selected">
-          <div
-            v-if="mode === 'edit'"
-            ref="editPane"
-            class="schedules-edit-pane"
-            data-form="edit"
-            tabindex="-1"
-            @keydown.esc="closeEditOnEscape"
-          >
-            <div class="schedules-pane-head">
-              <div>
-                <h2>{{ t("form.editTitle") }}</h2>
-                <p>{{ t("form.conflictHint") }}</p>
-              </div>
-              <sdk-button text size="small" @click="cancelForm">{{ t("action.close") }}</sdk-button>
-            </div>
-            <p class="schedules-note">{{ t("form.identity") }}</p>
-            <projection slot="editForm" @saved="saved" @discarded="cancelForm" @cancel="cancelForm"></projection>
-          </div>
+          <template #field-task.timeZone="{ value }">
+            <span class="schedules-timezone-readonly">{{ value || "—" }}</span>
+          </template>
 
-          <template v-if="mode === 'view'">
-            <projection slot="detailHeader">
-              <template #actions>
-                <div class="schedules-actions">
-                  <sdk-switch
-                    v-if="detailReady && detailEnabled !== null"
-                    :model-value="detailEnabled"
-                    :loading="selectedBusy"
-                    :disabled="selectedBusy"
-                    :aria-label="t('action.toggle')"
-                    data-action="toggle-enabled"
-                    @update:model-value="toggleSelected(Boolean($event))"
-                  ></sdk-switch>
-                  <sdk-button
-                    v-if="detailReady"
-                    type="primary"
-                    size="small"
-                    :loading="selectedBusy"
-                    data-action="run-now"
-                    @click="runNowSelected"
-                  >{{ t("action.runNow") }}</sdk-button>
-                  <sdk-button
-                    v-if="detailReady"
-                    size="small"
-                    data-action="edit"
-                    @click="openEdit"
-                  >{{ t("action.edit") }}</sdk-button>
-                  <sdk-button
-                    v-if="detailReady"
-                    size="small"
-                    type="danger"
-                    plain
-                    :loading="selectedBusy"
-                    data-action="delete"
-                    @click="deleteSelected"
-                  >{{ t("action.delete") }}</sdk-button>
-                  <sdk-button
-                    v-if="detailLatestResultPath"
-                    link
-                    type="primary"
-                    size="small"
-                    data-action="latest-result"
-                    @click="openResult(detailLatestResultPath)"
-                  >{{ t("action.viewResult") }} →</sdk-button>
-                  <sdk-button text size="small" data-action="close-pane" @click="closePane">{{ t("action.close") }}</sdk-button>
-                </div>
-              </template>
-            </projection>
+          <template #field-task.notifyEmail="{ value, disabled, set }">
+            <sdk-input
+              type="email"
+              inputmode="email"
+              autocomplete="email"
+              :model-value="value ?? ''"
+              :disabled="disabled"
+              :placeholder="t('form.notifyPlaceholder')"
+              maxlength="320"
+              clearable
+              @update:model-value="set($event)"
+            ></sdk-input>
+          </template>
 
-            <projection slot="detailPause">
-              <template #actions>
+          <template #actions="{ saving, asking, canSettle, save, discard }">
+            <div class="schedules-form-actions">
+              <div class="schedules-form-actions-left">
                 <sdk-button
-                  v-if="detailPauseCode === 'definition_changed'"
-                  class="pause-review"
-                  link
-                  type="primary"
+                  text
                   size="small"
-                  @click="openEdit"
-                >{{ t("card.review") }}</sdk-button>
-              </template>
-            </projection>
-
-            <projection slot="detailSummary"></projection>
-
-            <div ref="historyRecords" class="schedules-runs">
-              <h3 class="schedules-section-title" data-records>{{ t("runs.title") }}</h3>
-              <p v-if="isRunning" class="schedules-sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
-
-              <section v-if="runId" class="schedules-focus" :data-run="runId">
-                <div class="schedules-focus-head">
-                  <h4 class="schedules-focus-title">{{ t("runs.linked") }}</h4>
-                  <div class="schedules-focus-actions">
-                    <sdk-button
-                      v-if="focusResultPath"
-                      class="result-link"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="openResult(focusResultPath)"
-                    >{{ t("action.viewResult") }} →</sdk-button>
-                    <sdk-button text size="small" data-action="close-focus" @click="closeFocus">{{ t("action.close") }}</sdk-button>
-                  </div>
-                </div>
-                <projection slot="focus"></projection>
-              </section>
-
-              <projection slot="history" @choose="onChooseRun" @row-action="onRunRowAction"></projection>
+                  :disabled="saving || asking"
+                  data-action="reload-edit-form"
+                  @click="recomputeForm('editForm')"
+                >{{ t("form.reloadForm") }}</sdk-button>
+                <sdk-button
+                  text
+                  size="small"
+                  :disabled="saving || asking"
+                  data-action="load-latest"
+                  @click="loadLatestEdit(discard)"
+                >{{ t("form.loadLatest") }}</sdk-button>
+              </div>
+              <sdk-button :disabled="saving" @click="requestCancelEdit">{{ t("form.cancel") }}</sdk-button>
+              <sdk-button
+                type="primary"
+                :loading="saving"
+                :disabled="!canSettle || asking"
+                @click="save"
+              >{{ t("form.save") }}</sdk-button>
             </div>
           </template>
-        </template>
-      </aside>
+        </projection>
+      </div>
     </div>
-  </section>
+  </sdk-dialog>
+
+  <!-- Keeps selectedTask record outputs live for drawer title, deep links, and card result navigation. -->
+  <div v-if="selected" class="schedules-hidden-projection" aria-hidden="true">
+    <projection slot="detailHeader"></projection>
+  </div>
+
+  <!-- Independent right-side run records drawer (SC-11). -->
+  <sdk-drawer
+    :model-value="runsDrawerOpen"
+    :title="runsDrawerTitle"
+    direction="rtl"
+    size="min(560px, 92vw)"
+    destroy-on-close
+    @update:model-value="onRunsDrawerToggle"
+  >
+    <div v-if="selected" class="schedules-drawer-body">
+      <projection slot="detailPause">
+        <template #actions>
+          <sdk-button
+            v-if="detailPauseCode === 'definition_changed'"
+            class="pause-review"
+            link
+            type="primary"
+            size="small"
+            @click="openEdit"
+          >{{ t("card.review") }}</sdk-button>
+        </template>
+      </projection>
+
+      <p v-if="isRunning" class="schedules-drawer-sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
+
+      <section v-if="runId" class="schedules-focus" :data-run="runId">
+        <div class="schedules-focus-head">
+          <h4 class="schedules-focus-title">{{ focusIsOffPage ? t("runs.linked") : t("runs.details") }}</h4>
+          <div class="schedules-focus-actions">
+            <sdk-button
+              v-if="focusResultPath"
+              class="result-link"
+              link
+              type="primary"
+              size="small"
+              @click="openResult(focusResultPath)"
+            >{{ t("runs.viewResult") }} →</sdk-button>
+            <sdk-button text size="small" data-action="close-focus" @click="closeFocus">{{ t("runs.hide") }}</sdk-button>
+          </div>
+        </div>
+        <projection slot="focus"></projection>
+      </section>
+
+      <div ref="historyRecords" class="schedules-runs">
+        <projection slot="history" @choose="onChooseRun" @row-action="onRunRowAction">
+          <template #cell-resultPath="{ value }">
+            <sdk-button
+              v-if="value"
+              link
+              type="primary"
+              size="small"
+              data-action="run-result"
+              @click.stop="openResult(String(value))"
+            >{{ t("runs.viewResult") }} →</sdk-button>
+          </template>
+        </projection>
+      </div>
+    </div>
+  </sdk-drawer>
 </div>
