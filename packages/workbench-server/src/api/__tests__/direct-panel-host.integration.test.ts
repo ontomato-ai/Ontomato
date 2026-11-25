@@ -421,7 +421,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   expect(settingsResponse.status).toBe(200);
   const { panel: settings } = productPanelResponseSchema.parse(await settingsResponse.json());
   expect(settings.manifest.state.search).toMatchObject({ type: { kind: "scalar", type: "string" }, deepLink: true });
-  expect(settings.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: false });
+  expect(settings.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: true });
   expect(settings.manifest.state.detailPath).toMatchObject({ type: { kind: "scalar", type: "string" }, external: true });
   const createFormTarget = settings.manifest.members.createForm!.target;
   expect(createFormTarget).toHaveProperty("projectionId");
