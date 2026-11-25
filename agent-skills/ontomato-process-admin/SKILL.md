@@ -334,7 +334,7 @@ node client.mjs action-retire <actionId>          # 退休置为 UNUSED（不删
 ```
 
 - **新建严禁自编 `id`**（以及 `function.id`）：先通过 `action-save` 存为 `PENDING_REVIEW` 草稿，由服务端生成并返回 `id` 后再填入 `workflow.json` 的 `steps[].actionId`；修改已有草稿时才带 `id`。
-- 如有需要（例如重算或补齐解读），调用 `action-reexplain` 生成/重算解读；审阅确认后用 `action-publish <actionId>`（`POST /action/setStatus`）发布，不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
+- **异步解读与发布时序**：`action-save`（`POST /action/save`）立刻返回草稿、解读在后台异步生成，存完立刻 `action-publish` 会因解读未就绪被拒（`ACTION_EXPLANATION_REQUIRED`）。发布前先用 `action-get <actionId>` 确认 `codeSegments` 非空且与当前代码一致；若尚未生成，稍等几秒再查，或执行 `action-reexplain '{"ids":["<actionId>"],"missingOnly":true}'` 同步补齐后再调 `action-publish <actionId>`（`POST /action/setStatus`）。不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
 
 ---
 
