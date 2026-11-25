@@ -20,15 +20,21 @@ description: 在 Ontomato 上从零创建一条业务流程：把业务描述拆
 ## 身份与工具
 
 - 客户端：`node <SKILL目录>/wf-client.mjs <子命令>`
-- 环境变量：`WF_BASE`（默认 `http://localhost:8080/api/data-query`）、`WF_AUTH`、`WF_DOMAIN`（必填）、`WF_CODE`/`WF_PASS`
+- 环境变量：
+  - 端点：`WF_BASE` 或平台注入的 `ONTOMATO_ONTOLOGY_URL`（默认 `http://localhost:8080/api/data-query`）；`WF_AUTH`（仅用户名+密码模式使用，默认 `http://localhost:8080/api/auth`）。
+  - 认证（按优先级三选一）：
+    1. 平台 token：`WF_TOKEN` / `ONTOMATO_TK`（无需 `WF_DOMAIN`）
+    2. Ontomato API Key：`WF_API_KEY` / `ONTOMATO_API_KEY`（无需 `WF_DOMAIN`）
+    3. 用户名+密码：`WF_CODE` / `WF_PASS` + `WF_DOMAIN`（或 `login <code> <password> <domainId>`）
 - 域管理员账号密码由用户提供，不要在对话里复述；客户端只在内存里用一次。
 - 平台两套响应外壳（`{success,message}` 与 `{success,code,data}`）客户端已统一处理。
 
 ## 第 0 步：确认环境活着，别在死栈上建东西
 
 ```bash
-export WF_DOMAIN=<域id>
-node wf-client.mjs login <loginCode> <password> <domainId>
+# 平台内运行通常已注入 ONTOMATO_ONTOLOGY_URL 与 ONTOMATO_TK / ONTOMATO_API_KEY；
+# 平台外使用账号密码时再传 WF_DOMAIN 与 login：
+node wf-client.mjs login [<loginCode> <password> <domainId>]
 node wf-client.mjs ping        # workflow 接口是否可达
 node wf-client.mjs me          # 当前账号与域
 ```
@@ -122,11 +128,10 @@ node wf-client.mjs dsl '{"problem":"查类是否存在","answer":{"steps":[{"gra
 
 流程有 N 步，就写 N+1 个动作：**1 个发起动作 + 每步 1 个办理动作**。
 
-### 4.1 办理动作骨架（先作为待审核草稿导入）
+### 4.1 办理动作骨架（先作为待审核草稿保存）
 
 ```json
 {
-  "id": "act_<流程>_<步骤>",
   "name": "中文动作名",
   "description": "一句话说清这个动作做什么",
   "origin": "USER",
@@ -136,7 +141,6 @@ node wf-client.mjs dsl '{"problem":"查类是否存在","answer":{"steps":[{"gra
     {"objectParameter": "run_id", "className": "<类名>", "field": "status", "operator": "=", "value": "待办", "message": "单据不是待办"}
   ]},
   "function": {
-    "id": "fun_<流程>_<步骤>",
     "name": "同动作名",
     "origin": "USER",
     "operation": "OPERATION_WRITE",
@@ -161,7 +165,7 @@ node wf-client.mjs dsl '{"problem":"查类是否存在","answer":{"steps":[{"gra
 | `function.operation` 只能是 `OPERATION_WRITE` | 保存时强制，否则 `Function.notWrite` |
 | `status` 用 `PUBLISHED` 才算可执行 | Action 草稿用 `PENDING_REVIEW`，此时执行报 `Action.notPublished` |
 | 已发布就**冻结** | `PUBLISHED` 后改 `code` 报 `Action.publishedIsFrozen`；要改就新建动作 |
-| 每个动作必须有内嵌 `function` | 导入报 `has no embedded function` |
+| 每个动作必须有内嵌 `function` | 保存报 `Function.cannotBeEmpty` |
 | 参数类型目前用 `TYPE_STRING` | 其余类型在本部署未验证 |
 
 ### 4.2 发起动作的代码
@@ -266,14 +270,14 @@ workflow_run_id = identity.get("workflowRunId")  # 仅有唯一归属时才有�
 
 所以：**做业务判断读快照，业务授权由平台按角色、范围和目标可读性判断。** 不要因为「能读到 principalId」就以为可以跳过 `submissionCriteria`——那是两回事。
 
-### 4.4 导入草稿，生成解释，再发布
+### 4.4 保存草稿，生成解释，再发布
 
-1. 用 `node wf-client.mjs action-import ./actions.json` 导入上面的 `PENDING_REVIEW` 动作。客户端接受单个对象或数组，打成只含一个 JSON 文件的 ZIP，并带 `allowMissingExplanation=true`。确认返回的 `success` 为 true 且 `failureCount` 为 0；否则按 `failures[].message` 修正对应动作。
-2. 在同一域以已认证身份调用 `POST /action/re-explain`，请求体例如 `{"ids":["act_expense_approve"],"missingOnly":false}`。明确列出本次的动作 ID；检查外层 `success` 和 `data.failureCount`，单个新动作应有 `data.successCount=1`。有失败就停在草稿，读 `data.failures[].message`。
-3. 用 `POST /action/queryById`（`{"id":"act_expense_approve"}`）重新取回完整 `data` 对象，审阅程序与服务器生成的解释。确认 `codeSegments` 非空，且有当前代码的 `codeHash` 和 `explanationVersion`。只把该对象的 `status` 改为 `PUBLISHED`，将**完整对象**（含原 `function`）作为 `POST /action/save` 的请求体。以上接口均相对于 `WF_BASE`。
-4. 保存须返回 `success:true`；用 `node wf-client.mjs action-get act_expense_approve` 核对状态已为 `PUBLISHED`、目标和提交条件正确，再将该动作编入流程并激活。
+1. 用 `node wf-client.mjs action-save ./actions.json` 保存上面的 `PENDING_REVIEW` 动作。客户端接受单个对象或数组，逐条调用 `POST /action/save`。**新建动作时严禁自编 `id`（以及 `function.id`），省略 `id` 由服务端生成并返回**；仅修改已有草稿时才带 `id`。记下服务端返回的动作 `id`（例如 `<actionId>`），后续用于填入 `workflow.json` 的 `steps[].actionId`。
+2. 如有需要生成或重算代码解读，运行 `node wf-client.mjs action-reexplain '{"ids":["<actionId>"]}'`（`POST /action/re-explain`）。检查外层 `success` 和 `data.failureCount`，单个新动作应有 `data.successCount=1`；有失败就停在草稿，读 `data.failures[].message`。
+3. 用 `node wf-client.mjs action-get <actionId>` 审阅程序与服务器生成的解释，确认 `codeSegments` 非空且有当前代码的 `codeHash` 与 `explanationVersion`。审阅无误后，用 `node wf-client.mjs action-publish <actionId>`（`POST /action/setStatus`，`{"ids":["<actionId>"],"status":"PUBLISHED"}`）发布；不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
+4. 用 `node wf-client.mjs action-get <actionId>` 核对状态已为 `PUBLISHED`、目标和提交条件正确，再把服务端返回的 `id` 编入流程 `steps[].actionId` 并激活。
 
-`allowMissingExplanation=true` 不会放宽已发布动作的导入校验。不要把缺解释的骨架直接标为 `PUBLISHED`，也不要自行编造解释、哈希或版本号。
+不要把缺解释的骨架直接发布为 `PUBLISHED`，也不要自行编造解释、哈希或版本号。
 
 ## 第 5 步：存流程草稿
 
@@ -285,7 +289,7 @@ workflow_run_id = identity.get("workflowRunId")  # 仅有唯一归属时才有�
   "runContract": {"className":"expense_request","idField":"id","stepField":"current_node","statusField":"status","statusOpen":["待办"],"orgField":"department_code","assigneeField":"assignee_id"},
   "steps": [
     {"stepNo": 1, "name": "领导审批", "roleCode": "DEPT_LEADER",
-     "actionId": "act_expense_approve", "actionType": "approve",
+     "actionId": "<服务端返回的动作id>", "actionType": "approve",
      "scope": "self_organization", "description": "审批必要性与金额"}
   ]
 }
@@ -319,7 +323,7 @@ node wf-client.mjs wf-activate <workflowId>
 
 失败时最常见的两条：
 - `The workflow names a role that does not exist in this domain: X` → 回第 2 步建角色。
-- `step N names an unknown action: Y` → 动作没导入成功或 id 拼错。
+- `step N names an unknown action: Y` → 动作没保存成功或 `actionId` 拼错。
 
 激活后立刻核对授权真的落地了：
 
