@@ -32,9 +32,9 @@ afterEach(() => wrapper?.unmount());
 async function render() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: "/app-builder/workspace", component: { template: "<div />" } }, ...appBuilderPages()],
+    routes: [{ path: "/app-builder", component: { template: "<div />" } }, ...appBuilderPages()],
   });
-  await router.push("/app-builder/workspace");
+  await router.push("/app-builder");
   const { name, params } = router.resolve(route);
   expect(name).toBe("AppBuilderHostedPreview");
   expect(params.workspaceId).toBe(workspaceId);
@@ -51,7 +51,7 @@ it("binds the preview iframe to build-test data and refreshes with a new token",
   const first = view.get("iframe");
   expect(decodeURIComponent(first.attributes("src")!.split("#")[1]!)).toBe(`/api${url}/preview/first/index.html`);
   expect(mocks.register).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ kind: "build-test", workspaceId, contextId: context.contextId }));
-  expect(view.get("a").attributes("href")).toBe(`/app-builder/workspace?workspace=${workspaceId}`);
+  expect(view.get("a").attributes("href")).toBe(`/app-builder`);
 
   mocks.post.mockResolvedValue({ token: "next" });
   await view.get("button").trigger("click");
@@ -67,25 +67,4 @@ it("never requests a preview token or loads a frame when the build-test read is 
   expect(view.find("iframe").exists()).toBe(false);
   expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.register).not.toHaveBeenCalled();
-});
-
-it("redirects legacy /app-builder/:workspaceId URLs to the workspace panel or chat beside it", async () => {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      { path: "/app-builder/workspace", component: { template: "<div />" } },
-      { path: "/agents/chat", component: { template: "<div />" } },
-      ...appBuilderPages(),
-    ],
-  });
-
-  await router.push(`/app-builder/${workspaceId}`);
-  expect(router.currentRoute.value.fullPath).toBe(`/app-builder/workspace?workspace=${workspaceId}`);
-
-  await router.push(`/app-builder/${workspaceId}?sessionId=session-1`);
-  expect(router.currentRoute.value.path).toBe("/agents/chat");
-  expect(router.currentRoute.value.query).toEqual({
-    sessionId: "session-1",
-    page: `/app-builder/workspace?workspace=${workspaceId}`,
-  });
 });

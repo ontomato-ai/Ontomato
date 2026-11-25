@@ -372,16 +372,35 @@ public class DataSandboxService {
   }
   public JSONObject close(String id) {
     identity.requireQueryAccess();
-    var captured=row(id);var user=identity.getCurrentUser();buildOwner(captured,user.getId(),user.getDomainId());
-    var workspaceLock=workspaceLock(captured);workspaceLock.lock();
+    var captured = row(id);
+    var user = identity.getCurrentUser();
+    buildOwner(captured, user.getId(), user.getDomainId());
+    closeContext(captured);
+    return status(id);
+  }
+
+  public void closeWorkspace(String domainId, String workspaceId) {
+    var ids = jdbc.queryForList(
+        "SELECT id FROM data_sandboxes WHERE domain_id=? AND purpose='build-test' AND scope_key=? "
+            + "AND (state IN ('READY','PREPARING') OR NOT cleanup_attempted OR cleanup_error <> '')",
+        String.class, domainId, workspaceId);
+    for (String id : ids) closeContext(row(id));
+  }
+
+  private void closeContext(JSONObject captured) {
+    String id = captured.getString("id");
+    var workspaceLock = workspaceLock(captured);
+    workspaceLock.lock();
     try {
-    var r=row(id);
-    jdbc.update("UPDATE data_sandboxes SET state='CLOSED' WHERE id=? AND state IN ('READY','PREPARING')",id);
-    cleanup(row(id));
-    var result=status(id);
-    if(result.getString("cleanupError")!=null && !result.getString("cleanupError").isEmpty()) throw error(HttpStatus.INTERNAL_SERVER_ERROR,"BUILD_TEST_CLEANUP_FAILED: "+result.getString("cleanupError"));
-    return result;
-    } finally { workspaceLock.unlock(); }
+      jdbc.update("UPDATE data_sandboxes SET state='CLOSED' WHERE id=? AND state IN ('READY','PREPARING')", id);
+      cleanup(row(id));
+      var result = status(id);
+      if (result.getString("cleanupError") != null && !result.getString("cleanupError").isEmpty()) {
+        throw error(HttpStatus.INTERNAL_SERVER_ERROR, "BUILD_TEST_CLEANUP_FAILED: " + result.getString("cleanupError"));
+      }
+    } finally {
+      workspaceLock.unlock();
+    }
   }
 
   public JSONObject retryCleanup(String id) {

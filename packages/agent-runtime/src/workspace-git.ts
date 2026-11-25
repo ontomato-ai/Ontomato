@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, chmod, chown, readdir, lstat, readFile, writeFile, rm, realpath } from "node:fs/promises";
+import { mkdtemp, mkdir, chmod, chown, readdir, lstat, readFile, writeFile, rm, realpath } from "node:fs/promises";
 import path from "node:path";
 import { workspacePathSchema, WORKSPACE_FILE_BYTES, WORKSPACE_TOTAL_BYTES, type WorkspaceFile } from "@ontomato/contracts/workspaces";
 import { RuntimeError } from "./errors";
@@ -14,11 +14,12 @@ export class WorkspaceGit {
     this.tree = path.join(directory, "tree");
     this.repository = path.join(directory, "repository.git");
   }
-  async git(...args: string[]) {
-    return (await execute("git", ["--git-dir", this.repository, "--work-tree", this.tree,
+  git(...args: string[]) { return this.runGit(this.tree, {}, args); }
+  private async runGit(tree: string, env: NodeJS.ProcessEnv, args: string[]) {
+    return (await execute("git", ["--git-dir", this.repository, "--work-tree", tree,
       "-c", "safe.directory=*", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
       "-c", "user.name=Ontomato", "-c", "user.email=workspace@ontomato.local", ...args], {
-      env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+      env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", ...env },
       encoding: "buffer", maxBuffer: WORKSPACE_TOTAL_BYTES * 2,
     })).stdout;
   }
@@ -36,6 +37,30 @@ export class WorkspaceGit {
     if ((await this.git("diff", "--cached", "--name-only", "-z")).length)
       await this.git("commit", "--allow-empty-message", "-m", message);
     return this.head();
+  }
+  /** Preserve the incoming snapshot as an ancestor alongside the prior working history. */
+  async importMerge(files: WorkspaceFile[], baseline: WorkspaceFile[], message: string, uid?: number) {
+    const previous = await this.head();
+    const temporary = await mkdtemp(path.join(this.directory, "sync-"));
+    let baselineCommit: string;
+    try {
+      const tree = path.join(temporary, "tree");
+      await mkdir(tree);
+      await this.replace(baseline, undefined, tree);
+      const env = { GIT_INDEX_FILE: path.join(temporary, "index") };
+      await this.runGit(tree, env, ["add", "-A"]);
+      const baselineTree = (await this.runGit(tree, env, ["write-tree"])).toString().trim();
+      baselineCommit = (await this.git("commit-tree", baselineTree, "-m", "Snapshot current application definition")).toString().trim();
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+
+    await this.replace(files, uid);
+    await this.git("add", "-A");
+    const tree = (await this.git("write-tree")).toString().trim();
+    const commit = (await this.git("commit-tree", tree, "-p", previous, "-p", baselineCommit, "-m", message)).toString().trim();
+    await this.git("update-ref", "HEAD", commit, previous);
+    return { commit, baselineCommit };
   }
   async resolve(commit: string) {
     await this.git("merge-base", "--is-ancestor", commit, "HEAD");
@@ -95,7 +120,7 @@ export class WorkspaceGit {
     }
     return { commit, files };
   }
-  async replace(files: WorkspaceFile[], uid?: number) {
+  async replace(files: WorkspaceFile[], uid?: number, tree = this.tree) {
     let total = 0;
     const names = new Set<string>();
     const decoded = files.map(file => {
@@ -112,9 +137,9 @@ export class WorkspaceGit {
       for (let i = 1; i < parts.length; i++)
         if (names.has(parts.slice(0, i).join("/"))) throw new RuntimeError(400, "INVALID_SOURCE", "File conflicts with directory");
     }
-    for (const entry of await readdir(this.tree)) await rm(path.join(this.tree, entry), { recursive: true, force: true });
+    for (const entry of await readdir(tree)) await rm(path.join(tree, entry), { recursive: true, force: true });
     for (const file of decoded) {
-      const target = path.join(this.tree, file.name);
+      const target = path.join(tree, file.name);
       await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
       await writeFile(target, file.bytes, { mode: 0o600 });
     }

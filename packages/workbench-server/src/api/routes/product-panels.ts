@@ -157,6 +157,13 @@ function parseRegistration<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, body:
 export const productPanelsRouter = Router();
 mountProductCatalog(productPanelsRouter, "panel");
 mountPanelPersonalState(productPanelsRouter);
+productPanelsRouter.get("/preview/app/:appId", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const { appPreviewQuerySchema, readApplicationPreviewDescriptor } = await import("../../services/app-builder/preview-service");
+  const appId = productCurrentIdParamsSchema.shape.id.parse(req.params.appId);
+  const preview = await readApplicationPreviewDescriptor(owner, credentials, appId, appPreviewQuerySchema.parse(req.query));
+  res.set("Cache-Control", "no-store").json(preview);
+}));
 productPanelsRouter.post(PANEL_NESTED_READ_PATH.slice("/product-panels".length), wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");
   const { owner, credentials } = context(req);
@@ -167,7 +174,7 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const request = productPanelReadRequestSchema.parse(req.body);
   const preview = req.header(BUILD_TEST_HEADER);
-  const viewer = request.source.kind === "candidate" || preview === undefined
+  const viewer = request.source.kind === "candidate" || request.source.kind === "app-candidate" || preview === undefined
     ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
   res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName, req));
 }));

@@ -187,8 +187,7 @@ it("offers the builder only after its application and use gates both pass", asyn
 });
 
 it.each<PageSkillEntrance>([
-  { permissionCode: "app-builder", pageKey: "app-builder-workspaces" },
-  { access: "domain-member" as const, pageKey: "app-builder-workspace" },
+  { permissionCode: "app-builder", pageKey: "app-builder" },
 ])("resolves the builder as the App Builder page default for $pageKey", async entrance => {
   const builder = definition(3, "app-builder", []);
   mocks.appBuilder.mockResolvedValue(builder);

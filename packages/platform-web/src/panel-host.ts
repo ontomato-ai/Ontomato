@@ -148,7 +148,9 @@ function panelReadBatchKey(request: ProductPanelReadRequest): string {
   const { source } = request;
   const identity = source.kind === "candidate"
     ? [source.kind, source.workspace.id, source.workspace.ref]
-    : [source.kind, source.applicationId, source.useId];
+    : source.kind === "app-candidate"
+      ? [source.kind, source.app.id, source.app.ref, source.app.entryId]
+      : [source.kind, source.applicationId, source.useId];
   // ObjectList renders its primary rows while the supplement is still loading.
   const supplement = "dataName" in request && request.dataName === "supplement";
   return JSON.stringify([...identity, supplement]);
@@ -865,7 +867,7 @@ async function mountNested(
   const shown = () => outer.run.shown?.() ?? true;
   const overlay = createPanelOverlayRoot(instance, shown);
   try {
-    const nestedReadProjection = source.kind === "candidate"
+    const nestedReadProjection = source.kind === "candidate" || source.kind === "app-candidate"
       ? (id: string) => readPlatformProjection(id)
       : (id: string) => readCachedProjection(id, () => readPlatformProjection(id), { verifyAccess: true });
     const last = memberPath.at(-1);

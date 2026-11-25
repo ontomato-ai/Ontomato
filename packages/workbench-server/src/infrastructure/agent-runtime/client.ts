@@ -35,6 +35,7 @@ export class RuntimeClient {
     readonly domainId: string | undefined,
     incomingCorrelationId: string | undefined = getServiceLogContext().correlationId ?? undefined,
     readonly userId = getServiceLogContext().userId,
+    readonly workspaceOwnerId = userId,
   ) { this.correlationId = normalizeCorrelationId(incomingCorrelationId); }
   readonly correlationId: string;
   private headers(key?: string) {
@@ -49,7 +50,9 @@ export class RuntimeClient {
     };
     if (this.userId) {
       headers["x-ontomato-user-id"] = this.userId;
-      headers["x-workspace-owner-id"] = this.userId;
+    }
+    if (this.workspaceOwnerId) {
+      headers["x-workspace-owner-id"] = this.workspaceOwnerId;
     }
     if (this.domainId) headers["x-domain-id"] = this.domainId;
     if (key) headers["idempotency-key"] = key;

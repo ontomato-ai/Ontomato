@@ -1293,9 +1293,9 @@ test("read parameter named target allocates a distinct input port when member.ta
     ...typeTable,
     objectTypes: {
       ...typeTable.objectTypes,
-      "platform:AppWorkspace": {
+      "platform:Application": {
         reads: {
-          diff: { source: "object" as const, parameterMode: "fixed" as const, params: { target: "workspaceDiffTarget" as const }, result: "panelRecord" as const },
+          sourceDiff: { source: "object" as const, parameterMode: "fixed" as const, params: { target: "workspaceDiffTarget" as const }, result: "panelRecord" as const },
         },
         operations: [],
       },
@@ -1303,16 +1303,16 @@ test("read parameter named target allocates a distinct input port when member.ta
   };
   const diffState = panelManifestSchema.parse({
     state: {
-      workspace: { type: { kind: "object", objectType: "platform:AppWorkspace" } },
+      workspace: { type: { kind: "object", objectType: "platform:Application" } },
       diffTarget: { type: { kind: "scalar", type: "string" } },
     },
     members: {},
   }).state;
   const member = panelAuthoringMemberSchema.parse({
     component: "ObjectSummary",
-    type: "platform:AppWorkspace",
+    type: "platform:Application",
     target: "workspace",
-    data: { record: { read: "diff", params: { target: { state: "diffTarget" } } } },
+    data: { record: { read: "sourceDiff", params: { target: { state: "diffTarget" } } } },
   });
   assert("component" in member);
   const expanded = expandPanelAuthoringMember("diffSummary", member, {
@@ -1322,7 +1322,7 @@ test("read parameter named target allocates a distinct input port when member.ta
   });
   assert.deepEqual(expanded.projection.data.record, {
     source: { object: { input: "target" } },
-    read: "diff",
+    read: "sourceDiff",
     params: { target: { input: "diffTarget" } },
   });
   assert.deepEqual(expanded.placement.inputs, {
