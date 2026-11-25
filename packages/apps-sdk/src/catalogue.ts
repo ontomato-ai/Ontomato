@@ -108,6 +108,23 @@ export const components: readonly ComponentMetadata[] = [
     meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame. In a panel, write `<html-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
+    componentId: "AppPreview",
+    module: "@ontomato/sdk/preview",
+    exportName: "AppPreview",
+    role: "presentation",
+    group: "content",
+    meaning:
+      "Embeds an application preview (candidate panel, live panel, or legacy hosted preview) through the platform host without exposing preview tokens or raw iframe URLs, reporting navigation, selection, and status.",
+    effects:
+      "Loads the target application preview through the platform host under server-enforced authorization; writes no business data itself.",
+    data: {},
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      activePage: { kind: "scalar", type: "string" },
+      selection: { kind: "json" },
+    },
+  }),
+  defineComponentMeta({
     componentId: "AgentChat",
     module: "@ontomato/sdk/chat",
     exportName: "AgentChat",

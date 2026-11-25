@@ -34,6 +34,7 @@ export const baseComponents = {
   FormFields: () => import("@ontomato/foundation-ui/form").then(module => module.FormFields),
   TablePreview: () => import("@ontomato/foundation-ui/preview").then(module => module.TablePreview),
   HtmlPreview: () => import("@ontomato/foundation-ui/preview").then(module => module.HtmlPreview),
+  AppPreview: () => import("./preview/AppPreview.vue").then(module => module.default),
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
   ObjectTree: () => import("./base/ObjectTree.vue").then(module => module.default),
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),

@@ -34,7 +34,7 @@ import {
 } from "@ontomato/platform-shell";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import {
-  memberComponentId, panelModuleFor, PanelMemberUnavailable, preloadCatalogueComponents, readProjectionForRender,
+  memberComponentId, panelModuleFor, PanelMemberUnavailable, panelPreviewHostKey, preloadCatalogueComponents, readProjectionForRender,
   type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
 } from "@ontomato/apps-sdk/direct";
 import {
@@ -54,6 +54,7 @@ import {
 } from "@ontomato/agent-shell-ui";
 import type { PanelSessionFeed } from "./panel-session-runs";
 import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
+import { createPanelPreviewHost } from "./panel-preview";
 
 /*
  * The platform's panel host (overall design 3.4): the two reads a panel instance needs and the notices it listens to.
@@ -1036,6 +1037,7 @@ async function mountCoded(
       app.provide(panelChatHostKey, chatHost);
       if (feed?.stream) app.provide(pageSessionStream, feed.stream);
       if (feed) app.provide(sessionRunNotices, feed.notices);
+      app.provide(panelPreviewHostKey, createPanelPreviewHost());
       if (pageCounter) app.provide(pageCounterKey, pageCounter);
     },
     mounted: mount => (mounted = mount),

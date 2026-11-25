@@ -26,3 +26,15 @@ export {
   type PanelOperationHandle,
   type UsePanelOperationOptions,
 } from "./panel/panel-operation";
+export {
+  panelPreviewHostKey,
+  usePanelPreviewHost,
+  type AppPreviewContext,
+  type AppPreviewSelectionItem,
+  type AppPreviewStatus,
+  type AppPreviewStatusPayload,
+  type PanelPreviewHost,
+  type PanelPreviewMountHandle,
+  type PanelPreviewOutcome,
+  type PanelPreviewRequest,
+} from "./preview/panel-preview";
