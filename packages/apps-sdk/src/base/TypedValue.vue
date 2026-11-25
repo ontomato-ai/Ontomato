@@ -53,11 +53,11 @@ const props = withDefaults(
     rowIndex?: number;
     /** Display kind: `"auto"` infers from runtime value shape, record tones/tags, or metric column type. */
     kind?: TypedValueKind;
-    /** Optional semantic tone for `"tag"` or badge display; falls back to `valueMap` or `record.tones[field]`. */
+    /** Optional semantic tone for `"tag"` or badge display; falls back to the value's tag tone or `record.tones[field]`. */
     tone?: PanelFieldTone;
     /**
-     * Optional exact raw-value to display presentation mapping (`{ [rawValue]: { label?, labelKey?, labels?, tone?, icon? } }`).
-     * Pure presentation only: exact key match without calculation or range/threshold expressions; unmatched values fall back as-is.
+     * Optional exact raw-value to display presentation mapping (`{ [rawValue]: { label?, labelKey?, labels?, icon? } }`).
+     * Pure presentation only: exact key match for label/icon without tone overrides or range/threshold expressions; unmatched values fall back as-is.
      */
     valueMap?: TypedValueMap;
     /** Optional unit suffix rendered beside numeric or scalar values (for example `"%"`, `"ms"`). */
@@ -215,7 +215,6 @@ const tagValue = computed<PanelRecordTagFieldValue | null>(() => {
 const effectiveTone = computed<PanelFieldTone | undefined>(() => {
   if (props.tone) return props.tone;
   if (tagValue.value) return tagValue.value.tone ?? "info";
-  if (mappedEntry.value?.tone) return mappedEntry.value.tone;
   if (Array.isArray(resolved.value.raw) || props.kind === "tags") return undefined;
   const rec = resolved.value.record;
   const key = resolved.value.fieldKey;
@@ -347,7 +346,6 @@ const listItems = computed<readonly NormalizedListItem[]>(() => {
           text: mapped?.label ?? scalarFieldText(item, translate),
           reference: null,
           childReference: null,
-          tone: mapped?.tone,
           icon: mapped?.icon,
         };
       }

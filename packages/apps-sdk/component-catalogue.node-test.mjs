@@ -515,6 +515,13 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         `${name} meaning must not list single-page exclusive presentation attributes`,
       );
     }
+    // Status semantic tones travel on values or record.tones — never via ObjectList.rowToneMap or InfoBanner.toneMap.
+    const objectListConfigNames = (declared.get("ObjectList").config ?? []).map((prop) => prop.name);
+    assert.equal(objectListConfigNames.includes("row-tone-map"), false, "ObjectList must not expose row-tone-map");
+    assert.equal(objectListConfigNames.includes("row-tone-field"), true, "ObjectList retains row-tone-field");
+    const infoBannerConfigNames = (declared.get("InfoBanner").config ?? []).map((prop) => prop.name);
+    assert.equal(infoBannerConfigNames.includes("tone-map"), false, "InfoBanner must not expose tone-map");
+    assert.equal(infoBannerConfigNames.includes("tone-field"), true, "InfoBanner retains tone-field");
     // Verify Group F public general capabilities are reflected in catalogue metadata and config.
     assert.match(declared.get("ObjectForm").meaning, /\bsubmitOn\b/u, "ObjectForm meaning documents submitOn");
     assert.doesNotMatch(

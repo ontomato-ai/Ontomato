@@ -10,8 +10,8 @@
   1. **Owner gives numbers, component fills a fixed sentence template:** bind a MetricView (`data.result`) or record to
      `RecordTemplate` (`template: "共 {total} 人，其中 {pending} 人待审"`).
   2. **Exact-match `valueMap`:** map already-provided codes/booleans/statuses to localized `label` / `labelKey` /
-     `labels`, semantic `tone`, and platform `icon` on `TypedValue`, `RecordTemplate`, `InfoBanner`, or `ObjectList`
-     columns (pure exact match; no arithmetic or range/threshold expressions).
+     `labels` and platform `icon` on `TypedValue`, `RecordTemplate`, `InfoBanner`, or `ObjectList`
+     columns (pure exact match; no arithmetic or range/threshold expressions; semantic tones travel on values or `record.tones`, never in `valueMap`).
   3. **Local text matching on a complete unpaged list:** `ObjectList` filters an unpaged `panelRecordList` locally and
      exposes `filteredCount`. For paged reads (`panelRecordQuery`) or business-scoped filters, always use owner reads
      and the owner-returned `total`.

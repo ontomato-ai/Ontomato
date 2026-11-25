@@ -9,7 +9,6 @@ import { panelMemberKey } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import {
   asTone,
-  exactValueMapKey,
   extractMetricCell,
   extractMetricRow,
   resolveValueMapEntry,
@@ -19,7 +18,7 @@ import {
   type TypedValueMap,
 } from "./display-value";
 import { resolveLocalizedText } from "./localized-text";
-import { displayFieldText, rawRecordField } from "./record-field";
+import { displayFieldText, isRecordTag, rawRecordField } from "./record-field";
 import RecordTemplate from "./RecordTemplate.vue";
 
 type BannerTone = "info" | "success" | "warning" | "danger";
@@ -34,11 +33,9 @@ const props = withDefaults(
   defineProps<{
     /** Semantic banner tone (`"info"`, `"success"`, `"warning"`, `"danger"`). Defaults to `"info"`. */
     tone?: BannerTone;
-    /** Optional field/column key on a bound `record` or metric `result` whose value (via `toneMap`/`valueMap` or `record.tones`) determines the banner tone. */
+    /** Optional field/column key on a bound `record` or metric `result` whose value (tag tone, `record.tones[toneField]`, or tone string) determines the banner tone. */
     toneField?: string;
-    /** Optional exact raw-value to banner tone map (`{ [rawValue]: "info" | "success" | "warning" | "danger" }`). Pure exact match; no threshold expressions. */
-    toneMap?: Readonly<Record<string, BannerTone>>;
-    /** Optional exact raw-value to display label/tone/icon mapping applied to `toneField` / `field` (pure exact match; no threshold expressions). */
+    /** Optional exact raw-value to display label/icon mapping applied to `toneField` / `field` (pure exact match; no tone or threshold expressions). */
     valueMap?: TypedValueMap;
     /** Optional platform icon name overriding the default semantic status icon. */
     icon?: string;
@@ -76,7 +73,6 @@ const props = withDefaults(
   {
     tone: "info",
     toneField: undefined,
-    toneMap: undefined,
     valueMap: undefined,
     icon: undefined,
     title: undefined,
@@ -212,24 +208,29 @@ const mappedToneEntry = computed(() => {
 });
 
 const effectiveTone = computed<BannerTone>(() => {
-  const toneSource = props.toneField ? resolvedBound.value.rawToneFieldValue : resolvedBound.value.rawFieldValue;
-  if (props.toneMap) {
-    const key = exactValueMapKey(toneSource);
-    if (key !== null && Object.hasOwn(props.toneMap, key)) {
-      const mapped = toBannerTone(props.toneMap[key]);
-      if (mapped) return mapped;
-    }
-  }
-  const fromValueMap = toBannerTone(mappedToneEntry.value?.tone);
-  if (fromValueMap) return fromValueMap;
   const rec = resolvedBound.value.record;
-  if (rec && props.toneField) {
-    const fromTones = toBannerTone(asTone(rec.tones?.[props.toneField]));
-    if (fromTones) return fromTones;
-  }
   if (props.toneField) {
-    const fromValue = toBannerTone(asTone(resolvedBound.value.rawToneFieldValue));
+    const rawTone = resolvedBound.value.rawToneFieldValue;
+    if (isRecordTag(rawTone as PanelRecordFieldValue | undefined)) {
+      const fromTag = toBannerTone((rawTone as { readonly tone?: PanelFieldTone }).tone);
+      if (fromTag) return fromTag;
+    }
+    if (rec) {
+      const fromTones = toBannerTone(asTone(rec.tones?.[props.toneField]));
+      if (fromTones) return fromTones;
+    }
+    const fromValue = toBannerTone(asTone(rawTone));
     if (fromValue) return fromValue;
+  } else {
+    const rawField = resolvedBound.value.rawFieldValue;
+    if (isRecordTag(rawField as PanelRecordFieldValue | undefined)) {
+      const fromTag = toBannerTone((rawField as { readonly tone?: PanelFieldTone }).tone);
+      if (fromTag) return fromTag;
+    }
+    if (rec && props.field) {
+      const fromTones = toBannerTone(asTone(rec.tones?.[props.field]));
+      if (fromTones) return fromTones;
+    }
   }
   return props.tone;
 });

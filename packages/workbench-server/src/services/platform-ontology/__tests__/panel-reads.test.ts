@@ -519,9 +519,13 @@ describe("platform ontology catalogue reads", () => {
   it("returns typed rows for public properties and registered read and operation signatures", async () => {
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
     const properties = panelReadResultSchemas.panelRecordList.parse(reads.properties(AGENT_DEFINITION));
-    expect(properties.find(row => row.primaryKey === "name")?.fields).toMatchObject({
+    const nameProp = properties.find(row => row.primaryKey === "name");
+    expect(nameProp?.fields).toMatchObject({
       name: "name", type: "string", optional: false, description: expect.stringContaining("agent lists"),
     });
+    expect(nameProp?.tones).toEqual({ optional: "warning" });
+    const optionalProp = properties.find(row => row.fields.optional === true);
+    if (optionalProp) expect(optionalProp.tones).toEqual({ optional: "info" });
     const signatures = panelReadResultSchemas.panelRecordList.parse(await reads.reads(TRIGGER));
     expect(signatures.find(row => row.primaryKey === "query")?.fields).toMatchObject({
       name: "query", parameters: expect.arrayContaining(["search"]), result: "panelRecordQuery", source: "type",
@@ -541,6 +545,14 @@ describe("platform ontology catalogue reads", () => {
       expect.objectContaining({ direction: "incoming", relationKind: "user.created-action", peer: USER, derived: false }),
       expect.objectContaining({ direction: "incoming", relationKind: "projection.binds-target", peer: PRODUCT_PROJECTION }),
     ]));
+    expect(relations.find(row => row.fields.relationKind === "action.uses-function")?.tones).toEqual({
+      direction: "info",
+      derived: "success",
+    });
+    expect(relations.find(row => row.fields.relationKind === "user.created-action")?.tones).toEqual({
+      direction: "default",
+      derived: "success",
+    });
     const kinds = panelReadResultSchemas.panelRecordList.parse(reads.relationKinds());
     expect(kinds.find(row => row.primaryKey === "projection.binds-target")).toMatchObject({
       className: ONTOLOGY_RELATION_KIND,

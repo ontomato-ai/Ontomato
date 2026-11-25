@@ -108,8 +108,7 @@
               "width": 112,
               "valueMap": {
                 "true": {
-                  "labelKey": "attr.yes",
-                  "tone": "info"
+                  "labelKey": "attr.yes"
                 },
                 "false": {
                   "labelKey": "attr.dash"
@@ -122,8 +121,7 @@
               "width": 112,
               "valueMap": {
                 "true": {
-                  "labelKey": "attr.yes",
-                  "tone": "success"
+                  "labelKey": "attr.yes"
                 },
                 "false": {
                   "labelKey": "attr.dash"
