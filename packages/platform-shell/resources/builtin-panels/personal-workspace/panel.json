@@ -1,0 +1,1371 @@
+{
+  "manifest": {
+    "state": {
+      "layout": {
+        "type": {
+          "kind": "grid-layout",
+          "columns": 12,
+          "maxRowSpan": 12,
+          "groupIds": [
+            "workspace"
+          ],
+          "itemIds": [
+            "apps",
+            "dashboards",
+            "tasks",
+            "conversations",
+            "objects",
+            "recent"
+          ]
+        },
+        "personal": true,
+        "default": {
+          "groups": [
+            {
+              "id": "workspace",
+              "items": [
+                {
+                  "id": "tasks",
+                  "colSpan": 8,
+                  "rowSpan": 3
+                },
+                {
+                  "id": "apps",
+                  "colSpan": 4,
+                  "rowSpan": 3
+                },
+                {
+                  "id": "dashboards",
+                  "colSpan": 8,
+                  "rowSpan": 3
+                },
+                {
+                  "id": "conversations",
+                  "colSpan": 4,
+                  "rowSpan": 3
+                },
+                {
+                  "id": "objects",
+                  "colSpan": 6,
+                  "rowSpan": 3
+                },
+                {
+                  "id": "recent",
+                  "colSpan": 6,
+                  "rowSpan": 3
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "openModeObjects": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": true,
+        "default": "drawer"
+      },
+      "openModeMetrics": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": true,
+        "default": "drawer"
+      },
+      "openModeTasks": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": true,
+        "default": "drawer"
+      },
+      "selectedObject": {
+        "type": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "deepLink": false
+      },
+      "selectedCard": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:DashboardCard"
+        },
+        "deepLink": false
+      },
+      "selectedTask": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ScheduledTask"
+        },
+        "deepLink": false
+      }
+    },
+    "members": {
+      "homeStatus": {
+        "component": "InfoBanner",
+        "type": "platform:ProductPanel",
+        "data": {
+          "record": "homePanel"
+        },
+        "config": {
+          "tone": "warning",
+          "field": "unavailableReason",
+          "hideWhenEmpty": true
+        },
+        "name": "Home panel status",
+        "description": "Reads whether the user is viewing the built-in workspace or a customized home panel.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000001"
+      },
+      "homeActions": {
+        "component": "PanelData",
+        "type": "platform:ProductPanel",
+        "operations": {
+          "resetHome": "productPanels.resetHome"
+        },
+        "name": "Home workspace actions",
+        "description": "Non-UI operations for restoring the default personal workspace.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000002"
+      },
+      "askInline": {
+        "component": "ConversationEntry",
+        "agent": "page-default",
+        "config": {
+          "presentation": "inline",
+          "placeholderKey": "hero.askPlaceholder",
+          "minLines": 2,
+          "agentPickerVariant": "chip"
+        },
+        "name": "Quick ask composer",
+        "description": "Inline conversation composer embedded in the personal workspace hero band.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000003"
+      },
+      "customizeWorkspace": {
+        "component": "ConversationEntry",
+        "agent": "page-default",
+        "prefillKey": "hero.customizePrefill",
+        "config": {
+          "presentation": "button",
+          "labelKey": "hero.customize",
+          "size": "small",
+          "plain": true
+        },
+        "name": "Customize workspace",
+        "description": "Prefills the workspace composer to ask an agent to customize the user's personal workspace.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000004"
+      },
+      "workspaceGrid": {
+        "component": "GroupedGrid",
+        "state": {
+          "layout": "layout"
+        },
+        "config": {
+          "columns": 12,
+          "rowHeight": 112,
+          "gap": 16,
+          "editable": true,
+          "showGroupHeaders": false,
+          "showItemHeaders": true,
+          "allowHide": true,
+          "groups": [
+            {
+              "id": "workspace",
+              "titleKey": "grid.workspace"
+            }
+          ],
+          "items": [
+            {
+              "id": "tasks",
+              "titleKey": "block.tasks",
+              "groupId": "workspace",
+              "colSpan": 8,
+              "rowSpan": 3,
+              "minColSpan": 3,
+              "maxColSpan": 12,
+              "minRowSpan": 2,
+              "maxRowSpan": 8,
+              "hideable": true
+            },
+            {
+              "id": "apps",
+              "titleKey": "block.apps",
+              "groupId": "workspace",
+              "colSpan": 4,
+              "rowSpan": 3,
+              "minColSpan": 3,
+              "maxColSpan": 12,
+              "minRowSpan": 2,
+              "maxRowSpan": 8,
+              "hideable": true
+            },
+            {
+              "id": "dashboards",
+              "titleKey": "block.dashboards",
+              "groupId": "workspace",
+              "colSpan": 8,
+              "rowSpan": 3,
+              "minColSpan": 3,
+              "maxColSpan": 12,
+              "minRowSpan": 2,
+              "maxRowSpan": 8,
+              "hideable": true
+            },
+            {
+              "id": "conversations",
+              "titleKey": "block.conversations",
+              "groupId": "workspace",
+              "colSpan": 4,
+              "rowSpan": 3,
+              "minColSpan": 3,
+              "maxColSpan": 12,
+              "minRowSpan": 2,
+              "maxRowSpan": 8,
+              "hideable": true
+            },
+            {
+              "id": "objects",
+              "titleKey": "block.objects",
+              "groupId": "workspace",
+              "colSpan": 6,
+              "rowSpan": 3,
+              "minColSpan": 3,
+              "maxColSpan": 12,
+              "minRowSpan": 2,
+              "maxRowSpan": 8,
+              "hideable": true
+            },
+            {
+              "id": "recent",
+              "titleKey": "block.recent",
+              "groupId": "workspace",
+              "colSpan": 6,
+              "rowSpan": 3,
+              "minColSpan": 3,
+              "maxColSpan": 12,
+              "minRowSpan": 2,
+              "maxRowSpan": 8,
+              "hideable": true
+            }
+          ]
+        },
+        "name": "Workspace blocks grid",
+        "description": "Draggable, resizable, and hideable 12-column grid of personal workspace blocks.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000005"
+      },
+      "favoriteApps": {
+        "component": "ObjectList",
+        "type": "platform:Favorite",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "targetGroup": {
+                "literal": "apps"
+              }
+            }
+          }
+        },
+        "operations": {
+          "moveUp": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "up"
+              }
+            }
+          },
+          "moveDown": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "down"
+              }
+            }
+          },
+          "unfavorite": {
+            "type": "platform:Favorite",
+            "operation": "favorites.remove",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "leadingIconField": "icon",
+          "leadingIconKind": "application",
+          "openOutput": "openPath",
+          "emptyText": "empty.apps",
+          "rowActions": {
+            "maxVisible": 0,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "moveUp",
+                "labelKey": "action.moveUp",
+                "disabledWhen": {
+                  "field": "canMoveUp",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "moveDown",
+                "labelKey": "action.moveDown",
+                "disabledWhen": {
+                  "field": "canMoveDown",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "unfavorite",
+                "labelKey": "action.unfavorite",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Favorite applications and agents",
+        "description": "Pinned application and agent shortcuts with reorder and unpin actions.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000006"
+      },
+      "favoriteDashboards": {
+        "component": "ObjectList",
+        "type": "platform:Favorite",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "targetGroup": {
+                "literal": "dashboards"
+              }
+            }
+          }
+        },
+        "operations": {
+          "moveUp": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "up"
+              }
+            }
+          },
+          "moveDown": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "down"
+              }
+            }
+          },
+          "unfavorite": {
+            "type": "platform:Favorite",
+            "operation": "favorites.remove",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "openOutput": "openPath",
+          "emptyText": "empty.dashboards",
+          "rowActions": {
+            "maxVisible": 0,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "moveUp",
+                "labelKey": "action.moveUp",
+                "disabledWhen": {
+                  "field": "canMoveUp",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "moveDown",
+                "labelKey": "action.moveDown",
+                "disabledWhen": {
+                  "field": "canMoveDown",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "unfavorite",
+                "labelKey": "action.unfavorite",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Followed dashboards",
+        "description": "Shortcuts to dashboards followed by the current user.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000007"
+      },
+      "favoriteDashboardCards": {
+        "component": "ObjectList",
+        "type": "platform:Favorite",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "targetGroup": {
+                "literal": "dashboardCards"
+              }
+            }
+          }
+        },
+        "operations": {
+          "moveUp": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "up"
+              }
+            }
+          },
+          "moveDown": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "down"
+              }
+            }
+          },
+          "unfavorite": {
+            "type": "platform:Favorite",
+            "operation": "favorites.remove",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "cards",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "subtitleField": "dashboardName",
+          "emptyText": "empty.dashboardCards",
+          "rowActions": {
+            "placement": "header",
+            "maxVisible": 0,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "moveUp",
+                "labelKey": "action.moveUp",
+                "disabledWhen": {
+                  "field": "canMoveUp",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "moveDown",
+                "labelKey": "action.moveDown",
+                "disabledWhen": {
+                  "field": "canMoveDown",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "unfavorite",
+                "labelKey": "action.unfavorite",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Pinned dashboard cards",
+        "description": "Pinned metric and chart cards from followed dashboards.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000008"
+      },
+      "scheduledTasks": {
+        "component": "ObjectList",
+        "type": "platform:ScheduledTask",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "subtitleField": "frequency",
+          "statusField": "stateLabel",
+          "emptyText": "empty.tasks"
+        },
+        "name": "My scheduled tasks",
+        "description": "Scheduled tasks owned by or accessible to the current user.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000009"
+      },
+      "recentConversations": {
+        "component": "ObjectList",
+        "type": "platform:AgentSession",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "limit": {
+                "literal": 8
+              }
+            }
+          }
+        },
+        "operations": {
+          "rename": {
+            "type": "platform:AgentSession",
+            "operation": "agentSessions.rename",
+            "target": {
+              "row": true
+            }
+          },
+          "favorite": {
+            "type": "platform:Favorite",
+            "operation": "favorites.add",
+            "target": {
+              "row": true
+            }
+          },
+          "unfavorite": {
+            "type": "platform:Favorite",
+            "operation": "favorites.remove",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "openOutput": "openPath",
+          "emptyText": "empty.conversations",
+          "rowActions": {
+            "maxVisible": 0,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "rename",
+                "labelKey": "action.rename"
+              },
+              {
+                "kind": "operation",
+                "operation": "favorite",
+                "labelKey": "action.favorite",
+                "when": {
+                  "field": "favorite",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "unfavorite",
+                "labelKey": "action.unfavorite",
+                "when": {
+                  "field": "favorite",
+                  "equals": true
+                }
+              }
+            ]
+          }
+        },
+        "name": "Recent conversations",
+        "description": "Recent agent conversations with rename and favorite actions.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000010"
+      },
+      "pinnedObjects": {
+        "component": "ObjectList",
+        "type": "platform:Favorite",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "targetGroup": {
+                "literal": "objects"
+              }
+            }
+          }
+        },
+        "operations": {
+          "moveUp": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "up"
+              }
+            }
+          },
+          "moveDown": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "down"
+              }
+            }
+          },
+          "unfavorite": {
+            "type": "platform:Favorite",
+            "operation": "favorites.remove",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "emptyText": "empty.objects",
+          "rowActions": {
+            "maxVisible": 0,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "moveUp",
+                "labelKey": "action.moveUp",
+                "disabledWhen": {
+                  "field": "canMoveUp",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "moveDown",
+                "labelKey": "action.moveDown",
+                "disabledWhen": {
+                  "field": "canMoveDown",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "unfavorite",
+                "labelKey": "action.unfavorite",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Pinned objects",
+        "description": "Pinned domain objects with reorder, unpin, and quick detail inspection.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000011"
+      },
+      "recentVisits": {
+        "component": "ObjectList",
+        "type": "platform:RecentVisit",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "limit": {
+                "literal": 8
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "leadingIconField": "icon",
+          "leadingIconKind": "application",
+          "openOutput": "openPath",
+          "emptyText": "empty.recent"
+        },
+        "name": "Recent visits",
+        "description": "Recently visited pages and records across your applications.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000012"
+      },
+      "objectDetail": {
+        "target": {
+          "panelId": "builtin-product-object-detail-body"
+        },
+        "inputs": {
+          "selected": {
+            "state": "selectedObject"
+          }
+        },
+        "outputs": {
+          "selected": {
+            "state": "selectedObject"
+          }
+        }
+      },
+      "cardMetricPreview": {
+        "component": "MetricCard",
+        "type": "platform:DashboardCard",
+        "target": "selectedCard",
+        "data": {
+          "result": "result"
+        },
+        "config": {
+          "variant": "card"
+        },
+        "name": "Selected card preview",
+        "description": "Live KPI metric preview for the selected dashboard card.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000013"
+      },
+      "cardMetricSource": {
+        "component": "ObjectSummary",
+        "type": "platform:DashboardCard",
+        "target": "selectedCard",
+        "data": {
+          "record": "metricSource"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "metric",
+            "status",
+            "parameters"
+          ],
+          "emptyText": "drawer.cardEmpty"
+        },
+        "name": "Selected card metadata",
+        "description": "Backing metric view, status, and parameters for the selected dashboard card.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000014"
+      },
+      "taskSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:ScheduledTask",
+        "target": "selectedTask",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": true,
+          "emptyText": "drawer.taskEmpty"
+        },
+        "name": "Selected task summary",
+        "description": "Key schedule, status, and recent execution metadata for the selected task.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000015"
+      },
+      "askObject": {
+        "component": "ConversationEntry",
+        "agent": "page-default",
+        "prefillKey": "drawer.askObjectPrefill",
+        "config": {
+          "presentation": "button",
+          "labelKey": "drawer.askAgent",
+          "size": "small",
+          "plain": true
+        },
+        "name": "Ask agent about object",
+        "description": "Prefills the workspace composer to ask an agent to analyze the selected object.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000016"
+      },
+      "askCard": {
+        "component": "ConversationEntry",
+        "agent": "page-default",
+        "prefillKey": "drawer.askCardPrefill",
+        "config": {
+          "presentation": "button",
+          "labelKey": "drawer.askAgent",
+          "size": "small",
+          "plain": true
+        },
+        "name": "Ask agent about metric card",
+        "description": "Prefills the workspace composer to ask an agent to explain the selected dashboard card.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000017"
+      },
+      "askTask": {
+        "component": "ConversationEntry",
+        "agent": "page-default",
+        "prefillKey": "drawer.askTaskPrefill",
+        "config": {
+          "presentation": "button",
+          "labelKey": "drawer.askAgent",
+          "size": "small",
+          "plain": true
+        },
+        "name": "Ask agent about task",
+        "description": "Prefills the workspace composer to ask an agent to inspect the selected scheduled task.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000018"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "hero.greeting.morning": "Good morning",
+        "hero.greeting.afternoon": "Good afternoon",
+        "hero.greeting.evening": "Good evening",
+        "hero.subtitle": "Your apps, agents, dashboards, scheduled tasks, pinned objects, and recent work in one place.",
+        "hero.askPlaceholder": "Ask an agent anything, analyze a metric, or customize this workspace...",
+        "hero.customize": "Customize workspace",
+        "hero.customizePrefill": "Help me customize my personal workspace layout and blocks.",
+        "hero.preferences": "Layout & preferences",
+        "hero.restoreDefault": "Restore default workspace",
+        "grid.workspace": "Workspace",
+        "block.tasks": "My scheduled tasks",
+        "block.apps": "Favorite apps & agents",
+        "block.dashboards": "Dashboards & pinned cards",
+        "block.conversations": "Recent conversations",
+        "block.objects": "Pinned objects",
+        "block.recent": "Recent visits",
+        "block.dashboardsList": "Dashboards",
+        "block.dashboardCardsList": "Pinned cards",
+        "link.allApps": "Gallery",
+        "link.allDashboards": "Dashboards",
+        "link.allTasks": "Schedules",
+        "link.allConversations": "Chat",
+        "action.moveUp": "Move up",
+        "action.moveDown": "Move down",
+        "action.rename": "Rename",
+        "action.favorite": "Pin to workspace",
+        "action.unfavorite": "Remove",
+        "empty.apps": "Pin applications or agents from the Application Gallery to show them here.",
+        "empty.dashboards": "No followed dashboards yet.",
+        "empty.dashboardCards": "No pinned dashboard cards yet.",
+        "empty.tasks": "No scheduled tasks yet.",
+        "empty.conversations": "Start a conversation above to see recent threads here.",
+        "empty.objects": "Pin objects from detail pages to keep them handy here.",
+        "empty.recent": "Your recently visited pages will appear here.",
+        "prefs.title": "Layout & preferences",
+        "prefs.presets": "Layout presets",
+        "prefs.preset.balanced": "Balanced",
+        "prefs.preset.tasks": "Tasks focus",
+        "prefs.preset.data": "Data focus",
+        "prefs.preset.assistant": "Assistant focus",
+        "prefs.hiddenBlocks": "Hidden blocks",
+        "prefs.restoreBlock": "Show",
+        "prefs.restoreAll": "Restore all hidden blocks",
+        "prefs.resetLayout": "Reset default layout",
+        "prefs.openModes": "Opening mode",
+        "prefs.openObjects": "Pinned objects",
+        "prefs.openMetrics": "Dashboard cards",
+        "prefs.openTasks": "Scheduled tasks",
+        "prefs.mode.drawer": "Drawer",
+        "prefs.mode.page": "Full page",
+        "drawer.objectTitle": "Object detail",
+        "drawer.cardTitle": "Metric & card detail",
+        "drawer.taskTitle": "Scheduled task detail",
+        "drawer.openFullPage": "Open full page",
+        "drawer.askAgent": "Ask agent to analyze",
+        "drawer.askObjectPrefill": "Please analyze the currently selected object in my workspace and summarize key findings.",
+        "drawer.askCardPrefill": "Please explain the currently selected dashboard card metric, its trend, and any anomalies.",
+        "drawer.askTaskPrefill": "Please review the currently selected scheduled task status and recent runs.",
+        "drawer.cardEmpty": "Select a pinned dashboard card to inspect its metric source.",
+        "drawer.taskEmpty": "Select a scheduled task to inspect its details.",
+        "notice.presetApplied": "Layout preset applied.",
+        "notice.layoutReset": "Default layout restored.",
+        "notice.restoredDefaultHome": "Default personal workspace restored.",
+        "notice.actionFailed": "Action failed: {reason}"
+      },
+      "zh-CN": {
+        "hero.greeting.morning": "早上好",
+        "hero.greeting.afternoon": "下午好",
+        "hero.greeting.evening": "晚上好",
+        "hero.subtitle": "集中管理常用应用、智能体、仪表盘、定时任务、关注对象与最近访问。",
+        "hero.askPlaceholder": "向智能体提问、分析指标，或让我帮你调整个人工作台...",
+        "hero.customize": "帮我调整工作台",
+        "hero.customizePrefill": "请帮我调整个人工作台的布局和区块内容。",
+        "hero.preferences": "布局与偏好",
+        "hero.restoreDefault": "恢复默认工作台",
+        "grid.workspace": "工作台",
+        "block.tasks": "我的定时任务",
+        "block.apps": "常用应用与智能体",
+        "block.dashboards": "关注仪表盘与固定卡片",
+        "block.conversations": "最近对话",
+        "block.objects": "关注对象",
+        "block.recent": "最近访问",
+        "block.dashboardsList": "关注仪表盘",
+        "block.dashboardCardsList": "固定卡片",
+        "link.allApps": "应用广场",
+        "link.allDashboards": "仪表盘",
+        "link.allTasks": "定时任务",
+        "link.allConversations": "智能体对话",
+        "action.moveUp": "上移",
+        "action.moveDown": "下移",
+        "action.rename": "重命名",
+        "action.favorite": "收藏到工作台",
+        "action.unfavorite": "取消收藏",
+        "empty.apps": "在应用广场收藏常用应用或智能体后，将显示在这里。",
+        "empty.dashboards": "暂无关注的仪表盘。",
+        "empty.dashboardCards": "暂无固定的仪表盘卡片。",
+        "empty.tasks": "暂无定时任务。",
+        "empty.conversations": "在上方发起对话后，最近的会话会显示在这里。",
+        "empty.objects": "在对象详情页收藏对象后，可在这里快速查看。",
+        "empty.recent": "你最近访问过的页面会显示在这里。",
+        "prefs.title": "布局与偏好",
+        "prefs.presets": "布局预设",
+        "prefs.preset.balanced": "均衡视图",
+        "prefs.preset.tasks": "任务优先",
+        "prefs.preset.data": "数据优先",
+        "prefs.preset.assistant": "对话优先",
+        "prefs.hiddenBlocks": "已隐藏的区块",
+        "prefs.restoreBlock": "恢复显示",
+        "prefs.restoreAll": "恢复全部隐藏区块",
+        "prefs.resetLayout": "重置默认布局",
+        "prefs.openModes": "打开方式",
+        "prefs.openObjects": "关注对象",
+        "prefs.openMetrics": "指标与卡片",
+        "prefs.openTasks": "定时任务",
+        "prefs.mode.drawer": "抽屉预览",
+        "prefs.mode.page": "整页打开",
+        "drawer.objectTitle": "对象详情",
+        "drawer.cardTitle": "指标与卡片详情",
+        "drawer.taskTitle": "定时任务详情",
+        "drawer.openFullPage": "整页打开",
+        "drawer.askAgent": "让智能体分析",
+        "drawer.askObjectPrefill": "请帮我分析工作台当前选中的对象，并总结关键信息。",
+        "drawer.askCardPrefill": "请帮我解读工作台当前选中的仪表盘卡片指标趋势和异常点。",
+        "drawer.askTaskPrefill": "请帮我检查工作台当前选中的定时任务状态与近期执行情况。",
+        "drawer.cardEmpty": "选择一个固定卡片以查看其指标来源。",
+        "drawer.taskEmpty": "选择一个定时任务以查看详细信息。",
+        "notice.presetApplied": "已应用布局预设。",
+        "notice.layoutReset": "已恢复默认布局。",
+        "notice.restoredDefaultHome": "已恢复默认个人工作台。",
+        "notice.actionFailed": "操作失败：{reason}"
+      },
+      "zh-TW": {
+        "hero.greeting.morning": "早安",
+        "hero.greeting.afternoon": "午安",
+        "hero.greeting.evening": "晚安",
+        "hero.subtitle": "集中管理常用應用、智慧體、儀表板、排程任務、關注物件與最近造訪。",
+        "hero.askPlaceholder": "向智慧體提問、分析指標，或讓我幫你調整個人工作台...",
+        "hero.customize": "幫我調整工作台",
+        "hero.customizePrefill": "請幫我調整個人工作台的版面與區塊內容。",
+        "hero.preferences": "版面與偏好",
+        "hero.restoreDefault": "恢復預設工作台",
+        "grid.workspace": "工作台",
+        "block.tasks": "我的排程任務",
+        "block.apps": "常用應用與智慧體",
+        "block.dashboards": "關注儀表板與固定卡片",
+        "block.conversations": "最近對話",
+        "block.objects": "關注物件",
+        "block.recent": "最近造訪",
+        "block.dashboardsList": "關注儀表板",
+        "block.dashboardCardsList": "固定卡片",
+        "link.allApps": "應用廣場",
+        "link.allDashboards": "儀表板",
+        "link.allTasks": "排程任務",
+        "link.allConversations": "智慧體對話",
+        "action.moveUp": "上移",
+        "action.moveDown": "下移",
+        "action.rename": "重新命名",
+        "action.favorite": "收藏至工作台",
+        "action.unfavorite": "移除",
+        "empty.apps": "在應用廣場收藏應用或智慧體後，將顯示於此。",
+        "empty.dashboards": "尚無關注的儀表板。",
+        "empty.dashboardCards": "尚無固定的儀表板卡片。",
+        "empty.tasks": "尚無排程任務。",
+        "empty.conversations": "在上方開始對話後，最近的會話將顯示於此。",
+        "empty.objects": "在物件詳情頁收藏物件後，可於此快速檢視。",
+        "empty.recent": "最近造訪的頁面將顯示於此。",
+        "prefs.title": "版面與偏好",
+        "prefs.presets": "版面預設",
+        "prefs.preset.balanced": "均衡檢視",
+        "prefs.preset.tasks": "任務優先",
+        "prefs.preset.data": "數據優先",
+        "prefs.preset.assistant": "對話優先",
+        "prefs.hiddenBlocks": "已隱藏的區塊",
+        "prefs.restoreBlock": "顯示",
+        "prefs.restoreAll": "恢復所有隱藏區塊",
+        "prefs.resetLayout": "重設預設版面",
+        "prefs.openModes": "開啟方式",
+        "prefs.openObjects": "關注物件",
+        "prefs.openMetrics": "指標與卡片",
+        "prefs.openTasks": "排程任務",
+        "prefs.mode.drawer": "抽屜預覽",
+        "prefs.mode.page": "整頁開啟",
+        "drawer.objectTitle": "物件詳情",
+        "drawer.cardTitle": "指標與卡片詳情",
+        "drawer.taskTitle": "排程任務詳情",
+        "drawer.openFullPage": "整頁開啟",
+        "drawer.askAgent": "讓智慧體分析",
+        "drawer.askObjectPrefill": "請幫我分析工作台目前選取的物件並摘要重點。",
+        "drawer.askCardPrefill": "請幫我解讀工作台目前選取的儀表板卡片指標與異常。",
+        "drawer.askTaskPrefill": "請幫我檢視工作台目前選取的排程任務狀態與近期執行紀錄。",
+        "drawer.cardEmpty": "選取固定卡片以檢視其指標來源。",
+        "drawer.taskEmpty": "選取排程任務以檢視詳細資訊。",
+        "notice.presetApplied": "已套用版面預設。",
+        "notice.layoutReset": "已恢復預設版面。",
+        "notice.restoredDefaultHome": "已恢復預設個人工作台。",
+        "notice.actionFailed": "操作失敗：{reason}"
+      },
+      "ja": {
+        "hero.greeting.morning": "おはようございます",
+        "hero.greeting.afternoon": "こんにちは",
+        "hero.greeting.evening": "こんばんは",
+        "hero.subtitle": "アプリ、エージェント、ダッシュボード、スケジュールタスク、ピン留めオブジェクト、最近のアクセスを一か所に。",
+        "hero.askPlaceholder": "エージェントに質問する、指標を分析する、またはワークスペースをカスタマイズ...",
+        "hero.customize": "ワークスペースを調整",
+        "hero.customizePrefill": "個人ワークスペースのレイアウトとブロックを調整してください。",
+        "hero.preferences": "レイアウトと設定",
+        "hero.restoreDefault": "デフォルトに戻す",
+        "grid.workspace": "ワークスペース",
+        "block.tasks": "スケジュールタスク",
+        "block.apps": "お気に入りアプリ・エージェント",
+        "block.dashboards": "ダッシュボードと固定カード",
+        "block.conversations": "最近の会話",
+        "block.objects": "ピン留めオブジェクト",
+        "block.recent": "最近のアクセス",
+        "block.dashboardsList": "ダッシュボード",
+        "block.dashboardCardsList": "固定カード",
+        "link.allApps": "ギャラリー",
+        "link.allDashboards": "ダッシュボード",
+        "link.allTasks": "スケジュール",
+        "link.allConversations": "チャット",
+        "action.moveUp": "上へ移動",
+        "action.moveDown": "下へ移動",
+        "action.rename": "名前を変更",
+        "action.favorite": "固定する",
+        "action.unfavorite": "削除",
+        "empty.apps": "アプリギャラリーから固定するとここに表示されます。",
+        "empty.dashboards": "フォロー中のダッシュボードはありません。",
+        "empty.dashboardCards": "固定されたカードはありません。",
+        "empty.tasks": "スケジュールタスクはありません。",
+        "empty.conversations": "上から会話を始めると最近の履歴が表示されます。",
+        "empty.objects": "詳細ページからオブジェクトを固定するとここに表示されます。",
+        "empty.recent": "最近アクセスしたページがここに表示されます。",
+        "prefs.title": "レイアウトと設定",
+        "prefs.presets": "レイアウトプリセット",
+        "prefs.preset.balanced": "バランス",
+        "prefs.preset.tasks": "タスク重視",
+        "prefs.preset.data": "データ重視",
+        "prefs.preset.assistant": "アシスタント重視",
+        "prefs.hiddenBlocks": "非表示のブロック",
+        "prefs.restoreBlock": "表示",
+        "prefs.restoreAll": "すべて再表示",
+        "prefs.resetLayout": "デフォルトに戻す",
+        "prefs.openModes": "開き方",
+        "prefs.openObjects": "ピン留めオブジェクト",
+        "prefs.openMetrics": "ダッシュボードカード",
+        "prefs.openTasks": "スケジュールタスク",
+        "prefs.mode.drawer": "ドロワー",
+        "prefs.mode.page": "全画面",
+        "drawer.objectTitle": "オブジェクト詳細",
+        "drawer.cardTitle": "カード詳細",
+        "drawer.taskTitle": "タスク詳細",
+        "drawer.openFullPage": "全画面で開く",
+        "drawer.askAgent": "エージェントに分析させる",
+        "drawer.askObjectPrefill": "ワークスペースで選択中のオブジェクトを分析して要点をまとめてください。",
+        "drawer.askCardPrefill": "ワークスペースで選択中のダッシュボードカードの指標と傾向を説明してください。",
+        "drawer.askTaskPrefill": "ワークスペースで選択中のスケジュールタスクの状態と最近の実行を確認してください。",
+        "drawer.cardEmpty": "カードを選択すると指標ソースが表示されます。",
+        "drawer.taskEmpty": "タスクを選択すると詳細が表示されます。",
+        "notice.presetApplied": "プリセットを適用しました。",
+        "notice.layoutReset": "デフォルトレイアウトに戻しました。",
+        "notice.restoredDefaultHome": "デフォルトの個人ワークスペースに戻しました。",
+        "notice.actionFailed": "操作に失敗しました: {reason}"
+      },
+      "de": {
+        "hero.greeting.morning": "Guten Morgen",
+        "hero.greeting.afternoon": "Guten Tag",
+        "hero.greeting.evening": "Guten Abend",
+        "hero.subtitle": "Ihre Apps, Agenten, Dashboards, geplanten Aufgaben, angehefteten Objekte und letzten Besuche an einem Ort.",
+        "hero.askPlaceholder": "Fragen Sie einen Agenten, analysieren Sie Kennzahlen oder passen Sie diesen Bereich an...",
+        "hero.customize": "Bereich anpassen",
+        "hero.customizePrefill": "Hilf mir, Layout und Blöcke meines persönlichen Arbeitsbereichs anzupassen.",
+        "hero.preferences": "Layout & Einstellungen",
+        "hero.restoreDefault": "Standard wiederherstellen",
+        "grid.workspace": "Arbeitsbereich",
+        "block.tasks": "Geplante Aufgaben",
+        "block.apps": "Favoriten: Apps & Agenten",
+        "block.dashboards": "Dashboards & angeheftete Karten",
+        "block.conversations": "Letzte Gespräche",
+        "block.objects": "Angeheftete Objekte",
+        "block.recent": "Zuletzt besucht",
+        "block.dashboardsList": "Dashboards",
+        "block.dashboardCardsList": "Angeheftete Karten",
+        "link.allApps": "Galerie",
+        "link.allDashboards": "Dashboards",
+        "link.allTasks": "Zeitpläne",
+        "link.allConversations": "Chat",
+        "action.moveUp": "Nach oben",
+        "action.moveDown": "Nach unten",
+        "action.rename": "Umbenennen",
+        "action.favorite": "Anheften",
+        "action.unfavorite": "Entfernen",
+        "empty.apps": "Heften Sie Apps oder Agenten aus der Galerie an.",
+        "empty.dashboards": "Noch keine gefolgten Dashboards.",
+        "empty.dashboardCards": "Noch keine angehefteten Karten.",
+        "empty.tasks": "Noch keine geplanten Aufgaben.",
+        "empty.conversations": "Starten Sie oben ein Gespräch, um Verläufe hier zu sehen.",
+        "empty.objects": "Heften Sie Objekte auf Detailseiten an.",
+        "empty.recent": "Zuletzt besuchte Seiten erscheinen hier.",
+        "prefs.title": "Layout & Einstellungen",
+        "prefs.presets": "Layout-Vorlagen",
+        "prefs.preset.balanced": "Ausgewogen",
+        "prefs.preset.tasks": "Aufgabenfokus",
+        "prefs.preset.data": "Datenfokus",
+        "prefs.preset.assistant": "Assistentenfokus",
+        "prefs.hiddenBlocks": "Ausgeblendete Blöcke",
+        "prefs.restoreBlock": "Anzeigen",
+        "prefs.restoreAll": "Alle wiederherstellen",
+        "prefs.resetLayout": "Standardlayout zurücksetzen",
+        "prefs.openModes": "Öffnungsmodus",
+        "prefs.openObjects": "Angeheftete Objekte",
+        "prefs.openMetrics": "Dashboard-Karten",
+        "prefs.openTasks": "Geplante Aufgaben",
+        "prefs.mode.drawer": "Seitenleiste",
+        "prefs.mode.page": "Vollseite",
+        "drawer.objectTitle": "Objektdetails",
+        "drawer.cardTitle": "Kartendetails",
+        "drawer.taskTitle": "Aufgabendetails",
+        "drawer.openFullPage": "Vollseite öffnen",
+        "drawer.askAgent": "Agenten fragen",
+        "drawer.askObjectPrefill": "Bitte analysiere das ausgewählte Objekt in meinem Arbeitsbereich.",
+        "drawer.askCardPrefill": "Bitte erkläre die Kennzahl und Trends der ausgewählten Dashboard-Karte.",
+        "drawer.askTaskPrefill": "Bitte prüfe den Status und die letzten Läufe der ausgewählten Aufgabe.",
+        "drawer.cardEmpty": "Wählen Sie eine Karte aus, um Details zu sehen.",
+        "drawer.taskEmpty": "Wählen Sie eine Aufgabe aus, um Details zu sehen.",
+        "notice.presetApplied": "Layout-Vorlage angewendet.",
+        "notice.layoutReset": "Standardlayout wiederhergestellt.",
+        "notice.restoredDefaultHome": "Standard-Arbeitsbereich wiederhergestellt.",
+        "notice.actionFailed": "Aktion fehlgeschlagen: {reason}"
+      },
+      "fr": {
+        "hero.greeting.morning": "Bonjour",
+        "hero.greeting.afternoon": "Bon après-midi",
+        "hero.greeting.evening": "Bonsoir",
+        "hero.subtitle": "Vos applications, agents, tableaux de bord, tâches planifiées, objets épinglés et visites récentes réunis.",
+        "hero.askPlaceholder": "Posez une question à un agent, analysez un indicateur ou personnalisez cet espace...",
+        "hero.customize": "Personnaliser l'espace",
+        "hero.customizePrefill": "Aide-moi à personnaliser la disposition et les blocs de mon espace personnel.",
+        "hero.preferences": "Disposition & préférences",
+        "hero.restoreDefault": "Rétablir l'espace par défaut",
+        "grid.workspace": "Espace de travail",
+        "block.tasks": "Mes tâches planifiées",
+        "block.apps": "Applications & agents favoris",
+        "block.dashboards": "Tableaux de bord & cartes épinglées",
+        "block.conversations": "Conversations récentes",
+        "block.objects": "Objets épinglés",
+        "block.recent": "Visites récentes",
+        "block.dashboardsList": "Tableaux de bord",
+        "block.dashboardCardsList": "Cartes épinglées",
+        "link.allApps": "Galerie",
+        "link.allDashboards": "Tableaux de bord",
+        "link.allTasks": "Planifications",
+        "link.allConversations": "Discussion",
+        "action.moveUp": "Monter",
+        "action.moveDown": "Descendre",
+        "action.rename": "Renommer",
+        "action.favorite": "Épingler",
+        "action.unfavorite": "Retirer",
+        "empty.apps": "Épinglez des applications ou agents depuis la galerie.",
+        "empty.dashboards": "Aucun tableau de bord suivi.",
+        "empty.dashboardCards": "Aucune carte épinglée.",
+        "empty.tasks": "Aucune tâche planifiée.",
+        "empty.conversations": "Démarrez une conversation ci-dessus pour voir l'historique ici.",
+        "empty.objects": "Épinglez des objets depuis leurs pages de détail.",
+        "empty.recent": "Vos pages récemment consultées apparaîtront ici.",
+        "prefs.title": "Disposition & préférences",
+        "prefs.presets": "Modèles de disposition",
+        "prefs.preset.balanced": "Équilibré",
+        "prefs.preset.tasks": "Priorité tâches",
+        "prefs.preset.data": "Priorité données",
+        "prefs.preset.assistant": "Priorité assistant",
+        "prefs.hiddenBlocks": "Blocs masqués",
+        "prefs.restoreBlock": "Afficher",
+        "prefs.restoreAll": "Tout réafficher",
+        "prefs.resetLayout": "Réinitialiser la disposition",
+        "prefs.openModes": "Mode d'ouverture",
+        "prefs.openObjects": "Objets épinglés",
+        "prefs.openMetrics": "Cartes de tableau de bord",
+        "prefs.openTasks": "Tâches planifiées",
+        "prefs.mode.drawer": "Tiroir",
+        "prefs.mode.page": "Pleine page",
+        "drawer.objectTitle": "Détail de l'objet",
+        "drawer.cardTitle": "Détail de la carte",
+        "drawer.taskTitle": "Détail de la tâche",
+        "drawer.openFullPage": "Ouvrir en pleine page",
+        "drawer.askAgent": "Demander à l'agent",
+        "drawer.askObjectPrefill": "Analyse l'objet sélectionné dans mon espace de travail.",
+        "drawer.askCardPrefill": "Explique l'indicateur et les tendances de la carte sélectionnée.",
+        "drawer.askTaskPrefill": "Vérifie l'état et les dernières exécutions de la tâche sélectionnée.",
+        "drawer.cardEmpty": "Sélectionnez une carte pour afficher sa source.",
+        "drawer.taskEmpty": "Sélectionnez une tâche pour afficher ses détails.",
+        "notice.presetApplied": "Modèle appliqué.",
+        "notice.layoutReset": "Disposition par défaut rétablie.",
+        "notice.restoredDefaultHome": "Espace personnel par défaut rétabli.",
+        "notice.actionFailed": "Échec de l'action : {reason}"
+      },
+      "it": {
+        "hero.greeting.morning": "Buongiorno",
+        "hero.greeting.afternoon": "Buon pomeriggio",
+        "hero.greeting.evening": "Buonasera",
+        "hero.subtitle": "App, agenti, dashboard, attività pianificate, oggetti fissati e visite recenti in un unico posto.",
+        "hero.askPlaceholder": "Chiedi a un agente, analizza una metrica o personalizza quest'area...",
+        "hero.customize": "Personalizza area",
+        "hero.customizePrefill": "Aiutami a personalizzare layout e blocchi della mia area personale.",
+        "hero.preferences": "Layout e preferenze",
+        "hero.restoreDefault": "Ripristina predefinita",
+        "grid.workspace": "Area di lavoro",
+        "block.tasks": "Attività pianificate",
+        "block.apps": "App e agenti preferiti",
+        "block.dashboards": "Dashboard e schede fissate",
+        "block.conversations": "Conversazioni recenti",
+        "block.objects": "Oggetti fissati",
+        "block.recent": "Visite recenti",
+        "block.dashboardsList": "Dashboard",
+        "block.dashboardCardsList": "Schede fissate",
+        "link.allApps": "Galleria",
+        "link.allDashboards": "Dashboard",
+        "link.allTasks": "Pianificazioni",
+        "link.allConversations": "Chat",
+        "action.moveUp": "Sposta su",
+        "action.moveDown": "Sposta giù",
+        "action.rename": "Rinomina",
+        "action.favorite": "Fissa",
+        "action.unfavorite": "Rimuovi",
+        "empty.apps": "Fissa app o agenti dalla galleria per mostrarli qui.",
+        "empty.dashboards": "Nessuna dashboard seguita.",
+        "empty.dashboardCards": "Nessuna scheda fissata.",
+        "empty.tasks": "Nessuna attività pianificata.",
+        "empty.conversations": "Avvia una conversazione sopra per vederla qui.",
+        "empty.objects": "Fissa oggetti dalle pagine di dettaglio.",
+        "empty.recent": "Le pagine visitate di recente appariranno qui.",
+        "prefs.title": "Layout e preferenze",
+        "prefs.presets": "Layout predefiniti",
+        "prefs.preset.balanced": "Bilanciato",
+        "prefs.preset.tasks": "Focus attività",
+        "prefs.preset.data": "Focus dati",
+        "prefs.preset.assistant": "Focus assistente",
+        "prefs.hiddenBlocks": "Blocchi nascosti",
+        "prefs.restoreBlock": "Mostra",
+        "prefs.restoreAll": "Ripristina tutti",
+        "prefs.resetLayout": "Ripristina layout predefinito",
+        "prefs.openModes": "Modalità di apertura",
+        "prefs.openObjects": "Oggetti fissati",
+        "prefs.openMetrics": "Schede dashboard",
+        "prefs.openTasks": "Attività pianificate",
+        "prefs.mode.drawer": "Pannello laterale",
+        "prefs.mode.page": "Pagina intera",
+        "drawer.objectTitle": "Dettaglio oggetto",
+        "drawer.cardTitle": "Dettaglio scheda",
+        "drawer.taskTitle": "Dettaglio attività",
+        "drawer.openFullPage": "Apri pagina intera",
+        "drawer.askAgent": "Chiedi all'agente",
+        "drawer.askObjectPrefill": "Analizza l'oggetto selezionato nella mia area di lavoro.",
+        "drawer.askCardPrefill": "Spiega la metrica e le tendenze della scheda selezionata.",
+        "drawer.askTaskPrefill": "Controlla lo stato e le esecuzioni recenti dell'attività selezionata.",
+        "drawer.cardEmpty": "Seleziona una scheda per visualizzare i dettagli.",
+        "drawer.taskEmpty": "Seleziona un'attività per visualizzare i dettagli.",
+        "notice.presetApplied": "Layout applicato.",
+        "notice.layoutReset": "Layout predefinito ripristinato.",
+        "notice.restoredDefaultHome": "Area personale predefinita ripristinata.",
+        "notice.actionFailed": "Operazione non riuscita: {reason}"
+      },
+      "ar": {
+        "hero.greeting.morning": "صباح الخير",
+        "hero.greeting.afternoon": "مساء الخير",
+        "hero.greeting.evening": "مساء الخير",
+        "hero.subtitle": "تطبيقاتك ووكلاؤك ولوحات المعلومات والمهام المجدولة والعناصر المثبتة والزيارات الأخيرة في مكان واحد.",
+        "hero.askPlaceholder": "اسأل وكيلاً أو حلل مؤشراً أو خصص مساحة العمل هذه...",
+        "hero.customize": "تخصيص مساحة العمل",
+        "hero.customizePrefill": "ساعدني في تخصيص تخطيط وكتل مساحة العمل الشخصية.",
+        "hero.preferences": "التخطيط والتفضيلات",
+        "hero.restoreDefault": "استعادة مساحة العمل الافتراضية",
+        "grid.workspace": "مساحة العمل",
+        "block.tasks": "مهامي المجدولة",
+        "block.apps": "التطبيقات والوكلاء المفضلون",
+        "block.dashboards": "لوحات المعلومات والبطاقات المثبتة",
+        "block.conversations": "المحادثات الأخيرة",
+        "block.objects": "العناصر المثبتة",
+        "block.recent": "الزيارات الأخيرة",
+        "block.dashboardsList": "لوحات المعلومات",
+        "block.dashboardCardsList": "البطاقات المثبتة",
+        "link.allApps": "المعرض",
+        "link.allDashboards": "لوحات المعلومات",
+        "link.allTasks": "الجداول",
+        "link.allConversations": "المحادثة",
+        "action.moveUp": "نقل لأعلى",
+        "action.moveDown": "نقل لأسفل",
+        "action.rename": "إعادة تسمية",
+        "action.favorite": "تثبيت",
+        "action.unfavorite": "إزالة",
+        "empty.apps": "ثبت التطبيقات أو الوكلاء من المعرض لعرضها هنا.",
+        "empty.dashboards": "لا توجد لوحات معلومات متابعة بعد.",
+        "empty.dashboardCards": "لا توجد بطاقات مثبتة بعد.",
+        "empty.tasks": "لا توجد مهام مجدولة بعد.",
+        "empty.conversations": "ابدأ محادثة أعلاه لعرض المحادثات الأخيرة هنا.",
+        "empty.objects": "ثبت العناصر من صفحات التفاصيل لعرضها هنا.",
+        "empty.recent": "ستظهر الصفحات التي زرتها مؤخراً هنا.",
+        "prefs.title": "التخطيط والتفضيلات",
+        "prefs.presets": "قوالب التخطيط",
+        "prefs.preset.balanced": "متوازن",
+        "prefs.preset.tasks": "التركيز على المهام",
+        "prefs.preset.data": "التركيز على البيانات",
+        "prefs.preset.assistant": "التركيز على المساعد",
+        "prefs.hiddenBlocks": "الكتل المخفية",
+        "prefs.restoreBlock": "إظهار",
+        "prefs.restoreAll": "استعادة الكل",
+        "prefs.resetLayout": "إعادة التخطيط الافتراضي",
+        "prefs.openModes": "طريقة الفتح",
+        "prefs.openObjects": "العناصر المثبتة",
+        "prefs.openMetrics": "بطاقات لوحة المعلومات",
+        "prefs.openTasks": "المهام المجدولة",
+        "prefs.mode.drawer": "درج جانبي",
+        "prefs.mode.page": "صفحة كاملة",
+        "drawer.objectTitle": "تفاصيل العنصر",
+        "drawer.cardTitle": "تفاصيل البطاقة",
+        "drawer.taskTitle": "تفاصيل المهمة",
+        "drawer.openFullPage": "فتح في صفحة كاملة",
+        "drawer.askAgent": "اسأل الوكيل للتحليل",
+        "drawer.askObjectPrefill": "يرجى تحليل العنصر المحدد حالياً في مساحة العمل الخاصة بي.",
+        "drawer.askCardPrefill": "يرجى شرح المؤشر والاتجاهات في بطاقة لوحة المعلومات المحددة.",
+        "drawer.askTaskPrefill": "يرجى مراجعة حالة المهمة المجدولة المحددة وعمليات التشغيل الأخيرة.",
+        "drawer.cardEmpty": "اختر بطاقة لعرض تفاصيل مصدر المؤشر.",
+        "drawer.taskEmpty": "اختر مهمة مجدولة لعرض تفاصيلها.",
+        "notice.presetApplied": "تم تطبيق قالب التخطيط.",
+        "notice.layoutReset": "تمت استعادة التخطيط الافتراضي.",
+        "notice.restoredDefaultHome": "تمت استعادة مساحة العمل الافتراضية.",
+        "notice.actionFailed": "فشل الإجراء: {reason}"
+      }
+    }
+  }
+}

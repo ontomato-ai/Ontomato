@@ -5,6 +5,7 @@ import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { registerSkillProvider, type ProtectedSkillOffering, type SkillProvider, type SkillSourceFailure } from "../../core/skills/providers";
 import { backendGet } from "../../utils/backend-client";
+import { platformHomeStore } from "../platform-home/store";
 import { PANEL_SKILL_PROVIDER_ID } from "./skill-identity";
 
 const sourceResponse = z.object({ success: z.literal(true), data: panelSkillSourcesResponseSchema });
@@ -22,24 +23,40 @@ export async function readPanelSkillSources(domainId: string) {
 }
 
 export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
-  findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
+  findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials, userId?: string): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
 } = {
   id: PANEL_SKILL_PROVIDER_ID,
   name: "Panels",
-  async list({ domainId, reader, reportSourceFailure }) {
+  async list({ domainId, userId, reader, reportSourceFailure }) {
     const { panelSkillSources } = await import("./skill-package");
+    const rawSources = await readPanelSkillSources(domainId);
+    const hasHomeEntry = rawSources.some(entry => entry.applicationId === "home" && entry.useId === "home");
+    const homePanelId = userId && hasHomeEntry ? await platformHomeStore.homePanelId({ domainId, userId }) : null;
+    const sources = homePanelId !== null
+      ? rawSources.map(entry =>
+          entry.applicationId === "home" && entry.useId === "home"
+            ? { ...entry, panelId: homePanelId }
+            : entry,
+        )
+      : rawSources;
     const offerings: ProtectedSkillOffering[] = [];
-    for (const source of await panelSkillSources(domainId, await readPanelSkillSources(domainId), reader)) {
+    for (const source of await panelSkillSources(domainId, sources, reader)) {
       if ("kind" in source) offerings.push(source);
       else reportSourceFailure(source);
     }
     return offerings;
   },
-  async findByUse(domainId, { applicationId, useId }, reader) {
+  async findByUse(domainId, { applicationId, useId }, reader, userId) {
     const source = (await readPanelSkillSources(domainId)).find(entry => entry.applicationId === applicationId && entry.useId === useId);
     if (!source) return null;
+    const homePanelId = applicationId === "home" && useId === "home" && userId
+      ? await platformHomeStore.homePanelId({ domainId, userId })
+      : null;
+    const resolved = homePanelId !== null && homePanelId !== source.panelId
+      ? { ...source, panelId: homePanelId }
+      : source;
     const { panelSkillSources } = await import("./skill-package");
-    const [result] = await panelSkillSources(domainId, [source], reader);
+    const [result] = await panelSkillSources(domainId, [resolved], reader);
     return result!;
   },
 };

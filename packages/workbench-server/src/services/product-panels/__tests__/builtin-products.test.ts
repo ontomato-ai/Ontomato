@@ -276,9 +276,43 @@ describe("readBuiltinProducts", () => {
       expect(dashboardsPanel!.content.html).not.toMatch(/<el-|--el-|:deep\(/);
       expect(dashboardsPanel!.content.module).not.toContain("usePanelData");
 
+      const personalWorkspace = panels.get("builtin-product-personal-workspace");
+      expect(personalWorkspace).toBeDefined();
+      expect(personalWorkspace!.manifest.state.layout?.personal).toBe(true);
+      expect(personalWorkspace!.manifest.state.layout?.type).toMatchObject({
+        kind: "grid-layout",
+        columns: 12,
+        maxRowSpan: 12,
+        groupIds: ["workspace"],
+        itemIds: ["apps", "dashboards", "tasks", "conversations", "objects", "recent"],
+      });
+      expect(personalWorkspace!.manifest.state.openModeObjects?.personal).toBe(true);
+      expect(personalWorkspace!.manifest.state.openModeMetrics?.personal).toBe(true);
+      expect(personalWorkspace!.manifest.state.openModeTasks?.personal).toBe(true);
+      expect(personalWorkspace!.manifest.state.selectedObject?.type).toEqual({ kind: "object", objectType: "@any" });
+      expect(personalWorkspace!.manifest.members).toHaveProperty("homeStatus");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("homeActions");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("askInline");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("customizeWorkspace");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("workspaceGrid");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("favoriteApps");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("favoriteDashboards");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("favoriteDashboardCards");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("scheduledTasks");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("recentConversations");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("pinnedObjects");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("recentVisits");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("objectDetail");
+      expect(personalWorkspace!.content.html).not.toMatch(/<el-|--el-|:deep\(/);
+      expect(personalWorkspace!.content.module).not.toContain("usePanelData");
+
       const repoRoot = path.resolve(packagesRoot, "..");
       const { checkBuiltinPanelSource } = await import(
         path.join(repoRoot, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")
+      );
+      await checkBuiltinPanelSource(
+        path.join(packagesRoot, "platform-shell/resources/builtin-panels/personal-workspace"),
+        { ...panelCheck, draftReadOperationIds: [] },
       );
       await checkBuiltinPanelSource(
         path.join(packagesRoot, "ontology-manager/resources/builtin-panels/projections"),

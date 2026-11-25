@@ -31,7 +31,7 @@ function sameLocator(a: PageSkillLocator, b: PageSkillLocator): boolean {
 }
 
 export async function listAssistantAgents(owner: AssistantOwner, credentials: AssistantCredentials, query: AssistantAgentsQuery = {}, excludePreset?: string) {
-  const view = await readAssistantSkillView(owner.domainId, credentials);
+  const view = await readAssistantSkillView(owner.domainId, credentials, owner.userId);
   let pageFilter: { skillKey: string; defaultAgent: DefaultAgent } | null = null;
   if ("pageKey" in query) {
     const entrance: PageSkillEntrance = "permissionCode" in query

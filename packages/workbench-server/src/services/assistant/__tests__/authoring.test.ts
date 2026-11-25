@@ -81,7 +81,7 @@ it.each([
 
   loaded(member);
   await expect(executeAuthoring(owner, credentials, runId, kind, "read-test", input)).resolves.toEqual({ result: "tested" });
-  expect(mocks.readView).toHaveBeenCalledWith(owner.domainId, credentials);
+  expect(mocks.readView).toHaveBeenCalledWith(owner.domainId, credentials, owner.userId);
   expect(mocks.resolveSource).toHaveBeenLastCalledWith(skillView, catalogEntrance, {
     kind: "application-use", applicationId: "ontology", useId: catalogUseId,
   }, []);

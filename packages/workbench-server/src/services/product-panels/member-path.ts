@@ -47,11 +47,14 @@ export class PanelReadBatchCache {
   private readonly grants = new Map<string, Promise<boolean>>();
   private readonly products = new Map<string, Promise<CurrentProductRow | undefined>>();
   private readonly reads = new Map<string, Promise<unknown>>();
+  private readonly domainId: string;
 
-  constructor(private readonly domainId: string, private readonly viewer: AssistantCredentials) {}
+  constructor(private readonly owner: ProductOwner, private readonly viewer: AssistantCredentials) {
+    this.domainId = owner.domainId;
+  }
 
   entry(source: PanelUseRef) {
-    return memoize(this.entries, `${source.applicationId}\0${source.useId}`, () => requirePanelEntry(this.viewer, source));
+    return memoize(this.entries, `${source.applicationId}\0${source.useId}`, () => requirePanelEntry(this.viewer, source, this.owner));
   }
 
   allowed(id: string) {
@@ -134,7 +137,7 @@ export async function requireRegisteredPanelRoot(
   owner: ProductOwner, viewer: AssistantCredentials, source: RegisteredSource,
   { client, expectedPanelId, batchCache }: { client?: QueryClient; expectedPanelId?: string; batchCache?: PanelReadBatchCache } = {},
 ) {
-  const entry = await (batchCache ? batchCache.entry(source) : requirePanelEntry(viewer, source));
+  const entry = await (batchCache ? batchCache.entry(source) : requirePanelEntry(viewer, source, owner));
   const id = registeredPanelRootId(source, entry);
   if (id === undefined || (expectedPanelId !== undefined && expectedPanelId !== id))
     throw new HttpError(404, "This entry does not use the requested application frame", "PANEL_FRAME_UNAVAILABLE");

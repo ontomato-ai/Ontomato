@@ -23,6 +23,7 @@ export function servePanelEntries(router: Router): void {
     for (const use of app.panelUses ?? []) {
       if (isNativeApplicationEntry(use)) continue;
       const path = panelUsePath(use.path);
+      if (path === platformRoutes.home.path) continue;
       if (served.has(path)) continue;
       served.add(path);
       router.addRoute(platformRoutes.layout.name, {

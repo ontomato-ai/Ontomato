@@ -40,7 +40,7 @@ export class SkillRegistryManager {
   readonly failedManifests = new Map<string, SkillCatalogDiagnostics["items"][number]>();
   constructor(private readonly root: string, private readonly publicScanner: SkillScanner,
     private readonly domainId: string, private readonly providers: readonly RegisteredSkillProvider[],
-    private readonly reader: AssistantCredentials) {}
+    private readonly reader: AssistantCredentials, private readonly userId?: string) {}
 
   private fileEntry(meta: SkillMeta, source: { kind: "public" | "domain"; path: string }): SkillEntry {
     const skill: RuntimeSkillRef = source.kind === "public"
@@ -50,7 +50,7 @@ export class SkillRegistryManager {
   }
 
   private async listProvider(provider: RegisteredSkillProvider, reportSourceFailure: (failure: SkillSourceFailure) => void) {
-    try { return await provider.list({ domainId: this.domainId, reader: this.reader, reportSourceFailure }); }
+    try { return await provider.list({ domainId: this.domainId, ...(this.userId !== undefined && { userId: this.userId }), reader: this.reader, reportSourceFailure }); }
     catch (error) { throw providerFailure(provider, "list skills", error, false); }
   }
 
@@ -191,10 +191,10 @@ export class DomainSkillRegistryManager {
     return path.join(this.domainsRoot, encodeURIComponent(domainId).replace(/\./g, "%2E"));
   }
   async publicSkills() { return this.publicScanner.scan(); }
-  async forDomain(domainId: string, admit: AdmitSkills | undefined, reader: AssistantCredentials) {
+  async forDomain(domainId: string, admit: AdmitSkills | undefined, reader: AssistantCredentials, userId?: string) {
     const root = this.getDomainSkillsRoot(domainId);
     await fs.promises.mkdir(root, { recursive: true });
-    const registry = new SkillRegistryManager(root, this.publicScanner, domainId, registeredSkillProviders(), reader);
+    const registry = new SkillRegistryManager(root, this.publicScanner, domainId, registeredSkillProviders(), reader, userId);
     await registry.initialize(admit);
     return registry;
   }

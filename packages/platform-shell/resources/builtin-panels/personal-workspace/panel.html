@@ -1,0 +1,583 @@
+<style>
+  [v-cloak] { display: none; }
+  .pw-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color-page, var(--sdk-bg-color));
+    container: pw-page / inline-size;
+  }
+  .pw-scroll {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--spacing-lg, 24px) var(--page-gutter, 24px) var(--spacing-2xl, 40px);
+    box-sizing: border-box;
+  }
+  .pw-shell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg, 20px);
+    width: min(100%, 1360px);
+    margin-inline: auto;
+    min-width: 0;
+  }
+  .pw-status-host {
+    min-width: 0;
+  }
+  .pw-hero {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md, 16px);
+    padding: var(--spacing-lg, 22px) var(--spacing-xl, 24px);
+    border: 1px solid var(--sdk-border-color-lighter, var(--sdk-border-color));
+    border-radius: var(--radius-lg, 14px);
+    background: var(--sdk-bg-color);
+  }
+  .pw-hero-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-md, 16px);
+    flex-wrap: wrap;
+  }
+  .pw-hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .pw-greeting {
+    margin: 0;
+    font-size: var(--text-xl, 22px);
+    font-weight: var(--font-semibold, 600);
+    line-height: 1.3;
+    color: var(--sdk-text-color-primary);
+  }
+  .pw-subtitle {
+    margin: 0;
+    font-size: var(--text-sm, 13px);
+    line-height: 1.5;
+    color: var(--sdk-text-color-secondary);
+  }
+  .pw-hero-actions {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs, 8px);
+    flex: none;
+  }
+  .pw-prefs-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 6px;
+    border-radius: 999px;
+    background: var(--sdk-color-primary-light-9, var(--sdk-fill-color-light));
+    color: var(--sdk-color-primary);
+    font-size: 11px;
+    font-weight: var(--font-semibold, 600);
+    line-height: 1;
+  }
+  .pw-composer-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .pw-grid-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .pw-block-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm, 10px);
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+  }
+  .pw-block-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .pw-block-subsection-title {
+    margin: 0;
+    font-size: var(--text-xs, 12px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--sdk-text-color-secondary);
+  }
+  .pw-block-list {
+    height: auto;
+    min-width: 0;
+  }
+  .pw-header-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border: 0;
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    font: inherit;
+    font-size: var(--text-xs, 12px);
+    font-weight: var(--font-medium, 500);
+    cursor: pointer;
+    transition: background-color var(--transition-fast, 0.15s ease), color var(--transition-fast, 0.15s ease);
+  }
+  .pw-header-link:hover {
+    background: var(--sdk-fill-color-light);
+    color: var(--sdk-color-primary);
+  }
+  .pw-prefs-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg, 20px);
+    padding: 4px 0;
+  }
+  .pw-prefs-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm, 10px);
+  }
+  .pw-prefs-heading {
+    margin: 0;
+    font-size: var(--text-sm, 13px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--sdk-text-color-primary);
+  }
+  .pw-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-xs, 8px);
+  }
+  .pw-preset-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 var(--spacing-sm, 12px);
+    border: 1px solid var(--sdk-border-color);
+    border-radius: var(--radius-md, 8px);
+    background: var(--sdk-bg-color);
+    color: var(--sdk-text-color-primary);
+    font: inherit;
+    font-size: var(--text-sm, 13px);
+    font-weight: var(--font-medium, 500);
+    cursor: pointer;
+    transition: border-color var(--transition-fast, 0.15s ease), background-color var(--transition-fast, 0.15s ease);
+  }
+  .pw-preset-btn:hover {
+    border-color: var(--sdk-color-primary);
+    background: var(--sdk-fill-color-light);
+  }
+  .pw-hidden-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .pw-hidden-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm, 10px);
+    padding: 8px 12px;
+    border: 1px solid var(--sdk-border-color-lighter, var(--sdk-border-color));
+    border-radius: var(--radius-md, 8px);
+    background: var(--sdk-fill-color-blank, var(--sdk-bg-color));
+    font-size: var(--text-sm, 13px);
+    color: var(--sdk-text-color-primary);
+  }
+  .pw-mode-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pw-mode-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm, 12px);
+  }
+  .pw-mode-label {
+    font-size: var(--text-sm, 13px);
+    color: var(--sdk-text-color-primary);
+  }
+  .pw-mode-segments {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--sdk-border-color-lighter, var(--sdk-border-color));
+    border-radius: var(--radius-md, 8px);
+    background: var(--sdk-fill-color-light);
+  }
+  .pw-mode-btn {
+    min-height: 26px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: calc(var(--radius-md, 8px) - 2px);
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    font: inherit;
+    font-size: var(--text-xs, 12px);
+    font-weight: var(--font-medium, 500);
+    cursor: pointer;
+  }
+  .pw-mode-btn.is-active {
+    background: var(--sdk-bg-color);
+    color: var(--sdk-text-color-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .pw-prefs-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs, 8px);
+    padding-top: var(--spacing-sm, 10px);
+    border-top: 1px solid var(--sdk-border-color-lighter, var(--sdk-border-color));
+  }
+  .pw-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm, 12px);
+    width: 100%;
+    min-width: 0;
+  }
+  .pw-drawer-title {
+    margin: 0;
+    font-size: var(--text-base, 15px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--sdk-text-color-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pw-drawer-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs, 8px);
+    flex: none;
+  }
+  .pw-drawer-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md, 16px);
+    min-width: 0;
+  }
+  @container pw-page (max-width: 720px) {
+    .pw-scroll {
+      padding: var(--spacing-md, 16px) var(--spacing-md, 16px) var(--spacing-xl, 28px);
+    }
+    .pw-hero {
+      padding: var(--spacing-md, 16px);
+    }
+  }
+</style>
+
+<div id="app" v-cloak class="pw-page">
+  <div class="pw-scroll">
+    <div class="pw-shell">
+      <div class="pw-status-host">
+        <projection slot="homeStatus"></projection>
+        <projection slot="homeActions"></projection>
+      </div>
+
+      <section class="pw-hero">
+        <div class="pw-hero-top">
+          <div class="pw-hero-copy">
+            <h1 class="pw-greeting">{{ greetingText }}</h1>
+            <p class="pw-subtitle">{{ t("hero.subtitle") }}</p>
+          </div>
+          <div class="pw-hero-actions">
+            <projection slot="customizeWorkspace"></projection>
+            <sdk-button
+              size="small"
+              plain
+              data-testid="workspace-preferences-btn"
+              @click="preferencesOpen = true"
+            >
+              <span>{{ t("hero.preferences") }}</span>
+              <span v-if="hiddenCount > 0" class="pw-prefs-badge" data-testid="hidden-blocks-badge">{{ hiddenCount }}</span>
+            </sdk-button>
+            <sdk-button
+              v-if="isCustomHome"
+              size="small"
+              type="warning"
+              plain
+              :loading="resettingHome"
+              data-testid="restore-default-workspace-btn"
+              @click="runResetHome"
+            >
+              {{ t("hero.restoreDefault") }}
+            </sdk-button>
+          </div>
+        </div>
+
+        <div class="pw-composer-wrap">
+          <projection slot="askInline"></projection>
+        </div>
+      </section>
+
+      <section class="pw-grid-wrap">
+        <projection
+          slot="workspaceGrid"
+          :show-group-headers="false"
+          :show-item-headers="true"
+          :allow-hide="true"
+          :editable="true"
+        >
+          <template #item-header-actions="{ itemId }">
+            <button
+              v-if="blockHeaderLink(itemId)"
+              type="button"
+              class="pw-header-link"
+              @click.stop="openPath(blockHeaderLink(itemId).path)"
+            >
+              {{ t(blockHeaderLink(itemId).labelKey) }}
+            </button>
+          </template>
+
+          <template #item="{ itemId }">
+            <div v-if="itemId === 'apps'" class="pw-block-body">
+              <projection slot="favoriteApps" class="pw-block-list"></projection>
+            </div>
+
+            <div v-else-if="itemId === 'dashboards'" class="pw-block-body">
+              <div class="pw-block-subsection">
+                <h3 class="pw-block-subsection-title">{{ t("block.dashboardsList") }}</h3>
+                <projection slot="favoriteDashboards" class="pw-block-list"></projection>
+              </div>
+              <div class="pw-block-subsection">
+                <h3 class="pw-block-subsection-title">{{ t("block.dashboardCardsList") }}</h3>
+                <projection
+                  slot="favoriteDashboardCards"
+                  class="pw-block-list"
+                  @choose="onChooseCard"
+                ></projection>
+              </div>
+            </div>
+
+            <div v-else-if="itemId === 'tasks'" class="pw-block-body">
+              <projection
+                slot="scheduledTasks"
+                class="pw-block-list"
+                @choose="onChooseTask"
+              ></projection>
+            </div>
+
+            <div v-else-if="itemId === 'conversations'" class="pw-block-body">
+              <projection slot="recentConversations" class="pw-block-list"></projection>
+            </div>
+
+            <div v-else-if="itemId === 'objects'" class="pw-block-body">
+              <projection
+                slot="pinnedObjects"
+                class="pw-block-list"
+                @choose="onChooseObject"
+              ></projection>
+            </div>
+
+            <div v-else-if="itemId === 'recent'" class="pw-block-body">
+              <projection slot="recentVisits" class="pw-block-list"></projection>
+            </div>
+          </template>
+        </projection>
+      </section>
+    </div>
+  </div>
+
+  <!-- Layout & Preferences Drawer -->
+  <sdk-drawer
+    v-model="preferencesOpen"
+    :title="t('prefs.title')"
+    size="400px"
+    destroy-on-close
+  >
+    <div class="pw-prefs-panel">
+      <section class="pw-prefs-section">
+        <h3 class="pw-prefs-heading">{{ t("prefs.presets") }}</h3>
+        <div class="pw-preset-grid">
+          <button
+            v-for="preset in presets"
+            :key="preset.id"
+            type="button"
+            class="pw-preset-btn"
+            @click="applyPreset(preset.id)"
+          >
+            {{ t(preset.labelKey) }}
+          </button>
+        </div>
+      </section>
+
+      <section v-if="hiddenItems.length > 0" class="pw-prefs-section">
+        <h3 class="pw-prefs-heading">{{ t("prefs.hiddenBlocks") }}</h3>
+        <div class="pw-hidden-list">
+          <div v-for="item in hiddenItems" :key="item.id" class="pw-hidden-row">
+            <span>{{ t(item.titleKey) }}</span>
+            <sdk-button size="small" text type="primary" @click="restoreBlock(item.id)">
+              {{ t("prefs.restoreBlock") }}
+            </sdk-button>
+          </div>
+        </div>
+        <sdk-button size="small" plain @click="restoreAllHidden">
+          {{ t("prefs.restoreAll") }}
+        </sdk-button>
+      </section>
+
+      <section class="pw-prefs-section">
+        <h3 class="pw-prefs-heading">{{ t("prefs.openModes") }}</h3>
+        <div class="pw-mode-list">
+          <div class="pw-mode-row">
+            <span class="pw-mode-label">{{ t("prefs.openObjects") }}</span>
+            <div class="pw-mode-segments">
+              <button
+                type="button"
+                class="pw-mode-btn"
+                :class="{ 'is-active': openModeObjects === 'drawer' }"
+                @click="setOpenMode('openModeObjects', 'drawer')"
+              >{{ t("prefs.mode.drawer") }}</button>
+              <button
+                type="button"
+                class="pw-mode-btn"
+                :class="{ 'is-active': openModeObjects === 'page' }"
+                @click="setOpenMode('openModeObjects', 'page')"
+              >{{ t("prefs.mode.page") }}</button>
+            </div>
+          </div>
+
+          <div class="pw-mode-row">
+            <span class="pw-mode-label">{{ t("prefs.openMetrics") }}</span>
+            <div class="pw-mode-segments">
+              <button
+                type="button"
+                class="pw-mode-btn"
+                :class="{ 'is-active': openModeMetrics === 'drawer' }"
+                @click="setOpenMode('openModeMetrics', 'drawer')"
+              >{{ t("prefs.mode.drawer") }}</button>
+              <button
+                type="button"
+                class="pw-mode-btn"
+                :class="{ 'is-active': openModeMetrics === 'page' }"
+                @click="setOpenMode('openModeMetrics', 'page')"
+              >{{ t("prefs.mode.page") }}</button>
+            </div>
+          </div>
+
+          <div class="pw-mode-row">
+            <span class="pw-mode-label">{{ t("prefs.openTasks") }}</span>
+            <div class="pw-mode-segments">
+              <button
+                type="button"
+                class="pw-mode-btn"
+                :class="{ 'is-active': openModeTasks === 'drawer' }"
+                @click="setOpenMode('openModeTasks', 'drawer')"
+              >{{ t("prefs.mode.drawer") }}</button>
+              <button
+                type="button"
+                class="pw-mode-btn"
+                :class="{ 'is-active': openModeTasks === 'page' }"
+                @click="setOpenMode('openModeTasks', 'page')"
+              >{{ t("prefs.mode.page") }}</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="pw-prefs-footer">
+        <sdk-button size="small" plain @click="resetDefaultLayout">
+          {{ t("prefs.resetLayout") }}
+        </sdk-button>
+      </div>
+    </div>
+  </sdk-drawer>
+
+  <!-- Object Detail Drawer -->
+  <sdk-drawer
+    v-model="objectDrawerOpen"
+    size="56%"
+    destroy-on-close
+  >
+    <template #header>
+      <div class="pw-drawer-header">
+        <h2 class="pw-drawer-title">{{ selectedObjectTitle || t("drawer.objectTitle") }}</h2>
+        <div class="pw-drawer-actions">
+          <projection slot="askObject"></projection>
+          <sdk-button
+            v-if="selectedObjectPath"
+            size="small"
+            plain
+            @click="openPath(selectedObjectPath)"
+          >
+            {{ t("drawer.openFullPage") }}
+          </sdk-button>
+        </div>
+      </div>
+    </template>
+    <div v-if="hasSelectedObject" class="pw-drawer-content">
+      <projection slot="objectDetail"></projection>
+    </div>
+  </sdk-drawer>
+
+  <!-- Metric / Dashboard Card Detail Drawer -->
+  <sdk-drawer
+    v-model="cardDrawerOpen"
+    size="480px"
+    destroy-on-close
+  >
+    <template #header>
+      <div class="pw-drawer-header">
+        <h2 class="pw-drawer-title">{{ t("drawer.cardTitle") }}</h2>
+        <div class="pw-drawer-actions">
+          <projection slot="askCard"></projection>
+          <sdk-button
+            v-if="selectedCardPath"
+            size="small"
+            plain
+            @click="openPath(selectedCardPath)"
+          >
+            {{ t("drawer.openFullPage") }}
+          </sdk-button>
+        </div>
+      </div>
+    </template>
+    <div v-if="hasSelectedCard" class="pw-drawer-content">
+      <projection slot="cardMetricPreview"></projection>
+      <projection slot="cardMetricSource"></projection>
+    </div>
+  </sdk-drawer>
+
+  <!-- Scheduled Task Detail Drawer -->
+  <sdk-drawer
+    v-model="taskDrawerOpen"
+    size="480px"
+    destroy-on-close
+  >
+    <template #header>
+      <div class="pw-drawer-header">
+        <h2 class="pw-drawer-title">{{ t("drawer.taskTitle") }}</h2>
+        <div class="pw-drawer-actions">
+          <projection slot="askTask"></projection>
+          <sdk-button
+            v-if="selectedTaskPath"
+            size="small"
+            plain
+            @click="openPath(selectedTaskPath)"
+          >
+            {{ t("drawer.openFullPage") }}
+          </sdk-button>
+        </div>
+      </div>
+    </template>
+    <div v-if="hasSelectedTask" class="pw-drawer-content">
+      <projection slot="taskSummary"></projection>
+    </div>
+  </sdk-drawer>
+</div>

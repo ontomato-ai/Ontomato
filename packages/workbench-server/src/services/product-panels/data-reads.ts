@@ -903,7 +903,7 @@ export async function readProductPanelDataBatch(
 ): Promise<ProductPanelReadResponse[]> {
   const registeredViewer = previewHeader === undefined ? credentials
     : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: previewHeader } };
-  const batchCache = new PanelReadBatchCache(owner.domainId, registeredViewer);
+  const batchCache = new PanelReadBatchCache(owner, registeredViewer);
   const registered = requests.flatMap(({ source, memberPath }) => source.kind === "candidate" ? [] : [{ source, memberPath }]);
 
   const entries = await Promise.allSettled(registered.map(async request =>

@@ -80,10 +80,10 @@ it("carries the displayed member into human preparation and prompts with the che
   const prepare = { ...preparation(), ...request.channel, input: request.input, context: request.context };
   mocks.skills.mockResolvedValueOnce({ skills: [{ skill: member.ref, digest }], pageControl: true, currentPage });
   const result = await assistantService.prepare(prepare, owner, credentials);
-  expect(mocks.skills).toHaveBeenCalledWith(owner.domainId, expect.anything(), credentials, pageSkillContext);
+  expect(mocks.skills).toHaveBeenCalledWith(owner.domainId, expect.anything(), credentials, pageSkillContext, owner.userId);
   expect(result.definition.systemPrompt).toContain(JSON.stringify(currentPage));
   const resumed = await assistantService.prepare({ ...prepare, runId: agentId }, owner, credentials);
-  expect(mocks.skills).toHaveBeenLastCalledWith(owner.domainId, expect.anything(), credentials, undefined);
+  expect(mocks.skills).toHaveBeenLastCalledWith(owner.domainId, expect.anything(), credentials, undefined, owner.userId);
   expect(resumed.definition.systemPrompt).not.toContain(currentPage.path);
 });
 it.each(["interactive", "automation", "older automation"] as const)("uses the expected identity for %s preparation", async mode => {

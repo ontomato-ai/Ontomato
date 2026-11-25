@@ -72,7 +72,7 @@ function pageSkillContextFor(
 ) {
   const { applicationId, useId, ...entrance } = query;
   return readRegisteredPanelPageSkillContext(
-    { domainId: caller.owner.domainId, initiatorCredentials: caller.credentials },
+    { domainId: caller.owner.domainId, userId: caller.owner.userId, initiatorCredentials: caller.credentials },
     entrance, { kind: "application-use", applicationId, useId }, panel, panelSkillProvider,
   );
 }

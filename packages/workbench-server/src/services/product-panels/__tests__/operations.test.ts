@@ -843,7 +843,7 @@ it("runs a registered read using the reader and preview context without creating
 it("resolves the actual panel-use member and refuses a run that only loaded a sibling", async () => {
   mocks.resolveMember.mockResolvedValue({ ...skill, name: "other-panel-in-the-same-group" });
   await expect(prepareLiveAction(action())).rejects.toMatchObject({ code: "FORBIDDEN" });
-  expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials);
+  expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials, owner.userId);
   expect(mocks.resolveMember).toHaveBeenCalledWith(
     expect.objectContaining({ resolveSource: mocks.resolveMember }),
     { access: "domain-member", pageKey: "tasks" },

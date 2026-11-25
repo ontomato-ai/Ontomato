@@ -17,7 +17,12 @@ export function platformLayoutRoute(children: RouteRecordRaw[], component: Route
     redirect: () => startPage(),
     children: [
       { path: "", name: "PlatformHome", redirect: () => startPage() },
-      { ...platformRoutes.home, component: () => import("./pages/PersonalWorkspaceRoute.vue"), meta: { workbench: true } },
+      {
+        ...platformRoutes.home,
+        component: () => import("./pages/PanelApplicationRoute.vue"),
+        props: { applicationId: "home" },
+        meta: { workbench: true, ownHeader: true },
+      },
       { path: "/products/:productAssetId", component: () => import("./pages/ProductRoute.vue"), props:route=>({productAssetId:route.params.productAssetId,applicationId:typeof route.query.applicationId==='string'?route.query.applicationId:undefined}), meta: {workbench:true} },
       {
         path: "/applications/:applicationId/:panelPath(.*)?",

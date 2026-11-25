@@ -50,6 +50,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     ],
     "scheduleAdapter": null,
     "allowStandalone": false,
+    "framePanelId": "builtin-product-platform-frame",
     "declaration": {
       "names": {
         "en": "Personal workspace",
@@ -63,6 +64,28 @@ export const workbenchApplications: BuiltinApplication[] = [
       "groups": [],
       "permissions": [],
       "panelUses": [{
+        "id": "home",
+        "pageKey": "home",
+        "panelId": "builtin-product-personal-workspace",
+        "path": "/home",
+        "access": { "kind": "domain-member" },
+        "pageComposer": "none",
+        "icon": "home",
+        "names": {
+          "en": "Personal workspace",
+          "zh-CN": "个人工作台",
+          "zh-TW": "個人工作台",
+          "ja": "パーソナルワークスペース",
+          "de": "Persönlicher Arbeitsbereich",
+          "fr": "Espace personnel",
+          "it": "Area personale",
+          "ar": "مساحة العمل الشخصية"
+        },
+        "descriptions": {
+          "en": "Your apps, agents, dashboards, tasks and recent work",
+          "zh-CN": "常用应用、智能体、仪表盘、任务与最近访问"
+        }
+      }, {
         "id": "home-object-detail-body",
         "pageKey": "home-object-detail-body",
         "panelId": "builtin-product-object-detail-body",
