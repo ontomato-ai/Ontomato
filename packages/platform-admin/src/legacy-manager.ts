@@ -15,6 +15,7 @@ const oldPages: Record<string, string> = {
   "/visual-modeling": routes.modeling.path,
   "/admin/ontology/visual-modeling": routes.modeling.path,
   "/knowledge/feedback": routes.feedback.path,
+  "/governance/feedback": routes.feedback.path,
   "/knowledge": routes.knowledge.path,
   "/knowledge-governance": routes.knowledge.path,
   "/admin/model-config": routes.models.path,

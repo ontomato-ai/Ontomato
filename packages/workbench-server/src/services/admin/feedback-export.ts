@@ -63,5 +63,6 @@ export async function exportFeedback({ timeZone, ...filters }: ExportFilters & {
     bytes: Buffer.from(feedbackCsv(records, filters.locale, timeZone), "utf8"),
     suggestedName: `feedback_records_${new Date().toISOString().slice(0, 10)}.csv`,
     mime: "text/csv" as const,
+    count: records.length,
   };
 }

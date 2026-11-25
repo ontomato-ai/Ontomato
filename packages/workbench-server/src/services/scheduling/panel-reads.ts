@@ -29,6 +29,29 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
   const taskPath = (id: string) => `${base}/${encodeURIComponent(id)}`;
   const locale = resolveLocale(viewer.locale);
   const catalogPath = `${config.dataQuery.baseUrl.replace(/\/$/, "")}/platform/applications?purpose=schedules`;
+  async function loadApplicationsStatus() {
+    const [response, catalog] = await Promise.all([
+      backendGet("scheduled-task-applications", `${base}/applications`, options),
+      backendGet("scheduled-task-application-names", catalogPath, options),
+    ]);
+    const { applications } = platformScheduleApplicationsSchema.parse(JSON.parse(response.text));
+    const { data } = applicationCatalogResponse.parse(JSON.parse(catalog.text));
+    const entries = new Map(data.map((entry) => [
+      entry.id,
+      { name: localizedApplicationText(entry.names, locale) ?? entry.id, icon: entry.icon },
+    ]));
+    const resolved: (typeof applications[number] & { name: string; icon?: string })[] = [];
+    const missingIds: string[] = [];
+    for (const app of applications) {
+      const entry = entries.get(app.id);
+      if (!entry) {
+        missingIds.push(app.id);
+      } else {
+        resolved.push({ ...app, name: entry.name, ...(entry.icon ? { icon: entry.icon } : {}) });
+      }
+    }
+    return { applications: resolved, missingIds };
+  }
   return createScheduledTaskReads({
     async list() {
       const response = await backendGet("scheduled-task-list", base, options);
@@ -47,19 +70,13 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
       const response = await backendGet("scheduled-task-run", `${taskPath(id)}/runs/${encodeURIComponent(runId)}`, options);
       return platformTaskRunSchema.parse(JSON.parse(response.text));
     },
+    applicationsStatus: loadApplicationsStatus,
     async applications() {
-      const [response, catalog] = await Promise.all([
-        backendGet("scheduled-task-applications", `${base}/applications`, options),
-        backendGet("scheduled-task-application-names", catalogPath, options),
-      ]);
-      const { applications } = platformScheduleApplicationsSchema.parse(JSON.parse(response.text));
-      const { data } = applicationCatalogResponse.parse(JSON.parse(catalog.text));
-      const names = new Map(data.map(({ id, names }) => [id, localizedApplicationText(names, locale) ?? id]));
-      return applications.map(app => {
-        const name = names.get(app.id);
-        if (name === undefined) throw new Error(`The application catalog has no scheduled application '${app.id}'`);
-        return { ...app, name };
-      });
+      const { applications, missingIds } = await loadApplicationsStatus();
+      if (missingIds.length > 0) {
+        throw new Error(`The application catalog has no scheduled application '${missingIds[0]}'`);
+      }
+      return applications;
     },
     async form(appId, request) {
       const response = await backendPost(

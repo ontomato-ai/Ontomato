@@ -439,6 +439,7 @@ export const en = {
   "panels.knowledge.statusAll": "All",
   "panels.feedback.all": "All",
   "panels.feedback.export": "Export CSV",
+  "panels.feedback.exportEmpty": "No feedback records match the current filters",
   "panels.modelSettings.usageTitle": "Model usage",
   "panels.modelSettings.modelCount": "{count} models",
   "panels.modelSettings.connectionStates.ready": "Ready",

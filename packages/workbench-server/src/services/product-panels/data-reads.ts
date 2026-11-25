@@ -641,6 +641,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
       counts: (_selection, params) => schedules.counts(panelReadParameterSchemas.keyword.optional().parse(params.by)),
+      status: () => schedules.status(),
       record: selection => schedules.record(selection.primaryKey!),
       runs: (selection, params) => schedules.runs(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
       run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),

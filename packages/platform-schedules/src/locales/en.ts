@@ -118,7 +118,6 @@ export default {
       cronHint: "Six fields, seconds first: 0 30 2 * * * runs at 02:30:00 every day.",
       loadingForm: "Reading the application's form…",
       formFailed: "The application's form could not be read",
-      formChanged: "The application's form changed since you opened it and has been replaced; check the fields and save again.",
       changedElsewhere: "This task was just changed elsewhere; its latest version is loaded. Check it and save again.",
       choose: "Choose",
       required: "Required.",
