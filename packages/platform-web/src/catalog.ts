@@ -130,23 +130,7 @@ export function useApplicationCatalog() {
   };
 }
 
-/**
- * First visible panel entry path of an application, ordered by its declared groups (named entries preferred).
- */
-export function firstVisiblePanelPath(app: CatalogApplication): string | null {
-  const uses = app.panelUses ?? [];
-  if (uses.length === 0) return null;
-  const ordered = app.groups?.length
-    ? [
-        ...[...app.groups].sort((left, right) => left.sort - right.sort).flatMap((group) =>
-          uses.filter((use) => use.groupKey === group.key),
-        ),
-        ...uses.filter((use) => !use.groupKey || !app.groups!.some((group) => group.key === use.groupKey)),
-      ]
-    : uses;
-  const first = ordered.find((use) => Boolean(use.names)) ?? ordered[0];
-  return first ? panelUsePath(first.path) : null;
-}
+export { firstVisiblePanelPath } from "./native-layouts";
 
 /**
  * The native built-in application whose declared address space (`entry.path`) holds `path`, longest prefix winning.

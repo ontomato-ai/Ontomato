@@ -1,10 +1,27 @@
 import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
-import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
+import { applicationRootPath, isPanelApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { firstVisiblePanelPath } from "./catalog";
 import type { AppPartition } from "./partition";
+
+/**
+ * First visible panel entry path of an application, ordered by its declared groups (named entries preferred).
+ */
+export function firstVisiblePanelPath(app: CatalogApplication): string | null {
+  const uses = app.panelUses ?? [];
+  if (uses.length === 0) return null;
+  const ordered = app.groups?.length
+    ? [
+        ...[...app.groups].sort((left, right) => left.sort - right.sort).flatMap((group) =>
+          uses.filter((use) => use.groupKey === group.key),
+        ),
+        ...uses.filter((use) => !use.groupKey || !app.groups!.some((group) => group.key === use.groupKey)),
+      ]
+    : uses;
+  const first = ordered.find((use) => Boolean(use.names)) ?? ordered[0];
+  return first ? panelUsePath(first.path) : null;
+}
 export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
   { renderer: "personal-workspace", sections: [] },
