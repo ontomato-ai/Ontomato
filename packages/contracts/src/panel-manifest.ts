@@ -360,11 +360,44 @@ export const panelPlacementTypeSchema = z.object({
   kind: z.literal("placement"), candidates: panelPlacementCandidatesSchema,
 }).strict();
 
+/** One positioned item inside a typed `grid-layout` state value. */
+export const panelGridLayoutItemSchema = z.object({
+  id: key,
+  colSpan: z.number().int().min(1).max(24),
+  rowSpan: z.number().int().min(1).max(24),
+  hidden: z.boolean().optional(),
+}).strict();
+export type PanelGridLayoutItem = z.infer<typeof panelGridLayoutItemSchema>;
+
+/** One ordered group inside a typed `grid-layout` state value. */
+export const panelGridLayoutGroupSchema = z.object({
+  id: key,
+  title: z.string().min(1).max(200).optional(),
+  items: z.array(panelGridLayoutItemSchema),
+}).strict();
+export type PanelGridLayoutGroup = z.infer<typeof panelGridLayoutGroupSchema>;
+
+/** Runtime value carried by a typed `grid-layout` state port. */
+export const panelGridLayoutValueSchema = z.object({
+  groups: z.array(panelGridLayoutGroupSchema),
+}).strict();
+export type PanelGridLayoutValue = z.infer<typeof panelGridLayoutValueSchema>;
+
+/** Typed grid layout port with optional column/row bounds and allowed group/item IDs. */
+export const panelGridLayoutTypeSchema = z.object({
+  kind: z.literal("grid-layout"),
+  columns: z.number().int().min(1).max(24).optional(),
+  maxRowSpan: z.number().int().min(1).max(24).optional(),
+  groupIds: z.array(key).nonempty().optional(),
+  itemIds: z.array(key).nonempty().optional(),
+}).strict();
+export type PanelGridLayoutType = z.infer<typeof panelGridLayoutTypeSchema>;
+
 /** Generic structured JSON state (e.g. graph coordinates, date ranges, or personal UI layout preferences). */
 export const panelJsonTypeSchema = z.object({ kind: z.literal("json") }).strict();
 
 export const directPanelPortTypeSchema = z.union([
-  ontologyParameterTypeSchema, panelPlacementTypeSchema, panelJsonTypeSchema,
+  ontologyParameterTypeSchema, panelPlacementTypeSchema, panelGridLayoutTypeSchema, panelJsonTypeSchema,
 ]);
 export type DirectPanelPortType = z.infer<typeof directPanelPortTypeSchema>;
 
@@ -390,6 +423,28 @@ export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknow
       return Array.isArray(value) && value.every(item => item !== null && matchesDirectPanelValue(type.items, item));
     case "json":
       return runtimeJsonValueSchema.safeParse(value).success;
+    case "grid-layout": {
+      const parsed = panelGridLayoutValueSchema.safeParse(value);
+      if (!parsed.success) return false;
+      const maxColumns = type.columns ?? 24;
+      const maxRowSpan = type.maxRowSpan ?? 24;
+      const allowedGroups = type.groupIds ? new Set(type.groupIds) : null;
+      const allowedItems = type.itemIds ? new Set(type.itemIds) : null;
+      const seenGroups = new Set<string>();
+      const seenItems = new Set<string>();
+      for (const group of parsed.data.groups) {
+        if (seenGroups.has(group.id)) return false;
+        seenGroups.add(group.id);
+        if (allowedGroups && !allowedGroups.has(group.id)) return false;
+        for (const item of group.items) {
+          if (seenItems.has(item.id)) return false;
+          seenItems.add(item.id);
+          if (allowedItems && !allowedItems.has(item.id)) return false;
+          if (item.colSpan > maxColumns || item.rowSpan > maxRowSpan) return false;
+        }
+      }
+      return true;
+    }
     case "placement": {
       const placement = panelPlacementSchema.safeParse(value);
       if (!placement.success) return false;
@@ -574,7 +629,8 @@ export function normalizeExternalPanelValue(
       return { ok: true, value: normalizedItems };
     }
     case "json":
-    case "placement": {
+    case "placement":
+    case "grid-layout": {
       const parsed = panelDeepLinkStateValueSchema.safeParse(value);
       return parsed.success && matchesDirectPanelValue(type, parsed.data)
         ? { ok: true, value: parsed.data }
@@ -641,6 +697,18 @@ export function panelPortAccepts(target: DirectPanelPortType, source: DirectPane
   if (target.kind === "child-object")
     return source.kind === "child-object" && target.parentType === source.parentType && target.collection === source.collection;
   if (target.kind === "list") return source.kind === "list" && panelPortAccepts(target.items, source.items);
+  if (target.kind === "grid-layout") {
+    if (source.kind !== "grid-layout") return false;
+    if (target.columns !== undefined && (source.columns === undefined || source.columns > target.columns)) return false;
+    if (target.maxRowSpan !== undefined && (source.maxRowSpan === undefined || source.maxRowSpan > target.maxRowSpan)) return false;
+    if (target.groupIds !== undefined) {
+      if (source.groupIds === undefined || !source.groupIds.every(id => target.groupIds!.includes(id))) return false;
+    }
+    if (target.itemIds !== undefined) {
+      if (source.itemIds === undefined || !source.itemIds.every(id => target.itemIds!.includes(id))) return false;
+    }
+    return true;
+  }
   if (source.kind !== "placement") return false;
   const allowed = target.candidates;
   const offered = source.candidates;

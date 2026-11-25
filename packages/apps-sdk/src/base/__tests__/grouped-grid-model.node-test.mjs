@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import {
   buildGroupedGridGroups,
   buildLayoutChangePayload,
+  buildStaticGroupedGridState,
   moveGridItem,
   reorderGridGroups,
   resizeGridItem,
+  serializeStaticGridLayout,
+  setStaticGridItemHidden,
 } from "../grouped-grid-model.ts";
 
 function makeItem(id, groupId, extras = {}) {
@@ -173,4 +176,129 @@ test("reorderGridGroups, moveGridItem, and resizeGridItem produce deterministic 
 
   // No-op resize returns null
   assert.equal(resizeGridItem(resized, "test:Item:a", 8, 3), null);
+});
+
+test("buildStaticGroupedGridState merges saved layout, preserves hidden items, drops stale IDs, and appends new items", () => {
+  const groups = [
+    { id: "primary", title: "Primary" },
+    { id: "secondary", title: "Secondary" },
+  ];
+  const items = [
+    { id: "alpha", title: "Alpha", groupId: "primary", colSpan: 6, rowSpan: 2, minColSpan: 3, maxColSpan: 8 },
+    { id: "beta", title: "Beta", groupId: "primary", colSpan: 6, rowSpan: 2 },
+    { id: "gamma", title: "Gamma", groupId: "secondary", colSpan: 12, rowSpan: 2 },
+    { id: "delta", titleKey: "blocks.delta", title: "Delta Fallback", groupId: "secondary", colSpan: 4, rowSpan: 1 },
+  ];
+  const savedLayout = {
+    groups: [
+      {
+        id: "secondary",
+        items: [
+          { id: "stale-removed", colSpan: 6, rowSpan: 2 },
+          { id: "gamma", colSpan: 8, rowSpan: 3 },
+        ],
+      },
+      {
+        id: "primary",
+        items: [
+          { id: "beta", colSpan: 4, rowSpan: 2, hidden: true },
+          { id: "alpha", colSpan: 12, rowSpan: 9 },
+        ],
+      },
+    ],
+  };
+
+  const built = buildStaticGroupedGridState({
+    items,
+    groups,
+    layout: savedLayout,
+    columns: 12,
+    minColSpan: 2,
+    maxColSpan: 12,
+    minRowSpan: 1,
+    maxRowSpan: 6,
+    resolveTitle: (entry) => (entry.titleKey === "blocks.delta" ? "Delta Translated" : (entry.title ?? entry.id)),
+  });
+
+  // Saved group order is respected, stale ID is dropped, delta is appended to secondary
+  assert.deepEqual(built.visibleGroups.map((g) => g.id), ["secondary", "primary"]);
+  assert.deepEqual(
+    built.visibleGroups.map((g) => g.items.map((i) => ({ id: i.itemId, title: i.title, colSpan: i.colSpan, rowSpan: i.rowSpan }))),
+    [
+      [
+        { id: "gamma", title: "Gamma", colSpan: 8, rowSpan: 3 },
+        { id: "delta", title: "Delta Translated", colSpan: 4, rowSpan: 1 },
+      ],
+      [
+        // beta is omitted from visibleGroups; alpha is clamped to maxColSpan=8 and grid maxRowSpan=6
+        { id: "alpha", title: "Alpha", colSpan: 8, rowSpan: 6 },
+      ],
+    ],
+  );
+  assert.equal(built.hiddenCount, 1);
+  // Synthetic record and itemRef use grid:item
+  assert.deepEqual(built.visibleGroups[1].items[0].itemRef, { className: "grid:item", primaryKey: "alpha" });
+  assert.equal(built.visibleGroups[1].items[0].row.label, "Alpha");
+  // Full layoutState preserves hidden beta at index 0 of primary with its span
+  assert.deepEqual(built.layoutState.groups[1].items, [
+    { id: "beta", colSpan: 4, rowSpan: 2, hidden: true },
+    { id: "alpha", colSpan: 8, rowSpan: 6 },
+  ]);
+});
+
+test("serializeStaticGridLayout and setStaticGridItemHidden preserve hidden item order and spans across edits", () => {
+  const items = [
+    { id: "a", title: "A", colSpan: 4, rowSpan: 2 },
+    { id: "b", title: "B", colSpan: 4, rowSpan: 2 },
+    { id: "c", title: "C", colSpan: 4, rowSpan: 2 },
+  ];
+
+  const initial = buildStaticGroupedGridState({
+    items,
+    layout: {
+      groups: [
+        {
+          id: "main",
+          items: [
+            { id: "a", colSpan: 4, rowSpan: 2 },
+            { id: "b", colSpan: 5, rowSpan: 3, hidden: true },
+            { id: "c", colSpan: 4, rowSpan: 2 },
+          ],
+        },
+      ],
+    },
+    columns: 12,
+    minColSpan: 2,
+    maxColSpan: 12,
+    minRowSpan: 1,
+    maxRowSpan: 6,
+  });
+
+  // Reorder c before a among visible items, then serialize: hidden b stays at index 1 with 5x3 span
+  const reordered = moveGridItem(initial.visibleGroups, "grid:item:c", "main", {
+    targetItemKey: "grid:item:a",
+    position: "before",
+  });
+  assert.ok(reordered);
+  const serialized = serializeStaticGridLayout(reordered, initial.layoutState, items);
+  assert.deepEqual(serialized, {
+    groups: [
+      {
+        id: "main",
+        items: [
+          { id: "c", colSpan: 4, rowSpan: 2 },
+          { id: "b", colSpan: 5, rowSpan: 3, hidden: true },
+          { id: "a", colSpan: 4, rowSpan: 2 },
+        ],
+      },
+    ],
+  });
+
+  // Hide 'a' and unhide 'b' via setStaticGridItemHidden
+  const afterHide = setStaticGridItemHidden(serialized, "a", true);
+  assert.equal(afterHide.groups[0].items[2].hidden, true);
+  const afterUnhide = setStaticGridItemHidden(afterHide, "b", false);
+  assert.equal(afterUnhide.groups[0].items[1].hidden, undefined);
+  assert.equal(afterUnhide.groups[0].items[1].colSpan, 5);
+  assert.equal(afterUnhide.groups[0].items[1].rowSpan, 3);
 });

@@ -4,7 +4,10 @@ import type {
   GroupedGridGroupSummary,
   GroupedGridItem,
   GroupedGridLayoutChange,
+  GroupedGridLayoutState,
   GroupedGridSection,
+  GroupedGridStaticGroupConfig,
+  GroupedGridStaticItemConfig,
 } from "./grouped-grid-types";
 import type { ObjectListRef } from "./object-list-types";
 
@@ -173,6 +176,8 @@ export function buildGroupedGridGroups(options: BuildGroupedGridOptions): Groupe
 
     group.items.push({
       key: `${itemRef.className}:${itemRef.primaryKey}`,
+      itemId: row.primaryKey,
+      title: row.label || row.primaryKey,
       primaryKey: row.primaryKey,
       row,
       itemRef,
@@ -338,6 +343,363 @@ export function buildLayoutChangePayload(groups: readonly GroupedGridGroup[]): G
         colSpan: item.colSpan,
         rowSpan: item.rowSpan,
       })),
+    })),
+  };
+}
+
+export interface BuildStaticGroupedGridOptions {
+  readonly items: readonly GroupedGridStaticItemConfig[];
+  readonly groups?: readonly GroupedGridStaticGroupConfig[];
+  readonly layout?: GroupedGridLayoutState | null;
+  readonly columns: number;
+  readonly minColSpan: number;
+  readonly maxColSpan: number;
+  readonly minRowSpan: number;
+  readonly maxRowSpan: number;
+  readonly resolveTitle?: (entry: { readonly id: string; readonly title?: string; readonly titleKey?: string }) => string;
+}
+
+export interface BuiltStaticGroupedGridState {
+  readonly visibleGroups: GroupedGridGroup[];
+  readonly layoutState: GroupedGridLayoutState;
+  readonly hiddenCount: number;
+}
+
+type MutableStaticLayoutItem = {
+  id: string;
+  colSpan: number;
+  rowSpan: number;
+  hidden?: boolean;
+};
+
+type MutableStaticGroupEntry = {
+  id: string;
+  title: string;
+  items: MutableStaticLayoutItem[];
+};
+
+const STATIC_ITEM_CLASS_NAME = "grid:item";
+
+function resolveStaticItemBounds(
+  item: GroupedGridStaticItemConfig,
+  columns: number,
+  minCols: number,
+  maxCols: number,
+  minRows: number,
+  maxRows: number,
+) {
+  const maxColSpan = item.maxColSpan !== undefined
+    ? Math.max(1, Math.min(columns, Math.floor(item.maxColSpan)))
+    : maxCols;
+  const minColSpan = item.minColSpan !== undefined
+    ? Math.max(1, Math.min(maxColSpan, Math.floor(item.minColSpan)))
+    : Math.min(maxColSpan, minCols);
+  const maxRowSpan = item.maxRowSpan !== undefined
+    ? Math.max(1, Math.min(24, Math.floor(item.maxRowSpan)))
+    : maxRows;
+  const minRowSpan = item.minRowSpan !== undefined
+    ? Math.max(1, Math.min(maxRowSpan, Math.floor(item.minRowSpan)))
+    : Math.min(maxRowSpan, minRows);
+  return { minColSpan, maxColSpan, minRowSpan, maxRowSpan };
+}
+
+/**
+ * Resolve fixed-member `GroupedGrid` items and groups against an optional typed `layout` state.
+ * Preserves hidden items in `layoutState` while omitting them from `visibleGroups`, filters out stale IDs
+ * absent from `items`, and appends newly added items into their default group with clamped spans.
+ */
+export function buildStaticGroupedGridState(options: BuildStaticGroupedGridOptions): BuiltStaticGroupedGridState {
+  const columns = Math.max(1, Math.min(24, Math.floor(options.columns || 12)));
+  const maxCols = Math.max(1, Math.min(columns, Math.floor(options.maxColSpan || columns)));
+  const minCols = Math.max(1, Math.min(maxCols, Math.floor(options.minColSpan || 1)));
+  const maxRows = Math.max(1, Math.min(24, Math.floor(options.maxRowSpan || 6)));
+  const minRows = Math.max(1, Math.min(maxRows, Math.floor(options.minRowSpan || 1)));
+
+  const itemOrder: GroupedGridStaticItemConfig[] = [];
+  const itemById = new Map<string, GroupedGridStaticItemConfig>();
+  for (const item of options.items ?? []) {
+    const id = typeof item?.id === "string" ? item.id.trim() : "";
+    if (!id || itemById.has(id)) continue;
+    const normalized: GroupedGridStaticItemConfig = id === item.id ? item : { ...item, id };
+    itemOrder.push(normalized);
+    itemById.set(id, normalized);
+  }
+
+  const declaredGroups = new Map<string, { id: string; title: string }>();
+  for (const group of options.groups ?? []) {
+    const id = typeof group?.id === "string" ? group.id.trim() : "";
+    if (!id || declaredGroups.has(id)) continue;
+    const hasTitle = Boolean(group.titleKey || group.title?.trim());
+    const resolvedTitle = hasTitle
+      ? (options.resolveTitle ? options.resolveTitle(group).trim() : (group.title?.trim() ?? ""))
+      : "";
+    declaredGroups.set(id, { id, title: resolvedTitle });
+  }
+
+  const knownGroupIds = new Set<string>(declaredGroups.keys());
+  for (const item of itemOrder) {
+    const gid = item.groupId?.trim();
+    if (gid) knownGroupIds.add(gid);
+  }
+
+  const groupEntries = new Map<string, MutableStaticGroupEntry>();
+  const placedItemIds = new Set<string>();
+
+  const clampForItem = (cfg: GroupedGridStaticItemConfig, rawCol: unknown, rawRow: unknown) => {
+    const bounds = resolveStaticItemBounds(cfg, columns, minCols, maxCols, minRows, maxRows);
+    const defaultCol = clampGridSpan(cfg.colSpan, bounds.minColSpan, bounds.maxColSpan, Math.min(6, bounds.maxColSpan));
+    const defaultRow = clampGridSpan(cfg.rowSpan, bounds.minRowSpan, bounds.maxRowSpan, 1);
+    return {
+      ...bounds,
+      colSpan: clampGridSpan(rawCol, bounds.minColSpan, bounds.maxColSpan, defaultCol),
+      rowSpan: clampGridSpan(rawRow, bounds.minRowSpan, bounds.maxRowSpan, defaultRow),
+    };
+  };
+
+  if (options.layout && Array.isArray(options.layout.groups)) {
+    for (const rawGroup of options.layout.groups) {
+      if (!rawGroup || typeof rawGroup !== "object") continue;
+      const gid = typeof rawGroup.id === "string" ? rawGroup.id.trim() : "";
+      if (!gid || groupEntries.has(gid)) continue;
+      const rawItems: readonly unknown[] = Array.isArray(rawGroup.items) ? rawGroup.items : [];
+      const validRawItems = rawItems.filter((entry: unknown): entry is GroupedGridLayoutState["groups"][number]["items"][number] => {
+        if (!entry || typeof entry !== "object") return false;
+        const id = typeof (entry as { id?: unknown }).id === "string" ? ((entry as { id: string }).id).trim() : "";
+        return Boolean(id) && itemById.has(id) && !placedItemIds.has(id);
+      });
+      const keepGroup = declaredGroups.size > 0
+        ? knownGroupIds.has(gid)
+        : (knownGroupIds.has(gid) || validRawItems.length > 0);
+      if (!keepGroup) continue;
+
+      const declared = declaredGroups.get(gid);
+      const title = declared
+        ? declared.title
+        : (typeof rawGroup.title === "string" ? rawGroup.title.trim() : "");
+      const groupItems: MutableStaticLayoutItem[] = [];
+      for (const rawItem of validRawItems) {
+        const id = rawItem.id.trim();
+        if (placedItemIds.has(id)) continue;
+        const cfg = itemById.get(id)!;
+        const spans = clampForItem(cfg, rawItem.colSpan, rawItem.rowSpan);
+        groupItems.push({
+          id,
+          colSpan: spans.colSpan,
+          rowSpan: spans.rowSpan,
+          ...(rawItem.hidden === true ? { hidden: true } : {}),
+        });
+        placedItemIds.add(id);
+      }
+      groupEntries.set(gid, { id: gid, title, items: groupItems });
+    }
+  }
+
+  for (const [gid, declared] of declaredGroups) {
+    if (!groupEntries.has(gid)) {
+      groupEntries.set(gid, { id: gid, title: declared.title, items: [] });
+    }
+  }
+
+  for (const cfg of itemOrder) {
+    const gid = cfg.groupId?.trim();
+    if (gid && !groupEntries.has(gid)) {
+      groupEntries.set(gid, { id: gid, title: "", items: [] });
+    }
+  }
+
+  if (groupEntries.size === 0 && itemOrder.length > 0) {
+    groupEntries.set("default", { id: "default", title: "", items: [] });
+  }
+
+  const firstGroupId = groupEntries.keys().next().value as string | undefined;
+  for (const cfg of itemOrder) {
+    if (placedItemIds.has(cfg.id)) continue;
+    const preferredGroupId = cfg.groupId?.trim();
+    const targetGroupId = preferredGroupId && groupEntries.has(preferredGroupId)
+      ? preferredGroupId
+      : firstGroupId;
+    if (!targetGroupId) continue;
+    const spans = clampForItem(cfg, cfg.colSpan, cfg.rowSpan);
+    groupEntries.get(targetGroupId)!.items.push({
+      id: cfg.id,
+      colSpan: spans.colSpan,
+      rowSpan: spans.rowSpan,
+      ...(cfg.hidden === true ? { hidden: true } : {}),
+    });
+    placedItemIds.add(cfg.id);
+  }
+
+  let hiddenCount = 0;
+  let globalRowIndex = 0;
+  const visibleGroups: GroupedGridGroup[] = [];
+  const layoutGroups: GroupedGridLayoutState["groups"][number][] = [];
+
+  let groupOrder = 0;
+  for (const entry of groupEntries.values()) {
+    const visibleItems: GroupedGridItem[] = [];
+    for (const item of entry.items) {
+      if (item.hidden === true) {
+        hiddenCount += 1;
+        continue;
+      }
+      const cfg = itemById.get(item.id)!;
+      const bounds = resolveStaticItemBounds(cfg, columns, minCols, maxCols, minRows, maxRows);
+      const resolvedTitle = (options.resolveTitle ? options.resolveTitle(cfg) : (cfg.title?.trim() ?? "")).trim()
+        || cfg.title?.trim()
+        || cfg.id;
+      const itemRef: ObjectListRef = {
+        className: STATIC_ITEM_CLASS_NAME,
+        primaryKey: cfg.id,
+      };
+      const syntheticRow: PlatformObjectRecord = {
+        className: STATIC_ITEM_CLASS_NAME,
+        primaryKey: cfg.id,
+        label: resolvedTitle,
+        fields: {},
+      };
+      visibleItems.push({
+        key: `${STATIC_ITEM_CLASS_NAME}:${cfg.id}`,
+        itemId: cfg.id,
+        title: resolvedTitle,
+        primaryKey: cfg.id,
+        row: syntheticRow,
+        itemRef,
+        rowIndex: globalRowIndex,
+        groupId: entry.id,
+        section: undefined,
+        order: visibleItems.length,
+        colSpan: item.colSpan,
+        rowSpan: item.rowSpan,
+        minColSpan: bounds.minColSpan,
+        maxColSpan: bounds.maxColSpan,
+        minRowSpan: bounds.minRowSpan,
+        maxRowSpan: bounds.maxRowSpan,
+        hideable: cfg.hideable,
+      });
+      globalRowIndex += 1;
+    }
+
+    visibleGroups.push({
+      id: entry.id,
+      title: entry.title,
+      order: groupOrder,
+      items: visibleItems,
+      sections: [{ key: "__default__", items: visibleItems }],
+    });
+    layoutGroups.push({
+      id: entry.id,
+      ...(entry.title ? { title: entry.title } : {}),
+      items: entry.items.map((item) => ({
+        id: item.id,
+        colSpan: item.colSpan,
+        rowSpan: item.rowSpan,
+        ...(item.hidden === true ? { hidden: true } : {}),
+      })),
+    });
+    groupOrder += 1;
+  }
+
+  return {
+    visibleGroups,
+    layoutState: { groups: layoutGroups },
+    hiddenCount,
+  };
+}
+
+/**
+ * Serialize updated visible groups into a normalized `GroupedGridLayoutState`,
+ * preserving any hidden items from `currentLayout` in their groups at their last known positions and spans.
+ */
+export function serializeStaticGridLayout(
+  visibleGroups: readonly GroupedGridGroup[],
+  currentLayout: GroupedGridLayoutState | null | undefined,
+  items: readonly GroupedGridStaticItemConfig[],
+): GroupedGridLayoutState {
+  const validItemIds = new Set(
+    (items ?? []).map((item) => item.id.trim()).filter(Boolean),
+  );
+  const visibleItemIds = new Set<string>();
+  for (const group of visibleGroups) {
+    for (const item of group.items) {
+      if (validItemIds.has(item.itemId)) visibleItemIds.add(item.itemId);
+    }
+  }
+
+  const hiddenByGroup = new Map<string, Array<{ index: number; item: MutableStaticLayoutItem }>>();
+  const orphanHidden: Array<{ index: number; item: MutableStaticLayoutItem }> = [];
+  const visibleGroupIds = new Set(visibleGroups.map((group) => group.id));
+  const seenHidden = new Set<string>();
+
+  for (const prevGroup of currentLayout?.groups ?? []) {
+    prevGroup.items.forEach((prevItem, index) => {
+      if (prevItem.hidden !== true) return;
+      if (!validItemIds.has(prevItem.id) || visibleItemIds.has(prevItem.id) || seenHidden.has(prevItem.id)) return;
+      seenHidden.add(prevItem.id);
+      const entry = {
+        index,
+        item: {
+          id: prevItem.id,
+          colSpan: prevItem.colSpan,
+          rowSpan: prevItem.rowSpan,
+          hidden: true,
+        },
+      };
+      if (visibleGroupIds.has(prevGroup.id)) {
+        const list = hiddenByGroup.get(prevGroup.id) ?? [];
+        list.push(entry);
+        hiddenByGroup.set(prevGroup.id, list);
+      } else {
+        orphanHidden.push(entry);
+      }
+    });
+  }
+
+  return {
+    groups: visibleGroups.map((group, groupIndex) => {
+      const merged: MutableStaticLayoutItem[] = group.items
+        .filter((item) => validItemIds.has(item.itemId))
+        .map((item) => ({
+          id: item.itemId,
+          colSpan: item.colSpan,
+          rowSpan: item.rowSpan,
+        }));
+      const hiddenEntries = [
+        ...(hiddenByGroup.get(group.id) ?? []),
+        ...(groupIndex === 0 ? orphanHidden : []),
+      ].sort((a, b) => a.index - b.index);
+      for (const { index, item } of hiddenEntries) {
+        const insertAt = Math.max(0, Math.min(index, merged.length));
+        merged.splice(insertAt, 0, item);
+      }
+      const trimmedTitle = group.title.trim();
+      return {
+        id: group.id,
+        ...(trimmedTitle ? { title: trimmedTitle } : {}),
+        items: merged,
+      };
+    }),
+  };
+}
+
+/** Return an updated `GroupedGridLayoutState` with the specified item's `hidden` flag updated. */
+export function setStaticGridItemHidden(
+  layout: GroupedGridLayoutState,
+  itemId: string,
+  hidden: boolean,
+): GroupedGridLayoutState {
+  return {
+    groups: layout.groups.map((group) => ({
+      id: group.id,
+      ...(group.title ? { title: group.title } : {}),
+      items: group.items.map((item) => {
+        if (item.id !== itemId) return item;
+        return {
+          id: item.id,
+          colSpan: item.colSpan,
+          rowSpan: item.rowSpan,
+          ...(hidden ? { hidden: true } : {}),
+        };
+      }),
     })),
   };
 }

@@ -3796,3 +3796,224 @@ test("inline MetricChart without sourceCard accepts explicit slot-supplied card 
   };
   assert.deepEqual(panelAuthoringMemberSchema.parse(slotChart), slotChart);
 });
+
+test("grid-layout state port validates values, bounds, unique IDs, and port compatibility", async () => {
+  const {
+    directPanelPortTypeSchema,
+    matchesDirectPanelValue,
+    normalizeExternalPanelValue,
+    panelGridLayoutTypeSchema,
+    panelGridLayoutValueSchema,
+    panelPortAccepts,
+  } = await import("./panel-manifest");
+
+  const constrainedType = panelGridLayoutTypeSchema.parse({
+    kind: "grid-layout",
+    columns: 12,
+    maxRowSpan: 6,
+    groupIds: ["main", "secondary"],
+    itemIds: ["block-a", "block-b", "block-c"],
+  });
+  assert.deepEqual(directPanelPortTypeSchema.parse(constrainedType), constrainedType);
+
+  const validValue = panelGridLayoutValueSchema.parse({
+    groups: [
+      {
+        id: "main",
+        title: "Primary",
+        items: [
+          { id: "block-a", colSpan: 6, rowSpan: 2 },
+          { id: "block-b", colSpan: 6, rowSpan: 2, hidden: true },
+        ],
+      },
+      {
+        id: "secondary",
+        items: [{ id: "block-c", colSpan: 12, rowSpan: 4 }],
+      },
+    ],
+  });
+  assert.equal(matchesDirectPanelValue(constrainedType, validValue), true);
+  assert.equal(matchesDirectPanelValue(constrainedType, null), true);
+  assert.deepEqual(normalizeExternalPanelValue(constrainedType, validValue), { ok: true, value: validValue });
+
+  // Duplicate group ID rejected
+  assert.equal(matchesDirectPanelValue(constrainedType, {
+    groups: [
+      { id: "main", items: [{ id: "block-a", colSpan: 6, rowSpan: 2 }] },
+      { id: "main", items: [{ id: "block-b", colSpan: 6, rowSpan: 2 }] },
+    ],
+  }), false);
+
+  // Duplicate item ID across groups rejected
+  assert.equal(matchesDirectPanelValue(constrainedType, {
+    groups: [
+      { id: "main", items: [{ id: "block-a", colSpan: 6, rowSpan: 2 }] },
+      { id: "secondary", items: [{ id: "block-a", colSpan: 6, rowSpan: 2 }] },
+    ],
+  }), false);
+
+  // Unknown itemId rejected
+  assert.equal(matchesDirectPanelValue(constrainedType, {
+    groups: [{ id: "main", items: [{ id: "unknown-block", colSpan: 6, rowSpan: 2 }] }],
+  }), false);
+
+  // Unknown groupId rejected
+  assert.equal(matchesDirectPanelValue(constrainedType, {
+    groups: [{ id: "unknown-group", items: [{ id: "block-a", colSpan: 6, rowSpan: 2 }] }],
+  }), false);
+
+  // Out-of-bounds colSpan and rowSpan rejected
+  assert.equal(matchesDirectPanelValue(constrainedType, {
+    groups: [{ id: "main", items: [{ id: "block-a", colSpan: 13, rowSpan: 2 }] }],
+  }), false);
+  assert.equal(matchesDirectPanelValue(constrainedType, {
+    groups: [{ id: "main", items: [{ id: "block-a", colSpan: 6, rowSpan: 7 }] }],
+  }), false);
+  assert.equal(normalizeExternalPanelValue(constrainedType, {
+    groups: [{ id: "main", items: [{ id: "block-a", colSpan: 13, rowSpan: 2 }] }],
+  }).ok, false);
+
+  // Port compatibility checks
+  const unbounded = panelGridLayoutTypeSchema.parse({ kind: "grid-layout" });
+  const narrower = panelGridLayoutTypeSchema.parse({
+    kind: "grid-layout",
+    columns: 8,
+    maxRowSpan: 4,
+    groupIds: ["main"],
+    itemIds: ["block-a", "block-b"],
+  });
+  const widerColumns = panelGridLayoutTypeSchema.parse({
+    kind: "grid-layout",
+    columns: 16,
+    maxRowSpan: 6,
+    groupIds: ["main"],
+    itemIds: ["block-a"],
+  });
+  const extraItem = panelGridLayoutTypeSchema.parse({
+    kind: "grid-layout",
+    columns: 12,
+    maxRowSpan: 6,
+    groupIds: ["main"],
+    itemIds: ["block-a", "extra"],
+  });
+
+  assert.equal(panelPortAccepts(unbounded, constrainedType), true);
+  assert.equal(panelPortAccepts(constrainedType, unbounded), false);
+  assert.equal(panelPortAccepts(constrainedType, narrower), true);
+  assert.equal(panelPortAccepts(constrainedType, widerColumns), false);
+  assert.equal(panelPortAccepts(constrainedType, extraItem), false);
+  assert.equal(panelPortAccepts(constrainedType, { kind: "scalar", type: "string" }), false);
+  assert.equal(panelPortAccepts({ kind: "json" }, constrainedType), true);
+  assert.equal(panelPortAccepts(constrainedType, { kind: "json" }), false);
+});
+
+test("expandPanelAuthoringMember supports static GroupedGrid with constrained personal grid-layout state and no data", async () => {
+  const { expandPanelAuthoringMember, panelAuthoringManifestSchema } = await import("./panel-check");
+
+  const groupedGridComponent = {
+    componentId: "GroupedGrid",
+    module: "@ontomato/sdk/base",
+    exportName: "GroupedGrid",
+    role: "control" as const,
+    meaning: "Generic grouped grid.",
+    effects: "Reads and writes layout state.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      record: { results: ["panelRecord" as const], required: false },
+      rows: { results: ["panelRecordList" as const], required: false },
+    },
+    inputs: {
+      selected: { kind: "object" as const, objectType: "@data:rows" },
+      layout: { kind: "grid-layout" as const },
+    },
+    outputs: {
+      selected: { kind: "object" as const, objectType: "@data:rows" },
+      layout: { kind: "grid-layout" as const },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar" as const, type: "string" as const },
+      groupCount: { kind: "scalar" as const, type: "number" as const },
+      itemCount: { kind: "scalar" as const, type: "number" as const },
+      hiddenCount: { kind: "scalar" as const, type: "number" as const },
+    },
+    ports: { props: [], events: [], slots: [] },
+  };
+
+  const manifest = panelAuthoringManifestSchema.parse({
+    state: {
+      layout: {
+        type: {
+          kind: "grid-layout",
+          columns: 12,
+          maxRowSpan: 6,
+          groupIds: ["main"],
+          itemIds: ["summary", "activity"],
+        },
+        personal: true,
+        default: {
+          groups: [
+            {
+              id: "main",
+              items: [
+                { id: "summary", colSpan: 6, rowSpan: 2 },
+                { id: "activity", colSpan: 6, rowSpan: 2 },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    members: {
+      canvas: {
+        component: "GroupedGrid",
+        state: { layout: "layout" },
+        config: {
+          columns: 12,
+          showGroupHeaders: false,
+          items: [
+            { id: "summary", title: "Summary", groupId: "main", colSpan: 6, rowSpan: 2 },
+            { id: "activity", title: "Activity", groupId: "main", colSpan: 6, rowSpan: 2 },
+          ],
+        },
+      },
+    },
+  });
+
+  const member = manifest.members.canvas;
+  assert.ok("component" in member);
+  const expanded = expandPanelAuthoringMember("canvas", member, {
+    state: manifest.state,
+    components: [groupedGridComponent],
+    typeTable: { objectTypes: {} },
+  });
+
+  assert.equal(expanded.projection.componentId, "@ontomato/sdk:GroupedGrid");
+  assert.deepEqual(expanded.projection.data, {});
+  assert.deepEqual(expanded.projection.inputs.layout, manifest.state.layout.type);
+  assert.deepEqual(expanded.projection.outputs.layout, manifest.state.layout.type);
+  assert.deepEqual(expanded.placement.inputs, { layout: { state: "layout" } });
+  assert.deepEqual(expanded.placement.outputs, { layout: { state: "layout" } });
+
+  // Static config.items referencing an item ID outside state.layout.itemIds is rejected.
+  const badMember = panelAuthoringManifestSchema.parse({
+    state: manifest.state,
+    members: {
+      canvas: {
+        component: "GroupedGrid",
+        state: { layout: "layout" },
+        config: {
+          items: [{ id: "undeclared-item", title: "Bad" }],
+        },
+      },
+    },
+  }).members.canvas;
+  assert.ok("component" in badMember);
+  assert.throws(
+    () => expandPanelAuthoringMember("canvas", badMember, {
+      state: manifest.state,
+      components: [groupedGridComponent],
+      typeTable: { objectTypes: {} },
+    }),
+    /itemIds/,
+  );
+});

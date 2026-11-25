@@ -124,7 +124,9 @@ const inlineMemberSchema = z.object({
 
   const data = Object.entries(member.data ?? {});
   const hasOperations = member.operation !== undefined || (member.operations !== undefined && Object.keys(member.operations).length > 0);
-  if (!data.length && !hasOperations) {
+  const isStaticGroupedGrid = isOfficialComponent(member.component, "GroupedGrid")
+    && (Array.isArray(member.config?.items) || member.state?.layout !== undefined || member.inputs?.layout !== undefined);
+  if (!data.length && !hasOperations && !isStaticGroupedGrid) {
     issue(["data"], "Declare a named read or an operation");
   }
   if (member.operationParams !== undefined && member.operation === undefined) {
