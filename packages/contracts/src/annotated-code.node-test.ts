@@ -78,11 +78,15 @@ test("annotatedCodeSchema accepts nested children, structured detail refs, tones
   assert.deepEqual(parsed, payload);
   assert.equal(panelReadResultIdSchema.parse("annotatedCode"), "annotatedCode");
   assert.deepEqual(panelReadResultSchemas.annotatedCode.parse(payload), payload);
+
+  const withLanguage = annotatedCodeSchema.parse({ ...payload, language: "python" });
+  assert.equal(withLanguage.language, "python");
 });
 
 test("annotatedCodeSchema rejects invalid line ranges, missing required fields, bad tones, bad refs, and extra keys", () => {
   assert.throws(() => annotatedCodeSchema.parse({}));
   assert.throws(() => annotatedCodeSchema.parse({ segments: [], extra: true }));
+  assert.throws(() => annotatedCodeSchema.parse({ segments: [], language: "" }));
 
   assert.throws(() => annotatedCodeSchema.parse({
     segments: [{
