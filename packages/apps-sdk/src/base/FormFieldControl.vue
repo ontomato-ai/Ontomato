@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, nextTick, shallowRef, useTemplateRef, watch, type Slot } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElInput } from "element-plus/es/components/input/index";
+import { ElInputNumber } from "element-plus/es/components/input-number/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
@@ -22,7 +23,7 @@ import FormRowField from "./FormRowField.vue";
 import FormSelectChoices from "./FormSelectChoices.vue";
 import FormChoiceMatrix from "./FormChoiceMatrix.vue";
 import FormTextVariables from "./FormTextVariables.vue";
-import { ApplicationIconPicker } from "@ontomato/platform-shell";
+import { ApplicationIconPicker, appIcon } from "@ontomato/platform-shell";
 import { ScheduleFrequency, frequencyDraft, frequencyOf, type FrequencyDraft } from "@ontomato/platform-schedules/frequency-control";
 import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedules";
 
@@ -83,6 +84,30 @@ function addRow() {
 }
 /** A number as the reader typed it; cleared, it is null, never 0. (The input itself refuses text that is no number.) */
 const setNumber = (typed: string) => set(typed === "" ? null : Number(typed));
+const setStepperNumber = (next: number | null | undefined) => set(typeof next === "number" && Number.isFinite(next) ? next : null);
+const trashIcon = appIcon("trash-2");
+const RenderArrayItemFooter = (footerProps: { render: Slot; scope: Record<string, unknown> }) =>
+  footerProps.render(footerProps.scope);
+function arrayItemFooter(row: RuntimeJsonValue, index: number) {
+  return controls.resolveArrayItemFooterSlot?.(
+    props.path,
+    row,
+    index,
+    rowKey(row, index),
+    off.value,
+    props.field.readOnly,
+  );
+}
+const arrayPresentation = computed(() => (control.value.kind === "object-array" ? (control.value.presentation ?? "cards") : "cards"));
+const arrayFixedRows = computed(() => control.value.kind === "object-array" && control.value.fixedRows === true);
+const arrayReorderable = computed(() => {
+  if (control.value.kind !== "object-array" || arrayFixedRows.value) return false;
+  if (control.value.reorderable !== undefined) return control.value.reorderable;
+  return arrayPresentation.value === "cards";
+});
+const arrayVisibleColumns = computed(() => (
+  control.value.kind === "object-array" ? drawn(control.value.itemFields, false) : []
+));
 /**
  * A local time as HH:mm (the time zone is the owner's own field). Cleared, it is null where the owner's value schema
  * admits null, and otherwise the empty text, which the owner refuses as it refuses any time it does not accept.
@@ -157,6 +182,7 @@ function setFrequency(next: FrequencyDraft) {
         :model-value="text"
         :type="control.kind === 'markdown' || control.multiline ? 'textarea' : (control.kind === 'text' && control.secret ? 'password' : 'text')"
         :show-password="control.kind === 'text' && control.secret === true && !control.multiline"
+        :clearable="control.kind === 'text' && control.clearable === true && !control.multiline && !off"
         :rows="control.kind === 'text' && control.multiline && !control.rows ? 3 : undefined"
         :autosize="control.kind === 'markdown' ? { minRows: 6 } : (control.kind === 'text' && control.multiline && control.rows ? { minRows: control.rows, maxRows: Math.max(control.rows, 24) } : undefined)"
         :placeholder="control.kind === 'text' ? control.placeholder ?? undefined : undefined"
@@ -205,10 +231,24 @@ function setFrequency(next: FrequencyDraft) {
       class="sdk-form-field-time"
       @update:model-value="setTime"
     ></el-input>
+    <el-input-number
+      v-else-if="control.kind === 'number' && control.presentation === 'stepper'"
+      :model-value="typeof value === 'number' ? value : undefined"
+      :min="control.min"
+      :max="control.max"
+      :step="control.step"
+      :precision="control.precision"
+      :disabled="off"
+      class="sdk-form-field-number-stepper"
+      @update:model-value="setStepperNumber"
+    ></el-input-number>
     <el-input
       v-else-if="control.kind === 'number'"
       type="number"
       :model-value="typeof value === 'number' ? String(value) : ''"
+      :min="control.min"
+      :max="control.max"
+      :step="control.step"
       :disabled="off"
       @update:model-value="setNumber"
     ></el-input>
@@ -236,7 +276,7 @@ function setFrequency(next: FrequencyDraft) {
       </div>
       <el-button v-if="!off" class="sdk-form-add" @click="addRow">{{ t("platform.formAdd") }}</el-button>
     </div>
-    <div v-else-if="control.kind === 'object'" class="sdk-form-object">
+    <div v-else-if="control.kind === 'object'" class="sdk-form-object" :class="{ 'is-two-col': control.columns === 2 }">
       <template v-if="object">
         <form-field-control
           v-for="child in drawn(objectFields, false)"
@@ -247,7 +287,8 @@ function setFrequency(next: FrequencyDraft) {
         ></form-field-control>
         <form-advanced-section
           v-if="drawn(objectFields, true).length"
-          class="sdk-form-object"
+          class="sdk-form-object sdk-form-object-advanced"
+          :class="{ 'is-two-col': control.columns === 2 }"
           :paths="drawn(objectFields, true).map((child) => path + child.path)"
         >
           <form-field-control
@@ -264,9 +305,85 @@ function setFrequency(next: FrequencyDraft) {
       </template>
       <el-button v-else-if="!off" class="sdk-form-add" @click="addObject">{{ t("platform.formAdd") }}</el-button>
     </div>
+    <div v-else-if="control.kind === 'object-array' && arrayPresentation === 'inline'" class="sdk-form-rows sdk-form-inline-rows">
+      <p v-if="!rows.length && control.emptyText" class="sdk-form-array-empty">{{ control.emptyText }}</p>
+      <div
+        v-for="(row, index) in rows"
+        :key="rowKey(row, index)"
+        class="sdk-form-inline-row"
+        :class="{ 'has-remove': !off && !arrayFixedRows }"
+        :style="{ '--sdk-inline-cols': String(Math.max(1, arrayVisibleColumns.length)) }"
+        :data-row="path + '/' + index"
+      >
+        <form-row-field
+          v-for="child in arrayVisibleColumns"
+          :key="child.path"
+          :field="child"
+          :path="path"
+          :index="index"
+          :disabled="off"
+        ></form-row-field>
+        <el-button
+          v-if="!off && !arrayFixedRows"
+          text
+          type="danger"
+          class="sdk-form-inline-remove"
+          :aria-label="t('platform.formRemove')"
+          :title="t('platform.formRemove')"
+          @click="remove(index)"
+        >
+          <component :is="trashIcon" :size="15" aria-hidden="true" />
+        </el-button>
+      </div>
+      <el-button
+        v-if="!off && !arrayFixedRows"
+        type="primary"
+        link
+        class="sdk-form-add sdk-form-add-inline"
+        @click="addRow"
+      >
+        + {{ control.addLabel ?? t("platform.formAdd") }}
+      </el-button>
+    </div>
+    <div v-else-if="control.kind === 'object-array' && arrayPresentation === 'table'" class="sdk-form-table-wrap">
+      <table v-if="rows.length || !control.emptyText" class="sdk-form-table">
+        <thead>
+          <tr>
+            <th v-for="col in arrayVisibleColumns" :key="col.path" scope="col">{{ col.label }}</th>
+            <th v-if="!off && !arrayFixedRows" scope="col" class="sdk-form-table-actions-head"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row, index) in rows" :key="rowKey(row, index)" :data-row="path + '/' + index">
+            <td v-for="col in arrayVisibleColumns" :key="col.path">
+              <form-row-field
+                :field="col"
+                :path="path"
+                :index="index"
+                :disabled="off"
+              ></form-row-field>
+            </td>
+            <td v-if="!off && !arrayFixedRows" class="sdk-form-table-actions-cell">
+              <el-button
+                text
+                type="danger"
+                size="small"
+                :aria-label="t('platform.formRemove')"
+                @click="remove(index)"
+              >
+                <component :is="trashIcon" :size="14" aria-hidden="true" />
+              </el-button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="sdk-form-array-empty">{{ control.emptyText }}</p>
+      <el-button v-if="!off && !arrayFixedRows" class="sdk-form-add" @click="addRow">{{ control.addLabel ?? t("platform.formAdd") }}</el-button>
+    </div>
     <div v-else-if="control.kind === 'object-array'" class="sdk-form-rows">
+      <p v-if="!rows.length && control.emptyText" class="sdk-form-array-empty">{{ control.emptyText }}</p>
       <div v-for="(row, index) in rows" :key="rowKey(row, index)" class="sdk-form-row" :data-row="path + '/' + index">
-        <div class="sdk-form-row-fields">
+        <div class="sdk-form-row-fields" :class="{ 'is-two-col': control.columns === 2 }">
           <form-row-field
             v-for="child in drawn(control.itemFields, false)"
             :key="child.path"
@@ -278,6 +395,7 @@ function setFrequency(next: FrequencyDraft) {
           <form-advanced-section
             v-if="drawn(control.itemFields, true).length"
             class="sdk-form-row-fields sdk-form-row-advanced"
+            :class="{ 'is-two-col': control.columns === 2 }"
             :paths="drawn(control.itemFields, true).map((child) => path + '/' + index + child.path)"
           >
             <form-row-field
@@ -290,13 +408,22 @@ function setFrequency(next: FrequencyDraft) {
             ></form-row-field>
           </form-advanced-section>
         </div>
-        <div v-if="!off" class="sdk-form-row-tools">
-          <el-button text :disabled="index === 0" @click="move(index, index - 1)">{{ t("platform.formMoveUp") }}</el-button>
-          <el-button text :disabled="index === rows.length - 1" @click="move(index, index + 1)">{{ t("platform.formMoveDown") }}</el-button>
-          <el-button text @click="remove(index)">{{ t("platform.formRemove") }}</el-button>
+        <div v-if="!off && !arrayFixedRows" class="sdk-form-row-tools">
+          <template v-if="arrayReorderable">
+            <el-button text :disabled="index === 0" @click="move(index, index - 1)">{{ t("platform.formMoveUp") }}</el-button>
+            <el-button text :disabled="index === rows.length - 1" @click="move(index, index + 1)">{{ t("platform.formMoveDown") }}</el-button>
+          </template>
+          <el-button text type="danger" @click="remove(index)">{{ t("platform.formRemove") }}</el-button>
+        </div>
+        <div v-if="arrayItemFooter(row, index)" class="sdk-form-row-footer">
+          <component
+            :is="RenderArrayItemFooter"
+            :render="arrayItemFooter(row, index)!.slot"
+            :scope="arrayItemFooter(row, index)!.props"
+          />
         </div>
       </div>
-      <el-button v-if="!off" class="sdk-form-add" @click="addRow">{{ t("platform.formAdd") }}</el-button>
+      <el-button v-if="!off && !arrayFixedRows" class="sdk-form-add" @click="addRow">{{ control.addLabel ?? t("platform.formAdd") }}</el-button>
     </div>
     <div v-else-if="control.kind === 'avatar'" class="sdk-form-avatar">
       <div class="sdk-form-avatar-choices" role="group" :aria-label="t('platform.formAvatarIcon')">
@@ -382,6 +509,9 @@ function setFrequency(next: FrequencyDraft) {
 .sdk-form-field-time {
   width: 160px;
 }
+.sdk-form-field-number-stepper {
+  width: min(240px, 100%);
+}
 .sdk-form-field-unavailable {
   color: var(--el-color-danger-text);
   font-size: var(--text-xs);
@@ -393,6 +523,16 @@ function setFrequency(next: FrequencyDraft) {
   flex-direction: column;
   gap: var(--spacing-sm);
   width: 100%;
+}
+.sdk-form-object.is-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-md);
+}
+.sdk-form-object-advanced,
+.sdk-form-object.is-two-col > .sdk-form-object-remove,
+.sdk-form-object.is-two-col > .sdk-form-add {
+  grid-column: 1 / -1;
 }
 .sdk-form-string-row {
   display: flex;
@@ -408,15 +548,125 @@ function setFrequency(next: FrequencyDraft) {
   flex-wrap: wrap;
   gap: 0 var(--spacing-md);
 }
+.sdk-form-row-fields.is-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-md);
+}
+.sdk-form-row-fields.is-two-col :deep(.sdk-form-field) {
+  min-width: 0;
+}
 .sdk-form-row-advanced {
   flex-basis: 100%;
+  grid-column: 1 / -1;
 }
 .sdk-form-row-tools {
   display: flex;
   justify-content: flex-end;
 }
+.sdk-form-row-footer {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--ui-divider);
+}
+.sdk-form-array-empty {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+}
+/* Compact inline single-row object-array grid (for example HTTP headers: name | value | delete). */
+.sdk-form-inline-row {
+  display: grid;
+  grid-template-columns: repeat(var(--sdk-inline-cols, 2), minmax(0, 1fr));
+  gap: var(--spacing-sm);
+  align-items: start;
+}
+.sdk-form-inline-row.has-remove {
+  grid-template-columns: repeat(var(--sdk-inline-cols, 2), minmax(0, 1fr)) auto;
+}
+.sdk-form-inline-row :deep(.sdk-form-field) {
+  min-width: 0;
+  margin-bottom: 0;
+}
+.sdk-form-inline-row :deep(.el-form-item__label) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.sdk-form-inline-remove {
+  padding-inline: var(--spacing-xs);
+}
+.sdk-form-add-inline {
+  padding-inline: 0;
+}
+/* Compact bordered table editor for object-array fields (fixed-row routing matrices, etc.). */
+.sdk-form-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  width: 100%;
+  overflow-x: auto;
+}
+.sdk-form-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: var(--text-sm);
+}
+.sdk-form-table th,
+.sdk-form-table td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--ui-divider);
+}
+.sdk-form-table thead th {
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+}
+.sdk-form-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.sdk-form-table td :deep(.sdk-form-field) {
+  min-width: 0;
+  margin-bottom: 0;
+}
+.sdk-form-table td :deep(.el-form-item__label) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.sdk-form-table-actions-head,
+.sdk-form-table-actions-cell {
+  width: 44px;
+  text-align: center;
+}
 .sdk-form-add,
 .sdk-form-object-remove {
   align-self: flex-start;
+}
+@container sdk-owner-form (max-width: 640px) {
+  .sdk-form-object.is-two-col,
+  .sdk-form-row-fields.is-two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

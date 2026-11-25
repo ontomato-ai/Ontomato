@@ -70,6 +70,8 @@ export type {
 export type { FormChangeSummaryEntry } from "../base/form-change-summary";
 export { default as OperationButton } from "../base/OperationButton.vue";
 export { default as OperationResult } from "../base/OperationResult.vue";
+export { default as DataAdapterTestReport } from "../base/DataAdapterTestReport.vue";
+export type { DataAdapterTestOutcome } from "../base/data-adapter-test-report-types";
 export { default as FileUploadControl } from "../base/FileUploadControl.vue";
 export { default as SegmentedControl } from "../base/SegmentedControl.vue";
 export type { SegmentedControlOption } from "../base/segmented-control-types";

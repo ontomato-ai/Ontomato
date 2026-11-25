@@ -16,6 +16,7 @@ export const baseComponents = {
   ObjectFormFields: () => import("./base/ObjectFormFields.vue").then(module => module.default),
   OperationButton: () => import("./base/OperationButton.vue").then(module => module.default),
   OperationResult: () => import("./base/OperationResult.vue").then(module => module.default),
+  DataAdapterTestReport: () => import("./base/DataAdapterTestReport.vue").then(module => module.default),
   FileUploadControl: () => import("./base/FileUploadControl.vue").then(module => module.default),
   SegmentedControl: () => import("./base/SegmentedControl.vue").then(module => module.default),
   GraphCanvas: () => import("@ontomato/foundation-ui/graph").then(module => module.GraphCanvas),
