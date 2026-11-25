@@ -65,6 +65,11 @@
   .al-detail-empty {
     color: var(--sdk-text-color-secondary);
   }
+  .al-result-scope {
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
   .al-dialog-body {
     min-width: 0;
     display: flex;
@@ -133,6 +138,12 @@
               <sdk-button type="primary" @click="applyFilters">{{ t('action.query') }}</sdk-button>
               <sdk-button @click="refresh">{{ t('action.refresh') }}</sdk-button>
             </div>
+          </div>
+        </template>
+
+        <template #status="{ page, count, total }">
+          <div v-if="total !== null || count > 0" class="al-result-scope" role="status">
+            {{ resultScopeLabel(page) }}
           </div>
         </template>
 
