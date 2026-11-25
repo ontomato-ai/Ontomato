@@ -309,10 +309,6 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     }
 
     const buildOp = globalWrite(BUILD_TURN_EVIDENCE);
-    expect(await buildOp.execute(host, null, { turnKey: turnA }, "existing")).toMatchObject({
-      kind: "success", created: { objectType: TURN_EVIDENCE, primaryKey: turnA },
-    });
-    expect(mocks.resolveEvidence).not.toHaveBeenCalled();
     mocks.resolveEvidence.mockResolvedValueOnce(turnEvidence("turn.threadA.9"));
     const built = await buildOp.execute(host, null, { turnKey: "turn.threadA.9" }, "i2");
     expect(built).toMatchObject({

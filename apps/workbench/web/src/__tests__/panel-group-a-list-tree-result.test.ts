@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, provide, ref } from "vue";
+import { createApp, defineComponent, h, nextTick, provide, ref, shallowRef } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -697,7 +697,7 @@ describe("Gap 3: OperationResult pre-declared resultSections and defaultSectionI
       operations: { execute: runnerOp },
     });
 
-    const result = ref<PanelReadOperationResult | null>(null);
+    const result = shallowRef<PanelReadOperationResult | null>(null);
     const host = document.createElement("div");
     document.body.append(host);
     const app = createApp(defineComponent({

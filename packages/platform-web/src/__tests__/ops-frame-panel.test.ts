@@ -18,6 +18,7 @@ const opsApp = workbenchApplications.find((app) => app.id === "operations")!;
 
 function opsMenu(granted: readonly string[]): ApplicationEntryMenu {
   return {
+    singleEntry: false,
     names: opsApp.declaration.names,
     groups: opsApp.declaration.groups ?? [],
     panelUses: (opsApp.declaration.panelUses ?? []).filter(

@@ -5277,9 +5277,11 @@ defineExpose({
                 :item-key="rowItemKey(row)"
                 :index="rowIndex"
                 :operations="rowOperationsFor(row)"
+                :operation-results="rowResultsFor(row)"
                 :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
+                :clear-operation-result="(opName) => clearRowOperationResult(rowIdentityKey(row), opName)"
                 :render-slot="slots['row-detail']!"
-                :slot-props="{ ...rowRefSlotProps(row, rowIndex), collapse: () => { expandedKey = null; } }"
+                :slot-props="{ ...rowRefSlotProps(row, rowIndex), collapse: () => collapseRowKey(rowIdentityKey(row)) }"
               />
             </div>
           </div>

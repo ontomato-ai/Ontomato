@@ -236,8 +236,9 @@ public class ApplicationCatalog {
         return access.withPageSkillAuthorization(user, () -> {
             var apps = applicationsInDomain(user.getDomainId());
             var enterable = access.enterableApplicationIds(apps, user);
+            var pageKeys = new BuiltinPageKeys(apps);
             return apps.stream().filter(app -> enterable.contains(app.getString("id")) && hasAssignedPanelPaths(app))
-                .map(ApplicationCatalog::summaryView).toList();
+                .map(app -> summaryView(app, pageKeys)).toList();
         });
     }
     private record CatalogueKey(String id, String name, Instant updatedAt) {}
@@ -563,7 +564,7 @@ public class ApplicationCatalog {
         });
     }
 
-    private static JSONObject summaryView(JSONObject app) {
+    private static JSONObject summaryView(JSONObject app, BuiltinPageKeys pageKeys) {
         var result = new JSONObject(app);
         result.put("entry", publicEntry(app));
         result.put("singleEntry", singleEntry(app, pageKeys));
@@ -584,7 +585,7 @@ public class ApplicationCatalog {
     }
 
     private JSONObject view(JSONObject app, User user, BuiltinPageKeys pageKeys, boolean enterable) {
-        var result = summaryView(app);
+        var result = summaryView(app, pageKeys);
         if (hasPanelUseRegistration(app))
             result.put("panelUses", enterable ? visiblePanelUses(app, user, pageKeys) : List.of());
         return result;

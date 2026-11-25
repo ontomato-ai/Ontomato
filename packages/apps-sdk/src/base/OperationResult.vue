@@ -63,9 +63,10 @@ const declaredSections = computed<readonly PanelReadOperationSectionDeclaration[
   const opName = props.operationName?.trim();
   let ops: PanelProjectionRegistration["operations"] | null = null;
   if (slotName && panel) {
-    const registrations = (panel.instance.projections as unknown as { readonly value: readonly PanelProjectionRegistration[] }).value;
-    const registration = registrations.find((item) => item.slot === slotName);
+    const registrations = (panel.instance.projections as unknown as { readonly value?: readonly PanelProjectionRegistration[] } | undefined)?.value;
+    const registration = registrations?.find((item) => item.slot === slotName);
     if (registration) ops = registration.operations;
+    else if (memberGetter && memberGetter().key === slotName) ops = admittedOperations(memberGetter().operations.value);
   } else if (!slotName && opName && memberGetter) {
     ops = admittedOperations(memberGetter().operations.value);
   }

@@ -53,10 +53,13 @@ class ApplicationCatalogEntryMenuTest {
         assertTrue(singleMenu.singleEntry());
 
         var views = catalog.visible(user);
-        assertEquals(List.of(first), views.get(0).getList("panelUses", ApplicationPanelUse.class));
         assertEquals(multiMenu.singleEntry(), views.get(0).getBooleanValue("singleEntry"));
         assertEquals(singleMenu.singleEntry(), views.get(1).getBooleanValue("singleEntry"));
         assertTrue(views.get(2).getBooleanValue("singleEntry"));
+
+        var multiDetail = catalog.view("multi", user);
+        assertEquals(List.of(first), multiDetail.getList("panelUses", ApplicationPanelUse.class));
+        assertFalse(multiDetail.getBooleanValue("singleEntry"));
     }
 
     private static ApplicationPanelUse use(String id, Map<String, String> names) {

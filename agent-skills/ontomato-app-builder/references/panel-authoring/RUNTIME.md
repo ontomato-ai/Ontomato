@@ -36,6 +36,13 @@ interface PanelContext {
    */
   readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
   readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
+  /** Current signed-in user's public display info; null in editions without sign-in. Platform-owned, read-only. */
+  readonly currentUser: ComputedRef<PanelCurrentUser | null>;
+  /**
+   * Reactive read-only check for whether the given object currently has any unsaved local draft in this browser.
+   * Exposes only the boolean indicator; draft values and storage keys remain platform-internal.
+   */
+  hasLocalDraft(ref: PanelObjectRef): boolean;
   /**
    * The panel's own words (its content's `messages`) in the platform's current language: the current language, else
    * the deployment's default, else the key. The panel's HTML reads the same function as `t(key, params)`.

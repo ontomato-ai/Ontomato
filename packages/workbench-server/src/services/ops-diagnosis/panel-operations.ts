@@ -264,9 +264,8 @@ export const opsDiagnosisWriteOperations = [
         const turn = parseTurnKey(turnKey);
         if (!turn) throw new HttpError(400, "Invalid turnKey");
         const existing = loadManifest(turnKey);
-        if (existing) {
-          if (existing.domainId !== domainId) throw new HttpError(403, "Workspace access denied");
-          return { kind: "success", data: { turnKey }, created: { objectType: TURN_EVIDENCE, primaryKey: turnKey } };
+        if (existing && existing.domainId !== domainId) {
+          throw new HttpError(403, "Workspace access denied");
         }
         await assistantEvidenceReader().verifyDomain(turn.threadId, domainId);
         await buildTurnWorkspace({
