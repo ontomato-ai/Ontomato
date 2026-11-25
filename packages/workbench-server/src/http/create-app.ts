@@ -10,6 +10,8 @@ import { createComponentPackagesRouter, mountComponentPackageAssets } from "../a
 import { checkComponentPackageUpgrade } from "../services/component-packages/upgrade";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
+import { browserEventsPath } from "@ontomato/contracts/browser-events";
+import { browserEventsRouter } from "../api/routes/browser-events";
 import assistantRouter, { assistantInternalRouter, assistantQualityRouter } from "../api/routes/assistant";
 import { scheduleApplicationsRouter, scheduleExecutionStatus } from "../api/routes/schedule-applications";
 import { startAssistantReconciliation } from "../services/assistant/service";
@@ -211,6 +213,7 @@ export function createWorkbenchApp(): Express {
     );
   });
   app.use("/api", buildTestAccess);
+  app.use(`/api${browserEventsPath}`, browserEventsRouter);
 
   app.use("/api/assistant/sessions", governanceWindowsRouter);
   app.use("/api", appBuilderRouter);

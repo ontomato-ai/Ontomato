@@ -4,6 +4,7 @@ import { authHost } from "./auth";
 import { errorPunctuation } from "./error-punctuation";
 import { syncServerNowFromResponse } from "./server-time";
 import { API_BASE } from "./api-base";
+import { fetchWorkbench } from "./browser-events";
 
 const t = (key: string) => workbenchI18n().global.t(key);
 
@@ -331,7 +332,7 @@ export async function nodeApiFetch(
   const sends = method !== "GET" && method !== "DELETE";
   // A multipart body goes as it is: its Content-Type carries the boundary only the browser writing it knows.
   const form = body instanceof FormData;
-  const res = await fetch(`${API_BASE}${normalizePath(path)}`, {
+  const res = await fetchWorkbench(API_BASE, normalizePath(path), {
     method,
     ...opts,
     headers: buildBaseHeaders({

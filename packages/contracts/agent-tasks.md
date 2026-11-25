@@ -22,7 +22,7 @@ requesting run. prepare/read/cancel/settle call the owning provider directly. A 
 links to that page; an inline process reads the child runtime's public run projection. System
 prompts, host context and environment never cross into these public snapshots.
 
-GET `/assistant/sessions/:sessionId/tasks` reads the projection. Its `/events` stream registers
+GET `/assistant/sessions/:sessionId/tasks` reads the projection. Its `/events` subscription on the [Workbench browser transport](agent-host.md#workbench-browser-transport) registers
 before the initial read and pushes whole tasks_snapshot frames after runtime or provider
 changes. There is no two-second polling read. The runtime projects delegated executions; the
 workbench adds each reply's checks from the ontology service, so the read and the stream share

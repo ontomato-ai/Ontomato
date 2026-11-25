@@ -12,6 +12,7 @@ import type { AgentHostService } from "../../services/agent-host/types";
 import { openPresentationView, PRESENTATION_CALL_PATH, receivePresentation, requestPresentation } from "../../services/agent-host/presentation";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { HttpError } from "../../utils/errors";
+import { publishBrowserEvents } from "./browser-events";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 export function createAgentHostRouter(service: AgentHostService<[AssistantCredentials]>, workspaces = false) {
 const router: ReturnType<typeof Router> = Router(), uuid = z.string().uuid();
@@ -44,47 +45,24 @@ router.post(
       );
   }),
 );
-router.get(
+router.post(
   "/sessions/run-events",
   wrap(async (req, res) => {
-    const c = context(req),
-      query = agentHostSessionRunEventsQuerySchema.parse(req.query),
-      abort = new AbortController();
-    res.on("close", () => abort.abort());
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
-    try {
-      await new RuntimeClient(c.owner.domainId).sessionRunEvents(
-        () => {
-          res.set({
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-          });
-          res.flushHeaders();
-          heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15000);
-        },
-        async (frame) => {
-          // `ready` is the upstream barrier and is always forwarded; notices are forwarded
-          // only under this entry's own session read rule.
-          if (frame.type !== "ready") {
-            const readable = await service.readableSessions(c.owner, [
-              frame.sessionId,
-            ]);
-            if (!readable.has(frame.sessionId)) return;
-          }
-          const notice = frame.type === "ready" && host && query.viewId
-            ? { ...frame, connectionId: openPresentationView(host, c.owner, query.viewId,
-              event => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`), abort.signal) }
-            : frame;
-          res.write(`event: session-run\ndata: ${JSON.stringify(notice)}\n\n`);
-        },
-        abort.signal,
-      );
-    } finally {
-      abort.abort();
-      if (heartbeat) clearInterval(heartbeat);
-      if (res.headersSent) res.end();
-    }
+    const { owner } = context(req);
+    const { viewId } = agentHostSessionRunEventsQuerySchema.parse(req.query);
+    await publishBrowserEvents(req, res, async ({ signal, open, send }) => {
+      await new RuntimeClient(owner.domainId).sessionRunEvents(open, async frame => {
+        if (frame.type !== "ready") {
+          const readable = await service.readableSessions(owner, [frame.sessionId]);
+          if (!readable.has(frame.sessionId)) return;
+        }
+        if (signal.aborted) return;
+        const notice = frame.type === "ready" && host && viewId
+          ? { ...frame, connectionId: openPresentationView(host, owner, viewId, send, signal) }
+          : frame;
+        send(notice);
+      }, signal);
+    });
   }),
 );
 if (host) {
@@ -203,42 +181,23 @@ router.post(
     );
   }),
 );
-router.get(
+router.post(
   "/sessions/:sessionId/runs/:runId/events",
   wrap(async (req, res) => {
-    const c = context(req),
-      runId = id(req, "runId");
-    await service.ownRun(id(req, "sessionId"), runId, c.owner);
+    const { owner } = context(req), runId = id(req, "runId");
     const cursor = {
-        runId,
-        seq: z.coerce.number().int().nonnegative().parse(req.query.afterSeq),
-        streamId: uuid.parse(req.query.streamId),
-      },
-      abort = new AbortController();
-    res.set({
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "X-Accel-Buffering": "no",
+      runId,
+      seq: z.coerce.number().int().nonnegative().parse(req.query.afterSeq),
+      streamId: uuid.parse(req.query.streamId),
+    };
+    await publishBrowserEvents(req, res, async ({ signal, open, send }) => {
+      await service.ownRun(id(req, "sessionId"), runId, owner);
+      open();
+      await new RuntimeClient(owner.domainId).stream(cursor, async raw => {
+        const frame = publicFrame(raw);
+        if (frame) send(frame);
+      }, signal);
     });
-    res.flushHeaders();
-    res.on("close", () => abort.abort());
-    const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15000);
-    try {
-      await new RuntimeClient(c.owner.domainId).stream(
-        cursor,
-        async (raw) => {
-          const frame = publicFrame(raw);
-          if (!frame) return;
-          res.write(
-            `${frame.type === "event" ? `id: ${frame.envelope.cursor.seq}\n` : ""}event: runtime\ndata: ${JSON.stringify(frame)}\n\n`,
-          );
-        },
-        abort.signal,
-      );
-    } finally {
-      clearInterval(heartbeat);
-      res.end();
-    }
   }),
 );
 router.get(

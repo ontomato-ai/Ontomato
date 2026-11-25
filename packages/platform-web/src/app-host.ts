@@ -17,7 +17,7 @@ import {
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { authHost } from "@ontomato/workbench-ui/utils/auth";
 import { readRuntimeConfig } from "./config";
-import {nodeApiRequest} from '@ontomato/workbench-ui';
+import {fetchWorkbench,nodeApiRequest} from '@ontomato/workbench-ui';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 import {productReferences} from '@ontomato/contracts/product-assets';
 import {validatePageState,validateProductNavigation,productNavigationTargetSchema} from '@ontomato/contracts/product-page-state';
@@ -471,7 +471,7 @@ export function installAppHost(options: {
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);
       if(execution.kind==='build-test')headers.set(BUILD_TEST_HEADER,JSON.stringify({kind:'build-test',contextId:execution.contextId}));
-      const response=await fetch(`${readRuntimeConfig().apiBase}${service}${target}`,{...init,headers,credentials:'omit'});
+      const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${target}`,{...init,headers,credentials:'omit'});
       return panel?relayToPanel(panel,method,path,service,response):response;
     },
     invalidateProductData(source,event){

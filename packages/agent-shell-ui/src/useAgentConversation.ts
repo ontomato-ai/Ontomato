@@ -296,10 +296,6 @@ export function useAgentConversation(
     sending.value = true;
     sendError.value = null;
     pendingInput.value = text;
-    // Free an HTTP/1.1 connection for the POST while leaving the active run stream attached.
-    // The task stream opens with a full snapshot, including changes made during the send.
-    const resumeTasks = activeRunId.value !== null && (detachTasks !== null || taskTimer !== null);
-    if (resumeTasks) stopTasks();
     let createdSession: AgentHostSession | null = null;
     try {
       createdSession = state.sessionId ? null : await client.createSession(agentId);
@@ -331,10 +327,7 @@ export function useAgentConversation(
       }
       return null;
     } finally {
-      if (current === token) {
-        sending.value = false;
-        if (resumeTasks && !detachTasks) followTasks(state.sessionId!);
-      }
+      if (current === token) sending.value = false;
     }
   }
 

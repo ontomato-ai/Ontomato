@@ -2,7 +2,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { runtimeSessionRunFrameSchema } from "@ontomato/contracts/agent-runtime-events";
 import { agentHostSessionRunFrameSchema } from "@ontomato/contracts/agent-host";
 import { presentationFrameSchema, type PresentationResult } from "@ontomato/contracts/agent-presentation";
@@ -15,6 +15,8 @@ import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { AuthenticatedRequest } from "../../../utils/request-identity";
 import { HttpError } from "../../../utils/errors";
 import { createAgentHostRouter } from "../agent-host";
+import { browserEventsRouter } from "../browser-events";
+import { openBrowserEventConnection } from "../../../__tests__/fixtures/browser-events";
 import { callbackCredential, unwrapCallbackCredential } from "../../../services/agent-runtime/callback-credential";
 
 const owner: AgentHostOwner = { domainId: "domain-a", userId: "alice" };
@@ -85,7 +87,7 @@ function fakeService() {
   };
 }
 
-let server: Server, url: string, observeUrl: string, fake: ReturnType<typeof fakeService>;
+let server: Server, base: string, url: string, fake: ReturnType<typeof fakeService>;
 let runtimeServer: Server;
 let runtimeHeaderCalls: Array<Record<string, string | string[] | undefined>> = [];
 let statusCalls: Array<{ sessionIds: string[] }> = [];
@@ -160,13 +162,12 @@ beforeAll(async () => {
     if (caller) Object.assign(req as AuthenticatedRequest, { domainId: req.header("fixture-domain") ?? owner.domainId, userId: caller });
     next();
   });
+  app.use("/api/browser-events", browserEventsRouter);
   app.use("/api/agent-host", createAgentHostRouter(fake.service));
-  app.use("/api/observe/agent", createAgentHostRouter({ ...fake.service, presentationHost: "observe" }));
   server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
-  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   url = base + "/api/agent-host";
-  observeUrl = base + "/api/observe/agent";
 });
 
 afterAll(async () => {
@@ -268,15 +269,30 @@ it("returns ordered light run state for readable sessions and drops unreadable I
   ]);
 });
 
+const browserConnections: Awaited<ReturnType<typeof openBrowserEventConnection>>[] = [];
+
+async function openConnection(headers: Record<string, string> = auth) {
+  const connection = await openBrowserEventConnection(base, headers);
+  browserConnections.push(connection);
+  return connection;
+}
+
+afterEach(() => {
+  for (const connection of browserConnections.splice(0)) connection.close();
+});
+
 it("forwards ready and only the caller's readable run notices", async () => {
   runtimeHeaderCalls = [];
-  const response = await fetch(url + "/sessions/run-events", { headers: auth });
-  expect(response.status).toBe(200);
-  const frames = (await response.text())
-    .split("\n")
-    .filter((line) => line.startsWith("data: "))
-    .map((line) => runtimeSessionRunFrameSchema.parse(JSON.parse(line.slice(6))));
-  expect(frames).toEqual([
+  async function notices(connection: Awaited<ReturnType<typeof openConnection>>) {
+    const { registration, reader } = await connection.subscribe(url + "/sessions/run-events");
+    expect(registration.status).toBe(204);
+    const frames = [];
+    for (let part = await reader.read(); !part.done; part = await reader.read()) {
+      frames.push(runtimeSessionRunFrameSchema.parse(part.value));
+    }
+    return frames;
+  }
+  expect(await notices(await openConnection())).toEqual([
     { type: "ready" },
     { type: "run_started", sessionId, runId },
     { type: "run_stopped", sessionId, runId },
@@ -284,61 +300,46 @@ it("forwards ready and only the caller's readable run notices", async () => {
   const headers = runtimeHeaderCalls.at(-1);
   expect(headers?.authorization).toBe("Bearer fixture-runtime-token");
   expect(headers?.["x-domain-id"]).toBe(owner.domainId);
-  const stranger = await fetch(url + "/sessions/run-events", {
-    headers: { ...auth, "fixture-auth": "bob" },
-  });
-  expect(stranger.status).toBe(200);
-  const strangerFrames = (await stranger.text())
-    .split("\n")
-    .filter((line) => line.startsWith("data: "))
-    .map((line) => runtimeSessionRunFrameSchema.parse(JSON.parse(line.slice(6))));
-  expect(strangerFrames).toEqual([{ type: "ready" }]);
+
+  const stranger = { ...auth, "fixture-auth": "bob" };
+  expect(await notices(await openConnection(stranger))).toEqual([{ type: "ready" }]);
 });
 
-it("refuses the list stream before opening the runtime stream", async () => {
+it("refuses unauthenticated and foreign subscriptions before opening the runtime stream", async () => {
   runtimeHeaderCalls = [];
-  const response = await fetch(url + "/sessions/run-events");
-  expect(response.status).toBe(401);
+  const connection = await openConnection();
+  for (const [headers, status] of [
+    [{}, 401],
+    [{ ...auth, "fixture-auth": "bob" }, 404],
+    [{ ...auth, "fixture-domain": "domain-b" }, 404],
+  ] as const) {
+    const { registration } = await connection.subscribe(url + "/sessions/run-events", headers);
+    expect(registration.status).toBe(status);
+  }
   expect(runtimeHeaderCalls).toHaveLength(0);
 });
 
-async function openPresentationStream(viewId = randomUUID(), host = url, headers: Record<string, string> = auth) {
-  const abort = new AbortController();
-  const response = await fetch(host + "/sessions/run-events?viewId=" + viewId, { headers, signal: abort.signal });
-  expect(response.status).toBe(200);
-  const reader = response.body!.getReader(), decoder = new TextDecoder();
-  let buffer = "";
+async function openPresentationStream(connection: Awaited<ReturnType<typeof openConnection>>, viewId = randomUUID()) {
+  const { registration, reader, unsubscribe } = await connection.subscribe(url + "/sessions/run-events?viewId=" + viewId);
+  expect(registration.status).toBe(204);
   const nextFrame = async () => {
-    while (!buffer.includes("\n\n")) {
-      const part = await reader.read();
-      if (part.done) throw new Error("Stream ended before the expected frame");
-      buffer += decoder.decode(part.value, { stream: true });
-    }
-    const end = buffer.indexOf("\n\n");
-    const [event, data] = buffer.slice(0, end).split("\n");
-    buffer = buffer.slice(end + 2);
-    return { event: event!.slice("event: ".length), data: JSON.parse(data!.slice("data: ".length)) as unknown };
+    const part = await reader.read();
+    if (part.done) throw new Error("Stream ended before the expected frame");
+    return part.value;
   };
-  const ready = await nextFrame();
-  expect(ready.event).toBe("session-run");
-  const frame = agentHostSessionRunFrameSchema.parse(ready.data);
+  const frame = agentHostSessionRunFrameSchema.parse(await nextFrame());
   if (frame.type !== "ready" || !("connectionId" in frame)) throw new Error("View stream has no connection identity");
   const upstream = [...upstreamStreams].at(-1)!;
   return {
     viewId, connectionId: frame.connectionId, nextFrame,
     close: async () => {
       const closed = once(upstream, "close");
-      abort.abort();
+      await unsubscribe();
       await closed;
     },
     finish: async () => {
       upstream.end();
-      let remaining = buffer;
-      for (;;) {
-        const message = await reader.read();
-        if (message.done) return remaining + decoder.decode();
-        remaining += decoder.decode(message.value, { stream: true });
-      }
+      expect(await reader.read()).toEqual({ done: true, value: undefined });
     },
   };
 }
@@ -400,15 +401,15 @@ it.each([
 });
 
 async function expectPresentation(stream: Awaited<ReturnType<typeof openPresentationStream>>, toolCallId: string) {
-  const frame = await stream.nextFrame();
-  expect(frame.event).toBe("presentation");
-  expect(presentationFrameSchema.parse(frame.data)).toMatchObject({ sessionId, runId, toolCallId });
+  expect(presentationFrameSchema.parse(await stream.nextFrame())).toMatchObject({ sessionId, runId, toolCallId });
 }
 
 it("sends a live presentation to its bound stream and accepts only the matching receipt before the deadline", async () => {
   liveRunStreams = true;
   try {
-    const origin = await openPresentationStream(), other = await openPresentationStream();
+    const connection = await openConnection();
+    const origin = await openPresentationStream(connection);
+    const other = await openPresentationStream(connection);
     expect(origin.connectionId).not.toBe(other.connectionId);
     const { callback, receipt, result } = presentationCalls(origin.viewId);
 
@@ -416,8 +417,8 @@ it("sends a live presentation to its bound stream and accepts only the matching 
     await expectPresentation(origin, "call-1");
     const marker = { type: "run_started", sessionId, runId };
     for (const stream of upstreamStreams) writeRuntimeFrame(stream, marker);
-    expect(await other.nextFrame()).toEqual({ event: "session-run", data: marker });
-    expect(await origin.nextFrame()).toEqual({ event: "session-run", data: marker });
+    expect(await other.nextFrame()).toEqual(marker);
+    expect(await origin.nextFrame()).toEqual(marker);
     expect((await receipt("call-1", origin.connectionId, "bob")).status).toBe(404);
     expect((await receipt("call-1", other.connectionId)).status).toBe(404);
     expect((await receipt("call-1", origin.connectionId, owner.userId, secondSessionId)).status).toBe(404);
@@ -449,12 +450,13 @@ it("sends a live presentation to its bound stream and accepts only the matching 
 it("drops offline calls and routes later calls of the same run only to the remounted connection of its view", async () => {
   liveRunStreams = true;
   try {
-    const initial = await openPresentationStream();
+    const connection = await openConnection();
+    const initial = await openPresentationStream(connection);
     const { callback, receipt, result } = presentationCalls(initial.viewId);
     const lost = callback("before-hide");
     await expectPresentation(initial, "before-hide");
 
-    const superseding = await openPresentationStream(initial.viewId);
+    const superseding = await openPresentationStream(connection, initial.viewId);
     expect(superseding.connectionId).not.toBe(initial.connectionId);
     expect((await receipt("before-hide", superseding.connectionId)).status).toBe(404);
     await initial.close();
@@ -467,18 +469,18 @@ it("drops offline calls and routes later calls of the same run only to the remou
     expect(await (await resumed).json()).toEqual(result);
 
     await superseding.close();
-    const refreshed = await openPresentationStream();
+    const refreshed = await openPresentationStream(connection);
     expect(refreshed.viewId).not.toBe(initial.viewId);
     expect(await (await callback("while-hidden")).json()).toMatchObject({
       status: "not_opened", reason: "view_unavailable",
     });
 
-    const returned = await openPresentationStream(initial.viewId);
+    const returned = await openPresentationStream(connection, initial.viewId);
     const next = callback("after-return");
     await expectPresentation(returned, "after-return");
     expect((await receipt("after-return", returned.connectionId)).status).toBe(204);
     expect(await (await next).json()).toEqual(result);
-    expect(await refreshed.finish()).toBe("");
+    await refreshed.finish();
   } finally {
     liveRunStreams = false;
     for (const stream of upstreamStreams) stream.end();

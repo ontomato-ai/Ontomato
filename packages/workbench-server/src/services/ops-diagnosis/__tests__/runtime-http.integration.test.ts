@@ -1,3 +1,4 @@
+import { openBrowserEventConnection } from "../../../__tests__/fixtures/browser-events";
 import { removeWorkerFiles } from "../../../../../agent-runtime/src/worker";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
@@ -72,32 +73,15 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
   }
   /** The real host stream: the first two frames arrive before any test work, later ones on demand. */
   async function lifecycleStream(token: string) {
-    const controller = new AbortController();
-    const response = await fetch(hostUrl + "/api/observe/agent/sessions/run-events", {
-      headers: { tk: token }, signal: controller.signal,
-    });
-    if (response.status !== 200) throw new Error(`run-events ${response.status}: ${await response.text()}`);
+    const connection = await openBrowserEventConnection(hostUrl, { tk: token });
+    const { registration, reader } = await connection.subscribe(hostUrl + "/api/observe/agent/sessions/run-events");
+    if (!registration.ok) throw new Error(`run-events ${registration.status}: ${await registration.text()}`);
     const frames: any[] = [], waiters: Array<(frame: any) => void> = [];
-    const reader = response.body!.getReader(), decoder = new TextDecoder();
-    let buffer = "";
     const ended = (async () => {
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let newline: number;
-          while ((newline = buffer.indexOf("\n")) >= 0) {
-            const line = buffer.slice(0, newline).trimEnd();
-            buffer = buffer.slice(newline + 1);
-            if (!line.startsWith("data: ")) continue;
-            const frame = agentHostSessionRunFrameSchema.parse(JSON.parse(line.slice(6)));
-            const waiter = waiters.shift();
-            if (waiter) waiter(frame); else frames.push(frame);
-          }
-        }
-      } catch {
-        // Aborting this fixture is how a test closes the connection.
+      for (let part = await reader.read(); !part.done; part = await reader.read()) {
+        const frame = agentHostSessionRunFrameSchema.parse(part.value);
+        const waiter = waiters.shift();
+        if (waiter) waiter(frame); else frames.push(frame);
       }
     })();
     return {
@@ -109,7 +93,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
           waiters.push((value) => { clearTimeout(timer); resolve(value); });
         });
       },
-      close: () => { controller.abort(); void ended; },
+      close: () => { connection.close(); void reader.cancel(); void ended; },
     };
   }
   beforeAll(async () => {
