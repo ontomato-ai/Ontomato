@@ -15,6 +15,7 @@ vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://o
 vi.mock('../../../utils/request-identity',async original=>({...await original<typeof import('../../../utils/request-identity')>(),requireDomainId:(req:{domainId:string})=>req.domainId}));
 import {assistantExecutionMountPath, assistantExecutionRouter, assistantOwnerCallbackPath} from '../assistant-execution';
 import {callbackCredential,unwrapCallbackCredential} from '../../../services/agent-runtime/callback-credential';
+import {checkBackendResponse} from '../../../utils/backend-client';
 const run='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const nativeFetch=globalThis.fetch;
 let server:Server,base:string;
@@ -336,6 +337,15 @@ it("accepts author parameters only through the registered method and the run's c
  expect((await call("authoring/metric-view/context",{},"POST")).status).toBeGreaterThanOrEqual(400);
  expect((await call("authoring/action/context",{},"GET","")).status).toBe(403);
  expect(mocks.authoring).not.toHaveBeenCalled();
+});
+
+it("returns the data engine's vector readiness refusal to the authoring caller", async () => {
+  const error = { code: "VECTOR_NOT_READY", message: "Start or resume vector rebuilding in Model Configuration." };
+  mocks.authoring.mockImplementationOnce(() => checkBackendResponse(Response.json({ error }, { status: 409 })));
+
+  const response = await call("authoring/metric-view/context", {}, "GET");
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ error });
 });
 
 it("lets only the current callback submit the App Builder definition for adoption", async () => {
