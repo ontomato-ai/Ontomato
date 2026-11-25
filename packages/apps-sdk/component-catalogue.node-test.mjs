@@ -231,24 +231,25 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.ok(declared.get("ObjectForm").bindsElement.includes("ObjectType:*"), "ObjectForm applies to customer object types");
     // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
     const stringList = { kind: "list", items: { kind: "scalar", type: "string" } };
-    const ontologyNodeList = { kind: "list", items: ontologyNode };
+    const anyObject = { kind: "object", objectType: "@any" };
+    const anyObjectList = { kind: "list", items: anyObject };
     assert.deepEqual(declared.get("OntologyGraph").inputs, {
       mode: { kind: "scalar", type: "string" },
-      start: ontologyNode,
-      selected: ontologyNode,
+      start: anyObject,
+      selected: anyObject,
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       visibleLayers: stringList,
-      expandedNodes: ontologyNodeList,
+      expandedNodes: anyObjectList,
     });
     const platformRelationKindList = { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } };
     assert.deepEqual(declared.get("OntologyGraph").outputs, {
-      selectedNode: ontologyNode,
-      selected: ontologyNode,
+      selectedNode: anyObject,
+      selected: anyObject,
       selectedType: { kind: "scalar", type: "string" },
       visibleRelationKinds: platformRelationKindList,
       visibleLayers: stringList,
-      expandedNodes: ontologyNodeList,
+      expandedNodes: anyObjectList,
       positions: { kind: "json" },
     });
     assert.deepEqual(declared.get("OntologyGraph").data.connections.runtimeParams, ["version", "sampleToken"]);
@@ -256,7 +257,6 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       "node", "layers", "relationKinds", "targetClass", "direction", "limit", "offset",
     ]);
     const relationKindList = { kind: "list", items: { kind: "scalar", type: "string" } };
-    const anyObject = { kind: "object", objectType: "@any" };
     const objectRelations = declared.get("ObjectRelations");
     assert.ok(objectRelations.bindsElement.includes("Relationship:*"));
     assert.deepEqual(objectRelations.inputs, {
@@ -331,6 +331,11 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(summaryShowTitle?.default, "true");
     assert.match(summaryShowTitle?.description ?? "", /record\.label/);
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
+    const readerFormat = declared.get("ObjectTextReader").config.find((prop) => prop.name === "format");
+    assert.equal(readerFormat?.required, false);
+    for (const mode of ["auto", "plain", "markdown", "code", "table", "diff"]) {
+      assert.match(readerFormat?.type ?? "", new RegExp(`"${mode}"`), `ObjectTextReader.format includes "${mode}"`);
+    }
     assert.equal(declared.get("PanelData").config, undefined, "a component with no configuration declares none");
     const metricChartConfigNames = (declared.get("MetricChart").config ?? []).map((prop) => prop.name);
     assert.ok(metricChartConfigNames.includes("file-override"), "MetricChart exposes file-override for live draft preview");
@@ -412,11 +417,17 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(componentsDoc, /`<sdk-button>`/);
     assert.match(componentsDoc, /`v-sdk-loading`/);
     assert.match(componentsDoc, /`--sdk-color-primary`/);
+    const objectRefCardDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("ObjectRefCard\n"));
+    assert.match(
+      objectRefCardDoc,
+      /Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `navigate`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
+      "docs/components.md must print both layers and objectTypes for object-union ports",
+    );
     const ontologyGraphDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("OntologyGraph\n"));
     assert.match(
       ontologyGraphDoc,
-      /Inputs:\n\n[\s\S]*?- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
-      "docs/components.md must print both layers and objectTypes for object-union ports",
+      /Inputs:\n\n[\s\S]*?- `selected`: any ontology object\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `selectedNode`: any ontology object\n/u,
+      "docs/components.md must print any ontology object for OntologyGraph @any node ports",
     );
     assert.match(
       componentsDoc,

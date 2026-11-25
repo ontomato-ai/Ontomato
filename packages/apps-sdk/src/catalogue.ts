@@ -466,21 +466,21 @@ export const components: readonly ComponentMetadata[] = [
     // which layers are visible, which nodes are expanded, and saved per-person node coordinates.
     inputs: {
       mode: { kind: "scalar", type: "string" },
-      start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      start: { kind: "object", objectType: "@any" },
+      selected: { kind: "object", objectType: "@any" },
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
-      expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+      expandedNodes: { kind: "list", items: { kind: "object", objectType: "@any" } },
     },
     outputs: {
-      selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selectedNode: { kind: "object", objectType: "@any" },
+      selected: { kind: "object", objectType: "@any" },
       selectedType: { kind: "scalar", type: "string" },
       // The relation kinds drawn, read as well as written: a page's own kind filter and the graph follow one choice.
       visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
       visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
-      expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+      expandedNodes: { kind: "list", items: { kind: "object", objectType: "@any" } },
       positions: { kind: "json" },
     },
     readOnlyOutputs: {
@@ -698,7 +698,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectTextReader",
     role: "presentation",
     meaning:
-      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown according to `format` (`auto` by default, inferring Markdown with optional YAML frontmatter separation, CSV/TSV table preview, or a read-only code viewer from `pathField`, `record.label`, or `record.primaryKey`, and falling back to preformatted text when no extension is present; `plain`, `markdown`, `table`, and `code` override auto-detection). Clicking a relative `.md` link inside Markdown normalizes the path against the current document and writes it to `activePath`. Its outputs `activeSourceId`, `activeAnchor`, and `activePath`, bound to the panel's state, are read as well as written: the page opens a source by writing it (and, for a reader with an `anchor`, that anchor), and readers sharing them on one page have only one open. Which sources it lists is the `sources` read's: an owner read of one issue's cited sources lists only those.",
+      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown according to `format` (`auto` by default, inferring Markdown with optional YAML frontmatter separation, CSV/TSV table preview, or a read-only code viewer from `pathField`, `record.label`, or `record.primaryKey`, and falling back to preformatted text when no extension is present; `plain`, `markdown`, `table`, `code`, and `diff` override auto-detection, with `diff` parsing standard unified diffs into file summaries, per-file change cards, binary notices, and line-numbered hunks). Clicking a relative `.md` link inside Markdown normalizes the path against the current document and writes it to `activePath`. Its outputs `activeSourceId`, `activeAnchor`, and `activePath`, bound to the panel's state, are read as well as written: the page opens a source by writing it (and, for a reader with an `anchor`, that anchor), and readers sharing them on one page have only one open. Which sources it lists is the `sources` read's: an owner read of one issue's cited sources lists only those.",
     effects: "Reads the owner's sources, pages and records as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
@@ -785,10 +785,10 @@ export const components: readonly ComponentMetadata[] = [
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
           "business", "by", "category", "changedField", "className", "cursor", "defaultAppId", "direction", "entryId",
-          "favoritesOnly", "filters", "keyword", "layers", "limit", "node", "object", "offset",
-          "operation", "orgId", "origin", "page", "parentId", "path", "rating", "relationKinds",
+          "favoritesOnly", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
+          "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
           "runId", "sampleToken", "scope", "search", "section", "size", "sort", "source", "sourceType", "status",
-          "targetClass", "template", "type", "values", "verdict", "version",
+          "targetClass", "targetGroup", "template", "type", "values", "verdict", "version",
         ],
       },
     },

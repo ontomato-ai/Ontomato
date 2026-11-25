@@ -311,10 +311,15 @@ describe("ExternalMcpService server operations", () => {
       service: { id: SERVICE_ID_1, name: "Orders MCP", url: "https://orders.example/mcp", headers: { authorization: MCP_HEADER_MASK } },
     });
 
+    const createInput = {
+      values: { name: "Orders MCP", url: "https://orders.example/mcp", headers: [{ name: "Authorization", value: "Bearer top-secret" }] },
+      submittedFields: ["/name", "/url", "/headers"],
+    };
+    expect(createOp.inputSchema.parse(createInput)).toEqual(createInput);
     const created = await createOp.run(
       makeHost(),
       { kind: "draft" },
-      { values: { name: "Orders MCP", url: "https://orders.example/mcp", headers: [{ name: "Authorization", value: "Bearer top-secret" }] } },
+      createInput,
       "intent-1",
     );
     expect(created).toMatchObject({
@@ -374,6 +379,31 @@ describe("ExternalMcpService server operations", () => {
         name: "Orders MCP",
         url: "https://orders.example/mcp",
         headers: { authorization: null, "x-region": "eu-west" },
+      },
+      SERVICE_ID_1,
+    );
+
+    const partialRenameInput = {
+      values: {
+        name: "Orders MCP v2",
+        url: "https://ignored.example/mcp",
+        headers: [],
+      },
+      submittedFields: ["/name"],
+    };
+    expect(saveOp.inputSchema.parse(partialRenameInput)).toEqual(partialRenameInput);
+    const partialRenamed = await saveOp.run(
+      makeHost(),
+      { kind: "object", objectType: EXTERNAL_MCP_SERVICE, primaryKey: SERVICE_ID_1 },
+      partialRenameInput,
+      "intent-3b",
+    );
+    expect(partialRenamed).toMatchObject({ kind: "success", data: { id: SERVICE_ID_1 } });
+    expect(mockRuntime.saveMcpService).toHaveBeenLastCalledWith(
+      {
+        name: "Orders MCP v2",
+        url: "https://orders.example/mcp",
+        headers: { authorization: null },
       },
       SERVICE_ID_1,
     );

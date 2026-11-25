@@ -326,7 +326,7 @@ function checkOperations(id, projection, typeTable, placements, state, checks) {
       const value = placement.inputs?.[input];
       const bound = value && (!("state" in value) || matched.some(([type, operation]) => {
         const statePort = state[value.state].type;
-        const accepted = checks.panelOperationTargetPort(statePort, type, operation.batch);
+        const accepted = checks.panelOperationTargetPort(statePort, type, operation.batch, operation.targetTypes);
         if (!accepted) return false;
         return expectedPort.kind === "json" || (checks.panelPortAccepts
           ? checks.panelPortAccepts(expectedPort, statePort)

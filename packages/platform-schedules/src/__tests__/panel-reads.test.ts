@@ -82,3 +82,64 @@ it("builds task records with owner outputs, application counts, and run records"
   expect(focused.primaryKey).toBe(run.id);
   expect(focused.outputs?.isRunning).toBe(false);
 });
+
+it("classifies task attention groups and supports counts(by='attention')", async () => {
+  const baseTask = platformTaskSchema.parse(examples.creates[0]!.response);
+  const completedRun = platformTaskRunSchema.parse(examples.runs.find(item => item.response.status === "completed")!.response);
+  const failedRun = { ...completedRun, id: "run-failed", status: "failed" as const, error: { code: "run_failed" as const, message: "boom" } };
+  const runningTask = { ...baseTask, id: "task-running", title: "Running", activeRunId: "run-live", lastRun: null, pause: null };
+  const issueTask = { ...baseTask, id: "task-failed", title: "Failed", activeRunId: null, lastRun: failedRun, pause: null };
+  const pausedTask = {
+    ...baseTask,
+    id: "task-paused",
+    title: "Paused",
+    activeRunId: null,
+    lastRun: completedRun,
+    pause: { code: "target_unavailable" as const, message: "Paused after failures", at: completedRun.startedAt },
+  };
+  const resultsTask = { ...baseTask, id: "task-done", title: "Done", activeRunId: null, lastRun: completedRun, pause: null };
+  const idleTask = { ...baseTask, id: "task-idle", title: "Idle", activeRunId: null, lastRun: null, pause: null };
+
+  const reads = createScheduledTaskReads({
+    async list() {
+      return { tasks: [runningTask, issueTask, pausedTask, resultsTask, idleTask], timeZone: baseTask.timeZone };
+    },
+    async task() {
+      return baseTask;
+    },
+    async form() {
+      throw new Error("unused");
+    },
+    async runs() {
+      return { runs: [], nextCursor: null };
+    },
+    async run() {
+      return completedRun;
+    },
+    async applications() {
+      return [{ id: baseTask.appId, name: "Ontology", description: null, available: true, unavailableReason: null, taskCount: 5 }];
+    },
+  }, "en", translate);
+
+  const list = await reads.list();
+  expect(list.map(row => ({
+    id: row.primaryKey,
+    attentionGroup: row.outputs?.attentionGroup,
+    needsIntervention: row.outputs?.needsIntervention,
+    latestRunId: row.outputs?.latestRunId,
+    openPath: row.outputs?.openPath,
+  }))).toEqual([
+    { id: "task-running", attentionGroup: "running", needsIntervention: false, latestRunId: "run-live", openPath: "/schedules?taskId=task-running&runId=run-live" },
+    { id: "task-failed", attentionGroup: "issues", needsIntervention: true, latestRunId: "run-failed", openPath: "/schedules?taskId=task-failed&runId=run-failed" },
+    { id: "task-paused", attentionGroup: "issues", needsIntervention: true, latestRunId: completedRun.id, openPath: `/schedules?taskId=task-paused&runId=${encodeURIComponent(completedRun.id)}` },
+    { id: "task-done", attentionGroup: "results", needsIntervention: false, latestRunId: completedRun.id, openPath: `/schedules?taskId=task-done&runId=${encodeURIComponent(completedRun.id)}` },
+    { id: "task-idle", attentionGroup: "idle", needsIntervention: false, latestRunId: "", openPath: "/schedules?taskId=task-idle" },
+  ]);
+
+  const counts = await reads.counts("attention");
+  expect(counts).toEqual([
+    { key: "issues", label: "Needs attention", count: 2 },
+    { key: "results", label: "Recent results", count: 1 },
+    { key: "running", label: "Running", count: 1 },
+  ]);
+});

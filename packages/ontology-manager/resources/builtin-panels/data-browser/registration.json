@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-data-browser",
+      "input": {
+        "name": "对象浏览器",
+        "description": "对象浏览器主面板：支持实例图谱探索、对象表格浏览、服务端多条件筛选与排序、列显隐、当前页 CSV 导出及对象呈现配置。"
+      }
+    }
+  ]
+}

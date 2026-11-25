@@ -182,9 +182,9 @@ describe("stale responses and authentication failures", () => {
     const pending = deferred();
     respond = () => pending.promise;
     const { context, client } = setup({ type: "anonymous" });
-    const result = client.loadObjectData("Order", 1, 25);
+    const result = client.loadWorkflows();
     context.apiBase = "/other-api";
-    pending.resolve(json({ success: true, data: [{ id: "old-source" }], total_count: 1 }));
+    pending.resolve(json({ success: true, data: [{ id: "old-source" }] }));
 
     await expect(result).rejects.toMatchObject({ name: "AbortError" });
   });
@@ -270,11 +270,11 @@ describe("stale responses and authentication failures", () => {
     const pending = deferred();
     respond = () => pending.promise;
     const { context, client } = setup({ type: "token", token: "same" });
-    const result = client.loadObjectData("Order", 1, 25);
+    const result = client.loadWorkflows();
     context.credential = { type: "token", token: "same" };
-    pending.resolve(json({ success: true, data: [{ id: 1 }], total_count: "3" }));
+    pending.resolve(json({ success: true, data: [{ id: "wf-1" }] }));
 
-    await expect(result).resolves.toEqual({ rows: [{ id: 1 }], total: 3 });
+    await expect(result).resolves.toEqual([{ id: "wf-1" }]);
   });
 
   it.each([401, 402] as const)("%i only notifies the host and leaves the supplied credential unchanged", async (status) => {
@@ -372,30 +372,6 @@ describe("requests used by data browsing and visual modeling", () => {
     });
     expect(requests[0].headers).not.toHaveProperty("Content-Type");
     expect(requests[0].headers["x-api-key"]).toBe("k");
-  });
-
-  it("paged data submits search only when a keyword is given", async () => {
-    const { client } = setup({ type: "token", token: "t" });
-    await client.loadObjectData("Order", 2, 50, "abc");
-    await client.loadObjectData("Order", 1, 25);
-
-    expect(requests.map((r) => r.body)).toEqual([
-      expect.objectContaining({ classname: "Order", pagenum: 2, pagecount: 50, search: "abc" }),
-      expect.objectContaining({ classname: "Order", pagenum: 1, pagecount: 25 }),
-    ]);
-    expect(requests[1].body).not.toHaveProperty("search");
-  });
-
-  it("reads one instance's record with POST", async () => {
-    respond = async () => json({ success: true, data: { classDef: { className: "Order" }, data: { id: "1" } } });
-    const { client } = setup({ type: "token", token: "t" });
-
-    const info = await client.queryInstanceInfo("Order:1", "Order");
-
-    expect(info).toEqual({ classDef: { className: "Order" }, data: { id: "1" } });
-    expect(
-      requests.map((r) => [r.url.replace("/custom/manager-api/data-query", ""), r.method, r.body])
-    ).toEqual([["/data/queryInfoByNode", "POST", { id: "Order:1", class: "Order" }]]);
   });
 
   it("creating classes and relations in modeling keeps the original request body fields", async () => {

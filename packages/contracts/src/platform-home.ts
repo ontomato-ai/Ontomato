@@ -28,6 +28,36 @@ export const homeDashboardsSchema = z
   .strict();
 export type HomeDashboards = z.infer<typeof homeDashboardsSchema>;
 
+/** Ordered selected card IDs per followed dashboard; an absent or empty list displays all cards of that dashboard. */
+export const homeDashboardCardsSchema = z.record(
+  z.string().min(1),
+  z.array(z.string().min(1)).refine(distinct((id) => id), "duplicate card"),
+);
+export type HomeDashboardCards = z.infer<typeof homeDashboardCardsSchema>;
+
+/** Ordered pinned conversation session IDs (max 20); session titles belong to platform:AgentSession. */
+export const homePinnedSessionsSchema = z
+  .array(runtimeIdSchema)
+  .max(20)
+  .refine(distinct((id) => id), "duplicate pinned session");
+export type HomePinnedSessions = z.infer<typeof homePinnedSessionsSchema>;
+
+/** Target filter groups supported by platform:Favorite.list. */
+export const favoriteTargetGroupSchema = z.enum([
+  "all",
+  "apps",
+  "applications",
+  "agents",
+  "dashboards",
+  "dashboardCards",
+  "sessions",
+  "objects",
+]);
+export type FavoriteTargetGroup = z.infer<typeof favoriteTargetGroupSchema>;
+
+export const favoriteMoveDirectionSchema = z.enum(["up", "down"]);
+export type FavoriteMoveDirection = z.infer<typeof favoriteMoveDirectionSchema>;
+
 /** One pinned business object shown in the user's favorites, deduplicated by className + primaryKey. */
 export const homePinnedObjectSchema = z
   .object({
