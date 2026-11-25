@@ -80,6 +80,22 @@ function readCount(typeId: string, read = "count") {
   });
 }
 
+/** A normal catalogue query, including its one-row page, must keep returning rows. */
+function readQuery(typeId: string, params: Record<string, unknown>) {
+  const projection = productProjectionSchema.parse({
+    id: "builtin-product-test-query", domainId: null, ownerId: null, editable: false,
+    name: "Query", description: "", visibility: "platform", revision: 1,
+    createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
+    componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read: "query", params } },
+  });
+  mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection });
+  return readProductPanelData(owner, viewer, {
+    source: { kind: "frame", applicationId: "ontology", useId: "objects" },
+    memberPath: [{ member: "rows" }], dataName: "rows", inputs: {},
+  });
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.resolveRoot.mockResolvedValue({});
@@ -161,6 +177,28 @@ describe("platform count reads", () => {
       return Response.json({ success: true, data: { total: 5 } });
     }));
     await expect(readCount(APPLICATION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 5 } });
+  });
+
+  it("keeps a one-row application catalogue query a row query", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      const request = new URL(url);
+      expect(request.pathname).toBe("/platform/applications/catalogue");
+      expect(request.searchParams.get("countOnly")).toBeNull();
+      expect(request.searchParams.get("size")).toBe("1");
+      expect(init.method).toBe("GET");
+      return Response.json({
+        success: true,
+        data: {
+          rows: [{
+            id: "app-1", names: { en: "App" }, descriptions: { en: "" }, icon: "app-window",
+            source: "builtin", canMaintain: false, canEditEntries: false, canGrant: false, entryCount: 0,
+          }],
+          total: 1,
+        },
+      });
+    }));
+    const result = await readQuery(APPLICATION, { size: { literal: 1 } });
+    expect(result).toMatchObject({ status: "ready", value: { total: 1, rows: [{ primaryKey: "app-1" }] } });
   });
 
   it("projects a fixed object state key before reading the selected class's attributes", async () => {

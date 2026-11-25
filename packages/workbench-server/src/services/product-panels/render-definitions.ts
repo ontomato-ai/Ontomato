@@ -33,11 +33,11 @@ function readDefinition<T extends Definition>(
   cache.set(key, version);
   if (cache.size > maxDefinitions) cache.delete(cache.keys().next().value!);
   if (!editable) return version.record;
-  if (!version.editable) {
-    version.editable = { ...version.record, editable: true };
-    editableSources.set(version.editable, version.record);
-  }
-  return version.editable;
+  if (version.editable) return version.editable;
+  const editableRecord: T = { ...version.record, editable: true };
+  editableSources.set(editableRecord, version.record);
+  version.editable = editableRecord;
+  return editableRecord;
 }
 
 export function panelDefinition(row: CurrentProductRow, editable: boolean) {

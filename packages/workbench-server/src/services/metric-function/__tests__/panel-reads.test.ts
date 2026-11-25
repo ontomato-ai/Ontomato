@@ -174,6 +174,16 @@ it("counts the metric catalogue through the same owner URL", async () => {
   expect(sent).toEqual([{ path: "/metricView/queryList", body: { countOnly: true } }]);
 });
 
+it("keeps a one-row metric catalogue query a row query", async () => {
+  const sent = catalogueOwner(() => ({ success: true, data: [metricAsset] }));
+
+  const result = await createMetricReadAdapter(owner, viewer).query({ size: 1 });
+
+  expect(result.rows.map(row => row.primaryKey)).toEqual(["m1"]);
+  expect(result.total).toBe(1);
+  expect(sent).toEqual([{ path: "/metricView/queryList", body: {} }]);
+});
+
 it("reads the function catalogue with the owner's operation label", async () => {
   const sent = catalogueOwner(path => ({ success: true, data: path.endsWith("/queryList") ? [functionAsset] : functionAsset }));
   const reads = createFunctionReadAdapter(owner, viewer);
