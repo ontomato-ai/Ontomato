@@ -300,6 +300,8 @@ export const en = {
   "panels.productCatalog.application.memberTarget": "Target",
   "panels.productCatalog.projection.id": "Projection ID",
   "panels.productCatalog.projection.component": "Component",
+  "panels.productCatalog.projection.objectType": "Bound object type",
+  "panels.productCatalog.projection.objectTypeGroupCustom": "Business object types",
   "panels.productCatalog.projection.kind": "Projection type",
   "panels.productCatalog.projection.kindStandard": "Standard projection",
   "panels.productCatalog.projection.kindChart": "Chart projection",

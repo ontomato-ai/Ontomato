@@ -18,6 +18,8 @@ import {
   deleteProductCurrentResponseSchema,
   deleteProductPanelResponseSchema,
   productCatalogQuerySchema,
+  productProjectionCatalogQuerySchema,
+  projectionBoundObjectTypes,
   productCurrentIdParamsSchema,
   productPanelInUseErrorSchema,
   productPanelListResponseSchema,
@@ -432,6 +434,79 @@ test("declares grant reads for both resource classes and a panel-only template f
   assert.equal(panelReadParameterSchemas.productTemplate.safeParse("true").success, false);
   const projectionQuery = platformObjectTypes[PRODUCT_PROJECTION].reads?.query;
   assert.equal(projectionQuery?.parameterMode === "fixed" && Object.hasOwn(projectionQuery.params, "template"), false);
+  assert.equal(projectionQuery?.parameterMode === "fixed" && projectionQuery.params.componentId, "productProjectionComponent");
+  assert.equal(projectionQuery?.parameterMode === "fixed" && projectionQuery.params.objectType, "productProjectionObjectType");
+  assert.equal(panelQuery?.parameterMode === "fixed" && Object.hasOwn(panelQuery.params, "componentId"), false);
+  assert.equal(panelQuery?.parameterMode === "fixed" && Object.hasOwn(panelQuery.params, "objectType"), false);
+});
+
+test("declares projection-only componentId and objectType catalog filters and derives bound object types from existing facts", async () => {
+  const { productPanelCatalogQuerySchema } = await import("./product-catalog-query");
+  const { METRIC_VIEW, ONTOLOGY_TYPE, PRODUCT_PROJECTION, SCHEDULED_TASK, SDK_COMPONENT, platformObjectTypes } = await import("./platform-object-types");
+  const { panelReadParameterSchemas } = await import("./panel-projection");
+
+  assert.equal(productPanelCatalogQuerySchema.safeParse({ componentId: "@ontomato/sdk:ObjectList" }).success, false);
+  assert.equal(productPanelCatalogQuerySchema.safeParse({ objectType: "Student" }).success, false);
+  assert.deepEqual(productProjectionCatalogQuerySchema.parse({
+    q: " tasks ",
+    componentId: " @ontomato/sdk:ObjectList ",
+    objectType: " platform:ScheduledTask ",
+    limit: "20",
+  }), {
+    q: "tasks",
+    scope: "all",
+    sort: "updated",
+    limit: 20,
+    componentId: "@ontomato/sdk:ObjectList",
+    objectType: "platform:ScheduledTask",
+  });
+  assert.deepEqual(productProjectionCatalogQuerySchema.parse({ componentId: "   ", objectType: "" }), {
+    q: "",
+    scope: "all",
+    sort: "updated",
+    limit: 20,
+    componentId: undefined,
+    objectType: undefined,
+  });
+
+  assert.equal(panelReadParameterSchemas.productProjectionComponent.safeParse("@ontomato/sdk:ObjectList").success, true);
+  assert.equal(panelReadParameterSchemas.productProjectionComponent.safeParse("   ").success, false);
+  assert.equal(panelReadParameterSchemas.productProjectionObjectType.safeParse("Student").success, true);
+  assert.equal(panelReadParameterSchemas.productProjectionObjectType.safeParse("").success, false);
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.componentOptions?.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.componentOptions?.rowType, SDK_COMPONENT);
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.objectTypeOptions?.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.objectTypeOptions?.rowType, ONTOLOGY_TYPE);
+
+  assert.deepEqual(projectionBoundObjectTypes({
+    data: { rows: { source: { type: { kind: "ObjectType", id: "Student" } }, read: "query", params: {} } },
+    inputs: {},
+  }), ["Student"]);
+  assert.deepEqual(projectionBoundObjectTypes({
+    data: {
+      record: { source: { object: { input: "target" } }, read: "record", params: {} },
+      rows: { source: { object: { literal: { className: "Order", primaryKey: "o-1" } } }, read: "list", params: {} },
+    },
+    inputs: { target: { kind: "object", objectType: "Course" } },
+  }), ["Course", "Order"]);
+  assert.deepEqual(projectionBoundObjectTypes({
+    data: {},
+    inputs: { target: { kind: "list", items: { kind: "object", objectType: "Order" } } },
+    operations: {
+      approve: { operation: { kind: "Action", id: "approveOrder" }, target: { input: "target" } },
+      runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } },
+    },
+  }), ["Order", SCHEDULED_TASK]);
+  assert.deepEqual(projectionBoundObjectTypes({
+    data: {},
+    inputs: { target: { kind: "object", objectType: "@any" } },
+    metricId: "m-1",
+  }), [METRIC_VIEW]);
+  assert.deepEqual(projectionBoundObjectTypes({
+    data: {},
+    inputs: {},
+    conversationEntry: { target: { kind: "page-default" } },
+  }), []);
 });
 
 test("application contracts accept optional allowStandalone toggle and route it to identity rather than entries", async () => {

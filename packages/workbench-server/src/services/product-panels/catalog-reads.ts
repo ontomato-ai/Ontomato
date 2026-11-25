@@ -22,11 +22,14 @@ import {
   PRODUCT_PROJECTION,
   RELATIONSHIP,
   SDK_COMPONENT,
+  platformObjectTypes,
+  platformOntologyLayers,
 } from "@ontomato/contracts/platform-object-types";
 import type { DirectPanelPortType } from "@ontomato/contracts/panel-manifest";
 import {
-  METRIC_CHART_COMPONENT, currentPanelRecordSchema, productCatalogQuerySchema,
-  productPanelInputSchema, productPanelUsedBySchema, productVisibilitySchema, registerProductPanelRequestSchema,
+  METRIC_CHART_COMPONENT, currentPanelRecordSchema,
+  productPanelInputSchema, productPanelUsedBySchema, productProjectionCatalogQuerySchema,
+  productVisibilitySchema, projectionBoundObjectTypes, registerProductPanelRequestSchema,
   type ProductProjection, type ProductVisibility,
   registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
@@ -39,7 +42,10 @@ import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
 import { readHomePanel } from "../platform-home/service";
 import { platformHomeStore } from "../platform-home/store";
-import { currentProductGrants, currentProductUsedBy, listCurrentProducts, listUnavailablePanels, readCataloguePanel } from "./catalog";
+import {
+  currentProductGrants, currentProductUsedBy, listCurrentProducts, listProjectionFilterFacets, listUnavailablePanels,
+  readCataloguePanel,
+} from "./catalog";
 import { readAuthorComponentCatalogue } from "./component-catalogue";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 
@@ -788,10 +794,24 @@ export interface ProductProjectionSummaryRow {
   updatedAt: string;
   editable: boolean;
   componentId: string;
+  objectTypes?: readonly string[];
 }
 
 function shortComponentName(componentId: string): string {
   return componentId.split(":").pop() || componentId || "—";
+}
+
+function resolveObjectTypeLabel(typeId: string, language: string): string {
+  const entry = Object.hasOwn(platformObjectTypes, typeId) ? platformObjectTypes[typeId] : undefined;
+  if (entry?.labelKey) return tForLocale(language, entry.labelKey);
+  return typeId;
+}
+
+function formatBoundObjectTypes(typeIds: readonly string[], language: string): string | undefined {
+  if (!typeIds.length) return undefined;
+  const labels = typeIds.map(id => resolveObjectTypeLabel(id, language));
+  if (labels.length <= 2) return labels.join(", ");
+  return `${labels.slice(0, 2).join(", ")} +${labels.length - 2}`;
 }
 
 function formatPortType(port: DirectPanelPortType, locale: string): string {
@@ -916,6 +936,8 @@ export function toProductProjectionPanelRecord(
   const kindLabel = word(isChart ? "kindChart" : "kindStandard");
   const kindTone = isChart ? "warning" : "info";
   const domainShared = extra?.domainShared ?? (row.visibility === "domain");
+  const boundObjectTypes = isDetail ? projectionBoundObjectTypes(row) : (row.objectTypes ?? []);
+  const objectTypesDisplay = formatBoundObjectTypes(boundObjectTypes, language);
 
   const fields: PanelRecord["fields"] = {
     id: row.id,
@@ -923,6 +945,7 @@ export function toProductProjectionPanelRecord(
       ? { kind: "reference", className: SDK_COMPONENT, primaryKey: row.componentId, label: componentDisplay }
       : componentDisplay,
     componentId: row.componentId,
+    ...(objectTypesDisplay !== undefined && { objectTypes: objectTypesDisplay }),
     projectionKind: kindLabel,
     scope: scopeLabel,
     visibility: row.visibility,
@@ -939,6 +962,7 @@ export function toProductProjectionPanelRecord(
   const fieldLabels: NonNullable<PanelRecord["fieldLabels"]> = {
     id: word("id"),
     component: word("component"),
+    objectTypes: word("objectType"),
     projectionKind: word("kind"),
     scope: word("scope"),
     access: word("access"),
@@ -1023,7 +1047,16 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
 
   return {
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
-      const listed = await listCurrentProducts(owner, viewer, "projection", productCatalogQuerySchema.parse(catalogueQuery(params)));
+      const listed = await listCurrentProducts(
+        owner,
+        viewer,
+        "projection",
+        productProjectionCatalogQuerySchema.parse({
+          ...catalogueQuery(params),
+          componentId: params.componentId,
+          objectType: params.objectType,
+        }),
+      );
       const [ownerLabels, componentLabels] = await Promise.all([
         resolveOwnerLabels(listed.items.map(item => item.ownerId)),
         resolveComponentLabels(),
@@ -1032,6 +1065,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         rows: listed.items.map(item => toProductProjectionPanelRecord({
           ...item,
           componentId: item.componentId ?? "",
+          ...("objectTypes" in item && Array.isArray(item.objectTypes) ? { objectTypes: item.objectTypes } : {}),
         }, viewer.locale, {
           ownerLabel: item.ownerId ? ownerLabels.get(item.ownerId) : undefined,
           componentLabel: item.componentId ? componentLabels.get(item.componentId) : undefined,
@@ -1039,6 +1073,61 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         total: listed.total,
         ...(listed.nextCursor ? { nextCursor: listed.nextCursor } : {}),
       };
+    },
+    async componentOptions(): Promise<PanelRecord[]> {
+      const [{ componentIds }, catalogue] = await Promise.all([
+        listProjectionFilterFacets(owner, viewer),
+        readAuthorComponentCatalogue(owner).catch(() => new Map()),
+      ]);
+      const domainPackageLabel = tForLocale(language, "panels.sdkComponent.domain");
+      const packageFieldLabel = tForLocale(language, "panels.sdkComponent.package");
+      return componentIds
+        .map((componentId): PanelRecord => {
+          const entry = catalogue.get(componentId);
+          const label = entry?.label || shortComponentName(componentId);
+          const packageLabel = entry?.packageName
+            ?? (componentId.includes(":") && !componentId.startsWith("domain-component:")
+              ? componentId.slice(0, componentId.lastIndexOf(":"))
+              : domainPackageLabel);
+          return {
+            primaryKey: componentId,
+            className: SDK_COMPONENT,
+            label,
+            ...(label !== componentId && { subtitle: componentId }),
+            fields: { componentId, package: packageLabel },
+            fieldLabels: { componentId: word("component"), package: packageFieldLabel },
+          };
+        })
+        .sort((left, right) =>
+          String(left.fields.package ?? "").localeCompare(String(right.fields.package ?? ""))
+          || left.label.localeCompare(right.label),
+        );
+    },
+    async objectTypeOptions(): Promise<PanelRecord[]> {
+      const { objectTypes } = await listProjectionFilterFacets(owner, viewer);
+      const layerOrder = new Map<string, number>(platformOntologyLayers.map((layer, index) => [layer, index]));
+      const customGroupLabel = word("objectTypeGroupCustom");
+      return objectTypes
+        .map((typeId) => {
+          const entry = Object.hasOwn(platformObjectTypes, typeId) ? platformObjectTypes[typeId] : undefined;
+          const label = resolveObjectTypeLabel(typeId, language);
+          const layer = entry?.layer;
+          const groupLabel = layer ? tForLocale(language, `platformOntology.layers.${layer}`) : customGroupLabel;
+          const rank = layer ? (layerOrder.get(layer) ?? platformOntologyLayers.length) : -1;
+          return {
+            rank,
+            record: {
+              primaryKey: typeId,
+              className: ONTOLOGY_TYPE,
+              label,
+              ...(label !== typeId && { subtitle: typeId }),
+              fields: { typeId, group: groupLabel },
+              fieldLabels: { typeId: word("objectType"), group: word("objectType") },
+            } satisfies PanelRecord,
+          };
+        })
+        .sort((left, right) => left.rank - right.rank || left.record.label.localeCompare(right.record.label))
+        .map(item => item.record);
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       const projection = await rawRecord(primaryKey);

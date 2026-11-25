@@ -462,11 +462,33 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
   if (command === "uses" && args.length === 1) {
     return printData(await requestJson(api, "GET", `/platform/applications/${encodeURIComponent(args[0])}/panel-uses`));
   }
+  if (command === "projections") {
+    const query = new URLSearchParams();
+    const q = takeOption(args, "--q") ?? takeOption(args, "--search");
+    const componentId = takeOption(args, "--component");
+    const objectType = takeOption(args, "--object-type");
+    const scope = takeOption(args, "--scope");
+    const sort = takeOption(args, "--sort");
+    const limit = takeOption(args, "--limit");
+    const cursor = takeOption(args, "--cursor");
+    if (args.length > 0) {
+      die("panel projections [--q <text>] [--component <componentId>] [--object-type <typeId>] [--scope all|mine|shared] [--sort updated|name] [--limit <n>] [--cursor <token>]");
+    }
+    if (q !== null) query.set("q", q);
+    if (componentId !== null) query.set("componentId", componentId);
+    if (objectType !== null) query.set("objectType", objectType);
+    if (scope !== null) query.set("scope", scope);
+    if (sort !== null) query.set("sort", sort);
+    if (limit !== null) query.set("limit", limit);
+    if (cursor !== null) query.set("cursor", cursor);
+    const suffix = query.size ? `?${query}` : "";
+    return print(await workbench(api, "GET", `/product-projections${suffix}`));
+  }
   if ((command === "projection" || command === "get") && args.length === 1) {
     const collection = command === "projection" ? "projections" : "panels";
     return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
   }
-  die("panel requires applications, type <id> [--read <name>], delete application|panel <id>, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
+  die("panel requires applications, type <id> [--read <name>], delete application|panel <id>, projections [--q <text>] [--component <id>] [--object-type <typeId>], projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
 }
 
 async function functionCommand(api, [command, ...args]) {
@@ -569,6 +591,7 @@ function usage() {
   panel type <id> [--read <name>]
   panel type --all
   panel delete application|panel <id>
+  panel projections [--q <text>] [--component <componentId>] [--object-type <typeId>] [--scope all|mine|shared] [--sort updated|name] [--limit <n>] [--cursor <token>]
   panel projection <id>
   panel get <id>
   panel uses <applicationId>

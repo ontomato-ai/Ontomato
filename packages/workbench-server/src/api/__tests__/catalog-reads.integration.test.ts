@@ -525,3 +525,76 @@ it("filters panel templates in PostgreSQL before scanning cursor pages", async (
   expect(second.rows.map(item => ({ id: item.primaryKey, isTemplate: item.fields.isTemplate }))).toEqual([{ id: "two", isTemplate: true }]);
   expect(second.nextCursor).toBeUndefined();
 });
+
+it("filters projections in PostgreSQL by componentId and bound objectType before paging and returns distinct facets", async () => {
+  const { listCurrentProducts, listProjectionFilterFacets } = await import("../../services/product-panels/catalog");
+  const { SCHEDULED_TASK } = await import("@ontomato/contracts/platform-object-types");
+
+  const seedProjection = async (id: string, definition: Record<string, unknown>) => {
+    await state.pool!.query(
+      `INSERT INTO "${state.schema}".product_projections (domain_id,id,owner_id,definition) VALUES ($1,$2,$3,$4)`,
+      [owner.domainId, id, owner.userId, { visibility: "domain", inputs: {}, outputs: {}, config: {}, data: {}, ...definition }],
+    );
+    state.use.push(id);
+  };
+  await seedProjection("filter-sched-list", {
+    name: "Filter A Schedule List", description: "Lists schedules",
+    componentId: "@ontomato/sdk:ObjectList",
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+  });
+  await seedProjection("filter-stu-list-1", {
+    name: "Filter B Student List 1", description: "Lists students 1",
+    componentId: "@ontomato/sdk:ObjectList",
+    data: { rows: { source: { type: { kind: "ObjectType", id: "Student" } }, read: "query", params: {} } },
+  });
+  await seedProjection("filter-stu-list-2", {
+    name: "Filter C Student List 2", description: "Lists students 2",
+    componentId: "@ontomato/sdk:ObjectList",
+    data: { rows: { source: { type: { kind: "ObjectType", id: "Student" } }, read: "query", params: {} } },
+  });
+  await seedProjection("filter-stu-form", {
+    name: "Filter D Student Form", description: "Edits student",
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { target: { kind: "object", objectType: "Student" } },
+    data: { form: { source: { object: { input: "target" } }, read: "form", params: {} } },
+  });
+  await seedProjection("filter-sched-run", {
+    name: "Filter E Run Schedule", description: "Runs schedule",
+    componentId: "@ontomato/sdk:OperationButton",
+    operations: { run: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } } },
+  });
+
+  const byComponent = await listCurrentProducts(owner, viewer, "projection", {
+    q: "Filter ", scope: "all", sort: "name", limit: 10, componentId: "@ontomato/sdk:ObjectList",
+  });
+  expect(byComponent.total).toBe(3);
+  expect(byComponent.items.map(item => item.id)).toEqual(["filter-sched-list", "filter-stu-list-1", "filter-stu-list-2"]);
+
+  const byPlatformType = await listCurrentProducts(owner, viewer, "projection", {
+    q: "Filter ", scope: "all", sort: "name", limit: 10, objectType: SCHEDULED_TASK,
+  });
+  expect(byPlatformType.total).toBe(2);
+  expect(byPlatformType.items.map(item => item.id)).toEqual(["filter-sched-list", "filter-sched-run"]);
+
+  const combinedPage1 = await listCurrentProducts(owner, viewer, "projection", {
+    q: "Filter ", scope: "all", sort: "name", limit: 1,
+    componentId: "@ontomato/sdk:ObjectList", objectType: "Student",
+  });
+  expect(combinedPage1.total).toBe(2);
+  expect(combinedPage1.items.map(item => item.id)).toEqual(["filter-stu-list-1"]);
+  expect(combinedPage1.nextCursor).toEqual(expect.any(String));
+
+  const combinedPage2 = await listCurrentProducts(owner, viewer, "projection", {
+    q: "Filter ", scope: "all", sort: "name", limit: 1,
+    componentId: "@ontomato/sdk:ObjectList", objectType: "Student", cursor: combinedPage1.nextCursor!,
+  });
+  expect(combinedPage2.total).toBe(2);
+  expect(combinedPage2.items.map(item => item.id)).toEqual(["filter-stu-list-2"]);
+  expect(combinedPage2.nextCursor).toBeNull();
+
+  const facets = await listProjectionFilterFacets(owner, viewer);
+  expect(facets.componentIds).toEqual(expect.arrayContaining([
+    "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
+  ]));
+  expect(facets.objectTypes).toEqual(expect.arrayContaining([SCHEDULED_TASK, "Student"]));
+});

@@ -83,6 +83,7 @@ registered `target.projectionId`.
 | `panel type <type-id> [--read <name>]` | Read signature with its result schema. With no filter, list the type's reads and operations. |
 | `panel type --all` | The visible author type table as JSON, for offline checks |
 | `panel delete application\|panel <id>` | Delete a trial application or panel through its owner |
+| `panel projections [--q <text>] [--component <componentId>] [--object-type <typeId>] [--scope all\|mine\|shared] [--sort updated\|name] [--limit <n>] [--cursor <token>]` | Search and filter authorized projections across the full visible catalogue before paging, by keyword, component ID, and bound object type |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
 | `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft `catalog/` and `detail/` from the type table. Select single and batch buttons by owner operation ID. The returned `entry` is the catalog path. |

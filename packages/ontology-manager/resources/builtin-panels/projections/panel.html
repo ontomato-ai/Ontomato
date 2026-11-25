@@ -25,6 +25,14 @@
   .proj-filter-select {
     width: 9.5rem;
   }
+  .proj-filter-picker {
+    width: 12rem;
+    min-width: 0;
+  }
+  .proj-filter-picker .sdk-inline-reference-picker,
+  .proj-filter-picker .sdk-inline-reference-picker-select {
+    width: 100%;
+  }
   .proj-btn-icon {
     margin-inline-end: 6px;
     flex-shrink: 0;
@@ -62,6 +70,9 @@
   @container proj-page (max-width: 760px) {
     .proj-filter-select {
       width: 8.5rem;
+    }
+    .proj-filter-picker {
+      width: 10.5rem;
     }
   }
 </style>
@@ -107,9 +118,15 @@
     </page-header>
 
     <div v-show="!creating" class="proj-catalog">
-      <projection slot="catalogue" class="proj-list-slot" @choose="openDetail">
+      <projection slot="catalogue" class="proj-list-slot" @choose="openDetail" @clear-filters="clearFilters">
         <template #filters>
           <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
+          <div class="proj-filter-picker">
+            <projection slot="componentPicker"></projection>
+          </div>
+          <div class="proj-filter-picker">
+            <projection slot="objectTypePicker"></projection>
+          </div>
           <sdk-select v-model="sortModel" class="proj-filter-select" :aria-label="t('sort.label')">
             <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
             <sdk-option value="name" :label="t('sort.name')"></sdk-option>

@@ -132,6 +132,7 @@ const workbenchRules: readonly RouteRule[] = [
   { methods: ["POST"], match: /^\/api\/workspaces\/(?!applications$)[^/]+\/(?:import|restore|publish|rollback|build-tests)$/u },
   { methods: ["DELETE"], match: /^\/api\/workspaces\/(?!applications$)[^/]+\/build-tests$/u },
   { methods: ["GET", "PUT", "DELETE"], match: /^\/api\/product-panels\/(?!read$|nested-read$|definition-stream$|personal-state$)[^/]+$/u },
+  { methods: ["GET"], match: "/api/product-projections" },
   { methods: ["POST"], match: "/api/product-projections/chart-sources" },
   { methods: ["GET", "PUT"], match: /^\/api\/product-projections\/(?!chart-sources$)[^/]+$/u },
   { methods: ["GET"], match: /^\/api\/product-projections\/(?!chart-sources$)[^/]+\/used-by$/u },

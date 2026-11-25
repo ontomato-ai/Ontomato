@@ -2,8 +2,11 @@ import {
   APPLICATION,
   APPLICATION_PANEL_USE,
   OBJECT_TYPE,
+  ONTOLOGY_TYPE,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
+  SCHEDULED_TASK,
+  SDK_COMPONENT,
 } from "@ontomato/contracts/platform-object-types";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +15,7 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
 const listCurrentProductsMock = vi.hoisted(() => vi.fn());
+const listProjectionFilterFacetsMock = vi.hoisted(() => vi.fn());
 const currentProductUsedByMock = vi.hoisted(() => vi.fn());
 const currentProductGrantsMock = vi.hoisted(() => vi.fn());
 const copyCurrentProductMock = vi.hoisted(() => vi.fn());
@@ -22,6 +26,7 @@ const searchProductGrantPrincipalsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../catalog", () => ({
   listCurrentProducts: listCurrentProductsMock,
+  listProjectionFilterFacets: listProjectionFilterFacetsMock,
   readCataloguePanel: readCataloguePanelMock,
   currentProductUsedBy: currentProductUsedByMock,
   currentProductGrants: currentProductGrantsMock,
@@ -44,7 +49,7 @@ vi.mock("../../product-governance/grants", () => ({
   searchProductGrantPrincipals: searchProductGrantPrincipalsMock,
 }));
 
-import { createProductPanelReadAdapter } from "../catalog-reads";
+import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../catalog-reads";
 
 beforeAll(() => {
   installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
@@ -397,5 +402,76 @@ describe("createProductPanelReadAdapter", () => {
 
     expect(await deleteOp!.unavailable?.(host as never, { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "orders-panel" }))
       .toBeUndefined();
+  });
+
+  it("forwards projection componentId and objectType filters and exposes localized facet options", async () => {
+    listCurrentProductsMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: "proj-sched-list",
+          ownerId: null,
+          name: "Scheduled tasks",
+          description: "Lists tasks",
+          visibility: "platform",
+          revision: 1,
+          updatedAt: "2026-11-25T00:00:00.000Z",
+          editable: false,
+          componentId: "@ontomato/sdk:ObjectList",
+          objectTypes: [SCHEDULED_TASK, "Student"],
+        },
+        {
+          id: "proj-chat",
+          ownerId: "user-1",
+          name: "Chat entry",
+          description: "",
+          visibility: "private",
+          revision: 1,
+          updatedAt: "2026-11-25T00:00:00.000Z",
+          editable: true,
+          componentId: "@ontomato/sdk:ConversationEntry",
+          objectTypes: [],
+        },
+      ],
+      total: 2,
+      nextCursor: null,
+    });
+    const adapter = createProductProjectionReadAdapter(owner, viewer);
+    const result = panelReadResultSchemas.panelRecordQuery.parse(await adapter.query({
+      search: "tasks",
+      scope: "all",
+      sort: "name",
+      size: 20,
+      componentId: "@ontomato/sdk:ObjectList",
+      objectType: SCHEDULED_TASK,
+    }));
+    expect(listCurrentProductsMock).toHaveBeenCalledWith(owner, viewer, "projection", {
+      q: "tasks",
+      scope: "all",
+      sort: "name",
+      limit: 20,
+      cursor: undefined,
+      componentId: "@ontomato/sdk:ObjectList",
+      objectType: SCHEDULED_TASK,
+    });
+    expect(result.total).toBe(2);
+    expect(result.rows[0]?.fields.objectTypes).toContain("Student");
+    expect(result.rows[1]?.fields.objectTypes).toBeUndefined();
+
+    listProjectionFilterFacetsMock.mockResolvedValue({
+      componentIds: ["@ontomato/sdk:ObjectForm", "@ontomato/sdk:ObjectList", "domain-component:custom-card"],
+      objectTypes: [SCHEDULED_TASK, "Student"],
+    });
+    const compOptions = panelReadResultSchemas.panelRecordList.parse(await adapter.componentOptions());
+    expect(compOptions.map(row => ({ key: row.primaryKey, className: row.className, pkg: row.fields.package }))).toEqual([
+      { key: "@ontomato/sdk:ObjectForm", className: SDK_COMPONENT, pkg: "@ontomato/sdk" },
+      { key: "@ontomato/sdk:ObjectList", className: SDK_COMPONENT, pkg: "@ontomato/sdk" },
+      { key: "domain-component:custom-card", className: SDK_COMPONENT, pkg: en["panels.sdkComponent.domain"] },
+    ]);
+
+    const typeOptions = panelReadResultSchemas.panelRecordList.parse(await adapter.objectTypeOptions());
+    expect(typeOptions.map(row => ({ key: row.primaryKey, className: row.className, group: row.fields.group }))).toEqual([
+      { key: "Student", className: ONTOLOGY_TYPE, group: en["panels.productCatalog.projection.objectTypeGroupCustom"] },
+      { key: SCHEDULED_TASK, className: ONTOLOGY_TYPE, group: en["platformOntology.layers.capability"] },
+    ]);
   });
 });

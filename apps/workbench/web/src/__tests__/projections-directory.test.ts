@@ -625,17 +625,114 @@ async function mountProjectionsApp(options: MountOptions = {}) {
       }
       reads.push(body);
       const member = body.memberPath[0]?.member;
+      if (member === "componentPicker") {
+        return Response.json({
+          status: "ready",
+          value: [
+            {
+              primaryKey: "@ontomato/sdk:ObjectSummary",
+              className: "platform:SDKComponent",
+              label: "ObjectSummary",
+              subtitle: "@ontomato/sdk:ObjectSummary",
+              fields: { componentId: "@ontomato/sdk:ObjectSummary", package: "@ontomato/sdk" },
+            },
+            {
+              primaryKey: "@ontomato/sdk:ObjectList",
+              className: "platform:SDKComponent",
+              label: "ObjectList",
+              subtitle: "@ontomato/sdk:ObjectList",
+              fields: { componentId: "@ontomato/sdk:ObjectList", package: "@ontomato/sdk" },
+            },
+            {
+              primaryKey: "@ontomato/sdk:MetricChart",
+              className: "platform:SDKComponent",
+              label: "MetricChart",
+              subtitle: "@ontomato/sdk:MetricChart",
+              fields: { componentId: "@ontomato/sdk:MetricChart", package: "@ontomato/sdk" },
+            },
+          ],
+        });
+      }
+      if (member === "objectTypePicker") {
+        return Response.json({
+          status: "ready",
+          value: [
+            {
+              primaryKey: "Student",
+              className: "platform:OntologyType",
+              label: "Student",
+              fields: { typeId: "Student", group: "Business object types" },
+            },
+            {
+              primaryKey: "platform:ScheduledTask",
+              className: "platform:OntologyType",
+              label: "Scheduled task",
+              subtitle: "platform:ScheduledTask",
+              fields: { typeId: "platform:ScheduledTask", group: "Capability" },
+            },
+            {
+              primaryKey: "platform:MetricView",
+              className: "platform:OntologyType",
+              label: "Metric view",
+              subtitle: "platform:MetricView",
+              fields: { typeId: "platform:MetricView", group: "Capability" },
+            },
+          ],
+        });
+      }
       if (member === "catalogue") {
+        const componentFilter = typeof body.inputs?.componentId === "string" ? body.inputs.componentId : "";
+        const objectTypeFilter = typeof body.inputs?.objectType === "string" ? body.inputs.objectType : "";
+        const allCatalogRows = [
+          {
+            fixture: FIXTURES["proj-a"]!,
+            componentId: "@ontomato/sdk:ObjectList",
+            component: "ObjectList",
+            objectTypeIds: ["Student"],
+            objectTypes: "Student",
+          },
+          {
+            fixture: FIXTURES["proj-b"]!,
+            componentId: "@ontomato/sdk:ObjectSummary",
+            component: "ObjectSummary",
+            objectTypeIds: ["platform:ScheduledTask"],
+            objectTypes: "Scheduled task",
+          },
+          {
+            fixture: FIXTURES["proj-chart"]!,
+            componentId: "@ontomato/sdk:MetricChart",
+            component: "MetricChart",
+            objectTypeIds: ["platform:MetricView"],
+            objectTypes: "Metric view",
+          },
+          {
+            fixture: FIXTURES["proj-readonly"]!,
+            componentId: "@ontomato/sdk:ObjectList",
+            component: "ObjectList",
+            objectTypeIds: ["platform:ScheduledTask"],
+            objectTypes: "Scheduled task",
+          },
+        ];
+        const matched = allCatalogRows.filter((entry) =>
+          (!componentFilter || entry.componentId === componentFilter)
+          && (!objectTypeFilter || entry.objectTypeIds.includes(objectTypeFilter)),
+        );
         return Response.json({
           status: "ready",
           value: {
-            rows: [FIXTURES["proj-a"]!, FIXTURES["proj-b"]!, FIXTURES["proj-chart"]!, FIXTURES["proj-readonly"]!].map((item) => ({
-              primaryKey: item.id,
-              label: item.name,
-              subtitle: item.id,
-              fields: { component: "ObjectSummary", owner: "Alice", scope: "Private", updatedAt: "2026-11-24T00:00:00Z" },
+            rows: matched.map((entry) => ({
+              primaryKey: entry.fixture.id,
+              label: entry.fixture.name,
+              subtitle: entry.fixture.id,
+              fields: {
+                component: entry.component,
+                objectTypes: entry.objectTypes,
+                owner: "Alice",
+                scope: entry.fixture.domainShared ? "Domain" : "Private",
+                updatedAt: "2026-11-24T00:00:00Z",
+              },
             })),
-            total: 4,
+            total: matched.length,
           },
         });
       }
@@ -797,6 +894,11 @@ async function mountProjectionsApp(options: MountOptions = {}) {
       () => Boolean(mounted.element.querySelector(".proj-detail-page")),
       "initial projection detail page",
     );
+  } else if (startAddress.includes("?")) {
+    await waitFor(
+      () => Boolean(mounted.element.querySelector(".proj-list-slot")),
+      "initial filtered projections catalog list",
+    );
   } else {
     await waitFor(
       () =>
@@ -844,9 +946,97 @@ describe("projections two-entry catalog & detail panels", () => {
     expect(catalogHtml).not.toContain("<object-form-fields");
     expect(catalogSource.manifest.members.createForm.config.actions).toBe("none");
     expect(catalogSource.manifest.state.creating.deepLink).toBe(false);
+    expect(catalogSource.manifest.state.componentId.deepLink).toBe(true);
+    expect(catalogSource.manifest.state.objectType.deepLink).toBe(true);
     expect(detailSource.manifest.state.detailMode.deepLink).toBe(false);
     expect(catalogSource.manifest.members.catalogue.config.showChevron).toBe(true);
     expect(catalogSource.manifest.members.catalogue.config.fallbackToFirst).toBe(false);
+  });
+
+  it("filters projections via owner read using public componentId & objectType states, syncs URL deep links, and resets on clear filters", { timeout: 20000 }, async () => {
+    const harness = await mountProjectionsApp();
+    const { mounted, observed, reads, present } = harness;
+    try {
+      // Both ReferencePickers render in the toolbar filters slot.
+      expect(mounted.element.querySelectorAll(".proj-filter-picker").length).toBe(2);
+      expect(mounted.element.textContent).toContain("Student");
+      expect(mounted.element.textContent).toContain("Scheduled task");
+
+      // Single component filter via public state drives owner catalogue read and updates URL deep link.
+      await present({ componentId: "@ontomato/sdk:ObjectList" });
+      await waitFor(
+        () =>
+          reads.some((r) => r.memberPath[0]?.member === "catalogue" && r.inputs?.componentId === "@ontomato/sdk:ObjectList")
+          && mounted.element.textContent?.includes("Projection A") === true
+          && mounted.element.textContent?.includes("Shared Projection") === true
+          && !mounted.element.textContent?.includes("Projection B"),
+        "componentId filter narrows catalogue through owner read",
+      );
+      expect(new URL(displayUrlOf(harness), "http://localhost").searchParams.get("componentId")).toBe("@ontomato/sdk:ObjectList");
+      expect((observed.context?.state?.componentFilter as { primaryKey?: string } | undefined)?.primaryKey).toBe("@ontomato/sdk:ObjectList");
+
+      // Combined componentId + objectType filter narrows further through owner read.
+      await present({ componentId: "@ontomato/sdk:ObjectList", objectType: "Student" });
+      await waitFor(
+        () =>
+          reads.some(
+            (r) =>
+              r.memberPath[0]?.member === "catalogue"
+              && r.inputs?.componentId === "@ontomato/sdk:ObjectList"
+              && r.inputs?.objectType === "Student",
+          )
+          && mounted.element.textContent?.includes("Projection A") === true
+          && !mounted.element.textContent?.includes("Shared Projection"),
+        "combined componentId + objectType filter narrows catalogue",
+      );
+      expect(displayUrlOf(harness)).toContain("objectType=Student");
+      expect((observed.context?.state?.objectTypeFilter as { primaryKey?: string } | undefined)?.primaryKey).toBe("Student");
+
+      // Non-matching combination shows narrowed empty state; clicking Clear filters resets both public states & pickers.
+      await present({ componentId: "@ontomato/sdk:MetricChart", objectType: "Student" });
+      await waitFor(
+        () => Boolean(findButton(mounted.element, "Clear filters")),
+        "narrowed empty state offers Clear filters button",
+      );
+      findButton(mounted.element, "Clear filters")!.click();
+      await waitFor(
+        () =>
+          observed.context?.state?.componentId == null
+          && observed.context?.state?.objectType == null
+          && mounted.element.textContent?.includes("Projection A") === true
+          && mounted.element.textContent?.includes("Projection B") === true,
+        "Clear filters restores full projection catalog and clears filter states",
+      );
+    } finally {
+      mounted.app.unmount();
+    }
+  });
+
+  it("restores componentId and objectType filters from URL deep link on initial catalog load", { timeout: 20000 }, async () => {
+    const harness = await mountProjectionsApp({
+      initialAddress: `${CATALOG_PATH}?componentId=%40ontomato%2Fsdk%3AObjectList&objectType=Student`,
+    });
+    const { mounted, observed, reads } = harness;
+    try {
+      await waitFor(
+        () =>
+          reads.some(
+            (r) =>
+              r.memberPath[0]?.member === "catalogue"
+              && r.inputs?.componentId === "@ontomato/sdk:ObjectList"
+              && r.inputs?.objectType === "Student",
+          )
+          && mounted.element.textContent?.includes("Projection A") === true
+          && !mounted.element.textContent?.includes("Projection B"),
+        "deep link restores componentId and objectType filters",
+      );
+      expect(observed.context?.state?.componentId).toBe("@ontomato/sdk:ObjectList");
+      expect(observed.context?.state?.objectType).toBe("Student");
+      expect((observed.context?.state?.componentFilter as { primaryKey?: string } | undefined)?.primaryKey).toBe("@ontomato/sdk:ObjectList");
+      expect((observed.context?.state?.objectTypeFilter as { primaryKey?: string } | undefined)?.primaryKey).toBe("Student");
+    } finally {
+      mounted.app.unmount();
+    }
   });
 
   it("navigates from full-width catalog row click to /ontology/projections/detail?selected=...", { timeout: 20000 }, async () => {

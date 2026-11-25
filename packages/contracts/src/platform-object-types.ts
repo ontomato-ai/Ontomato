@@ -709,7 +709,17 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("productProjection", "product"),
     reads: {
       ...productCatalogueFormReads,
-      query: { ...catalogueQuery, result: "panelRecordQuery" },
+      query: {
+        ...catalogueQuery,
+        params: {
+          ...catalogueQuery.params,
+          componentId: "productProjectionComponent",
+          objectType: "productProjectionObjectType",
+        },
+        result: "panelRecordQuery",
+      },
+      componentOptions: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: SDK_COMPONENT },
+      objectTypeOptions: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: ONTOLOGY_TYPE },
       record: {
         ...catalogueRecord,
         result: "panelRecord",
