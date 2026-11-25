@@ -1,4 +1,4 @@
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import {
   mountPanel,
   usePanelBack,
@@ -111,6 +111,34 @@ await mountPanel({
       void navigate("/ontology/panels").catch(() => undefined);
     }
 
+    const refreshing = ref(false);
+    let refreshTimer = null;
+    watch(headerStatus, (status) => {
+      if (refreshing.value && status && status !== "loading") {
+        refreshing.value = false;
+        if (refreshTimer) {
+          clearTimeout(refreshTimer);
+          refreshTimer = null;
+        }
+      }
+    });
+    onBeforeUnmount(() => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
+    });
+
+    function refresh() {
+      refreshing.value = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      instance.refreshObjects();
+      refreshTimer = setTimeout(() => {
+        refreshing.value = false;
+        refreshTimer = null;
+      }, 600);
+    }
+
     function goBack() {
       const target = returnTarget.value === "workspace"
         ? "/workspace"
@@ -132,9 +160,10 @@ await mountPanel({
       canConfigure,
       favorited,
       favoriteBusy,
+      refreshing,
       configureDialog,
       toggleFavorite,
-      refresh: () => instance.refreshObjects(),
+      refresh,
       openConfigureDialog,
       handleConfigureDialogClose,
       onDetailPanelSaved,
