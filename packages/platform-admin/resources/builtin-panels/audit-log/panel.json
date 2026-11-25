@@ -36,6 +36,8 @@
         },
         "config": {
           "layout": "table",
+          "border": true,
+          "stripe": true,
           "searchable": false,
           "fallbackToFirst": false,
           "pageSize": 20,
@@ -85,20 +87,12 @@
           "record": "record"
         },
         "config": {
-          "showTitle": false,
-          "fields": [
-            "operateTime",
-            "userName",
-            "userId",
-            "business",
-            "operation",
-            "byAi",
-            "description",
-            "parameters"
-          ]
+          "presentation": "pre",
+          "textField": "description",
+          "showTitle": false
         },
         "name": "Audit log detail",
-        "description": "Full read-only detail of the selected audit log record including description and parameters",
+        "description": "Full read-only description text of the selected audit log record",
         "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-400000000002"
       }
     }
@@ -114,6 +108,7 @@
         "action.close": "Close",
         "filter.business": "Biz Type",
         "filter.operation": "Operation Type",
+        "filter.all": "All",
         "business.knowledge": "Knowledge Base",
         "business.glossary": "Glossary",
         "business.example": "Example Base",
@@ -128,6 +123,7 @@
         "col.operation": "Operation Type",
         "col.detail": "Detail",
         "list.empty": "No audit logs match these filters",
+        "list.resultScope": "Page {page} · Business type: {business} · Operation: {operation}",
         "detail.title": "Audit log detail"
       },
       "zh-CN": {
@@ -139,6 +135,7 @@
         "action.close": "关闭",
         "filter.business": "业务类型",
         "filter.operation": "操作类型",
+        "filter.all": "全部",
         "business.knowledge": "知识库",
         "business.glossary": "术语表",
         "business.example": "示例库",
@@ -153,6 +150,7 @@
         "col.operation": "操作类型",
         "col.detail": "详情",
         "list.empty": "没有符合筛选条件的审计日志",
+        "list.resultScope": "第 {page} 页 · 业务类型：{business} · 操作类型：{operation}",
         "detail.title": "审计日志详情"
       },
       "zh-TW": {
@@ -164,6 +162,7 @@
         "action.close": "關閉",
         "filter.business": "業務類型",
         "filter.operation": "操作類型",
+        "filter.all": "全部",
         "business.knowledge": "知識庫",
         "business.glossary": "術語表",
         "business.example": "範例庫",
@@ -178,6 +177,7 @@
         "col.operation": "操作類型",
         "col.detail": "詳細",
         "list.empty": "沒有符合篩選條件的稽核日誌",
+        "list.resultScope": "第 {page} 頁 · 業務類型：{business} · 操作類型：{operation}",
         "detail.title": "稽核日誌詳細"
       },
       "ja": {
@@ -189,6 +189,7 @@
         "action.close": "閉じる",
         "filter.business": "業務タイプ",
         "filter.operation": "操作タイプ",
+        "filter.all": "すべて",
         "business.knowledge": "ナレッジベース",
         "business.glossary": "用語集",
         "business.example": "サンプルベース",
@@ -203,6 +204,7 @@
         "col.operation": "操作タイプ",
         "col.detail": "詳細",
         "list.empty": "この条件に一致する監査ログはありません",
+        "list.resultScope": "{page} ページ · 業務タイプ：{business} · 操作タイプ：{operation}",
         "detail.title": "監査ログ詳細"
       },
       "de": {
@@ -214,6 +216,7 @@
         "action.close": "Schließen",
         "filter.business": "Geschäftstyp",
         "filter.operation": "Operationstyp",
+        "filter.all": "Alle",
         "business.knowledge": "Wissensdatenbank",
         "business.glossary": "Glossar",
         "business.example": "Beispielbasis",
@@ -228,6 +231,7 @@
         "col.operation": "Operationstyp",
         "col.detail": "Detail",
         "list.empty": "Keine Audit-Einträge entsprechen diesen Filtern",
+        "list.resultScope": "Seite {page} · Geschäftstyp: {business} · Operationstyp: {operation}",
         "detail.title": "Audit-Protokolldetail"
       },
       "fr": {
@@ -239,6 +243,7 @@
         "action.close": "Fermer",
         "filter.business": "Type métier",
         "filter.operation": "Type opération",
+        "filter.all": "Tous",
         "business.knowledge": "Base connaissances",
         "business.glossary": "Glossaire",
         "business.example": "Base exemples",
@@ -253,6 +258,7 @@
         "col.operation": "Type opération",
         "col.detail": "Détail",
         "list.empty": "Aucun journal d’audit ne correspond à ces filtres",
+        "list.resultScope": "Page {page} · Type métier : {business} · Type opération : {operation}",
         "detail.title": "Détail du journal d'audit"
       },
       "it": {
@@ -264,6 +270,7 @@
         "action.close": "Chiudi",
         "filter.business": "Tipo business",
         "filter.operation": "Tipo operazione",
+        "filter.all": "Tutti",
         "business.knowledge": "Base conoscenza",
         "business.glossary": "Glossario",
         "business.example": "Base esempi",
@@ -278,6 +285,7 @@
         "col.operation": "Tipo operazione",
         "col.detail": "Dettaglio",
         "list.empty": "Nessun registro di audit corrisponde a questi filtri",
+        "list.resultScope": "Pagina {page} · Tipo business: {business} · Tipo operazione: {operation}",
         "detail.title": "Dettaglio log audit"
       },
       "ar": {
@@ -289,6 +297,7 @@
         "action.close": "إغلاق",
         "filter.business": "نوع العمل",
         "filter.operation": "نوع العملية",
+        "filter.all": "الكل",
         "business.knowledge": "قاعدة المعرفة",
         "business.glossary": "المسرد",
         "business.example": "قاعدة الأمثلة",
@@ -303,6 +312,7 @@
         "col.operation": "نوع العملية",
         "col.detail": "تفاصيل",
         "list.empty": "لا توجد سجلات تدقيق تطابق عوامل التصفية",
+        "list.resultScope": "الصفحة {page} · نوع العمل: {business} · نوع العملية: {operation}",
         "detail.title": "تفاصيل سجل التدقيق"
       }
     }

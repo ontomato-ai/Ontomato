@@ -20,7 +20,8 @@
         "operation": "platform:GeneralSettings.save",
         "config": {
           "layout": "rows",
-          "actions": "none"
+          "actions": "none",
+          "showRequiredMark": false
         },
         "name": "General settings",
         "description": "Configure knowledge recall limit, DSL cooker timeout in seconds, and backend language",
