@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from "vue";
+import { computed, inject, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { ChartDisplay, ChartFormat } from "@ontomato/contracts/chart-data";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
@@ -73,8 +73,6 @@ const props = withDefaults(
     valueSize?: "default" | "large";
     /** How truncation notices are presented: `"badge"` (`!` circle), `"icon"` (14px warning triangle), or `"none"` (delegated to outer header). */
     truncationDisplay?: "badge" | "icon" | "none";
-    /** Keep the previous rendered value visible while refreshing instead of flashing to `"…"` (default `true`). */
-    keepPreviousOnRefresh?: boolean;
     /** Optional maximum number of grid columns in multi-item `"card"` / `"compact"` mode; collapses on narrow containers. */
     columns?: number;
     /** Fallback text shown when a metric `result` has no rows or a bound field is absent. Defaults to `"—"`. */
@@ -102,7 +100,6 @@ const props = withDefaults(
     showLabel: true,
     valueSize: "default",
     truncationDisplay: "badge",
-    keepPreviousOnRefresh: true,
     columns: undefined,
     emptyText: "—",
   },
@@ -246,26 +243,11 @@ const parsedSource = computed<ParsedSource>(() => {
   return { state: "ready", total: hasTotal ? query.total! : undefined, hasTotal };
 });
 
-const lastReadySource = ref<ParsedSource | null>(null);
-watch(
-  parsedSource,
-  (next) => {
-    if (next.state === "ready" || next.state === "empty") {
-      lastReadySource.value = next;
-    } else if (next.state === "error" || next.state === "forbidden" || next.state === "awaiting") {
-      lastReadySource.value = null;
-    }
-  },
-  { immediate: true },
-);
-
 const isRefreshing = computed(() =>
-  props.keepPreviousOnRefresh && parsedSource.value.state === "loading" && lastReadySource.value !== null,
+  Boolean(boundDatum && boundDatum.state.value.status === "ready" && boundDatum.state.value.refreshing),
 );
 
-const effectiveSource = computed<ParsedSource>(() =>
-  isRefreshing.value && lastReadySource.value ? lastReadySource.value : parsedSource.value,
-);
+const effectiveSource = parsedSource;
 
 const currentTruncationHint = computed<string | null>(() => effectiveSource.value.truncationHint ?? null);
 watch(
@@ -456,7 +438,7 @@ defineExpose({ refresh, truncationHint: currentTruncationHint });
     :style="gridStyle"
     :data-state="effectiveSource.state"
     :title="effectiveSource.notice"
-    :aria-busy="parsedSource.state === 'loading' ? 'true' : undefined"
+    :aria-busy="parsedSource.state === 'loading' || isRefreshing ? 'true' : undefined"
     :aria-label="accessibleSummary"
   >
     <article

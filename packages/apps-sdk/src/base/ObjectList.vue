@@ -1128,7 +1128,7 @@ const liveRowOperations = computed<PanelRowOperationsMap>(() => {
 watch(
   datumState,
   (state) => {
-    if (state.status === "loading") return;
+    if (state.status === "loading" || (state.status === "ready" && state.refreshing)) return;
     if (state.status === "empty") {
       lastGoodSnapshot.value = {
         parsed: {
@@ -2245,7 +2245,7 @@ function publishListed(refs: readonly ObjectListRef[]) {
 watch(
   datumState,
   (state) => {
-    if (state.status === "loading") return;
+    if (state.status === "loading" || (state.status === "ready" && state.refreshing)) return;
     if (state.status === "empty") {
       pendingScrollToTop = false;
       publishListed([]);

@@ -34,6 +34,7 @@ import { findGroup, getOwnedDashboard } from "./access";
 import { DashboardMetricClient } from "./metric-client";
 import { metricCardParameterForm, saveMetricCardParameters } from "./metric-data";
 import {
+  applyDashboardDraftPatch,
   createDashboardDimension,
   createEmptyDashboard,
   deleteDashboardById,
@@ -75,10 +76,21 @@ const deleteGroupInputSchema = z.object({
   groupId: z.string().min(1),
 }).strict();
 
+const draftItemOverrideSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  fileOverride: z.unknown().optional(),
+}).passthrough();
+
 const saveLayoutInputSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
-  groups: dashboardReplaceLayoutSchema.shape.groups,
-}).strict();
+  groups: dashboardReplaceLayoutSchema.shape.groups.optional(),
+  groupRenames: z.record(z.string(), z.string()).optional(),
+  itemRenames: z.record(z.string(), z.string()).optional(),
+  itemOverrides: z.record(z.string(), draftItemOverrideSchema).optional(),
+}).strict().refine(
+  (data) => Boolean(data.groups || data.name || data.groupRenames || data.itemRenames || data.itemOverrides),
+  { message: "Layout update requires groups or draft patch fields" },
+);
 
 const emptyInputSchema = z.object({}).strict();
 const idResultSchema = z.object({ id: z.string() }).strict();
@@ -336,11 +348,15 @@ export const dashboardServerOperations = [
     resultSchema: idResultSchema,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const { primaryKey } = dashboardObjectTarget.parse(target);
-      const { name, groups } = saveLayoutInputSchema.parse(input);
+      const parsed = saveLayoutInputSchema.parse(input);
       const { userId, domainId } = host.executor.owner;
       const locale = host.locale ?? host.executor.credentials.locale;
       try {
-        await replaceDashboardLayout(userId, domainId, { id: primaryKey, groups }, host.executor.credentials, name);
+        if (parsed.groups) {
+          await replaceDashboardLayout(userId, domainId, { id: primaryKey, groups: parsed.groups }, host.executor.credentials, parsed.name);
+        } else {
+          await applyDashboardDraftPatch(userId, domainId, primaryKey, parsed, host.executor.credentials);
+        }
         return {
           kind: "success",
           data: { id: primaryKey },

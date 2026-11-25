@@ -131,10 +131,8 @@ const props = withDefaults(
     itemSurface?: GroupedGridItemSurface;
     /** Row track height strategy (`"fixed"` uses `rowHeight * rowSpan`; `"auto"` adapts to item content height). */
     rowSizing?: GroupedGridRowSizing;
-    /** Bottom divider style under item headers (`"line"` or `"none"`, default `"line"`). */
-    itemHeaderDivider?: GroupedGridDividerStyle;
-    /** Optional per-section item header bottom divider overrides (`"line"` or `"none"`). */
-    sectionItemHeaderDivider?: Readonly<Record<string, GroupedGridDividerStyle>>;
+    /** Bottom divider style under item headers: `"line"` (default), `"none"`, or per-section overrides (`{ metric: "none", chart: "line" }`). */
+    itemHeaderDivider?: GroupedGridDividerStyle | Readonly<Record<string, GroupedGridDividerStyle>>;
     /** When item header actions, drag grip, and resize handles are visible (`"hover"` or `"always"`, default `"hover"`). */
     controlsVisibility?: GroupedGridControlsVisibility;
     /** Static item definitions for fixed-member mode (when no `rows` datum is bound). */
@@ -157,12 +155,8 @@ const props = withDefaults(
     emptyGroupTitle?: string;
     /** Optional list of item primary keys to mark with a highlight ring (for example draft-modified items). */
     highlightedIds?: readonly string[];
-    /** Optional unsaved-draft preview banner text rendered above the grid with Save / Discard actions. */
-    draftNotice?: string;
-    /** Whether a draft save initiated from the preview banner is currently in flight. */
-    draftSaving?: boolean;
-    /** Register this grid with the panel's form registry (`instance.forms`) so agents can preview unsaved whole-grid edits. */
-    allowDraftPreview?: boolean;
+    /** Optional bound projection write operation name (for example `"saveLayout"`) that persists unsaved whole-grid drafts through the platform's unified form and leave-protection flow. */
+    saveOperation?: string;
   }>(),
   {
     columns: 12,
@@ -191,8 +185,7 @@ const props = withDefaults(
     groupSurface: "plain",
     itemSurface: "card",
     rowSizing: "fixed",
-    itemHeaderDivider: "line",
-    sectionItemHeaderDivider: undefined,
+    itemHeaderDivider: undefined,
     controlsVisibility: "hover",
     items: undefined,
     groups: undefined,
@@ -204,9 +197,7 @@ const props = withDefaults(
     emptyGroupText: undefined,
     emptyGroupTitle: undefined,
     highlightedIds: undefined,
-    draftNotice: undefined,
-    draftSaving: false,
-    allowDraftPreview: false,
+    saveOperation: undefined,
   },
 );
 
@@ -217,10 +208,6 @@ const emit = defineEmits<{
   select: [ref: ObjectListRef | null];
   /** Emitted when a local row action (`kind: "local"`) is triggered on an item. */
   "row-action": [payload: { id: string; ref: ObjectListRef; index: number }];
-  /** Emitted when the reader clicks Save in the unsaved draft preview banner. */
-  "draft-save": [draft: Readonly<Record<string, RuntimeJsonValue>>];
-  /** Emitted when the reader clicks Discard in the unsaved draft preview banner. */
-  "draft-discard": [];
 }>();
 
 defineSlots<{
@@ -271,8 +258,13 @@ function sectionResizeAxis(sectionKey: string | null | undefined): GroupedGridRe
   return override ?? "both";
 }
 function sectionHeaderDivider(sectionKey: string | null | undefined): GroupedGridDividerStyle {
-  const override = sectionKey && sectionKey !== "__default__" ? props.sectionItemHeaderDivider?.[sectionKey] : undefined;
-  return override ?? props.itemHeaderDivider;
+  const divider = props.itemHeaderDivider;
+  if (typeof divider === "string") return divider;
+  if (divider && typeof divider === "object") {
+    if (sectionKey && sectionKey !== "__default__" && divider[sectionKey]) return divider[sectionKey]!;
+    return divider.default ?? "line";
+  }
+  return "line";
 }
 const effectiveGap = computed(() => Math.max(0, Math.floor(props.gap ?? 16)));
 const effectiveMaxColSpan = computed(() => (
@@ -376,6 +368,7 @@ const sourceGroups = computed<GroupedGridGroup[]>(() => {
 
 const internalDraftValues = shallowRef<Record<string, RuntimeJsonValue> | null>(null);
 const internalDraftSaving = ref(false);
+const lastOpNotice = shallowRef<{ tone: "info" | "success" | "danger"; message: string } | null>(null);
 
 const hasInternalDraft = computed(() => internalDraftValues.value !== null && Object.keys(internalDraftValues.value).length > 0);
 const isLocked = computed(() => props.locked || hasInternalDraft.value);
@@ -444,7 +437,6 @@ const draftChangedIds = computed<ReadonlySet<string>>(() => {
 });
 
 const effectiveDraftNotice = computed(() => {
-  if (props.draftNotice) return props.draftNotice;
   if (!hasInternalDraft.value) return "";
   const explicit = internalDraftValues.value?.summary ?? internalDraftValues.value?.notice;
   if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
@@ -453,8 +445,6 @@ const effectiveDraftNotice = computed(() => {
     ? `${t("platform.unsavedChanges")} (${changedCount})`
     : t("platform.unsavedChanges");
 });
-
-const effectiveDraftSaving = computed(() => props.draftSaving || internalDraftSaving.value);
 
 function applyDraftToGroups(groups: readonly GroupedGridGroup[]): readonly GroupedGridGroup[] {
   if (!hasInternalDraft.value) return groups;
@@ -483,17 +473,86 @@ function applyDraftToGroups(groups: readonly GroupedGridGroup[]): readonly Group
   });
 }
 
-function discardDraft() {
+function draftSaveTarget() {
+  const target = containerRecord.value;
+  if (target) {
+    return {
+      kind: "object" as const,
+      objectType: target.className || objectType,
+      primaryKey: target.primaryKey,
+    };
+  }
+  const inputTarget = stateObject(member.inputs.value.target as PanelFieldValue);
+  if (inputTarget) {
+    return {
+      kind: "object" as const,
+      objectType: inputTarget.className || objectType,
+      primaryKey: inputTarget.primaryKey,
+    };
+  }
+  return null;
+}
+
+function draftOperationInput(draft: Readonly<Record<string, RuntimeJsonValue>>): Record<string, RuntimeJsonValue> {
+  const input: Record<string, RuntimeJsonValue> = {};
+  for (const [key, value] of Object.entries(draft)) {
+    if (key === "summary" || key === "notice" || key === "highlightedIds") continue;
+    input[key] = value;
+  }
+  return input;
+}
+
+async function discardDraft(confirm = false): Promise<boolean> {
+  if (!hasInternalDraft.value) return true;
+  if (confirm && panel.confirmLeaveUnsaved) {
+    const leave = await panel.confirmLeaveUnsaved();
+    if (!leave) return false;
+  }
   internalDraftValues.value = null;
-  emit("draft-discard");
+  return true;
 }
 
-async function saveDraft() {
-  const payload = internalDraftValues.value ? { ...internalDraftValues.value } : {};
-  emit("draft-save", payload);
+async function saveDraft(): Promise<unknown> {
+  if (!props.saveOperation || !hasInternalDraft.value || internalDraftSaving.value) return undefined;
+  const descriptor = admittedOperations(operationsState.value)[props.saveOperation];
+  const binding = member.projection.operations?.[props.saveOperation];
+  const target = draftSaveTarget();
+  if (!descriptor || !binding || !target) {
+    lastOpNotice.value = { tone: "danger", message: t("platform.operationUnavailable") };
+    return undefined;
+  }
+  const input = draftOperationInput(internalDraftValues.value ?? {});
+  const operationId = panel.instance.operationIdOf(slot.slot, props.saveOperation);
+  internalDraftSaving.value = true;
+  lastOpNotice.value = null;
+  try {
+    const answer = await panel.instance.writeOperation(operationId, { call: { target, input } });
+    if (answer.decision === "cancel" || !answer.response) return answer;
+    if (answer.response.kind === "not-dispatched") {
+      lastOpNotice.value = { tone: "danger", message: answer.response.message };
+      return answer;
+    }
+    const outcome = answer.response.outcome;
+    if (outcome?.kind === "success") {
+      internalDraftValues.value = null;
+      panel.notify({ kind: "success", text: formatOperationOutcome(outcome, t) });
+    } else if (outcome && outcome.kind !== "batch") {
+      lastOpNotice.value = {
+        tone: outcome.kind === "failure" || outcome.kind === "refusal" ? "danger" : "info",
+        message: formatOperationOutcome(outcome, t),
+      };
+    }
+    return answer;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lastOpNotice.value = { tone: "danger", message };
+    return undefined;
+  } finally {
+    internalDraftSaving.value = false;
+  }
 }
 
-if (props.allowDraftPreview) {
+if (props.saveOperation) {
   const emptyFields = ref([] as const);
   const emptyErrors = ref<Readonly<Record<string, string>>>({});
   const formHandle: PanelFormHandle = {
@@ -501,22 +560,21 @@ if (props.allowDraftPreview) {
     values: computed(() => internalDraftValues.value ?? {}),
     errors: emptyErrors,
     changed: computed(() => new Set(Object.keys(internalDraftValues.value ?? {}))),
-    busy: effectiveDraftSaving,
+    busy: internalDraftSaving,
     dirty: hasInternalDraft,
     dirtyFields: computed(() => new Set(Object.keys(internalDraftValues.value ?? {}))),
-    submitting: effectiveDraftSaving,
-    canSubmit: computed(() => hasInternalDraft.value && !effectiveDraftSaving.value),
+    submitting: internalDraftSaving,
+    canSubmit: computed(() => hasInternalDraft.value && !internalDraftSaving.value),
     set(path, value) {
       const key = path.replace(/^\/+/, "");
       internalDraftValues.value = { ...(internalDraftValues.value ?? {}), [key]: value };
     },
     async refreshDraft() {},
     async submit() {
-      await saveDraft();
+      return saveDraft();
     },
-    async reset() {
-      discardDraft();
-      return true;
+    async reset(options) {
+      return discardDraft(Boolean(options?.confirm));
     },
   };
   const adapter: PanelFormAdapter = {
@@ -534,10 +592,12 @@ if (props.allowDraftPreview) {
       return { ok: true, filledFields: Object.keys(values) };
     },
     async submit() {
-      await saveDraft();
+      return saveDraft();
     },
     dirty: () => hasInternalDraft.value,
-    discard: () => discardDraft(),
+    discard: () => {
+      internalDraftValues.value = null;
+    },
     editingTarget: () => {
       const target = containerRecord.value;
       if (!target) return null;
@@ -776,7 +836,6 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
 }
 
 const rowOpRunning = ref(false);
-const lastOpNotice = shallowRef<{ tone: "info" | "success" | "danger"; message: string } | null>(null);
 const pendingInputDialog = shallowRef<{
   row: PlatformObjectRecord;
   operation: string;
@@ -1258,18 +1317,18 @@ const gridCssVars = computed(() => ({
         <button
           type="button"
           class="sdk-grouped-grid-draft-btn secondary"
-          :disabled="effectiveDraftSaving"
+          :disabled="internalDraftSaving"
           data-testid="grouped-grid-draft-discard"
-          @click="discardDraft"
+          @click="void discardDraft(true)"
         >
           {{ t("platform.discard") }}
         </button>
         <button
           type="button"
           class="sdk-grouped-grid-draft-btn primary"
-          :disabled="effectiveDraftSaving"
+          :disabled="internalDraftSaving"
           data-testid="grouped-grid-draft-save"
-          @click="saveDraft"
+          @click="void saveDraft()"
         >
           {{ t("platform.save") }}
         </button>

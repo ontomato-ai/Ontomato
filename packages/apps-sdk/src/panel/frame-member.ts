@@ -179,7 +179,11 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
           state.value = awaitsInputs(projection, data, placement, inputs(), own())
             ? { status: "awaiting" }
             : { status: "loading" };
-        } else if (state.value.status !== "ready") {
+        } else if (state.value.status === "ready") {
+          if (!state.value.refreshing) {
+            state.value = { ...state.value, refreshing: true };
+          }
+        } else {
           state.value = { status: "loading" };
         }
         return answer(name, inputs()).then(

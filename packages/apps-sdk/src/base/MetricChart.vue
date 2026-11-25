@@ -24,8 +24,8 @@ type ChartPayload = {
  * which the card's owner works out for the reader. Supports toggling between the drawn chart and a formatted data
  * table (formatted with the chart file's declared `formats`, up to `tableMaxRows`), opening a fullscreen zoom modal
  * (`min(1100px, 92%) x min(720px, 92%)`), keeping the previous chart visible under a translucent overlay during
- * refresh instead of flashing blank, and rendering truncation warnings either inline, as a compact 14px orange
- * warning icon, or delegated to an outer card header via `@truncation-change`.
+ * platform data-layer refreshes instead of flashing blank, and rendering truncation warnings either inline, as a compact
+ * 14px orange warning icon, or delegated to an outer card header via `@truncation-change`.
  */
 const props = withDefaults(
   defineProps<{
@@ -47,8 +47,6 @@ const props = withDefaults(
     tableMaxRows?: number;
     /** How truncation notices appear: `"inline"` (default bar above chart), `"icon"` (14px warning triangle), or `"none"`. */
     truncationDisplay?: "inline" | "icon" | "none";
-    /** Keep the previous rendered chart/table visible with a translucent loading veil while refreshing (default `false`). */
-    keepPreviousOnRefresh?: boolean;
     /** Optional minimum height of the chart container (CSS length, default `"320px"`). */
     minHeight?: string;
   }>(),
@@ -62,7 +60,6 @@ const props = withDefaults(
     zoomed: undefined,
     tableMaxRows: 500,
     truncationDisplay: "inline",
-    keepPreviousOnRefresh: false,
     minHeight: "320px",
   },
 );
@@ -147,28 +144,14 @@ const rawResult = computed<DataStateResult<ChartPayload>>(() => {
   };
 });
 
-const lastReadyPayload = ref<ChartPayload | null>(null);
-watch(
-  rawResult,
-  (next) => {
-    if (next.status === "ready") {
-      lastReadyPayload.value = next.value;
-    } else if (next.status === "error" || next.status === "forbidden" || next.status === "awaiting") {
-      lastReadyPayload.value = null;
-    }
-  },
-  { immediate: true },
-);
-
 const isRefreshing = computed(() =>
-  props.keepPreviousOnRefresh && rawResult.value.status === "loading" && lastReadyPayload.value !== null,
+  Boolean(
+    (template?.value.status === "ready" && template.value.refreshing)
+    || (output?.value.status === "ready" && output.value.refreshing),
+  ),
 );
 
-const result = computed<DataStateResult<ChartPayload>>(() =>
-  isRefreshing.value && lastReadyPayload.value
-    ? { status: "ready", value: lastReadyPayload.value }
-    : rawResult.value,
-);
+const result = rawResult;
 
 const currentPayload = computed<ChartPayload | null>(() =>
   result.value.status === "ready" ? result.value.value : null,
@@ -301,7 +284,7 @@ defineExpose({
     class="sdk-metric-chart"
     :class="{ 'is-refreshing': isRefreshing, 'is-table-mode': activeViewMode === 'table' }"
     :style="{ minHeight }"
-    :aria-busy="rawResult.status === 'loading' ? 'true' : undefined"
+    :aria-busy="result.status === 'loading' || isRefreshing ? 'true' : undefined"
   >
     <div v-if="showInternalToolbar || $slots.toolbar" class="sdk-metric-chart-toolbar">
       <span
