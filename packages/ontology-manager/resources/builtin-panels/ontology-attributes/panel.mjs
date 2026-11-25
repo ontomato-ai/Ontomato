@@ -18,13 +18,13 @@ const COLUMNS_WIDE = [
     key: "businessKey",
     labelKey: "attr.colBizKey",
     width: 112,
-    valueMap: { true: { labelKey: "attr.yes", tone: "info" }, false: { labelKey: "attr.dash" } },
+    valueMap: { true: { labelKey: "attr.yes" }, false: { labelKey: "attr.dash" } },
   },
   {
     key: "primaryKey",
     labelKey: "attr.colPrimaryKey",
     width: 112,
-    valueMap: { true: { labelKey: "attr.yes", tone: "success" }, false: { labelKey: "attr.dash" } },
+    valueMap: { true: { labelKey: "attr.yes" }, false: { labelKey: "attr.dash" } },
   },
 ];
 const COLUMNS_MEDIUM = [

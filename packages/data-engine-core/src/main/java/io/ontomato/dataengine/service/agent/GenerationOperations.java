@@ -29,7 +29,6 @@ public class GenerationOperations {
   private final PythonExecuteService python;
   private final QueryGrantService grants;
   private final DataPermissionLookup permissions;
-  private final IdentityService identity;
   private final ActionTrialStore actionTrials;
 
   public GenerationOperations(
@@ -46,12 +45,18 @@ public class GenerationOperations {
     this.python = python;
     this.grants = grants;
     this.permissions = permissions;
-    this.identity = identity;
     this.actionTrials = actionTrials;
   }
 
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.authorization.ActionAuthorization actionAuthorization;
+
   public void requireWriteAccess(Owner owner) {
-    identity.requireActionExecutionAccess(owner.userId(), owner.domainId());
+    try {
+      actionAuthorization.requireCreate(actionAuthorization.subject(owner.domainId(), owner.userId()));
+    } catch (io.ontomato.dataengine.service.authorization.ActionAuthorization.Denied denied) {
+      throw new AgentHttpException(403, denied.code(), denied.getMessage());
+    }
   }
 
   public JSONObject gate(String run, Owner owner) {

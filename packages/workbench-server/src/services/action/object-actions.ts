@@ -198,7 +198,7 @@ async function actionForm(
 }
 
 export async function resolveObjectAction(host: Host, selection: ObjectActionSelection): Promise<ResolvedObjectAction> {
-  const stored = await ownerPost(host, "/action/queryById", { id: selection.actionId }, ownerEnvelopeSchema);
+  const stored = await ownerPost(host, "/action/queryById", { id: selection.actionId, purpose: "execute" }, ownerEnvelopeSchema);
   if (!stored.success) throw readRefusal(stored, "ACTION_READ_FAILED", "The owner could not read the action");
   if (stored.data == null) throw new HttpError(404, "The action does not exist", "ACTION_NOT_FOUND");
   const action = storedObjectActionSchema.parse(stored.data);
@@ -287,7 +287,8 @@ async function execute(host: Host, resolved: ResolvedObjectAction, values: Recor
   body.set("id", resolved.actionId);
   body.set("param", JSON.stringify(form.parameters));
   const response = await host.request(`${DATA_QUERY_GATEWAY}/action/execute`, { method: "POST", body });
-  if (!response.ok) throw new HttpError(response.status, "Owner request failed: /action/execute", "OWNER_UNAVAILABLE");
+  if (!response.ok && response.status !== 403)
+    throw new HttpError(response.status, "Owner request failed: /action/execute", "OWNER_UNAVAILABLE");
   const envelope = ownerEnvelopeSchema.parse(await response.json());
   if (!envelope.success) return ownerWriteFailure(envelope, "ACTION_EXECUTE_FAILED", "The owner could not execute the action");
   const executed = executedSchema.parse(envelope.data);

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { assistantEngineSchema, assistantAgentInputSchema, assistantAgentPanelValuesSchema as inputSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
-import type { PanelFormDescription, PanelFormField, PanelFormRequest } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import { AGENT_DEFINITION, EXTERNAL_MCP_SERVICE, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import { tForLocale } from "../../i18n";
@@ -9,9 +9,8 @@ import { HttpError } from "../../utils/errors";
 import {
   AgentDefinitionFieldError, agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm,
 } from "./definition-form-schema";
-import { productGrantAllowed, requireProductGrant } from "../product-governance/grants";
-import { assertPermission } from "../../identity/installed";
-import { agentDefinitionPermissions, checkedDefinition, projectAgentDefinitionSkills, readStoredAgentDefinition } from "./definitions";
+import { agentAllowed, requireAgent, requireAgentCreation } from "./authorization";
+import { checkedDefinition, projectAgentDefinitionSkills, readAgentDefinitionRow, readStoredAgentDefinition } from "./definitions";
 import { readAssistantSkillView } from "./skills";
 import { readExecutionOptions } from "./execution-setting";
 import type { AssistantOwner } from "./store";
@@ -68,11 +67,12 @@ export async function describeAgentDefinitionForm(
     const { primaryKey } = target;
     if (target.objectType !== AGENT_DEFINITION || !z.string().uuid().safeParse(primaryKey).success)
       throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
-    await requireProductGrant(primaryKey, "view", credentials);
-    canEdit = await productGrantAllowed(primaryKey, "edit", credentials);
+    const row = await readAgentDefinitionRow(primaryKey, owner);
+    await requireAgent(row, "VIEW", credentials);
+    canEdit = await agentAllowed(row, "EDIT", credentials);
     definitionRead = readStoredAgentDefinition(primaryKey, owner, credentials.locale);
   } else {
-    await assertPermission(credentials, agentDefinitionPermissions);
+    await requireAgentCreation(credentials);
   }
   // The form uses the caller's capability. The user picker resolves the selected member separately.
   const [definition, openOptions, skillView] = await Promise.all([
@@ -86,9 +86,9 @@ export async function describeAgentDefinitionForm(
     current = values;
   }
 
-  let values = submittedValues ?? (definition
+  let values: PanelFormValues = submittedValues ?? (definition
     ? { ...current, skills: projectAgentDefinitionSkills(definition, skillView!).skills }
-    : current);
+    : { ...current, publicationAccess: { kind: "private" } });
   let errors: FormFieldError[] = [];
   if (checkDraft) {
     try {
@@ -112,13 +112,26 @@ export async function describeAgentDefinitionForm(
   const text = (key: string) => tForLocale(credentials.locale, `panels.agentForm.${key}`);
   const helped = new Set(fields.filter((field) => "help" in field).map(({ key }) => key));
   const suggested = new Set(fields.filter((field) => "placeholder" in field).map(({ key }) => key));
+  const publicationFields: PanelFormField[] = target.kind === "draft" ? [
+    {
+      path: "/publicationAccess/kind", label: text("publication.label"), section: "basics", required: false, readOnly: false, refreshOnChange: true,
+      defaultValue: "private", valueSchema: { type: "string", enum: ["private", "domain", "policy"] },
+      control: { kind: "select", options: ["private", "domain", "policy"].map(value => ({
+        value, label: text(`publication.${value}`), description: null, disabled: false, disabledReason: null,
+      })) },
+    },
+    ...((values.publicationAccess as { kind?: string } | undefined)?.kind === "policy" ? [{
+      path: "/publicationAccess/policyId", label: text("publication.policyId"), section: "basics", required: true, readOnly: false,
+      valueSchema: { type: "string", minLength: 1 }, control: { kind: "text" as const },
+    }] : []),
+  ] : [];
   return {
     values,
     errors,
     sections: SECTIONS.map((key) => ({
       key, title: text(`sections.${key}`), ...(SECTION_HINTS.has(key) ? { hint: text(`sections.${key}Hint`) } : {}),
     })),
-    fields: fieldSchemas.map(({ key, ...field }) => {
+    fields: [...fieldSchemas.map(({ key, ...field }) => {
       const readOnly = !canEdit || (key === "executionUserId" && !canSetExecutionUser);
       return {
         ...field,
@@ -126,7 +139,7 @@ export async function describeAgentDefinitionForm(
         label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text(canEdit ? "executionReadOnly" : "editReadOnly") } : {}),
         ...(helped.has(key) ? { help: text(`help.${key}`) } : {}),
       };
-    }),
+    }), ...publicationFields],
     save: agentDefinitionSave(target),
   };
 }

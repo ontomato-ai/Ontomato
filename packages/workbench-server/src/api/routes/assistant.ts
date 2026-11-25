@@ -5,11 +5,9 @@ import { describeAgentDefinitionForm } from "../../services/assistant/definition
 import { AgentDefinitionFieldError } from "../../services/assistant/definition-form-schema";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
 import { requirePermission } from "../../identity/installed";
-import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
 import { readAnalysisScope } from "../../services/assistant/analysis-scope";
 import {
-  agentDefinitionPermissions,
   readAgentDefinition,
   listAgentDefinitions,
   deleteAgentDefinition,
@@ -20,7 +18,7 @@ import {
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { platformService } from "../middleware/platform-service";
 import { initializeDomainPresetAgents } from "../../services/assistant/preset-initialization";
-import { agentHostCreateSessionSchema, agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
+import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
   assistantAgentInputSchema,
@@ -56,18 +54,6 @@ function wrapDefinitionWrite(write: (req: Request, res: Response) => Promise<voi
     }
   });
 }
-const guardBuilder: RequestHandler = (req, res, next) => {
-  wrap(async () => {
-    const c = context(req);
-    const input = req.params.sessionId
-      ? { sessionId: id(req, "sessionId") }
-      : agentHostCreateSessionSchema.parse(req.body);
-    if (await assistantService.isAppBuilder(c.owner, input)) await assertAppBuilderAccess(c.credentials);
-    next();
-  })(req, res, next);
-};
-router.post("/sessions", guardBuilder);
-router.post("/sessions/:sessionId/runs", guardBuilder);
 router.get("/agents", wrap(async (req, res) => {
   const c = context(req);
   const { excludePreset, ...query } = req.query;
@@ -89,8 +75,7 @@ router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId"
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
 }));
-const agentAdmin = requirePermission(agentDefinitionPermissions);
-router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
+router.get("/agent-skills", requirePermission(["analysis-agent"]), wrap(async (req, res) => {
   const c = context(req);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials));
 }));
@@ -169,7 +154,6 @@ router.get(
 );
 router.post(
   "/agent-definitions",
-  agentAdmin,
   wrapDefinitionWrite(async (req, res) => {
     res
       .status(201)

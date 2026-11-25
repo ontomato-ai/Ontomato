@@ -146,8 +146,8 @@ describe("ObjectList Pack 2C features", () => {
             labelKey: "col.envs",
             kind: "tags",
             valueMap: {
-              prod: { label: "Production", tone: "danger" },
-              staging: { label: "Staging", tone: "warning" },
+              prod: { label: "Production", icon: "check-circle" },
+              staging: { label: "Staging" },
             },
           },
           {
@@ -223,13 +223,14 @@ describe("ObjectList Pack 2C features", () => {
     expect(statusTags[1]!.getAttribute("data-tone")).toBe("warning");
     expect(statusTags[1]!.getAttribute("data-effect")).toBe("plain");
 
-    // Column 3: per-item valueMap resolution + unmapped scalar falls back to "info" (NOT row.tones.envTags = "success").
+    // Column 3: per-item valueMap resolves label/icon only; tag tone falls back to "info" (NOT row.tones.envTags = "success").
     const envTags = rowCells[2]!.querySelectorAll(".sdk-object-list-tag");
     expect(envTags.length).toBe(3);
     expect(envTags[0]!.textContent?.trim()).toBe("Production");
-    expect(envTags[0]!.getAttribute("data-tone")).toBe("danger");
+    expect(envTags[0]!.getAttribute("data-tone")).toBe("info");
+    expect(envTags[0]!.querySelector(".sdk-object-list-tag-icon")?.getAttribute("data-icon")).toBe("check-circle");
     expect(envTags[1]!.textContent?.trim()).toBe("Staging");
-    expect(envTags[1]!.getAttribute("data-tone")).toBe("warning");
+    expect(envTags[1]!.getAttribute("data-tone")).toBe("info");
     expect(envTags[2]!.textContent?.trim()).toBe("sandbox");
     expect(envTags[2]!.getAttribute("data-tone")).toBe("info");
 

@@ -68,7 +68,7 @@ through the platform's generic `form` / `createForm` reads paired with published
 }
 ```
 
-- **Example B — `OperationButton` bound to a targetless `Action`:**
+- **Example B — `OperationButton` bound to a targetless `Action` (inline member):**
   Omit `target`. When the Action declares `values` parameters, clicking the button automatically opens the parameter
   collection dialog, validates inputs, confirms, and dispatches with `target: null`:
 
@@ -79,6 +79,34 @@ through the platform's generic `form` / `createForm` reads paired with published
     "operation": "action-create-order",
     "config": { "label": "New Order", "type": "primary", "icon": "plus" }
   }
+}
+```
+
+- **Example C — `OperationButton` bound to an object-targeted `Action` (standalone projection file):**
+  Include `"data": {}`, declare the target input, bind `operations.<localName>.operation` to
+  `{ "kind": "Action", "id": "<action-id>" }`, and reference `"<localName>"` in `config.operation`:
+
+```json
+{
+  "componentId": "@ontomato/sdk:OperationButton",
+  "inputs": {
+    "target": { "kind": "object", "objectType": "Order" }
+  },
+  "data": {},
+  "operations": {
+    "approve": {
+      "operation": { "kind": "Action", "id": "action-approve-order" },
+      "target": { "input": "target" }
+    }
+  },
+  "config": {
+    "operation": "approve",
+    "type": "primary",
+    "hideWhenUnavailable": true
+  },
+  "name": "approve-order",
+  "description": "Approve the selected order",
+  "visibility": "domain"
 }
 ```
 

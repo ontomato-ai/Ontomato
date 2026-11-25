@@ -735,7 +735,7 @@ describe("action catalog reads", () => {
     const invoices = await readObjectActions(viewer, "Invoice");
     expect(invoices.actions.map(entry => entry.declaration.id)).toEqual(["close-invoice"]);
     expect(invoices.unavailableActions).toEqual(unavailableActions);
-    expect(sent.map(request => request.body)).toEqual([{ status: "PUBLISHED" }, { status: "PUBLISHED" }]);
+    expect(sent.map(request => request.body)).toEqual([{ purpose: "execute", status: "PUBLISHED" }, { purpose: "execute", status: "PUBLISHED" }]);
   });
 
   it("describes the status change and the delete from the catalog operations", async () => {

@@ -496,16 +496,16 @@ in panel templates / slots) instead of formatting business fields in panel HTML:
 - `<typed-value>` (`TypedValue`): formats one typed field value (text, number, date/datetime/relative-time, boolean,
   status tag, tags, clickable object reference, localized map, list, code/JSON) from `data.record`, `data.result`
   (`metricOutput` scalar/first-row or named column), or a direct `value` prop. Supports exact-match `valueMap`
-  (`{ [rawValue]: { label?, labelKey?, labels?, tone?, icon? } }`) for mapping raw codes/booleans/enums to localized
-  text, semantic tones, and platform icons (pure exact match; no calculation or range/threshold expressions).
+  (`{ [rawValue]: { label?, labelKey?, labels?, icon? } }`) for mapping raw codes/booleans/enums to localized
+  text and platform icons (pure exact match; semantic tone comes from the value or `record.tones`).
 - `<record-template>` (`RecordTemplate`): fills already-provided values from `data.record` or one row of
   `data.result` (`metricOutput`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or
   locale-keyed `templates`, with per-field `fieldFormats` including `valueMap`). Strictly presentation-only: no
   expressions, calculation, or conditional sentence branching.
 - `<info-banner>` (`InfoBanner`): standardized `info`/`success`/`warning`/`danger` callout banner supporting static/
-  localized copy, slots, or already-provided `data.record` / `data.result` fields and fixed templates, plus exact-match
-  `toneMap`/`valueMap` and platform `icon`.
-- `ObjectList` columns also accept `column.valueMap` with the same exact-match `{ label?, labelKey?, labels?, tone?, icon? }`
+  localized copy, slots, or already-provided `data.record` / `data.result` fields and fixed templates, plus value-driven
+  `toneField`, exact-match `valueMap` (label/icon), and platform `icon`.
+- `ObjectList` columns also accept `column.valueMap` with the same exact-match `{ label?, labelKey?, labels?, icon? }`
   shape (or use `<typed-value :value="value" :value-map="..." />` inside `#cell-<columnKey>` slots).
 - `<object-ref-card>` (`ObjectRefCard`): clickable object reference card (icon/monogram, caption, localized name,
   monospace identifier, optional badge) from `data.record` (via `field` or the record itself), `data.result`, or a

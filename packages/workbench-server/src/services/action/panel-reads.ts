@@ -502,7 +502,7 @@ export interface ObjectActionCatalog {
  */
 export async function readObjectActions(viewer: AssistantCredentials, objectType?: string): Promise<ObjectActionCatalog> {
   const owner = actionOwner(viewer);
-  const published = await owner("action-object-catalog", "/action/queryList", { status: "PUBLISHED" }, z.array(z.unknown()));
+  const published = await owner("action-object-catalog", "/action/queryList", { purpose: "execute", status: "PUBLISHED" }, z.array(z.unknown()));
   const actions: ObjectActionEntry[] = [];
   const unavailableActions: UnavailableObjectAction[] = [];
   for (const raw of published) {

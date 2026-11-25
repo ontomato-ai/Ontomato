@@ -24,8 +24,6 @@ vi.mock("../../../services/product-panels/type-table", () => ({
 }));
 vi.mock("../../../services/assistant/service", () => ({
   assistantService: {
-    isAppBuilder: async (_owner: unknown, input: { agentId?: string; sessionId?: string }) =>
-      input.agentId === fixture.builderAgent || input.sessionId === fixture.builderSession,
     create: async (_id: string, _owner: unknown, input: { agentId: string }) => ({ agentId: input.agentId }),
     send: async (sessionId: string) => ({ sessionId }),
   },
@@ -84,7 +82,7 @@ function request(entry: string, headers: Record<string, string> = { tk: "synthet
   });
 }
 
-for (const [entry, allowedStatus] of [["type-table", 200], ["session", 201], ["run", 202]] as const) {
+for (const [entry, allowedStatus] of [["type-table", 200]] as const) {
   describe(entry, () => {
     it.each([
       ["token", { tk: "synthetic-token" }],
@@ -129,4 +127,5 @@ for (const [entry, allowedStatus] of [["type-table", 200], ["session", 201], ["r
 it.each([["session", 201], ["run", 202]] as const)("keeps regular assistant %s access independent of the App Builder catalog", async (entry, status) => {
   vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("catalog unavailable"); }));
   expect((await request(entry, {}, true)).status).toBe(status);
+  expect((await request(entry)).status).toBe(status);
 });

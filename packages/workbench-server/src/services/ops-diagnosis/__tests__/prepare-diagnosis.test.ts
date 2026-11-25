@@ -23,7 +23,7 @@ vi.mock("../../../infrastructure/postgres", () => ({
 }));
 vi.mock("../model-settings", () => ({ readDiagnosisModel: mocks.readModel }));
 vi.mock("../../assistant/store", () => ({
-  assistantStore: { opsDiagnosis: vi.fn(async () => undefined) },
+  assistantStore: { opsDiagnosis: vi.fn(async () => ({ id: DIAGNOSIS_AGENT_ID })) },
 }));
 vi.mock("../../../core/skills/registry/manager", () => ({
   skillRegistryManager: { publicSkills: mocks.publicSkills },
@@ -39,9 +39,9 @@ vi.mock("../../../config/query-settings", () => ({ getQueryTimeoutMs: () => 900_
 vi.mock("../../../core/prompts/loader", () => ({ renderPrompt: () => "Diagnosis prompt" }));
 vi.mock("../../../i18n", () => ({ resolveLocale: (locale?: string) => locale ?? "en", getOutputLanguageInstruction: () => "Reply in English" }));
 
-vi.mock("../../product-governance/grants", () => ({
-  productGrantAllowed: mocks.allowed,
-  requireProductGrant: async (...args: unknown[]) => {
+vi.mock("../../assistant/authorization", () => ({
+  agentAllowed: mocks.allowed,
+  requireAgent: async (...args: unknown[]) => {
     if (!await mocks.allowed(...args)) throw new HttpError(403, "Use Grant required", "PRODUCT_FORBIDDEN");
   },
 }));
@@ -241,5 +241,5 @@ it("hides diagnosis and refuses conversation writes and prepare when use is revo
   await expect(diagnosisService.send(sessionId, runId, { message: "Continue" }, owner, credentials, "human")).rejects.toMatchObject(forbidden);
   await expect(prepareDiagnosis(sessionId, runId, { role: "user", content: "Continue", timestamp: 1 }, owner, credentials)).rejects.toMatchObject(forbidden);
   expect(mocks.query).not.toHaveBeenCalled();
-  expect(mocks.allowed).toHaveBeenCalledWith(DIAGNOSIS_AGENT_ID, "use", credentials);
+  expect(mocks.allowed).toHaveBeenCalledWith(expect.objectContaining({ id: DIAGNOSIS_AGENT_ID }), "USE", credentials);
 });

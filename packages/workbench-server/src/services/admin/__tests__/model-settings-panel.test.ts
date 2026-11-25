@@ -401,6 +401,7 @@ describe("model settings owner reads & forms", () => {
   it("exposes vector rebuild outputs and the four background task models with domain default labels", async () => {
     const usage = createModelUsageReads(actor);
     const rebuild = await usage.vectorRebuild("domain");
+    expect(rebuild.tones).toEqual({ stateLabel: "warning", tone: "warning" });
     expect(rebuild.outputs).toMatchObject({
       configured: true,
       state: "PENDING",

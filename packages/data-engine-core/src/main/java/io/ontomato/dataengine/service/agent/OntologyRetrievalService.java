@@ -4,6 +4,7 @@ import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import jakarta.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
@@ -21,7 +22,7 @@ public class OntologyRetrievalService {
   private final OntologyAgentDefinitions definitions;
   private final OntologyQueryService ontology;
   private final QueryGrantService grants;
-  private final ProductGrantService productGrants;
+  private final RetrieverAccess retrieverAccess;
   private final QueryOutputService outputs;
   private final QueryJobService jobs;
   private final QueryQualityService quality;
@@ -45,7 +46,7 @@ public class OntologyRetrievalService {
       QueryOutputService outputs,
       QueryJobService jobs,
       QueryQualityService quality,
-      OntologyAgentAccess access, RetrievalResults results, AgentChannelRuns channel,AgentChannelChanges changes, ProductGrantService productGrants) {
+      OntologyAgentAccess access, RetrievalResults results, AgentChannelRuns channel,AgentChannelChanges changes, RetrieverAccess retrieverAccess) {
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
@@ -58,7 +59,7 @@ public class OntologyRetrievalService {
     this.results = results;
     this.channel = channel;
     this.changes=changes;
-    this.productGrants = productGrants;
+    this.retrieverAccess = retrieverAccess;
   }
 
   public static int timeout(JSONObject body) {
@@ -174,7 +175,16 @@ public class OntologyRetrievalService {
     return texts;
   }
 
+  public boolean canUse(Owner caller) {
+    return retrieverAccess.decide(retrieverAccess.subject(caller), Verb.USE).allowed();
+  }
+
+  private void requireUse(Owner caller) {
+    retrieverAccess.require(retrieverAccess.subject(caller), Verb.USE);
+  }
+
   public boolean createSession(String id, Owner owner) throws Exception {
+    requireUse(owner);
     boolean replayed = store.createSession(id, owner, RETRIEVER);
     try {
       runtime.json(owner.domainId(), id, "/v1/sessions", "POST", Map.of(), id);
@@ -250,8 +260,7 @@ public class OntologyRetrievalService {
 
   public JSONObject begin(String key, JSONObject body, OntologyAgentAccess.Context context) {
     var user = context.access().user();
-    if (!productGrants.allowedFor(user.getDomainId(), user.getId(), RETRIEVER, "use"))
-      throw new AgentHttpException(403, "FORBIDDEN", "Retriever use Grant required");
+    requireUse(new Owner(user.getId(), user.getDomainId()));
     String existing = body.getString("retrievalId");
     var copy = AgentJson.copy(body);
     copy.remove("retrievalId");

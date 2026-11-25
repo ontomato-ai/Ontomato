@@ -5,7 +5,8 @@ and standard Vue slots (`#cell-<key>`, `#cell`, `#actions`, `#row-detail`, `#car
 the list without replacing the whole table.
 
 - **Action layout:** `rowActions.items` holds operations (`kind: "operation"`, `operation`) or local actions
-  (`kind: "local"`, `id`, optional `to`). Items accept `labelKey` or `label`, `primary`, `danger`, `when`
+  (`kind: "local"`, `id`, optional `to`). Items accept `labelKey` or `label`, `tone`
+  (`"default" | "primary" | "success" | "warning" | "danger"`), `icon`, `iconOnly`, `when`
   and `disabledWhen`. Conditions match owner fields against `equals`, `notEquals`, `in`, `notIn` or `truthy`.
   Operation items also accept `hideWhenUnavailable`. The action column accepts `labelKey` or `label`,
   `maxVisible` (overflow after two by default), `fixed: "right" | false`, `align`, `width` and `minWidth`.
@@ -16,8 +17,13 @@ the list without replacing the whole table.
   - `#actions` receives `{ ref, index, operations, runOperation }`.
   - `#row-detail` receives `{ ref, index, collapse }` — pass `:inputs="{ target: ref }"` to a nested projection whose
     `target` is `{ "fromSlot": true }`.
-  - `#row-detail` expansion is internal to the list and is toggled by its row expansion control. Use a drawer or
-    detail projection bound to public selection when the expanded editor must be reachable via an address or `present`.
+  - `#row-detail` expansion supports `rowActivation: "click" | "dblclick" | "expand"` (with `"expand"` toggling inline
+    detail on whole-row click or `Enter`/`Space` with a trailing chevron and dirty-form leave confirmation) and
+    controlled `expandedKeys` (`v-model:expandedKeys` or `state.expandedKeys` via `inputs`/`outputs.expandedKeys`,
+    which can be bound to public state for deep links or `present`). Use a drawer or detail projection bound to public
+    selection when a separate full-detail editor is preferred.
+  - Set `minContainerWidth` (pixels) on table columns to automatically hide lower-priority columns when the list
+    container narrows below that threshold (always keeping at least one column visible).
   - `runOperation(localName, overrides?)` only accepts parameters declared on that row operation's allowlist.
 
 ```json
@@ -79,7 +85,8 @@ the list without replacing the whole table.
 
 For `ObjectForm`, place field-level pickers or custom inputs inside `#field-<dotPath>` (for example `#field-skills`,
 `#field-modelSelection.modelId`, or `#field-items.*.skillId` for array rows). `ReferencePicker` and `ObjectGraph`
-connect automatically to the enclosing form field.
+connect automatically to the enclosing form field; `ReferencePicker` also provides in-place Retry on choice-read
+failure and optional `refreshable: true` for manual choice refresh.
 
 Prepare the domain component and check the application source. Publish through Application Builder after preview and confirmation.
 

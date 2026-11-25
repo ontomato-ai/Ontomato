@@ -8,8 +8,10 @@
   `window.innerWidth` or viewport units (`vh`/`vw`/`dvh`) so the same code works full-page, embedded in another panel,
   and beside a conversation. When the container has no definite height, grow naturally with content; when it has a
   definite height, either grow and let the outer container scroll or fill the container and scroll the needed sub-region.
-- **No layout components.** Write catalog tables, full-width detail cards, split panes, and tabs with normal HTML, CSS
-  grid/flex, and Vue. Start from a matching [page template](../../templates/README.md).
+- **Reuse SDK layout components when they fit.** Use `<two-pane-layout>` (`sdk read docs/components/TwoPaneLayout.md`)
+  for master-detail split panes with built-in narrow-screen detail switching and back handling (or `<workbench-layout>`
+  for workbench shells); use normal HTML, CSS grid/flex, and Vue for other layouts. Start from a matching
+  [page template](../../templates/README.md).
 - **Button classification (Rule 2):**
   1. **Local UI interaction only** (open/close a create dialog, switch tabs/view modes, navigate, go back, discard
      unsaved draft): write `<sdk-button>` directly in `panel.html` without registering a projection.
@@ -21,19 +23,22 @@
 - **Pure presentational `<page-header>`.** Place `<page-header>` at the top of `panel.html` when the page needs a
   header (omit it for headerless pages):
   - `title` (string) or `#title` slot (for example `<projection slot="headerTitle"></projection>` using `ObjectHeader`)
-  - Keep `#title` on one horizontal line. For an `ObjectHeader` title, set `config.subtitle: ""` and the owner field
-    for `config.statusField`, and pass `:fallback-title="selectedKey"` to the projection. Place descriptive content
-    in `#description` with `TypedValue`.
+  - For a single-line `ObjectHeader` inside `#title`, set `config.subtitle: ""` (and `config.statusField` when the
+    owner type declares a status field), pass `:fallback-title="selectedKey"` to the projection, and place descriptive
+    content in `#description` with `TypedValue`.
   - optional `back-label` + `@back` (wired to `navigate(CATALOG_PATH)` or `usePanelBack`)
-  - Always declare `<template #actions>` for custom actions and put visibility conditions inside. Use `v-show`
-    on the delete projection: `letGo` can clear `selected` before `@done` runs, so keep the button mounted
-    until completion can navigate.
+  - Always declare `<template #actions>` for custom actions and put visibility conditions inside. Unmount actions that
+    are unavailable in the current view or mode with `v-if` (or gate them with `usePanelOperation(..., { available })`)
+    so inactive entries do not remain registered for `page_action`. Use `v-show` only in the specific case where a
+    valid, currently actionable delete button must stay mounted across `letGo` clearing `selected` until its `@done`
+    receipt navigates (or handle post-delete navigation in `usePanelOperation`'s `onSettled` callback).
   - `:draft="formDraft"` wired to `usePanelFormDraft("form")` for automatic Save, Discard, and unsaved-changes feedback
 
 ```html
 <page-header :title="selectedTitle" :back-label="t('detail.back')" :draft="formDraft" @back="goBack">
   <template #actions>
-    <projection v-show="selectedKey && ready" slot="remove" @done="onRemoveDone"></projection>
+    <!-- Unmount mode-invalid actions with v-if; use v-show only when keeping an active delete mounted until @done navigates. -->
+    <projection v-if="deleteAllowed" v-show="selectedKey && ready" slot="remove" @done="onRemoveDone"></projection>
   </template>
 </page-header>
 ```

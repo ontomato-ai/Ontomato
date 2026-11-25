@@ -1,13 +1,12 @@
 import { Request } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { workbenchIdentity } from "../../identity/installed";
 import { workbenchProduct } from "../../product/installed";
 import { createLogger } from "../../logging/logger";
 import { runOutcome } from "../../platform/agent-runtime/projection";
 import { tApp } from "../../i18n";
 import { randomUUID } from "node:crypto";
-import { createDiagnosis, diagnosisService } from "../../services/ops-diagnosis/service";
+import { createDiagnosis, diagnosisService, requireDiagnosisAgent } from "../../services/ops-diagnosis/service";
 import type { AgentHostOwner } from "../../services/agent-host/types";
 import { answerText } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -75,7 +74,7 @@ export function createOpsAgentMcpServer(
           }
         },
         {
-          authorize: (caller) => workbenchIdentity().assertObserveAccess(caller),
+          authorize: (caller) => requireDiagnosisAgent(caller, caller),
         }
       )
   );

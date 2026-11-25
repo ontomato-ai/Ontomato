@@ -57,9 +57,8 @@ const DEFAULT_AVATAR = { key: "Brain", color: LIGHT_AVATAR_COLORS[0] };
 const GRANT_VERBS = new Set(["use", "view", "edit"]);
 const GRANT_DIALOG_RESET = {
   grantDialog: null,
-  grantUser: null,
-  grantRole: null,
-  grantPrincipalId: null,
+  grantPolicy: null,
+  grantPolicyId: null,
 };
 
 function parseAgentAvatar(icon) {
@@ -99,7 +98,7 @@ function runtimeSkillKey(skill) {
  *   by the owner's options/resolve reads.
  * - Readers with `view` only see a read-only banner and form, with Save/Delete/Grants hidden.
  * - Editors (`canGrant`) can switch to the Permissions & sharing tab to toggle domain-wide use
- *   and grant or revoke single-select 3-level (use / view / edit) principal and role access.
+ *   and grant or revoke single-select 3-level (use / view / edit) policy access.
  */
 await mountPanel({
   setup() {
@@ -373,31 +372,13 @@ await mountPanel({
         }
       },
     });
-    const grantPrincipalKindModel = computed({
-      get: () => (values.value.grantPrincipalKind === "role" ? "role" : "principal"),
-      set: (next) => {
-        state.setState({
-          grantPrincipalKind: next === "role" ? "role" : "principal",
-          grantUser: null,
-          grantRole: null,
-          grantPrincipalId: null,
-        });
-      },
-    });
     const grantVerbModel = computed({
       get: () => (GRANT_VERBS.has(values.value.grantVerb) ? values.value.grantVerb : "use"),
       set: (next) => state.set("grantVerb", GRANT_VERBS.has(next) ? next : "use"),
     });
-    const grantPrincipalId = computed(() =>
-      typeof values.value.grantPrincipalId === "string" ? values.value.grantPrincipalId : "",
-    );
     const canSubmitGrant = computed(
-      () => grantEntryAllowed.value && grantDialogOpen.value && Boolean(grantPrincipalId.value),
+      () => grantEntryAllowed.value && grantDialogOpen.value && Boolean(values.value.grantPolicyId),
     );
-    const grantKindOptions = computed(() => [
-      { value: "principal", label: t("grants.principal") },
-      { value: "role", label: t("grants.role") },
-    ]);
     const grantVerbOptions = computed(() => [
       { value: "use", label: t("grants.use") },
       { value: "view", label: t("grants.view") },
@@ -405,19 +386,9 @@ await mountPanel({
     ]);
     const grantVerbDescription = computed(() => t(`grants.levelDesc.${grantVerbModel.value}`));
 
-    // Keep grantPrincipalId synced from the active ReferencePicker selection.
     watch(
-      () => ({
-        kind: grantPrincipalKindModel.value,
-        userId: values.value.grantUser?.primaryKey ?? null,
-        roleId: values.value.grantRole?.primaryKey ?? null,
-      }),
-      ({ kind, userId, roleId }) => {
-        const nextId = kind === "role" ? roleId : userId;
-        if ((values.value.grantPrincipalId ?? null) !== nextId) {
-          state.set("grantPrincipalId", nextId);
-        }
-      },
+      () => values.value.grantPolicy?.primaryKey ?? null,
+      policyId => state.set("grantPolicyId", policyId),
       { immediate: true },
     );
 
@@ -429,7 +400,6 @@ await mountPanel({
         const patched = state.lastPatchedKeys;
         const defaults = {
           ...GRANT_DIALOG_RESET,
-          grantPrincipalKind: "principal",
           grantVerb: "use",
         };
         const resetPatch = {};
@@ -504,10 +474,7 @@ await mountPanel({
     function openGrantDialog() {
       if (!grantEntryAllowed.value) return;
       state.setState({
-        grantPrincipalKind: "principal",
-        grantUser: null,
-        grantRole: null,
-        grantPrincipalId: null,
+        ...GRANT_DIALOG_RESET,
         grantVerb: "use",
         grantDialog: true,
       });
@@ -561,9 +528,7 @@ await mountPanel({
       toggleSkill,
       grantEntryAllowed,
       grantDialogOpen,
-      grantPrincipalKindModel,
       grantVerbModel,
-      grantKindOptions,
       grantVerbOptions,
       grantVerbDescription,
       canSubmitGrant,

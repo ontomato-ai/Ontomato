@@ -31,7 +31,13 @@ export async function ownerPost<Envelope>(
   host: DataQueryOperationHost, path: string, body: unknown, schema: z.ZodType<Envelope>,
 ): Promise<Envelope> {
   const response = await requestOwnerPost(host, path, body);
-  if (!response.ok) throw new HttpError(response.status, `Owner request failed: ${path}`, "OWNER_UNAVAILABLE");
+  if (!response.ok) {
+    if (response.status === 403 && path.startsWith("/action/")) {
+      const denial = ownerEnvelopeSchema.parse(await response.json());
+      throw new HttpError(403, denial.message ?? "Action permission denied", ownerRefusalCodeSchema.parse(denial.code));
+    }
+    throw new HttpError(response.status, `Owner request failed: ${path}`, "OWNER_UNAVAILABLE");
+  }
   return schema.parse(await response.json());
 }
 

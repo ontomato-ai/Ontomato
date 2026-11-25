@@ -131,15 +131,7 @@ node client.mjs praxis-health
 node client.mjs my-actions
 ```
 
-`my-actions` 是后面所有判断的基础：
-
-- 它取当前主体在域内的有效角色；
-- 取所有 `ACTIVE` 流程的 `role × action` 授权，以及手工授予的 Action；
-- 只保留 `status=PUBLISHED` 的动作；
-- 输出每个动作的来源（`source=process|direct`）、流程 id、版本。
-
-如果没有角色，`my-actions` 会明确说 “This subject holds no role in this domain.”，不要继续猜。
-
+`my-actions` 调动作属主的执行目录，列出当前主体独立获准调用的已发布动作。选定目标后，动作属主会再核对作用范围、数据权限和业务条件。流程步骤走实例的 `inbox`、`decide` 或 `tick`。
 ---
 
 ## 4. 按需求找“我能办什么”
@@ -151,10 +143,7 @@ node client.mjs find "我要请假两天"
 node client.mjs find "审批研发部的采购申请" purchase_request
 ```
 
-`find` 调 `/action/find`，再把结果与 `my-actions` 取交集：
-
-- `allowed`：我有权限的动作；
-- `denied`：平台找到了、但我没有权限的动作。不要对 `denied` 硬跑；它会返回 `notGranted` 或作用域错误。
+`find` 调 `/action/find`，由同一动作属主按当前主体独立执行权限过滤匹配项。
 
 ### 4.2 看流程步骤
 
@@ -341,8 +330,8 @@ node client.mjs temp-clean <workflowId>
 
 - 先跑 `org-graph` 确认目标角色确实具备所需 Action，并确认自己的角色 `canAuthorWorkflow=true`。
 - **需要 `/workflow/save` 和 `/workflow/activate` 权限**；普通使用方没有时会失败，明确报缺哪个权限，再让管理员补授权或代建。
-- **临时流程用完必须 `temp-clean`。** 旧版/非 `caseScoped` 的临时流程激活时会留下 `role × action` 授权，`my-actions` 会一直显示 `allowed`，后续会话会误以为可以直接办理，从而绕过 Case。发现 `allowed` 的来源是 `TMP-` 流程时，先确认它是否还该存在；不该存在就 `temp-clean`。
-- 激活会给 `role × action` 落授权；临时流程也会出现在 `workflow/query`、`grants` 里，直到停用/删除。
+- **临时流程用完必须 `temp-clean`。** 停用回收该版本的步骤授权，独立动作策略继续按自己的范围生效。
+- 激活冻结步骤和该步骤的角色、动作及作用范围。临时流程也会出现在 `workflow/query`、`grants` 里，直到停用或删除。
 - `temp-clean` 先失效（回收该版本授权）再删除；已经创建的 Run 模板是冻结的，账本记录不受影响。
 - 这不是“无痕流程”：`Activated` 事件、版本号、Run 记录都会留下。
 - 如果只想试跑一次、不想留授权，必须显式 `temp-clean`；否则它就是一条普通的 ACTIVE 流程。
@@ -382,7 +371,7 @@ node client.mjs temp-clean <workflowId>
 ```
 
 - `temporary: true` + `runClassName: "workflow_case"`：不要求业务事实类或 `runContract`。
-- `caseScoped: true`：激活时不写 `role × action` 全局授权；执行时只允许 Case 当前 assignee。
+- `caseScoped: true`：激活时授权记到冻结步骤。经办时核对 Case 实例、候选或分派，并按步骤作用范围判定。
 - 固定 `execute` 步默认由 `requester` 执行；`roleCode` 只决定授权，不决定执行人。要让部门的人办理，需把步骤做成 human/approve，或等平台支持 `step.executor/assignee`。
 - `inputBindings`：Action 参数从 Case payload 取；`locked` 的字段办理人改不了。
 

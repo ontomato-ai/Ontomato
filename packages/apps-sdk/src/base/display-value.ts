@@ -47,7 +47,7 @@ export interface TypedNumberFormat {
   readonly useGrouping?: boolean;
 }
 
-/** Pure presentation mapping for one exact scalar value (`label`/`labelKey`/`labels`, `tone`, `icon`). */
+/** Pure presentation mapping for one exact scalar value (`label`/`labelKey`/`labels`, `icon`). */
 export type TypedValueMapEntry = PanelDisplayValueMapEntry;
 
 /** Map from exact scalar string key to pure presentation overrides (no calculation or threshold evaluation). */
@@ -57,7 +57,6 @@ export type TypedValueMap = PanelDisplayValueMap;
 export interface ResolvedValueMapEntry {
   readonly matchedKey: string;
   readonly label: string | null;
-  readonly tone?: PanelFieldTone;
   readonly icon?: string;
 }
 
@@ -75,7 +74,7 @@ export interface TypedFieldFormat {
   readonly separator?: string;
   /** Optional list style (`"inline"` or `"tags"`). */
   readonly listStyle?: "inline" | "tags";
-  /** Optional exact raw-value to display label/tone/icon mapping (pure presentation; no threshold expressions). */
+  /** Optional exact raw-value to display label/icon mapping (pure presentation; no threshold expressions). */
   readonly valueMap?: TypedValueMap;
 }
 
@@ -111,7 +110,7 @@ export function asTone(value: unknown): PanelFieldTone | undefined {
 }
 
 /**
- * Converts a scalar runtime value into an exact lookup key for `valueMap` / `toneMap`.
+ * Converts a scalar runtime value into an exact lookup key for `valueMap`.
  * Pure exact matching only: strings stay exact, finite numbers stringify in base-10, booleans become `"true"`/`"false"`.
  * Objects, arrays, `null`, and `undefined` never match; no range, threshold, or expression comparisons are ever performed.
  */
@@ -124,7 +123,7 @@ export function exactValueMapKey(raw: unknown): string | null {
 }
 
 /**
- * Resolves a pure presentation mapping entry (`label`/`labelKey`/`labels`, `tone`, `icon`) for an exact raw scalar
+ * Resolves a pure presentation mapping entry (`label`/`labelKey`/`labels`, `icon`) for an exact raw scalar
  * value. Returns `null` when `valueMap` is omitted or has no own property matching `exactValueMapKey(raw)`.
  */
 export function resolveValueMapEntry(
@@ -156,7 +155,6 @@ export function resolveValueMapEntry(
   return {
     matchedKey: key,
     label: resolvedLabel.length > 0 ? resolvedLabel : null,
-    tone: asTone(entry.tone),
     icon,
   };
 }

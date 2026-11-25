@@ -7,17 +7,25 @@ import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.ObjectAccess;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-public final class AuthorizationPolicies {
+public class AuthorizationPolicies {
     public static final String READ = "authorization.policies.read";
     public static final String CHANGE = "authorization.policies.change";
+    private static final Set<Kind> FIRST_PUBLICATION_KINDS = Set.of(Kind.PANEL, Kind.PROJECTION, Kind.COMPONENT,
+            Kind.METRIC, Kind.READ_FUNCTION, Kind.AGENT);
+
+    public enum PublicationStatus { granted, pending }
+    public record AgentAccess(boolean shared, List<AgentPolicyGrant> grants) {}
 
     private final AuthorizationStore store;
     private final ManagementOperations operations;
@@ -60,6 +68,82 @@ public final class AuthorizationPolicies {
         store.revokeObject(grant);
     }
 
+    /** The definition owner calls this with the pre-publication facts on the first transition. */
+    public PublicationStatus firstPublication(SubjectContext ctx, ObjectTarget target, OwnerFacts facts, String policyId) {
+        if (!FIRST_PUBLICATION_KINDS.contains(target.kind()) || facts.state() != DefinitionState.DRAFT)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "First publication requires a supported draft object.");
+        requireEdit(ctx, target, facts);
+        if (policyId == null) {
+            store.grantObject(domainUse(target));
+        } else {
+            var grant = new ObjectGrant(policyId, target, Verb.USE, null);
+            if (!authorization.decide(ctx, new Management(CHANGE)).allowed()) {
+                store.addPendingGrant(new PendingGrant(0, "first-publication", target.id(), ctx.identity().userId(), null, grant));
+                return PublicationStatus.pending;
+            }
+            store.grantObject(grant);
+        }
+        return PublicationStatus.granted;
+    }
+
+    public AgentAccess agentAccess(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
+        requireAgent(target);
+        requireEdit(ctx, target, facts);
+        var domainPolicyId = store.domainPolicy(target.domainId()).policyId();
+        boolean shared = !store.objectGrants(target, Verb.USE, Set.of(domainPolicyId)).isEmpty();
+        var grants = store.agentPolicyGrants(target).stream().filter(grant -> !domainPolicyId.equals(grant.policyId())).toList();
+        return new AgentAccess(shared, grants);
+    }
+
+    public void replaceAgentLevel(SubjectContext ctx, String policyId, ObjectTarget target, Verb level, OwnerFacts facts) {
+        requireAgent(target);
+        requireManagement(ctx, CHANGE);
+        requireEdit(ctx, target, facts);
+        if (level != null) requireGrant(Kind.AGENT, target.id(), level, null, false);
+        store.replaceAgentLevel(policyId, target, level);
+    }
+
+    public void setAgentDomainUse(SubjectContext ctx, ObjectTarget target, OwnerFacts facts, boolean shared) {
+        requireAgent(target);
+        requireManagement(ctx, CHANGE);
+        requireEdit(ctx, target, facts);
+        var grant = domainUse(target);
+        if (shared) store.grantObject(grant);
+        else store.revokeObject(grant);
+    }
+
+    private ObjectGrant domainUse(ObjectTarget target) {
+        return new ObjectGrant(store.domainPolicy(target.domainId()).policyId(), target, Verb.USE, null);
+    }
+
+    private void requireEdit(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
+        requireGrant(target.kind(), target.id(), Verb.EDIT, null, false);
+        var decision = authorization.decide(ctx, new ObjectAccess(target, Verb.EDIT, facts));
+        if (!decision.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
+    }
+
+    private static void requireAgent(ObjectTarget target) {
+        if (target.kind() != Kind.AGENT)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "An agent target is required.");
+    }
+
+    public static void requireObjectDecision(Kind kind, String id, Verb verb) {
+        if (verb != Verb.USE && verb != Verb.VIEW && verb != Verb.EDIT)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object access verb.");
+        requireGrant(kind, id, verb, null, false);
+    }
+
+    public static void requireCreateDecision(Kind kind) {
+        requireGrant(kind, "", Verb.CREATE, null, false);
+    }
+
+    public void retireObject(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
+        if (target.kind() == Kind.ENTRY || target.kind() == Kind.APPLICATION)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The definition owner must retire an object.");
+        requireEdit(ctx, target, facts);
+        store.retireObject(target);
+    }
+
     public void grantManagement(SubjectContext ctx, String policyId, String operationId) {
         requireManagement(ctx, CHANGE);
         operations.require(operationId);
@@ -69,6 +153,89 @@ public final class AuthorizationPolicies {
     public void revokeManagement(SubjectContext ctx, String policyId, String operationId) {
         requireManagement(ctx, CHANGE);
         store.revokeManagement(ctx.identity().domainId(), policyId, operationId);
+    }
+
+    public List<ManagementOperations.Operation> managementCatalog() {
+        return operations.list();
+    }
+
+    public Set<String> listManagementOperations(SubjectContext ctx, String policyId) {
+        requireManagement(ctx, READ);
+        return store.managementOperations(ctx.identity().domainId(), Set.of(policyId));
+    }
+
+    @Transactional
+    public void replaceManagementOperations(SubjectContext ctx, String policyId, Set<String> operationIds) {
+        requireManagement(ctx, CHANGE);
+        var domainId = ctx.identity().domainId();
+        var desired = new LinkedHashSet<String>();
+        for (var operationId : operationIds) {
+            operations.require(operationId);
+            desired.add(operationId);
+        }
+        var current = store.managementOperations(domainId, Set.of(policyId));
+        for (var operationId : current) {
+            if (!desired.contains(operationId)) store.revokeManagement(domainId, policyId, operationId);
+        }
+        for (var operationId : desired) {
+            if (!current.contains(operationId)) store.grantManagement(domainId, policyId, operationId);
+        }
+    }
+
+    public List<ObjectGrant> listObjectGrants(SubjectContext ctx, String policyId) {
+        requireManagement(ctx, READ);
+        return store.policyObjectGrants(ctx.identity().domainId(), policyId);
+    }
+
+    @Transactional
+    public void replaceObjectGrants(SubjectContext ctx, String policyId, List<ObjectGrant> desiredGrants) {
+        requireManagement(ctx, CHANGE);
+        var domainId = ctx.identity().domainId();
+        var desired = new LinkedHashSet<ObjectGrant>();
+        for (var grant : desiredGrants) {
+            if (!domainId.equals(grant.target().domainId()) || !policyId.equals(grant.policyId()))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The policy and object must be in your domain.");
+            requireGrant(grant.target().kind(), grant.target().id(), grant.verb(), grant.scope(), false);
+            requireActionScope(grant);
+            desired.add(grant);
+        }
+        var current = new LinkedHashSet<>(store.policyObjectGrants(domainId, policyId));
+        for (var existing : current) {
+            if (!desired.contains(existing)) store.revokeObject(existing);
+        }
+        for (var grant : desired) {
+            if (!current.contains(grant)) store.grantObject(grant);
+        }
+    }
+
+    @Transactional
+    public void grantEntries(SubjectContext ctx, String policyId, List<ObjectTarget> entries,
+            List<ObjectGrant> acceptedObjects) {
+        requireManagement(ctx, CHANGE);
+        var domainId = ctx.identity().domainId();
+        var toGrant = new LinkedHashSet<ObjectGrant>();
+        for (var entry : entries) {
+            if (!domainId.equals(entry.domainId()) || entry.kind() != Kind.ENTRY)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each granted entry must belong to the policy domain.");
+            var grant = new ObjectGrant(policyId, entry, Verb.ENTER, null);
+            requireGrant(Kind.ENTRY, entry.id(), Verb.ENTER, null, false);
+            toGrant.add(grant);
+        }
+        for (var objectGrant : acceptedObjects) {
+            if (!domainId.equals(objectGrant.target().domainId()) || !policyId.equals(objectGrant.policyId()))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The policy and object must be in your domain.");
+            requireGrant(objectGrant.target().kind(), objectGrant.target().id(), objectGrant.verb(), objectGrant.scope(), false);
+            requireActionScope(objectGrant);
+            toGrant.add(objectGrant);
+        }
+        for (var grant : toGrant) {
+            store.grantObject(grant);
+        }
+    }
+
+    public Set<String> policyRoleIds(SubjectContext ctx, String policyId) {
+        requireManagement(ctx, READ);
+        return store.policyRoleIds(ctx.identity().domainId(), policyId);
     }
 
     public List<PendingGrant> listPending(SubjectContext ctx, String policyId) {
@@ -102,7 +269,12 @@ public final class AuthorizationPolicies {
         var row = actions.queryById(target.id());
         if (row == null || !target.domainId().equals(((Action) row[0]).getDomainId()))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The action must exist in the policy domain.");
-        grant.scope().requireTarget(((Action) row[0]).getTarget(), admin.getJSONRule(target.domainId()));
+        Action action = (Action) row[0];
+        if (!Action.STATUS_PUBLISHED.equals(action.getStatus()))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The action must be published.");
+        var rule = admin.getJSONRule(target.domainId());
+        if (action.getTarget() != null) action.getTarget().definition(rule);
+        grant.scope().requireTarget(action.getTarget(), rule);
     }
 
     static void requireGrant(Kind kind, String id, Verb verb, GrantScope scope, boolean candidate) {

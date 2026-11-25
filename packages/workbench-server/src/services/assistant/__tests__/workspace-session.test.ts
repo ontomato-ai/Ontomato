@@ -6,15 +6,14 @@ import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
 import { assistantService } from "../service";
 import { assistantStore, type AgentRow, type SessionRow } from "../store";
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), access: vi.fn(), grant: vi.fn(), materialize: vi.fn() }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), materialize: vi.fn() }));
 vi.mock("../../app-builder/project-service", () => ({ ensureMaterializedWorkspace: mocks.materialize }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
 vi.mock("../../../infrastructure/postgres-transaction", () => ({
   transaction: (run: (client: { query: typeof mocks.query }) => unknown) => run({ query: mocks.query }),
 }));
 vi.mock("../../agent-host/session-claim", () => ({ lockSessionClaim: async () => {}, assertUnclaimedSession: async () => {} }));
-vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: mocks.access }));
-vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant }));
+vi.mock("../authorization", () => ({ requireAgent: mocks.grant }));
 vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: {} }));
 
 const owner = { domainId: "domain", userId: "owner" };
@@ -86,9 +85,7 @@ it("requires an authorized application and rejects an explicit mismatched worksp
   expect(RuntimeClient.prototype.createSession).not.toHaveBeenCalled();
 });
 
-it("allocates no workspace when the builder entry or product grant is denied", async () => {
-  mocks.access.mockRejectedValueOnce(new HttpError(403, "entry", "FORBIDDEN"));
-  await expect(assistantService.create(sessionId, owner, { agentId }, credentials)).rejects.toHaveProperty("status", 403);
+it("allocates no workspace when agent use is denied", async () => {
   mocks.grant.mockRejectedValueOnce(new HttpError(403, "grant", "FORBIDDEN"));
   await expect(assistantService.create(sessionId, owner, { agentId }, credentials)).rejects.toHaveProperty("status", 403);
   expect(RuntimeClient.prototype.request).not.toHaveBeenCalled();

@@ -290,8 +290,7 @@
               "labelKey": "visualModeling.attrPrimaryKey",
               "valueMap": {
                 "true": {
-                  "labelKey": "visualModeling.yes",
-                  "tone": "success"
+                  "labelKey": "visualModeling.yes"
                 },
                 "false": {
                   "labelKey": "visualModeling.no"
@@ -303,8 +302,7 @@
               "labelKey": "visualModeling.attrBusinessKey",
               "valueMap": {
                 "true": {
-                  "labelKey": "visualModeling.yes",
-                  "tone": "info"
+                  "labelKey": "visualModeling.yes"
                 },
                 "false": {
                   "labelKey": "visualModeling.no"
@@ -317,12 +315,10 @@
               "kind": "tag",
               "valueMap": {
                 "true": {
-                  "labelKey": "visualModeling.enabled",
-                  "tone": "success"
+                  "labelKey": "visualModeling.enabled"
                 },
                 "false": {
-                  "labelKey": "visualModeling.disabled",
-                  "tone": "warning"
+                  "labelKey": "visualModeling.disabled"
                 }
               }
             }
