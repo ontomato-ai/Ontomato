@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { RuntimeJsonObject, RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonValueSchema, type RuntimeJsonObject, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { entryDependencySchema, entryRootsSchema } from "@ontomato/contracts/entry-dependencies";
-import { panelReadParameterSchemas, panelRecordSchema, type PanelRecord, type PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
+import { panelRecordSchema, type PanelRecord, type PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
 import { isBuiltinProductId, isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { config } from "../../config/application";
 import { getPostgresPool } from "../../infrastructure/postgres";
@@ -18,11 +18,18 @@ const itemKeySchema = z.object({ kind: id, id: z.string(), verb: id });
 const policyGrantSchema = itemKeySchema.extend({ policyId: id, scope: scope.nullable() });
 const acceptedObjectSchema = itemKeySchema.extend({ scope: scope.nullish() }).strict();
 
+const actionTargetSchema = z.object({
+  actionId: id,
+  className: id,
+  objectId: id,
+  fields: z.record(z.string(), runtimeJsonValueSchema).optional(),
+}).strict();
+
 export const previewPolicyEntryGrantInputSchema = z.object({
-  entryIds: panelReadParameterSchemas.policyEntryIds,
+  entryIds: z.array(id),
 }).strict();
 export const grantPolicyEntriesInputSchema = z.object({
-  entryIds: panelReadParameterSchemas.policyEntryIds,
+  entryIds: z.array(id),
   acceptedObjects: z.array(acceptedObjectSchema),
 }).strict();
 export const grantPolicyEntriesResultSchema = z.object({
@@ -38,9 +45,9 @@ export const resolvePendingPolicyGrantsResultSchema = z.object({
   resolvedCount: z.number().int().nonnegative(),
 });
 export const inspectPolicyAccessInputSchema = z.object({
-  subjectId: panelReadParameterSchemas.accessInspectSubjectId,
-  entryId: panelReadParameterSchemas.accessInspectEntryId,
-  actionTargets: panelReadParameterSchemas.accessInspectActionTargets.optional(),
+  subjectId: id,
+  entryId: id,
+  actionTargets: z.array(actionTargetSchema).optional(),
 }).strict();
 
 const publishedActionSchema = z.object({

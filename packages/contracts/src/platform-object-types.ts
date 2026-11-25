@@ -674,16 +674,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...referenceReads,
       ...governancePageQuery,
       ...modelReads,
-      previewEntryGrant: {
-        source: "object", parameterMode: "fixed", params: { entryIds: "policyEntryIds" },
-        requiredParams: ["entryIds"], result: "panelRecord",
-      },
-      pendingGrants: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
-      inspectAccess: {
-        source: "object", parameterMode: "fixed",
-        params: { subjectId: "accessInspectSubjectId", entryId: "accessInspectEntryId", actionTargets: "accessInspectActionTargets" },
-        requiredParams: ["subjectId", "entryId"], result: "panelRecord",
-      },
     },
     operations: [
       `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,

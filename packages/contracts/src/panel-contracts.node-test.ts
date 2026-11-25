@@ -800,7 +800,7 @@ test("feedback, governance records and the skill library read through their owne
 test("permission policy describes and saves all grants through its owner form", () => {
   const policy = platformObjectTypes[PERMISSION_POLICY];
   assert.deepEqual(Object.keys(policy.reads ?? {}).sort(), [
-    "createForm", "form", "inspectAccess", "options", "pendingGrants", "previewEntryGrant", "query", "record", "resolve",
+    "createForm", "form", "options", "query", "record", "resolve",
   ]);
   assert.deepEqual(policy.operations, [
     `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY, REFRESH_POLICY_API_CATALOG,

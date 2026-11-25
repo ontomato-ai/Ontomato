@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { panelRecordSchema, type PanelRecord } from "@ontomato/contracts/panel-projection";
-import { GRANT_POLICY_ENTRIES, PERMISSION_POLICY, RESOLVE_PENDING_POLICY_GRANT } from "@ontomato/contracts/platform-object-types";
+import {
+  GRANT_POLICY_ENTRIES,
+  INSPECT_POLICY_ACCESS,
+  LIST_PENDING_POLICY_GRANTS,
+  PERMISSION_POLICY,
+  PREVIEW_POLICY_ENTRY_GRANT,
+  RESOLVE_PENDING_POLICY_GRANT,
+} from "@ontomato/contracts/platform-object-types";
 import { getPostgresPool } from "../../../infrastructure/postgres";
 import { backendPost } from "../../../utils/backend-client";
 import { registeredPanelOperation, type PanelOperationHost } from "../../product-panels/server-operations";
 import { assistantStore, type AgentRow } from "../../assistant/store";
-import { createGovernanceReadAdapters } from "../panel-reads";
 import {
   grantPolicyEntries, inspectPolicyAccess, listPendingPolicyGrants, previewEntryGrant, resolvePendingPolicyGrants,
 } from "../policy-access";
@@ -215,12 +221,39 @@ describe("policy access", () => {
     expect(structuredField(record, "missingGrantableItems")).toEqual([{ kind: "PROJECTION", id: "order-list", verb: "USE", label: "Order list" }]);
   });
 
-  it("exposes the policy reads and dispatches both registered writes for the selected policy", async () => {
-    const reads = createGovernanceReadAdapters(viewer).policies;
-    expect((await reads.previewEntryGrant(domainId, policyId, { entryIds: [entryId] })).primaryKey).toBe(policyId);
+  it("dispatches all registered read and write operations for the selected policy", async () => {
     const target = { kind: "object", objectType: PERMISSION_POLICY, primaryKey: policyId } as const;
     const actor = { credentials: viewer, owner: { domainId, userId: "viewer" } };
     const host: PanelOperationHost = { initiator: actor, executor: actor, request: vi.fn(), requestWorkbench: vi.fn() };
+    const previewHandler = registeredPanelOperation(PREVIEW_POLICY_ENTRY_GRANT)?.handler;
+    if (!previewHandler || previewHandler.effect !== "read") throw new Error("Missing previewEntryGrant read op");
+    expect(await previewHandler.execute(host, { target, input: { entryIds: [entryId] } })).toMatchObject({
+      kind: "json",
+      value: { policyId },
+    });
+
+    const pendingHandler = registeredPanelOperation(LIST_PENDING_POLICY_GRANTS)?.handler;
+    if (!pendingHandler || pendingHandler.effect !== "read") throw new Error("Missing listPending read op");
+    post.mockResolvedValueOnce(json({ policyId, canManage: true, targetPolicyRoleIds: [], items: [] }));
+    expect(await pendingHandler.execute(host, { target, input: {} })).toMatchObject({
+      kind: "json",
+      value: { policyId, canManage: true, items: [] },
+    });
+
+    const inspectHandler = registeredPanelOperation(INSPECT_POLICY_ACCESS)?.handler;
+    if (!inspectHandler || inspectHandler.effect !== "read") throw new Error("Missing inspectAccess read op");
+    post.mockResolvedValueOnce(json(rootFacts));
+    post.mockResolvedValueOnce(json({
+      subjectId: "subject", entryId, targetPolicyId: policyId,
+      targetPolicyRoleIds: ["r-sales"], subjectRoleIds: ["r-sales"],
+      entry: { kind: "ENTRY", id: entryId, verb: "ENTER", allowed: true, sources: [] },
+      items: [],
+    }));
+    expect(await inspectHandler.execute(host, { target, input: { subjectId: "subject", entryId } })).toMatchObject({
+      kind: "json",
+      value: { subjectId: "subject", entryId, targetPolicyId: policyId },
+    });
+
     for (const operation of [
       { id: GRANT_POLICY_ENTRIES, input: { entryIds: [entryId], acceptedObjects: [] }, data: { policyId, grantedEntryCount: 1, grantedObjectCount: 0 } },
       { id: RESOLVE_PENDING_POLICY_GRANT, input: { resolutions: [{ id: 1, confirm: false }] }, data: { policyId, resolvedCount: 1 } },
