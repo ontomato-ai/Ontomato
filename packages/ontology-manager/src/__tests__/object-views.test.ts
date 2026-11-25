@@ -73,14 +73,6 @@ describe("object view requests", () => {
     return createManagerClient({ apiBase: "/api", credential: { type: "token", token: "test-token" }, locale: "en", text: (key) => englishMessages.ontology[key],
       dataFallbacks: { noBusinessDescription: "", unnamedAsset: "" } }, () => {});
   }
-  it("keeps optimistic revision and form on save and surfaces conflicts", async () => {
-    const fetch = vi.fn(async () => new Response(JSON.stringify({ success: false, message: "The view changed. Reload before saving or publishing." }), { status: 409 }));
-    vi.stubGlobal("fetch", fetch);
-    await expect(client().saveObjectView(createObjectView("Order"), "panel", 7, "Update layout")).rejects.toThrow("The view changed");
-    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-    const body = JSON.parse(String(init.body));
-    expect(body).toMatchObject({ className: "Order", form: "panel", expectedRevision: 7, description: "Update layout" });
-  });
   it("keeps action strings intact and sends multipart parameters through the host credential", async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, data: {} })));
     vi.stubGlobal("fetch", fetch);

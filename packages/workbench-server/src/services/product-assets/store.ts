@@ -142,7 +142,6 @@ async function writeProduct(client: PoolClient, owner: ProductOwner, id: string,
   const registration=ontologyRegistration(saved);
   if(registration)await client.query(`INSERT INTO ${t('product_ontology_outbox')} (domain_id,asset_id,revision,registration) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(domain_id,asset_id) DO UPDATE SET revision=EXCLUDED.revision,registration=EXCLUDED.registration`,[owner.domainId,id,saved.revision,JSON.stringify(registration)]);
   await client.query(`INSERT INTO ${t('product_asset_revisions')} (domain_id,asset_id,revision,asset) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING`,[owner.domainId,id,saved.revision,JSON.stringify(saved)]);
-  if(migrating&&saved.document.kind==='object-projection'&&saved.document.layout)await client.query(`INSERT INTO ${t('product_object_view_heads')} (domain_id,asset_id,revision) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[owner.domainId,id,saved.revision]);
   return saved;
 }
 export async function saveProduct(owner: ProductOwner, id: string, input: Omit<ProductAssetInput,'visibility'> & {visibility?:ProductAssetInput['visibility']}, revision: number, credentials:AssistantCredentials,migrating=false) {

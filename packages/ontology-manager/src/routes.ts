@@ -18,41 +18,36 @@ import { managerPaths } from "./navigation";
  * visual modeling brings AntV G6/X6 and data browsing loads G6 only for its graph view.
  */
 const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowser.vue"));
-const ObjectViewPage = defineAsyncComponent(() => import("./object-views/ObjectViewPage.vue"));
-const ObjectViewBuilder = defineAsyncComponent(() => import("./object-views/ObjectViewBuilder.vue"));
 
-function objectViewLocation(reference: ObjectReference) {
-  return { name: routes.objectView.name, params: { className: reference.className }, query: { key: reference.primaryKey } };
+const OBJECT_DETAIL_PATH = "/browser/views";
+
+function firstQueryString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+  return "";
 }
 
-const ObjectViewRoute = defineComponent({
-  setup() {
-    const route = useRoute();
-    const router = useRouter();
-    return () => h(ObjectViewPage, {
-      reference: { className: String(route.params.className), primaryKey: String(route.query.key ?? "") },
-      onOpen: (reference: ObjectReference) => void router.push({ ...objectViewLocation(reference), query: { key: reference.primaryKey, ...(route.query.from === "workspace" ? { from: "workspace" } : {}) } }),
-      onEdit: () => void router.push({ name: routes.objectViewEditor.name, params: route.params, query: route.query }),
-      onBack: () => void router.push(route.query.from === "workspace" ? { path: "/workspace" } : { name: routes.data.name, params: { className: route.params.className } }),
-    });
-  },
-});
+function objectViewLocation(reference: ObjectReference, returnTo?: string) {
+  return panelAddress(OBJECT_DETAIL_PATH, {
+    selected: { className: reference.className, primaryKey: reference.primaryKey },
+    ...(returnTo ? { returnTo } : {}),
+  });
+}
 
-const ObjectViewEditorRoute = defineComponent({
-  setup() {
-    const route = useRoute();
-    const router = useRouter();
-    return () => h(ObjectViewBuilder, {
-      className: String(route.params.className),
-      initialPrimaryKey: String(route.query.key ?? ""),
-      onOpen: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
-      // Back goes to the object types panel with this class selected: the page that class's detail address opens.
-      onBack: () => void router.push(panelAddress(managerPaths.objects, {
-        selected: String(route.params.className),
-      })),
-    });
-  },
-});
+function legacyObjectDetailRedirect(to: { params: Record<string, unknown>; query: Record<string, unknown> }) {
+  const className = typeof to.params.className === "string" ? to.params.className : "";
+  const primaryKey = firstQueryString(to.query.key);
+  const returnTo = firstQueryString(to.query.returnTo) || firstQueryString(to.query.from);
+  if (className && primaryKey) {
+    return objectViewLocation({ className, primaryKey }, returnTo || undefined);
+  }
+  return returnTo ? panelAddress(OBJECT_DETAIL_PATH, { returnTo }) : OBJECT_DETAIL_PATH;
+}
+
+function legacyObjectViewEditorRedirect(to: { params: Record<string, unknown> }) {
+  const className = typeof to.params.className === "string" ? to.params.className : "";
+  return className ? panelAddress(managerPaths.objects, { selected: className }) : managerPaths.objects;
+}
 
 /** Where the data browser last was, kept per router so that the navigation entry returns to that object type. */
 interface DataBrowserMemory {
@@ -73,7 +68,7 @@ function dataBrowserPage(memory: DataBrowserMemory) {
         h("section", { class: "legacy-surface" }, [h(DataBrowser, {
           initialClass: props.className, onClassChange,
           onOpenObject: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
-          onConfigureView: (className: string) => void router.push({ name: routes.objectViewEditor.name, params: { className } }),
+          onConfigureView: (className: string) => void router.push(panelAddress(managerPaths.objects, { selected: className })),
         })]);
     },
   });
@@ -142,13 +137,17 @@ const stringParam = (name: string) => (route: { params: Record<string, unknown> 
 export function managerRoutes(): RouteRecordRaw[] {
   const dataBrowser: DataBrowserMemory = { className: "" };
   return [
+    { ...routes.objectView, redirect: legacyObjectDetailRedirect },
+    { ...routes.objectViewEditor, redirect: legacyObjectViewEditorRedirect },
+    {
+      path: "/views/:className",
+      redirect: (to) =>
+        to.query.edit === "true" ? legacyObjectViewEditorRedirect(to) : legacyObjectDetailRedirect(to),
+    },
     {
       path: "",
       component: ManagerFrame,
       children: [
-        { ...routes.objectView, component: ObjectViewRoute, meta: { page: managerPaths.dataBrowser, ownHeader: true } },
-        { ...routes.objectViewEditor, component: ObjectViewEditorRoute, meta: { page: managerPaths.objects } },
-        { path: "/views/:className", redirect: (to) => ({ name: to.query.edit === "true" ? routes.objectViewEditor.name : routes.objectView.name, params: to.params, query: to.query }) },
         {
           ...routes.data,
           component: dataBrowserPage(dataBrowser),

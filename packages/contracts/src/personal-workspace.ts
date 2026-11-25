@@ -45,7 +45,7 @@ export const recentWorkInputSchema = z.object({
       return value.startsWith("/") && url.origin === "https://workspace.invalid"
         // eslint-disable-next-line no-control-regex -- control characters are exactly what this rejects.
         && !decoded.includes("//") && !decoded.includes("\\") && !/[\u0000-\u0020\u007f]/.test(decoded)
-        && !url.hash && [...url.searchParams.keys()].every(key => ["dashboardId", "sessionId", "primaryKey", "key"].includes(key));
+        && !url.hash && [...url.searchParams.keys()].every(key => ["dashboardId", "sessionId", "primaryKey", "key", "selected"].includes(key));
     } catch { return false; }
   }),
 }).strict();

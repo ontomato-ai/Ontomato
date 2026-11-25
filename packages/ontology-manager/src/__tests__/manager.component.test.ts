@@ -113,7 +113,6 @@ function respond(url: string, body?: Record<string, unknown>, method = "POST"): 
   if (path.startsWith("/ontology/model/attribute/")) {
     return json({});
   }
-  if (path === "/objectView/read" || path === "/objectView/edit" || url.includes('/product-assets/object-views/read')||url.includes('/product-assets/object-views/edit')) return json({ success: true, data: { revision: 0, publishedRevision: null, versions: [] } });
   if (path === "/metricView/queryList") return json({ success: true, data: [
     { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER" },
   ] });
@@ -267,8 +266,10 @@ function mountHost(initial: HostOptions) {
     history,
     routes: [
       { path: "/", component: RouterView, children: managerRoutes() },
-      // The graph address is the host's panel entry now (the graph is a built-in panel); the Manager only links to it.
+      // The graph, objects and object-detail addresses are host panel entries now; the Manager only links or redirects to them.
       { path: "/ontology/playground", component: defineComponent({ render: () => h("div", { class: "graph-panel-entry" }) }) },
+      { path: "/ontology/objects", component: defineComponent({ render: () => h("div", { class: "objects-panel-entry" }) }) },
+      { path: "/browser/views", component: defineComponent({ render: () => h("div", { class: "object-detail-panel-entry" }) }) },
       // The service router sends unknown addresses to its root, which lands on the graph.
       { path: "/:unknown(.*)*", redirect: "/ontology/playground" },
     ],
@@ -354,15 +355,13 @@ function clickButton(text: string) {
 }
 
 describe("Manager pages in the service router", () => {
-  it("opens the routed object view fallback and its type-level editor", async () => {
-    const { root, views } = mountHost({ ...base, view: "/browser/views/Order?key=001" });
+  it("redirects legacy object view and view editor routes to the new panel destinations", async () => {
+    const { views } = mountHost({ ...base, view: "/browser/views/Order?key=001" });
     await settle();
-    expect(root().querySelector(".object-view-runtime")).not.toBeNull();
-    expect(requests.find(request => request.url.endsWith("/product-assets/object-views/read"))?.body).toMatchObject({ className: "Order", form: "full" });
-    clickButton("Configure view");
+    expect(views.at(-1)).toBe("/browser/views?selected=Order~001");
+    const editorHost = mountHost({ ...base, view: "/ontology/objects/Order/view" });
     await settle();
-    expect(views.at(-1)).toContain("/ontology/objects/Order/view");
-    expect(root().querySelector(".view-builder")).not.toBeNull();
+    expect(editorHost.views.at(-1)).toBe("/ontology/objects?selected=Order");
   });
   it("a 50,000-instance graph initially loads only the type summary", async () => {
     instanceNodeCount = 50000;
@@ -767,7 +766,7 @@ describe("Manager pages in the service router", () => {
     expect(root().textContent).not.toContain("[de] ");
     expect(requests).toEqual([]);
 
-    host.view = "/browser/views/Order?key=1";
+    host.view = "/browser/data/Item";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
@@ -775,15 +774,21 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/admin/getMetas" ? 402 : path === "/data/queryInfoByNode" ? 401 : 200;
+      path === "/admin/getMetas" ? 402 : 200;
     const { host, failures } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    host.view = "/browser/views/Order?key=1";
+    host.view = "/ontology/playground";
+    await settle();
+    statusFor = (path) =>
+      path === "/admin/getMetas" ? 401 : 200;
+    host.view = "/browser/data/Order";
     await settle();
     expect([...new Set(failures)].sort()).toEqual([401, 402]);
 
     requests = [];
     statusFor = () => 200;
+    host.view = "/ontology/playground";
+    await settle();
     host.view = "/browser/data/Order";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
@@ -816,7 +821,7 @@ describe("Manager pages in the service router", () => {
     expect(metaRequests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
 
     requests = [];
-    host.view = "/browser/views/Order?key=1";
+    host.view = "/browser/data/Item";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "de")).toBe(true);

@@ -71,7 +71,7 @@ type Reference = {
   key: string;
   target: Target;
   wiring: Wiring;
-  fromObjectDetail?: true;
+  fromObjectDetail?: { fromState: string; className: string };
 };
 
 function fixedTarget(target: PanelPlacement["target"]): Target {
@@ -85,7 +85,7 @@ function collectReferences(
   const references: Reference[] = [];
   for (const [key, wiring] of Object.entries(members)) {
     const { target } = wiring;
-    const add = (target: Target, fromObjectDetail?: true) =>
+    const add = (target: Target, fromObjectDetail?: Reference["fromObjectDetail"]) =>
       references.push({ key, target, wiring, fromObjectDetail });
     if ("panelId" in target || "projectionId" in target) {
       add(fixedTarget(target));
@@ -99,7 +99,7 @@ function collectReferences(
         const type = state[target.fromState]?.type;
         if (type?.kind === "object" || type?.kind === "object-union") {
           for (const [className, id] of details) {
-            if (matchesObjectType(type, className)) add({ kind: "panel", id }, true);
+            if (matchesObjectType(type, className)) add({ kind: "panel", id }, { fromState: target.fromState, className });
           }
         }
       }
@@ -309,7 +309,7 @@ function ports(definition: PanelDefinition | ProjectionDefinition) {
 }
 
 async function incompatiblePort(
-  source: ReferenceManifest, { wiring }: Reference, definition: PanelDefinition | ProjectionDefinition,
+  source: ReferenceManifest, { wiring, fromObjectDetail }: Reference, definition: PanelDefinition | ProjectionDefinition,
   readCatalogue = readPanelComponentCatalogue, domainId: string | null = null, client?: QueryClient,
 ) {
   const target = ports(definition);
@@ -333,7 +333,12 @@ async function incompatiblePort(
     if (!type && ("state" in value || "output" in value) && implicit.has(name)) continue;
     if (!type) return `input '${name}' was removed or is not exposed`;
     if ("item" in value || "output" in value) continue;
-    const offered = "state" in value ? panelStateInputType(value, source.state[value.state]?.type) : undefined;
+    const rawStateType = "state" in value
+      ? (fromObjectDetail && value.state === fromObjectDetail.fromState
+        ? { kind: "object" as const, objectType: fromObjectDetail.className }
+        : source.state[value.state]?.type)
+      : undefined;
+    const offered = "state" in value ? panelStateInputType(value, rawStateType) : undefined;
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
     const accepts = "literal" in value ? type.kind === "json" || matchesDirectPanelValue(type, value.literal)
       : offered !== undefined && directProjectionInputAccepts(type, offered);

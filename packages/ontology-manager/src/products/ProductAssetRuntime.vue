@@ -2,9 +2,9 @@
 import { computed, ref, watch,onBeforeUnmount,inject,type Component } from "vue";
 import {onProductInvalidation} from '@ontomato/contracts/product-invalidation';
 import {productWidgets,productAgentRuntimeKey, type ProductAsset } from "@ontomato/contracts/product-assets";
+import { panelAddress } from "@ontomato/contracts/panel-host";
 import { objectViewDocumentSchema,readViewPath } from "@ontomato/contracts/object-views";
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
-import ObjectViewPage from "../object-views/ObjectViewPage.vue";
 import PlatformWidgetRuntime from './PlatformWidgetRuntime.vue';
 import {useOntologyText} from '../context';
 import ObjectProjectionRuntime from './ObjectProjectionRuntime.vue';
@@ -75,7 +75,7 @@ const document = computed(() => {
   <section v-else-if="asset.document.kind === 'object-view'" class="product-object-view">
     <header><strong>{{asset.name}}</strong><span>{{asset.document.className}}</span></header>
     <form v-if="!asset.document.primaryKey" class="object-selector" @submit.prevent="activeObject=objectKey.trim()"><el-input v-model="objectKey" :placeholder="ot('productEnterObjectKey')" :aria-label="ot('productObjectPrimaryKey')"/><el-button native-type="submit" :disabled="!objectKey.trim()">{{ ot('productViewObject') }}</el-button></form>
-    <ObjectViewPage v-if="activeObject" :reference="{className:asset.document.className,primaryKey:activeObject}" preview capability-only :read-only="preview"/>
+    <a v-if="activeObject" class="product-entry" :href="`#${panelAddress('/browser/views', { selected: { className: asset.document.className, primaryKey: activeObject } })}`"><strong>{{ activeObject }}</strong><span>{{ ot('productViewObject') }} ↗</span></a>
     <p v-else>{{ ot('productObjectSelectionHint') }}</p>
   </section>
   <p v-else>{{ asset.name }}</p>

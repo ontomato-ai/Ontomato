@@ -24,9 +24,10 @@ router.post("/recent", asyncHandler(async (req, res) => {
 }));
 router.get("/", wrap(async (req, res) => {
   const currentOwner = owner(req as AuthenticatedRequest);
-  const [asset, homePreferences] = await Promise.all([
+  const [asset, homePreferences, pinnedObjects] = await Promise.all([
     personalHome(currentOwner, context(req).credentials),
     platformHomeStore.preferences(currentOwner),
+    platformHomeStore.pinnedObjects(currentOwner),
   ]);
   if (asset.document.kind !== "page") throw new Error("Home must be a page");
   const overlay = await readProductOverlay(currentOwner, asset.id);
@@ -36,6 +37,7 @@ router.get("/", wrap(async (req, res) => {
     applicationIds: homePreferences.favorites.filter(item => item.kind === "application").map(item => item.id),
     agentIds: homePreferences.favorites.filter(item => item.kind === "agent").map(item => item.id),
     dashboardIds: homePreferences.dashboardIds,
+    pinnedObjects,
   };
   res.json({ data, revision: asset.revision, assetId: asset.id });
 }));
@@ -58,6 +60,7 @@ router.put("/", wrap(async (req, res) => {
   await Promise.all([
     platformHomeStore.saveFavorites(currentOwner, favorites),
     platformHomeStore.saveDashboards(currentOwner, parsed.data.dashboardIds),
+    platformHomeStore.savePinnedObjects(currentOwner, parsed.data.pinnedObjects),
   ]);
   res.json({ data: parsed.data, revision: asset.revision, assetId: asset.id });
 }));

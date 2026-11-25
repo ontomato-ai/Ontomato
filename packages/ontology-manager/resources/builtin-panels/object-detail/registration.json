@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-object-detail",
+      "input": {
+        "name": "对象详情",
+        "description": "对象浏览器整页详情：页头提供返回、对象标题、收藏星标、刷新与配置呈现弹窗，主体复用对象详情内容面板。"
+      }
+    }
+  ]
+}

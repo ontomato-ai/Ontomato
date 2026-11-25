@@ -14,7 +14,11 @@ import { useRouter } from "vue-router";
 import { platformHostKey } from "@ontomato/platform-admin";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork, type WorkspaceSection } from "@ontomato/contracts/personal-workspace";
-import { ManagerFrame, ObjectViewPage, ProductAssetRuntime, useProductText } from "@ontomato/ontology-manager";
+import { panelAddress } from "@ontomato/contracts/panel-host";
+import { panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
+import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { ManagerFrame, ProductAssetRuntime, useProductText } from "@ontomato/ontology-manager";
+import { PanelHost, type PanelHostLabels, type PanelHostPort, type PanelHostState, type PanelInstanceView } from "@ontomato/platform-shell";
 import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
@@ -25,12 +29,13 @@ import {dropdownBoundaryOptions} from '@ontomato/ontology-manager';
 import { useApplicationCatalog } from "../catalog";
 import {openApplicationKey} from '../apps';
 import {HOME_PREFERENCES_CHANGED} from '../features/home/api';
+import { platformPanelHost, type PanelObjectChange } from "../panel-host";
 import AppPage from "./AppPage.vue";
 import WorkspaceSkeleton from "./WorkspaceSkeleton.vue";
 import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHorizontal, Pin, RefreshCw, Settings2, Sparkles } from "lucide-vue-next";
 import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceResourceDetail.vue";
 import { agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
-const { locale, t } = useI18n();
+const { locale, fallbackLocale, t } = useI18n();
 const productText = useProductText();
 const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
 const personalHome=computed(()=>!props.productAssetId&&!props.platformWidgetAsset&&!props.embedded);
@@ -178,13 +183,72 @@ async function removeObject(item: WorkspaceObjectReference) {
   });
   saving.value = false;
 }
+const HOME_OBJECT_DETAIL_USE: ApplicationPanelUse = {
+  id: "home-object-detail-body",
+  pageKey: "home-object-detail-body",
+  panelId: "builtin-product-object-detail-body",
+  path: "/home/object-detail",
+  access: { kind: "domain-member" },
+};
+const objectDetailHost = ref<PanelInstanceView | null>(null);
+const objectDetailUse = computed<ApplicationPanelUse>(() =>
+  catalog.applications.value
+    .find((app) => app.id === "home")
+    ?.panelUses?.find((use) => use.id === HOME_OBJECT_DETAIL_USE.id)
+  ?? HOME_OBJECT_DETAIL_USE,
+);
+let cachedObjectDetailPort: { key: string; port: PanelHostPort } | null = null;
+function onObjectDetailChange(change: PanelObjectChange) {
+  objectDetailHost.value?.refresh(change.target, change.affected, change.operation);
+}
+const objectDetailPort = computed<PanelHostPort>(() => {
+  const use = objectDetailUse.value;
+  const key = `${use.id}:${use.panelId}`;
+  if (!cachedObjectDetailPort || cachedObjectDetailPort.key !== key) {
+    cachedObjectDetailPort = { key, port: platformPanelHost("home", use, onObjectDetailChange) };
+  }
+  return cachedObjectDetailPort.port;
+});
+const objectDetailLabels = computed<PanelHostLabels>(() => ({
+  notStarted: t("platform.panelNotStarted"),
+  failures: {
+    fileUnavailable: t("platform.panelFileUnavailable", { file: "{file}" }),
+    scriptThrew: t("platform.panelScriptThrew"),
+    scriptRejected: t("platform.panelScriptRejected"),
+  },
+  content: { styleOutside: t("platform.panelStyleOutside") },
+  refresh: t("common.refresh"),
+}));
+const objectDetailLanguage = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
+const objectDetailInitial = computed(() =>
+  objectPreview.value
+    ? { selected: { className: objectPreview.value.className, primaryKey: objectPreview.value.primaryKey } }
+    : {},
+);
+function onObjectDetailState(nextState: PanelHostState) {
+  if (!objectPreview.value) return;
+  const parsed = panelObjectRefSchema.safeParse(nextState.selected);
+  if (!parsed.success) return;
+  if (
+    parsed.data.className === objectPreview.value.className
+    && parsed.data.primaryKey === objectPreview.value.primaryKey
+  ) return;
+  objectPreview.value = {
+    className: parsed.data.className,
+    primaryKey: parsed.data.primaryKey,
+    title: t("ontology.productHomeRelatedObject"),
+  };
+}
 function openObject(item: WorkspaceObjectReference) {
   if (config.value.objectOpening === "drawer") { objectPreview.value = item; objectPreviewOpen.value = true; return; }
   openObjectPage(item);
 }
 function openObjectPage(item: WorkspaceObjectReference) {
   objectPreviewOpen.value = false;
-  void router.push({ name: platformRoutes.objectView.name, params: { className: item.className }, query: { key: item.primaryKey, from: "workspace" } });
+  void router.push(panelAddress("/browser/views", {
+    selected: { className: item.className, primaryKey: item.primaryKey },
+    returnTo: "workspace",
+  }));
 }
 function askObject(item: WorkspaceObjectReference) {
   const question = locale.value.startsWith("zh")
@@ -634,7 +698,19 @@ const actions = computed(() => [
     <el-drawer v-model="objectPreviewOpen" class="workspace-object-drawer" :title="objectPreview?.title" size="min(920px, 100vw)" destroy-on-close>
       <template v-if="objectPreview">
         <div class="resource-toolbar"><el-button @click="openObjectPage(objectPreview)">{{ interactionLabels.openPage }}</el-button><el-button v-if="canChat && enabledAgents.length" type="primary" @click="askObject(objectPreview)">{{ t('ontology.productHomeAskAboutObject') }}</el-button></div>
-        <ManagerFrame class="workspace-preview-frame"><ObjectViewPage class="workspace-object-preview" :reference="objectPreview" preview @open="objectPreview = { ...$event, title: t('ontology.productHomeRelatedObject') }" /></ManagerFrame>
+        <div class="workspace-preview-frame">
+          <PanelHost
+            ref="objectDetailHost"
+            class="workspace-object-preview"
+            :port="objectDetailPort"
+            :labels="objectDetailLabels"
+            :language="objectDetailLanguage"
+            :address="objectDetailUse.path"
+            :initial="objectDetailInitial"
+            :history-back="false"
+            @display-state="onObjectDetailState"
+          />
+        </div>
       </template>
     </el-drawer>
     <el-drawer v-model="resourceOpen" :title="resource?.title" size="min(680px, 100vw)" destroy-on-close>

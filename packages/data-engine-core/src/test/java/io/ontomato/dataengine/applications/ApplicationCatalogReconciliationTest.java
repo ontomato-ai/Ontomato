@@ -136,8 +136,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")
                 .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data[0].entrance.permissionCode").value("business-knowledge"))
-            .andExpect(jsonPath("$.data[0].path").value("/ontology/knowledge"));
+            .andExpect(jsonPath("$.data[?(@.path == '/ontology/knowledge')].entrance.permissionCode")
+                .value(org.hamcrest.Matchers.contains("business-knowledge")));
         http.perform(get("/platform/applications/ontology/panel-uses"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.entry.renderer").value("ontology"))

@@ -12,8 +12,11 @@ import {
   ATTRIBUTE,
   DELETE_ATTRIBUTE,
   DELETE_OBJECT_TYPE,
+  CLEAR_OBJECT_DETAIL_PANEL,
   OBJECT_TYPE,
+  PRODUCT_PANEL,
   RELATIONSHIP,
+  SAVE_OBJECT_DETAIL_PANEL,
   SET_PRIMARY_KEY,
   platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
@@ -47,6 +50,7 @@ const use = panelUse(
 
 const actionTargetInputs: Record<string, string> = {
   [DELETE_OBJECT_TYPE]: "objectType",
+  [CLEAR_OBJECT_DETAIL_PANEL]: "objectType",
   [DELETE_ATTRIBUTE]: "attribute",
   [SET_PRIMARY_KEY]: "attribute",
 };
@@ -57,7 +61,7 @@ const objectTypes = Object.fromEntries(
     platformTypeTableEntrySchema.parse({
       ...entry,
       operations: entry.operations?.map((id) => {
-        const form = id.endsWith(".save") || id.endsWith(".create");
+        const form = id.endsWith(".save") || id.endsWith(".create") || id === SAVE_OBJECT_DETAIL_PANEL;
         return {
           id,
           kind: form ? "form.save" : "action",
@@ -445,8 +449,8 @@ function mountObjectsRoute(
         },
       },
       { path: "/ontology/relations/detail", component: { render: () => h("div", "relation-detail") } },
+      { path: "/ontology/panels", component: { render: () => h("div", "panels-directory") } },
       { path: "/browser/data/:className", component: { render: () => h("div", "data-browser") } },
-      { path: "/ontology/objects/:className/view", component: { render: () => h("div", "view-editor") } },
     ],
   });
 
@@ -1383,6 +1387,125 @@ describe("ontology-objects cleaned builtin panel", () => {
           (req) => !("operations" in req) && req.memberPath[0]?.member === "catalog",
         ).length;
         expect(catalogReadsAfter).toBeGreaterThan(catalogReadsBefore);
+      });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("opens the in-page presentation dialog locally without changing URL and links to /ontology/panels", async () => {
+    const route = mountObjectsRoute(
+      { selected: "warehouse" },
+      {
+        onRead: (body) => {
+        const member = body.memberPath[0]?.member;
+        if ("operations" in body) {
+          if (member === "clearDetailPanel") {
+            return Response.json({
+              status: "ready",
+              value: {
+                clearDetailPanel: {
+                  handlerRef: CLEAR_OBJECT_DETAIL_PANEL,
+                  kind: "action",
+                  label: "Clear detail panel binding",
+                  effect: "write",
+                  batch: false,
+                  target: { source: "input", input: "objectType" },
+                  inputSchema: {},
+                  resultSchema: {},
+                },
+              },
+            });
+          }
+          if (member === "detailPanelForm") {
+            return Response.json({
+              status: "ready",
+              value: {
+                saveDetailPanel: {
+                  handlerRef: SAVE_OBJECT_DETAIL_PANEL,
+                  kind: "form.save",
+                  label: "Save detail panel",
+                  effect: "write",
+                  batch: false,
+                  target: { source: "draft", slot: "detailPanelForm" },
+                  inputSchema: {},
+                  resultSchema: {},
+                },
+              },
+            });
+          }
+          return undefined;
+        }
+        if (member === "detailBinding") {
+          return Response.json({
+            status: "ready",
+            value: {
+              className: OBJECT_TYPE,
+              primaryKey: "warehouse",
+              label: "Detail panel",
+              outputs: { configured: false, panelId: "", panelStatus: "unconfigured", canConfigure: true },
+              fields: { status: "Default read-only detail", panelName: "", unavailableReason: "" },
+              fieldLabels: { status: "Status", panelName: "Detail panel", unavailableReason: "Reason" },
+            },
+          });
+        }
+        if (member === "detailPanelForm") {
+          return Response.json({
+            status: "ready",
+            value: {
+              fields: [
+                {
+                  path: "/panelId",
+                  label: "Detail panel",
+                  help: "Leave empty to use the default read-only detail.",
+                  required: false,
+                  valueSchema: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  control: { kind: "reference", objectType: PRODUCT_PANEL, multiple: false },
+                  readOnly: false,
+                },
+              ],
+              values: { panelId: null },
+              errors: [],
+              save: {
+                operation: SAVE_OBJECT_DETAIL_PANEL,
+                method: "PUT",
+                path: "/api/object-details/warehouse",
+                bodySchema: { type: "object", properties: { panelId: { anyOf: [{ type: "string" }, { type: "null" }] } } },
+              },
+            },
+          });
+        }
+        if (member === "detailPanelPicker") {
+          return Response.json({ status: "ready", value: { options: [], hasMore: false } });
+        }
+        return undefined;
+      },
+    },
+    );
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(element.textContent).toContain("Configure presentation");
+      });
+
+      const urlBefore = route.router.currentRoute.value.fullPath;
+      const configBtn = Array.from(element.querySelectorAll<HTMLButtonElement>("button"))
+        .find((btn) => btn.textContent?.includes("Configure presentation"))!;
+      configBtn.click();
+
+      await vi.waitFor(() => {
+        expect(document.body.textContent).toContain("Configure object presentation");
+        expect(document.body.textContent).toContain("Default read-only detail");
+        expect(document.body.textContent).toContain("Manage detail panels");
+      });
+      // Dialog toggle stays local and never pollutes the URL.
+      expect(route.router.currentRoute.value.fullPath).toBe(urlBefore);
+
+      const manageBtn = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((btn) => btn.textContent?.includes("Manage detail panels"))!;
+      manageBtn.click();
+      await vi.waitFor(() => {
+        expect(route.router.currentRoute.value.fullPath).toBe("/ontology/panels");
       });
     } finally {
       app.unmount();

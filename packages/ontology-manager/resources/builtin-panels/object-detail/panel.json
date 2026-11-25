@@ -1,0 +1,303 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "deepLink": true,
+        "external": true
+      },
+      "returnTo": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "selectedClass": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      }
+    },
+    "members": {
+      "headerTitle": {
+        "component": "ObjectHeader",
+        "name": "Object title",
+        "description": "Displays the selected object's primary display name in the page header.",
+        "type": "platform:ObjectType",
+        "data": {
+          "record": {
+            "read": "instanceRecord",
+            "params": {
+              "object": {
+                "state": "selected"
+              }
+            }
+          }
+        },
+        "config": {
+          "subtitle": "",
+          "fallbackTitle": ""
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000001"
+      },
+      "detailBinding": {
+        "component": "InfoBanner",
+        "name": "Detail panel permission probe",
+        "description": "Reads whether the current user can configure this object type's detail panel.",
+        "target": "selectedClass",
+        "data": {
+          "record": "detailPanel"
+        },
+        "config": {
+          "field": "unavailableReason",
+          "hideWhenEmpty": true
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000002"
+      },
+      "detailBindingSummary": {
+        "component": "ObjectSummary",
+        "name": "Current detail panel binding",
+        "description": "Displays the currently configured detail panel status and name inside the presentation dialog.",
+        "target": "selectedClass",
+        "data": {
+          "record": "detailPanel"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "status",
+            "panelName",
+            "unavailableReason"
+          ]
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000003"
+      },
+      "detailPanelForm": {
+        "component": "ObjectForm",
+        "name": "Configure detail panel form",
+        "description": "Selects or clears the custom detail panel bound to this object type.",
+        "type": "platform:ObjectType",
+        "target": "selectedClass",
+        "data": {
+          "form": "detailPanelForm"
+        },
+        "operation": "platform:ObjectType.saveDetailPanel",
+        "config": {
+          "actions": "footer"
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000004"
+      },
+      "detailPanelPicker": {
+        "component": "ReferencePicker",
+        "name": "Detail panel picker",
+        "description": "Searches and picks a usable panel to bind as this object type's detail panel.",
+        "type": "platform:ProductPanel",
+        "data": {
+          "options": "options"
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000005"
+      },
+      "clearDetailPanel": {
+        "component": "OperationButton",
+        "name": "Restore default detail",
+        "description": "Clears the custom detail panel binding so the object type falls back to the built-in read-only detail.",
+        "operation": "objectTypes.clearDetailPanel",
+        "target": "selectedClass",
+        "config": {
+          "plain": true,
+          "labelKey": "od.restoreDefault"
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000006"
+      },
+      "favoriteStatus": {
+        "component": "InfoBanner",
+        "name": "Favorite state",
+        "description": "Reads whether the currently viewed object is in the reader's personal favorites.",
+        "type": "platform:Favorite",
+        "data": {
+          "record": {
+            "read": "record",
+            "params": {
+              "object": {
+                "state": "selected"
+              }
+            }
+          }
+        },
+        "config": {
+          "field": "status",
+          "hideWhenEmpty": true
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000007"
+      },
+      "addFavorite": {
+        "component": "PanelData",
+        "name": "Add object to favorites",
+        "description": "Pins the selected object to the reader's personal favorites.",
+        "type": "platform:Favorite",
+        "operation": "favorites.add",
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000008"
+      },
+      "removeFavorite": {
+        "component": "PanelData",
+        "name": "Remove object from favorites",
+        "description": "Removes the selected object from the reader's personal favorites.",
+        "type": "platform:Favorite",
+        "operation": "favorites.remove",
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000009"
+      },
+      "body": {
+        "target": {
+          "panelId": "builtin-product-object-detail-body"
+        },
+        "inputs": {
+          "selected": {
+            "state": "selected"
+          }
+        },
+        "outputs": {
+          "selected": {
+            "state": "selected"
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Object detail",
+        "panel.description": "Inspect one object record, manage its favorite state, and configure its type's detail presentation.",
+        "od.backBrowser": "Back to data browser",
+        "od.backWorkspace": "Back to workspace",
+        "od.favoriteAdd": "Add to favorites",
+        "od.favoriteRemove": "Remove from favorites",
+        "od.refresh": "Refresh",
+        "od.configurePresentation": "Configure presentation",
+        "od.configureTitle": "Configure object presentation",
+        "od.currentBinding": "Current presentation",
+        "od.restoreDefault": "Restore default detail",
+        "od.managePanels": "Manage detail panels",
+        "od.savedNotice": "Object presentation updated.",
+        "od.clearedNotice": "Restored default read-only detail."
+      },
+      "zh-CN": {
+        "panel.name": "对象详情",
+        "panel.description": "查看单个对象记录、收藏到个人工作台，并配置该对象类型的详情呈现方式。",
+        "od.backBrowser": "返回数据浏览",
+        "od.backWorkspace": "返回个人工作台",
+        "od.favoriteAdd": "收藏对象",
+        "od.favoriteRemove": "取消收藏",
+        "od.refresh": "刷新",
+        "od.configurePresentation": "配置呈现",
+        "od.configureTitle": "配置对象呈现",
+        "od.currentBinding": "当前呈现配置",
+        "od.restoreDefault": "恢复默认详情",
+        "od.managePanels": "新建 / 管理详情面板",
+        "od.savedNotice": "对象呈现配置已保存。",
+        "od.clearedNotice": "已恢复默认只读详情。"
+      },
+      "zh-TW": {
+        "panel.name": "物件詳情",
+        "panel.description": "檢視單一物件記錄、收藏至個人工作台，並設定該物件類型的詳情呈現方式。",
+        "od.backBrowser": "返回資料瀏覽",
+        "od.backWorkspace": "返回個人工作台",
+        "od.favoriteAdd": "收藏物件",
+        "od.favoriteRemove": "取消收藏",
+        "od.refresh": "重新整理",
+        "od.configurePresentation": "設定呈現",
+        "od.configureTitle": "設定物件呈現",
+        "od.currentBinding": "目前呈現設定",
+        "od.restoreDefault": "恢復預設詳情",
+        "od.managePanels": "新增 / 管理詳情面板",
+        "od.savedNotice": "物件呈現設定已儲存。",
+        "od.clearedNotice": "已恢復預設唯讀詳情。"
+      },
+      "ja": {
+        "panel.name": "オブジェクト詳細",
+        "panel.description": "単一オブジェクトの詳細を確認し、お気に入り管理と表示パネル設定を行います。",
+        "od.backBrowser": "データブラウザーに戻る",
+        "od.backWorkspace": "ワークスペースに戻る",
+        "od.favoriteAdd": "お気に入りに追加",
+        "od.favoriteRemove": "お気に入りから削除",
+        "od.refresh": "更新",
+        "od.configurePresentation": "表示を設定",
+        "od.configureTitle": "オブジェクト表示の設定",
+        "od.currentBinding": "現在の表示設定",
+        "od.restoreDefault": "デフォルト表示に戻す",
+        "od.managePanels": "詳細パネルを作成・管理",
+        "od.savedNotice": "オブジェクトの表示設定を保存しました。",
+        "od.clearedNotice": "デフォルトの読み取り専用表示に戻しました。"
+      },
+      "de": {
+        "panel.name": "Objektdetail",
+        "panel.description": "Einzelnen Objektdatensatz prüfen, Favoritenstatus verwalten und die Darstellung des Typs konfigurieren.",
+        "od.backBrowser": "Zurück zum Datenbrowser",
+        "od.backWorkspace": "Zurück zum Arbeitsbereich",
+        "od.favoriteAdd": "Zu Favoriten hinzufügen",
+        "od.favoriteRemove": "Aus Favoriten entfernen",
+        "od.refresh": "Aktualisieren",
+        "od.configurePresentation": "Darstellung konfigurieren",
+        "od.configureTitle": "Objektdarstellung konfigurieren",
+        "od.currentBinding": "Aktuelle Darstellung",
+        "od.restoreDefault": "Standardansicht wiederherstellen",
+        "od.managePanels": "Detailpanels verwalten",
+        "od.savedNotice": "Objektdarstellung gespeichert.",
+        "od.clearedNotice": "Schreibgeschützte Standardansicht wiederhergestellt."
+      },
+      "fr": {
+        "panel.name": "Détail de l'objet",
+        "panel.description": "Consultez un objet, gérez son statut de favori et configurez la présentation de son type.",
+        "od.backBrowser": "Retour à l'explorateur de données",
+        "od.backWorkspace": "Retour à l'espace de travail",
+        "od.favoriteAdd": "Ajouter aux favoris",
+        "od.favoriteRemove": "Retirer des favoris",
+        "od.refresh": "Actualiser",
+        "od.configurePresentation": "Configurer la présentation",
+        "od.configureTitle": "Configurer la présentation de l'objet",
+        "od.currentBinding": "Présentation actuelle",
+        "od.restoreDefault": "Rétablir la vue par défaut",
+        "od.managePanels": "Gérer les panneaux de détail",
+        "od.savedNotice": "Présentation de l'objet enregistrée.",
+        "od.clearedNotice": "Vue détaillée en lecture seule rétablie."
+      },
+      "it": {
+        "panel.name": "Dettaglio oggetto",
+        "panel.description": "Esamina un oggetto, gestisci i preferiti e configura la presentazione del relativo tipo.",
+        "od.backBrowser": "Torna al browser dati",
+        "od.backWorkspace": "Torna allo spazio di lavoro",
+        "od.favoriteAdd": "Aggiungi ai preferiti",
+        "od.favoriteRemove": "Rimuovi dai preferiti",
+        "od.refresh": "Aggiorna",
+        "od.configurePresentation": "Configura presentazione",
+        "od.configureTitle": "Configura presentazione oggetto",
+        "od.currentBinding": "Presentazione corrente",
+        "od.restoreDefault": "Ripristina dettaglio predefinito",
+        "od.managePanels": "Gestisci pannelli di dettaglio",
+        "od.savedNotice": "Presentazione oggetto salvata.",
+        "od.clearedNotice": "Ripristinato il dettaglio predefinito in sola lettura."
+      },
+      "ar": {
+        "panel.name": "تفاصيل الكائن",
+        "panel.description": "استعراض سجل كائن واحد وإدارة حالة التفضيل وتكوين عرض التفاصيل لنوع الكائن.",
+        "od.backBrowser": "العودة إلى متصفح البيانات",
+        "od.backWorkspace": "العودة إلى مساحة العمل",
+        "od.favoriteAdd": "إضافة إلى المفضلة",
+        "od.favoriteRemove": "إزالة من المفضلة",
+        "od.refresh": "تحديث",
+        "od.configurePresentation": "تكوين العرض",
+        "od.configureTitle": "تكوين عرض الكائن",
+        "od.currentBinding": "العرض الحالي",
+        "od.restoreDefault": "استعادة التفاصيل الافتراضية",
+        "od.managePanels": "إنشاء / إدارة لوحات التفاصيل",
+        "od.savedNotice": "تم حفظ تكوين عرض الكائن.",
+        "od.clearedNotice": "تمت استعادة التفاصيل الافتراضية للقراءة فقط."
+      }
+    }
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "external": true,
+        "deepLink": true
+      },
+      "selectedClass": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      }
+    },
+    "members": {
+      "detailBinding": {
+        "component": "InfoBanner",
+        "name": "Detail panel binding state",
+        "description": "Reads the object type's detail panel binding status and shows the unavailable or forbidden reason in place.",
+        "target": "selectedClass",
+        "data": {
+          "record": "detailPanel"
+        },
+        "config": {
+          "tone": "warning",
+          "titleKey": "odb.unavailableTitle",
+          "field": "unavailableReason",
+          "hideWhenEmpty": true
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a01-000000000001"
+      },
+      "customDetail": {
+        "target": {
+          "fromState": "selected",
+          "candidates": {
+            "rule": "objectDetail"
+          }
+        },
+        "inputs": {
+          "selected": {
+            "state": "selected"
+          }
+        },
+        "outputs": {
+          "selected": {
+            "state": "selected"
+          }
+        }
+      },
+      "defaultSummary": {
+        "component": "ObjectSummary",
+        "name": "Object attributes",
+        "description": "Read-only attribute summary of the selected object.",
+        "type": "platform:ObjectType",
+        "data": {
+          "record": {
+            "read": "instanceRecord",
+            "params": {
+              "object": {
+                "state": "selected"
+              }
+            }
+          }
+        },
+        "config": {
+          "showTitle": false,
+          "emptyText": "odb.empty",
+          "missingText": "odb.missing"
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a01-000000000002"
+      },
+      "defaultRelations": {
+        "component": "ObjectRelations",
+        "name": "Related objects",
+        "description": "One-hop incoming and outgoing relations of the selected object.",
+        "type": "platform:ObjectType",
+        "data": {
+          "neighbors": {
+            "read": "instanceNeighbors",
+            "params": {
+              "node": {
+                "state": "selected"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "selected"
+        },
+        "config": {
+          "showSummary": true,
+          "collapseEmptyGroups": true,
+          "allowSetStart": false,
+          "emptyText": "odb.empty"
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a01-000000000003"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Object detail body",
+        "panel.description": "Renders an object's configured detail panel, its unavailable or forbidden notice, or the default read-only attributes and relations.",
+        "odb.empty": "Select an object to view its details.",
+        "odb.loading": "Loading…",
+        "odb.missing": "The object does not exist or is no longer accessible.",
+        "odb.unavailableTitle": "Configured detail panel unavailable",
+        "odb.forbiddenTitle": "No permission to open detail panel",
+        "odb.attributes": "Attributes",
+        "odb.relations": "Related objects"
+      },
+      "zh-CN": {
+        "panel.name": "对象详情内容",
+        "panel.description": "按对象类型展示已配置的自定义详情面板、不可用或无权提示，或在未配置时展示只读属性与关联对象。",
+        "odb.empty": "请选择一个对象以查看详情。",
+        "odb.loading": "正在读取…",
+        "odb.missing": "对象不存在或已无法访问。",
+        "odb.unavailableTitle": "已配置的详情面板不可用",
+        "odb.forbiddenTitle": "无权打开已配置的详情面板",
+        "odb.attributes": "属性",
+        "odb.relations": "关联对象"
+      },
+      "zh-TW": {
+        "panel.name": "物件詳情內容",
+        "panel.description": "依物件類型顯示已設定的自訂詳情面板、不可用或無權限提示，或在未設定時顯示唯讀屬性與關聯物件。",
+        "odb.empty": "請選擇一個物件以檢視詳情。",
+        "odb.loading": "正在讀取…",
+        "odb.missing": "物件不存在或已無法存取。",
+        "odb.unavailableTitle": "已設定的詳情面板不可用",
+        "odb.forbiddenTitle": "無權開啟已設定的詳情面板",
+        "odb.attributes": "屬性",
+        "odb.relations": "關聯物件"
+      },
+      "ja": {
+        "panel.name": "オブジェクト詳細本文",
+        "panel.description": "オブジェクトタイプに設定された詳細パネル、利用不可・権限不足の案内、または未設定時の読み取り専用属性と関連オブジェクトを表示します。",
+        "odb.empty": "詳細を表示するオブジェクトを選択してください。",
+        "odb.loading": "読み込み中…",
+        "odb.missing": "オブジェクトが存在しないか、アクセスできなくなりました。",
+        "odb.unavailableTitle": "設定された詳細パネルを利用できません",
+        "odb.forbiddenTitle": "設定された詳細パネルを開く権限がありません",
+        "odb.attributes": "属性",
+        "odb.relations": "関連オブジェクト"
+      },
+      "de": {
+        "panel.name": "Objektdetailinhalt",
+        "panel.description": "Zeigt das konfigurierte Detailpanel eines Objekts, einen Hinweis bei Nichtverfügbarkeit oder fehlender Berechtigung oder schreibgeschützte Standardattribute und Beziehungen an.",
+        "odb.empty": "Wählen Sie ein Objekt aus, um Details anzuzeigen.",
+        "odb.loading": "Wird geladen…",
+        "odb.missing": "Das Objekt existiert nicht oder ist nicht mehr zugänglich.",
+        "odb.unavailableTitle": "Konfiguriertes Detailpanel nicht verfügbar",
+        "odb.forbiddenTitle": "Keine Berechtigung für das konfigurierte Detailpanel",
+        "odb.attributes": "Attribute",
+        "odb.relations": "Verknüpfte Objekte"
+      },
+      "fr": {
+        "panel.name": "Contenu de détail d'objet",
+        "panel.description": "Affiche le panneau de détail configuré, l'avis d'indisponibilité ou d'accès refusé, ou les attributs et relations en lecture seule par défaut.",
+        "odb.empty": "Sélectionnez un objet pour afficher ses détails.",
+        "odb.loading": "Chargement…",
+        "odb.missing": "L'objet n'existe pas ou n'est plus accessible.",
+        "odb.unavailableTitle": "Panneau de détail configuré indisponible",
+        "odb.forbiddenTitle": "Autorisation insuffisante pour ouvrir le panneau de détail",
+        "odb.attributes": "Attributs",
+        "odb.relations": "Objets associés"
+      },
+      "it": {
+        "panel.name": "Contenuto dettaglio oggetto",
+        "panel.description": "Mostra il pannello di dettaglio configurato, l'avviso di indisponibilità o accesso negato, oppure gli attributi e le relazioni predefiniti in sola lettura.",
+        "odb.empty": "Seleziona un oggetto per visualizzarne i dettagli.",
+        "odb.loading": "Caricamento…",
+        "odb.missing": "L'oggetto non esiste o non è più accessibile.",
+        "odb.unavailableTitle": "Pannello di dettaglio configurato non disponibile",
+        "odb.forbiddenTitle": "Nessuna autorizzazione per aprire il pannello di dettaglio",
+        "odb.attributes": "Attributi",
+        "odb.relations": "Oggetti correlati"
+      },
+      "ar": {
+        "panel.name": "محتوى تفاصيل الكائن",
+        "panel.description": "يعرض لوحة التفاصيل المكونة للكائن أو إشعار عدم التوفر أو عدم الصلاحية، أو السمات والعلاقات الافتراضية للقراءة فقط.",
+        "odb.empty": "اختر كائنًا لعرض تفاصيله.",
+        "odb.loading": "جارٍ التحميل…",
+        "odb.missing": "الكائن غير موجود أو لم يعد بالإمكان الوصول إليه.",
+        "odb.unavailableTitle": "لوحة التفاصيل المكونة غير متاحة",
+        "odb.forbiddenTitle": "لا توجد صلاحية لفتح لوحة التفاصيل المكونة",
+        "odb.attributes": "السمات",
+        "odb.relations": "الكائنات المرتبطة"
+      }
+    }
+  }
+}

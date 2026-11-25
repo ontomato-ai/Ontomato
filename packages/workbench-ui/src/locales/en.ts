@@ -1294,7 +1294,8 @@ export default {
       "autotestCaseArtifact": "Test case artifact",
       "modelConnection": "Model connection",
       "modelEntry": "Configured model",
-      "modelUsage": "Model usage"
+      "modelUsage": "Model usage",
+      "favorite": "Favorite object"
     },
     "relations": {
       "object-type": {
