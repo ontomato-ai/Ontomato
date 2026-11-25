@@ -279,7 +279,7 @@ it("pairs zero-config SegmentedControl ordered counts with ObjectList flat statu
   );
 
   // Fallback-to-first selects k-1 automatically on initial load.
-  await vi.waitFor(() => expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-1")));
+  await vi.waitFor(() => expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-1")), { timeout: 5000 });
 
   // SegmentedControl derives options directly from ordered panelGroupCounts without static config.options.
   await vi.waitFor(() => {

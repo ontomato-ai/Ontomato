@@ -798,10 +798,18 @@ describe("panels two-entry architecture (catalog + detail)", () => {
 
     try {
       // Page sizes include 20, 50, and 100.
-      const pageSizeOptions = [...mounted.element.querySelectorAll<HTMLOptionElement>(".sdk-object-list-page-size option")].map((o) =>
-        Number(o.value),
+      const pageSizeTrigger = mounted.element.querySelector<HTMLElement>(".sdk-object-list-page-size .el-select__wrapper");
+      expect(pageSizeTrigger).toBeTruthy();
+      pageSizeTrigger!.click();
+      await waitFor(
+        () => document.querySelectorAll(".sdk-object-list-page-size-popper .el-select-dropdown__item").length === 3,
+        "page size dropdown options rendered",
+      );
+      const pageSizeOptions = [...document.querySelectorAll<HTMLElement>(".sdk-object-list-page-size-popper .el-select-dropdown__item")].map((o) =>
+        Number(o.textContent?.match(/\d+/)?.[0]),
       );
       expect(pageSizeOptions).toEqual([20, 50, 100]);
+      pageSizeTrigger!.click();
 
       // Unavailable panels section is visible and clickable.
       const unavailableSection = mounted.element.querySelector<HTMLElement>(".pd-unavailable-section");

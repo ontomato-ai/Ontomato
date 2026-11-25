@@ -58,6 +58,11 @@ const props = withDefaults(
     missingText?: string;
     /** Field keys that show a one-click copy button beside their displayed value; hash routes (`#/...`) resolve to the full browser URL. */
     copyableFields?: readonly string[];
+    /**
+     * Spacing and column ratio for the `"fields"` definition list: `"comfortable"` (default) uses an airy `1fr 2fr`
+     * two-column layout with `12px` row gap and `16px` column gap; `"compact"` uses tighter `auto 1fr` spacing for dense containers.
+     */
+    density?: "comfortable" | "compact";
   }>(),
   {
     showTitle: true,
@@ -68,6 +73,7 @@ const props = withDefaults(
     emptyText: undefined,
     missingText: undefined,
     copyableFields: undefined,
+    density: "comfortable",
   },
 );
 
@@ -199,7 +205,15 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
 </script>
 
 <template>
-  <div class="sdk-object-summary" :class="{ 'sdk-object-summary-article': isArticle, 'sdk-object-summary-centered': showArticleEmpty || showArticleMissing }">
+  <div
+    class="sdk-object-summary"
+    :class="{
+      'sdk-object-summary-article': isArticle,
+      'sdk-object-summary-centered': showArticleEmpty || showArticleMissing,
+      'sdk-object-summary-compact': density === 'compact',
+    }"
+    :data-density="density"
+  >
     <div v-if="showArticleEmpty || showArticleMissing" class="sdk-object-summary-empty" role="status">
       <svg
         class="sdk-object-summary-empty-icon"
@@ -463,15 +477,29 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
 dl {
   display: grid;
   font-size: var(--text-sm);
-  gap: var(--spacing-xs) var(--spacing-md);
-  grid-template-columns: auto 1fr;
+  column-gap: var(--spacing-md, 16px);
+  row-gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   margin: 0;
+}
+.sdk-object-summary-compact dl {
+  gap: var(--spacing-xs, 4px) var(--spacing-md, 16px);
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
 }
 dt {
   color: var(--el-text-color-secondary);
+  line-height: 1.5;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 dd {
+  color: var(--el-text-color-primary);
+  line-height: 1.5;
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 /* An owner's text keeps its own line breaks: a knowledge item's body reads as its owner wrote it. */
 .sdk-object-summary-text {
