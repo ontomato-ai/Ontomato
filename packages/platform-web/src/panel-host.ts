@@ -45,7 +45,11 @@ import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
 import { runPanelModule, useTemplateCompiler } from "./panel-module";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
-import { pageCounterKey, servePageComposerKey, type DisplayObjectChange, type PageCounter } from "@ontomato/agent-shell-ui";
+import {
+  pageCounterKey, panelChatHostKey, servePageComposerKey,
+  type DisplayObjectChange, type PageCounter, type PanelChatHost,
+} from "@ontomato/agent-shell-ui";
+import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
 
 /*
  * The platform's panel host (overall design 3.4): the two reads a panel instance needs and the notices it listens to.
@@ -233,7 +237,10 @@ export function platformPanelHost(
   beside?: (address: string) => void,
   /** Platform page counter provided by the outer layout, bridged into direct-mounted panel Vue apps for inline composers. */
   pageCounter?: PageCounter | null,
+  /** Optional hook called while an embedded AgentChatPanel is mounted so the page suppresses its bottom PageComposer. */
+  claimComposer?: () => () => void,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
+  const panelChatHost = createPanelChatHost(use.defaultAgent, claimComposer);
   const shown: PanelUseRef = { applicationId, useId: use.id };
   /** Whether Java's answer for an entry is this page's use relation, still bound to the same panel. */
   const names = (answer: ApplicationEntryResolution) => answer.use.id === use.id && answer.use.panelId === use.panelId;
@@ -341,7 +348,7 @@ export function platformPanelHost(
       const mount = (opened: DirectPanelRun) => mountCoded(withNested({
         ...directOptions(source, opened, shown, changed, beside, undefined, undefined, mountUnavailable),
         ...(panelDomainComponents ? { panelDomainComponents } : {}),
-      }, personalSource, pageCounter), target, source.panel.content.module, pageCounter);
+      }, personalSource, pageCounter, panelChatHost), target, source.panel.content.module, pageCounter, panelChatHost);
       return withPersonalState(personalSource, [], source.panel.manifest, run, mount,
         entryPanel ? controlled : new Set(), entryPanel ? pending : undefined);
     },
@@ -725,8 +732,13 @@ type PanelReadSource = ProductPanelReadRequest["source"];
 type OwnPanelOptions = Omit<DirectPanelMountOptions, "nested">;
 
 /** A panel's options in this document, with which the panels its state places inside it are mounted too. */
-function withNested(options: OwnPanelOptions, source: PanelReadSource, pageCounter?: PageCounter | null): DirectPanelMountOptions {
-  return { ...options, nested: (memberPath, run) => mountNested(options, source, memberPath, run, pageCounter) };
+function withNested(
+  options: OwnPanelOptions,
+  source: PanelReadSource,
+  pageCounter?: PageCounter | null,
+  panelChatHost?: PanelChatHost,
+): DirectPanelMountOptions {
+  return { ...options, nested: (memberPath, run) => mountNested(options, source, memberPath, run, pageCounter, panelChatHost) };
 }
 
 /**
@@ -739,6 +751,7 @@ function withNested(options: OwnPanelOptions, source: PanelReadSource, pageCount
 async function mountNested(
   outer: OwnPanelOptions, source: PanelReadSource, memberPath: ProductPanelNestedReadRequest["memberPath"], run: DirectPanelRun,
   pageCounter?: PageCounter | null,
+  panelChatHost?: PanelChatHost,
 ): Promise<{ element: HTMLElement; mount: PanelRunMount }> {
   const path: ProductPanelNestedReadRequest["memberPath"] = [...(outer.memberPath ?? []), ...memberPath] as ProductPanelNestedReadRequest["memberPath"];
   // A placement the reader may not use, or one whose record is gone or not among its candidates, is that block's own
@@ -775,8 +788,8 @@ async function mountNested(
         run: { ...opened, overlayRoot: overlay.element, shown },
         memberPath: placedAt,
         panelDomainComponents: domainComponents,
-      }, source, pageCounter),
-      { element, template }, panel.content.module, pageCounter,
+      }, source, pageCounter, panelChatHost),
+      { element, template }, panel.content.module, pageCounter, panelChatHost,
     ), new Set(Object.keys(last ? outer.manifest.members[last.member]?.inputs ?? {} : {})));
     return {
       element,
@@ -892,6 +905,18 @@ function warmTemplateCompiler() {
   void useTemplateCompiler().catch(() => undefined);
 }
 
+function createPanelChatHost(
+  defaultAgent?: ApplicationPanelUse["defaultAgent"],
+  claimComposer?: () => () => void,
+): PanelChatHost {
+  let client: ReturnType<typeof createAssistantClient> | null = null;
+  return {
+    client: () => (client ??= createAssistantClient()),
+    ...(defaultAgent ? { defaultAgent } : {}),
+    ...(claimComposer ? { claimComposer } : {}),
+  };
+}
+
 /**
  * Runs a panel in this document: its module, once for this instance, with `vue` naming the platform's
  * Vue and `@ontomato/sdk/panel` an SDK of this instance's own, whose `mountPanel` mounts the panel's component into the
@@ -902,11 +927,13 @@ async function mountCoded(
   target: CodedPanelTarget,
   module?: string,
   pageCounter?: PageCounter | null,
+  panelChatHost?: PanelChatHost,
 ): Promise<PanelRunMount> {
   const { global } = workbenchI18n();
   const language = workbenchLanguage();
   await useTemplateCompiler();
   let mounted: PanelRunMount | undefined;
+  const chatHost = panelChatHost ?? createPanelChatHost();
   const panelSdk = panelModuleFor({
     ...options,
     loadDomainComponent,
@@ -916,6 +943,7 @@ async function mountCoded(
       app.use(workbenchI18n());
       provideGlobalConfig(Vue.computed(() => ({ locale: language.elementLocale(global.locale.value) })), app, true);
       app.provide(servePageComposerKey, servePageComposer);
+      app.provide(panelChatHostKey, chatHost);
       if (pageCounter) app.provide(pageCounterKey, pageCounter);
     },
     mounted: mount => (mounted = mount),

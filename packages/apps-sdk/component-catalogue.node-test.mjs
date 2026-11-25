@@ -77,6 +77,7 @@ const DECLARED_DATA = {
   SegmentedControl: { counts: ["panelGroupCounts"] },
   // Readable as a member it reads nothing; an empty table says so, and Node registers it on that declaration.
   ConversationEntry: {},
+  AgentChatPanel: {},
   ObjectTree: { files: ["panelRecordList"] },
   ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
   AnnotatedCode: { content: ["annotatedCode"] },

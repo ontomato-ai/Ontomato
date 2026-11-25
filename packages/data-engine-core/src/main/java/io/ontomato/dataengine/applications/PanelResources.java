@@ -43,7 +43,7 @@ public class PanelResources {
     }
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record UseReference(String id, String panelId, Map<String, Map<String, Object>> inputs,
-                                DefaultAgentTarget defaultAgent, String icon) {}
+                                DefaultAgentTarget defaultAgent, String icon, String pageComposer) {}
     private record DeliveryReferences(List<String> panels, List<String> projections) {}
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record References(String domainId, String framePanelId, List<UseReference> uses, DeliveryReferences delivery,
@@ -52,7 +52,7 @@ public class PanelResources {
     public void requireCurrent(String domain, String framePanelId, List<ApplicationPanelUse> uses,
                                ApplicationCatalog.Delivery delivery, JsonNode theme, String icon, Locale locale) {
         var references = new References(domain, framePanelId,
-            uses.stream().map(use -> new UseReference(use.id(), use.panelId(), use.inputs(), use.defaultAgent(), use.icon())).toList(),
+            uses.stream().map(use -> new UseReference(use.id(), use.panelId(), use.inputs(), use.defaultAgent(), use.icon(), use.pageComposer())).toList(),
             delivery == null ? new DeliveryReferences(List.of(), List.of())
                 : new DeliveryReferences(delivery.panels(), delivery.projections()), theme, icon);
         try {

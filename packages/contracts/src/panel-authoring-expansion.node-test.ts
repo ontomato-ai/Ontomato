@@ -1203,3 +1203,66 @@ test("customer ObjectList expands json state bindings for server filters and sor
     ...expanded.projection, name: "Work items", description: "", visibility: "domain",
   }));
 });
+
+test("AgentChatPanel short member expands declared agent target and optional sessionId state", async () => {
+  const { builtinProductProjectionInputSchema, productProjectionInputSchema } = await import("./product-panels");
+  const chatComponent = buildComponent("AgentChatPanel", {
+    data: {},
+    inputs: { sessionId: { kind: "scalar", type: "string" } },
+    outputs: { sessionId: { kind: "scalar", type: "string" } },
+  });
+  const chatState = panelManifestSchema.parse({
+    state: {
+      sessionId: { type: { kind: "scalar", type: "string" }, deepLink: true },
+    },
+    members: {},
+  }).state;
+  const agentId = "11111111-1111-4111-8111-111111111111";
+
+  const withId = panelAuthoringMemberSchema.parse({
+    component: "AgentChatPanel",
+    agent: { kind: "id", id: agentId },
+    state: { sessionId: "sessionId" },
+    config: { showHeader: false },
+  });
+  assert("component" in withId);
+  const expanded = expandPanelAuthoringMember("chat", withId, {
+    state: chatState, components: [chatComponent], typeTable,
+  });
+  assert.deepEqual(expanded.projection, {
+    componentId: "@ontomato/sdk:AgentChatPanel",
+    inputs: { sessionId: { kind: "scalar", type: "string" } },
+    outputs: { sessionId: { kind: "scalar", type: "string" } },
+    data: {},
+    config: { showHeader: false },
+    conversationEntry: { target: { kind: "id", id: agentId } },
+  });
+  assert.deepEqual(expanded.placement.inputs, { sessionId: { state: "sessionId" } });
+  assert.deepEqual(expanded.placement.outputs, { sessionId: { state: "sessionId" } });
+  assert.doesNotThrow(() => productProjectionInputSchema.parse({
+    ...expanded.projection, name: "Assistant chat", description: "", visibility: "domain",
+  }));
+  // Built-in projections still forbid domain-specific agent IDs.
+  assert.equal(builtinProductProjectionInputSchema.safeParse({
+    ...expanded.projection, name: "Assistant chat", description: "", visibility: "platform",
+  }).success, false);
+
+  const withDefault = panelAuthoringMemberSchema.parse({
+    component: "AgentChatPanel",
+    agent: "page-default",
+  });
+  assert("component" in withDefault);
+  const defaultExpanded = expandPanelAuthoringMember("chat", withDefault, {
+    state: {}, components: [chatComponent], typeTable,
+  });
+  assert.deepEqual(defaultExpanded.projection.conversationEntry, { target: { kind: "page-default" } });
+
+  // AgentChatPanel requires agent and forbids prefill/prefillKey/data.
+  assert.equal(panelAuthoringMemberSchema.safeParse({ component: "AgentChatPanel" }).success, false);
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    component: "AgentChatPanel", agent: "page-default", prefill: "hi",
+  }).success, false);
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    component: "AgentChatPanel", agent: "page-default", data: { rows: "list" },
+  }).success, false);
+});

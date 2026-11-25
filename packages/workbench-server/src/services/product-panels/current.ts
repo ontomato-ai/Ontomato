@@ -1,7 +1,7 @@
 import { themeOverrideProblems } from "@ontomato/design-tokens/theme-overrides";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
-  METRIC_CHART_COMPONENT, builtinProductPanelInputSchema, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
+  AGENT_CHAT_PANEL_COMPONENT, METRIC_CHART_COMPONENT, builtinProductPanelInputSchema, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
   type ApplicationPanelReferencesRequest, type ProductPanel, type ProductProjection,
   type ProductPanelInput, type ProductProjectionInput, type RegisterProductProjectionRequest,
 } from "@ontomato/contracts/product-panels";
@@ -243,9 +243,42 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     }
   }
 
+  const projectionRows = projections.size ? await findCurrentProducts(domainId, "projection", [...projections]) : new Map();
+  const chatProjectionIds = new Set(
+    [...projectionRows.values()]
+      .filter(row => {
+        const def = row.definition;
+        return def && typeof def === "object" && !Array.isArray(def) && "componentId" in def
+          && (def as { componentId?: unknown }).componentId === AGENT_CHAT_PANEL_COMPONENT;
+      })
+      .map(row => row.id),
+  );
+  function panelContainsAgentChat(panelId: string, seen = new Set<string>()): boolean {
+    if (seen.has(panelId)) return false;
+    seen.add(panelId);
+    const panel = panels.get(panelId);
+    if (!panel) return false;
+    for (const { target } of Object.values(panel.manifest.members)) {
+      if ("projectionId" in target && chatProjectionIds.has(target.projectionId)) return true;
+      if ("panelId" in target && panelContainsAgentChat(target.panelId, seen)) return true;
+      if ("candidates" in target) {
+        if ("projectionIds" in target.candidates && target.candidates.projectionIds.some(id => chatProjectionIds.has(id))) return true;
+        if ("panelIds" in target.candidates && target.candidates.panelIds.some(id => panelContainsAgentChat(id, seen))) return true;
+      }
+    }
+    return false;
+  }
+
   const frame = framePanelId === undefined ? undefined : panels.get(framePanelId)!;
   let definitions: Awaited<ReturnType<typeof assistantStore.agents>> | undefined;
   for (const use of uses) {
+    if (chatProjectionIds.size > 0 && use.pageComposer !== "none" && panelContainsAgentChat(use.panelId)) {
+      throw new HttpError(
+        400,
+        `Entry '${use.id}' mounts AgentChatPanel and must declare pageComposer: "none"`,
+        "INVALID_PANEL_ENTRY_PAGE_COMPOSER",
+      );
+    }
     const { state } = panels.get(use.panelId)!.manifest;
     for (const [name, ref] of Object.entries(use.inputs ?? {})) {
       if ("frameState" in ref && frame === undefined) {

@@ -67,7 +67,7 @@ input sources such as another member's read-only output. The inline shorthand ac
 | `state` | No | Map typed component port names or owner read parameter names to panel state fields. |
 | `inputs` | No | Explicit projection input bindings: {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, {output: {member, name, path?}}, or {fromSlot: true} when supplied by an enclosing Vue slot. |
 | `config` | No | Component configuration from the released SDK catalogue. |
-| `agent` | No | Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}. |
+| `agent` | No | Required for ConversationEntry and AgentChatPanel. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}. |
 | `prefill` | No | ConversationEntry text placed in the page composer without sending it. |
 | `prefillKey` | No | ConversationEntry opening sentence as a key in this panel's content.messages, read in the reader's language. Use it instead of prefill in a panel shipped to several languages. |
 | `sourceCard` | No | Optional for MetricChart. Use {dashboardId, cardId} to bind an existing dashboard card through the chart owner, or omit it and bind MetricChart data directly. |

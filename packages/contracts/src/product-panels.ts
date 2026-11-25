@@ -74,6 +74,7 @@ const builtinProductRecordFields = {
 const builtinVisibility = z.literal("platform");
 
 export const METRIC_CHART_COMPONENT = "@ontomato/sdk:MetricChart";
+export const AGENT_CHAT_PANEL_COMPONENT = "@ontomato/sdk:AgentChatPanel";
 export const chartProjectionSourceSchema = dashboardCardRequestSchema;
 export type ChartProjectionSource = z.infer<typeof chartProjectionSourceSchema>;
 
@@ -399,7 +400,7 @@ export const applicationPanelReferencesRequestSchema = z.object({
   /** Submit on creation or when the icon changes. Unchanged stored values are not checked here. */
   icon: domainApplicationIconSchema.optional(),
   framePanelId: id.optional(),
-  uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true }).extend({
+  uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true, pageComposer: true }).extend({
     icon: domainApplicationIconSchema.optional(),
   })),
   theme: applicationEntrySettings.theme,
