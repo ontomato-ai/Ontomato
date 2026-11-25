@@ -75,7 +75,7 @@ it("returns missing status after a lost busy response without starting another b
   expect(mocks.start).not.toHaveBeenCalled();
 });
 it("starts an inspection in the unified assistant host and applies the same observer authorization", async () => {
-  await application.authorize(context);const request={...input(),content:{operation:"inspection",instruction:"Check failures"},formRevision:"inspection-v1"};
+  const request={...input(),content:{operation:"inspection",instruction:"Check failures"},formRevision:"inspection-v1"};
   const result=await application.start(request,context);
   expect(result.resultLink).toEqual({
     appId: "operations",

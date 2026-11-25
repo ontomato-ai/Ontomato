@@ -57,19 +57,16 @@ scheduleApplicationsRouter.get("/:appId", route(async (req, res) => {
 }));
 scheduleApplicationsRouter.post("/:appId/form", route(async (req, res) => {
   const application = scheduleApplication(req.params.appId), caller = context(req);
-  await application.authorize(caller);
   res.json(platformScheduleFormSchema.parse(await application.form(platformScheduleFormRequestSchema.parse(req.body), caller)));
 }));
 scheduleApplicationsRouter.post("/:appId/validate", route(async (req, res) => {
   const application = scheduleApplication(req.params.appId), caller = context(req);
-  await application.authorize(caller);
   res.json(platformScheduleValidationSchema.parse(await application.validate(platformScheduleValidationRequestSchema.parse(req.body), caller)));
 }));
 scheduleApplicationsRouter.post("/:appId/runs", route(async (req, res) => {
   const application = scheduleApplication(req.params.appId), caller = context(req);
   const input = platformScheduleExecutionRequestSchema.parse(req.body);
   if (input.appId !== application.id) throw new HttpError(400, "Application does not match the execution", "INVALID_REQUEST");
-  await application.authorize(caller);
   const state = platformScheduleExecutionStateSchema.parse(await application.start(input, caller));
   res.status(state.status === "running" ? 202 : 200).json(state);
 }));

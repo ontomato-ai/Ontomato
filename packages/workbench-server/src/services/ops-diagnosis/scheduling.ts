@@ -87,7 +87,13 @@ export const operationsScheduleApplication: ScheduleApplication = {
   id: "operations",
   description(locale) { return locale?.startsWith("zh") ? "跑自动测试，或按指令巡检" : "Run automated tests or inspect as instructed"; },
   async authorize(context) {
-    if (await refused(requireInspectionAccess(context))) await requireAutotestFormAccess(context);
+    try {
+      await Promise.any([requireInspectionAccess(context), requireAutotestFormAccess(context)]);
+    } catch (error) {
+      if (!(error instanceof AggregateError)) throw error;
+      const [inspection, autotest] = error.errors;
+      throw inspection instanceof HttpError && inspection.status === 403 ? autotest : inspection;
+    }
   },
   async form(input, context) {
     const { owner, credentials } = context;
