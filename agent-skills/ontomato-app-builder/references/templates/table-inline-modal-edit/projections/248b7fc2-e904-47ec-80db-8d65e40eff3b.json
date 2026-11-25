@@ -1,0 +1,38 @@
+{
+  "componentId": "@ontomato/sdk:ObjectForm",
+  "inputs": {
+    "target": {
+      "kind": "object",
+      "objectType": "Course"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "form": {
+      "source": {
+        "object": {
+          "input": "target"
+        }
+      },
+      "read": "form",
+      "params": {}
+    }
+  },
+  "config": {
+    "actions": "none"
+  },
+  "operations": {
+    "save": {
+      "operation": {
+        "kind": "Action",
+        "id": "course.update"
+      },
+      "target": {
+        "input": "target"
+      }
+    }
+  },
+  "name": "form",
+  "description": "form",
+  "visibility": "domain"
+}

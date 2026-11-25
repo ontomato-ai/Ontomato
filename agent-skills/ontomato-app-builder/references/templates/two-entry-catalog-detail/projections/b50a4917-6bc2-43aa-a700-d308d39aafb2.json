@@ -1,0 +1,27 @@
+{
+  "componentId": "@ontomato/sdk:ObjectHeader",
+  "inputs": {
+    "target": {
+      "kind": "object",
+      "objectType": "platform:AgentDefinition"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "record": {
+      "source": {
+        "object": {
+          "input": "target"
+        }
+      },
+      "read": "record",
+      "params": {}
+    }
+  },
+  "config": {
+    "subtitle": ""
+  },
+  "name": "header",
+  "description": "header",
+  "visibility": "domain"
+}

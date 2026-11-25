@@ -1,4 +1,7 @@
 {
+  "name": "Agent Definition Detail",
+  "description": "Full-width detail entry with single-row page header and form draft controls",
+  "visibility": "domain",
   "manifest": {
     "state": {
       "selected": {
@@ -6,39 +9,40 @@
           "kind": "object",
           "objectType": "platform:AgentDefinition"
         },
-        "deepLink": true
+        "personal": false,
+        "deepLink": true,
+        "external": false
       }
     },
     "members": {
       "form": {
-        "component": "ObjectForm",
-        "target": "selected",
-        "data": {
-          "form": "form"
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
         },
-        "operation": "platform:AgentDefinition.save",
-        "config": {
-          "actions": "none"
+        "target": {
+          "projectionId": "221b788e-0fd0-432c-87c3-83f8a5f2540c"
         }
       },
       "detail": {
-        "component": "ObjectSummary",
-        "target": "selected",
-        "data": {
-          "record": "record"
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
         },
-        "config": {
-          "showTitle": false
+        "target": {
+          "projectionId": "0a0697b4-4394-4c6c-83ac-5608f8ddf4d9"
         }
       },
       "header": {
-        "component": "ObjectHeader",
-        "target": "selected",
-        "config": {
-          "subtitle": ""
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
         },
-        "data": {
-          "record": "record"
+        "target": {
+          "projectionId": "b50a4917-6bc2-43aa-a700-d308d39aafb2"
         }
       }
     }
@@ -57,10 +61,10 @@
         "detail.missing": "The record is missing."
       },
       "zh-CN": {
-        "panel.name": "\u667a\u80fd\u4f53\u5b9a\u4e49\u8be6\u60c5",
-        "detail.back": "\u8fd4\u56de\u667a\u80fd\u4f53\u5b9a\u4e49",
-        "detail.basicInfo": "\u57fa\u672c\u4fe1\u606f",
-        "detail.overview": "\u6982\u89c8",
+        "panel.name": "智能体定义详情",
+        "detail.back": "返回智能体定义",
+        "detail.basicInfo": "基本信息",
+        "detail.overview": "概览",
         "detail.choose": "请从目录选择一条记录。",
         "detail.loading": "正在加载记录…",
         "detail.forbidden": "你没有权限查看这条记录。",

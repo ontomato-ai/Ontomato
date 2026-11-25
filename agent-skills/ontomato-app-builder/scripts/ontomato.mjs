@@ -426,10 +426,11 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     if (args.length !== 2) die("panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]");
     const [type, directory] = args;
     const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
-    const checks = await sdk.check(await sdk.current());
+    const release = await sdk.current();
+    const [checks, catalogue] = await Promise.all([sdk.check(release), sdk.components(release)]);
     const typeTable = await readPlatformTypeTable(api, checks);
     const panel = managementPanel(type, checks, typeTable, { id, operations, batches });
-    await writeManagementPanel(directory, panel);
+    await writeManagementPanel(directory, panel, checks, { catalogue, typeTable });
     return print({ directory, entry: panel.entry });
   }
   if (command === "applications" && args.length === 0) {

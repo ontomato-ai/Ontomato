@@ -1,0 +1,39 @@
+{
+  "name": "Enrollments",
+  "description": "Enrollments for the selected term",
+  "visibility": "domain",
+  "manifest": {
+    "state": {
+      "term": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": false,
+        "deepLink": false,
+        "external": true,
+        "default": "2026-fall"
+      }
+    },
+    "members": {
+      "list": {
+        "inputs": {
+          "search": {
+            "state": "term"
+          }
+        },
+        "target": {
+          "projectionId": "33ea6527-a3a5-463b-a2d0-3a17079936a9"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Enrollments",
+        "col.name": "Enrollment"
+      }
+    }
+  }
+}

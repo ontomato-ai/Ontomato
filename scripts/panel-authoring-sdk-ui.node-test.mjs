@@ -629,7 +629,7 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
     };
     const root = resolve(${JSON.stringify(ROOT)}, "agent-skills/ontomato-app-builder/references/templates");
     const dirs = readdirSync(root, { recursive: true })
-      .filter(file => file.endsWith("panel.json"))
+      .filter(file => file.endsWith("application.json"))
       .map(file => dirname(resolve(root, file)))
       .sort();
     const results = [];

@@ -1,0 +1,93 @@
+{
+  "name": "Course catalogue",
+  "description": "Maintain courses in a full-width table",
+  "visibility": "domain",
+  "manifest": {
+    "state": {
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": false,
+        "deepLink": true,
+        "external": false,
+        "default": ""
+      },
+      "editing": {
+        "type": {
+          "kind": "object",
+          "objectType": "Course"
+        },
+        "personal": false,
+        "deepLink": false,
+        "external": false
+      },
+      "tab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": false,
+        "deepLink": false,
+        "external": false,
+        "default": "details"
+      }
+    },
+    "members": {
+      "courses": {
+        "inputs": {
+          "search": {
+            "state": "search"
+          }
+        },
+        "outputs": {
+          "search": {
+            "state": "search"
+          }
+        },
+        "target": {
+          "projectionId": "342f9f26-a167-4086-acea-3314f86e0600"
+        }
+      },
+      "header": {
+        "inputs": {
+          "target": {
+            "state": "editing"
+          }
+        },
+        "target": {
+          "projectionId": "e22d9d8c-f496-43b9-8eef-e0492b918f7a"
+        }
+      },
+      "form": {
+        "inputs": {
+          "target": {
+            "state": "editing"
+          }
+        },
+        "target": {
+          "projectionId": "248b7fc2-e904-47ec-80db-8d65e40eff3b"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Course catalogue",
+        "course.name": "Course",
+        "course.capacity": "Capacity",
+        "action.edit": "Edit",
+        "action.archive": "Archive",
+        "action.cancel": "Cancel",
+        "action.discard": "Discard",
+        "action.save": "Save",
+        "draft.unsaved": "Unsaved changes",
+        "dialog.title": "Edit course",
+        "tab.details": "Details",
+        "tab.capacity": "Capacity"
+      }
+    }
+  }
+}

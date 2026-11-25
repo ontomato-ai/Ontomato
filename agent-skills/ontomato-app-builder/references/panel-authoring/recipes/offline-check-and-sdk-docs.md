@@ -21,7 +21,7 @@ component catalogue, reports unchecked references, and needs no running service.
 
 For a calculated MetricView chart from an existing dashboard card, declare `component: "MetricChart"` and
 `sourceCard: { dashboardId, cardId }`, and connect its inputs in `state` (if unregistered, `panel check` lists it in
-`unchecked` and `panel register` asks the card owner to register it and writes the projection ID). `MetricChart` also
+`unchecked`. Ask the card owner to register it, then reference the projection by ID). `MetricChart` also
 supports binding its data directly without `sourceCard` when rendering a standalone or preview chart. To refresh a
 single mounted projection in place (for example one dashboard card) without reloading the whole panel, attach a Vue
 template `ref` to `<projection slot="...">` and call `memberRef.value?.refresh()`.

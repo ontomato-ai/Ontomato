@@ -1,0 +1,25 @@
+{
+  "componentId": "@ontomato/sdk:ObjectHeader",
+  "inputs": {
+    "target": {
+      "kind": "object",
+      "objectType": "Course"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "record": {
+      "source": {
+        "object": {
+          "input": "target"
+        }
+      },
+      "read": "record",
+      "params": {}
+    }
+  },
+  "config": {},
+  "name": "header",
+  "description": "header",
+  "visibility": "domain"
+}

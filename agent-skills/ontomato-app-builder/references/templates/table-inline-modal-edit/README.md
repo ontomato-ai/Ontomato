@@ -14,7 +14,6 @@ checks for unsaved changes and unmounts the editor. Reopening on a different row
 ```sh
 template="$SKILL/references/templates/table-inline-modal-edit"
 node "$SKILL/scripts/ontomato.mjs" panel check "$template"
-node "$SKILL/scripts/ontomato.mjs" panel register "$template"
 ```
 
-Open `/applications/app-course-catalogue/courses`.
+After publishing through Application Builder, open `/applications/app-course-catalogue/courses`.

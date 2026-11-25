@@ -1,0 +1,40 @@
+{
+  "componentId": "@ontomato/sdk:ObjectList",
+  "inputs": {
+    "search": {
+      "kind": "scalar",
+      "type": "string"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "rows": {
+      "source": {
+        "type": {
+          "kind": "ObjectType",
+          "id": "Course"
+        }
+      },
+      "read": "query",
+      "params": {
+        "search": {
+          "input": "search"
+        }
+      }
+    }
+  },
+  "config": {
+    "layout": "table",
+    "searchable": false,
+    "columns": [
+      {
+        "key": "label",
+        "labelKey": "col.name",
+        "minWidth": 200
+      }
+    ]
+  },
+  "name": "list",
+  "description": "list",
+  "visibility": "domain"
+}

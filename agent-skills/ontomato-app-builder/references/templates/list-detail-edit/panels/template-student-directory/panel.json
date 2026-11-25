@@ -1,0 +1,102 @@
+{
+  "name": "Student directory",
+  "description": "Browse and maintain student records",
+  "visibility": "domain",
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "Student"
+        },
+        "personal": false,
+        "deepLink": true,
+        "external": false
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": false,
+        "deepLink": true,
+        "external": false,
+        "default": ""
+      },
+      "mode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": false,
+        "deepLink": false,
+        "external": false,
+        "default": "view"
+      }
+    },
+    "members": {
+      "list": {
+        "inputs": {
+          "search": {
+            "state": "search"
+          }
+        },
+        "outputs": {
+          "search": {
+            "state": "search"
+          }
+        },
+        "target": {
+          "projectionId": "7e33f259-2cfb-4e0b-97ac-d27585f9feaf"
+        }
+      },
+      "detail": {
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
+        },
+        "target": {
+          "projectionId": "689c67fc-0473-475c-a2b2-99a0ddd7d2ec"
+        }
+      },
+      "summary": {
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
+        },
+        "target": {
+          "projectionId": "0429877b-bf01-43a0-9401-19381d55d49a"
+        }
+      },
+      "editForm": {
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
+        },
+        "target": {
+          "projectionId": "845b7537-2e5a-4f75-97bd-bbfefb75348c"
+        }
+      },
+      "createForm": {
+        "target": {
+          "projectionId": "87df92eb-b974-453c-a277-826d38dc1d56"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Student directory",
+        "action.create": "New student",
+        "action.edit": "Edit student",
+        "action.cancel": "Cancel",
+        "action.back": "Back to students",
+        "detail.choose": "Choose a student to see their details."
+      }
+    }
+  }
+}

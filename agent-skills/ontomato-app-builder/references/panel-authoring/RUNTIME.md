@@ -624,6 +624,6 @@ The value has `className` and `primaryKey`. Linking the graph and relation list 
 
 ## Application icons
 
-Choose an application's `declaration.icon` from `node "$SKILL/scripts/ontomato.mjs" sdk icons`.
+Choose an application's `application.json` field `declaration.icon` from `node "$SKILL/scripts/ontomato.mjs" sdk icons`.
 To render an application icon by key in a catalog panel, draw `<component :is="appIcon(key)" :size="16" />` with
 `appIcon` from `@ontomato/sdk/panel`.

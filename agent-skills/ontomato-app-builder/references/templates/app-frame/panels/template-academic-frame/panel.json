@@ -1,4 +1,7 @@
 {
+  "name": "Academic planner frame",
+  "description": "Academic navigation and term selection",
+  "visibility": "domain",
   "manifest": {
     "state": {
       "term": {
@@ -6,9 +9,10 @@
           "kind": "scalar",
           "type": "string"
         },
-        "default": "2026-fall",
+        "personal": false,
         "deepLink": true,
-        "external": true
+        "external": true,
+        "default": "2026-fall"
       }
     },
     "members": {
@@ -21,37 +25,23 @@
         }
       },
       "courses": {
-        "component": "ObjectCount",
-        "type": "Course",
-        "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "search": {
-                "state": "term"
-              }
-            }
+        "inputs": {
+          "search": {
+            "state": "term"
           }
         },
-        "config": {
-          "appearance": "badge"
+        "target": {
+          "projectionId": "b9a90fbd-bb2d-4c3f-b6ef-fec7fbedb6bc"
         }
       },
       "enrollments": {
-        "component": "ObjectCount",
-        "type": "Enrollment",
-        "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "search": {
-                "state": "term"
-              }
-            }
+        "inputs": {
+          "search": {
+            "state": "term"
           }
         },
-        "config": {
-          "appearance": "badge"
+        "target": {
+          "projectionId": "8d50ec25-9dc9-4ae6-a7ad-12504335e61e"
         }
       }
     }

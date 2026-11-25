@@ -1,0 +1,38 @@
+{
+  "componentId": "@ontomato/sdk:ObjectList",
+  "inputs": {
+    "search": {
+      "kind": "scalar",
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "search": {
+      "kind": "scalar",
+      "type": "string"
+    }
+  },
+  "data": {
+    "rows": {
+      "source": {
+        "type": {
+          "kind": "ObjectType",
+          "id": "Student"
+        }
+      },
+      "read": "query",
+      "params": {
+        "search": {
+          "input": "search"
+        }
+      }
+    }
+  },
+  "config": {
+    "layout": "list",
+    "fallbackToFirst": false
+  },
+  "name": "list",
+  "description": "list",
+  "visibility": "domain"
+}

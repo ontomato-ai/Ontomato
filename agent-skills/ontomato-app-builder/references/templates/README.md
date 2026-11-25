@@ -1,5 +1,9 @@
 # Panel page templates
 
+Copy the chosen application tree into your source. Use the project's application ID in the entry paths,
+and update owned panel and projection IDs together with their references when adapting a template to a new app.
+For shared resources, keep the existing IDs and reference them from the consuming application.
+
 | Page shape | Template |
 | --- | --- |
 | Full-width catalog and a separate full-width detail entry | [Two-entry catalog and detail](two-entry-catalog-detail/README.md) |
