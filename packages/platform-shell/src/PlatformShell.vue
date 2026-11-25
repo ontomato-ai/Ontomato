@@ -72,7 +72,7 @@ const collapsed = computed({
 
 <template>
   <div class="platform-shell" :class="{ 'rail-collapsed': collapsed && !hideRail, 'rail-hidden': hideRail }">
-    <div v-if="!hideRail" class="platform-rail-slot" :class="{ collapsed }">
+    <div v-if="!hideRail" class="platform-rail-slot" :class="{ 'slot-collapsed': collapsed }">
       <PlatformRail
         :loading="loading"
         :apps="apps"
@@ -123,7 +123,7 @@ const collapsed = computed({
   z-index: 40;
   transition: width var(--transition-base), flex-basis var(--transition-base);
 }
-.platform-rail-slot.collapsed {
+.platform-rail-slot.slot-collapsed {
   flex: 0 0 var(--shell-platform-rail-collapsed);
   width: var(--shell-platform-rail-collapsed);
 }
