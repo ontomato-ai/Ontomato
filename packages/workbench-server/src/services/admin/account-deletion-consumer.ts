@@ -56,13 +56,22 @@ export async function consumeAccountDeletions(deps: DeletionConsumerDependencies
 }
 
 /** One process owns the consumer and the workbench's durable volume. No overlapping polls. */
-export function startAccountDeletionConsumer(deps: DeletionConsumerDependencies, intervalMs = 30_000) {
+export function startAccountDeletionConsumer(
+  deps: DeletionConsumerDependencies, intervalMs = 30_000, deliverPending?: () => Promise<void>,
+) {
   let stopped = false;
   let current: Promise<void> | undefined;
   const tick = () => {
     if (stopped || current) return;
     current = consumeAccountDeletions(deps, () => stopped).catch((error) => {
       logger.error("Platform event polling failed; will resume from the saved cursor", { error: toErrorMessage(error) });
+    }).then(async () => {
+      if (!deliverPending || stopped) return;
+      try {
+        await deliverPending();
+      } catch (error) {
+        logger.error("Entry dependency publication failed", { error: toErrorMessage(error) });
+      }
     }).finally(() => { current = undefined; });
   };
   const timer = setInterval(tick, intervalMs);
@@ -85,5 +94,8 @@ export function startWorkbenchPlatformEvents() {
       const { cleanupDeletedUsers } = await import("./user-resource-cleanup");
       await cleanupDeletedUsers(userIds);
     },
+  }, 30_000, async () => {
+    const { deliverPendingEntryDependencyPublications } = await import("../product-panels/entry-dependency-publication");
+    await deliverPendingEntryDependencyPublications();
   });
 }

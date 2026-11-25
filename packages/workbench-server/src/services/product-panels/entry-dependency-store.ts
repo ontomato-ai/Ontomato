@@ -10,7 +10,7 @@ type QueryClient = Pick<PoolClient, "query">;
 export type DependencyMap = Map<string, EntryDependency[]>;
 type Change = { panelId: string; before: EntryDependency[]; after: EntryDependency[] };
 export type EntryDependencyPublication = {
-  source: EntryDependencyChangeRequest["source"];
+  source: Omit<EntryDependencyChangeRequest["source"], "sequence"> & { id: string };
   panels: Change[];
   detail?: { before: string | null; after: string | null };
 };
