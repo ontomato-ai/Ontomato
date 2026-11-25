@@ -169,6 +169,7 @@ export const DELETE_MODEL_ENTRY = "modelEntries.delete";
 export const REBUILD_VECTORS = "modelUsage.rebuildVectors";
 export const PAUSE_VECTOR_REBUILD = "modelUsage.pauseVectorRebuild";
 export const TEST_DATA_ADAPTER_CONNECTION = "dataAdapters.testConnection";
+export const SAVE_DATA_ADAPTER_ROUTING = `${DATA_ADAPTER_CONFIG}.saveRouting`;
 export const SAVE_OBJECT_DETAIL_PANEL = `${OBJECT_TYPE}.saveDetailPanel`;
 export const CLEAR_OBJECT_DETAIL_PANEL = "objectTypes.clearDetailPanel";
 export const CREATE_DASHBOARD = "dashboards.create";
@@ -1104,8 +1105,9 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
       form: modelReads.form,
+      routingForm: modelReads.form,
     },
-    operations: [`${DATA_ADAPTER_CONFIG}.save`, TEST_DATA_ADAPTER_CONNECTION],
+    operations: [`${DATA_ADAPTER_CONFIG}.save`, SAVE_DATA_ADAPTER_ROUTING, TEST_DATA_ADAPTER_CONNECTION],
   },
   [FAVORITE]: {
     ...describeType("favorite"),
@@ -1189,6 +1191,7 @@ const platformNamedFormSaves: ReadonlySet<string> = new Set([
   ADD_MODEL_ENTRY,
   CREATE_EXTERNAL_MCP_SERVICE,
   SAVE_OBJECT_DETAIL_PANEL,
+  SAVE_DATA_ADAPTER_ROUTING,
 ]);
 
 /** Platform operation IDs whose server handler is a `form.save` rather than an action. */

@@ -232,6 +232,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [DATA_ADAPTER_CONFIG]: {
       record: selection => dataAdapters.record(selection.primaryKey!),
       form: (selection, params) => dataAdapters.form(selection.primaryKey!, formParams(params)),
+      routingForm: (selection, params) => dataAdapters.routingForm(selection.primaryKey!, formParams(params)),
     },
     [MODEL_CONNECTION]: {
       list: () => modelConnections.list(),

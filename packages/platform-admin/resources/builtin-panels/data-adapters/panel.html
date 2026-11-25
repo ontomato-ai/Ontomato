@@ -89,13 +89,19 @@
     <page-header
       :title="t('panel.name')"
       :description="t('panel.description')"
-      :draft="adapterDraft"
+      :draft="pageDraft"
     ></page-header>
 
     <div class="da-body">
       <section class="da-section">
         <div class="da-form-wrap">
-          <projection slot="adapterForm" @saved="onSaved"></projection>
+          <projection slot="adapterForm" @saved="onAdapterSaved"></projection>
+        </div>
+      </section>
+
+      <section v-if="isMultiMode" class="da-section">
+        <div class="da-form-wrap">
+          <projection slot="routingForm" @saved="onRoutingSaved"></projection>
         </div>
       </section>
 
