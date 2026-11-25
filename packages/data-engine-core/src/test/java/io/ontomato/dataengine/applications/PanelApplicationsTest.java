@@ -34,6 +34,10 @@ class PanelApplicationsTest {
         when(user.getId()).thenReturn("author"); when(user.getDomainId()).thenReturn("domain");
         when(tx.execute(any())).thenAnswer(call -> ((TransactionCallback<?>)call.getArgument(0)).doInTransaction(null));
         when(grants.allowed(anyString(), eq("use"))).thenReturn(true);
+        when(grants.allowedBatchFor(eq("domain"), eq("author"), anyList(), eq("use"))).thenAnswer(call ->
+            call.<List<String>>getArgument(2).stream()
+                .collect(java.util.stream.Collectors.toMap(id -> id, id -> true)));
+        when(access.enterableApplicationIds(anyList(), any())).thenCallRealMethod();
         when(access.withPageSkillAuthorization(any(), any())).thenCallRealMethod();
         catalog = spy(new ApplicationCatalog(db, tx, access, "{}", panels, grants));
         doReturn(List.of()).when(catalog).all();
@@ -416,9 +420,29 @@ class PanelApplicationsTest {
         when(access.canEnter(application, user)).thenReturn(true);
         when(access.panelUses(List.of(allowed, denied), user)).thenReturn(List.of(allowed));
         assertEquals(List.of(allowed), catalog.panelUses("app-panel-a", user).getList("panelUses", ApplicationPanelUse.class));
-        when(grants.allowed("panel-p", "use")).thenReturn(false);
+        when(grants.allowedBatchFor("domain", "author", List.of("panel-p"), "use")).thenReturn(Map.of("panel-p", false));
         assertTrue(catalog.panelUses("app-panel-a", user).getJSONArray("panelUses").isEmpty());
         verify(access, never()).pageSkills(anyList(), any());
+    }
+
+    @Test void panelUsesChecksAllAdmittedPanelIdsInOneBatch() {
+        var allowed = use("first", null);
+        var denied = new ApplicationPanelUse("use-second", "second", "panel-other", "/applications/app-panel-a/second",
+                allowed.access(), null, null);
+        var duplicate = use("third", null);
+        var uses = List.of(allowed, denied, duplicate);
+        var application = app("app-panel-a", "panels", uses);
+        doReturn(List.of(application)).when(catalog).all();
+        when(access.canEnter(application, user)).thenReturn(true);
+        when(access.panelUses(uses, user)).thenReturn(uses);
+        var ids = List.of("panel-p", "panel-other");
+        when(grants.allowedBatchFor("domain", "author", ids, "use"))
+                .thenReturn(Map.of("panel-p", true, "panel-other", false));
+
+        assertEquals(List.of(allowed, duplicate), catalog.panelUses("app-panel-a", user)
+                .getList("panelUses", ApplicationPanelUse.class));
+        verify(grants).allowedBatchFor("domain", "author", ids, "use");
+        verifyNoMoreInteractions(grants);
     }
 
     @Test void reverseLookupIncludesBuiltinAndDomainUsesButNoOtherDomainAndRequiresServiceAuth() throws Exception {
