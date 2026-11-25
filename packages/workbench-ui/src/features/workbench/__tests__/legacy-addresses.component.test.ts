@@ -106,9 +106,9 @@ async function openAddress(
 
 describe("the agent platform's settings addresses", () => {
   it.each([
-    ["/agent-builder/new", "/agents/settings", {}],
+    ["/agent-builder/new", "/agents/settings", { creating: "true" }],
     ["/agent-builder/agent-42", "/agents/settings/detail", { selected: "agent-42" }],
-    ["/agents/settings/new", "/agents/settings", {}],
+    ["/agents/settings/new", "/agents/settings", { creating: "true" }],
     ["/agents/settings/agent-42", "/agents/settings/detail", { selected: "agent-42" }],
   ])("opens %s on %s with state %o", async (path, expectedPath, state) => {
     const { router } = await openAddress(path);
