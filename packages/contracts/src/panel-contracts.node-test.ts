@@ -4207,6 +4207,20 @@ test("value-carried tag field values, form option tones, and ObjectList column t
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "light" }).success, true);
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "dark" }).success, false);
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", headerTooltipKey: "" }).success, false);
+
+  // Column valueMap only carries display label and icon; semantic tone comes from the value or row.tones.
+  assert.equal(panelObjectListColumnSchema.safeParse({
+    key: "status",
+    valueMap: {
+      APPROVED: { labelKey: "status.approved", icon: "check-circle" },
+    },
+  }).success, true);
+  assert.equal(panelObjectListColumnSchema.safeParse({
+    key: "status",
+    valueMap: {
+      APPROVED: { labelKey: "status.approved", tone: "success" },
+    },
+  }).success, false);
 });
 
 test("ObjectList rowActions align conversation fields with PanelConversationEntry and unify 5-level tone", async () => {

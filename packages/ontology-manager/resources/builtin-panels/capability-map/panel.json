@@ -305,12 +305,10 @@
               "width": "76px",
               "valueMap": {
                 "true": {
-                  "labelKey": "cm.optionalYes",
-                  "tone": "info"
+                  "labelKey": "cm.optionalYes"
                 },
                 "false": {
-                  "labelKey": "cm.optionalNo",
-                  "tone": "warning"
+                  "labelKey": "cm.optionalNo"
                 }
               }
             },
@@ -350,12 +348,10 @@
               "width": "76px",
               "valueMap": {
                 "outgoing": {
-                  "labelKey": "cm.outgoing",
-                  "tone": "info"
+                  "labelKey": "cm.outgoing"
                 },
                 "incoming": {
-                  "labelKey": "cm.incoming",
-                  "tone": "default"
+                  "labelKey": "cm.incoming"
                 }
               }
             },
@@ -376,12 +372,10 @@
               "width": "76px",
               "valueMap": {
                 "true": {
-                  "labelKey": "cm.derived",
-                  "tone": "info"
+                  "labelKey": "cm.derived"
                 },
                 "false": {
-                  "labelKey": "cm.stored",
-                  "tone": "success"
+                  "labelKey": "cm.stored"
                 }
               }
             }

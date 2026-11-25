@@ -40,7 +40,7 @@
 | --- | --- |
 | **列表、详情、表单（客户业务类，如 `Student`、`Order`）** | 投影绑定平台通用读函数：`query`（分页列表）、`record`（单条详情）、`form`（编辑表单）、`createForm`（新建表单）。注意组件目录里的 `bindsElement` 只表示适用类型，实际绑定必须经由读法或操作，单写类登记不过。 |
 | **平台对象（如 `platform:Relationship`、`platform:Application`）** | 投影绑定平台内置读法与管理操作。 |
-| **带口径的统计数、汇总句、状态判断结论** | 能力层建指标 `MetricView`（读）或动作 `Action`（写）。指标在定义里写清 `sourceObjectTypes`，写操作完成后平台按影响范围自动刷新指标投影。组件只做三种格式化：① `RecordTemplate` 把指标/记录已给的数字填进固定句式（如 `共 {total} 人，其中 {pending} 人待审`）；② `TypedValue` / `InfoBanner` / `ObjectList` 列用精确匹配 `valueMap` 把原始枚举映射成文字、颜色和图标；③ `ObjectList` 在**完整未分页**列表上做本地纯文字匹配并输出 `filteredCount`（分页列表的总数必须用拥有者返回的 `total`，缺时为 `null`，不能拿已加载行数冒充）。 |
+| **带口径的统计数、汇总句、状态判断结论** | 能力层建指标 `MetricView`（读）或动作 `Action`（写）。指标在定义里写清 `sourceObjectTypes`，写操作完成后平台按影响范围自动刷新指标投影。组件只做三种格式化：① `RecordTemplate` 把指标/记录已给的数字填进固定句式（如 `共 {total} 人，其中 {pending} 人待审`）；② `TypedValue` / `InfoBanner` / `ObjectList` 列用精确匹配 `valueMap` 把原始枚举映射成文字和图标（语义色由值或属主 `tones` 自带）；③ `ObjectList` 在**完整未分页**列表上做本地纯文字匹配并输出 `filteredCount`（分页列表的总数必须用拥有者返回的 `total`，缺时为 `null`，不能拿已加载行数冒充）。 |
 | **编辑保存、删除、审批、新建、全局批量动作** | 绑定能力层已发布的 `Action` 或平台内置操作。编辑表单绑定目标动作时，动作参数必须覆盖想让人编辑的全部属性（支持同名直连、`{ "formField": "/pointer" }` 改名/嵌套路径、`{ "formFields": { "k": "/pointer" } }` 装入 JSON 参数；动作不接的属性自动只读）。新建或全局操作绑定**无目标动作**（`target: { source: "none" }`，调用时 `target: null`；运行 `panel type <类型ID>` 会直接在 `targetlessOperations` 中列出 `affects` 包含该类型的无目标动作，运行 `panel type --all` 可查看全部顶层无目标动作）。 |
 | **原页面要的能力在本体里还没有** | 由业务/能力拥有者在能力层补读法、指标、表单字段或动作；不要在面板脚本里绕路拼接或前端兜底。 |
 

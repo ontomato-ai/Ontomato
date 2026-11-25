@@ -30,10 +30,15 @@
   }
   .wf-steps-summary {
     display: block;
-    max-width: min(100%, 220px);
+    max-width: 186px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  @container wf-page (min-width: 1360px) {
+    .wf-steps-summary {
+      max-width: 24rem;
+    }
   }
   .wf-grant-link {
     display: inline-block;

@@ -1454,6 +1454,7 @@ export function createModelUsageReads(actor: PanelOperationActor) {
           progress: t("panels.modelSettings.vectorRebuild.progress"),
           message: t("panels.modelSettings.vectorRebuild.detail"),
         },
+        tones: { stateLabel: tone, tone },
         outputs: { configured: status.configured, state, tone, alive, canRebuild, canResume, canPause },
       };
     },

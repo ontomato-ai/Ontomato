@@ -615,7 +615,7 @@ describe("E3-A Category 2 Pack A built-in panels", () => {
                   reason: "Expected 10",
                   durationText: "1.2s",
                 },
-                tones: { statusLabel: "success", verdictLabel: "danger" },
+                tones: { statusLabel: "success", verdict: "danger", verdictLabel: "danger" },
               },
               {
                 className: AUTOTEST_CASE_ARTIFACT,
@@ -631,7 +631,7 @@ describe("E3-A Category 2 Pack A built-in panels", () => {
                   reason: "Timeout",
                   durationText: "1.4s",
                 },
-                tones: { statusLabel: "danger", verdictLabel: "warning" },
+                tones: { statusLabel: "danger", verdict: "warning", verdictLabel: "warning" },
               },
             ],
           });

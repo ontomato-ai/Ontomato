@@ -152,6 +152,10 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
         peerLabel: text(platformObjectTypes[peer].labelKey!),
         derived: relation.derived,
       },
+      tones: {
+        direction: direction === "outgoing" ? "info" : "default",
+        derived: relation.derived ? "info" : "success",
+      },
     };
   }
 
@@ -209,16 +213,22 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
     properties(type: string): PanelRecord[] {
       const spec = requireType(type);
       const detail = detailKey(spec.labelKey);
-      return (platformTypeDetails[type]?.properties ?? []).map(property => ({
-        primaryKey: property.name,
-        label: property.name,
-        fields: {
-          name: property.name,
-          type: property.type,
-          optional: property.optional ?? false,
-          description: text(`${detail}.properties.${property.name}`),
-        },
-      }));
+      return (platformTypeDetails[type]?.properties ?? []).map(property => {
+        const optional = property.optional ?? false;
+        return {
+          primaryKey: property.name,
+          label: property.name,
+          fields: {
+            name: property.name,
+            type: property.type,
+            optional,
+            description: text(`${detail}.properties.${property.name}`),
+          },
+          tones: {
+            optional: optional ? "info" : "warning",
+          },
+        };
+      });
     },
 
     typeRelations(type: string): PanelRecord[] {
