@@ -32,6 +32,7 @@ it("returns a sampled overview and joins the connections using the owner's versi
   javaReply("nodes", {
     version: "v1", sampleToken: "sample", nodeCount: 20, edgeCount: null,
     relationTypes: ["placedBy"], classes: [group], overviewNodes: [order],
+    overviewEdges: [], overviewEdgesTruncated: false,
   });
   const overview = panelReadResultSchemas.panelGraphOverview.parse(await graph.overview());
   expect(overview).toMatchObject({
@@ -39,6 +40,7 @@ it("returns a sampled overview and joins the connections using the owner's versi
     groups: [{ id: from.className, label: "Orders", totalCount: 20, sampleCount: 1 }],
     nodes: [{ ...from, label: "Order" }],
   });
+  expect(overview.edges).toBeUndefined();
 
   const { version, sampleToken } = overview;
   javaReply("connections", { version, overviewEdges: [edge], overviewEdgesTruncated: true }, { version, sampleToken });
@@ -67,5 +69,75 @@ it("keeps graph totals and real instance identities across statistics, search an
   expect(panelReadResultSchemas.panelGraphNeighbors.parse(neighbors)).toMatchObject({
     node: to, neighbors: [from], edges: [{ from, to, direction: "incoming" }],
     relations: [{ relationKind: "placedBy", edgeCount: 1 }], nextOffset: 4, total: null, version: "v2",
+  });
+});
+
+it("maps owner relation status codes to actionable localized reasons across neighbors and connections", async () => {
+  javaReply("neighborhood", {
+    nodes: [customer, order],
+    edges: [edge],
+    relations: [
+      { relationKind: "placedBy", label: "Placed by", status: "ok", edgeCount: 1, truncated: false },
+      { relationKind: "rel_r014", label: "Related task", status: "unavailable", edgeCount: 0, reasonCode: "RELATION_MISSING_JOIN_FIELDS" },
+      { relationKind: "rel_graph", label: "Graph link", status: "unavailable", edgeCount: 0, reasonCode: "RELATION_GRAPH_TYPE_UNSUPPORTED" },
+      { relationKind: "rel_cross", label: "Cross link", status: "unavailable", edgeCount: 0, reasonCode: "RELATION_CROSS_SOURCE_UNSUPPORTED" },
+      { relationKind: "rel_secret", label: "Secret link", status: "refused", edgeCount: 0, reasonCode: "RELATION_FORBIDDEN" },
+      { relationKind: "rel_broken", label: "Broken link", status: "failed", edgeCount: 0, reasonCode: "RELATION_READ_FAILED" },
+    ],
+    nextOffset: null,
+    total: 1,
+    version: "v3",
+  }, { node: to });
+
+  const neighbors = panelReadResultSchemas.panelGraphNeighbors.parse(await graph.neighbors(to, {}));
+  expect(neighbors.relations).toEqual([
+    { relationKind: "placedBy", label: "Placed by", status: "ok", edgeCount: 1, truncated: false },
+    { relationKind: "rel_r014", label: "Related task", status: "unavailable", edgeCount: 0, reason: en["panels.objectDetail.relationMissingJoinFields"] },
+    { relationKind: "rel_graph", label: "Graph link", status: "unavailable", edgeCount: 0, reason: en["panels.objectDetail.relationGraphTypeUnsupported"] },
+    { relationKind: "rel_cross", label: "Cross link", status: "unavailable", edgeCount: 0, reason: en["panels.objectDetail.relationCrossSourceUnsupported"] },
+    { relationKind: "rel_secret", label: "Secret link", status: "refused", edgeCount: 0, reason: en["panels.objectDetail.relationForbidden"] },
+    { relationKind: "rel_broken", label: "Broken link", status: "failed", edgeCount: 0, reason: en["panels.objectDetail.relationReadFailed"] },
+  ]);
+
+  javaReply("connections", {
+    version: "v3",
+    overviewEdges: [edge],
+    overviewEdgesTruncated: false,
+    relations: [
+      { relationKind: "placedBy", label: "Placed by", status: "ok", edgeCount: 1 },
+      { relationKind: "rel_r014", label: "Related task", status: "unavailable", edgeCount: 0, reasonCode: "RELATION_MISSING_JOIN_FIELDS" },
+    ],
+  }, { version: "v3", sampleToken: "tok" });
+
+  const connections = panelReadResultSchemas.panelGraphConnections.parse(await graph.connections("v3", "tok"));
+  expect(connections.relations).toEqual([
+    { relationKind: "placedBy", label: "Placed by", status: "ok", edgeCount: 1 },
+    { relationKind: "rel_r014", label: "Related task", status: "unavailable", edgeCount: 0, reason: en["panels.objectDetail.relationMissingJoinFields"] },
+  ]);
+});
+
+it("replaces raw upstream error text with localized messages on graph failures", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () =>
+    Response.json({
+      success: false,
+      code: "INSTANCE_GRAPH_READ_FAILED",
+      message: "DSL error at relationship[rel_r014]: raw technical message",
+    }),
+  ));
+  await expect(graph.neighbors(to, {})).rejects.toMatchObject({
+    status: 502,
+    message: en["panels.objectDetail.graphReadFailed"],
+  });
+
+  vi.stubGlobal("fetch", vi.fn(async () =>
+    Response.json({
+      success: false,
+      code: "GRAPH_VERSION_CHANGED",
+      message: "Ontology changed. Reload the overview.",
+    }),
+  ));
+  await expect(graph.connections("old", "tok")).rejects.toMatchObject({
+    status: 409,
+    message: en["panels.objectDetail.graphVersionChanged"],
   });
 });
