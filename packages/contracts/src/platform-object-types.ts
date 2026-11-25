@@ -198,8 +198,11 @@ export const ISSUE_USER_API_KEY_BATCH = "users.issueApiKeyBatch";
 export const DELETE_ROLE = "roles.delete";
 export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
 export const REFRESH_POLICY_API_CATALOG = "permissionPolicies.refreshApiCatalog";
+export const PREVIEW_POLICY_ENTRY_GRANT = "permissionPolicies.previewEntryGrant";
 export const GRANT_POLICY_ENTRIES = "permissionPolicies.grantEntries";
+export const LIST_PENDING_POLICY_GRANTS = "permissionPolicies.listPending";
 export const RESOLVE_PENDING_POLICY_GRANT = "permissionPolicies.resolvePending";
+export const INSPECT_POLICY_ACCESS = "permissionPolicies.inspectAccess";
 export const DELETE_ORG_UNIT = "orgUnits.delete";
 export const ADD_ORG_UNIT_MEMBER = "orgUnits.addMember";
 export const SET_ORG_MEMBERSHIP_LOCKED = "orgMemberships.setLocked";
@@ -684,7 +687,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
-      REFRESH_POLICY_API_CATALOG, GRANT_POLICY_ENTRIES, RESOLVE_PENDING_POLICY_GRANT,
+      REFRESH_POLICY_API_CATALOG, PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES,
+      LIST_PENDING_POLICY_GRANTS, RESOLVE_PENDING_POLICY_GRANT, INSPECT_POLICY_ACCESS,
     ],
   },
   [ORG_UNIT]: {

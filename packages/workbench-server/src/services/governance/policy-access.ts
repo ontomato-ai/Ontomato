@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeJsonObject, RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { entryDependencySchema, entryRootsSchema } from "@ontomato/contracts/entry-dependencies";
 import { panelReadParameterSchemas, panelRecordSchema, type PanelRecord, type PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
 import { isBuiltinProductId, isDomainComponentId } from "@ontomato/contracts/product-record-id";
@@ -18,6 +18,9 @@ const itemKeySchema = z.object({ kind: id, id: z.string(), verb: id });
 const policyGrantSchema = itemKeySchema.extend({ policyId: id, scope: scope.nullable() });
 const acceptedObjectSchema = itemKeySchema.extend({ scope: scope.nullish() }).strict();
 
+export const previewPolicyEntryGrantInputSchema = z.object({
+  entryIds: panelReadParameterSchemas.policyEntryIds,
+}).strict();
 export const grantPolicyEntriesInputSchema = z.object({
   entryIds: panelReadParameterSchemas.policyEntryIds,
   acceptedObjects: z.array(acceptedObjectSchema),
@@ -201,7 +204,9 @@ function policyRecord(id: string, fields: Record<string, RuntimeJsonValue | unde
   return panelRecordSchema.parse({ primaryKey: id, label: id, fields: recordFields });
 }
 
-export async function previewEntryGrant(viewer: AssistantCredentials, domainId: string, policyId: string, entryIds: string[]) {
+export async function previewEntryGrantPayload(
+  viewer: AssistantCredentials, domainId: string, policyId: string, entryIds: string[],
+): Promise<RuntimeJsonObject> {
   const context = await entryContext(viewer, domainId, policyId, entryIds);
   const objects = await readPolicyWorkbenchObjects(domainId, viewer.locale, true);
   const label = labelFor(objects.catalog, context.publishedActions);
@@ -231,7 +236,7 @@ export async function previewEntryGrant(viewer: AssistantCredentials, domainId: 
       } : {}),
     };
   });
-  return policyRecord(policyId, {
+  return {
     policyId, entries: context.entries, candidates, existingGrants: context.existingGrants,
     targetPolicyRoleIds: context.targetPolicyRoleIds, publishedActions: context.publishedActions,
     summary: {
@@ -240,7 +245,11 @@ export async function previewEntryGrant(viewer: AssistantCredentials, domainId: 
       grantableCount: candidates.filter(candidate => candidate.grantable).length,
       defaultSelectedCount: candidates.filter(candidate => candidate.defaultSelected).length,
     },
-  });
+  };
+}
+
+export async function previewEntryGrant(viewer: AssistantCredentials, domainId: string, policyId: string, entryIds: string[]) {
+  return policyRecord(policyId, await previewEntryGrantPayload(viewer, domainId, policyId, entryIds));
 }
 
 export function grantPolicyEntries(viewer: AssistantCredentials, policyId: string, input: unknown) {
@@ -249,12 +258,18 @@ export function grantPolicyEntries(viewer: AssistantCredentials, policyId: strin
   }, grantPolicyEntriesResultSchema);
 }
 
-export async function listPendingPolicyGrants(viewer: AssistantCredentials, domainId: string, policyId: string) {
+export async function listPendingPolicyGrantsPayload(
+  viewer: AssistantCredentials, domainId: string, policyId: string,
+): Promise<RuntimeJsonObject> {
   const result = await policyPost(viewer, "pending:list", { policyId }, pendingListResultSchema);
   const label = labelFor(await loadPolicyWorkbenchCatalog(domainId, viewer.locale));
-  return policyRecord(policyId, {
+  return {
     ...result, items: result.items.map(item => ({ ...item, label: label(item.kind, item.targetId) })),
-  });
+  };
+}
+
+export async function listPendingPolicyGrants(viewer: AssistantCredentials, domainId: string, policyId: string) {
+  return policyRecord(policyId, await listPendingPolicyGrantsPayload(viewer, domainId, policyId));
 }
 
 export function resolvePendingPolicyGrants(viewer: AssistantCredentials, policyId: string, input: unknown) {
@@ -270,10 +285,10 @@ function ownerIdFor(item: ItemKey, { ownerIds }: WorkbenchObjects) {
   }
 }
 
-export async function inspectPolicyAccess(
+export async function inspectPolicyAccessPayload(
   viewer: AssistantCredentials, domainId: string, targetPolicyId: string | null | undefined,
   { subjectId, entryId, actionTargets }: InspectionInput,
-) {
+): Promise<RuntimeJsonObject> {
   const context = await entryContext(viewer, domainId, targetPolicyId ?? undefined, [entryId]);
   const objects = await readPolicyWorkbenchObjects(domainId, viewer.locale, true);
   const result = await policyPost(viewer, "access:inspect", {
@@ -296,9 +311,16 @@ export async function inspectPolicyAccess(
       requiresScope: true, targetClass: action?.targetClass ?? null, targetKeyField: action?.targetKeyField ?? null,
     } : {}) };
   });
-  return policyRecord(entryId, {
-    ...result, targetPolicyId: result.targetPolicyId ?? targetPolicyId,
+  return {
+    ...result, targetPolicyId: result.targetPolicyId ?? targetPolicyId ?? null,
     entry: { ...result.entry, label: context.entries.find(entry => entry.entryId === entryId)?.label ?? entryId },
     items, missingGrantableItems,
-  });
+  };
+}
+
+export async function inspectPolicyAccess(
+  viewer: AssistantCredentials, domainId: string, targetPolicyId: string | null | undefined,
+  input: InspectionInput,
+) {
+  return policyRecord(input.entryId, await inspectPolicyAccessPayload(viewer, domainId, targetPolicyId, input));
 }
