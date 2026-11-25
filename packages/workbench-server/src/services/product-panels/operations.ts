@@ -1,3 +1,4 @@
+import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import type { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -706,8 +707,9 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   }
   // A refused call keeps its file for the reader's retry, such as confirming an overwrite.
   if (result?.outcome.kind === "success" && staged.upload) await uploads.remove(owner, staged.upload.id);
+  const canReceiveSecrets = credentials.token && credentials.headers?.[AGENT_EXECUTION_HEADER] === undefined;
   return result
-    ? { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome: credentials.token ? result.outcome : result.persistedOutcome }, owner, credentials, view) }
+    ? { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome: canReceiveSecrets ? result.outcome : result.persistedOutcome }, owner, credentials, view) }
     : replay(await store.get(owner, id), owner, credentials);
 }
 

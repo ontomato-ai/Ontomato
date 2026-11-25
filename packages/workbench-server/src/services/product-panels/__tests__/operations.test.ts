@@ -1,3 +1,4 @@
+import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { z } from "zod";
 import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
@@ -187,7 +188,7 @@ it("reports the identity assigned by the agent definition owner to a new draft",
   expect(outcome).toMatchObject({ kind: "success", created: { objectType: AGENT_DEFINITION, primaryKey } });
 });
 
-it("delivers generated secrets to the operator once and broadcasts only the safe receipt", async () => {
+it.each([false, true])("protects generated secrets at dispatch and in the receipt (agent callback: %s)", async agentCallback => {
   const objectType = "platform:ScheduledTask";
   const handlerRef = `${objectType}.save`;
   const created = { objectType, primaryKey: uuid(91) };
@@ -227,8 +228,14 @@ it("delivers generated secrets to the operator once and broadcasts only the safe
     });
     expect(JSON.stringify([intents.get(prepared.intentId), prepared, mocks.request.mock.calls, inspect.mock.calls]))
       .not.toContain(humanValue);
-    const result = await dispatchHumanPanelOperation(owner, credentials, prepared.intentId);
-    expect(result).toMatchObject({ kind: "dispatched", outcome: { kind: "success", created, secret } });
+    const caller = agentCallback
+      ? { ...credentials, headers: { [AGENT_EXECUTION_HEADER]: uuid(97) } }
+      : credentials;
+    const result = await dispatchHumanPanelOperation(owner, caller, prepared.intentId);
+    expect(result).toMatchObject({ kind: "dispatched", outcome: { kind: "success", created,
+      ...(agentCallback ? { secretGenerated: true } : { secret }),
+    } });
+    if (agentCallback) expect(JSON.stringify(result)).not.toContain(secret.items[0]!.value);
     expect(execute).toHaveBeenCalledWith(expect.anything(), { kind: "draft" }, {
       values: { title: "New task", settings: { password: humanValue } },
     }, prepared.intentId);

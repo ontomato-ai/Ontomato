@@ -29,3 +29,26 @@ export const runtimeBusinessCallbacksSchema = z.object({
 }).strict();
 export type RuntimeBusinessCallback = z.infer<typeof runtimeBusinessCallbackSchema>;
 export type RuntimeBusinessCallbacks = z.infer<typeof runtimeBusinessCallbacksSchema>;
+
+/** A callback sets this narrowing header after authentication. It never grants access. */
+export const AGENT_EXECUTION_HEADER = "X-Ontomato-Agent-Execution";
+
+/** Check the decoded path before sending its original wire encoding to an owner. */
+export function unsafeCallbackPath(path: string): boolean {
+  return /[\\%?#;\p{Cc}]/u.test(path) || path.startsWith("//") ||
+    path.split("/").some(segment => segment === "." || segment === "..");
+}
+
+/** Forward end-to-end headers for the decoded response body returned by fetch. */
+export function callbackResponseHeaders(headers: Headers, set: (name: string, value: string | string[]) => void) {
+  const excluded = new Set([
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer",
+    "transfer-encoding", "upgrade", "content-encoding", "content-length", "set-cookie",
+    ...(headers.get("connection") ?? "").toLowerCase().split(",").map(name => name.trim()),
+  ]);
+  headers.forEach((value, name) => {
+    if (!excluded.has(name)) set(name, value);
+  });
+  const cookies = headers.getSetCookie();
+  if (cookies.length) set("set-cookie", cookies);
+}

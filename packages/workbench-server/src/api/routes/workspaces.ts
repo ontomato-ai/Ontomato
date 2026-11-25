@@ -1,3 +1,4 @@
+import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { WorkspaceBuildTests } from "../../services/app-builder/build-tests";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
@@ -73,6 +74,9 @@ workspaceRouter.get("/:id/panel-candidate", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store").json(source);
 }));
 workspaceRouter.post("/:id/preview-token", wrap(async (req, res) => {
+  if (req.header(AGENT_EXECUTION_HEADER) !== undefined) {
+    throw new HttpError(403, "Preview credentials can only be delivered to the person opening the preview", "FORBIDDEN");
+  }
   const { owner, credentials } = context(req), workspaceId = id(req, "id");
   await assertAppBuilderAccess(credentials);
   const tests = new WorkspaceBuildTests(owner, credentials, workspaceId);

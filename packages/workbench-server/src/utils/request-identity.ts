@@ -1,3 +1,4 @@
+import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import type { RequestIdentity } from "@ontomato/contracts/identity";
 import { Request } from "express";
 import {buildBackendHeaders} from "./backend-client";
@@ -16,6 +17,13 @@ export function requireDomainId(identity: { domainId?: string | null }): string 
 /** Preserve a caller's narrowing scope when a public Node capability calls Java. */
 export function credentialsFromRequest(request:AuthenticatedRequest) {
   const {token,apiKey,locale}=request;
-  const caller=request.header("X-Ontomato-Retrieval-Caller-Id");
-  return {token,apiKey,locale,...(caller?{headers:buildBackendHeaders(token,undefined,locale,apiKey,{"X-Ontomato-Retrieval-Caller-Id":caller})}:{})};
+  const caller = request.header("X-Ontomato-Retrieval-Caller-Id");
+  const execution = request.header(AGENT_EXECUTION_HEADER);
+  const scope = {
+    ...(caller && { "X-Ontomato-Retrieval-Caller-Id": caller }),
+    ...(execution !== undefined && { [AGENT_EXECUTION_HEADER]: execution }),
+  };
+  return { token, apiKey, locale, ...((caller || execution !== undefined) && {
+    headers: buildBackendHeaders(token, undefined, locale, apiKey, scope),
+  }) };
 }

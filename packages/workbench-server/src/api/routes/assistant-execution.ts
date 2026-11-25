@@ -11,9 +11,9 @@ import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { isAssistantBuildTestOperation } from "../build-test-access";
 import { PROJECTION_REUSE_PANEL_HEADER } from "@ontomato/contracts/product-panels";
 import { Router, type Request } from "express";
-import { AGENT_DEFINITION, SKILL, MODEL_OPTION, EXTERNAL_MCP_SERVICE, USER, OBJECT_TYPE, ONTOLOGY_TYPE, bindingKey, chartProjectionLookupRead, chartProjectionSourceRead, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE, bindingKey, panelClientReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
-import { Readable } from "node:stream";
+import { AGENT_EXECUTION_HEADER, callbackResponseHeaders, unsafeCallbackPath } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { z } from "zod";
 import { context, wrap } from "../utils/agent-host";
 import { proxyResponse } from "../utils/proxy";
@@ -30,125 +30,16 @@ import { adoptAppBuilderDefinition, executeAuthoring, type AuthoringOperation } 
 import { authoringAdoptionRequestSchema, authoringKindSchema, authoringOperations } from "@ontomato/contracts/authoring";
 
 export const assistantExecutionRouter = Router();
-type RouteRule = {
-  methods: readonly string[];
-  match: string | RegExp;
-};
+export const assistantExecutionMountPath = "/api/assistant/executions";
+export const assistantOwnerCallbackPath = "/:runId/:target(ontology|workbench)/*";
 
-function matchesRules(rules: readonly RouteRule[], method: string, path: string): boolean {
-  return rules.some(rule =>
-    rule.methods.includes(method) && (typeof rule.match === "string" ? rule.match === path : rule.match.test(path)),
-  );
-}
-
-const ontologyReads = [
-  "/ontology/query/overview",
-  "/action/export",
-  "/metricView/export",
-  "/admin/getDatasetDesc",
-  "/admin/getAllClassNames",
-  "/user/getCur",
-  "/platform/applications",
-];
-const ontologyPosts = [
-  "/ontology/query/schema",
-  "/ontology/query/dsl-reference",
-  "/ontology/query/distinct-values",
-  "/ontology/query/execute-dsl",
-  "/ontology/query/metrics/search",
-  "/ontology/query/metrics/recall",
-  "/ontology/query/metrics/parameter-form",
-  "/ontology/query/metrics/parse-parameters",
-  "/ontology/query/metrics/execute",
-  "/ontology/query/knowledge/search",
-  "/ontology/query/outputs",
-  "/action/queryById",
-  "/action/queryList",
-  "/action/find",
-  "/action/form",
-  "/action/execute",
-  "/action/re-explain",
-  "/action/save",
-  "/action/delete",
-  "/metricView/find",
-  "/metricView/test",
-  "/metricView/testExecute",
-  "/metricView/execute",
-  "/metricView/save",
-  "/metricView/delete",
-  "/function/save",
-  "/function/delete",
-  "/workflow/subjects",
-  "/workflow/grants",
-  "/vectorResource/upload",
-  "/vectorResource/delete",
-  "/data/queryInfoByNode",
-  "/knowledge/findknowledge",
-  "/admin/getBussinessKnowledge",
-  "/admin/getSchemaByClassName",
-  "/admin/getRelationshipByClassNames",
-];
-const assetReadPaths = [
-  "/metricView/queryById",
-  "/metricView/queryList",
-  "/metricView/form",
-  "/function/queryList",
-  "/function/queryById",
-  "/function/form",
-];
-const queryOutput = /^\/ontology\/query\/outputs\/[0-9a-f-]+$/u;
-const queryOutputCancel = /^\/ontology\/query\/outputs\/[0-9a-f-]+\/cancel$/u;
 const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u;
-const governanceClose = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/skill-runs\/[^/]+\/close$/u;
-const ontologyRules: readonly RouteRule[] = [
-  { methods: ["GET"], match: queryOutput },
-  { methods: ["GET"], match: /^\/platform\/applications\/catalogue\/[^/]+$/u },
-  { methods: ["GET", "PUT"], match: /^\/platform\/applications\/(?!catalogue$)[^/]+\/panel-uses$/u },
-  { methods: ["PUT"], match: /^\/platform\/applications\/(?!catalogue$)[^/]+\/identity$/u },
-  { methods: ["DELETE"], match: /^\/platform\/applications\/(?!catalogue$)[^/]+$/u },
-  { methods: ["POST"], match: queryOutputCancel },
-  { methods: ["POST"], match: "/ontology/ai/knowledge-governance/skill-runs" },
-  { methods: ["POST"], match: governanceAction },
-  { methods: ["POST"], match: governanceClose },
-];
-function ontologyAllowed(method: string, path: string) {
-  if (method === "GET" && ontologyReads.includes(path)) return true;
-  if (method === "POST" && ontologyPosts.includes(path)) return true;
-  return matchesRules(ontologyRules, method, path);
-}
-const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
-const workbenchRules: readonly RouteRule[] = [
-  { methods: ["GET", "POST"], match: workbenchPath },
-  { methods: ["PUT", "DELETE"], match: /^\/api\/product-assets\/[^/]+$/u },
-  { methods: ["GET"], match: /^\/apps-sdk\/current\/.+$/u },
-  { methods: ["GET"], match: "/api/apps-sdk/current" },
-  { methods: ["GET"], match: "/api/app-builder/type-table" },
-  { methods: ["GET"], match: /^\/api\/component-packages\/(?!install$)(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u },
-  { methods: ["GET", "POST"], match: "/api/domain-components" },
-  { methods: ["GET", "PUT"], match: /^\/api\/domain-components\/[^/]+$/u },
-  { methods: ["GET", "POST"], match: "/api/workspaces" },
-  { methods: ["GET", "PATCH", "DELETE"], match: /^\/api\/workspaces\/(?!applications$)[^/]+$/u },
-  { methods: ["GET"], match: /^\/api\/workspaces\/(?!applications$)[^/]+\/(?:tree|commits|sessions|releases|files\/content|diff|panel-candidate|build-tests)$/u },
-  { methods: ["POST"], match: /^\/api\/workspaces\/(?!applications$)[^/]+\/(?:import|restore|publish|rollback|build-tests)$/u },
-  { methods: ["DELETE"], match: /^\/api\/workspaces\/(?!applications$)[^/]+\/build-tests$/u },
-  { methods: ["GET", "PUT", "DELETE"], match: /^\/api\/product-panels\/(?!read$|nested-read$|definition-stream$|personal-state$)[^/]+$/u },
-  { methods: ["GET"], match: "/api/product-projections" },
-  { methods: ["POST"], match: "/api/product-projections/chart-sources" },
-  { methods: ["GET", "PUT"], match: /^\/api\/product-projections\/(?!chart-sources$)[^/]+$/u },
-  { methods: ["GET"], match: /^\/api\/product-projections\/(?!chart-sources$)[^/]+\/used-by$/u },
-];
 
+// These existing reads and personal operations belong to the initiator, including on runs
+// with a separate execution account. Every other route uses the run's execution identity.
 const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
 const initiatorPanelReads = [AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
-const executorPanelReads = [
-  ...[MODEL_OPTION, EXTERNAL_MCP_SERVICE, USER, OBJECT_TYPE]
-    .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type }))),
-  ...panelClientReads(bindingKey({ kind: "MetricView", id: "*" })),
-  chartProjectionLookupRead,
-  chartProjectionSourceRead,
-];
-
 async function panelReader(req: Request, runId: string, source: ProductPanelReadSource, memberPath: DirectPanelMemberPath) {
   if (source.kind === "candidate")
     throw new HttpError(400, "A page skill reads a registered application entry", "INVALID_REQUEST");
@@ -247,39 +138,27 @@ assistantExecutionRouter.post("/:runId/authoring/:kind/adopt", wrap(async (req, 
   res.json(await adoptAppBuilderDefinition(owner, credentials, runId, kind, definition));
 }));
 
-assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
+assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) => {
   const callback = res.locals.runtimeCallback as RuntimeCallback;
   const runId = callbackRun(req, callback);
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
-  const canonicalPath = !req.path.includes("%");
-  const workbenchResource = target === "workbench" && canonicalPath && path.startsWith("/api/");
+  if (unsafeCallbackPath(path)) throw new HttpError(403, "Invalid execution callback path", "FORBIDDEN");
+  const workbenchResource = target === "workbench" && path.startsWith("/api/");
   const initiatorResourceRead = workbenchResource && (
     (req.method === "GET" && skillReadPath.test(path)) ||
     initiatorPanelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)))
   );
-  const executorResourceRead = target === "ontology"
-    ? canonicalPath && (
-      (req.method === "POST" && assetReadPaths.includes(path)) ||
-      [...scheduledTaskReads, ...executorPanelReads].some(
-        read => read.service === "/data-query" && read.method === req.method && read.path.test(path),
-      )
-    )
-    : workbenchResource && executorPanelReads.some(
-      read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)),
-    );
-  const resourceRead = initiatorResourceRead || executorResourceRead;
-  const assistantDirectory = target === "workbench" && req.method === "GET" && path === "/api/assistant/agents";
-  if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
-    !(resourceRead || assistantDirectory || (target === "ontology" ? ontologyAllowed(req.method, path) : matchesRules(workbenchRules, req.method, path))))
-    throw new HttpError(403, "Path is outside the execution callback", "FORBIDDEN");
+  const ownership = target === "workbench" && (
+    (req.method === "GET" && path === "/api/assistant/agents") ||
+    /^\/api\/(?:panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path)
+  );
   const { owner, credentials: initiatorCredentials } = context(req);
-  const grantAction=target==="ontology" && callback.businessGrant && governanceAction.test(path);
-  const ownership = assistantDirectory || target === "workbench" && /^\/api\/(?:panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
+  const businessGrant = target === "ontology" && governanceAction.test(path) ? callback.businessGrant : undefined;
   let credentials: AssistantCredentials = initiatorCredentials;
   let retrievalScopeId: string | null = null;
   let executionContext = req.header(BUILD_TEST_HEADER);
-  if (initiatorResourceRead || ownership || grantAction) {
+  if (initiatorResourceRead || ownership || businessGrant) {
     if (target === "ontology") {
       const { turn, run } = await ownedRun(owner, runId);
       if (initiatorResourceRead && (!run.channel || run.status !== "running")) {
@@ -304,30 +183,33 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
     }
   }
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
-  if (callback.businessGrant && !resourceRead && !assistantDirectory) {
-    headers.tk = callback.businessGrant;
+  if (businessGrant) {
+    headers.tk = businessGrant;
     delete headers["X-API-Key"];
   }
   headers["X-Ontomato-Run-Id"] = runId;
+  headers[AGENT_EXECUTION_HEADER] = runId;
   if (retrievalScopeId) headers["X-Ontomato-Retrieval-Caller-Id"] = retrievalScopeId;
   else delete headers["X-Ontomato-Retrieval-Caller-Id"];
   if (executionContext !== undefined) headers[BUILD_TEST_HEADER] = executionContext;
   const reusePanel = req.header(PROJECTION_REUSE_PANEL_HEADER);
   if (reusePanel !== undefined) headers[PROJECTION_REUSE_PANEL_HEADER] = reusePanel;
-  const origin = target === "ontology" ? config.dataQuery.baseUrl : environment.agentRuntime().callbackUrl;
-  const upstreamPath = target === "workbench" && path.startsWith("/api/component-packages/")
-    ? "/api/component-packages/" + encodeURIComponent(path.slice("/api/component-packages/".length))
-    : path;
-  const query = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-  let body: string | ReadableStream<Uint8Array> | undefined;
-  if (req.method !== "GET") {
-    if (req.is("multipart/form-data")) {
-      headers["Content-Type"] = req.headers["content-type"]!;
-      body = Readable.toWeb(req) as ReadableStream<Uint8Array>;
-    } else body = JSON.stringify(req.body);
+  const upstream = new URL(target === "ontology" ? config.dataQuery.baseUrl : environment.agentRuntime().callbackUrl);
+  upstream.pathname = upstream.pathname.replace(/\/$/u, "") + "/" + req.path.split("/").slice(3).join("/");
+  upstream.search = req.url.slice(req.path.length);
+  const contentType = req.header("Content-Type");
+  if (contentType) headers["Content-Type"] = contentType;
+  else delete headers["Content-Type"];
+  for (const name of ["Accept", "Idempotency-Key"]) {
+    const value = req.header(name);
+    if (value !== undefined) headers[name] = value;
   }
-  const response = await fetch(origin.replace(/\/$/u, "") + upstreamPath + query, {
-    method: req.method, headers, body, redirect: "error", ...(body instanceof ReadableStream ? {duplex:"half"} : {}),
-  } as NonNullable<Parameters<typeof fetch>[1]>);
+  const response = await fetch(upstream.href, {
+    method: req.method,
+    headers,
+    body: req.method !== "GET" && req.method !== "HEAD" && Buffer.isBuffer(req.body) ? req.body as Uint8Array<ArrayBuffer> : undefined,
+    redirect: "manual",
+  });
+  callbackResponseHeaders(response.headers, (name, value) => res.setHeader(name, value));
   await proxyResponse(response, res);
 }));

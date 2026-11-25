@@ -13,13 +13,16 @@ vi.mock('../../../services/assistant/execution',()=>({credentialsForRun:mocks.re
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({token:'test-callback-secret',callbackUrl:'http://workbench.test',queryServiceToken:'host-service'}),queryBase:()=>'http://ontology.test',queryTimeout:()=>30000,queryKey:()=>''}}));
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://ontology.test'}}}));
 vi.mock('../../../utils/request-identity',async original=>({...await original<typeof import('../../../utils/request-identity')>(),requireDomainId:(req:{domainId:string})=>req.domainId}));
-import {assistantExecutionRouter} from '../assistant-execution';
+import {assistantExecutionMountPath, assistantExecutionRouter, assistantOwnerCallbackPath} from '../assistant-execution';
 import {callbackCredential,unwrapCallbackCredential} from '../../../services/agent-runtime/callback-credential';
 const run='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const nativeFetch=globalThis.fetch;
 let server:Server,base:string;
 beforeAll(async()=>{
- const app=express();app.use(express.json());app.use(unwrapCallbackCredential);
+ const app=express();
+ app.all(assistantExecutionMountPath + assistantOwnerCallbackPath, express.raw({ type: () => true }));
+ app.use(express.json());
+ app.use(unwrapCallbackCredential);
  app.use((req,_res,next)=>{Object.assign(req,{userId:'U',userName:'Alice',domainId:'domain',token:req.header('tk'),locale:'en'});next();});
  app.use('/api/assistant/executions',assistantExecutionRouter);
  app.use((error:Error&{status?:number},_req:express.Request,res:express.Response,_next:express.NextFunction)=>{res.status(error.status??500).json({error:error.message});});
@@ -30,7 +33,7 @@ afterEach(()=>{vi.unstubAllGlobals();});
 beforeEach(()=>{vi.clearAllMocks();mocks.run.mockResolvedValue({status:"running"});mocks.ownedRun.mockResolvedValue({turn:{id:run,retrieval_scope_id:run},run:{status:"running",channel:{agent:{agentId:"agent"}}}});mocks.restore.mockResolvedValue({run:{},executionUserId:'V',retrievalScopeId:run,credentials:{apiKey:'selected-user-key',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':run}}});});
 function credential() {return callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()+60000,token:'initiator-token',apiKey:''}).value;}
 async function call(path:string,extra:Record<string,string>={},method='POST',token=credential()) {
- return nativeFetch(base+`/api/assistant/executions/${run}/`+path,{method,headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':token,'X-Ontomato-Run-Id':run,...extra},...(method==='GET'?{}:{body:'{}'})});
+ return nativeFetch(base+`/api/assistant/executions/${run}/`+path,{method,headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':token,'X-Ontomato-Run-Id':run,...extra},...(method==='GET'||method==='HEAD'?{}:{body:'{}'})});
 }
 it("resolves the workspace only for the active App Builder session", async () => {
  const path = "workbench/api/app-builder/workspace";
@@ -61,16 +64,20 @@ it('restores the initiator before resolving the executor and forwards only ordin
  const [url,request]=upstream.mock.calls[0] as unknown as [string,NonNullable<Parameters<typeof fetch>[1]>];
  expect(url).toBe('http://ontology.test/ontology/query/execute-dsl');
  expect(request.headers).toMatchObject({'X-API-Key':'selected-user-key','X-Ontomato-Run-Id':run,'X-Ontomato-Retrieval-Caller-Id':run});
- expect(request.headers).not.toHaveProperty('X-Ontomato-Query-Service-Token');expect(request.redirect).toBe('error');
+ expect(request.headers).not.toHaveProperty('X-Ontomato-Query-Service-Token');expect(request.redirect).toBe('manual');
 });
 it.each([
- 'ontology/ontology/ai/generation/gates',
- 'ontology/ontology/ai/generation/platform/action/test',
- 'ontology/action/generateFromNatureLanguage',
- 'ontology/metricView/generateFromNatureLanguage',
- 'ontology/ontology/retrievals/skill-runs','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other,'ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other+'/content','ontology/ontology/retrievals/'+run+'/skill-runs/'+run+'/close','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs','ontology/platform/agent-channel/commands','ontology/internal/agent-execution/resolve','ontology/agent-principals/execution','ontology/https%3A%2F%2Fevil.test','workbench/internal/agent-channel/prepare'])('refuses an out-of-scope path %s before resolving any key',async path=>{
- const upstream=vi.fn();vi.stubGlobal('fetch',upstream);
- expect((await call(path)).status).toBe(403);expect(upstream).not.toHaveBeenCalled();expect(mocks.restore).not.toHaveBeenCalled();
+  "ontology/%2e%2e%2fuser/getCur",
+  "ontology/%2e%2e;session/user/getCur",
+  "ontology/%252e%252e/user/getCur",
+  "ontology/%2foutside.test/key",
+  "workbench/api%5c..%5csecret",
+])("refuses an unsafe owner path %s before resolving a key", async path => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ expect((await call(path)).status).toBe(403);
+ expect(upstream).not.toHaveBeenCalled();
+ expect(mocks.restore).not.toHaveBeenCalled();
 });
 it('keeps an existing query Grant separate from callback authentication',async()=>{
  const upstream=vi.fn(async()=>Response.json({result:'ok'}));vi.stubGlobal('fetch',upstream);
@@ -79,9 +86,10 @@ it('keeps an existing query Grant separate from callback authentication',async()
 });
 it('keeps path, run, expiry and HTTP method checks at the callback boundary',async()=>{
  const upstream=vi.fn(async()=>Response.json({ok:true}));vi.stubGlobal('fetch',upstream);
- expect((await call('workbench/api/assistant/agents',{},'PUT')).status).toBe(403);
- expect((await call('workbench/api/assistant/agents',{},'DELETE')).status).toBe(403);
- expect((await call('workbench/api/assistant/agents',{},'OPTIONS')).status).toBe(401);
+ expect((await call('workbench/api/assistant/agents',{},'PUT')).status).toBe(200);
+ expect((await call('workbench/api/assistant/agents',{},'DELETE')).status).toBe(200);
+ expect((await call('workbench/api/assistant/agents',{},'OPTIONS')).status).toBe(200);
+ expect((await call('workbench/api/assistant/agents',{},'POST','wbc1.invalid')).status).toBe(401);
  expect((await call('workbench/api/assistant/agents',{},'GET')).status).toBe(200);
  expect((await call('ontology/ontology/query/overview',{'X-Ontomato-Run-Id':other})).status).toBe(401);
  const expired=callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()-1,token:'initiator-token',apiKey:''}).value;
@@ -150,19 +158,6 @@ it.each([
 });
 
 it.each([
-  "workbench/api/assistant/agent-definitions",
-  "workbench/api/assistant/diagnosis-model",
-  "workbench/api/mcp/services/names",
-  "ontology/model-options",
-  "ontology/platform/agent-execution/options",
-])("rejects the unlisted POST %s", async path => {
- const upstream = vi.fn();
- vi.stubGlobal("fetch", upstream);
- expect((await call(path)).status).toBe(403);
- expect(upstream).not.toHaveBeenCalled();
-});
-
-it.each([
   "/api/skills",
   "/api/skills/reporting/references",
   "/api/skills/reporting/files",
@@ -177,21 +172,6 @@ it.each([
  expect(request).toMatchObject({ method: "GET", headers: { tk: "initiator-token" } });
  expect(request.headers).not.toHaveProperty("X-API-Key");
  expect(mocks.restore).not.toHaveBeenCalled();
-});
-
-it.each([
-  ["GET", "workbench/api/skills/search?q=report"],
-  ["GET", "workbench/api/skills/reporting/export"],
-  ["GET", "workbench/api/skills/reporting/files/extra"],
-  ["GET", "ontology/api/skills"],
-  ["POST", "workbench/api/skills/reporting/files"],
-  ["POST", "workbench/api/skills/import"],
-])("refuses the unlisted skill callback %s %s before resolving the executor", async (method, path) => {
- const upstream = vi.fn();
- vi.stubGlobal("fetch", upstream);
- expect((await call(path, {}, method)).status).toBe(403);
- expect(mocks.restore).not.toHaveBeenCalled();
- expect(upstream).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -210,23 +190,10 @@ it.each([
  });
  expect(response.status).toBe(200);
  expect(upstream.mock.calls[0]?.[0]).toBe("http://workbench.test" + path);
- expect(upstream.mock.calls[0]?.[1]).toMatchObject({ method, body: body === undefined ? undefined : JSON.stringify(body), headers: { tk: "initiator-token" } });
+ expect(upstream.mock.calls[0]?.[1]).toMatchObject({ method, body: body === undefined ? undefined : Buffer.from(JSON.stringify(body)), headers: { tk: "initiator-token" } });
  expect(upstream.mock.calls[0]?.[1].headers).not.toHaveProperty("X-API-Key");
  expect(mocks.run).toHaveBeenCalledWith({ userId: "U", domainId: "domain" }, run);
  expect(mocks.restore).not.toHaveBeenCalled();
-});
-
-it.each([
-  ["POST", "workbench/api/platform-ontology/schema"],
-  ["GET", "workbench/api/platform-ontology/neighbors"],
-  ["POST", "workbench/api/platform-ontology/objects/extra"],
-  ["GET", "ontology/platform-ontology/start"],
-])("refuses the unlisted platform ontology callback %s %s", async (method, route) => {
- const upstream = vi.fn();
- vi.stubGlobal("fetch", upstream);
- expect((await call(route, {}, method)).status).toBe(403);
- expect(mocks.restore).not.toHaveBeenCalled();
- expect(upstream).not.toHaveBeenCalled();
 });
 
 it("lets Java restore V for governance business Grants without a Node key exchange",async()=>{
@@ -262,44 +229,6 @@ it.each([
 });
 
 it.each([
-  ["POST", "/platform/scheduled-tasks"],
-  ["POST", `/platform/scheduled-tasks/${other}`],
-  ["GET", "/platform/scheduled-tasks/applications/agents/form"],
-  ["POST", `/platform/scheduled-tasks/${other}/runs`],
-  ["POST", `/platform/scheduled-tasks/${other}/enabled`],
-  ["POST", "/platform/scheduled-tasks/applications/a%2520b/form"],
-  ["POST", "/platform/scheduled-tasks/applications/%61gents/form"],
-  ["POST", "/platform/scheduled-tasks/applications/%2e%2e%2fform"],
-])("forbids %s %s before resolving the executor", async (method, path) => {
-  const upstream = vi.fn();
-  vi.stubGlobal("fetch", upstream);
-  expect((await call("ontology" + path, {}, method)).status).toBe(403);
-  expect(mocks.restore).not.toHaveBeenCalled();
-  expect(upstream).not.toHaveBeenCalled();
-});
-
-it.each(["PUT", "DELETE"])("forbids %s for a scheduled task before resolving the executor", async method => {
-  const upstream = vi.fn();
-  vi.stubGlobal("fetch", upstream);
-  expect((await call(`ontology/platform/scheduled-tasks/${other}`, {}, method)).status).toBe(403);
-  expect(mocks.restore).not.toHaveBeenCalled();
-  expect(upstream).not.toHaveBeenCalled();
-});
-
-it.each([
-  ["GET", "product-projections/chart-sources?dashboardId=board&cardId=card", 200],
-  ["GET", "product-projections/projection/chart-source", 200],
-  ["POST", "product-projections/chart-sources", 200],
-  ["PUT", "product-projections/projection/chart-source", 403],
-])("proxies declared chart operations and rejects undeclared ones, %s %s", async (method, path, status) => {
-  const upstream = vi.fn(async (_url: string) => Response.json({}));
-  vi.stubGlobal("fetch", upstream);
-  expect((await call("workbench/api/" + path, {}, method)).status).toBe(status);
-  if (status === 200) expect(upstream).toHaveBeenCalledWith("http://workbench.test/api/" + path, expect.anything());
-  else expect(upstream).not.toHaveBeenCalled();
-});
-
-it.each([
   ["GET", "workbench/apps-sdk/current/sdk.json", "http://workbench.test/apps-sdk/current/sdk.json"],
   ["GET", "workbench/api/apps-sdk/current", "http://workbench.test/api/apps-sdk/current"],
   ["GET", "workbench/api/app-builder/type-table", "http://workbench.test/api/app-builder/type-table"],
@@ -307,8 +236,8 @@ it.each([
   ["GET", "workbench/api/component-packages/%40scope%2Fpkg", "http://workbench.test/api/component-packages/%40scope%2Fpkg"],
   ["GET", "workbench/api/domain-components", "http://workbench.test/api/domain-components"],
   ["POST", "workbench/api/domain-components", "http://workbench.test/api/domain-components"],
-  ["GET", "workbench/api/domain-components/domain-component%3Acard", "http://workbench.test/api/domain-components/domain-component:card"],
-  ["PUT", "workbench/api/domain-components/domain-component%3Acard", "http://workbench.test/api/domain-components/domain-component:card"],
+  ["GET", "workbench/api/domain-components/domain-component%3Acard", "http://workbench.test/api/domain-components/domain-component%3Acard"],
+  ["PUT", "workbench/api/domain-components/domain-component%3Acard", "http://workbench.test/api/domain-components/domain-component%3Acard"],
   ["GET", "workbench/api/workspaces?page=1", "http://workbench.test/api/workspaces?page=1"],
   ["POST", "workbench/api/workspaces", "http://workbench.test/api/workspaces"],
   ["GET", `workbench/api/workspaces/${other}`, `http://workbench.test/api/workspaces/${other}`],
@@ -337,6 +266,13 @@ it.each([
   ["POST", "ontology/admin/getRelationshipByClassNames", "http://ontology.test/admin/getRelationshipByClassNames"],
   ["POST", "ontology/vectorResource/upload", "http://ontology.test/vectorResource/upload"],
   ["POST", "ontology/vectorResource/delete", "http://ontology.test/vectorResource/delete"],
+  ["POST", "ontology/action/setStatus", "http://ontology.test/action/setStatus"],
+  ["POST", "ontology/workflow/save", "http://ontology.test/workflow/save"],
+  ["POST", "ontology/workflow/activate", "http://ontology.test/workflow/activate"],
+  ["POST", "ontology/role/saveOrUpdate", "http://ontology.test/role/saveOrUpdate"],
+  ["POST", "ontology/organization/unit/save", "http://ontology.test/organization/unit/save"],
+  ["POST", "ontology/post/saveOrUpdate", "http://ontology.test/post/saveOrUpdate"],
+  ["GET", "ontology/sysop/refreshApiPermission", "http://ontology.test/sysop/refreshApiPermission"],
   ["POST", "ontology/action/save", "http://ontology.test/action/save"],
   ["POST", "ontology/action/delete", "http://ontology.test/action/delete"],
   ["POST", "ontology/metricView/save", "http://ontology.test/metricView/save"],
@@ -352,38 +288,12 @@ it.each([
   ["GET", "ontology/user/getCur", "http://ontology.test/user/getCur"],
   ["POST", "ontology/workflow/subjects", "http://ontology.test/workflow/subjects"],
   ["POST", "ontology/workflow/grants", "http://ontology.test/workflow/grants"],
-])("forwards registered skill callback %s %s to %s", async (method, path, expectedUrl) => {
+])("forwards owner callback %s %s to %s", async (method, path, expectedUrl) => {
   const upstream = vi.fn(async () => method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({ ok: true }));
   vi.stubGlobal("fetch", upstream);
   const response = await call(path, {}, method);
   expect(response.status).toBe(method === "DELETE" ? 204 : 200);
-  expect(upstream).toHaveBeenCalledWith(expectedUrl, expect.objectContaining({ method, redirect: "error" }));
-});
-
-it.each([
-  ["POST", "workbench/api/component-packages/install"],
-  ["GET", "workbench/api/component-packages/install"],
-  ["GET", "workbench/api/app-builder/bootstrap"],
-  ["GET", "workbench/api/app-builder/agents"],
-  ["GET", `workbench/api/workspaces/applications/app-1/policy`],
-  ["POST", `workbench/api/workspaces/${other}/preview-token`],
-  ["POST", `workbench/api/workspaces/${other}/export`],
-  ["DELETE", "workbench/api/domain-components/domain-component:card"],
-  ["GET", "workbench/api/domain-components/domain-component:card/used-by"],
-  ["PUT", "workbench/api/product-panels/personal-state"],
-  ["DELETE", "workbench/api/product-projections/proj-1"],
-  ["PUT", "workbench/api/product-projections/chart-sources"],
-  ["PUT", "workbench/api/dashboards/board-1"],
-  ["DELETE", "workbench/api/dashboards/board-1"],
-  ["POST", "ontology/admin/unknown"],
-  ["GET", "ontology/action/save"],
-  ["POST", "ontology/platform/applications/app-1/other"],
-  ["DELETE", "ontology/platform/applications/catalogue"],
-])("forbids unlisted skill route or method %s %s", async (method, path) => {
-  const upstream = vi.fn();
-  vi.stubGlobal("fetch", upstream);
-  expect((await call(path, {}, method)).status).toBe(403);
-  expect(upstream).not.toHaveBeenCalled();
+  expect(upstream).toHaveBeenCalledWith(expectedUrl, expect.objectContaining({ method, redirect: "manual" }));
 });
 
 it("forwards projection catalog list queries with componentId and objectType filters", async () => {
@@ -469,4 +379,41 @@ it("resolves retrieval_scope_id from the server turn on retrieval and ontology c
  const appBuilderRes=await call('ontology/ontology/query/overview',{},'GET');
  expect(appBuilderRes.status).toBe(200);
  expect(new Headers(upstream.mock.calls[2]![1]?.headers).has('X-Ontomato-Retrieval-Caller-Id')).toBe(false);
+});
+
+it("relays multipart bytes, the query and the owner's response status and headers", async () => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => new Response("owner response", {
+   status: 422, headers: { "Content-Type": "text/plain", "X-Owner-Result": "rejected", "Cache-Control": "no-store" },
+ }));
+ vi.stubGlobal("fetch", upstream);
+ const body = "--fixture\r\nContent-Disposition: form-data; name=\"file\"\r\n\r\ncontents\r\n--fixture--\r\n";
+ const contentType = "multipart/form-data; boundary=fixture";
+ const response = await nativeFetch(base + `/api/assistant/executions/${run}/ontology/new-owner/import?x=a%2Fb&x=c`, {
+   method: "PATCH", body,
+   headers: {
+     "Content-Type": contentType, "X-Ontomato-Callback-Credential": credential(), "X-Ontomato-Run-Id": run,
+     "X-Ontomato-Agent-Execution": "caller-supplied",
+   },
+ });
+ expect(upstream).toHaveBeenCalledWith("http://ontology.test/new-owner/import?x=a%2Fb&x=c", expect.objectContaining({
+   method: "PATCH", body: Buffer.from(body), headers: expect.objectContaining({
+     "Content-Type": contentType, "X-API-Key": "selected-user-key", "X-Ontomato-Agent-Execution": run,
+   }),
+ }));
+ expect(response.status).toBe(422);
+ expect(response.headers.get("X-Owner-Result")).toBe("rejected");
+ expect(response.headers.get("Cache-Control")).toBe("no-store");
+ expect(await response.text()).toBe("owner response");
+});
+
+it("carries the verified execution marker to the credential owner and returns its refusal", async () => {
+ const upstream = vi.fn(async (_url: string, request: NonNullable<Parameters<typeof fetch>[1]>) =>
+   new Headers(request.headers).get("X-Ontomato-Agent-Execution") === run
+     ? Response.json({ code: "FORBIDDEN" }, { status: 403 })
+     : Response.json({ data: "fixture-generated-key" }));
+ vi.stubGlobal("fetch", upstream);
+ const response = await call("ontology/user/generateApiKey");
+ expect(upstream).toHaveBeenCalledWith("http://ontology.test/user/generateApiKey", expect.anything());
+ expect(response.status).toBe(403);
+ expect(await response.json()).toEqual({ code: "FORBIDDEN" });
 });

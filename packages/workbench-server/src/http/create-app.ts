@@ -24,7 +24,7 @@ import { installAssistantEvidenceReader } from "../platform/diagnosis/observe/wo
 import { installDiagnosisEvidenceReader } from "../platform/diagnosis/observe/workspaces/diagnosis-source";
 import { resolveDiagnosisEvidence } from "../services/ops-diagnosis/evidence";
 import type { AuthenticatedRequest } from "../utils/request-identity";
-import { assistantExecutionRouter } from "../api/routes/assistant-execution";
+import { assistantExecutionMountPath, assistantExecutionRouter, assistantOwnerCallbackPath } from "../api/routes/assistant-execution";
 import { unwrapCallbackCredential } from "../services/agent-runtime/callback-credential";
 import express, {
   Express,
@@ -114,7 +114,11 @@ export function createWorkbenchApp(): Express {
       runWithLogContext({ requestId: generateRequestId(), correlationId: correlation }, next));
   });
   app.use(accessLogger);
-  app.use(cors({ exposedHeaders: [SERVER_NOW_HEADER, "X-Correlation-Id"] }));
+  app.use(cors((req, callback) => callback(null, {
+    exposedHeaders: [SERVER_NOW_HEADER, "X-Correlation-Id"],
+    preflightContinue: req.headers["x-ontomato-callback-credential"] !== undefined,
+  })));
+  app.all(assistantExecutionMountPath + assistantOwnerCallbackPath, express.raw({ type: () => true, limit: "50mb" }));
   app.use(express.json({ limit: "50mb" }));
   app.use((_req: Request, res: Response, next: NextFunction) => {
     const originalJson = res.json.bind(res);
@@ -221,7 +225,7 @@ export function createWorkbenchApp(): Express {
   app.use(COMPONENT_PACKAGES_PATH, createComponentPackagesRouter(identity.requireDeploymentMaintenance, checkComponentPackageUpgrade));
   app.use("/api/workspaces", workspaceRouter);
   app.use("/api/analysis-tasks", analysisTasksRouter);
-  app.use("/api/assistant/executions", assistantExecutionRouter);
+  app.use(assistantExecutionMountPath, assistantExecutionRouter);
   app.use("/api/assistant", assistantRouter);
   app.use("/api/platform/schedule-applications", scheduleApplicationsRouter);
   app.use("/api/platform/home", platformHomeRouter);
