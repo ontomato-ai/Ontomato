@@ -272,9 +272,9 @@ workflow_run_id = identity.get("workflowRunId")  # 仅有唯一归属时才有�
 
 ### 4.4 保存草稿，生成解释，再发布
 
-1. 用 `node wf-client.mjs action-save ./actions.json` 保存上面的 `PENDING_REVIEW` 动作。客户端接受单个对象或数组，逐条调用 `POST /action/save`。**新建动作时严禁自编 `id`（以及 `function.id`），省略 `id` 由服务端生成并返回**；仅修改已有草稿时才带 `id`。记下服务端返回的动作 `id`（例如 `<actionId>`），后续用于填入 `workflow.json` 的 `steps[].actionId`。
-2. 如有需要生成或重算代码解读，运行 `node wf-client.mjs action-reexplain '{"ids":["<actionId>"]}'`（`POST /action/re-explain`）。检查外层 `success` 和 `data.failureCount`，单个新动作应有 `data.successCount=1`；有失败就停在草稿，读 `data.failures[].message`。
-3. 用 `node wf-client.mjs action-get <actionId>` 审阅程序与服务器生成的解释，确认 `codeSegments` 非空且有当前代码的 `codeHash` 与 `explanationVersion`。审阅无误后，用 `node wf-client.mjs action-publish <actionId>`（`POST /action/setStatus`，`{"ids":["<actionId>"],"status":"PUBLISHED"}`）发布；不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
+1. 用 `node wf-client.mjs action-save ./actions.json` 保存上面的 `PENDING_REVIEW` 动作。客户端接受单个对象或数组，逐条调用 `POST /action/save`，保存立刻返回、代码解读在后台异步生成。**新建动作时严禁自编 `id`（以及 `function.id`），省略 `id` 由服务端生成并返回**；仅修改已有草稿时才带 `id`。记下服务端返回的动作 `id`（例如 `<actionId>`），后续用于填入 `workflow.json` 的 `steps[].actionId`。
+2. 存完不要立刻发布（后台解读未落库时发布会报 `ACTION_EXPLANATION_REQUIRED`）。先用 `node wf-client.mjs action-get <actionId>` 确认 `codeSegments` 非空且带当前代码的 `codeHash` 与 `explanationVersion`；若尚未生成，可稍等几秒再查，或运行 `node wf-client.mjs action-reexplain '{"ids":["<actionId>"],"missingOnly":true}'`（`POST /action/re-explain`）同步补齐解读（检查外层 `success` 与 `data.failureCount=0`，失败就停在草稿读 `data.failures[].message`）。
+3. 审阅程序与服务器生成的解释无误后，用 `node wf-client.mjs action-publish <actionId>`（`POST /action/setStatus`，`{"ids":["<actionId>"],"status":"PUBLISHED"}`）发布；不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
 4. 用 `node wf-client.mjs action-get <actionId>` 核对状态已为 `PUBLISHED`、目标和提交条件正确，再把服务端返回的 `id` 编入流程 `steps[].actionId` 并激活。
 
 不要把缺解释的骨架直接发布为 `PUBLISHED`，也不要自行编造解释、哈希或版本号。
