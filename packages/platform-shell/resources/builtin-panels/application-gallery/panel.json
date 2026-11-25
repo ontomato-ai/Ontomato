@@ -85,73 +85,6 @@
           }
         },
         "id": "builtin-product-6c1b4d8e-52f9-4a13-8c7b-39e6d04f1a21"
-      },
-      "agents": {
-        "component": "ObjectList",
-        "type": "platform:AgentDefinition",
-        "data": {
-          "rows": "available"
-        },
-        "state": {
-          "search": "search"
-        },
-        "operations": {
-          "favorite": {
-            "type": "platform:Favorite",
-            "operation": "favorites.add",
-            "target": {
-              "row": true
-            }
-          },
-          "unfavorite": {
-            "type": "platform:Favorite",
-            "operation": "favorites.remove",
-            "target": {
-              "row": true
-            }
-          }
-        },
-        "config": {
-          "layout": "cards",
-          "searchable": false,
-          "showFooter": false,
-          "leadingIconField": "icon",
-          "leadingIconKind": "agent",
-          "openOutput": "openPath",
-          "subtitleLines": 2,
-          "emptyText": "panel.empty",
-          "noMatchText": "panel.empty",
-          "rowActions": {
-            "placement": "header",
-            "maxVisible": 1,
-            "items": [
-              {
-                "kind": "operation",
-                "operation": "favorite",
-                "labelKey": "panel.addFavorite",
-                "icon": "star",
-                "iconOnly": true,
-                "when": {
-                  "field": "favorite",
-                  "equals": false
-                }
-              },
-              {
-                "kind": "operation",
-                "operation": "unfavorite",
-                "labelKey": "panel.removeFavorite",
-                "icon": "star-filled",
-                "iconOnly": true,
-                "active": true,
-                "when": {
-                  "field": "favorite",
-                  "equals": true
-                }
-              }
-            ]
-          }
-        },
-        "id": "builtin-product-91f2a70c-3b84-4e65-9d12-7a85c4e2b910"
       }
     }
   },
@@ -166,8 +99,6 @@
         "panel.category.agents": "智能体",
         "panel.category.build": "构建",
         "panel.category.admin": "管理",
-        "panel.section.applications": "应用",
-        "panel.section.agents": "智能体",
         "panel.searchPlaceholder": "搜索应用或智能体",
         "panel.empty": "没有可显示的应用或智能体",
         "panel.clear": "清除筛选",
@@ -183,8 +114,6 @@
         "panel.category.agents": "Agents",
         "panel.category.build": "Build",
         "panel.category.admin": "Admin",
-        "panel.section.applications": "Applications",
-        "panel.section.agents": "Agents",
         "panel.searchPlaceholder": "Search applications or agents",
         "panel.empty": "No applications or agents to show",
         "panel.clear": "Clear",
@@ -200,8 +129,6 @@
         "panel.category.agents": "智慧體",
         "panel.category.build": "建置",
         "panel.category.admin": "管理",
-        "panel.section.applications": "應用",
-        "panel.section.agents": "智慧體",
         "panel.searchPlaceholder": "搜尋應用或智慧體",
         "panel.empty": "沒有可顯示的應用或智慧體",
         "panel.clear": "清除篩選",
@@ -217,8 +144,6 @@
         "panel.category.agents": "エージェント",
         "panel.category.build": "構築",
         "panel.category.admin": "管理",
-        "panel.section.applications": "アプリ",
-        "panel.section.agents": "エージェント",
         "panel.searchPlaceholder": "アプリまたはエージェントを検索",
         "panel.empty": "表示できるアプリやエージェントがありません",
         "panel.clear": "クリア",
@@ -234,8 +159,6 @@
         "panel.category.agents": "Agenten",
         "panel.category.build": "Erstellen",
         "panel.category.admin": "Verwaltung",
-        "panel.section.applications": "Anwendungen",
-        "panel.section.agents": "Agenten",
         "panel.searchPlaceholder": "Anwendungen oder Agenten suchen",
         "panel.empty": "Keine Anwendungen oder Agenten vorhanden",
         "panel.clear": "Zurücksetzen",
@@ -251,8 +174,6 @@
         "panel.category.agents": "Agents",
         "panel.category.build": "Création",
         "panel.category.admin": "Administration",
-        "panel.section.applications": "Applications",
-        "panel.section.agents": "Agents",
         "panel.searchPlaceholder": "Rechercher des applications ou agents",
         "panel.empty": "Aucune application ni aucun agent à afficher",
         "panel.clear": "Effacer",
@@ -268,8 +189,6 @@
         "panel.category.agents": "Agenti",
         "panel.category.build": "Sviluppo",
         "panel.category.admin": "Amministrazione",
-        "panel.section.applications": "Applicazioni",
-        "panel.section.agents": "Agenti",
         "panel.searchPlaceholder": "Cerca applicazioni o agenti",
         "panel.empty": "Nessuna applicazione o agente da mostrare",
         "panel.clear": "Cancella",
@@ -285,8 +204,6 @@
         "panel.category.agents": "الوكلاء",
         "panel.category.build": "البناء",
         "panel.category.admin": "الإدارة",
-        "panel.section.applications": "التطبيقات",
-        "panel.section.agents": "الوكلاء",
         "panel.searchPlaceholder": "ابحث عن التطبيقات أو الوكلاء",
         "panel.empty": "لا توجد تطبيقات أو وكلاء للعرض",
         "panel.clear": "مسح",

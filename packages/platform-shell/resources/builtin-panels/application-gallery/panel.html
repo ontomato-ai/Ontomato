@@ -80,28 +80,21 @@
     color: var(--sdk-text-color-secondary);
     flex-shrink: 0;
   }
-  .gallery-groups {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xl);
-  }
-  .gallery-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    min-width: 0;
-  }
-  .gallery-group.is-hidden {
-    display: none;
-  }
-  .gallery-group-title {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-secondary);
-  }
   .gallery-list {
     height: auto;
+  }
+  .gallery-list .sdk-object-list-diagnostics {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin: 0 0 var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid color-mix(in srgb, var(--sdk-color-warning), var(--sdk-bg-color) 70%);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--sdk-color-warning), var(--sdk-bg-color) 90%);
+    color: var(--sdk-color-warning);
+    font-size: var(--text-sm);
+    line-height: 1.5;
   }
   .gallery-empty {
     display: grid;
@@ -163,84 +156,28 @@
           </sdk-input>
         </div>
 
-        <div class="gallery-groups">
-          <section
-            v-if="showApplications"
-            class="gallery-group"
-            :class="{ 'is-hidden': hideEmptyApplicationsInAll }"
-            :aria-hidden="hideEmptyApplicationsInAll ? 'true' : undefined"
-          >
-            <h2 v-if="showSectionHeadings" class="gallery-group-title">{{ t("panel.section.applications") }}</h2>
-            <projection
-              slot="applications"
-              class="gallery-list"
-              @clear-filters="clearFilters"
-            >
-              <template #empty>
-                <div class="gallery-empty">
-                  <svg v-if="filtered" class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="m21 21-4.3-4.3"></path>
-                  </svg>
-                  <svg v-else class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-                    <path d="M10 4v4"></path>
-                    <path d="M2 8h20"></path>
-                    <path d="M6 4v4"></path>
-                  </svg>
-                  <p role="status">{{ t("panel.empty") }}</p>
-                  <sdk-button v-if="filtered" text @click="clearFilters">{{ t("panel.clear") }}</sdk-button>
-                </div>
-              </template>
-            </projection>
-          </section>
-
-          <section
-            v-if="showAgents"
-            class="gallery-group"
-            :class="{ 'is-hidden': hideEmptyAgentsInAll }"
-            :aria-hidden="hideEmptyAgentsInAll ? 'true' : undefined"
-          >
-            <h2 v-if="showSectionHeadings" class="gallery-group-title">{{ t("panel.section.agents") }}</h2>
-            <projection
-              slot="agents"
-              class="gallery-list"
-              @clear-filters="clearFilters"
-            >
-              <template #empty>
-                <div class="gallery-empty">
-                  <svg v-if="filtered" class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="m21 21-4.3-4.3"></path>
-                  </svg>
-                  <svg v-else class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-                    <path d="M10 4v4"></path>
-                    <path d="M2 8h20"></path>
-                    <path d="M6 4v4"></path>
-                  </svg>
-                  <p role="status">{{ t("panel.empty") }}</p>
-                  <sdk-button v-if="filtered" text @click="clearFilters">{{ t("panel.clear") }}</sdk-button>
-                </div>
-              </template>
-            </projection>
-          </section>
-
-          <div v-if="showCombinedEmpty" class="gallery-empty">
-            <svg v-if="filtered" class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="8"></circle>
-              <path d="m21 21-4.3-4.3"></path>
-            </svg>
-            <svg v-else class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-              <path d="M10 4v4"></path>
-              <path d="M2 8h20"></path>
-              <path d="M6 4v4"></path>
-            </svg>
-            <p role="status">{{ t("panel.empty") }}</p>
-            <sdk-button v-if="filtered" text @click="clearFilters">{{ t("panel.clear") }}</sdk-button>
-          </div>
-        </div>
+        <projection
+          slot="applications"
+          class="gallery-list"
+          @clear-filters="clearFilters"
+        >
+          <template #empty>
+            <div class="gallery-empty">
+              <svg v-if="filtered" class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.3-4.3"></path>
+              </svg>
+              <svg v-else class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                <path d="M10 4v4"></path>
+                <path d="M2 8h20"></path>
+                <path d="M6 4v4"></path>
+              </svg>
+              <p role="status">{{ t("panel.empty") }}</p>
+              <sdk-button v-if="filtered" text @click="clearFilters">{{ t("panel.clear") }}</sdk-button>
+            </div>
+          </template>
+        </projection>
       </div>
     </div>
   </section>

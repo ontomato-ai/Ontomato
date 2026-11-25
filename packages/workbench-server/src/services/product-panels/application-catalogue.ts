@@ -5,8 +5,8 @@ import {
   type ApplicationCatalogueFormRequest,
 } from "@ontomato/contracts/application-catalogue";
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
-import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
-import { APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import { AGENT_DEFINITION, APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationPanelUseSchema, isNativeApplicationEntry, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
@@ -15,6 +15,7 @@ import { readFavorites } from "../platform-home/service";
 import { config } from "../../config/application";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { createLogger } from "../../logging/logger";
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { readProductGrantRecords, type ProductOwner } from "../product-governance/grants";
@@ -166,6 +167,7 @@ export function toApplicationPanelRecord(
 }
 
 const GALLERY_EXCLUDED_APP_IDS = new Set(["home", "personal-workspace", "workplace", "application-gallery"]);
+const logger = createLogger("application-catalogue");
 const GALLERY_RAIL_ORDER = ["top", "apps", "bottom"] as const;
 
 export function applicationCatalogueClient(viewer: AssistantCredentials) {
@@ -280,45 +282,118 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
   }
 
   return {
-    async available(params: { category?: string; search?: string; favoritesOnly?: boolean }): Promise<PanelRecord[]> {
-      if (params.category === "agents") return [];
-      const [catalog, favorites] = await Promise.all([
-        client.navigation(),
-        readFavorites(owner),
+    async available(params: { category?: string; search?: string; favoritesOnly?: boolean }): Promise<PanelRecordQuery> {
+      const category = params.category ?? "all";
+      const includeApps = category !== "agents";
+      const includeAgents = category === "all" || category === "agents";
+      const [catalog, agentResult, favoritesResult] = await Promise.all([
+        includeApps ? client.navigation() : Promise.resolve([]),
+        includeAgents
+          ? import("../assistant/service").then(({ assistantService }) => assistantService.agents(owner, viewer))
+          : Promise.resolve({ agents: [] }),
+        readFavorites(owner).then(
+          items => ({ ok: true as const, items }),
+          error => ({ ok: false as const, error }),
+        ),
       ]);
-      const favoriteIds = favorites.filter(item => item.kind === "application").map(item => item.id);
-      const favoriteSet = new Set(favoriteIds);
-      const visible = catalog.filter(app => !GALLERY_EXCLUDED_APP_IDS.has(app.id));
-      const ordered = params.favoritesOnly
-        ? favoriteIds.flatMap(id => visible.find(app => app.id === id) ?? [])
-        : GALLERY_RAIL_ORDER.flatMap(rail => visible.filter(app => (app.rail ?? "apps") === rail));
-      const queryText = params.search?.trim().toLocaleLowerCase() ?? "";
-      return ordered
-        .filter(app => !params.category || params.category === "all" || app.category === params.category)
-        .flatMap((app): PanelRecord[] => {
-          const label = localizedApplicationText(app.names, language) ?? app.id;
-          const description = localizedApplicationText(app.descriptions, language);
-          if (queryText && !`${label}\n${description ?? ""}`.toLocaleLowerCase().includes(queryText)) {
-            return [];
-          }
-          const openPath = app.entry.path.startsWith("/__external/") || app.kind === "link"
-            ? app.entry.path
-            : isPanelApplication(app) || app.kind === "hosted" || app.kind === "connected"
-              ? applicationRootPath(app.id)
-              : (app.entry.home ?? app.entry.path);
-          return [{
-            primaryKey: app.id,
-            className: APPLICATION,
-            label,
-            ...(description && { subtitle: description }),
-            fields: {
-              category: app.category,
-              icon: app.icon,
-              favorite: favoriteSet.has(app.id),
-            },
-            outputs: { openPath },
-          }];
+      if (!favoritesResult.ok && params.favoritesOnly) {
+        throw favoritesResult.error;
+      }
+      if (!favoritesResult.ok) {
+        logger.warn("Failed to read personal favorites for application gallery", {
+          error: favoritesResult.error instanceof Error ? favoritesResult.error.message : String(favoritesResult.error),
         });
+      }
+      const favorites = favoritesResult.ok ? favoritesResult.items : [];
+      const diagnostics = favoritesResult.ok
+        ? undefined
+        : [tForLocale(language, "panels.favorite.loadUnavailable")];
+      const favoriteAppSet = new Set(favorites.filter(item => item.kind === "application").map(item => item.id));
+      const favoriteAgentSet = new Set(favorites.filter(item => item.kind === "agent").map(item => item.id));
+      const visibleApps = catalog.filter(app => !GALLERY_EXCLUDED_APP_IDS.has(app.id));
+      const enabledAgents = agentResult.agents.filter(agent => agent.enabled);
+      const queryText = params.search?.trim().toLocaleLowerCase() ?? "";
+
+      const toAppRecord = (app: (typeof visibleApps)[number]): PanelRecord | undefined => {
+        if (category !== "all" && app.category !== category) return undefined;
+        const label = localizedApplicationText(app.names, language) ?? app.id;
+        const description = localizedApplicationText(app.descriptions, language);
+        if (queryText && !`${label}\n${description ?? ""}`.toLocaleLowerCase().includes(queryText)) {
+          return undefined;
+        }
+        const openPath = app.entry.path.startsWith("/__external/") || app.kind === "link"
+          ? app.entry.path
+          : isPanelApplication(app) || app.kind === "hosted" || app.kind === "connected"
+            ? applicationRootPath(app.id)
+            : (app.entry.home ?? app.entry.path);
+        return {
+          primaryKey: app.id,
+          className: APPLICATION,
+          label,
+          ...(description && { subtitle: description }),
+          fields: {
+            category: app.category,
+            icon: app.icon,
+            ...(favoritesResult.ok && { favorite: favoriteAppSet.has(app.id) }),
+          },
+          outputs: { openPath },
+        };
+      };
+
+      const toAgentRecord = (agent: (typeof enabledAgents)[number]): PanelRecord | undefined => {
+        const description = agent.description?.trim() || undefined;
+        if (queryText && !`${agent.name}\n${description ?? ""}`.toLocaleLowerCase().includes(queryText)) {
+          return undefined;
+        }
+        return {
+          primaryKey: agent.id,
+          className: AGENT_DEFINITION,
+          label: agent.name,
+          ...(description && { subtitle: description }),
+          fields: {
+            category: "agents",
+            icon: agent.icon ?? "",
+            ...(favoritesResult.ok && { favorite: favoriteAgentSet.has(agent.id) }),
+          },
+          outputs: {
+            openPath: `/agents/chat?agentId=${encodeURIComponent(agent.id)}`,
+          },
+        };
+      };
+
+      if (params.favoritesOnly) {
+        const appById = new Map(visibleApps.map(app => [app.id, app]));
+        const agentById = new Map(enabledAgents.map(agent => [agent.id, agent]));
+        const rows: PanelRecord[] = [];
+        for (const item of favorites) {
+          if (item.kind === "application" && includeApps) {
+            const app = appById.get(item.id);
+            const record = app ? toAppRecord(app) : undefined;
+            if (record) rows.push(record);
+          } else if (item.kind === "agent" && includeAgents) {
+            const agent = agentById.get(item.id);
+            const record = agent ? toAgentRecord(agent) : undefined;
+            if (record) rows.push(record);
+          }
+        }
+        return { rows, total: rows.length };
+      }
+
+      const orderedApps = GALLERY_RAIL_ORDER.flatMap(rail => visibleApps.filter(app => (app.rail ?? "apps") === rail));
+      const appRecords = orderedApps.flatMap(app => {
+        const record = toAppRecord(app);
+        return record ? [record] : [];
+      });
+      const agentRecords = enabledAgents.flatMap(agent => {
+        const record = toAgentRecord(agent);
+        return record ? [record] : [];
+      });
+      const rows = [...appRecords, ...agentRecords];
+      return {
+        rows,
+        total: rows.length,
+        ...(diagnostics && { diagnostics }),
+      };
     },
     async query(params: Record<string, unknown>) {
       const { rows, total, nextCursor } = await query(params);
