@@ -152,9 +152,10 @@ function parseTaskRecord(row: PlatformObjectRecord): ScheduledTaskSummaryItem {
 }
 
 const previousCards = computed(() => {
-  if (presentation.value !== "cards" || props.tasks) return;
+  if (presentation.value !== "cards" || props.tasks) return undefined;
   const state = rowsState?.value;
   if (state?.status === "error" || state?.status === "loading") return state.previous;
+  return undefined;
 });
 
 const resolvedData = computed<DataStateResult<readonly ScheduledTaskSummaryItem[]>>(() => {

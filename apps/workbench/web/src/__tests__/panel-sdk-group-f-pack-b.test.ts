@@ -58,14 +58,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+type MockResizeObserverCallback = ConstructorParameters<typeof ResizeObserver>[0];
+
 function installControllableResizeObserver(initialWidth: number) {
   let width = initialWidth;
-  const callbacks = new Set<ResizeObserverCallback>();
-  const targetsByCb = new Map<ResizeObserverCallback, Set<Element>>();
+  const callbacks = new Set<MockResizeObserverCallback>();
+  const targetsByCb = new Map<MockResizeObserverCallback, Set<Element>>();
 
   class MockResizeObserver implements ResizeObserver {
-    private readonly cb: ResizeObserverCallback;
-    constructor(cb: ResizeObserverCallback) {
+    private readonly cb: MockResizeObserverCallback;
+    constructor(cb: MockResizeObserverCallback) {
       this.cb = cb;
       callbacks.add(cb);
       targetsByCb.set(cb, new Set());

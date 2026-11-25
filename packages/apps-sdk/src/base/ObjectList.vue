@@ -1070,7 +1070,7 @@ const expandedKeyList = computed<readonly string[]>(() => {
   }
   return normalizeExpandedKeys(internalExpandedKeys.value, mode);
 });
-const expandedKeys = computed<ReadonlySet<string>>(() => new Set(expandedKeyList.value));
+const expandedKeySet = computed<ReadonlySet<string>>(() => new Set(expandedKeyList.value));
 const detailElements = new Map<string, HTMLElement>();
 const rowDetailFormsByRowKey = new Map<string, Set<RowDetailFormRegistration>>();
 let expandGuardPending = false;
@@ -1213,7 +1213,7 @@ function setExpandedKeys(next: readonly string[]) {
 }
 
 function isRowExpanded(row: PlatformObjectRecord): boolean {
-  return matchesRowExpandedKey(expandedKeys.value, rowExpandAliases(row));
+  return matchesRowExpandedKey(expandedKeySet.value, rowExpandAliases(row));
 }
 
 function expandRowKeyImmediate(key: string, knownRow?: PlatformObjectRecord) {
