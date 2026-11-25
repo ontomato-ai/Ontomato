@@ -58,15 +58,15 @@
       "id": "ontology-relation-detail", "pageKey": "ontology-relation-detail", "panelId": "builtin-product-ontology-relation-detail",
       "path": "/ontology/relations/detail", "access": {"permissionCode": "ontology-modeling"}
     }, {
-      "id": "ontology-visual-modeling", "pageKey": "ontology-visual-modeling", "panelId": "builtin-product-ontology-visual-modeling",
-      "path": "/ontology/visual-modeling", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "Edit this domain's object types, attributes and relations on one canvas: drag the layout, draw a relation between two types, select to edit or delete.", "zh-CN": "在一张画布上编辑本域的对象类型、属性与关系：拖动布局、连线建关系、选中编辑与删除。"},
-      "names": {"en": "Visual modeling", "zh-CN": "可视化建模"}, "groupKey": "facts"
-    }, {
       "id": "business-knowledge", "pageKey": "business-knowledge", "panelId": "builtin-product-business-knowledge",
       "path": "/ontology/knowledge", "access": {"permissionCode": "business-knowledge"},
       "descriptions": {"en": "Maintain business rules and terminology, and review pending knowledge", "zh-CN": "维护业务规则与术语，审核待确认的知识"},
       "names": {"en": "Business knowledge", "zh-CN": "业务知识"}, "groupKey": "facts"
+    }, {
+      "id": "ontology-visual-modeling", "pageKey": "ontology-visual-modeling", "panelId": "builtin-product-ontology-visual-modeling",
+      "path": "/ontology/visual-modeling", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Edit this domain's object types, attributes and relations on one canvas: drag the layout, draw a relation between two types, select to edit or delete.", "zh-CN": "在一张画布上编辑本域的对象类型、属性与关系：拖动布局、连线建关系、选中编辑与删除。"},
+      "names": {"en": "Visual modeling", "zh-CN": "可视化建模"}, "groupKey": "facts"
     }, {
       "id": "ontology-metric-views", "pageKey": "metric-views", "panelId": "builtin-product-ontology-metric-views",
       "path": "/ontology/assets/metrics", "access": {"permissionCode": "ontology-modeling"},

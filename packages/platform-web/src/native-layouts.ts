@@ -24,8 +24,8 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
           managerPaths.objects,
           managerPaths.attributes,
           managerPaths.relations,
-          managerPaths.visualModeling,
           managerPaths.knowledge,
+          managerPaths.visualModeling,
         ],
       },
       {

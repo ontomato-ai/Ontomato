@@ -4,16 +4,12 @@ import { workbenchApplications } from "../builtins";
 import { registerWorkbenchApplications } from "../register";
 
 describe("workbench built-in application allowStandalone defaults", () => {
-  it("disables standalone open for system-level built-ins and keeps user-facing built-ins enabled", () => {
+  it("disables standalone open for all workbench built-in applications", () => {
     const byId = new Map(workbenchApplications.map(app => [app.id, builtinApplicationSchema.parse(app)]));
 
-    for (const id of ["application-gallery", "home", "operations", "app-builder"]) {
+    for (const id of ["application-gallery", "home", "agents", "dashboards", "schedules", "operations", "app-builder"]) {
       expect(byId.get(id)?.allowStandalone, id).toBe(false);
       expect(allowsStandalone(byId.get(id)), id).toBe(false);
-    }
-
-    for (const id of ["agents", "dashboards", "schedules"]) {
-      expect(allowsStandalone(byId.get(id)), id).toBe(true);
     }
   });
 
@@ -23,10 +19,13 @@ describe("workbench built-in application allowStandalone defaults", () => {
     expect(register).toHaveBeenCalledTimes(1);
     const sent = register.mock.calls[0]![0] as typeof workbenchApplications;
     expect(sent.filter(app => app.allowStandalone === false).map(app => app.id).sort()).toEqual([
+      "agents",
       "app-builder",
       "application-gallery",
+      "dashboards",
       "home",
       "operations",
+      "schedules",
     ]);
   });
 });

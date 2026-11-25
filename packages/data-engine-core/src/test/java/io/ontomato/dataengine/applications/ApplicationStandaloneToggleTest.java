@@ -147,7 +147,7 @@ class ApplicationStandaloneToggleTest {
         var browser = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/browser.json"));
         assertFalse(settings.allowsStandalone());
         assertFalse(ontology.allowsStandalone());
-        assertTrue(browser.allowsStandalone());
+        assertFalse(browser.allowsStandalone());
 
         var db = mock(JdbcTemplate.class);
         var transactions = mock(TransactionTemplate.class);

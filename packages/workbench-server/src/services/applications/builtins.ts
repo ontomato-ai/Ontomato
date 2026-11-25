@@ -87,6 +87,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "analysis-agent"
     ],
     "scheduleAdapter": "java:agents",
+    "allowStandalone": false,
     "declaration": {
       "names": {
         "en": "Agent platform",
@@ -131,6 +132,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "domain-member"
     ],
     "scheduleAdapter": null,
+    "allowStandalone": false,
     "framePanelId": "builtin-product-platform-frame",
     "declaration": {
       "names": {
@@ -189,6 +191,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "domain-member"
     ],
     "scheduleAdapter": null,
+    "allowStandalone": false,
     "framePanelId": "builtin-product-platform-frame",
     "declaration": {
       "names": {
