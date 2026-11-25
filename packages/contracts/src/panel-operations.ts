@@ -149,14 +149,69 @@ export const panelReadOperationCallSchema = z.object({
   input: runtimeJsonObjectSchema,
 }).strict();
 
+const panelReadOperationTruncationSchema = z.object({
+  rowLimit: z.number().nullable(),
+  hint: z.string().nullable(),
+}).strict();
+
+const panelReadOperationSectionBaseShape = {
+  id: z.string().min(1).max(120),
+  label: z.string().min(1).max(200),
+  emptyText: z.string().min(1).max(300).optional(),
+};
+
+export const panelReadOperationRecordCellSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+]);
+export type PanelReadOperationRecordCell = z.infer<typeof panelReadOperationRecordCellSchema>;
+
+export const panelReadOperationRecordColumnSchema = z.object({
+  key: z.string().min(1).max(200),
+  label: z.string().min(1).max(200),
+}).strict();
+export type PanelReadOperationRecordColumn = z.infer<typeof panelReadOperationRecordColumnSchema>;
+
+/** One titled section of a multi-section read-only operation result. */
+export const panelReadOperationSectionSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...panelReadOperationSectionBaseShape,
+    kind: z.literal("records"),
+    columns: z.array(panelReadOperationRecordColumnSchema),
+    rows: z.array(z.record(z.string(), panelReadOperationRecordCellSchema)),
+  }).strict(),
+  z.object({
+    ...panelReadOperationSectionBaseShape,
+    kind: z.literal("code"),
+    language: z.string().min(1).max(60),
+    content: z.string(),
+  }).strict(),
+  z.object({
+    ...panelReadOperationSectionBaseShape,
+    kind: z.literal("json"),
+    value: runtimeJsonValueSchema,
+    truncation: panelReadOperationTruncationSchema.optional(),
+  }).strict(),
+]);
+export type PanelReadOperationSection = z.infer<typeof panelReadOperationSectionSchema>;
+
+export const panelReadOperationSectionsResultSchema = z.object({
+  kind: z.literal("sections"),
+  sections: z.array(panelReadOperationSectionSchema).nonempty(),
+}).strict();
+export type PanelReadOperationSectionsResult = z.infer<typeof panelReadOperationSectionsResultSchema>;
+
 /** The JSON success body of a read. File-producing reads send bytes with attachment headers. */
 export const panelReadOperationJsonResultSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict(),
   z.object({
     kind: z.literal("json"),
     value: runtimeJsonValueSchema,
-    truncation: z.object({ rowLimit: z.number().nullable(), hint: z.string().nullable() }).strict().optional(),
+    truncation: panelReadOperationTruncationSchema.optional(),
   }).strict(),
+  panelReadOperationSectionsResultSchema,
 ]);
 export const panelReadOperationResultSchema = z.union([panelReadOperationJsonResultSchema, panelDownloadReceiptSchema]);
 export type PanelReadOperationResult = z.infer<typeof panelReadOperationResultSchema>;

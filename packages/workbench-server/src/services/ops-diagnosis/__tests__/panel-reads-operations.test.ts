@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import AdmZip from "adm-zip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as panelCheck from "@ontomato/contracts/panel-check";
+import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
+import { panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import {
   AUTOTEST_CASE_ARTIFACT,
   AUTOTEST_RUN,
@@ -12,6 +15,8 @@ import {
   DOWNLOAD_AUTOTEST_CASE_ARTIFACT,
   DOWNLOAD_AUTOTEST_RUN,
   DOWNLOAD_TURN_EVIDENCE,
+  DSL_QUERY,
+  EXECUTE_DSL_QUERY,
   KEEP_AUTOTEST_RUN,
   KEEP_TURN_EVIDENCE,
   OPS_KNOWLEDGE,
@@ -25,13 +30,17 @@ import { HttpError } from "../../../utils/errors";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
 import { panelServerOperation, type PanelOperationHost, type PanelReadServerOperation, type PanelWriteServerOperation } from "../../product-panels/server-operations";
+import { platformTypeEntries } from "../../product-panels/type-table";
 import {
   createAutotestCaseArtifactReadAdapter,
   createAutotestRunReadAdapter,
+  createDslQueryReadAdapter,
   createOpsKnowledgeReadAdapter,
   createTurnEvidenceReadAdapter,
+  DEFAULT_DSL_QUERY_TEXT,
   encodeAutotestCaseArtifactKey,
 } from "../panel-reads";
+import { registerDslResultSectionProvider } from "../panel-operations";
 
 configureI18n({
   defaultLocale: "en",
@@ -48,6 +57,7 @@ const mocks = vi.hoisted(() => ({
   keptArtifacts: new Set<string>(),
   verifyDomain: vi.fn(async () => {}),
   buildTurnWorkspace: vi.fn(),
+  executeDslViaBackend: vi.fn(),
   activeRun: null as { runId: string } | null,
 }));
 
@@ -115,6 +125,10 @@ vi.mock("../../../platform/diagnosis/observe/workspaces/assistant-source", () =>
 
 vi.mock("../../../platform/diagnosis/observe/workspaces/builder", () => ({
   buildTurnWorkspace: mocks.buildTurnWorkspace,
+}));
+
+vi.mock("../../data-query/dsl-executor", () => ({
+  executeDslViaBackend: mocks.executeDslViaBackend,
 }));
 
 function makeHost(domainId = "domain-a", locale = "en"): PanelOperationHost {
@@ -348,5 +362,166 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     expect(await deleteRunOp.unavailable?.(host, runTarget)).toBeUndefined();
     expect(await deleteRunOp.execute(host, runTarget, {}, "r3")).toMatchObject({ kind: "success" });
     expect((await runAdapter.list()).length).toBe(0);
+  });
+
+  it("reads the DSL draft form and executes dslQuery.execute with default 2 sections and provider-inserted middle sections", async () => {
+    const adapter = createDslQueryReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
+    const form = panelFormDescriptionSchema.parse(await adapter.form());
+    expect(form.values).toEqual({ dsl: DEFAULT_DSL_QUERY_TEXT });
+    expect(form.fields).toHaveLength(1);
+    expect(form.fields[0]).toMatchObject({
+      path: "/dsl",
+      control: { kind: "code", language: "json" },
+      valueSchema: { type: "string" },
+      defaultValue: DEFAULT_DSL_QUERY_TEXT,
+    });
+
+    const executeOp = objectRead(EXECUTE_DSL_QUERY);
+    expect(executeOp.targetType).toBe(DSL_QUERY);
+    expect(executeOp.target).toEqual({ source: "draft" });
+    const host = makeHost("domain-a", "en");
+
+    // Invalid JSON draft is rejected with 422.
+    await expect(
+      executeOp.execute(host, { target: { kind: "draft" }, input: { draft: { dsl: "{invalid" }, parameters: {} } }),
+    ).rejects.toMatchObject({ status: 422, code: "INVALID_DSL_QUERY" });
+
+    // Backend failure is surfaced as HttpError.
+    mocks.executeDslViaBackend.mockResolvedValueOnce({
+      ok: false,
+      executeUrl: "http://backend/dsl/executeV1",
+      status: 503,
+      detail: "Backend down",
+    });
+    await expect(
+      executeOp.execute(host, { target: { kind: "draft" }, input: { draft: { dsl: DEFAULT_DSL_QUERY_TEXT }, parameters: {} } }),
+    ).rejects.toMatchObject({ status: 503, code: "DSL_EXECUTION_FAILED" });
+
+    // Default response returns 2 sections: records table followed by raw JSON.
+    const backendPayload = {
+      success: true,
+      data: {
+        data: [
+          {
+            problem: "List servers",
+            answer: [
+              { id: "s1", count: 3, active: true, meta: { region: "east" } },
+              { id: "s2", count: 0, active: false, meta: null },
+            ],
+            generatedQuery: "db.servers.find({})",
+          },
+        ],
+      },
+    };
+    mocks.executeDslViaBackend.mockResolvedValue({
+      ok: true,
+      executeUrl: "http://backend/dsl/executeV1",
+      payload: backendPayload,
+    });
+
+    const twoSections = panelReadOperationResultSchema.parse(await executeOp.execute(host, {
+      target: { kind: "draft" },
+      input: { draft: { dsl: '{"problem":"List servers","answer":{"steps":[]}}' }, parameters: {} },
+    }));
+    expect(mocks.executeDslViaBackend).toHaveBeenLastCalledWith(
+      { problem: "List servers", answer: { steps: [] } },
+      "tok",
+    );
+    expect(twoSections).toMatchObject({
+      kind: "sections",
+      sections: [
+        {
+          id: "table",
+          label: "Data table",
+          kind: "records",
+          columns: [
+            { key: "id", label: "id" },
+            { key: "count", label: "count" },
+            { key: "active", label: "active" },
+            { key: "meta", label: "meta" },
+          ],
+          rows: [
+            { id: "s1", count: 3, active: true, meta: '{"region":"east"}' },
+            { id: "s2", count: 0, active: false, meta: null },
+          ],
+        },
+        {
+          id: "raw",
+          label: "Raw response",
+          kind: "json",
+          value: backendPayload.data,
+        },
+      ],
+    });
+
+    // Registered provider inserts extra section(s) strictly between data table and raw response.
+    const unregister = registerDslResultSectionProvider(({ payload }) => {
+      const generated = (payload as { data?: Array<{ generatedQuery?: string }> })?.data?.[0]?.generatedQuery;
+      if (!generated) return null;
+      return {
+        id: "generated-query",
+        label: "Generated query",
+        kind: "code",
+        language: "javascript",
+        content: generated,
+      };
+    });
+    try {
+      const threeSections = await executeOp.execute(host, {
+        target: { kind: "draft" },
+        input: { draft: { dsl: DEFAULT_DSL_QUERY_TEXT }, parameters: {} },
+      });
+      expect(threeSections.kind).toBe("sections");
+      if (threeSections.kind === "sections") {
+        expect(threeSections.sections.map((s) => s.id)).toEqual(["table", "generated-query", "raw"]);
+        expect(threeSections.sections[1]).toEqual({
+          id: "generated-query",
+          label: "Generated query",
+          kind: "code",
+          language: "javascript",
+          content: "db.servers.find({})",
+        });
+      }
+    } finally {
+      unregister();
+    }
+
+    // Observe access is enforced on both form read and execution.
+    mocks.assertObserveAccess.mockRejectedValueOnce(new HttpError(403, "Forbidden"));
+    await expect(adapter.form()).rejects.toMatchObject({ status: 403 });
+    mocks.assertObserveAccess.mockRejectedValueOnce(new HttpError(403, "Forbidden"));
+    await expect(
+      executeOp.execute(host, { target: { kind: "draft" }, input: { draft: { dsl: DEFAULT_DSL_QUERY_TEXT }, parameters: {} } }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("validates ops-dsl-console builtin panel source with real draftReadOperationIds and 8-locale parity", async () => {
+    const repoRoot = path.resolve(__dirname, "../../../../../..");
+    const { checkBuiltinPanelSource } = await import(path.resolve(repoRoot, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs"));
+    const typeMap = platformTypeEntries();
+    const draftReadOperationIds = [...typeMap.values()].flatMap(({ operations = [] }) =>
+      operations.filter((op) => op.effect === "read" && op.target.source === "draft").map((op) => op.id),
+    );
+    expect(draftReadOperationIds).toContain(EXECUTE_DSL_QUERY);
+
+    const dir = path.resolve(repoRoot, "packages/platform-admin/resources/builtin-panels/ops-dsl-console");
+    await checkBuiltinPanelSource(dir, { ...panelCheck, draftReadOperationIds });
+
+    const mod = fs.readFileSync(path.resolve(dir, "panel.mjs"), "utf8");
+    const html = fs.readFileSync(path.resolve(dir, "panel.html"), "utf8");
+    const desc = JSON.parse(fs.readFileSync(path.resolve(dir, "panel.json"), "utf8"));
+    expect(mod).not.toContain("usePanelState");
+    expect(mod).not.toContain("context.refresh(");
+    expect(mod).not.toContain("localStorage");
+    expect(html).not.toContain("<el-");
+    expect(html).not.toContain("--el-");
+
+    const locales = ["en", "zh-CN", "zh-TW", "ja", "de", "fr", "it", "ar"];
+    const messages = desc.content.messages as Record<string, Record<string, string>>;
+    expect(Object.keys(messages).sort()).toEqual([...locales].sort());
+    const enKeys = Object.keys(messages.en!).sort();
+    for (const locale of locales) {
+      expect(Object.keys(messages[locale]!).sort()).toEqual(enKeys);
+    }
   });
 });

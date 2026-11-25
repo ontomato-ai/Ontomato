@@ -1292,6 +1292,7 @@ export default {
       "turnEvidence": "Turn evidence",
       "autotestRun": "Autotest run",
       "autotestCaseArtifact": "Test case artifact",
+      "dslQuery": "DSL query",
       "modelConnection": "Model connection",
       "modelEntry": "Configured model",
       "modelUsage": "Model usage",

@@ -1,0 +1,161 @@
+<style>
+  [v-cloak] { display: none; }
+  .ops-dsl-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--sdk-bg-color);
+    container: ops-dsl-page / inline-size;
+  }
+  .ops-dsl-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+  }
+  .ops-dsl-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-md) var(--page-gutter) var(--spacing-lg);
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: minmax(320px, 44%) minmax(0, 1fr);
+    gap: var(--spacing-md);
+    overflow: hidden;
+  }
+  .ops-dsl-pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    overflow: hidden;
+  }
+  .ops-dsl-pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--sdk-border-color-lighter, var(--ui-divider));
+    background: var(--sdk-fill-color-light);
+    flex-shrink: 0;
+  }
+  .ops-dsl-pane-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .ops-dsl-pane-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-md);
+    box-sizing: border-box;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+  .ops-dsl-form-slot {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .ops-dsl-form-slot .sdk-owner-form,
+  .ops-dsl-form-slot .sdk-owner-form-inner {
+    height: auto;
+    min-height: 100%;
+  }
+  .ops-dsl-form-slot .sdk-owner-form-body {
+    overflow: visible;
+  }
+  .ops-dsl-form-slot .code-editor {
+    min-height: 360px;
+  }
+  .ops-dsl-result-view {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    margin-block-start: 0;
+  }
+  .ops-dsl-empty {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 240px;
+  }
+  .ops-dsl-error {
+    flex-shrink: 0;
+  }
+  @container ops-dsl-page (max-width: 56rem) {
+    .ops-dsl-page {
+      height: auto;
+      min-height: 100%;
+      overflow: auto;
+    }
+    .ops-dsl-body {
+      grid-template-columns: minmax(0, 1fr);
+      overflow: visible;
+    }
+    .ops-dsl-pane {
+      min-height: 360px;
+    }
+  }
+</style>
+
+<div id="app" v-cloak class="ops-dsl-page">
+  <page-header :title="t('panel.title')" :description="t('panel.description')">
+    <template #actions>
+      <div class="ops-dsl-actions">
+        <sdk-button @click="resetDraft">{{ t("panel.reset") }}</sdk-button>
+        <sdk-button @click="clearDraft">{{ t("panel.clear") }}</sdk-button>
+        <projection slot="executeDsl" @read="onExecuteRead" @error="onExecuteError"></projection>
+      </div>
+    </template>
+  </page-header>
+
+  <div class="ops-dsl-body">
+    <section class="ops-dsl-pane ops-dsl-editor-pane">
+      <header class="ops-dsl-pane-header">
+        <h2 class="ops-dsl-pane-title">{{ t("panel.editorTitle") }}</h2>
+      </header>
+      <div class="ops-dsl-pane-body">
+        <projection slot="dslForm" class="ops-dsl-form-slot"></projection>
+      </div>
+    </section>
+
+    <section class="ops-dsl-pane ops-dsl-result-pane">
+      <header class="ops-dsl-pane-header">
+        <h2 class="ops-dsl-pane-title">{{ t("panel.resultTitle") }}</h2>
+      </header>
+      <div class="ops-dsl-pane-body">
+        <sdk-alert
+          v-if="executionError"
+          type="error"
+          :title="executionError"
+          :closable="false"
+          class="ops-dsl-error"
+        ></sdk-alert>
+        <operation-result
+          v-if="executionResult"
+          :result="executionResult"
+          class="ops-dsl-result-view"
+        ></operation-result>
+        <div v-else-if="!executionError" class="ops-dsl-empty">
+          <sdk-empty :description="t('panel.emptyResult')"></sdk-empty>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

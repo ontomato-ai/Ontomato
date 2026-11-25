@@ -10,7 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
+  AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, DSL_QUERY, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
   MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, TURN_EVIDENCE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
@@ -46,6 +46,7 @@ import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-
 import {
   createAutotestCaseArtifactReadAdapter,
   createAutotestRunReadAdapter,
+  createDslQueryReadAdapter,
   createOpsKnowledgeReadAdapter,
   createTurnEvidenceReadAdapter,
 } from "../ops-diagnosis/panel-reads";
@@ -194,6 +195,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const turnEvidence = createTurnEvidenceReadAdapter(owner, viewer);
   const autotestRun = createAutotestRunReadAdapter(owner, viewer);
   const autotestCaseArtifact = createAutotestCaseArtifactReadAdapter(owner, viewer);
+  const dslQuery = createDslQueryReadAdapter(owner, viewer);
   const externalMcp = createExternalMcpReads(owner, viewer);
   return {
     [PUBLISHED_MCP_SERVICE]: {
@@ -273,6 +275,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         selection.primaryKey!,
         panelReadParameterSchemas.opsFilePath.parse(params.path),
       ),
+    },
+    [DSL_QUERY]: {
+      form: (_selection, params) => dslQuery.form(formParams(params)),
     },
     [ACTION]: {
       count: async () => (await actions()).count(),
