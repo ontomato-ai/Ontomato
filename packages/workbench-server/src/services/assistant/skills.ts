@@ -1,7 +1,7 @@
-import { configuredAssistantSkills } from "./skill-selection";
+import { configuredAssistantSkills, isAppBuilderEntrance } from "./skill-selection";
 import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
-import { APP_BUILDER_SKILL } from "../app-builder/definition";
+import { APP_BUILDER_SKILL, isAppBuilderKind } from "../app-builder/definition";
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import path from "node:path";
 import { runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
@@ -122,6 +122,7 @@ export function effectiveAssistantSkills(
   return configuredAssistantSkills(
     { kind: agent.kind, skills: agent.skills.filter(view.hasSkill) },
     pageSkills,
+    view.pageSkills.filter(group => isAppBuilderEntrance(group.locator)).flatMap(group => group.skills),
   );
 }
 
@@ -229,7 +230,7 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
   const currentKey = currentRef ? runtimeSkillKey(currentRef) : undefined;
   if (currentKey) required.add(currentKey);
   const regular = agent.kind === "regular";
-  const optional = (ref: RuntimeSkillRef) => regular && !required.has(runtimeSkillKey(ref));
+  const optional = (ref: RuntimeSkillRef) => (regular || isAppBuilderKind(agent.kind)) && !required.has(runtimeSkillKey(ref));
   const skipped: SkippedPageSkill[] = [];
   function skip(ref: RuntimeSkillRef, failure: PageSkillFailure) {
     const page = view.admittedPageSkill(ref) ?? {

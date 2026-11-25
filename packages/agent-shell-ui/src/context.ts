@@ -12,6 +12,7 @@ import type {
 
 export interface ShellContext {
   labels: Ref<ShellLabels>;
+  workspaceId?: string | null;
   /** The host's task routes, when its conversations delegate work. */
   tasks?: ShellTaskPort;
   /** The task the reader asked to see (from the task list); its card or review opens and scrolls into view. */

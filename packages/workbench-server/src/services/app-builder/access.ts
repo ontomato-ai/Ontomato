@@ -10,7 +10,7 @@ const navigationResponseSchema = z.object({
   data: applicationCatalogSchema,
 });
 
-export async function assertAppBuilderAccess(credentials: AssistantCredentials): Promise<void> {
+export async function assertAppBuilderAccess(credentials: AssistantCredentials) {
   const api = getApiConfig();
   let applications;
   try {
@@ -32,4 +32,5 @@ export async function assertAppBuilderAccess(credentials: AssistantCredentials):
   if (!applications.some((application) => application.id === "app-builder")) {
     throw new HttpError(403, "Application access denied", "FORBIDDEN");
   }
+  return applications;
 }

@@ -62,13 +62,42 @@ export const schedulePages = (): RouteRecordRaw[] => [
 ];
 
 /**
- * 应用构建: one page at the workspace its address names, with the platform's facts the builder needs (its route page),
- * and the author's preview of that workspace's panel candidate. An edition adds what its guard reads to let a reader in
- * (the enterprise edition the application's entry permission, `app-builder`); Node lets only the workspace's author read
- * its candidate.
+ * App builder preview routes and legacy workspace URL redirects.
+ * `/app-builder` and `/app-builder/workspace` are served by the panel entry guard via
+ * `builtin-product-app-builder-workspaces` and `builtin-product-app-builder-workspace`.
  */
+const WORKSPACE_UUID_PATTERN = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+
 export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
-  { ...routes.appBuilder, component: () => import("./pages/AppBuilderRoute.vue"), meta: { workbench: true, ...meta } },
+  {
+    path: `/app-builder/:workspaceId(${WORKSPACE_UUID_PATTERN})`,
+    redirect: (to) => {
+      const workspaceId = String(to.params.workspaceId);
+      const sessionId = typeof to.query.sessionId === "string" && to.query.sessionId.trim()
+        ? to.query.sessionId
+        : null;
+      if (sessionId) {
+        return {
+          path: routes.chat.path,
+          query: {
+            sessionId,
+            page: `/app-builder/workspace?workspace=${workspaceId}`,
+          },
+        };
+      }
+      return {
+        path: "/app-builder/workspace",
+        query: { workspace: workspaceId },
+      };
+    },
+  },
+  {
+    name: "AppBuilderHostedPreview",
+    path: "/app-builder/:workspaceId/hosted-preview",
+    component: () => import("./pages/HostedPreviewRoute.vue"),
+    props: true,
+    meta: { workbench: true, ...meta },
+  },
   {
     name: "PanelCandidatePreview",
     path: "/app-builder/:workspaceId/panel-preview/:ref/:pageKey",

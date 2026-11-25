@@ -1266,3 +1266,46 @@ test("AgentChatPanel short member expands declared agent target and optional ses
     component: "AgentChatPanel", agent: "page-default", data: { rows: "list" },
   }).success, false);
 });
+
+test("read parameter named target allocates a distinct input port when member.target already uses port target", () => {
+  const diffTable = {
+    ...typeTable,
+    objectTypes: {
+      ...typeTable.objectTypes,
+      "platform:AppWorkspace": {
+        reads: {
+          diff: { source: "object" as const, parameterMode: "fixed" as const, params: { target: "workspaceDiffTarget" as const }, result: "panelRecord" as const },
+        },
+        operations: [],
+      },
+    },
+  };
+  const diffState = panelManifestSchema.parse({
+    state: {
+      workspace: { type: { kind: "object", objectType: "platform:AppWorkspace" } },
+      diffTarget: { type: { kind: "scalar", type: "string" } },
+    },
+    members: {},
+  }).state;
+  const member = panelAuthoringMemberSchema.parse({
+    component: "ObjectSummary",
+    type: "platform:AppWorkspace",
+    target: "workspace",
+    data: { record: { read: "diff", params: { target: { state: "diffTarget" } } } },
+  });
+  assert("component" in member);
+  const expanded = expandPanelAuthoringMember("diffSummary", member, {
+    state: diffState,
+    components: [...components, buildComponent("ObjectSummary", { data: { record: { results: ["panelRecord"], required: true } } })],
+    typeTable: diffTable,
+  });
+  assert.deepEqual(expanded.projection.data.record, {
+    source: { object: { input: "target" } },
+    read: "diff",
+    params: { target: { input: "diffTarget" } },
+  });
+  assert.deepEqual(expanded.placement.inputs, {
+    target: { state: "workspace" },
+    diffTarget: { state: "diffTarget" },
+  });
+});

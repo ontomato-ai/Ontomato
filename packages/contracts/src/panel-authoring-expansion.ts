@@ -267,12 +267,19 @@ export function expandPanelAuthoringMember(
         return [param, supplied] as const;
       }
       if ("fromSlot" in supplied) {
-        inputTypes.set(param, parameterPortType(parameterId));
-        return [param, { input: param }] as const;
+        const port = inputTypes.has(param) ? `${name}_${param}` : param;
+        inputTypes.set(port, parameterPortType(parameterId));
+        return [param, { input: port }] as const;
       }
       if (!panelReadInputMatches(parameterId, stateInputType(supplied, paramPath)))
         fail(paramPath, `State '${supplied.state}' has an incompatible type for '${parameterId}'`);
-      return [param, bindMemberInput(param, supplied, paramPath)] as const;
+      const existing = inputBindings.get(param);
+      const port = existing && !sameBinding(existing, supplied)
+        ? (!inputBindings.has(supplied.state) || sameBinding(inputBindings.get(supplied.state)!, supplied)
+            ? supplied.state
+            : `${name}_${param}`)
+        : param;
+      return [param, bindMemberInput(port, supplied, paramPath)] as const;
     }));
     const [missing] = missingRequiredReadParameters(declaration, params, datum.runtimeParams);
     if (missing !== undefined) fail(`${path}.params.${missing}`, "Required parameter has no binding or component runtime source");

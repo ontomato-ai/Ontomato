@@ -1,9 +1,10 @@
+import { workspaceIdSchema, workspaceSchema } from "@ontomato/contracts/workspaces";
 import { requireProductGrant } from "../product-governance/grants";
 import { closeGovernanceWindow } from "./governance";
 import { closeAuthoringRun } from "./authoring";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
-import { resolveLocale } from "../../i18n";
+import { tForLocale, resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { ChannelProcessClient } from "../agent-host/process";
 import { agentExecutionCredentials, executionActor } from "./execution";
@@ -81,16 +82,28 @@ export const assistantService = {
   agents: listAssistantAgents,
   /** Scheduled tasks start their conversations here too, marked with their origin. */
   async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, credentials: AssistantCredentials, origin: SessionRow["origin"] = "user") {
-    await this.admitAgent(input.agentId, owner, credentials);
+    const { agent } = await this.admitAgent(input.agentId, owner, credentials);
+    const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId);
+    const builder = isAppBuilderKind(agent.kind);
+    if (builder && input.workspaceId) {
+      await runtime.request(`/v1/workspaces/${workspaceIdSchema.parse(input.workspaceId)}`);
+    }
+    const createWorkspace = builder && input.workspaceId === undefined
+      ? async () => workspaceSchema.parse(await runtime.request("/v1/workspaces", "POST", {
+        name: tForLocale(credentials.locale, "panels.appWorkspace.defaultName"),
+      })).id
+      : undefined;
     const { row, replayed } = await assistantStore.create(
       id,
       owner,
       input.agentId,
       origin,
       input.workspaceId,
+      false,
+      createWorkspace,
     );
     try {
-      await new RuntimeClient(owner.domainId, undefined, owner.userId).createSession(id, input.workspaceId);
+      await runtime.createSession(id, row.workspace_id ?? undefined);
     } catch (e) {
       if (e instanceof HttpError && e.status === 410) {
         await db().query(
@@ -101,7 +114,7 @@ export const assistantService = {
       }
       throw e;
     }
-    const latestRun = (await new RuntimeClient(owner.domainId, undefined, owner.userId).session(id))
+    const latestRun = (await runtime.session(id))
       .latestRun;
     return { session: sessionView(row, latestRun?.run ?? null), replayed };
   },
@@ -292,7 +305,7 @@ export const assistantService = {
     // both reads and writes inherit that user's permissions. `execution_user_id` is only for unattended automation.
     const executionUserId = isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
     const executionCredentials = await agentExecutionCredentials(a.id, executionUserId, owner, credentials);
-    const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid(), variables: z.record(z.unknown()).optional() }).strict().safeParse(body.context) : null;
+    const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid(), variables: z.record(z.unknown()).optional(), pageSkillContext: pageSkillContextSchema.optional() }).strict().safeParse(body.context) : null;
     if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
     const workspace = context?.success ? context.data.workspaceId : undefined;
     if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
@@ -345,7 +358,7 @@ export const assistantService = {
     const context = {
       ...(session.workspace_id ? { workspaceId: session.workspace_id } : {}),
       ...(input.variables ? { variables: input.variables } : {}),
-      ...(entry === "human" && !isAppBuilderKind(a.kind) && input.pageSkillContext
+      ...(entry === "human" && input.pageSkillContext
         ? { pageSkillContext: input.pageSkillContext } : {}),
     };
     const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(

@@ -59,6 +59,7 @@ function resolvePinnedBoundParams(
   binding: ProjectionOperationBinding,
   pinnedInputs: ReadonlyMap<string, unknown>,
   target?: PanelOperationTarget | null,
+  row?: PanelRecord,
 ): Record<string, unknown> {
   const boundParams: Record<string, unknown> = {};
   for (const [paramKey, paramBinding] of Object.entries(binding.params ?? {})) {
@@ -68,6 +69,14 @@ function resolvePinnedBoundParams(
     }
     if ("input" in paramBinding && pinnedInputs.has(paramBinding.input)) {
       boundParams[paramKey] = pinnedInputs.get(paramBinding.input);
+      continue;
+    }
+    if (row && "row" in paramBinding) {
+      boundParams[paramKey] = row[paramBinding.row];
+      continue;
+    }
+    if (row && "rowField" in paramBinding) {
+      boundParams[paramKey] = row.fields[paramBinding.rowField];
       continue;
     }
     if (
@@ -285,7 +294,13 @@ async function resolveAdmittedOperationUnavailable(
     return selected !== undefined ? result.handler.unavailable?.(operationHost(actor), selected) : undefined;
   }
   if (result.selected?.kind === "object" || (result.selected === null && bound.binding.target === undefined)) {
-    return result.handler.unavailable?.(operationHost(actor), result.selected);
+    const host = operationHost(actor);
+    const handler = result.handler;
+    if (handler.unavailableForInput) {
+      const known = new Map([...Object.entries(inputs), ...pinnedInputs]);
+      return handler.unavailableForInput(host, result.selected, resolvePinnedBoundParams(bound.binding, known, result.selected));
+    }
+    return handler.unavailable?.(host, result.selected);
   }
   const targetInput = bound.binding.target && "input" in bound.binding.target ? bound.binding.target.input : undefined;
   if (targetInput === undefined || (!result.handler.unavailableBatch && !result.handler.unavailable)) {
@@ -412,12 +427,13 @@ export async function describeRowOperationsForRows(
         || operationAcceptsTargetType(target.objectType, bound.owner!.targetType, bound.owner!.declaration.targetTypes);
       return {
         rowKey: rowKeys[index]!,
+        row,
         target,
         compatible,
       };
     });
 
-    if (!handler.unavailable && !handler.unavailableBatch) {
+    if (!handler.unavailable && !handler.unavailableBatch && !handler.unavailableForInput) {
       for (const { rowKey, target, compatible } of rowEntries) {
         if (target === undefined) continue;
         (result[rowKey] ??= {})[bound.name] = { available: compatible };
@@ -425,10 +441,19 @@ export async function describeRowOperationsForRows(
       continue;
     }
 
-    const validTargets = rowEntries.filter((entry): entry is { rowKey: string; target: PanelRecordTarget; compatible: boolean } =>
+    const validTargets = rowEntries.filter((entry): entry is { rowKey: string; row: PanelRecord; target: PanelRecordTarget; compatible: boolean } =>
       entry.compatible && entry.target !== undefined && entry.target !== null);
 
-    const reasonsByRowKey = await resolveBatchUnavailableReasons(host, handler, validTargets);
+    const inputReasons = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
+    const inspectInput = handler.unavailableForInput;
+    if (inspectInput) {
+      const known = new Map(Object.entries(inputs));
+      await runWithConcurrency(validTargets, ROW_AVAILABILITY_CONCURRENCY, async ({ rowKey, target, row }) => {
+        const params = resolvePinnedBoundParams(bound.binding, known, target, row);
+        inputReasons.set(rowKey, await inspectInput(host, target, params));
+      });
+    }
+    const reasonsByRowKey = inspectInput ? inputReasons : await resolveBatchUnavailableReasons(host, handler, validTargets);
     for (const { rowKey, target, compatible } of rowEntries) {
       if (target === undefined) continue;
       if (!compatible) {

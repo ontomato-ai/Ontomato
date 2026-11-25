@@ -1,0 +1,1018 @@
+{
+  "manifest": {
+    "state": {
+      "workspace": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AppWorkspace"
+        },
+        "deepLink": true
+      },
+      "tab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "files"
+      },
+      "filePath": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "fileSearch": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "diffTarget": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "latest"
+      },
+      "renaming": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false
+      },
+      "publishing": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false
+      },
+      "sessionsOpen": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false
+      }
+    },
+    "members": {
+      "detailHeader": {
+        "component": "ObjectHeader",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitleField": "shortHeadCommit",
+          "statusField": "busyLabel"
+        },
+        "name": "Workspace header",
+        "description": "Displays the workspace title, current commit, run status badge, and read-only record outputs.",
+        "id": "builtin-product-680fc965-8e9e-4027-b912-8a1f4f056b0b"
+      },
+      "conversationEntry": {
+        "component": "ConversationEntry",
+        "agent": "page-default",
+        "prefillKey": "panel.buildPrefill",
+        "config": {
+          "type": "primary",
+          "labelKey": "action.chat"
+        },
+        "name": "Chat with builder agent",
+        "description": "Expand the page composer to collaborate with the App Builder agent on this workspace.",
+        "id": "builtin-product-d191e385-d61b-4a44-b971-746dc8b74442"
+      },
+      "workspaceSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "shortHeadCommit",
+            "busyLabel",
+            "buildTestStatusLabel",
+            "buildTestSampleName",
+            "publishedAppName",
+            "updatedAt"
+          ]
+        },
+        "name": "Workspace status summary",
+        "description": "Displays current commit, workspace status, business test data status, published application, and update time.",
+        "id": "builtin-product-895dc722-748f-4431-8169-0847c47eb35f"
+      },
+      "restartBuildTest": {
+        "component": "OperationButton",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "operation": "appWorkspaces.restartBuildTest",
+        "config": {
+          "type": "default",
+          "size": "small",
+          "hideWhenUnavailable": true
+        },
+        "name": "Restart business test",
+        "description": "Restart an ended or expired business test sample for this workspace.",
+        "id": "builtin-product-4f49e14d-0d25-4298-b983-0784f536b81b"
+      },
+      "fileTree": {
+        "component": "ObjectTree",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "files": "files"
+        },
+        "state": {
+          "selected": "filePath",
+          "search": "fileSearch"
+        },
+        "config": {
+          "fallbackToFirst": true,
+          "searchable": true,
+          "searchPlaceholder": "files.searchPlaceholder",
+          "label": "files.treeTitle",
+          "emptyText": "files.empty",
+          "noMatchText": "files.noMatch"
+        },
+        "name": "Workspace files",
+        "description": "Searchable directory tree of files in the workspace.",
+        "id": "builtin-product-d47db9de-985c-4d50-a81b-e3e53f17ac3a"
+      },
+      "fileNonTextNotice": {
+        "component": "InfoBanner",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "record": {
+            "read": "file",
+            "params": {
+              "path": {
+                "state": "filePath"
+              }
+            }
+          }
+        },
+        "config": {
+          "field": "nonTextNotice",
+          "tone": "info",
+          "compact": true,
+          "hideWhenEmpty": true
+        },
+        "name": "Non-text file notice",
+        "description": "Displays an informational notice when the selected workspace file is not a text file.",
+        "id": "builtin-product-cc342087-4db1-4a77-abf0-f1546f0fcae5"
+      },
+      "fileViewer": {
+        "component": "ObjectTextReader",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "record": {
+            "read": "file",
+            "params": {
+              "path": {
+                "state": "filePath"
+              }
+            }
+          }
+        },
+        "state": {
+          "activePath": "filePath"
+        },
+        "config": {
+          "format": "auto",
+          "textField": "content",
+          "pathField": "path",
+          "emptyText": "files.selectHint"
+        },
+        "name": "Workspace file viewer",
+        "description": "Read-only viewer for the selected workspace file.",
+        "id": "builtin-product-c8954744-c267-4e14-a065-d3f7844b9ec3"
+      },
+      "diffSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "record": {
+            "read": "diff",
+            "params": {
+              "target": {
+                "state": "diffTarget"
+              }
+            }
+          }
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "targetLabel",
+            "comparisonLabel"
+          ]
+        },
+        "name": "Diff comparison summary",
+        "description": "Shows the diff target and baseline commit being compared.",
+        "id": "builtin-product-72dc4644-dc30-4618-92ec-e1e2afccb7f4"
+      },
+      "diffViewer": {
+        "component": "ObjectTextReader",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "record": {
+            "read": "diff",
+            "params": {
+              "target": {
+                "state": "diffTarget"
+              }
+            }
+          }
+        },
+        "config": {
+          "format": "diff",
+          "textField": "content",
+          "emptyText": "changes.empty"
+        },
+        "name": "Workspace diff viewer",
+        "description": "Unified patch diff viewer for uncommitted changes or any workspace commit.",
+        "id": "builtin-product-dbf4ad21-364d-47f0-a7dd-6dd030c76c54"
+      },
+      "commitsList": {
+        "component": "ObjectList",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "rows": "commits"
+        },
+        "operations": {
+          "restoreCommit": {
+            "operation": "appWorkspaces.restoreCommit",
+            "target": {
+              "state": "workspace"
+            },
+            "params": {
+              "commit": {
+                "row": "primaryKey"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "history.empty",
+          "columns": [
+            {
+              "key": "message",
+              "labelKey": "history.colMessage",
+              "minWidth": 220,
+              "wrap": true
+            },
+            {
+              "key": "shortId",
+              "labelKey": "history.colCommit",
+              "width": 110
+            },
+            {
+              "key": "isHead",
+              "labelKey": "history.colStatus",
+              "kind": "tag",
+              "width": 110,
+              "valueMap": {
+                "true": {
+                  "labelKey": "history.current",
+                  "tone": "success"
+                },
+                "false": {
+                  "labelKey": "history.historical",
+                  "tone": "default"
+                }
+              }
+            },
+            {
+              "key": "createdAt",
+              "labelKey": "history.colCreatedAt",
+              "kind": "time",
+              "width": 160
+            }
+          ],
+          "rowActions": {
+            "labelKey": "table.actions",
+            "maxVisible": 2,
+            "items": [
+              {
+                "kind": "local",
+                "id": "diff",
+                "labelKey": "history.viewChanges"
+              },
+              {
+                "kind": "operation",
+                "operation": "restoreCommit",
+                "labelKey": "history.restore"
+              }
+            ]
+          }
+        },
+        "name": "Commit history",
+        "description": "Lists workspace commits with diff inspection and version restore actions.",
+        "id": "builtin-product-790cff52-d843-4043-a0fd-5e5effe9069d"
+      },
+      "releasesList": {
+        "component": "ObjectList",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "rows": "releases"
+        },
+        "operations": {
+          "rollbackRelease": {
+            "operation": "appWorkspaces.rollbackRelease",
+            "target": {
+              "state": "workspace"
+            },
+            "params": {
+              "releaseId": {
+                "row": "primaryKey"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "emptyText": "releases.empty",
+          "columns": [
+            {
+              "key": "commitMessage",
+              "labelKey": "releases.colMessage",
+              "minWidth": 220,
+              "wrap": true
+            },
+            {
+              "key": "shortCommit",
+              "labelKey": "releases.colCommit",
+              "width": 110
+            },
+            {
+              "key": "isCurrent",
+              "labelKey": "releases.colStatus",
+              "kind": "tag",
+              "width": 110,
+              "valueMap": {
+                "true": {
+                  "labelKey": "releases.current",
+                  "tone": "success"
+                },
+                "false": {
+                  "labelKey": "releases.previous",
+                  "tone": "default"
+                }
+              }
+            },
+            {
+              "key": "createdAt",
+              "labelKey": "releases.colCreatedAt",
+              "kind": "time",
+              "width": 160
+            }
+          ],
+          "rowActions": {
+            "labelKey": "table.actions",
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "rollbackRelease",
+                "labelKey": "releases.rollback"
+              }
+            ]
+          }
+        },
+        "name": "Release history",
+        "description": "Lists published releases of this workspace with rollback actions.",
+        "id": "builtin-product-16cd1659-f34b-4224-a713-5edcd6ca8520"
+      },
+      "renameForm": {
+        "component": "ObjectForm",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "form": "form"
+        },
+        "operation": "appWorkspaces.save",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "Rename workspace form",
+        "description": "Form to rename the current workspace.",
+        "id": "builtin-product-69142e8c-851b-4e74-b5b0-1d9d2e6b161a"
+      },
+      "publishForm": {
+        "component": "ObjectForm",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "form": "publishForm"
+        },
+        "operation": "appWorkspaces.publish",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "Publish application form",
+        "description": "Form to publish a workspace commit as an application release.",
+        "id": "builtin-product-89c67da0-b312-437c-b3a7-76c24c5beb12"
+      },
+      "sessionsList": {
+        "component": "ObjectList",
+        "type": "platform:AppWorkspace",
+        "target": "workspace",
+        "data": {
+          "rows": "sessions"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "openOutput": "openPath",
+          "showChevron": true,
+          "emptyText": "sessions.empty",
+          "columns": [
+            {
+              "key": "title",
+              "labelKey": "sessions.colTitle",
+              "minWidth": 200
+            },
+            {
+              "key": "statusLabel",
+              "labelKey": "sessions.colStatus",
+              "kind": "tag",
+              "width": 120
+            },
+            {
+              "key": "updatedAt",
+              "labelKey": "sessions.colUpdatedAt",
+              "kind": "time",
+              "width": 160
+            }
+          ]
+        },
+        "name": "Linked conversations",
+        "description": "Lists AgentSession conversations linked to this workspace; click a row to open it in the Agent platform.",
+        "id": "builtin-product-ed8ce108-4f34-42e4-a08b-e2d297f672be"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.title": "App workspace",
+        "panel.buildPrefill": "Continue building this workspace",
+        "action.back": "Workspaces",
+        "action.chat": "Ask builder agent",
+        "action.candidatePreview": "Candidate preview",
+        "action.hostedPreview": "Hosted preview",
+        "action.sessions": "Conversations",
+        "action.rename": "Rename",
+        "action.refresh": "Refresh",
+        "action.openPublishedApp": "Open application",
+        "action.managePermissions": "Manage permissions",
+        "action.publishNew": "Publish new version",
+        "action.close": "Close",
+        "empty.title": "No workspace selected",
+        "empty.hint": "Choose a workspace from the App Builder directory to inspect files, changes, commits, and releases.",
+        "empty.backToList": "Go to workspaces",
+        "tabs.ariaLabel": "Workspace views",
+        "tabs.files": "Files",
+        "tabs.changes": "Changes",
+        "tabs.history": "History",
+        "tabs.releases": "Releases",
+        "files.treeTitle": "Files",
+        "files.searchPlaceholder": "Search files",
+        "files.empty": "No files in this workspace",
+        "files.noMatch": "No matching files",
+        "files.selectHint": "Select a file from the tree to view its contents",
+        "files.backToTree": "Back to files",
+        "files.readOnlyNotice": "Read-only — files are edited through conversations with the builder agent.",
+        "changes.working": "Uncommitted",
+        "changes.latest": "Latest commit",
+        "changes.customCommit": "Viewing commit {commit}",
+        "changes.empty": "No file changes",
+        "history.empty": "No commits yet",
+        "history.colMessage": "Commit message",
+        "history.colCommit": "Commit",
+        "history.colStatus": "Status",
+        "history.colCreatedAt": "Created",
+        "history.current": "Current",
+        "history.historical": "Previous",
+        "history.viewChanges": "View changes",
+        "history.restore": "Restore",
+        "releases.statusPublished": "Published as {name}",
+        "releases.statusUnpublished": "Not published yet",
+        "releases.empty": "No releases yet",
+        "releases.colMessage": "Commit message",
+        "releases.colCommit": "Commit",
+        "releases.colStatus": "Status",
+        "releases.colCreatedAt": "Published",
+        "releases.current": "Live",
+        "releases.previous": "Previous",
+        "releases.rollback": "Roll back",
+        "table.actions": "Actions",
+        "dialog.renameTitle": "Rename workspace",
+        "dialog.publishTitle": "Publish application",
+        "drawer.sessionsTitle": "Linked conversations",
+        "drawer.sessionsHint": "Click a conversation to open it in the Agent platform beside this workspace.",
+        "sessions.empty": "No conversations linked to this workspace yet",
+        "sessions.colTitle": "Conversation",
+        "sessions.colStatus": "Status",
+        "sessions.colUpdatedAt": "Updated",
+        "notify.renamed": "Workspace renamed",
+        "notify.published": "New release published",
+        "notify.restored": "Workspace restored to selected commit",
+        "notify.rolledBack": "Published application rolled back",
+        "notify.testRestarted": "Business test restarted"
+      },
+      "zh-CN": {
+        "panel.title": "应用工作区",
+        "panel.buildPrefill": "继续构建当前应用工作区",
+        "action.back": "返回工作区列表",
+        "action.chat": "与应用构建智能体对话",
+        "action.candidatePreview": "候选预览",
+        "action.hostedPreview": "托管预览",
+        "action.sessions": "关联会话",
+        "action.rename": "重命名",
+        "action.refresh": "刷新",
+        "action.openPublishedApp": "打开应用",
+        "action.managePermissions": "权限管理",
+        "action.publishNew": "发布新版本",
+        "action.close": "关闭",
+        "empty.title": "未选择工作区",
+        "empty.hint": "请先从应用构建目录选择一个工作区，再查看代码文件、变更、提交历史与发布记录。",
+        "empty.backToList": "返回工作区列表",
+        "tabs.ariaLabel": "工作区视图",
+        "tabs.files": "文件与代码",
+        "tabs.changes": "变更对比",
+        "tabs.history": "提交历史",
+        "tabs.releases": "发布与记录",
+        "files.treeTitle": "工作区文件",
+        "files.searchPlaceholder": "搜索文件",
+        "files.empty": "工作区暂无文件",
+        "files.noMatch": "没有匹配的文件",
+        "files.selectHint": "从左侧文件树选择一个文件查看内容",
+        "files.backToTree": "返回文件树",
+        "files.readOnlyNotice": "只读视图——工作区代码由应用构建智能体通过对话维护。",
+        "changes.working": "未提交变更",
+        "changes.latest": "最新提交",
+        "changes.customCommit": "正在查看提交 {commit}",
+        "changes.empty": "暂无文件变更",
+        "history.empty": "暂无提交记录",
+        "history.colMessage": "提交说明",
+        "history.colCommit": "提交",
+        "history.colStatus": "状态",
+        "history.colCreatedAt": "时间",
+        "history.current": "当前版本",
+        "history.historical": "历史版本",
+        "history.viewChanges": "查看变更",
+        "history.restore": "恢复此版本",
+        "releases.statusPublished": "已发布应用：{name}",
+        "releases.statusUnpublished": "尚未发布",
+        "releases.empty": "暂无发布记录",
+        "releases.colMessage": "提交说明",
+        "releases.colCommit": "提交",
+        "releases.colStatus": "状态",
+        "releases.colCreatedAt": "发布时间",
+        "releases.current": "当前线上",
+        "releases.previous": "历史发布",
+        "releases.rollback": "回滚",
+        "table.actions": "操作",
+        "dialog.renameTitle": "重命名工作区",
+        "dialog.publishTitle": "发布新版本",
+        "drawer.sessionsTitle": "关联会话",
+        "drawer.sessionsHint": "点击任意会话，将在智能体平台中打开并联动当前工作区。",
+        "sessions.empty": "该工作区暂无关联会话",
+        "sessions.colTitle": "会话标题",
+        "sessions.colStatus": "状态",
+        "sessions.colUpdatedAt": "更新时间",
+        "notify.renamed": "已重命名工作区",
+        "notify.published": "已发布新版本",
+        "notify.restored": "已恢复到所选提交",
+        "notify.rolledBack": "已回滚发布版本",
+        "notify.testRestarted": "已重启业务测试数据"
+      },
+      "zh-TW": {
+        "panel.title": "應用工作區",
+        "panel.buildPrefill": "繼續建構目前應用工作區",
+        "action.back": "返回工作區清單",
+        "action.chat": "與應用建構智能體對話",
+        "action.candidatePreview": "候選預覽",
+        "action.hostedPreview": "託管預覽",
+        "action.sessions": "關聯會話",
+        "action.rename": "重新命名",
+        "action.refresh": "重新整理",
+        "action.openPublishedApp": "開啟應用",
+        "action.managePermissions": "權限管理",
+        "action.publishNew": "發佈新版本",
+        "action.close": "關閉",
+        "empty.title": "未選擇工作區",
+        "empty.hint": "請先從應用建構目錄選擇一個工作區，再檢視檔案、變更、提交歷史與發佈紀錄。",
+        "empty.backToList": "返回工作區清單",
+        "tabs.ariaLabel": "工作區檢視",
+        "tabs.files": "檔案與程式碼",
+        "tabs.changes": "變更對比",
+        "tabs.history": "提交歷史",
+        "tabs.releases": "發佈與紀錄",
+        "files.treeTitle": "工作區檔案",
+        "files.searchPlaceholder": "搜尋檔案",
+        "files.empty": "工作區尚無檔案",
+        "files.noMatch": "沒有符合條件的檔案",
+        "files.selectHint": "從左側檔案樹選擇一個檔案檢視內容",
+        "files.backToTree": "返回檔案樹",
+        "files.readOnlyNotice": "唯讀檢視——工作區程式碼由應用建構智能體透過對話維護。",
+        "changes.working": "未提交變更",
+        "changes.latest": "最新提交",
+        "changes.customCommit": "正在檢視提交 {commit}",
+        "changes.empty": "尚無檔案變更",
+        "history.empty": "尚無提交紀錄",
+        "history.colMessage": "提交說明",
+        "history.colCommit": "提交",
+        "history.colStatus": "狀態",
+        "history.colCreatedAt": "時間",
+        "history.current": "目前版本",
+        "history.historical": "歷史版本",
+        "history.viewChanges": "檢視變更",
+        "history.restore": "還原此版本",
+        "releases.statusPublished": "已發佈應用：{name}",
+        "releases.statusUnpublished": "尚未發佈",
+        "releases.empty": "尚無發佈紀錄",
+        "releases.colMessage": "提交說明",
+        "releases.colCommit": "提交",
+        "releases.colStatus": "狀態",
+        "releases.colCreatedAt": "發佈時間",
+        "releases.current": "目前線上",
+        "releases.previous": "歷史發佈",
+        "releases.rollback": "回滾",
+        "table.actions": "操作",
+        "dialog.renameTitle": "重新命名工作區",
+        "dialog.publishTitle": "發佈新版本",
+        "drawer.sessionsTitle": "關聯會話",
+        "drawer.sessionsHint": "點擊任意會話，將在智能體平台中開啟並連動目前工作區。",
+        "sessions.empty": "該工作區尚無關聯會話",
+        "sessions.colTitle": "會話標題",
+        "sessions.colStatus": "狀態",
+        "sessions.colUpdatedAt": "更新時間",
+        "notify.renamed": "已重新命名工作區",
+        "notify.published": "已發佈新版本",
+        "notify.restored": "已還原至所選提交",
+        "notify.rolledBack": "已回滾發佈版本",
+        "notify.testRestarted": "已重新啟動業務測試資料"
+      },
+      "ja": {
+        "panel.title": "アプリワークスペース",
+        "panel.buildPrefill": "このワークスペースの構築を続ける",
+        "action.back": "ワークスペース一覧",
+        "action.chat": "ビルダーと会話",
+        "action.candidatePreview": "候補プレビュー",
+        "action.hostedPreview": "ホストプレビュー",
+        "action.sessions": "関連会話",
+        "action.rename": "名前を変更",
+        "action.refresh": "更新",
+        "action.openPublishedApp": "アプリを開く",
+        "action.managePermissions": "権限管理",
+        "action.publishNew": "新バージョンを公開",
+        "action.close": "閉じる",
+        "empty.title": "ワークスペースが未選択です",
+        "empty.hint": "アプリビルダー一覧からワークスペースを選択して、ファイル・差分・履歴・公開を確認してください。",
+        "empty.backToList": "ワークスペース一覧へ",
+        "tabs.ariaLabel": "ワークスペースビュー",
+        "tabs.files": "ファイル",
+        "tabs.changes": "変更差分",
+        "tabs.history": "コミット履歴",
+        "tabs.releases": "公開と履歴",
+        "files.treeTitle": "ファイル",
+        "files.searchPlaceholder": "ファイルを検索",
+        "files.empty": "ワークスペースにファイルがありません",
+        "files.noMatch": "一致するファイルがありません",
+        "files.selectHint": "左のツリーからファイルを選択して内容を確認してください",
+        "files.backToTree": "ファイル一覧に戻る",
+        "files.readOnlyNotice": "読み取り専用 — ファイルはビルダーエージェントとの会話で更新されます。",
+        "changes.working": "未コミット変更",
+        "changes.latest": "最新コミット",
+        "changes.customCommit": "コミット {commit} を表示中",
+        "changes.empty": "変更されたファイルはありません",
+        "history.empty": "コミットはまだありません",
+        "history.colMessage": "コミットメッセージ",
+        "history.colCommit": "コミット",
+        "history.colStatus": "状態",
+        "history.colCreatedAt": "作成日時",
+        "history.current": "現在",
+        "history.historical": "履歴",
+        "history.viewChanges": "変更を見る",
+        "history.restore": "この版を復元",
+        "releases.statusPublished": "公開アプリ：{name}",
+        "releases.statusUnpublished": "未公開",
+        "releases.empty": "公開履歴はまだありません",
+        "releases.colMessage": "コミットメッセージ",
+        "releases.colCommit": "コミット",
+        "releases.colStatus": "状態",
+        "releases.colCreatedAt": "公開日時",
+        "releases.current": "稼働中",
+        "releases.previous": "過去版",
+        "releases.rollback": "ロールバック",
+        "table.actions": "操作",
+        "dialog.renameTitle": "ワークスペース名を変更",
+        "dialog.publishTitle": "新バージョンを公開",
+        "drawer.sessionsTitle": "関連会話",
+        "drawer.sessionsHint": "会話をクリックするとエージェントプラットフォームでこのワークスペースと連動して開きます。",
+        "sessions.empty": "このワークスペースに紐づく会話はまだありません",
+        "sessions.colTitle": "会話",
+        "sessions.colStatus": "状態",
+        "sessions.colUpdatedAt": "更新日時",
+        "notify.renamed": "ワークスペース名を変更しました",
+        "notify.published": "新しいバージョンを公開しました",
+        "notify.restored": "選択したコミットに復元しました",
+        "notify.rolledBack": "公開バージョンをロールバックしました",
+        "notify.testRestarted": "テストデータを再起動しました"
+      },
+      "de": {
+        "panel.title": "App-Arbeitsbereich",
+        "panel.buildPrefill": "Diesen Arbeitsbereich weiterentwickeln",
+        "action.back": "Arbeitsbereiche",
+        "action.chat": "Mit Builder-Agent chatten",
+        "action.candidatePreview": "Kandidaten-Vorschau",
+        "action.hostedPreview": "Gehostete Vorschau",
+        "action.sessions": "Unterhaltungen",
+        "action.rename": "Umbenennen",
+        "action.refresh": "Aktualisieren",
+        "action.openPublishedApp": "App öffnen",
+        "action.managePermissions": "Berechtigungen",
+        "action.publishNew": "Neue Version veröffentlichen",
+        "action.close": "Schließen",
+        "empty.title": "Kein Arbeitsbereich ausgewählt",
+        "empty.hint": "Wählen Sie einen Arbeitsbereich aus der Übersicht, um Dateien, Änderungen, Commits und Releases anzuzeigen.",
+        "empty.backToList": "Zu den Arbeitsbereichen",
+        "tabs.ariaLabel": "Arbeitsbereich-Ansichten",
+        "tabs.files": "Dateien",
+        "tabs.changes": "Änderungen",
+        "tabs.history": "Verlauf",
+        "tabs.releases": "Releases",
+        "files.treeTitle": "Dateien",
+        "files.searchPlaceholder": "Dateien suchen",
+        "files.empty": "Keine Dateien in diesem Arbeitsbereich",
+        "files.noMatch": "Keine passenden Dateien",
+        "files.selectHint": "Wählen Sie links eine Datei aus, um ihren Inhalt anzuzeigen",
+        "files.backToTree": "Zurück zu den Dateien",
+        "files.readOnlyNotice": "Schreibgeschützt — Dateien werden über Unterhaltungen mit dem Builder-Agenten gepflegt.",
+        "changes.working": "Uncommittet",
+        "changes.latest": "Letzter Commit",
+        "changes.customCommit": "Commit {commit}",
+        "changes.empty": "Keine Dateiänderungen",
+        "history.empty": "Noch keine Commits",
+        "history.colMessage": "Commit-Nachricht",
+        "history.colCommit": "Commit",
+        "history.colStatus": "Status",
+        "history.colCreatedAt": "Erstellt",
+        "history.current": "Aktuell",
+        "history.historical": "Früher",
+        "history.viewChanges": "Änderungen ansehen",
+        "history.restore": "Wiederherstellen",
+        "releases.statusPublished": "Veröffentlicht als {name}",
+        "releases.statusUnpublished": "Noch nicht veröffentlicht",
+        "releases.empty": "Noch keine Releases",
+        "releases.colMessage": "Commit-Nachricht",
+        "releases.colCommit": "Commit",
+        "releases.colStatus": "Status",
+        "releases.colCreatedAt": "Veröffentlicht",
+        "releases.current": "Aktiv",
+        "releases.previous": "Früher",
+        "releases.rollback": "Zurücksetzen",
+        "table.actions": "Aktionen",
+        "dialog.renameTitle": "Arbeitsbereich umbenennen",
+        "dialog.publishTitle": "Anwendung veröffentlichen",
+        "drawer.sessionsTitle": "Verknüpfte Unterhaltungen",
+        "drawer.sessionsHint": "Klicken Sie auf eine Unterhaltung, um sie neben diesem Arbeitsbereich in der Agenten-Plattform zu öffnen.",
+        "sessions.empty": "Noch keine Unterhaltungen mit diesem Arbeitsbereich verknüpft",
+        "sessions.colTitle": "Unterhaltung",
+        "sessions.colStatus": "Status",
+        "sessions.colUpdatedAt": "Aktualisiert",
+        "notify.renamed": "Arbeitsbereich umbenannt",
+        "notify.published": "Neue Version veröffentlicht",
+        "notify.restored": "Arbeitsbereich auf gewählten Commit wiederhergestellt",
+        "notify.rolledBack": "Veröffentlichte Anwendung zurückgesetzt",
+        "notify.testRestarted": "Geschäftstest neu gestartet"
+      },
+      "fr": {
+        "panel.title": "Espace de travail d'application",
+        "panel.buildPrefill": "Continuer à construire cet espace de travail",
+        "action.back": "Espaces de travail",
+        "action.chat": "Discuter avec l'agent",
+        "action.candidatePreview": "Aperçu candidat",
+        "action.hostedPreview": "Aperçu hébergé",
+        "action.sessions": "Conversations",
+        "action.rename": "Renommer",
+        "action.refresh": "Actualiser",
+        "action.openPublishedApp": "Ouvrir l'application",
+        "action.managePermissions": "Gérer les droits",
+        "action.publishNew": "Publier une nouvelle version",
+        "action.close": "Fermer",
+        "empty.title": "Aucun espace de travail sélectionné",
+        "empty.hint": "Sélectionnez un espace de travail dans le répertoire pour consulter les fichiers, modifications, commits et versions.",
+        "empty.backToList": "Aller aux espaces de travail",
+        "tabs.ariaLabel": "Vues de l'espace de travail",
+        "tabs.files": "Fichiers",
+        "tabs.changes": "Modifications",
+        "tabs.history": "Historique",
+        "tabs.releases": "Publications",
+        "files.treeTitle": "Fichiers",
+        "files.searchPlaceholder": "Rechercher des fichiers",
+        "files.empty": "Aucun fichier dans cet espace de travail",
+        "files.noMatch": "Aucun fichier correspondant",
+        "files.selectHint": "Sélectionnez un fichier dans l'arborescence pour afficher son contenu",
+        "files.backToTree": "Retour aux fichiers",
+        "files.readOnlyNotice": "Lecture seule — les fichiers sont maintenus via les conversations avec l'agent constructeur.",
+        "changes.working": "Non validées",
+        "changes.latest": "Dernier commit",
+        "changes.customCommit": "Commit {commit}",
+        "changes.empty": "Aucune modification de fichier",
+        "history.empty": "Aucun commit pour le moment",
+        "history.colMessage": "Message de commit",
+        "history.colCommit": "Commit",
+        "history.colStatus": "Statut",
+        "history.colCreatedAt": "Créé le",
+        "history.current": "Actuel",
+        "history.historical": "Précédent",
+        "history.viewChanges": "Voir les changements",
+        "history.restore": "Restaurer",
+        "releases.statusPublished": "Publiée sous {name}",
+        "releases.statusUnpublished": "Pas encore publiée",
+        "releases.empty": "Aucune publication pour le moment",
+        "releases.colMessage": "Message de commit",
+        "releases.colCommit": "Commit",
+        "releases.colStatus": "Statut",
+        "releases.colCreatedAt": "Publiée le",
+        "releases.current": "En ligne",
+        "releases.previous": "Précédente",
+        "releases.rollback": "Revenir à cette version",
+        "table.actions": "Actions",
+        "dialog.renameTitle": "Renommer l'espace de travail",
+        "dialog.publishTitle": "Publier l'application",
+        "drawer.sessionsTitle": "Conversations associées",
+        "drawer.sessionsHint": "Cliquez sur une conversation pour l'ouvrir dans la plateforme d'agents à côté de cet espace de travail.",
+        "sessions.empty": "Aucune conversation associée à cet espace de travail",
+        "sessions.colTitle": "Conversation",
+        "sessions.colStatus": "Statut",
+        "sessions.colUpdatedAt": "Mis à jour",
+        "notify.renamed": "Espace de travail renommé",
+        "notify.published": "Nouvelle version publiée",
+        "notify.restored": "Espace de travail restauré sur le commit sélectionné",
+        "notify.rolledBack": "Application publiée restaurée",
+        "notify.testRestarted": "Test métier redémarré"
+      },
+      "it": {
+        "panel.title": "Area di lavoro app",
+        "panel.buildPrefill": "Continua a sviluppare questa area di lavoro",
+        "action.back": "Aree di lavoro",
+        "action.chat": "Chatta con l'agente",
+        "action.candidatePreview": "Anteprima candidato",
+        "action.hostedPreview": "Anteprima ospitata",
+        "action.sessions": "Conversazioni",
+        "action.rename": "Rinomina",
+        "action.refresh": "Aggiorna",
+        "action.openPublishedApp": "Apri app",
+        "action.managePermissions": "Gestisci permessi",
+        "action.publishNew": "Pubblica nuova versione",
+        "action.close": "Chiudi",
+        "empty.title": "Nessuna area di lavoro selezionata",
+        "empty.hint": "Seleziona un'area di lavoro dall'elenco per consultare file, modifiche, commit e rilasci.",
+        "empty.backToList": "Vai alle aree di lavoro",
+        "tabs.ariaLabel": "Viste area di lavoro",
+        "tabs.files": "File",
+        "tabs.changes": "Modifiche",
+        "tabs.history": "Cronologia",
+        "tabs.releases": "Rilasci",
+        "files.treeTitle": "File",
+        "files.searchPlaceholder": "Cerca file",
+        "files.empty": "Nessun file in questa area di lavoro",
+        "files.noMatch": "Nessun file corrispondente",
+        "files.selectHint": "Seleziona un file dall'albero per visualizzarne il contenuto",
+        "files.backToTree": "Torna ai file",
+        "files.readOnlyNotice": "Sola lettura — i file sono gestiti tramite le conversazioni con l'agente costruttore.",
+        "changes.working": "Non confermate",
+        "changes.latest": "Ultimo commit",
+        "changes.customCommit": "Commit {commit}",
+        "changes.empty": "Nessuna modifica ai file",
+        "history.empty": "Nessun commit",
+        "history.colMessage": "Messaggio di commit",
+        "history.colCommit": "Commit",
+        "history.colStatus": "Stato",
+        "history.colCreatedAt": "Creato",
+        "history.current": "Attuale",
+        "history.historical": "Precedente",
+        "history.viewChanges": "Vedi modifiche",
+        "history.restore": "Ripristina",
+        "releases.statusPublished": "Pubblicata come {name}",
+        "releases.statusUnpublished": "Non ancora pubblicata",
+        "releases.empty": "Nessun rilascio",
+        "releases.colMessage": "Messaggio di commit",
+        "releases.colCommit": "Commit",
+        "releases.colStatus": "Stato",
+        "releases.colCreatedAt": "Pubblicato",
+        "releases.current": "Attivo",
+        "releases.previous": "Precedente",
+        "releases.rollback": "Ripristina rilascio",
+        "table.actions": "Azioni",
+        "dialog.renameTitle": "Rinomina area di lavoro",
+        "dialog.publishTitle": "Pubblica applicazione",
+        "drawer.sessionsTitle": "Conversazioni collegate",
+        "drawer.sessionsHint": "Fai clic su una conversazione per aprirla nella piattaforma agenti accanto a questa area di lavoro.",
+        "sessions.empty": "Nessuna conversazione collegata a questa area di lavoro",
+        "sessions.colTitle": "Conversazione",
+        "sessions.colStatus": "Stato",
+        "sessions.colUpdatedAt": "Aggiornato",
+        "notify.renamed": "Area di lavoro rinominata",
+        "notify.published": "Nuova versione pubblicata",
+        "notify.restored": "Area di lavoro ripristinata al commit selezionato",
+        "notify.rolledBack": "Applicazione pubblicata ripristinata",
+        "notify.testRestarted": "Test aziendale riavviato"
+      },
+      "ar": {
+        "panel.title": "مساحة عمل التطبيق",
+        "panel.buildPrefill": "متابعة بناء مساحة العمل هذه",
+        "action.back": "مساحات العمل",
+        "action.chat": "محادثة وكيل البناء",
+        "action.candidatePreview": "معاينة المرشح",
+        "action.hostedPreview": "معاينة مستضافة",
+        "action.sessions": "المحادثات",
+        "action.rename": "إعادة تسمية",
+        "action.refresh": "تحديث",
+        "action.openPublishedApp": "فتح التطبيق",
+        "action.managePermissions": "إدارة الصلاحيات",
+        "action.publishNew": "نشر إصدار جديد",
+        "action.close": "إغلاق",
+        "empty.title": "لم يتم تحديد مساحة عمل",
+        "empty.hint": "اختر مساحة عمل من دليل منشئ التطبيقات لفحص الملفات والتغييرات والإيداعات والإصدارات.",
+        "empty.backToList": "العودة إلى مساحات العمل",
+        "tabs.ariaLabel": "طرق عرض مساحة العمل",
+        "tabs.files": "الملفات",
+        "tabs.changes": "التغييرات",
+        "tabs.history": "السجل",
+        "tabs.releases": "الإصدارات",
+        "files.treeTitle": "الملفات",
+        "files.searchPlaceholder": "البحث في الملفات",
+        "files.empty": "لا توجد ملفات في مساحة العمل هذه",
+        "files.noMatch": "لا توجد ملفات مطابقة",
+        "files.selectHint": "اختر ملفاً من الشجرة لعرض محتواه",
+        "files.backToTree": "العودة إلى الملفات",
+        "files.readOnlyNotice": "للقراءة فقط — تتم صيانة ملفات مساحة العمل عبر المحادثات مع وكيل البناء.",
+        "changes.working": "غير مودعة",
+        "changes.latest": "أحدث إيداع",
+        "changes.customCommit": "عرض الإيداع {commit}",
+        "changes.empty": "لا توجد تغييرات في الملفات",
+        "history.empty": "لا توجد إيداعات بعد",
+        "history.colMessage": "رسالة الإيداع",
+        "history.colCommit": "الإيداع",
+        "history.colStatus": "الحالة",
+        "history.colCreatedAt": "وقت الإنشاء",
+        "history.current": "الحالي",
+        "history.historical": "سابق",
+        "history.viewChanges": "عرض التغييرات",
+        "history.restore": "استعادة",
+        "releases.statusPublished": "منشور باسم {name}",
+        "releases.statusUnpublished": "لم يُنشر بعد",
+        "releases.empty": "لا توجد إصدارات بعد",
+        "releases.colMessage": "رسالة الإيداع",
+        "releases.colCommit": "الإيداع",
+        "releases.colStatus": "الحالة",
+        "releases.colCreatedAt": "تاريخ النشر",
+        "releases.current": "منشور حالياً",
+        "releases.previous": "سابق",
+        "releases.rollback": "تراجع",
+        "table.actions": "الإجراءات",
+        "dialog.renameTitle": "إعادة تسمية مساحة العمل",
+        "dialog.publishTitle": "نشر التطبيق",
+        "drawer.sessionsTitle": "المحادثات المرتبطة",
+        "drawer.sessionsHint": "انقر على أي محادثة لفتحها في منصة الوكلاء بجانب مساحة العمل هذه.",
+        "sessions.empty": "لا توجد محادثات مرتبطة بمساحة العمل هذه بعد",
+        "sessions.colTitle": "المحادثة",
+        "sessions.colStatus": "الحالة",
+        "sessions.colUpdatedAt": "آخر تحديث",
+        "notify.renamed": "تمت إعادة تسمية مساحة العمل",
+        "notify.published": "تم نشر إصدار جديد",
+        "notify.restored": "تمت استعادة مساحة العمل إلى الإيداع المحدد",
+        "notify.rolledBack": "تم التراجع عن الإصدار المنشور",
+        "notify.testRestarted": "تمت إعادة تشغيل اختبار الأعمال"
+      }
+    }
+  }
+}

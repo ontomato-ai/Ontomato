@@ -360,21 +360,6 @@ function executionContext(source: object) {
   return context;
 }
 
-type PageContextListener = AppHost["setPageContext"];
-const pageContextListeners = new Set<PageContextListener>();
-
-/**
- * Hears every app frame of this window say what its reader looks at (`AppHost.setPageContext`) until the returned
- * function is called; `source` tells the frames apart. A page that shows an app beside its agent listens while it is
- * open (the app builder, for its preview); with no one listening, the call has no effect.
- */
-export function subscribeAppPageContext(listener: PageContextListener) {
-  pageContextListeners.add(listener);
-  return () => {
-    pageContextListeners.delete(listener);
-  };
-}
-
 /**
  * Installs the port for the apps this shell shows in a same-origin iframe. It hands over values and calls of this page
  * load, never its Vue state: an app runs its own Vue and SDK version. The credential and the auth failure handling are
@@ -513,9 +498,7 @@ export function installAppHost(options: {
       await options.router.push({path:'/products/'+encodeURIComponent(targetId),query:{applicationId,state:JSON.stringify(state)}});
     },
     onAuthFailure: options.onAuthFailure,
-    setPageContext(source, context) {
-      for (const listener of pageContextListeners) listener(source, context);
-    },
+    setPageContext() {},
     subscribeFrameInsets(source, listener) {
       executionContext(source);
       const listeners = insetListeners.get(source) ?? new Set();
