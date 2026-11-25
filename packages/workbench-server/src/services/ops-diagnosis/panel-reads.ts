@@ -8,7 +8,7 @@ import {
   OPS_KNOWLEDGE,
   TURN_EVIDENCE,
 } from "@ontomato/contracts/platform-object-types";
-import type { PanelRecord } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormValues, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
 import { workbenchIdentity } from "../../identity/installed";
 import { parseTurnKey } from "../../logging/log-context";
@@ -750,6 +750,50 @@ export function createAutotestCaseArtifactReadAdapter(owner: ProductOwner, viewe
         fieldLabels: {
           path: tForLocale(locale, "panels.ops.fields.path"),
           size: tForLocale(locale, "panels.ops.fields.size"),
+        },
+      };
+    },
+  };
+}
+
+export const DEFAULT_DSL_QUERY_TEXT = `{
+  "problem": "",
+  "answer": {
+    "steps": []
+  }
+}`;
+
+export function createDslQueryReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  const locale = viewer.locale;
+  return {
+    async form(params?: { values?: PanelFormValues; changedField?: string | null }): Promise<PanelFormDescription> {
+      await requireObserveAccessDomain(owner, viewer);
+      const dslText = typeof params?.values?.dsl === "string" ? params.values.dsl : DEFAULT_DSL_QUERY_TEXT;
+      return {
+        values: { dsl: dslText },
+        fields: [
+          {
+            path: "/dsl",
+            label: tForLocale(locale, "panels.ops.dsl.fieldLabel"),
+            help: tForLocale(locale, "panels.ops.dsl.fieldHelp"),
+            control: { kind: "code", language: "json" },
+            valueSchema: { type: "string" },
+            defaultValue: DEFAULT_DSL_QUERY_TEXT,
+            required: true,
+            readOnly: false,
+          },
+        ],
+        errors: [],
+        save: {
+          method: "POST",
+          path: "/panel-operations/read",
+          bodySchema: {
+            type: "object",
+            properties: {
+              dsl: { type: "string" },
+            },
+            required: ["dsl"],
+          },
         },
       };
     },

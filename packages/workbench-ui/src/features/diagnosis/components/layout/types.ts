@@ -11,11 +11,3 @@ export type AutotestRunMeta = RunMeta & Partial<ArtifactRetention>;
 export interface ObserveAccount {
   readonly userName: string;
 }
-
-/**
- * Extra tabs of the DSL result area (e.g. MQL), inserted between the data table and the raw response; payload is the same
- * normalized result the original mqlText used and activeTab is the current result tab. Not provided in open source.
- */
-export interface DslTestPageSlots {
-  "result-tabs"?: (props: { payload: any; activeTab: string }) => unknown;
-}

@@ -17,3 +17,8 @@ export {
   type Locale,
   type LocalePack,
 } from "./i18n/index";
+export {
+  registerDslResultSectionProvider,
+  type DslResultSectionContext,
+  type DslResultSectionProvider,
+} from "./services/ops-diagnosis/dsl-result-sections";

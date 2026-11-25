@@ -2257,9 +2257,47 @@ test("a read-only trial carries the current draft and parameters without a write
     { kind: "json", value: [{ count: 1 }] },
     { kind: "json", value: [{ count: 1 }], truncation: { rowLimit: 20000, hint: "Narrow the range" } },
     { kind: "json", value: null, truncation: { rowLimit: null, hint: null } },
+    {
+      kind: "sections",
+      sections: [
+        {
+          id: "table",
+          label: "Records",
+          emptyText: "No rows",
+          kind: "records",
+          columns: [{ key: "id", label: "ID" }, { key: "active", label: "Active" }],
+          rows: [{ id: "r1", active: true }, { id: "r2", active: null }],
+        },
+        {
+          id: "query",
+          label: "Generated query",
+          kind: "code",
+          language: "javascript",
+          content: "db.items.find({})",
+        },
+        {
+          id: "raw",
+          label: "Raw payload",
+          kind: "json",
+          value: { count: 2 },
+          truncation: { rowLimit: 100, hint: null },
+        },
+      ],
+    },
   ]) {
     assert.deepEqual(panelReadOperationResultSchema.parse(result), result);
+    assert.deepEqual(readPanelOperationResponseSchema.parse(result), result);
     assert.equal(panelReadOperationResultSchema.safeParse({ ...result, affected: { objects: [] } }).success, false);
+  }
+  for (const invalidSectionResult of [
+    { kind: "sections", sections: [] },
+    { kind: "sections", sections: [{ id: "s1", label: "Table", kind: "records", columns: [], rows: [{ a: { nested: true } }] }] },
+    { kind: "sections", sections: [{ id: "s1", label: "Code", kind: "code", language: "", content: "x" }] },
+    { kind: "sections", sections: [{ id: "s1", label: "Unknown", kind: "html", content: "<div/>" }] },
+    { kind: "sections", sections: [{ id: "s1", label: "Json", kind: "json", value: {}, extra: 1 }] },
+    { kind: "sections", sections: [{ id: "s1", label: "Table", kind: "records", columns: [{ key: "a", label: "A", extra: 1 }], rows: [] }] },
+  ]) {
+    assert.equal(panelReadOperationResultSchema.safeParse(invalidSectionResult).success, false);
   }
   assert.equal(
     panelReadOperationResultSchema.safeParse({
