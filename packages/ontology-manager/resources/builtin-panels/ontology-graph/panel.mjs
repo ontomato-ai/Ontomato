@@ -22,16 +22,6 @@ const PRODUCT_PANEL = "platform:ProductPanel";
 const APPLICATION = "platform:Application";
 const AGENT_DEFINITION = "platform:AgentDefinition";
 
-const TECHNICAL_ERROR_PATTERN =
-  /\b(TypeError|ReferenceError|SyntaxError|RangeError|ZodError|Error:|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|fetch failed|Unexpected token|SQLSTATE|NullPointerException|IllegalStateException|Backend service unavailable|HTTP \d{3})\b|https?:\/\/|\n\s*at\s+/i;
-
-function safeReaderError(raw, fallback) {
-  if (typeof raw !== "string") return fallback;
-  const trimmed = raw.trim();
-  if (!trimmed || trimmed.length > 240 || TECHNICAL_ERROR_PATTERN.test(trimmed)) return fallback;
-  return trimmed;
-}
-
 function productAssetRoute(target) {
   const id = target?.primaryKey || target?.assetId;
   if (!id) return null;
@@ -58,7 +48,6 @@ await mountPanel({
 
     // Read-only outputs published by official projections (no raw record reads).
     const graphStatus = usePanelOutput("graph", "status");
-    const graphError = usePanelOutput("graph", "error");
     const graphPathStatus = usePanelOutput("graph", "pathStatus");
     const graphPathMessage = usePanelOutput("graph", "pathMessage");
     const graphPathHops = usePanelOutput("graph", "pathHops");
@@ -138,17 +127,11 @@ await mountPanel({
       { immediate: true },
     );
     const readError = computed(() =>
-      graphStatus.value === "error"
-        ? safeReaderError(graphError.value, t("ontologyGraph.graphReadFailedDesc"))
-        : "",
+      graphStatus.value === "error" ? t("ontologyGraph.graphReadFailedDesc") : "",
     );
     const showGraphWorkspace = computed(() => !readError.value || graphEverReady.value);
-    const safeObjectHeaderError = computed(() =>
-      safeReaderError(objectHeaderError.value, t("ontologyGraph.readFailedFallback")),
-    );
-    const safeRelationHeaderError = computed(() =>
-      safeReaderError(relationHeaderError.value, t("ontologyGraph.readFailedFallback")),
-    );
+    const safeObjectHeaderError = computed(() => t("ontologyGraph.readFailedFallback"));
+    const safeRelationHeaderError = computed(() => t("ontologyGraph.readFailedFallback"));
 
     // Mirror SDK #303 `previous` semantics: once the current target has loaded, a same-target reread failure
     // keeps the element details visible with an error banner instead of mislabelling it as deleted.

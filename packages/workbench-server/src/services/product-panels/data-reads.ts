@@ -19,7 +19,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
-import { tForLocale } from "../../i18n";
+import { tApp } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
@@ -953,35 +953,21 @@ export async function readProductPanelData(
       ...(rowOperations && { rowOperations }),
     };
   } catch (error) {
-    const safeReadFailure = tForLocale(viewer.locale, "foundation.error.apiRequestFailed");
     if (error instanceof HttpError && error.status === 403) {
-      return { status: "forbidden", reason: error.message || tForLocale(viewer.locale, "foundation.error.unauthorized") };
+      return { status: "forbidden", reason: error.message || tApp("foundation.error.unauthorized") };
     }
     if (error instanceof HttpError && error.status === 401) {
-      return { status: "error", message: tForLocale(viewer.locale, "foundation.error.unauthorized"), code: "UNAUTHENTICATED" };
+      return { status: "error", message: tApp("foundation.error.unauthorized"), code: "UNAUTHENTICATED" };
     }
     if (error instanceof HttpError && (error.code === "GRAPH_VERSION_CHANGED"
       || error.code === "NO_VISIBLE_FIELDS" || error.code === "NO_READABLE_OBJECT_KEY")) {
       return { status: "error", message: error.message, code: error.code };
     }
-    if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
-      return { status: "error", message: error.message, ...(error.code && { code: error.code }) };
-    }
-    if (error instanceof BackendUnavailableError) {
-      logger.warn("Panel data read backend unavailable", { detail: error.message });
-      return { status: "error", message: safeReadFailure, code: "BACKEND_UNAVAILABLE" };
-    }
-    if (error instanceof z.ZodError || error instanceof SyntaxError) {
-      logger.warn("Panel data read response invalid", { detail: error.message });
-      return { status: "error", message: safeReadFailure, code: "INVALID_RESPONSE" };
-    }
-    if (error instanceof HttpError) {
-      logger.error("Panel data read server error", error);
-      return { status: "error", message: safeReadFailure, code: error.code || "READ_FAILED" };
-    }
+    if (error instanceof HttpError || error instanceof BackendUnavailableError || error instanceof z.ZodError || error instanceof SyntaxError)
+      return { status: "error", message: error.message };
     if (batchCache) {
       logger.error("Panel batch item failed", error instanceof Error ? error : undefined);
-      return { status: "error", message: safeReadFailure, code: "READ_FAILED" };
+      return { status: "error", message: "Service unavailable" };
     }
     throw error;
   }

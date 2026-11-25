@@ -391,8 +391,8 @@ afterEach(() => {
 
 describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
   it("OG-08 / OG-10: wires OntologyModelGraph styling overrides and solid-background dated PNG export", async () => {
-    expect(authoringMembers.graph.component).toBe("OntologyModelGraph");
-    expect(authoringMembers.productGraph.component).toBe("ProductAssetGraph");
+    expect("component" in authoringMembers.graph && authoringMembers.graph.component).toBe("OntologyModelGraph");
+    expect("component" in authoringMembers.productGraph && authoringMembers.productGraph.component).toBe("ProductAssetGraph");
 
     const harness = mountOntologyGraph();
     const { app, element } = await harness.open();

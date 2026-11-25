@@ -824,7 +824,6 @@ describe("ObjectList #card concurrent scoped ObjectForm instances", () => {
       id: "card-list",
       ...meta,
       name: "Card list",
-      element: { kind: "PlatformObjectType", id: FUNCTION },
       componentId: "@ontomato/sdk:ObjectList",
       inputs: {},
       outputs: {},
@@ -841,7 +840,6 @@ describe("ObjectList #card concurrent scoped ObjectForm instances", () => {
       id: "card-inline-form",
       ...meta,
       name: "Card inline form",
-      element: { kind: "PlatformObjectType", id: FUNCTION },
       componentId: "@ontomato/sdk:ObjectForm",
       inputs: {
         prop: { kind: "object", objectType: FUNCTION },
@@ -930,10 +928,13 @@ describe("ObjectList #card concurrent scoped ObjectForm instances", () => {
             };
           },
         },
-        confirmOperation: async (intentId) => ({
-          kind: "dispatched",
-          intentId,
-          outcome: { kind: "success", data: {} },
+        confirmOperation: async (preparation) => ({
+          decision: "confirm",
+          response: {
+            kind: "dispatched",
+            intentId: preparation.intentId,
+            outcome: { kind: "success", data: {}, affected: { objects: [], objectTypes: [] } },
+          },
         }),
         render: (inst) =>
           h(
