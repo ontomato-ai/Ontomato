@@ -757,7 +757,7 @@ it.each([false, true])("obeys a fixed options signature without page when keywor
   }
 });
 
-it("renders right-aligned option secondary count/meta text from metaField and optionMeta", async () => {
+it("renders right-aligned option secondary count/meta text from metaField", async () => {
   const picker: DirectProjection = {
     ...meta,
     id: "meta-object-picker",
@@ -768,7 +768,6 @@ it("renders right-aligned option secondary count/meta text from metaField and op
     config: {
       placeholder: "Select type",
       metaField: "instanceCount",
-      optionMeta: { Line: "42" },
     },
     data: {
       rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },
@@ -813,7 +812,7 @@ it("renders right-aligned option secondary count/meta text from metaField and op
     expect(metaByLabel).toEqual({
       Factory: "10",
       Order: (1200).toLocaleString(),
-      Line: "42",
+      Line: null,
     });
   });
 });

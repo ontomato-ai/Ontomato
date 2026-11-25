@@ -77,7 +77,6 @@ export interface GraphNeighborFilter {
   readonly relationKind?: string | null;
   readonly direction?: NeighborDirection;
   readonly fitAfterExpand?: boolean;
-  readonly revision?: number;
 }
 
 interface NeighborPageState {
@@ -148,15 +147,7 @@ const props = withDefaults(
     showRefreshControl?: boolean;
     /** Show built-in neighbor filter popover controls when supported by the neighbors port. */
     showNeighborControls?: boolean;
-    /** Initial neighbor traversal direction filter (`both` | `outgoing` | `incoming`). */
-    neighborDirection?: NeighborDirection;
-    /** Initial neighbor target group filter (`className`). */
-    neighborTargetClass?: string | null;
-    /** Initial neighbor relation kind filter. */
-    neighborRelationKind?: string | null;
-    /** Re-fit the graph viewport after incremental neighbor expansion. */
-    fitAfterExpand?: boolean;
-    /** Batch neighbor filter configuration; updating this applies all filter criteria together. */
+    /** Applied neighbor filter configuration (`direction`, `targetClass`, `relationKind`, `fitAfterExpand`). Updating this applies the filter; unapplied edits in the toolbar popover stay internal until submitted. */
     neighborFilter?: GraphNeighborFilter | null;
     /** Page size (`limit`) used when the bound `neighbors` port supports paginated loading. */
     neighborPageSize?: number;
@@ -185,10 +176,6 @@ const props = withDefaults(
     showZoomControls: true,
     showRefreshControl: true,
     showNeighborControls: true,
-    neighborDirection: "both",
-    neighborTargetClass: null,
-    neighborRelationKind: null,
-    fitAfterExpand: false,
     neighborFilter: null,
     neighborPageSize: 50,
     maxHeight: undefined,
@@ -208,6 +195,8 @@ const emit = defineEmits<{
   "update:aggregateEdges": [value: boolean];
   /** Emitted when the edge-labels display setting changes. */
   "update:showEdgeLabels": [value: boolean];
+  /** Emitted when the applied neighbor filter changes via the graph toolbar popover. */
+  "update:neighborFilter": [value: GraphNeighborFilter];
 }>();
 
 class MemberReadForbiddenError extends Error {
@@ -551,31 +540,55 @@ const neighborPagesByNode = shallowRef<Map<string, NeighborPageState>>(new Map()
 const instancePositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 const lastNeighborVersion = ref<string | null>(null);
 
-// Draft & applied neighbor filters (batch-submitted via Apply Filters or props.neighborFilter)
-const draftNeighborDirection = ref<NeighborDirection>(props.neighborDirection);
-const appliedNeighborDirection = ref<NeighborDirection>(props.neighborDirection);
-watch(() => props.neighborDirection, (next) => {
-  draftNeighborDirection.value = next;
-  appliedNeighborDirection.value = next;
+/**
+ * Bidirectional applied neighbor filter (`neighborFilter`, `json` panel state).
+ * Changing this public state applies the filter immediately; unapplied edits inside the popover remain local draft state.
+ */
+const neighborFilterParam = useMemberParam("neighborFilter");
+
+interface NormalizedNeighborFilter {
+  readonly direction: NeighborDirection;
+  readonly targetClass: string;
+  readonly relationKind: string;
+  readonly fitAfterExpand: boolean;
+}
+
+function normalizeNeighborFilter(raw: unknown): NormalizedNeighborFilter {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { direction: "both", targetClass: "", relationKind: "", fitAfterExpand: false };
+  }
+  const record = raw as Record<string, unknown>;
+  const direction: NeighborDirection =
+    record.direction === "incoming" || record.direction === "outgoing" || record.direction === "both"
+      ? record.direction
+      : "both";
+  const targetClass = typeof record.targetClass === "string" ? record.targetClass : "";
+  const relationKind = typeof record.relationKind === "string" ? record.relationKind : "";
+  const fitAfterExpand = Boolean(record.fitAfterExpand);
+  return { direction, targetClass, relationKind, fitAfterExpand };
+}
+
+const externalNeighborFilter = computed<GraphNeighborFilter | null>(() => {
+  if (props.neighborFilter !== null && props.neighborFilter !== undefined) {
+    return props.neighborFilter;
+  }
+  const paramVal = neighborFilterParam.value.value;
+  if (paramVal && typeof paramVal === "object" && !Array.isArray(paramVal)) {
+    return paramVal as GraphNeighborFilter;
+  }
+  return null;
 });
-const draftNeighborTargetGroup = ref<string>(props.neighborTargetClass ?? "");
-const appliedNeighborTargetGroup = ref<string>(props.neighborTargetClass ?? "");
-watch(() => props.neighborTargetClass, (next) => {
-  draftNeighborTargetGroup.value = next ?? "";
-  appliedNeighborTargetGroup.value = next ?? "";
-});
-const draftNeighborRelationKind = ref<string>(props.neighborRelationKind ?? "");
-const appliedNeighborRelationKind = ref<string>(props.neighborRelationKind ?? "");
-watch(() => props.neighborRelationKind, (next) => {
-  draftNeighborRelationKind.value = next ?? "";
-  appliedNeighborRelationKind.value = next ?? "";
-});
-const draftFitAfterExpand = ref<boolean>(props.fitAfterExpand);
-const appliedFitAfterExpand = ref<boolean>(props.fitAfterExpand);
-watch(() => props.fitAfterExpand, (next) => {
-  draftFitAfterExpand.value = next;
-  appliedFitAfterExpand.value = next;
-});
+
+// Draft & applied neighbor filters (unapplied edits stay internal until submitted; applied filter syncs with `neighborFilter`)
+const initialNeighborFilter = normalizeNeighborFilter(externalNeighborFilter.value);
+const draftNeighborDirection = ref<NeighborDirection>(initialNeighborFilter.direction);
+const appliedNeighborDirection = ref<NeighborDirection>(initialNeighborFilter.direction);
+const draftNeighborTargetGroup = ref<string>(initialNeighborFilter.targetClass);
+const appliedNeighborTargetGroup = ref<string>(initialNeighborFilter.targetClass);
+const draftNeighborRelationKind = ref<string>(initialNeighborFilter.relationKind);
+const appliedNeighborRelationKind = ref<string>(initialNeighborFilter.relationKind);
+const draftFitAfterExpand = ref<boolean>(initialNeighborFilter.fitAfterExpand);
+const appliedFitAfterExpand = ref<boolean>(initialNeighborFilter.fitAfterExpand);
 const neighborFiltersDirty = computed(
   () =>
     draftNeighborDirection.value !== appliedNeighborDirection.value
@@ -1966,13 +1979,7 @@ function expandSelectedNodeAction() {
   void expandInstanceNode(activeSelectedNode.value, loadGeneration);
 }
 
-function applyNeighborFilters() {
-  appliedNeighborDirection.value = draftNeighborDirection.value;
-  appliedNeighborTargetGroup.value = draftNeighborTargetGroup.value;
-  appliedNeighborRelationKind.value = draftNeighborRelationKind.value;
-  appliedFitAfterExpand.value = draftFitAfterExpand.value;
-  neighborPopoverRef.value?.hide?.();
-  neighborPopoverVisible.value = false;
+function runFilteredNeighborReload() {
   if (activeMode.value !== "instance") return;
   const targetId = activeSelectedNodeId.value ?? focusedNodeId.value ?? rootNodeId.value;
   const node = targetId ? instanceNodes.value.get(targetId) : undefined;
@@ -1986,15 +1993,45 @@ function applyNeighborFilters() {
   );
 }
 
+function applyNeighborFilters() {
+  appliedNeighborDirection.value = draftNeighborDirection.value;
+  appliedNeighborTargetGroup.value = draftNeighborTargetGroup.value;
+  appliedNeighborRelationKind.value = draftNeighborRelationKind.value;
+  appliedFitAfterExpand.value = draftFitAfterExpand.value;
+  const nextPublic: GraphNeighborFilter = {
+    direction: appliedNeighborDirection.value,
+    targetClass: appliedNeighborTargetGroup.value || null,
+    relationKind: appliedNeighborRelationKind.value || null,
+    fitAfterExpand: appliedFitAfterExpand.value,
+  };
+  neighborFilterParam.set(nextPublic as unknown as RuntimeJsonValue);
+  emit("update:neighborFilter", nextPublic);
+  neighborPopoverRef.value?.hide?.();
+  neighborPopoverVisible.value = false;
+  runFilteredNeighborReload();
+}
+
 watch(
-  () => props.neighborFilter,
+  externalNeighborFilter,
   (next) => {
-    if (!next) return;
-    if (next.direction !== undefined) draftNeighborDirection.value = next.direction;
-    if (next.targetClass !== undefined) draftNeighborTargetGroup.value = next.targetClass ?? "";
-    if (next.relationKind !== undefined) draftNeighborRelationKind.value = next.relationKind ?? "";
-    if (next.fitAfterExpand !== undefined) draftFitAfterExpand.value = Boolean(next.fitAfterExpand);
-    applyNeighborFilters();
+    const normalized = normalizeNeighborFilter(next);
+    const queryChanged =
+      normalized.direction !== appliedNeighborDirection.value
+      || normalized.targetClass !== appliedNeighborTargetGroup.value
+      || normalized.relationKind !== appliedNeighborRelationKind.value;
+    const fitChanged = normalized.fitAfterExpand !== appliedFitAfterExpand.value;
+    if (!queryChanged && !fitChanged) return;
+    draftNeighborDirection.value = normalized.direction;
+    appliedNeighborDirection.value = normalized.direction;
+    draftNeighborTargetGroup.value = normalized.targetClass;
+    appliedNeighborTargetGroup.value = normalized.targetClass;
+    draftNeighborRelationKind.value = normalized.relationKind;
+    appliedNeighborRelationKind.value = normalized.relationKind;
+    draftFitAfterExpand.value = normalized.fitAfterExpand;
+    appliedFitAfterExpand.value = normalized.fitAfterExpand;
+    if (queryChanged) {
+      runFilteredNeighborReload();
+    }
   },
   { deep: true },
 );
