@@ -552,7 +552,7 @@ defineExpose({ refresh, truncationHint: currentTruncationHint });
 }
 
 .sdk-metric-card-group.is-surface-bare .sdk-metric-card {
-  padding: 0 var(--spacing-md, 16px) var(--spacing-md, 14px);
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
