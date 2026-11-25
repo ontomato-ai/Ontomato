@@ -59,6 +59,11 @@ Node 24+ and pnpm 9+ are required. Run `pnpm install`, then `pnpm dev`. Dependen
 always use exact versions, never `^` or `~` ranges; the root `.npmrc` sets
 `save-exact=true`, so `pnpm add` writes exact versions.
 
+The agent runtime runs in Docker with the Linux session sandbox. The default development
+image is `ghcr.io/ontomato-ai/ontomato-agent-runtime:edge`. Set `AGENT_RUNTIME_DEV_IMAGE`
+in the product root `.env` to use a compatible image. PostgreSQL and the runtime's
+configured callback endpoints must be reachable from Docker.
+
 The Node service reads the product root `.env` (the process environment takes priority)
 and writes runtime data under the product root `data/`. Manager requests go through the gateway to the data engine. The
 Java data engine and PostgreSQL are prepared separately; this entry point

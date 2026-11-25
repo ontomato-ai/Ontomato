@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { ensurePythonEnv, runtimeEnvironment, waitForRuntime } from "./dev-runtime.mjs";
+import { runtimeEnvironment, startDockerRuntime, waitForRuntime } from "./dev-runtime.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WINDOWS = process.platform === "win32";
@@ -56,16 +56,6 @@ export function configuration(mode, { root }, inherited = process.env) {
       tool = "tsx";
       args = ["watch", join(root, "apps/workbench/src/index.ts")];
       cwd = resolve(root, "apps/workbench");
-      break;
-    case "runtime":
-      env.NODE_ENV = "development";
-      tool = "tsx";
-      args = [
-        "watch",
-        join(ROOT, "apps/agent-runtime/src/index.ts"),
-        "--dev-root",
-        root,
-      ];
       break;
     case "web":
       tool = "vite";
@@ -127,10 +117,18 @@ export function start(
   stdio = "inherit",
   setExitCode = true,
 ) {
+  if (mode === "runtime") {
+    const child = startDockerRuntime(product.root, ROOT, inherited, stdio);
+    const release = holdForeground(child);
+    child.once("error", error => { console.error(error.message); process.exitCode = 1; });
+    child.once("close", (code, signal) => {
+      release();
+      if (setExitCode) process.exitCode = code ?? (signal === "SIGINT" ? 130 : 1);
+    });
+    return child;
+  }
   const settings = configuration(mode, product, inherited);
-  const toolRoot =
-    mode === "runtime" ? join(ROOT, "apps/agent-runtime") : settings.cwd;
-  const requireFromCwd = createRequire(resolve(toolRoot, "package.json"));
+  const requireFromCwd = createRequire(resolve(settings.cwd, "package.json"));
   const manifestPath = requireFromCwd.resolve(`${settings.tool}/package.json`);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const entry =
@@ -181,12 +179,6 @@ export async function runCli(product) {
     // Combined dev starts this same server entry; prepare once, immediately before it starts.
     if (mode === "server") buildWorkbenchPanels(product.root);
     const env = runtimeEnvironment(product);
-    if (mode === "dev" || mode === "runtime")
-      env.AGENT_RUNTIME_PYTHON ||= ensurePythonEnv(
-        join(product.root, "data/agent-runtime"),
-        join(ROOT, "packages/agent-runtime/requirements-py310.txt"),
-        env,
-      );
     if (mode !== "dev") {
       start(product, mode, env);
       return;
@@ -199,7 +191,7 @@ export async function runCli(product) {
     } finally {
       closeSync(fd);
     }
-    await waitForRuntime(runtime, env.AGENT_RUNTIME_URL);
+    await waitForRuntime(runtime, env.AGENT_RUNTIME_URL, 300_000);
     console.log(`[dev] Agent runtime ready; log ${log}`);
     const frontend = start(product, "dev", env);
     frontend.once("close", () => runtime.kill("SIGTERM"));
