@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.controller.KnowledgeGovernanceController;
 import io.ontomato.dataengine.controller.OntologyAgentErrors;
+import io.ontomato.dataengine.core.db.jdbc.InitDb;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.agent.*;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
@@ -47,6 +48,9 @@ class OssGovernanceWindowAssemblyTest {
     var definitions=mock(OntologyAgentDefinitions.class);when(definitions.resource(anyString())).thenCallRealMethod();
     context=new AnnotationConfigApplicationContext();
     var beans=context.getBeanFactory();
+    // The fixture initialized its isolated schema before creating this context.
+    beans.registerSingleton("jdbcInitDb",mock(InitDb.class));
+    beans.registerSingleton("jdbcTemplate",jdbc);
     beans.registerSingleton("ontologyAgentStore",store);
     beans.registerSingleton("queryGrantService",grants);
     beans.registerSingleton("agentRuntimeClient",mock(AgentRuntimeClient.class));
