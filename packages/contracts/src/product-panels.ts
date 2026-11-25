@@ -11,7 +11,7 @@ import {
   directProjectionPortsSchema, directReadDeclaration, panelReadParameterId, validateDirectProjection,
   type DirectProjectionPorts,
 } from "./panel-projection";
-import { platformObjectTypes } from "./platform-object-types";
+import { METRIC_VIEW, platformObjectTypes } from "./platform-object-types";
 import { applicationMetadataSchema } from "./application-metadata";
 import { domainApplicationIconSchema } from "./application-icons";
 import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
@@ -21,7 +21,14 @@ export { chartProjectionTemplateSchema } from "./dashboard";
 export { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { objectDetailUsedByResponseSchema } from "./object-detail";
 import { productCatalogCursorSchema } from "./product-catalog-query";
-export { productCatalogQuerySchema, type ProductCatalogQuery } from "./product-catalog-query";
+export {
+  productCatalogQuerySchema,
+  productProjectionCatalogQuerySchema,
+  productProjectionComponentFilterSchema,
+  productProjectionObjectTypeFilterSchema,
+  type ProductCatalogQuery,
+  type ProductProjectionCatalogQuery,
+} from "./product-catalog-query";
 import { builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema, isDomainComponentId, productCurrentIdParamsSchema } from "./product-record-id";
 export {
   BUILTIN_PRODUCT_ID_PREFIX, builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema,
@@ -549,7 +556,129 @@ const builtinProductCurrentSummarySchema = productCurrentSummarySchema.extend({
   editable: builtinProductRecordFields.editable,
 });
 const panelSummaryFields = panelDefinitionContentSchema.pick({ template: true }).shape;
-const projectionSummaryFields = projectionDefinition.pick({ componentId: true }).shape;
+const projectionSummaryFields = {
+  ...projectionDefinition.pick({ componentId: true }).shape,
+  /** Derived object types bound by the projection's existing data, operation, or chart bindings. */
+  objectTypes: z.array(z.string().min(1)).optional(),
+};
+
+const platformOperationOwners = new Map<string, string>();
+for (const [typeId, declaration] of Object.entries(platformObjectTypes)) {
+  for (const operationId of declaration.operations ?? []) {
+    platformOperationOwners.set(operationId, typeId);
+  }
+}
+
+/** Platform operation IDs owned by the given platform object type, used when matching operation-bound projections. */
+export function platformOperationsOwnedByType(objectType: string): string[] {
+  const entry = Object.hasOwn(platformObjectTypes, objectType) ? platformObjectTypes[objectType] : undefined;
+  return entry?.operations ? [...entry.operations] : [];
+}
+
+/** Declared ontology layer for a platform object type, or null for customer ontology classes and unknown IDs. */
+export function platformLayerOfObjectType(objectType: string): string | null {
+  const entry = Object.hasOwn(platformObjectTypes, objectType) ? platformObjectTypes[objectType] : undefined;
+  return entry?.layer ?? null;
+}
+
+function addConcreteBoundObjectType(target: Set<string>, value: unknown) {
+  if (typeof value !== "string") return;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "@any" || trimmed === "@binding" || trimmed.startsWith("@data:")) return;
+  target.add(trimmed);
+}
+
+function collectInputPortObjectTypes(target: Set<string>, port: unknown) {
+  if (!port || typeof port !== "object" || Array.isArray(port)) return;
+  const record = port as Record<string, unknown>;
+  if (record.kind === "object") {
+    addConcreteBoundObjectType(target, record.objectType);
+    return;
+  }
+  if (record.kind === "child-object") {
+    addConcreteBoundObjectType(target, record.parentType);
+    return;
+  }
+  if (record.kind === "list") {
+    const items = record.items;
+    if (items && typeof items === "object" && !Array.isArray(items) && (items as Record<string, unknown>).kind === "object") {
+      addConcreteBoundObjectType(target, (items as Record<string, unknown>).objectType);
+    }
+    return;
+  }
+  if (record.kind === "object-union") {
+    if (Array.isArray(record.objectTypes)) {
+      for (const item of record.objectTypes) addConcreteBoundObjectType(target, item);
+    }
+    if (Array.isArray(record.layers)) {
+      const layerSet = new Set(record.layers.filter((item): item is string => typeof item === "string"));
+      for (const [typeId, declaration] of Object.entries(platformObjectTypes)) {
+        if (declaration.layer && layerSet.has(declaration.layer)) target.add(typeId);
+      }
+    }
+  }
+}
+
+/**
+ * Derive the sorted unique object type IDs bound by a projection definition from its existing facts:
+ * data sources (type, literal object, input port), operation targets/platform-operation owners, and chart metricId.
+ */
+export function projectionBoundObjectTypes(definition: unknown): string[] {
+  if (!definition || typeof definition !== "object" || Array.isArray(definition)) return [];
+  const def = definition as Record<string, unknown>;
+  const inputs = def.inputs && typeof def.inputs === "object" && !Array.isArray(def.inputs)
+    ? (def.inputs as Record<string, unknown>)
+    : {};
+  const types = new Set<string>();
+
+  if (def.data && typeof def.data === "object" && !Array.isArray(def.data)) {
+    for (const datum of Object.values(def.data as Record<string, unknown>)) {
+      if (!datum || typeof datum !== "object" || Array.isArray(datum)) continue;
+      const source = (datum as Record<string, unknown>).source;
+      if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+      const src = source as Record<string, unknown>;
+      if (src.type && typeof src.type === "object" && !Array.isArray(src.type)) {
+        addConcreteBoundObjectType(types, (src.type as Record<string, unknown>).id);
+        continue;
+      }
+      if (src.object && typeof src.object === "object" && !Array.isArray(src.object)) {
+        const obj = src.object as Record<string, unknown>;
+        if (obj.literal && typeof obj.literal === "object" && !Array.isArray(obj.literal)) {
+          addConcreteBoundObjectType(types, (obj.literal as Record<string, unknown>).className);
+        } else if (typeof obj.input === "string") {
+          collectInputPortObjectTypes(types, inputs[obj.input]);
+        }
+      }
+    }
+  }
+
+  if (def.operations && typeof def.operations === "object" && !Array.isArray(def.operations)) {
+    for (const binding of Object.values(def.operations as Record<string, unknown>)) {
+      if (!binding || typeof binding !== "object" || Array.isArray(binding)) continue;
+      const opBinding = binding as Record<string, unknown>;
+      if (opBinding.target && typeof opBinding.target === "object" && !Array.isArray(opBinding.target)) {
+        const target = opBinding.target as Record<string, unknown>;
+        if (target.literal && typeof target.literal === "object" && !Array.isArray(target.literal)) {
+          addConcreteBoundObjectType(types, (target.literal as Record<string, unknown>).className);
+        } else if (typeof target.input === "string") {
+          collectInputPortObjectTypes(types, inputs[target.input]);
+        }
+      }
+      if (opBinding.operation && typeof opBinding.operation === "object" && !Array.isArray(opBinding.operation)) {
+        const op = opBinding.operation as Record<string, unknown>;
+        if (op.kind === "PlatformOperation" && typeof op.id === "string") {
+          addConcreteBoundObjectType(types, platformOperationOwners.get(op.id));
+        }
+      }
+    }
+  }
+
+  if (typeof def.metricId === "string" && def.metricId.trim().length > 0) {
+    types.add(METRIC_VIEW);
+  }
+
+  return [...types].sort();
+}
 export const productPanelSummarySchema = z.discriminatedUnion("visibility", [
   productCurrentSummarySchema.extend(panelSummaryFields),
   builtinProductCurrentSummarySchema.extend(panelSummaryFields),

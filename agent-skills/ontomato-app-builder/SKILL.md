@@ -41,6 +41,7 @@ sdk current                              # current SDK release info
 sdk read docs/components.md              # grouped overview of panel-usable components (a few KB)
 sdk read docs/components/<Name>.md       # one component's full data, config, slots, and events
 panel type <id> [--read <name>]          # object type reads, parameters, resultSchema, and operations
+panel projections [--component <id>] [--object-type <typeId>] [--q <text>]  # find reusable projections
 panel scaffold <type> <new-dir>          # scaffold catalog/ and detail/ panels
 panel check <dir>                        # validate sources, declarations, and bindings
 panel register <dir>                     # register projections, panel, and application
@@ -57,6 +58,7 @@ Start here: pick the row for your task and read only that recipe or component pa
 | What you want to do | Where to look |
 | --- | --- |
 | Browse available panel components by purpose | `sdk read docs/components.md` (then `sdk read docs/components/<Name>.md`) |
+| Find reusable projections by component or bound object type | `panel projections [--component <componentId>] [--object-type <typeId>] [--q <text>]` (filters full visible catalogue before paging) |
 | Pick a starter page layout (catalog + detail, split editor, modal edit, app frame) | [Page templates](references/templates/README.md) · [Panel authoring guide](references/panel-authoring/SKILL.md) |
 | Move an existing page into the product layer | [Migrate an existing page](references/migrate-existing-page.md) · [App decomposition](references/app-standard/SKILL.md) |
 | Lay out a page, `<page-header>`, button roles, and container responsiveness | [Layout & page header](references/panel-authoring/recipes/layout-and-page-header.md) · `sdk read docs/components/PageHeader.md` |

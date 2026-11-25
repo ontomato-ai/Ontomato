@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import express from "express";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -10,6 +12,7 @@ import { DASHBOARD_CARD, SCHEDULED_TASK } from "@ontomato/contracts/platform-obj
 import {
   METRIC_CHART_COMPONENT, productPanelInUseErrorSchema, productPanelListResponseSchema, productPanelResponseSchema,
   productProjectionInUseErrorSchema, productProjectionListResponseSchema, productProjectionResponseSchema,
+  projectionBoundObjectTypes,
 } from "@ontomato/contracts/product-panels";
 import { writeBundledAppSdkFixture } from "../../../__tests__/fixtures/bundled-app-sdk";
 import { config } from "../../../config/application";
@@ -191,17 +194,24 @@ beforeEach(() => {
         .map(({ id, definition }) => ({ id, definition })) };
     }
     if (sql.includes('AS "sortKey"') || sql.startsWith("SELECT COUNT(*)::int AS total")) {
-      const [domain, usable, scope, caller, query, template, _panelCatalog, key, position, limit] =
-        values as [string, string[], string, string, string, boolean | null, boolean, string | null, string | null, number];
+      const projectionCatalog = table === "product_projections";
+      const [domain, usable, scope, caller, query, template, _panelCatalog] =
+        values as [string, string[], string, string, string, boolean | null, boolean];
+      const componentId = projectionCatalog ? (values[7] as string | null) : null;
+      const objectType = projectionCatalog ? (values[8] as string | null) : null;
+      const cursorOffset = projectionCatalog ? 11 : 7;
+      const [key, position, limit] = values.slice(cursorOffset) as [string | null, string | null, number];
       const sortByName = sql.includes("ORDER BY lower");
       const order = sortByName ? 1 : -1;
       const rows = [...collection.values()].filter(row => row.domainId === domain && usable.includes(row.id))
         .filter(row => template === null || Boolean(row.definition.template) === template)
         .filter(row => scope === "all" || (scope === "mine") === (row.ownerId === caller))
+        .filter(row => componentId === null || row.definition.componentId === componentId)
+        .filter(row => objectType === null || projectionBoundObjectTypes(row.definition).includes(objectType))
         .map(row => ({
           id: row.id, ownerId: row.ownerId, revision: row.revision, updatedAt: row.updatedAt,
           name: String(row.definition.name), description: String(row.definition.description), visibility: row.definition.visibility,
-          ...(sql.includes('AS "componentId"') ? { componentId: row.definition.componentId } : {}),
+          ...(sql.includes('AS "componentId"') ? { componentId: row.definition.componentId, definition: row.definition } : {}),
           ...(sql.includes("AS binding") ? { binding: row.definition.binding ?? null } : {}),
           // The panel catalogue reads each record's definition to set an unreadable one apart.
           ...(sql.includes(",definition,") ? {
@@ -237,6 +247,108 @@ function request(path: string, method = "GET", body?: unknown, caller = "alice",
     method, headers: { tk: caller, "Content-Type": "application/json", "Accept-Language": locale }, body: JSON.stringify(body),
   });
 }
+
+const execFileAsync = promisify(execFile);
+
+it("filters projections across the full catalog before paging by componentId and objectType, and exposes the same read via ontomato.mjs", async () => {
+  const listScheduled = {
+    name: "Scheduled tasks list", description: "All scheduled tasks", visibility: "domain",
+    componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+  };
+  const listStudentA = {
+    name: "Student directory A", description: "Active students", visibility: "domain",
+    componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
+    data: { rows: { source: { type: { kind: "ObjectType", id: "Student" } }, read: "query", params: {} } },
+  };
+  const listStudentB = {
+    name: "Student directory B", description: "Archived students", visibility: "domain",
+    componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
+    data: { rows: { source: { type: { kind: "ObjectType", id: "Student" } }, read: "query", params: {} } },
+  };
+  const formStudent = {
+    name: "Student form", description: "Edit student record", visibility: "domain",
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { target: { kind: "object", objectType: "Student" } },
+    outputs: {}, config: {},
+    data: { form: { source: { object: { input: "target" } }, read: "form", params: {} } },
+  };
+  const runScheduled = {
+    name: "Run schedule button", description: "Execute schedule now", visibility: "domain",
+    componentId: "@ontomato/sdk:OperationButton", inputs: {}, outputs: {}, config: {}, data: {},
+    operations: { run: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } } },
+  };
+  const chatOnly = {
+    name: "Ask assistant", description: "Conversation entry", visibility: "domain",
+    componentId: "@ontomato/sdk:ConversationEntry", inputs: {}, outputs: {}, config: {}, data: {},
+    conversationEntry: { target: { kind: "page-default" } },
+  };
+  seed("product_projections", "p-sched-list", "alice", listScheduled);
+  seed("product_projections", "p-stu-list-a", "alice", listStudentA);
+  seed("product_projections", "p-stu-list-b", "alice", listStudentB);
+  seed("product_projections", "p-stu-form", "alice", formStudent);
+  seed("product_projections", "p-sched-run", "alice", runScheduled);
+  seed("product_projections", "p-chat", "alice", chatOnly);
+
+  const list = async (query: string) => productProjectionListResponseSchema.parse(
+    await (await request("product-projections?" + query)).json(),
+  );
+
+  // Single filter: componentId
+  const listsOnly = await list("componentId=" + encodeURIComponent("@ontomato/sdk:ObjectList") + "&sort=name");
+  expect(listsOnly.total).toBe(3);
+  expect(listsOnly.items.map(item => item.id)).toEqual(["p-sched-list", "p-stu-list-a", "p-stu-list-b"]);
+  expect(listsOnly.items[0]?.objectTypes).toEqual([SCHEDULED_TASK]);
+  expect(listsOnly.items[1]?.objectTypes).toEqual(["Student"]);
+
+  // Single filter: objectType (platform type matched via data source AND PlatformOperation owner)
+  const scheduled = await list("objectType=" + encodeURIComponent(SCHEDULED_TASK) + "&sort=name");
+  expect(scheduled.total).toBe(2);
+  expect(scheduled.items.map(item => item.id)).toEqual(["p-sched-run", "p-sched-list"]);
+
+  // Single filter: objectType (customer class matched via type source AND input port)
+  const students = await list("objectType=Student&sort=name");
+  expect(students.total).toBe(3);
+  expect(students.items.map(item => item.id)).toEqual(["p-stu-list-a", "p-stu-list-b", "p-stu-form"]);
+
+  // Combined componentId + objectType with pagination (filters full set before paging)
+  const page1 = await list("componentId=" + encodeURIComponent("@ontomato/sdk:ObjectList") + "&objectType=Student&sort=name&limit=1");
+  expect(page1.total).toBe(2);
+  expect(page1.items.map(item => item.id)).toEqual(["p-stu-list-a"]);
+  expect(page1.nextCursor).toEqual(expect.any(String));
+  const page2 = await list(
+    "componentId=" + encodeURIComponent("@ontomato/sdk:ObjectList")
+    + "&objectType=Student&sort=name&limit=1&cursor=" + encodeURIComponent(page1.nextCursor!),
+  );
+  expect(page2.total).toBe(2);
+  expect(page2.items.map(item => item.id)).toEqual(["p-stu-list-b"]);
+  expect(page2.nextCursor).toBeNull();
+
+  // Blank filter values fall back to unfiltered full catalog; non-matching returns empty
+  expect((await list("componentId=&objectType=")).total).toBe(6);
+  const none = await list("componentId=" + encodeURIComponent("@ontomato/sdk:ConversationEntry") + "&objectType=Student");
+  expect(none).toEqual({ items: [], total: 0, nextCursor: null });
+
+  // Boundary check: panel catalog rejects projection-only filters
+  expect((await request("product-panels?componentId=" + encodeURIComponent("@ontomato/sdk:ObjectList"))).status).toBe(400);
+  expect((await request("product-panels?objectType=Student")).status).toBe(400);
+
+  // Skill CLI uses the same owner read with identical filter params
+  const cliPath = join(process.cwd(), "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
+  const { stdout } = await execFileAsync(process.execPath, [
+    cliPath, "panel", "projections",
+    "--component", "@ontomato/sdk:ObjectList",
+    "--object-type", "Student",
+    "--sort", "name",
+    "--limit", "1",
+  ], {
+    env: { ...process.env, ONTOMATO_URL: base, ONTOMATO_TK: "alice" },
+  });
+  const cliResult = productProjectionListResponseSchema.parse(JSON.parse(stdout));
+  expect(cliResult.total).toBe(2);
+  expect(cliResult.items.map(item => item.id)).toEqual(["p-stu-list-a"]);
+  expect(cliResult.nextCursor).toEqual(expect.any(String));
+});
 
 it("lists only use grants across mine/shared/all and follows a stable cursor through tied names", async () => {
   seed("product_projections", "a", "alice", projectionDefinition);

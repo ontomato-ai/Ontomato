@@ -4,7 +4,8 @@ import {
   deleteProductPanelQuerySchema, deleteProductPanelResponseSchema,
   productCatalogQuerySchema, productCurrentIdParamsSchema,
   productPanelListResponseSchema, productPanelResponseSchema, productPanelUsedBySchema,
-  productProjectionListResponseSchema, productProjectionResponseSchema, productProjectionUsedBySchema,
+  productProjectionCatalogQuerySchema, productProjectionListResponseSchema, productProjectionResponseSchema,
+  productProjectionUsedBySchema,
 } from "@ontomato/contracts/product-panels";
 import {
   changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema, changeProductPanelDomainGrantResponseSchema,
@@ -23,7 +24,9 @@ import { asyncHandler } from "../utils/http";
 export function mountProductCatalog(router: Router, kind: CurrentProductKind) {
   router.get("/", wrap(async (req, res) => {
     const { owner, credentials } = context(req);
-    const query = productCatalogQuerySchema.parse(req.query);
+    const query = kind === "projection"
+      ? productProjectionCatalogQuerySchema.parse(req.query)
+      : productCatalogQuerySchema.parse(req.query);
     const result = await listCurrentProducts(owner, credentials, kind, query);
     const schema = kind === "projection" ? productProjectionListResponseSchema : productPanelListResponseSchema;
     res.json(schema.parse(result));

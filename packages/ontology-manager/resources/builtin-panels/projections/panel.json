@@ -24,6 +24,32 @@
         "deepLink": true,
         "default": "updated"
       },
+      "componentId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "objectType": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "componentFilter": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:SDKComponent"
+        }
+      },
+      "objectTypeFilter": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
       "creating": {
         "type": {
           "kind": "scalar",
@@ -46,6 +72,12 @@
               },
               "sort": {
                 "state": "sort"
+              },
+              "componentId": {
+                "state": "componentId"
+              },
+              "objectType": {
+                "state": "objectType"
               }
             }
           }
@@ -76,6 +108,12 @@
             {
               "key": "component",
               "labelKey": "col.component",
+              "minWidth": 150
+            },
+            {
+              "key": "objectTypes",
+              "labelKey": "col.objectType",
+              "emptyKey": "col.empty",
               "minWidth": 160
             },
             {
@@ -99,8 +137,46 @@
           ]
         },
         "name": "投影目录 · 列表",
-        "description": "本域内我能使用的投影，按检索词、范围和排序逐页读取。",
+        "description": "本域内我能使用的投影，按检索词、范围、所用组件、绑定对象类型和排序逐页读取。",
         "id": "builtin-product-38cd4fdd-1a92-4106-adbc-9c752d7b85dc"
+      },
+      "componentPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ProductProjection",
+        "data": {
+          "rows": "componentOptions"
+        },
+        "state": {
+          "selected": "componentFilter"
+        },
+        "config": {
+          "placeholderKey": "filter.component",
+          "clearable": true,
+          "size": "default",
+          "groupBy": "package"
+        },
+        "name": "投影目录 · 组件筛选",
+        "description": "按投影所用组件筛选可见投影。",
+        "id": "builtin-product-2a6e91c4-7f38-4b5a-8e12-9d4c60a3f1b7"
+      },
+      "objectTypePicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ProductProjection",
+        "data": {
+          "rows": "objectTypeOptions"
+        },
+        "state": {
+          "selected": "objectTypeFilter"
+        },
+        "config": {
+          "placeholderKey": "filter.objectType",
+          "clearable": true,
+          "size": "default",
+          "groupBy": "group"
+        },
+        "name": "投影目录 · 对象类型筛选",
+        "description": "按投影所绑定的对象类型筛选可见投影。",
+        "id": "builtin-product-9c4b72e1-3d05-4a89-b6f3-1e8a52c7d904"
       },
       "createForm": {
         "component": "ObjectForm",
@@ -129,11 +205,15 @@
         "scope.all": "全部",
         "scope.mine": "我的",
         "scope.shared": "共享",
+        "filter.component": "全部组件",
+        "filter.objectType": "全部对象类型",
         "sort.label": "排序",
         "sort.updated": "最近更新",
         "sort.name": "名称",
         "col.name": "名称",
         "col.component": "所用组件",
+        "col.objectType": "绑定对象",
+        "col.empty": "—",
         "col.owner": "所属人",
         "col.scope": "共享范围",
         "col.updatedAt": "更新时间",
@@ -152,11 +232,15 @@
         "scope.all": "All",
         "scope.mine": "Mine",
         "scope.shared": "Shared",
+        "filter.component": "All components",
+        "filter.objectType": "All object types",
         "sort.label": "Sort",
         "sort.updated": "Recently updated",
         "sort.name": "Name",
         "col.name": "Name",
         "col.component": "Component",
+        "col.objectType": "Object type",
+        "col.empty": "—",
         "col.owner": "Owner",
         "col.scope": "Scope",
         "col.updatedAt": "Updated",
@@ -175,11 +259,15 @@
         "scope.all": "全部",
         "scope.mine": "我的",
         "scope.shared": "共享",
+        "filter.component": "全部元件",
+        "filter.objectType": "全部物件類型",
         "sort.label": "排序",
         "sort.updated": "最近更新",
         "sort.name": "名稱",
         "col.name": "名稱",
         "col.component": "所用元件",
+        "col.objectType": "綁定物件",
+        "col.empty": "—",
         "col.owner": "所屬人",
         "col.scope": "共享範圍",
         "col.updatedAt": "更新時間",
@@ -198,11 +286,15 @@
         "scope.all": "すべて",
         "scope.mine": "自分",
         "scope.shared": "共有",
+        "filter.component": "すべてのコンポーネント",
+        "filter.objectType": "すべてのオブジェクト型",
         "sort.label": "並び替え",
         "sort.updated": "最終更新",
         "sort.name": "名前",
         "col.name": "名前",
         "col.component": "コンポーネント",
+        "col.objectType": "対象オブジェクト型",
+        "col.empty": "—",
         "col.owner": "所有者",
         "col.scope": "共有範囲",
         "col.updatedAt": "更新日時",
@@ -221,11 +313,15 @@
         "scope.all": "الكل",
         "scope.mine": "الخاصة بي",
         "scope.shared": "مشتركة",
+        "filter.component": "كل المكوّنات",
+        "filter.objectType": "كل أنواع الكائنات",
         "sort.label": "ترتيب",
         "sort.updated": "الأحدث تعديلاً",
         "sort.name": "الاسم",
         "col.name": "الاسم",
         "col.component": "المكوّن",
+        "col.objectType": "نوع الكائن",
+        "col.empty": "—",
         "col.owner": "المالك",
         "col.scope": "النطاق",
         "col.updatedAt": "آخر تحديث",
@@ -244,11 +340,15 @@
         "scope.all": "Toutes",
         "scope.mine": "Les miennes",
         "scope.shared": "Partagées",
+        "filter.component": "Tous les composants",
+        "filter.objectType": "Tous les types d'objet",
         "sort.label": "Trier",
         "sort.updated": "Mis à jour récemment",
         "sort.name": "Nom",
         "col.name": "Nom",
         "col.component": "Composant",
+        "col.objectType": "Type d'objet",
+        "col.empty": "—",
         "col.owner": "Propriétaire",
         "col.scope": "Portée",
         "col.updatedAt": "Mis à jour",
@@ -267,11 +367,15 @@
         "scope.all": "Alle",
         "scope.mine": "Eigene",
         "scope.shared": "Geteilt",
+        "filter.component": "Alle Komponenten",
+        "filter.objectType": "Alle Objekttypen",
         "sort.label": "Sortieren",
         "sort.updated": "Zuletzt aktualisiert",
         "sort.name": "Name",
         "col.name": "Name",
         "col.component": "Komponente",
+        "col.objectType": "Objekttyp",
+        "col.empty": "—",
         "col.owner": "Eigentümer",
         "col.scope": "Bereich",
         "col.updatedAt": "Aktualisiert",
@@ -290,11 +394,15 @@
         "scope.all": "Tutte",
         "scope.mine": "Mie",
         "scope.shared": "Condivise",
+        "filter.component": "Tutti i componenti",
+        "filter.objectType": "Tutti i tipi di oggetto",
         "sort.label": "Ordina",
         "sort.updated": "Aggiornate di recente",
         "sort.name": "Nome",
         "col.name": "Nome",
         "col.component": "Componente",
+        "col.objectType": "Tipo di oggetto",
+        "col.empty": "—",
         "col.owner": "Proprietario",
         "col.scope": "Ambito",
         "col.updatedAt": "Aggiornato",

@@ -386,6 +386,22 @@ it.each([
   expect(upstream).not.toHaveBeenCalled();
 });
 
+it("forwards projection catalog list queries with componentId and objectType filters", async () => {
+  const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) =>
+    Response.json({ items: [], total: 0, nextCursor: null }));
+  vi.stubGlobal("fetch", upstream);
+  const response = await call(
+    "workbench/api/product-projections?componentId=%40ontomato%2Fsdk%3AObjectList&objectType=Student",
+    {},
+    "GET",
+  );
+  expect(response.status).toBe(200);
+  expect(upstream).toHaveBeenCalledTimes(1);
+  expect(upstream.mock.calls[0]?.[0]).toContain(
+    "/api/product-projections?componentId=%40ontomato%2Fsdk%3AObjectList&objectType=Student",
+  );
+});
+
 it("forwards execution-context and reuse-panel headers when supplied", async () => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ ok: true }));
   vi.stubGlobal("fetch", upstream);

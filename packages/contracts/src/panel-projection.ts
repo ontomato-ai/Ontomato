@@ -1,5 +1,11 @@
 import {
-  applicationCatalogueScopeSchema, applicationCatalogueSortSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
+  applicationCatalogueScopeSchema,
+  applicationCatalogueSortSchema,
+  applicationFormSectionSchema,
+  productCatalogQuerySchema,
+  productPanelCatalogQuerySchema,
+  productProjectionComponentFilterSchema,
+  productProjectionObjectTypeFilterSchema,
 } from "./product-catalog-query";
 import { z } from "zod";
 import { workspaceCommitSchema, workspacePathSchema } from "./workspaces";
@@ -249,6 +255,8 @@ export const panelReadParameterSchemas = {
   productScope: productCatalogQuerySchema.shape.scope.removeDefault(),
   productSort: productCatalogQuerySchema.shape.sort.removeDefault(),
   productTemplate: productPanelCatalogQuerySchema.shape.template.unwrap(),
+  productProjectionComponent: productProjectionComponentFilterSchema,
+  productProjectionObjectType: productProjectionObjectTypeFilterSchema,
   applicationScope: applicationCatalogueScopeSchema,
   applicationSort: applicationCatalogueSortSchema,
   applicationGalleryCategory: z.enum(["all", "business", "agents", "build", "admin"]),
@@ -332,6 +340,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "metricViewOrigin":
     case "productScope":
     case "productSort":
+    case "productProjectionComponent":
+    case "productProjectionObjectType":
     case "applicationScope":
     case "applicationSort":
     case "applicationGalleryCategory":

@@ -1,4 +1,4 @@
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -8,6 +8,8 @@ import {
 } from "@ontomato/sdk/panel";
 
 const DETAIL_PATH = "/ontology/projections/detail";
+const SDK_COMPONENT_TYPE = "platform:SDKComponent";
+const ONTOLOGY_TYPE = "platform:OntologyType";
 
 const ProjectionsCatalogPanel = {
   setup() {
@@ -24,6 +26,47 @@ const ProjectionsCatalogPanel = {
       get: () => values.value.sort || "updated",
       set: (next) => instance.state.set("sort", next || "updated"),
     });
+    const componentId = computed(() => (typeof values.value.componentId === "string" ? values.value.componentId : ""));
+    const componentFilterKey = computed(() => values.value.componentFilter?.primaryKey || "");
+    const objectType = computed(() => (typeof values.value.objectType === "string" ? values.value.objectType : ""));
+    const objectTypeFilterKey = computed(() => values.value.objectTypeFilter?.primaryKey || "");
+
+    // Keep deep-linkable scalar filter states synchronized with their ReferencePicker object selections.
+    watch(
+      componentId,
+      (next) => {
+        if (next === componentFilterKey.value) return;
+        instance.state.set("componentFilter", next ? { className: SDK_COMPONENT_TYPE, primaryKey: next } : null);
+      },
+      { immediate: true },
+    );
+    watch(componentFilterKey, (next) => {
+      if (next === componentId.value) return;
+      instance.state.set("componentId", next || null);
+    });
+    watch(
+      objectType,
+      (next) => {
+        if (next === objectTypeFilterKey.value) return;
+        instance.state.set("objectTypeFilter", next ? { className: ONTOLOGY_TYPE, primaryKey: next } : null);
+      },
+      { immediate: true },
+    );
+    watch(objectTypeFilterKey, (next) => {
+      if (next === objectType.value) return;
+      instance.state.set("objectType", next || null);
+    });
+
+    function clearFilters() {
+      instance.state.setState({
+        search: null,
+        scope: "all",
+        componentId: null,
+        componentFilter: null,
+        objectType: null,
+        objectTypeFilter: null,
+      });
+    }
     const scopeOptions = computed(() => [
       { value: "all", label: t("scope.all") },
       { value: "mine", label: t("scope.mine") },
@@ -98,6 +141,7 @@ const ProjectionsCatalogPanel = {
       sortModel,
       startCreate,
       cancelCreate,
+      clearFilters,
       openDetail,
       onCreated,
       refresh: () => instance.refreshObjects(),
