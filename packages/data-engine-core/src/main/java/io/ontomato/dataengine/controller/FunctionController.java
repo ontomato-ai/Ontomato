@@ -1,5 +1,10 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
+
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +37,8 @@ public class FunctionController {
 	@Autowired
 	private FunctionService functionService;
 
+    @Autowired private CapabilityDefinitions definitions;
+
 	@Autowired
 	private LangService langService;
 
@@ -54,7 +61,9 @@ public class FunctionController {
 			Function stored = functionService.queryById(id);
 			if (stored == null || !domainId.equals(stored.getDomainId()))
 				throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
-			saved = PanelFormFields.asset(stored);
+			if (!Function.OPERATION_PRODUCT.equals(stored.getOperation()))
+                definitions.require(definitions.current(), access(stored, Verb.EDIT));
+            saved = PanelFormFields.asset(stored);
 		}
 		JSONObject values = PanelFormFields.withSubmitted(saved, param, submitted);
 		if (id != null) values.put("id", id);
@@ -67,13 +76,16 @@ public class FunctionController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			Function function = Function.fromInput(submittedValues(param, user.getDomainId(), lang));
+			Selection publication = objectMapper.convertValue(param.get("publicationAccess"), Selection.class);
+            Function function = Function.fromInput(submittedValues(param, user.getDomainId(), lang));
 			function.setDomainId(user.getDomainId());
-			ret.put("data", withDisplay(functionService.save(function, lang), lang));
+			ret.put("data", withDisplay(publication == null ? functionService.save(function, lang) : functionService.save(function, lang, publication), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -91,7 +103,9 @@ public class FunctionController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -116,7 +130,9 @@ public class FunctionController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -137,10 +153,14 @@ public class FunctionController {
 			if (function == null || !user.getDomainId().equals(function.getDomainId()))
 				throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
 			ret.put("success", true);
-			ret.put("data", withDisplay(function, lang));
+			if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
+                definitions.requireRead(definitions.current(), access(function, Verb.USE));
+            ret.put("data", withDisplay(function, lang));
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -159,7 +179,9 @@ public class FunctionController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -177,10 +199,15 @@ public class FunctionController {
 			User user = SystemUtils.getCurUser();
 			String operation = param.getString("operation");
 			String className = param.getString("className");
-			List<Function> functions = functionService.queryList(operation, className, user.getDomainId());
+			var subject = definitions.subject(user);
+            List<Function> functions = functionService.queryList(operation, className, user.getDomainId()).stream()
+                    .filter(function -> Function.OPERATION_PRODUCT.equals(function.getOperation())
+                            || definitions.canRead(subject, access(function, Verb.USE))).toList();
 			ret.put("success", true);
 			ret.put("data", withDisplay(functions, lang));
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());

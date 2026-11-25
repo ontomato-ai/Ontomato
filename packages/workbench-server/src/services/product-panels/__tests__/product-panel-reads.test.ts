@@ -117,10 +117,10 @@ beforeEach(() => {
     options: [{ id: "user-1", name: "Alice Chen" }],
   });
   currentProductGrantsMock.mockResolvedValue({
+    shared: true,
     grants: [
-      { principalKind: "domain", principalId: "*", verb: "use" },
-      { principalKind: "principal", principalId: "user-1", principalName: "Alice Chen", verb: "edit" },
-      { principalKind: "role", principalId: "role-ops", principalName: "Operators", verb: "use" },
+      { policyId: "owners", name: "Owners", verb: "EDIT" },
+      { policyId: "ops", name: "Operators", verb: "USE" },
     ],
   });
   currentProductUsedByMock.mockResolvedValue({
@@ -330,20 +330,13 @@ describe("createProductPanelReadAdapter", () => {
 
     const grantRows = panelReadResultSchemas.panelRecordList.parse(await adapter.grantRows("orders-panel"));
     expect(grantRows).toHaveLength(3);
-    expect(grantRows[0]).toMatchObject({
-      label: "Domain members",
-      fields: { principalKind: "domain", revocable: false, verb: "use" },
-    });
-    expect(grantRows[1]).toMatchObject({
-      label: "Alice Chen",
-      subtitle: "user-1",
-      fields: { principalKind: "principal", principalId: "user-1", revocable: true, verb: "edit" },
-    });
-    expect(grantRows[2]).toMatchObject({
-      label: "Operators",
-      subtitle: "role-ops",
-      fields: { principalKind: "role", principalId: "role-ops", revocable: true, verb: "use" },
-    });
+    expect(grantRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Domain members", fields: { revocable: false, verb: "USE", verbLabel: "Use" } }),
+      expect.objectContaining({ primaryKey: "owners:EDIT", label: "Owners",
+        fields: { policyId: "owners", revocable: true, verb: "EDIT", verbLabel: expect.stringMatching(/\S/u) } }),
+      expect.objectContaining({ primaryKey: "ops:USE", label: "Operators",
+        fields: { policyId: "ops", revocable: true, verb: "USE", verbLabel: "Use" } }),
+    ]));
   });
 
   it("lists and reads virtual panel source files for ObjectTree and ObjectTextReader", async () => {

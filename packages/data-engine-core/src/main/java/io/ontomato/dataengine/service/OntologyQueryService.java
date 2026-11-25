@@ -53,7 +53,10 @@ public class OntologyQueryService {
 
   private String checkedClass(String name, QueryAccessService.Access access) {
     String normalized = DBSchemaUtil.normalizeClassName(name, classes(access));
-    if(access.target().testing()) access.target().requireClasses(List.of(normalized));
+    if (access.target().testing()) access.target().requireClasses(List.of(normalized));
+    if (!access.verifiedIdentity().limit().permits(
+        new io.ontomato.dataengine.service.authorization.AuthorizationService.Data(List.of(normalized))))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class is outside this grant's scope");
     List<String> scope =
         access.classNames();
     if (scope != null && !scope.isEmpty() && !scope.contains(normalized))
@@ -270,7 +273,7 @@ public class OntologyQueryService {
 
   private Map<String, Object> executeQuery(JSONObject query, QueryAccessService.Access access, JSONObject predicate) throws Exception {
     validateQuery(query, access);
-    if (access.target().testing() || access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
+    if (access.target().mode() == ExecutionTarget.Mode.SANDBOX || access.grant() != null && QueryGrantService.readsThroughWriteProgram(access.grant())) {
       var definitions = classes(access);
       var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
       QueryPermissions.authorizeInputs(analysis, access.permission(), definitions);
@@ -279,9 +282,7 @@ public class OntologyQueryService {
           .put("conditions", JSONObject.of("properties", predicate));
       var restricted = (JSONObject) io.ontomato.dataengine.util.DslPermissionUtil.addRowPermission(
           "[" + query.toJSONString() + "]", definitions, access.permission())[0];
-      String sandbox = access.target().testing() ? access.target().sandboxId() : access.grant().getString("sandboxId");
-      if (io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX.equals(sandbox)) sandbox = null;
-      return QueryPermissions.response(writes.query(restricted, sandbox, access.user().getDomainId()), analysis, access.permission(), true);
+      return QueryPermissions.response(writes.query(restricted, access.target().sandboxId(), access.user().getDomainId()), analysis, access.permission(), true);
     }
     if (predicate != null) return dsl.executeGovernedRead(query, predicate, access.permission(), access.user());
     boolean internal = access.grant() != null && ("user-read".equals(access.grant().getString("purpose")) || "package-read".equals(access.grant().getString("purpose")));
@@ -486,8 +487,14 @@ public class OntologyQueryService {
    * The metric's readable source, or null when this caller cannot read everything it touches. Definition-driven
    * catalogues share one answer to "may this caller run it" so a listing never offers what execution refuses.
    */
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.authorization.CapabilityDefinitions metricDefinitions;
+
   private JSONObject readableSource(MetricView metric, QueryAccessService.Access access,
-      List<Map<String, Object>> available, Set<String> availableNames) {
+      List<Map<String, Object>> available, Set<String> availableNames,
+      io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext subject) {
+    if (!metricDefinitions.allows(subject, io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access(
+        metric, io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb.USE))) return null;
     JSONObject sourceAnalysis;
     try {
       sourceAnalysis = metricAnalysis(metric);
@@ -537,11 +544,12 @@ public class OntologyQueryService {
         available.stream().map(c -> (String) c.get("className")).collect(java.util.stream.Collectors.toSet());
     List<JSONObject> items = new ArrayList<>();
     Set<String> taken = new HashSet<>();
+    var subject = metricDefinitions.subject(access.user());
     for (var hit : metrics.recall(question, access.user().getDomainId(), RECALL_MAX_DISTANCE, RECALL_MAX_ROWS)) {
       if (items.size() == RECALL_MAX_METRICS) break;
       if (!taken.add(hit.metricId())) continue;
       MetricView metric = metrics.queryById(hit.metricId(), access.user().getDomainId());
-      if (readableSource(metric, access, available, availableNames) == null) continue;
+      if (readableSource(metric, access, available, availableNames, subject) == null) continue;
       Set<String> involved = involvedClasses(metric, metricAnalysis(metric));
       if (!access.classNames().isEmpty() && !access.classNames().containsAll(involved)) continue;
       JSONObject item = JSONObject.of("id", metric.getId(), "revision", revision(metric),
@@ -575,6 +583,7 @@ public class OntologyQueryService {
     var available = classes(access);
     Set<String> availableNames = available.stream().map(c -> (String) c.get("className")).collect(java.util.stream.Collectors.toSet());
     String next = null;
+    var subject = metricDefinitions.subject(access.user());
     for (MetricView metric : all.subList(0, Math.min(limit, all.size()))) {
       next = metric.getId();
       JSONObject spec =
@@ -582,7 +591,7 @@ public class OntologyQueryService {
               JSON.toJSONString(
                   metric, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
       spec.put("revision", revision(metric));
-      JSONObject sourceAnalysis = readableSource(metric, access, available, availableNames);
+      JSONObject sourceAnalysis = readableSource(metric, access, available, availableNames, subject);
       if (sourceAnalysis == null) continue;
       List<Object> fields = new ArrayList<>(), parameterFields = new ArrayList<>();
       var function = metric.getFunction();

@@ -1,3 +1,4 @@
+import { objectDecisions } from "../../../__tests__/fixtures/agent-object-decisions";
 import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
 import express from "express";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -100,11 +101,16 @@ beforeAll(async () => {
     calls.push(`test:${req.header("tk")}:${req.query.workspaceId}`);
     res.json(issuedTest);
   });
-  app.post("/java/product-governance/check", (req, res) => {
-    calls.push(`grant:${req.header("tk")}:${req.body.verb}:${req.body.id}`);
-    res.json({ allowed: allowProjection && req.header("tk") === "alice" && req.body.id === projectionId });
+  app.post("/java/authorization/objects/decide-batch", (req, res) => {
+    res.json(objectDecisions(req.body, request => {
+      if (!("target" in request)) return false;
+      const { target, ownerFacts, verb } = request;
+      expect(target).toEqual({ id: projectionId, domainId: scope.domainId, kind: "PROJECTION" });
+      expect(ownerFacts).toEqual({ ownerId: "settings-owner", state: "PUBLISHED" });
+      if (verb === "USE") calls.push(`grant:${req.header("tk")}:use:${target.id}`);
+      return verb === "USE" && allowProjection && req.header("tk") === "alice";
+    }));
   });
-  app.post("/java/product-governance/resources", (_req, res) => res.json({ ids: [] }));
   app.use("/api", (req, _res, next) => {
     Object.assign(req, { userId: req.header("tk"), domainId: scope.domainId, token: req.header("tk") });
     next();
@@ -125,6 +131,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture");
   calls.length = 0;
   allowProjection = true;
   issuedTest = currentTest;
@@ -198,8 +205,8 @@ it("rejects a referenced projection when the author has no use Grant", async () 
   allowProjection = false;
   const response = await preview(commit);
   expect(response.status).toBe(403);
-  expect(await response.json()).toMatchObject({ code: "PRODUCT_FORBIDDEN" });
-  expect(productQuery).not.toHaveBeenCalled();
+  expect(await response.json()).toMatchObject({ code: "OBJECT_FORBIDDEN" });
+  expect(productQuery.mock.calls.map(([, params]) => params)).toEqual([[scope.domainId, projectionId]]);
 });
 
 async function candidateMember(ref: string, member = "form", userId = "alice") {
@@ -234,11 +241,11 @@ it.each([
   expect(productQuery).not.toHaveBeenCalled();
 });
 
-it("requires the author's use Grant before loading a candidate member's projection", async () => {
+it("refuses a candidate member after looking up its same-domain projection facts", async () => {
   allowProjection = false;
-  await expect(candidateMember(commit)).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
+  await expect(candidateMember(commit)).rejects.toMatchObject({ code: "OBJECT_FORBIDDEN" });
   expect(calls).toEqual([`grant:alice:use:${projectionId}`]);
-  expect(productQuery).not.toHaveBeenCalled();
+  expect(productQuery.mock.calls.map(([, params]) => params)).toEqual([[scope.domainId, projectionId]]);
 });
 
 it.each(["product-panels", "product-projections"])("refuses a build-test management write at %s before changing product records", async (collection) => {

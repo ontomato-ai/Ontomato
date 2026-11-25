@@ -1501,7 +1501,7 @@ async function evaluateRelationKind(
       for (const panel of panelsRes.data) {
         const { projectionIds } = extractPanelContainedIds(panel);
         for (const projectionId of projectionIds) {
-          if (!isBuiltinProductId(projectionId) && !grantsRes.data.has(projectionId)) continue;
+          if (!grantsRes.data.has(projectionId)) continue;
           if (
             (node.className === PRODUCT_PANEL && panel.id === node.primaryKey) ||
             (node.className === PRODUCT_PROJECTION && projectionId === node.primaryKey)
@@ -1532,7 +1532,7 @@ async function evaluateRelationKind(
       for (const panel of panelsRes.data) {
         const { panelIds } = extractPanelContainedIds(panel, objectDetailMappings);
         for (const childPanelId of panelIds) {
-          if (childPanelId === panel.id || (!isBuiltinProductId(childPanelId) && !grantsRes.data.has(childPanelId))) {
+          if (childPanelId === panel.id || !grantsRes.data.has(childPanelId)) {
             continue;
           }
           if (panel.id === node.primaryKey || childPanelId === node.primaryKey) {

@@ -17,10 +17,15 @@ public class AgentExecutionAccess {
   }
 
   public User require(String domain, String userId) {
+    var user = requireMember(domain, userId);
+    credentials.forOwner(domain, userId);
+    return user;
+  }
+
+  public User requireMember(String domain, String userId) {
     var user = identities.creator(domain, userId);
     if (user == null || !user.isEnable() || !domain.equals(user.getDomainId()))
       throw new AgentHttpException(403, "EXECUTION_USER_INVALID", "Execution user is no longer an enabled domain member");
-    credentials.forOwner(domain, userId);
     return user;
   }
 }

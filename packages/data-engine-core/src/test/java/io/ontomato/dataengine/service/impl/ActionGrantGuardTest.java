@@ -28,6 +28,9 @@ import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionPreconditionService;
+import io.ontomato.dataengine.service.ActionRuntimeGrant;
+import io.ontomato.dataengine.service.ExecutionTarget;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.IdentitySnapshotLookup;
 import io.ontomato.dataengine.service.LangService;
@@ -152,6 +155,19 @@ class ActionGrantGuardTest {
 
     assertEquals("ACTION_NOT_GRANTED", error.code());
     assertEquals("No role grants this action", error.getMessage());
+  }
+
+  @Test
+  void aPreviouslyAdmittedRuntimeUsesTheCurrentActionGrant() throws Exception {
+    var action = publishedAction();
+    var proof = ActionRuntimeGrant.capture(action, alice, params(), new Standalone());
+    grantAnswer(true);
+    service.requireCurrent(alice, proof, ExecutionTarget.LIVE);
+    grantAnswer(false);
+    var denied = assertThrows(OwnerRefusal.class,
+        () -> service.requireCurrent(alice, proof, ExecutionTarget.LIVE));
+    assertEquals("ACTION_NOT_GRANTED", denied.code());
+    verifyNoInteractions(programs);
   }
 
   @Test

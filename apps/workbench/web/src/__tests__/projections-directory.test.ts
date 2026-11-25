@@ -396,6 +396,8 @@ async function mountProjectionsApp(options: MountOptions = {}) {
   const dispatchedIntents: Array<{ intentId: string; operationId: string; targetKey: string; input: Record<string, unknown> }> = [];
   let intentSeq = 0;
   let sharedState = false;
+  const policy = { primaryKey: "analysts", value: "analysts", label: "Analysts" };
+  const grantedVerbs = new Set(["EDIT"]);
   const confirmLeaveUnsaved = vi.fn(async () => (options.confirmLeave ? options.confirmLeave() : true));
 
   const sent = installPlatform((request: Sent) => {
@@ -525,10 +527,19 @@ async function mountProjectionsApp(options: MountOptions = {}) {
           : { kind: "success" as const, data: { id: "owner-assigned-copy" } };
         return Response.json({ kind: "dispatched", intentId, outcome });
       }
-      if (stored.preparation.operationId === "shareEnable.share") {
-        sharedState = true;
-      } else if (stored.preparation.operationId === "shareDisable.share") {
-        sharedState = false;
+      const operation = stored.preparation.operationId;
+      if (operation === "shareEnable.share" || operation === "shareDisable.share") {
+        sharedState = operation === "shareEnable.share";
+        return Response.json({ kind: "dispatched", intentId, outcome: { kind: "success", data: { success: true } } });
+      }
+      if (operation === "grantSubmit.grant" || operation === "grantsList.revoke") {
+        const verb = String(stored.input.verb);
+        if (operation === "grantSubmit.grant") grantedVerbs.add(verb);
+        else grantedVerbs.delete(verb);
+        return Response.json({ kind: "dispatched", intentId, outcome: {
+          kind: "success", data: {},
+          affected: { objects: [{ objectType: PRODUCT_PROJECTION, primaryKey: stored.targetKey }], objectTypes: [PRODUCT_PROJECTION] },
+        } });
       }
       return Response.json({ kind: "dispatched", intentId, outcome: { kind: "success", data: {} } });
     }
@@ -587,18 +598,22 @@ async function mountProjectionsApp(options: MountOptions = {}) {
             },
           });
         }
-        if (member === "grantSubmit") {
+        if (member === "grantSubmit" || member === "grantsList") {
+          const operation = member === "grantSubmit" ? "grant" : "revoke";
           return Response.json({
             status: "ready",
             value: {
-              grant: {
-                handlerRef: "productProjections.grant",
-                label: "Grant",
+              [operation]: {
+                handlerRef: `productProjections.${operation}`,
+                label: operation === "grant" ? "Grant" : "Revoke",
                 kind: "action",
                 effect: "write",
                 batch: false,
                 target: { source: "input", input: "target" },
-                inputSchema: { type: "object", properties: {} },
+                inputSchema: {
+                  type: "object", required: ["policyId", "verb"],
+                  properties: { policyId: { type: "string" }, verb: { enum: ["USE", "EDIT"] } },
+                },
                 resultSchema: {},
               },
             },
@@ -774,11 +789,20 @@ async function mountProjectionsApp(options: MountOptions = {}) {
           },
         });
       }
-      if (member === "userPicker" || member === "rolePicker") {
-        if (body.dataName === "options") {
-          return Response.json({ status: "ready", value: { options: [], total: 0 } });
-        }
-        return Response.json({ status: "empty" });
+      if (member === "policyPicker") {
+        return Response.json({ status: "ready", value: body.dataName === "options" ? { options: [policy] } : policy });
+      }
+      if (member === "grantsList") {
+        return Response.json({ status: "ready", value: [
+          ...Array.from(grantedVerbs, verb => ({
+            primaryKey: `${policy.primaryKey}:${verb}`, className: PRODUCT_PROJECTION, label: policy.label,
+            fields: { policyId: policy.primaryKey, verb, verbLabel: verb === "EDIT" ? "Edit" : "Use", revocable: true },
+          })),
+          ...(sharedState ? [{
+            primaryKey: "domain", className: PRODUCT_PROJECTION, label: "Domain",
+            fields: { verb: "USE", verbLabel: "Use", revocable: false },
+          }] : []),
+        ] });
       }
       if (member === "createForm") {
         return Response.json({ status: "ready", value: formDescription("create", "") });
@@ -844,7 +868,6 @@ async function mountProjectionsApp(options: MountOptions = {}) {
         || member === "inputsList"
         || member === "outputsList"
         || member === "operationsList"
-        || member === "grantsList"
       ) {
         return Response.json({ status: "ready", value: [] });
       }
@@ -1323,6 +1346,41 @@ describe("projections two-entry catalog & detail panels", () => {
       await waitFor(() => observed.context?.state?.grantDialog === true && Boolean(document.querySelector(".el-dialog")), "add grant dialog opened");
       findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Cancel")!.click();
       await waitFor(() => observed.context?.state?.grantDialog === false, "add grant dialog closed");
+
+      expect(dispatchedIntents).toContainEqual(expect.objectContaining({
+        operationId: "shareEnable.share", targetKey: "proj-a", input: { shared: true },
+      }));
+      await waitFor(() => Boolean(findButton(grantsPanel, "Disable domain sharing")), "share status refreshed");
+
+      findButton(grantsPanel, "Add grant")!.click();
+      const pickerSelector = ".el-dialog .sdk-inline-reference-picker-select .el-select__wrapper";
+      await waitFor(() => Boolean(document.querySelector(pickerSelector)), "policy picker ready");
+      document.querySelector<HTMLElement>(pickerSelector)!.click();
+      const options = () => [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")];
+      await waitFor(() => options().some(option => option.textContent?.trim() === "Analysts"), "policy option visible");
+      options().find(option => option.textContent?.trim() === "Analysts")!.click();
+      const grantButton = () => findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Grant");
+      await waitFor(() => grantButton()?.disabled === false, "grant enabled after policy selection");
+      grantButton()!.click();
+      await waitFor(() => observed.context?.state?.grantDialog === false, "grant submitted");
+      expect(dispatchedIntents).toContainEqual(expect.objectContaining({
+        operationId: "grantSubmit.grant", targetKey: "proj-a", input: { policyId: "analysts", verb: "USE" },
+      }));
+
+      const rows = () => [...grantsPanel.querySelectorAll<HTMLElement>("tbody tr")];
+      const grantRow = (label: string, verb: string) => rows().find(row =>
+        [...row.querySelectorAll("td")].some(cell => cell.textContent?.trim() === label)
+        && [...row.querySelectorAll("td")].some(cell => cell.textContent?.trim() === verb),
+      );
+      await waitFor(() => Boolean(grantRow("Analysts", "Use")), "independent use row added");
+      expect(findButton(grantRow("Domain", "Use")!, "Revoke")).toBeUndefined();
+      findButton(grantRow("Analysts", "Edit")!, "Revoke")!.click();
+      await waitFor(() => !grantRow("Analysts", "Edit"), "edit grant revoked");
+      expect(grantRow("Analysts", "Use")).toBeTruthy();
+      expect(dispatchedIntents).toContainEqual(expect.objectContaining({
+        operationId: "grantsList.revoke", targetKey: "proj-a", input: { policyId: "analysts", verb: "EDIT" },
+      }));
+
 
       // Switch to usage tab -> shows visible panels and hidden count hint; clicking panel navigates to /ontology/panels/detail?selected=...
       await present({ tab: "usage" });

@@ -301,9 +301,8 @@ export async function readApplicationPreviewDescriptor(
           content: livePanel.content,
         });
         const domainComponents = await readPanelDomainComponents(
-          owner.domainId,
+          { domainId: livePanel.domainId, credentials },
           panel.manifest.components,
-          { authorId: owner.userId },
         );
         return {
           kind: "panel",
@@ -350,9 +349,8 @@ export async function readApplicationPreviewDescriptor(
   ]);
 
   const domainComponents = await readPanelDomainComponents(
-    owner.domainId,
+    { domainId: owner.domainId, credentials },
     selected.panel.manifest.components,
-    { authorId: owner.userId },
   );
 
   return {

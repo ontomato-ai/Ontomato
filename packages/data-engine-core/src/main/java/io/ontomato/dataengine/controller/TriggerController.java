@@ -1,6 +1,9 @@
 package io.ontomato.dataengine.controller;
 
-import java.time.Instant;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +56,8 @@ public class TriggerController {
 	@Autowired
 	private TriggerService service;
 
+    @Autowired private CapabilityDefinitions definitions;
+
 	@Autowired
 	private TriggerMigration migration;
 
@@ -91,7 +96,9 @@ public class TriggerController {
 					"skippedOther", report.skippedOther(),
 					"skippedIds", report.skippedIds()));
 			ret.put("success", true);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -111,7 +118,9 @@ public class TriggerController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -132,7 +141,9 @@ public class TriggerController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -152,7 +163,9 @@ public class TriggerController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -173,11 +186,14 @@ public class TriggerController {
 			// answer, because the caller has no way to tell the difference and should not learn that it exists.
 			if (trigger == null || !user.getDomainId().equals(trigger.getDomainId()))
 				throw new OwnerRefusal("TRIGGER_NOT_FOUND", langService.get(lang, "Trigger.notFound"));
+			definitions.requireRead(definitions.subject(user), access(trigger, Verb.USE));
 			ret.put("data", withDisplay(trigger, displayContext(user.getDomainId(), List.of(trigger)), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -195,15 +211,21 @@ public class TriggerController {
 			User user = SystemUtils.getCurUser();
 			String status = param == null ? null : param.getString("status");
 			ret.put("success", true);
-			if (param != null && param.getBooleanValue("countOnly")) {
-				ret.put("data", JSONObject.of("total", triggers.count(user.getDomainId(), status)));
-			} else {
-				List<Trigger> list = triggers.queryList(user.getDomainId(), status);
-				ret.put("data", withDisplay(list, user.getDomainId(), lang));
-			}
+            var subject = definitions.subject(user);
+            if (param != null && param.getBooleanValue("countOnly")) {
+                long total = triggers.countCandidates(user.getDomainId(), status).stream()
+                        .filter(trigger -> definitions.canRead(subject, access(trigger, Verb.USE))).count();
+                ret.put("data", JSONObject.of("total", total));
+                return ret;
+            }
+            List<Trigger> list = triggers.queryList(user.getDomainId(), status).stream()
+                    .filter(trigger -> definitions.canRead(subject, access(trigger, Verb.USE))).toList();
+            ret.put("data", withDisplay(list, user.getDomainId(), lang));
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -235,7 +257,9 @@ public class TriggerController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -255,11 +279,13 @@ public class TriggerController {
 			var trigger = triggers.queryById(param == null ? null : param.getString("id"));
 			if (trigger == null || !user.getDomainId().equals(trigger.getDomainId()))
 				throw new OwnerRefusal("TRIGGER_NOT_FOUND", langService.get(lang, "Trigger.notFound"));
-			ret.put("data", service.fire(trigger, Instant.now(), lang));
+			ret.put("data", service.run(trigger, lang, user));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());

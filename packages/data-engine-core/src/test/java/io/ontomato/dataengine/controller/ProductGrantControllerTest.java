@@ -20,26 +20,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.ontomato.dataengine.config.BaseControllerAdvice;
 
 class ProductGrantControllerTest {
-    @Test void panelManagementChecksAcceptOwnerFactsOnlyFromTheDefinitionService() throws Exception {
+    @Test void legacyChecksCannotAuthorizeAnObjectFromSubmittedOwnerFacts() throws Exception {
         var grants = mock(ProductGrantService.class);
-        var target = new ProductGrantService.ObjectTarget("domain", "panel", "panel");
-        var ownerFacts = new ProductGrantService.OwnerFacts("author", "current");
-        when(grants.managementAccess(target, ownerFacts)).thenReturn(new ProductGrantService.ManagementAccess(true, true, false));
         var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, new WorkbenchServiceAuthentication("fixture")))
+            .setControllerAdvice(new BaseControllerAdvice())
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         var body = """
-            {"target":{"domainId":"domain","kind":"panel","id":"panel"},"ownerFacts":{"ownerId":"author","state":"current"}}
+            {"target":{"domainId":"domain","kind":"PANEL","id":"panel"},"ownerFacts":{"ownerId":"author","state":"PUBLISHED"}}
             """;
         mvc.perform(post("/product-governance/check").contentType(MediaType.APPLICATION_JSON).content(body))
-            .andExpect(status().isForbidden());
-        verifyNoInteractions(grants);
+            .andExpect(status().isBadRequest());
         mvc.perform(post("/product-governance/check").header(WorkbenchServiceAuthentication.HEADER, "fixture")
             .contentType(MediaType.APPLICATION_JSON).content(body))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.allowed").value(true))
-            .andExpect(jsonPath("$.authored").value(true))
-            .andExpect(jsonPath("$.editable").value(false));
-        verify(grants).managementAccess(target, ownerFacts);
+            .andExpect(status().isBadRequest());
+        verifyNoInteractions(grants);
     }
 
     @Test void batchCheckBindsJacksonListsAndReturnsTheJavaDecisions() throws Exception {

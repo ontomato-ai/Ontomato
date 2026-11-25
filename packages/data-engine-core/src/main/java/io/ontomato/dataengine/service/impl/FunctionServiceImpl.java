@@ -1,5 +1,13 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.functionKind;
+
 import io.ontomato.dataengine.service.QueryPackage;
 
 import com.alibaba.fastjson2.JSONObject;
@@ -37,6 +45,8 @@ public class FunctionServiceImpl implements FunctionService {
   @Autowired private LangService langService;
 
   @Autowired private FunctionDao functionDao;
+  @Autowired private CapabilityDefinitions definitions;
+  @Autowired private DefinitionFirstPublication firstPublication;
 
   @Autowired private MetricViewDao metricViewDao;
 
@@ -111,35 +121,50 @@ public class FunctionServiceImpl implements FunctionService {
 
   @Override
 	@Transactional(rollbackFor = Exception.class)
-	public Function save(Function function, String lang) throws Exception {
+    public Function save(Function function, String lang, Selection publication) throws Exception {
+        if (!Function.OPERATION_READ.equals(function.getOperation()) && !Function.OPERATION_WRITE.equals(function.getOperation()))
+            throw new IllegalArgumentException("Function.operation: expected OPERATION_READ or OPERATION_WRITE");
+        var subject = definitions.current();
+        var kind = functionKind(function.getOperation());
+        boolean firstPublish = false;
+        if (function.getId() == null) {
+            definitions.require(subject, new Create(kind));
+            function.setCreatedBy(subject.identity().userId());
+            function.setOrigin(Function.ORIGIN_USER);
+            boolean read = Function.OPERATION_READ.equals(function.getOperation());
+            function.setPublished(!read || publication != null || !firstPublication.requiresSelection());
+            firstPublish = read && function.isPublished();
+        } else {
+            functionDao.lock(function.getId());
+            Function stored = functionDao.queryById(function.getId());
+            if (stored == null || !function.getDomainId().equals(stored.getDomainId()))
+                throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
+            if (Function.OPERATION_PRODUCT.equals(stored.getOperation()))
+                throw new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", langService.get(lang, "PanelForm.readOnly.product"));
+            definitions.require(subject, access(stored, Verb.EDIT));
+            if (Function.ORIGIN_SYSTEM.equals(stored.getOrigin()))
+                throw new OwnerRefusal("FUNCTION_SYSTEM", langService.get(lang, "Function.cannotModifySystem"));
+            if (!stored.getOperation().equals(function.getOperation()))
+                throw new OwnerRefusal("FUNCTION_OPERATION_IMMUTABLE", langService.get(lang, "PanelForm.readOnly.operation"));
+            isReferenced(function.getId(), lang);
+            function.setOrigin(stored.getOrigin());
+            function.setCreatedBy(stored.getCreatedBy());
+            function.setCreateTimestamp(stored.getCreateTimestamp());
+            firstPublish = !stored.isPublished() && publication != null;
+            function.setPublished(stored.isPublished() || firstPublish);
+        }
         if (Function.OPERATION_READ.equals(function.getOperation())) {
             try {
                 QueryPackage.prepareReadFunction(function,
                     (List<Map<String, Object>>) adminService.getJSONRule(function.getDomainId()).get("classDef"));
             } catch (IllegalArgumentException error) {
-                // The package's own rules refuse it: the reader corrects the query package field.
                 throw new OwnerFieldRefusal("FUNCTION_QUERY_PACKAGE_INVALID", "/queryPackage", "invalid_object", error.getMessage());
             }
         }
-		if (function.getId() != null) {
-			functionDao.lock(function.getId());
-			Function existFunction = functionDao.queryById(function.getId());
-			if(existFunction!=null&&Function.OPERATION_PRODUCT.equals(existFunction.getOperation()))throw new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", langService.get(lang, "PanelForm.readOnly.product"));
-			if (existFunction == null) {
-				throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
-			} else {
-				if (Function.ORIGIN_SYSTEM.equals(function.getOrigin())) {
-					throw new OwnerRefusal("FUNCTION_SYSTEM", langService.get(lang, "Function.cannotModifySystem"));
-				}
-				if (!function.getDomainId().equals(existFunction.getDomainId())) {
-					throw new OwnerRefusal("FUNCTION_DOMAIN_MISMATCH", langService.get(lang, "Function.domainMismatch"));
-				}
-			}
-			// A referenced Function cannot be modified or deleted
-			isReferenced(function.getId(), lang);
-		}
-		return functionDao.save(function, lang);
-	}
+        Function saved = functionDao.save(function, lang);
+        if (firstPublish) firstPublication.grantUse(subject, access(saved, Verb.USE).target(), publication);
+        return saved;
+    }
 
 	private void isReferenced(String functionId, String lang) throws Exception {
 		String reason = referenceReason(functionId, lang);
@@ -174,7 +199,9 @@ public class FunctionServiceImpl implements FunctionService {
 		functionDao.lock(id);
 		Function function = functionDao.queryById(id);
 		if (function == null || !domainId.equals(function.getDomainId())) return;
-		OwnerRefusal refusal = deletionRefusal(function, lang);
+		if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
+            definitions.require(definitions.current(), access(function, Verb.EDIT));
+        OwnerRefusal refusal = deletionRefusal(function, lang);
 		if (refusal != null) throw refusal;
 		functionDao.delete(id);
 	}
@@ -184,7 +211,9 @@ public class FunctionServiceImpl implements FunctionService {
 		Function function = functionDao.queryById(id);
 		if (function == null || !domainId.equals(function.getDomainId()))
 			throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
-		OwnerRefusal refusal = deletionRefusal(function, lang);
+		if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
+            definitions.require(definitions.current(), access(function, Verb.EDIT));
+        OwnerRefusal refusal = deletionRefusal(function, lang);
 		return refusal == null ? null : refusal.getMessage();
 	}
 
@@ -214,8 +243,17 @@ public class FunctionServiceImpl implements FunctionService {
       function = functionDao.queryById(primaryKey);
       if (function == null || !domainId.equals(function.getDomainId()))
         throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
+      if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
+          definitions.requireRead(definitions.current(), access(function, Verb.USE));
       existing = true;
     } else if ("draft".equals(kind)) {
+      var subject = definitions.current();
+      var values = request.getJSONObject("values");
+      if (values != null && values.getString("operation") != null) {
+          definitions.require(subject, new Create(functionKind(values.getString("operation"))));
+      } else if (!definitions.allows(subject, new Create(functionKind(Function.OPERATION_WRITE)))) {
+          definitions.require(subject, new Create(functionKind(Function.OPERATION_READ)));
+      }
       function = FunctionForm.defaultValues().to(Function.class);
       function.setDomainId(domainId);
       existing = false;

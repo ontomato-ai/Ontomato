@@ -110,7 +110,7 @@ it("prepares a diagnosis run on assistant_sessions using the agent row model and
   expect(Object.keys(prepared.businessCallbacks ?? {})).toEqual(["workbench"]);
   expect(prepared.businessCallbacks?.workbench).toMatchObject({
     baseUrl: "http://workbench.test/api/observe/evidence",
-    credential: expect.stringMatching(/^wbc1\./),
+    credential: expect.stringMatching(/^wbc2\./),
   });
 });
 
@@ -147,6 +147,6 @@ it("attaches page skill, pageControl and panelOperations callback when invoked f
   expect(prepared.definition.systemPrompt).toContain("builtin-product-ops-turn-evidence");
   expect(prepared.businessCallbacks?.panelOperations).toMatchObject({
     baseUrl: `http://workbench.test/api/assistant/executions/${runId}/panels`,
-    credential: expect.stringMatching(/^wbc1\./),
+    credential: expect.stringMatching(/^wbc2\./),
   });
 });

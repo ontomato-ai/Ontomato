@@ -7,6 +7,7 @@ import {
   productProjectionSchema,
   isApplicationPanelUse, type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
+import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
 import {
@@ -16,11 +17,13 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanelNestedReadRequest, ProductPanelNestedReadResponse } from "@ontomato/contracts/panel-host";
 import { HttpError } from "../../utils/errors";
-import { productGrantAllowed, productGrantsAllowedBatch, requireProductGrant, type ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
+import { currentDefinitionAccess, requireCurrentDefinitionUse } from "./access";
+import { requireAllowed } from "../product-governance/authorization";
 import { readRegisteredPanelEntry, requirePanelEntry } from "./application-use";
 import { parseStoredDefinition } from "./definition-diagnostics";
 import { panelDefinition } from "./render-definitions";
-import { readPanelDomainComponents } from "./component-catalogue";
+import { readPanelDomainComponents, readProjectionComponent } from "./component-catalogue";
 import { findObjectDetailPanelId } from "./object-detail";
 import { panelStateKey, type PanelStatePathKey } from "./personal-state-key";
 
@@ -47,7 +50,7 @@ function targetKey({ kind, id }: Target) {
 
 export class PanelReadBatchCache {
   private readonly entries = new Map<string, Promise<PanelEntry>>();
-  private readonly grants = new Map<string, Promise<boolean>>();
+  private readonly grants = new Map<string, Promise<void>>();
   private readonly products = new Map<string, Promise<CurrentProductRow | undefined>>();
   private readonly reads = new Map<string, Promise<unknown>>();
   private readonly domainId: string;
@@ -60,8 +63,8 @@ export class PanelReadBatchCache {
     return memoize(this.entries, `${source.applicationId}\0${source.useId}`, () => readRegisteredPanelEntry(this.viewer, source, this.owner));
   }
 
-  allowed(id: string) {
-    return memoize(this.grants, id, () => productGrantAllowed(id, "use", this.viewer));
+  requireUse(target: Target, row: CurrentProductRow) {
+    return memoize(this.grants, targetKey(target), () => requireCurrentDefinitionUse(target.kind, row, this.domainId, this.viewer));
   }
 
   product(target: Target, client?: QueryClient) {
@@ -73,25 +76,27 @@ export class PanelReadBatchCache {
   }
 
   async prefetch(targets: readonly Target[]) {
-    const unchecked = [...new Set(targets.map(({ id }) => id))].filter(id => !this.grants.has(id));
-    if (unchecked.length > 0) {
-      const decisions = productGrantsAllowedBatch(unchecked, "use", this.viewer);
-      for (const id of unchecked) this.grants.set(id, decisions.then(allowed => allowed[id]));
-    }
-    const lookups: Promise<CurrentProductRow | undefined>[] = [];
+    const lookups: Promise<unknown>[] = [];
     for (const kind of ["panel", "projection"] as const) {
       const ids = [...new Set(targets.filter(target => target.kind === kind).map(target => target.id))]
         .filter(id => !this.products.has(targetKey({ kind, id })));
       if (ids.length === 0) continue;
-      const rows = Promise.all(ids.map(async id => ({ id, allowed: await this.allowed(id) })))
-        .then(decisions => {
-          const allowedIds = decisions.filter(decision => decision.allowed).map(decision => decision.id);
-          return allowedIds.length ? findCurrentProducts(this.domainId, kind, allowedIds) : new Map<string, CurrentProductRow>();
-        });
+      const rows = findCurrentProducts(this.domainId, kind, ids);
+      const decisions = rows.then(async products => {
+        const available = [...products.values()];
+        const { decisions } = await currentDefinitionAccess(kind, available, this.domainId, this.viewer, false);
+        return new Map(available.map((row, index) => [row.id, decisions[index]]));
+      });
       for (const id of ids) {
+        const key = targetKey({ kind, id });
         const row = rows.then(products => products.get(id));
-        this.products.set(targetKey({ kind, id }), row);
-        lookups.push(row);
+        const admission = decisions.then(admissions => {
+          const decision = admissions.get(id);
+          if (decision) requireAllowed(decision);
+        });
+        this.products.set(key, row);
+        this.grants.set(key, admission);
+        lookups.push(row, admission);
       }
     }
     // Keep rejections in the cache for the reads that need those entries.
@@ -123,9 +128,6 @@ function unavailable(): never {
 async function requireTarget(
   owner: ProductOwner, viewer: AssistantCredentials, target: Target, client?: QueryClient, batchCache?: PanelReadBatchCache,
 ) {
-  if (batchCache) {
-    if (!await batchCache.allowed(target.id)) throw new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN");
-  } else await requireProductGrant(target.id, "use", viewer);
   const row = await (batchCache
     ? batchCache.product(target, client)
     : findCurrentProduct(owner.domainId, target.kind, target.id, client));
@@ -133,6 +135,7 @@ async function requireTarget(
     const kind = target.kind === "panel" ? "Panel" : "Projection";
     throw new HttpError(404, `${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
   }
+  await (batchCache?.requireUse(target, row) ?? requireCurrentDefinitionUse(target.kind, row, owner.domainId, viewer));
   return row;
 }
 
@@ -264,11 +267,11 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
     const row = candidate ? undefined : await requireTarget(owner, viewer, target, client, batchCache);
     if (target.kind === "projection") {
       if (!isFinal) unavailable();
-      return {
-        kind: "projection" as const,
-        projection: parseStoredDefinition(productProjectionSchema, candidate ?? currentProductRecord(row!, false), "Projection"),
-        panel, member, keys, trail,
-      };
+      const projection = parseStoredDefinition(productProjectionSchema, candidate ?? currentProductRecord(row!, false), "Projection");
+      if (isDomainComponentId(projection.componentId) &&
+          !await readProjectionComponent(projection.componentId, undefined, { domainId: projection.domainId, credentials: viewer, client }))
+        throw new HttpError(404, "The registered component is unavailable", "COMPONENT_UNAVAILABLE");
+      return { kind: "projection" as const, projection, panel, member, keys, trail };
     }
     if ("itemKey" in segment && segment.itemKey !== undefined) {
       throw new HttpError(422, "Row itemKey is only allowed on a projection member", "ROW_OPERATION_MEMBER_INVALID");
@@ -303,7 +306,7 @@ export async function readNestedPanel(
   if (placement.kind !== "panel" || !("revision" in placement.panel))
     throw new HttpError(404, "The member path does not select a panel", "PANEL_MEMBER_UNAVAILABLE");
   const { id, revision, content, manifest, theme, domainId } = placement.panel;
-  const domainComponents = await readPanelDomainComponents(domainId, manifest.components);
+  const domainComponents = await readPanelDomainComponents({ domainId, credentials }, manifest.components);
   return {
     panel: { id, revision, content, manifest, ...(theme !== undefined && { theme }) },
     ...(domainComponents && { domainComponents }),

@@ -150,12 +150,19 @@ public class TriggerDao {
 				+ " WHERE domain_id=? AND status=? ORDER BY modify_timestamp DESC", this::map, domainId, status);
 	}
 
-	public long count(String domainId, String status) {
-		String sql = "SELECT COUNT(*) FROM " + TABLE_NAME + " WHERE domain_id=?";
-		if (status == null || status.isBlank())
-			return jdbcTemplate.queryForObject(sql, Long.class, domainId);
-		return jdbcTemplate.queryForObject(sql + " AND status=?", Long.class, domainId, status);
-	}
+    public List<Trigger> countCandidates(String domainId, String status) {
+        String sql = "SELECT id, status, created_by FROM " + TABLE_NAME + " WHERE domain_id = ?"
+                + (status == null || status.isBlank() ? "" : " AND status = ?");
+        Object[] args = status == null || status.isBlank() ? new Object[]{domainId} : new Object[]{domainId, status};
+        return jdbcTemplate.query(sql, (rs, row) -> {
+            Trigger trigger = new Trigger();
+            trigger.setId(rs.getString("id"));
+            trigger.setStatus(rs.getString("status"));
+            trigger.setCreatedBy(rs.getString("created_by"));
+            trigger.setDomainId(domainId);
+            return trigger;
+        }, args);
+    }
 
 	public void delete(String id, String domainId) {
 		jdbcTemplate.update("DELETE FROM " + TABLE_NAME + " WHERE id=? AND domain_id=?", id, domainId);

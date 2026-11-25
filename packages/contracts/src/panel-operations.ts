@@ -26,6 +26,7 @@ import {
 } from "./platform-ontology-data";
 import { platformTaskRunPageSchema, platformTaskRunSchema } from "./platform-schedules";
 import { productCatalogueGrantsSchema } from "./product-governance";
+import { agentObjectAccessSchema, productObjectAccessSchema } from "./object-policy-access";
 import type { PanelReadResultId } from "./platform-object-types";
 
 const inputTarget = z.object({ source: z.literal("input"), input: runtimeKeySchema }).strict();
@@ -127,6 +128,8 @@ export const panelReadResultSchemas = {
   productPanelUsedBy: productPanelUsedBySchema,
   productPanelMembers: panelManifestSchema.innerType().shape.members,
   productCatalogueGrants: productCatalogueGrantsSchema,
+  productObjectAccess: productObjectAccessSchema,
+  agentObjectAccess: agentObjectAccessSchema,
   applicationEntries: applicationCatalogueEntriesSchema,
   panelFormDescription: panelFormDescriptionSchema,
   scheduledTaskRunPage: platformTaskRunPageSchema,

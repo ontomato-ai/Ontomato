@@ -8,6 +8,7 @@ import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -28,18 +29,20 @@ public final class ObjectAuthorizationController {
     public static final String AGENT_LEVEL = "/authorization/objects/agent-level";
     public static final String DOMAIN_USE = "/authorization/objects/domain-use";
     public static final String RETIRE = "/authorization/objects/retire";
+    public static final String PRODUCT_ACCESS = "/authorization/objects/product-access";
+    public static final String PRODUCT_GRANT = "/authorization/objects/product-grant";
+    public static final String PRODUCT_DOMAIN_USE = "/authorization/objects/product-domain-use";
 
     public record DecisionInput(ObjectTarget target, Verb verb, OwnerFacts ownerFacts, Kind create) {}
     public record BatchInput(List<DecisionInput> requests) {}
     public record BatchResult(List<Decision> decisions) {}
-    public enum AccessKind { domain, policy }
-    public record PublicationAccess(AccessKind kind, String policyId) {}
-    public record PublicationInput(ObjectTarget target, OwnerFacts ownerFacts, PublicationAccess access) {}
+    public record PublicationInput(ObjectTarget target, OwnerFacts ownerFacts, Selection access) {}
     public record PublicationResult(AuthorizationPolicies.PublicationStatus status) {}
     public record AgentInput(ObjectTarget target, OwnerFacts ownerFacts) {}
     public record AgentLevelInput(ObjectTarget target, OwnerFacts ownerFacts, String policyId,
                                   @JsonProperty(value = "level", required = true) Verb level) {}
     public record DomainUseInput(ObjectTarget target, OwnerFacts ownerFacts, Boolean shared) {}
+    public record ProductGrantInput(ObjectTarget target, OwnerFacts ownerFacts, String policyId, Verb verb, Boolean remove) {}
 
     private final WorkbenchServiceAuthentication workbench;
     private final IdentityService identity;
@@ -67,10 +70,7 @@ public final class ObjectAuthorizationController {
         var actor = actor(request);
         requireFacts(actor, input.target(), input.ownerFacts());
         var access = input.access();
-        if (access == null || access.kind() == null
-                || (access.kind() == AccessKind.domain ? access.policyId() != null : blank(access.policyId()))) {
-            throw badRequest("Select domain access or supply an object policy ID.");
-        }
+        if (access == null) throw badRequest("Select domain access or supply an object policy ID.");
         return new PublicationResult(policies.firstPublication(authorization.resolveSubject(actor),
                 input.target(), input.ownerFacts(), access.policyId()));
     }
@@ -113,6 +113,33 @@ public final class ObjectAuthorizationController {
         policies.retireObject(authorization.resolveSubject(actor), input.target(), input.ownerFacts());
     }
 
+    @PostMapping(PRODUCT_ACCESS)
+    public AuthorizationPolicies.ObjectAccessPolicies productAccess(HttpServletRequest request, @RequestBody AgentInput input) {
+        var actor = actor(request);
+        requireFacts(actor, input.target(), input.ownerFacts());
+        return policies.productAccess(authorization.resolveSubject(actor), input.target(), input.ownerFacts());
+    }
+
+    @PostMapping(PRODUCT_GRANT)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void productGrant(HttpServletRequest request, @RequestBody ProductGrantInput input) {
+        var actor = actor(request);
+        requireFacts(actor, input.target(), input.ownerFacts());
+        if (blank(input.policyId()) || input.remove() == null)
+            throw badRequest("The policy ID and removal intent are required.");
+        policies.changeProductAccess(authorization.resolveSubject(actor), input.target(), input.ownerFacts(),
+                input.policyId(), input.verb(), input.remove());
+    }
+
+    @PostMapping(PRODUCT_DOMAIN_USE)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void productDomainUse(HttpServletRequest request, @RequestBody DomainUseInput input) {
+        var actor = actor(request);
+        requireFacts(actor, input.target(), input.ownerFacts());
+        if (input.shared() == null) throw badRequest("A shared flag is required.");
+        policies.setProductDomainUse(authorization.resolveSubject(actor), input.target(), input.ownerFacts(), input.shared());
+    }
+
     private VerifiedIdentity actor(HttpServletRequest request) {
         workbench.authenticate(request);
         if (request.getAttribute(QueryGrantService.ATTRIBUTE) != null)
@@ -120,7 +147,7 @@ public final class ObjectAuthorizationController {
         var user = identity.getCurrentUser();
         if (user == null || !user.isEnable() || blank(user.getId()) || blank(user.getDomainId()))
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "An active user in a domain is required.");
-        return new VerifiedIdentity(user.getDomainId(), identity.workbenchSubjectId(user), CredentialLimit.UNRESTRICTED);
+        return new VerifiedIdentity(user.getDomainId(), identity.workbenchSubjectId(user), QueryGrantService.limit(request));
     }
 
     private static Request operation(VerifiedIdentity actor, DecisionInput item) {

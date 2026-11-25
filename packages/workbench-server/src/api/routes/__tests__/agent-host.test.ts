@@ -163,11 +163,11 @@ beforeAll(async () => {
     next();
   });
   app.use("/api/browser-events", browserEventsRouter);
-  app.use("/api/agent-host", createAgentHostRouter(fake.service));
+  app.use("/api/assistant", createAgentHostRouter(fake.service));
   server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  url = base + "/api/agent-host";
+  url = base + "/api/assistant";
 });
 
 afterAll(async () => {
@@ -348,7 +348,7 @@ function presentationCalls(viewId: string) {
   const runPath = `/sessions/${sessionId}/runs/${runId}`;
   const callbackPath = `${runPath}/presentation-call/${viewId}`;
   const credential = callbackCredential({
-    pathPrefix: "/api/agent-host" + callbackPath, runId, expiresAt: Date.now() + 60_000,
+    scope: { purpose: "presentation", host: "workbench", sessionId, viewId }, runId, expiresAt: Date.now() + 60_000,
     token: "fixture-initiator", apiKey: "",
   }).value;
   const callback = (toolCallId: string, input: unknown = { target: "/fixture/page" }) => fetch(url + callbackPath, {

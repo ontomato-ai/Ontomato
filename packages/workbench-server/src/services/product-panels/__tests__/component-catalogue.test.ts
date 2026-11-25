@@ -1,5 +1,6 @@
 import { beforeAll, expect, it, vi } from "vitest";
 import { panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
+import { productProjectionSchema } from "@ontomato/contracts/product-panels";
 import { SDK_COMPONENT } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -11,6 +12,8 @@ import {
   readSdkComponentOperationRows,
   readSdkComponentOutputRows,
   readSdkComponentRecord,
+  readPanelDomainComponents,
+  validateProjectionComponent,
 } from "../component-catalogue";
 
 vi.mock("../../app-builder/sdk", () => ({
@@ -112,10 +115,20 @@ vi.mock("../../component-packages/store", () => ({
   readComponentPackage: async () => undefined,
 }));
 
+const componentAccess = vi.hoisted(() => ({
+  resolve: vi.fn(),
+  decide: vi.fn(),
+}));
 vi.mock("../../domain-components/store", () => ({
   listVisibleDomainComponents: async () => [],
-  domainComponentForProjection: async () => undefined,
-  domainComponentRecord: vi.fn(),
+  domainComponentForProjection: componentAccess.resolve,
+  domainComponentRecord: (row: { definition: object }) => row.definition,
+}));
+vi.mock("../../product-governance/authorization", () => ({
+  decideObjects: componentAccess.decide,
+  requireAllowed: (decision: { allowed: boolean }) => {
+    if (!decision.allowed) throw Object.assign(new Error("Object use denied"), { status: 403 });
+  },
 }));
 
 const owner = { domainId: "domain", userId: "reader" };
@@ -157,7 +170,7 @@ beforeAll(() => {
 
 it("formats platform:SDKComponent record and all five specification tables according to locale", async () => {
   const id = "@ontomato/sdk:SampleList";
-  const record = panelRecordSchema.parse(await readSdkComponentRecord(owner, id, "zh-CN"));
+  const record = panelRecordSchema.parse(await readSdkComponentRecord(owner, id, { locale: "zh-CN" }));
   expect(record).toMatchObject({
     primaryKey: id,
     className: SDK_COMPONENT,
@@ -178,7 +191,7 @@ it("formats platform:SDKComponent record and all five specification tables accor
     tones: { role: "info", panelUsable: "success" },
   });
 
-  const dataRows = panelRecordListSchema.parse(await readSdkComponentDataRows(owner, id, "zh-CN"));
+  const dataRows = panelRecordListSchema.parse(await readSdkComponentDataRows(owner, id, { locale: "zh-CN" }));
   expect(dataRows).toMatchObject([
     {
       primaryKey: "rows",
@@ -189,32 +202,32 @@ it("formats platform:SDKComponent record and all five specification tables accor
     },
   ]);
 
-  const configRows = panelRecordListSchema.parse(await readSdkComponentConfigRows(owner, id, "zh-CN"));
+  const configRows = panelRecordListSchema.parse(await readSdkComponentConfigRows(owner, id, { locale: "zh-CN" }));
   expect(configRows).toMatchObject([
     { primaryKey: "pageSize", label: "pageSize", fields: { type: "number", required: "否", defaultValue: "20", description: "Rows per page." } },
     { primaryKey: "layout", label: "layout", fields: { type: '"table" | "list"', required: "是", description: "Display style." } },
   ]);
   expect(configRows[1]!.fields).not.toHaveProperty("defaultValue");
 
-  const inputRows = panelRecordListSchema.parse(await readSdkComponentInputRows(owner, id, "zh-CN"));
+  const inputRows = panelRecordListSchema.parse(await readSdkComponentInputRows(owner, id, { locale: "zh-CN" }));
   expect(inputRows).toMatchObject([
     { primaryKey: "input:selected", label: "selected", fields: { kind: "输入", type: "使用它的投影所绑定的对象类型" } },
     { primaryKey: "input:tags", label: "tags", fields: { kind: "输入", type: "a list of <a string scalar>" } },
     { primaryKey: "slot:filters", label: "#filters", fields: { kind: "插槽", type: "slot", description: "Custom filter controls." } },
   ]);
 
-  const outputRows = panelRecordListSchema.parse(await readSdkComponentOutputRows(owner, id, "zh-CN"));
+  const outputRows = panelRecordListSchema.parse(await readSdkComponentOutputRows(owner, id, { locale: "zh-CN" }));
   expect(outputRows).toMatchObject([
     { primaryKey: "output:selected", label: "selected", fields: { kind: "输出", type: "an object of platform:Application" } },
     { primaryKey: "readOnlyOutput:total", label: "total", fields: { kind: "只读输出", type: "a number scalar" }, tones: { kind: "success" } },
     { primaryKey: "event:choose", label: "choose", fields: { kind: "事件", type: "(ref: ObjectListRef) => void", description: "Emitted when a row is chosen." } },
   ]);
 
-  expect(await readSdkComponentOperationRows(owner, id, "en")).toEqual([]);
+  expect(await readSdkComponentOperationRows(owner, id, { locale: "en" })).toEqual([]);
 });
 
 it("formats wildcard data entries, declared package operations, and throws 404 for unknown components", async () => {
-  const wildcardRows = panelRecordListSchema.parse(await readSdkComponentDataRows(owner, "@ontomato/sdk:WildcardBox", "zh-CN"));
+  const wildcardRows = panelRecordListSchema.parse(await readSdkComponentDataRows(owner, "@ontomato/sdk:WildcardBox", { locale: "zh-CN" }));
   expect(wildcardRows[0]).toMatchObject({
     primaryKey: "*",
     label: "任意名称 *",
@@ -222,12 +235,12 @@ it("formats wildcard data entries, declared package operations, and throws 404 f
     tags: { results: ["panelRecord"] },
   });
 
-  const opRows = panelRecordListSchema.parse(await readSdkComponentOperationRows(owner, "@acme/widgets:ActionCard", "en"));
+  const opRows = panelRecordListSchema.parse(await readSdkComponentOperationRows(owner, "@acme/widgets:ActionCard", { locale: "en" }));
   expect(opRows).toMatchObject([
     { primaryKey: "approve", label: "approve", fields: { signature: "orders.approve" } },
   ]);
 
-  await expect(readSdkComponentRecord(owner, "@ontomato/sdk:Missing", "en")).rejects.toThrow(
+  await expect(readSdkComponentRecord(owner, "@ontomato/sdk:Missing", { locale: "en" })).rejects.toThrow(
     "SDK component '@ontomato/sdk:Missing' is not in the current release.",
   );
 });
@@ -235,8 +248,8 @@ it("formats wildcard data entries, declared package operations, and throws 404 f
 it("describes the two ObjectRelations wiring choices in the reader's locale", async () => {
   const component = "@ontomato/sdk:ObjectRelations";
   const [inputs, outputs] = await Promise.all([
-    readSdkComponentInputRows(owner, component, "en"),
-    readSdkComponentOutputRows(owner, component, "en"),
+    readSdkComponentInputRows(owner, component, { locale: "en" }),
+    readSdkComponentOutputRows(owner, component, { locale: "en" }),
   ]);
   expect(inputs.find(row => row.label === "selected")?.fields.type).toBe(en["panels.sdkComponent.portAnyOntologyObject"]);
   expect(outputs.find(row => row.label === "start")?.fields.type).toBe(en["panels.sdkComponent.portAnyOntologyObject"]);
@@ -246,7 +259,7 @@ it("describes the two ObjectRelations wiring choices in the reader's locale", as
 });
 
 it("lists components in canonical purpose group order with summary attributes and searches across full metadata", async () => {
-  const all = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN"));
+  const all = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }));
   expect(all).toMatchObject([
     {
       primaryKey: "@ontomato/sdk:SampleList",
@@ -275,21 +288,21 @@ it("lists components in canonical purpose group order with summary attributes an
     expect(row.fields).not.toHaveProperty("meaning");
   }
 
-  const byGroupLabel = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "图谱"));
+  const byGroupLabel = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }, "图谱"));
   expect(byGroupLabel.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:ObjectRelations"]);
 
-  const byAvailability = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "仅平台外壳"));
+  const byAvailability = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }, "仅平台外壳"));
   expect(byAvailability.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:WildcardBox"]);
 
-  const byMeaning = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "records"));
+  const byMeaning = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }, "records"));
   expect(byMeaning.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:SampleList"]);
 
   // Search still matches truncated bindsElement items, while detail retains the full list.
-  const byOverflowBinding = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "Relationship:*"));
+  const byOverflowBinding = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }, "Relationship:*"));
   expect(byOverflowBinding.map(row => row.primaryKey)).toEqual(["@acme/widgets:ActionCard"]);
   expect(byOverflowBinding[0]?.tags?.bindsElement).toEqual(["PlatformObjectType:*", "ObjectType:*", "Action:*", "+2"]);
 
-  const detail = panelRecordSchema.parse(await readSdkComponentRecord(owner, "@acme/widgets:ActionCard", "zh-CN"));
+  const detail = panelRecordSchema.parse(await readSdkComponentRecord(owner, "@acme/widgets:ActionCard", { locale: "zh-CN" }));
   expect(detail.tags?.bindsElement).toEqual([
     "PlatformObjectType:*",
     "ObjectType:*",
@@ -297,4 +310,35 @@ it("lists components in canonical purpose group order with summary attributes an
     "MetricView:*",
     "Relationship:*",
   ]);
+});
+
+it("checks component use for each viewer before returning source, including a cached projection", async () => {
+  const componentId = "domain-component:00000000-0000-0000-0000-000000000001";
+  const source = { template: "<div>private source</div>" };
+  const row = {
+    id: componentId, domainId: owner.domainId, ownerId: null, revision: 1, createdAt: new Date(), updatedAt: new Date(),
+    definition: { domainId: owner.domainId, revision: 1, source, declaration: { data: {} } },
+  };
+  componentAccess.resolve.mockResolvedValue(row);
+  componentAccess.decide.mockImplementation(async (_requests, viewer) => [viewer.token === "allowed"
+    ? { allowed: true } : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Object use denied" }]);
+  const allowed = { domainId: owner.domainId, credentials: { token: "allowed" } };
+  const denied = { domainId: owner.domainId, credentials: { token: "denied" } };
+  const projection = productProjectionSchema.parse({
+    componentId, id: "p", domainId: owner.domainId, ownerId: "projection-author", revision: 1, editable: false,
+    name: "Projection", description: "", visibility: "domain", inputs: {}, outputs: {}, data: {}, config: {},
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  const declared = { wrapper: componentId };
+
+  await expect(validateProjectionComponent("p", projection, undefined, allowed)).resolves.toMatchObject({ source });
+  await expect(validateProjectionComponent("p", projection, undefined, denied)).rejects.toMatchObject({ status: 403 });
+  await expect(readPanelDomainComponents(allowed, declared)).resolves.toMatchObject({ [componentId]: { source } });
+  await expect(readPanelDomainComponents(denied, declared)).resolves.toBeUndefined();
+  await expect(readPanelDomainComponents(denied, declared, { strict: true })).rejects.toMatchObject({ status: 403 });
+  expect(componentAccess.decide).toHaveBeenCalledWith([{
+    target: { kind: "COMPONENT", domainId: owner.domainId, id: componentId },
+    ownerFacts: { ownerId: null, state: "PUBLISHED" },
+    verb: "USE",
+  }], denied.credentials);
 });

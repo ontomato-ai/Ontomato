@@ -4,13 +4,11 @@ import { skillManager } from "../../services/skills/skill-manager";
 import { filterReadableAgentDefinitions } from "../../services/assistant/definitions";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { t, tApp } from "../../i18n";
-import { requirePermission } from "../../identity/installed";
 import { credentialsFromRequest, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler, sendError } from "../utils/http";
 import { HttpError } from "../../utils/errors";
 const router: ReturnType<typeof Router> = Router();
 const upload = multer({ storage: multer.memoryStorage() });
-const requireSkillAdmin = requirePermission(["skill-management"]);
 
 function requireDomain(req: Request, res: Response, next: NextFunction): void {
   if (!(req as AuthenticatedRequest).domainId) {
@@ -99,7 +97,6 @@ router.get(
 router.delete(
   "/:id",
   requireDomain,
-  requireSkillAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const request = req as AuthenticatedRequest;
     const domainId = request.domainId!;
@@ -115,7 +112,6 @@ router.delete(
 router.post(
   "/import",
   requireDomain,
-  requireSkillAdmin,
   upload.single("file"),
   asyncHandler(async (req: Request, res: Response) => {
     try {

@@ -12,7 +12,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
-import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
+import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
@@ -172,15 +172,21 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe(viewer.token);
     res.json({ success: true, data: { ...summary, entry, panelUses: [publicUse], groups: [] } });
   });
-  app.post("/java/product-governance/grants", (req, res) => {
+  mountCurrentProductDecisions(app, {
+    prefix: "/java", token: "governance", domain: owner.domainId,
+    allow: ({ target, verb }, caller) => [viewer.token, "executor"].includes(caller ?? "") &&
+      (verb === "USE" ? state.use : state.edit).includes(target.id),
+  });
+  app.post("/java/authorization/objects/product-access", (req, res) => {
     expect(req.header("tk")).toBe(viewer.token);
-    if (!state.edit.includes(req.body.id)) {
-      res.status(403).json({ success: false, message: "Edit Grant required" });
+    const { target, ownerFacts } = req.body;
+    expect(target.domainId).toBe(owner.domainId);
+    expect(ownerFacts.state).toBe("PUBLISHED");
+    if (!state.edit.includes(target.id)) {
+      res.status(403).json({ success: false, message: "Edit grant required" });
       return;
     }
-    const grants = [{ principalKind: "principal", principalId: owner.userId, verb: "edit" }];
-    if (req.body.id === "one") grants.push({ principalKind: "domain", principalId: "*", verb: "use" });
-    res.json({ grants });
+    res.json({ shared: target.id === "one", grants: [{ policyId: "editors", name: "Editors", verb: "EDIT" }] });
   });
   app.post("/java/platform/applications/catalogue/form", (req, res) => {
     const draft = req.body.section === "create";
@@ -392,10 +398,11 @@ it("updates only the submitted projection configuration field in PostgreSQL", as
   if (save.effect !== "write" || save.kind !== "form.save") throw new Error("Expected a form save");
   const target = { kind: "object" as const, objectType: PRODUCT_PROJECTION, primaryKey: before.id };
 
-  await expect(save.execute(host, target, {
+  const saved = await save.execute(host, target, {
     values: { config: { drawing: { color: "orange", width: 1 } } },
     submittedFields: ["/config/drawing/color"], revision: before.revision,
-  }, "projection-save")).resolves.toMatchObject({ kind: "success" });
+  }, "projection-save");
+  expect(saved.kind, JSON.stringify(saved)).toBe("success");
   expect(await readCurrentProjection(owner, viewer, before.id)).toMatchObject({
     name: before.name, data: before.data, componentId: before.componentId,
     config: { drawing: { color: "orange", width: 400 } },
@@ -522,13 +529,12 @@ it("requires edit for grant reads and derives domain sharing from the owner Gran
   expect(await readCatalogueResult("panelGrants", { panel: { className: PRODUCT_PANEL, primaryKey: "two" } }))
     .toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(await readCatalogue("panelGrants", { panel: { className: PRODUCT_PANEL, primaryKey: "one" } })).toEqual({
-    grants: [{ principalKind: "principal", principalId: owner.userId, verb: "edit" },
-      { principalKind: "domain", principalId: "*", verb: "use" }],
+    grants: [{ policyId: "editors", name: "Editors", verb: "EDIT" }],
     shared: true,
   });
   expect(await readCatalogue("projectionGrants", {
     projection: { className: PRODUCT_PROJECTION, primaryKey: "catalogue-data" },
-  })).toEqual({ grants: [{ principalKind: "principal", principalId: owner.userId, verb: "edit" }], shared: false });
+  })).toEqual({ grants: [{ policyId: "editors", name: "Editors", verb: "EDIT" }], shared: false });
 });
 
 it("filters panel templates in PostgreSQL before scanning cursor pages", async () => {

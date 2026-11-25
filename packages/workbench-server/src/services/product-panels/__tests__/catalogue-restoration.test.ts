@@ -1,3 +1,7 @@
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  requireObject: vi.fn(),
+}));
 import { beforeAll, expect, it, vi } from "vitest";
 import { applicationCatalogueRecordSchema } from "@ontomato/contracts/application-catalogue";
 import { panelFormDescriptionSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
@@ -264,10 +268,8 @@ it("maps projection summaries and details to standard PanelRecord records with o
 
   vi.mocked(readCurrentProjection).mockResolvedValue(sampleProjection);
   vi.mocked(currentProductGrants).mockResolvedValue({
-    grants: [
-      { principalKind: "domain", principalId: "*", verb: "use" },
-      { principalKind: "principal", principalId: "user-2", principalName: "Bob", verb: "edit" },
-    ],
+    grants: [{ policyId: "policy-edit", name: "Editors", verb: "EDIT" }],
+    shared: true,
   });
   vi.mocked(currentProductUsedBy).mockResolvedValue({
     panels: [{ id: "panel-orders", name: "Orders page" }],
@@ -309,8 +311,8 @@ it("maps projection summaries and details to standard PanelRecord records with o
 
   const grantRows = panelRecordListSchema.parse(await adapter.grantRows("proj-sample"));
   expect(grantRows).toHaveLength(2);
-  expect(grantRows[0]).toMatchObject({ fields: { principalKind: "domain", revocable: false } });
-  expect(grantRows[1]).toMatchObject({ label: "Bob", subtitle: "user-2", fields: { principalKind: "principal", verb: "edit", revocable: true } });
+  expect(grantRows.find(row => row.primaryKey === "domain")).toMatchObject({ fields: { verb: "USE", revocable: false } });
+  expect(grantRows.find(row => row.primaryKey === "policy-edit:EDIT")).toMatchObject({ label: "Editors", fields: { policyId: "policy-edit", verb: "EDIT", revocable: true } });
 
   const dataRows = panelRecordListSchema.parse(await adapter.dataRows("proj-sample"));
   expect(dataRows).toEqual([expect.objectContaining({

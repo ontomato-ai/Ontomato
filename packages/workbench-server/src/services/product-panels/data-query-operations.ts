@@ -3,6 +3,7 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import { formFieldErrorSchema } from "@ontomato/contracts/form-fields";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { HttpError } from "../../utils/errors";
+import { BackendResponseError } from "../../utils/backend-client";
 import type { PanelOperationHost, PanelOperationTarget, PanelRecordTarget, SinglePanelOperationOutcome } from "./server-operations";
 
 export const ownerEnvelopeSchema = z.object({
@@ -31,13 +32,8 @@ export async function ownerPost<Envelope>(
   host: DataQueryOperationHost, path: string, body: unknown, schema: z.ZodType<Envelope>,
 ): Promise<Envelope> {
   const response = await requestOwnerPost(host, path, body);
-  if (!response.ok) {
-    if (response.status === 403 && path.startsWith("/action/")) {
-      const denial = ownerEnvelopeSchema.parse(await response.json());
-      throw new HttpError(403, denial.message ?? "Action permission denied", ownerRefusalCodeSchema.parse(denial.code));
-    }
-    throw new HttpError(response.status, `Owner request failed: ${path}`, "OWNER_UNAVAILABLE");
-  }
+  if (response.status === 403) throw new BackendResponseError(response.status, await response.text());
+  if (!response.ok) throw new HttpError(response.status, `Owner request failed: ${path}`, "OWNER_UNAVAILABLE");
   return schema.parse(await response.json());
 }
 
@@ -61,6 +57,7 @@ export async function ownerDeleteUnavailable(
 /** The owner's record for one target; an unreadable target is the owner's error, never an id standing in for a name. */
 export async function ownerRecord(host: DataQueryOperationHost, target: PanelRecordTarget, path: string, code: string): Promise<unknown> {
   const response = await requestOwnerPost(host, path, { id: target.primaryKey });
+  if (response.status === 403) throw new BackendResponseError(response.status, await response.text());
   if (!response.ok) {
     const body = await response.json() as { message?: string; error?: { message?: string } } | null;
     throw new HttpError(response.status, body?.message ?? body?.error?.message ?? "The owner could not read the target", code);

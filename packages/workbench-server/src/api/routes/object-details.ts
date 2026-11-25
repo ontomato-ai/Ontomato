@@ -4,7 +4,7 @@ import {
   type ClearObjectDetailResponse, type ObjectDetailResponse, type ObjectDetailUsedByResponse,
 } from "@ontomato/contracts/object-detail";
 import { Router } from "express";
-import { requireProductGrant } from "../../services/product-governance/grants";
+import { requireCurrentDefinitionUse } from "../../services/product-panels/access";
 import {
   classesUsingDetailPanel, requireDetailPanel, resolveObjectDetail,
 } from "../../services/product-panels/object-detail";
@@ -16,8 +16,8 @@ export const objectDetailsRouter = Router();
 objectDetailsRouter.get("/by-panel/:panelId", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const { panelId } = objectDetailPanelParamsSchema.parse(req.params);
-  await requireProductGrant(panelId, "use", credentials);
-  await requireDetailPanel(owner.domainId, panelId);
+  const panel = await requireDetailPanel(owner.domainId, panelId);
+  await requireCurrentDefinitionUse("panel", panel, owner.domainId, credentials);
   const classNames = await classesUsingDetailPanel(owner.domainId, panelId);
   res.json({ classNames } satisfies ObjectDetailUsedByResponse);
 }));

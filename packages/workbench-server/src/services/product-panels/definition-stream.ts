@@ -4,7 +4,7 @@ import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
 import {currentProductRecord,findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
-import {requireProductGrant} from '../product-governance/grants';
+import {requireCurrentDefinitionUse} from './access';
 import {resolvePanelMemberPath} from './member-path';
 
 type AuthorStream = {
@@ -69,8 +69,9 @@ export async function snapshotPanelDefinitions(
   return { panel: root, members, projections: [...projections.values()] };
 }
 export async function requireDefinition(owner:ProductOwner,credentials:AssistantCredentials,kind:CurrentProductKind,id:string){
-  await requireProductGrant(id,'use',credentials);
-  return currentDefinition(owner.domainId,kind,id);
+  const row=await currentDefinition(owner.domainId,kind,id);
+  await requireCurrentDefinitionUse(kind,row,owner.domainId,credentials);
+  return row;
 }
 async function currentDefinition(domainId:string,kind:CurrentProductKind,id:string){
   const record=await findCurrentProduct(domainId,kind,id);

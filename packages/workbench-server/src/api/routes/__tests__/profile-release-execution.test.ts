@@ -1,3 +1,4 @@
+import { objectDecisions } from "../../../__tests__/fixtures/agent-object-decisions";
 import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
 import express from "express";
 import {randomUUID} from "node:crypto";
@@ -75,7 +76,10 @@ beforeEach(()=>{
     throw new Error(`Unexpected SQL: ${sql}`);
   });
   state.post.mockImplementation(async(name:string,_url:string,body:{userId?:string;verb?:string;executionUserId?:string},options:{headers:Record<string,string>})=>{
-    if(name==="product-grant-check")return {text:JSON.stringify({allowed:true})};
+    if(name==="object-authorization-decide-batch")return {
+      text:JSON.stringify(objectDecisions(body as Parameters<typeof objectDecisions>[0], request =>
+        "target" in request && request.target.domainId === owner.domainId && request.verb === "USE")),
+    };
     if(name==="product-grant-owner-resources")return {text:JSON.stringify({ids:body.verb==="use"&&(body.userId==="V"||state.use)?[profileId,view.id]:[]})};
     if(name==="agent-execution-resolve")return {text:JSON.stringify({executionUserId:body.executionUserId,apiKey:"V-key"})};
     if(name==="projection-object-contract"){
@@ -152,7 +156,7 @@ it("reads panel and referenced projection revisions under their use grants witho
     projections: [{ id: "projection-live", revision: 7 }],
     members: [{ status: "ready", memberPath: [{ member: "summary" }], target: { kind: "projection", id: "projection-live" }, revision: 7 }],
   });
-  expect(state.post.mock.calls.filter(([name]) => name === "product-grant-check")).toHaveLength(2);
+  expect(state.post.mock.calls.filter(([name]) => name === "object-authorization-decide-batch")).toHaveLength(2);
 });
 
 it("delivers live projection-only author notices while its snapshot is still reading", async () => {
