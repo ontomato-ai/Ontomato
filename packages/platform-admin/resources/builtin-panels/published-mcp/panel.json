@@ -47,29 +47,21 @@
           "rows": "tools"
         },
         "config": {
-          "layout": "table",
+          "layout": "accordion",
+          "subtitleField": "name",
+          "rowExpandMode": "multiple",
           "searchable": false,
           "fallbackToFirst": false,
+          "showHeader": false,
           "showFooter": false,
           "emptyText": "tools.empty",
           "columns": [
             {
-              "key": "label",
-              "labelKey": "tools.colTool",
-              "subtitleKey": "name",
-              "minWidth": 180
-            },
-            {
-              "key": "description",
-              "labelKey": "tools.colDescription",
-              "wrap": true,
-              "minWidth": 220
+              "key": "description"
             },
             {
               "key": "inputSchema",
-              "labelKey": "tools.colInputSchema",
-              "wrap": true,
-              "minWidth": 240
+              "labelKey": "tools.colInputSchema"
             }
           ]
         },
