@@ -546,9 +546,11 @@ it("supports paginated neighbor loading (nextOffset), direction/target-group fil
   // Open neighbor filter popover: changing direction/target group drafts does NOT trigger reads until Apply is clicked
   const filterBtn = element.querySelector<HTMLButtonElement>('[data-graph-action="neighbor-filters"]')!;
   filterBtn.click();
-  await nextTick();
-  const applyBtn = document.querySelector<HTMLButtonElement>('[data-graph-action="apply-filters"]')!;
-  expect(applyBtn).not.toBeNull();
+  const applyBtn = await vi.waitFor(() => {
+    const btn = document.querySelector<HTMLButtonElement>('[data-graph-action="apply-filters"]');
+    expect(btn).not.toBeNull();
+    return btn!;
+  });
   const directionWrapper = document.querySelector<HTMLElement>('[data-graph-filter="direction"] .el-select__wrapper')!;
   directionWrapper.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   await nextTick();

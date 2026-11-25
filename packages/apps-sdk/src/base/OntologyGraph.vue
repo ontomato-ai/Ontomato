@@ -582,6 +582,7 @@ const neighborFiltersDirty = computed(
     || draftNeighborRelationKind.value !== appliedNeighborRelationKind.value,
 );
 const neighborPopoverVisible = ref(false);
+const neighborPopoverRef = ref<{ hide?: () => void } | null>(null);
 const displaySettingsVisible = ref(false);
 
 // Local canvas viewport and focus
@@ -1956,6 +1957,7 @@ function applyNeighborFilters() {
   appliedNeighborTargetGroup.value = draftNeighborTargetGroup.value;
   appliedNeighborRelationKind.value = draftNeighborRelationKind.value;
   appliedFitAfterExpand.value = draftFitAfterExpand.value;
+  neighborPopoverRef.value?.hide?.();
   neighborPopoverVisible.value = false;
   if (activeMode.value !== "instance") return;
   const targetId = activeSelectedNodeId.value ?? focusedNodeId.value ?? rootNodeId.value;
@@ -2509,11 +2511,12 @@ onBeforeUnmount(() => {
 
         <el-popover
           v-if="(showAggregateToggle && activeMode === 'overview') || showEdgeLabelToggle"
-          v-model:visible="displaySettingsVisible"
           trigger="click"
           :width="260"
           placement="top-start"
           :teleported="false"
+          @show="displaySettingsVisible = true"
+          @hide="displaySettingsVisible = false"
         >
           <template #reference>
             <button
@@ -2567,11 +2570,14 @@ onBeforeUnmount(() => {
 
         <el-popover
           v-if="showNeighborControls && activeMode === 'instance' && hasAnyNeighborFilter"
-          v-model:visible="neighborPopoverVisible"
+          ref="neighborPopoverRef"
           trigger="click"
           :width="290"
           placement="top-start"
           :teleported="false"
+          :persistent="false"
+          @before-enter="neighborPopoverVisible = true"
+          @after-leave="neighborPopoverVisible = false"
         >
           <template #reference>
             <button
