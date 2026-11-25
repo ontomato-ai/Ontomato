@@ -364,7 +364,7 @@ describe("platform-ontology composite query", () => {
     const application = byId.get(APPLICATION);
     expect(application?.definition).toBe(platformTypeDetails[APPLICATION]?.definition);
     expect(Object.keys(application?.reads ?? {}).sort()).toEqual([
-      "available", "createForm", "entries", "entryRows", "form", "grantRows", "grants", "query", "record", "usedPanels",
+      "available", "count", "createForm", "entries", "entryRows", "form", "grantRows", "grants", "query", "record", "usedPanels",
     ]);
     expect(application?.operations?.map((op) => op.id)).toContain(`${APPLICATION}.save`);
 
