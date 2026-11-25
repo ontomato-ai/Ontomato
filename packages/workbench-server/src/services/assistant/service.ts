@@ -60,7 +60,7 @@ const db = () => getPostgresPool(),
   ADMISSION_GRACE_MS = 10 * 60_000,
   RECONCILE_PAGE = 200;
 export { publicSnapshot } from "../../platform/agent-runtime/projection";
-import { publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
+import { publicHistoryRuns, publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
 type LatestRun = Parameters<typeof runStatusView>[0];
 const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
   agentHostSessionSchema.parse({
@@ -197,7 +197,11 @@ export const assistantService = {
   async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
     await assistantStore.session(id, owner);
     const page = await new RuntimeClient(owner.domainId, undefined, owner.userId).history(id, query);
-    return { ...page, session: sessionView(await assistantStore.session(id, owner), page.session.latestRun) };
+    return {
+      ...page,
+      runs: publicHistoryRuns(page.runs),
+      session: sessionView(await assistantStore.session(id, owner), page.session.latestRun),
+    };
   },
   async snapshot(id: string, owner: AssistantOwner) {
     const row = await assistantStore.session(id, owner),

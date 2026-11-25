@@ -8,8 +8,7 @@ import {
   type AppExecutionContext,
 } from "@ontomato/contracts/build-tests";
 import type { PageContext, PageSelection } from "@ontomato/contracts/page-context";
-import { panelAddressState, type PanelHostSource } from "@ontomato/contracts/panel-host";
-import type { WorkspacePreviewToken } from "@ontomato/contracts/workspaces";
+import { appCandidatePanelSourceSchema, panelAddressState, type AppCandidatePanelSource } from "@ontomato/contracts/panel-host";
 import type {
   AppPreviewSelectionItem,
   PanelPreviewHost,
@@ -18,10 +17,10 @@ import type {
   PanelPreviewRequest,
 } from "@ontomato/apps-sdk/direct";
 import { PanelHost, type PanelHostLabels, type PanelHostPort } from "@ontomato/platform-shell";
-import { ApiRequestError, apiUrl, nodeApiGet, nodeApiPost } from "@ontomato/workbench-ui";
+import { ApiRequestError, apiUrl, nodeApiGet } from "@ontomato/workbench-ui";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import { registerBuildPreview } from "./app-host";
-import { candidatePanelHost } from "./panel-host";
+import { appCandidatePanelHost } from "./panel-host";
 
 const LEGACY_SDK_ERROR_CODES = new Set([
   "BUILD_TEST_SDK_UPGRADE_REQUIRED",
@@ -162,31 +161,28 @@ function isInvalidCandidateError(failure: unknown): boolean {
   return failure.status === 400 || failure.code === "PANEL_CANDIDATE_INVALID";
 }
 
-function memoizeFirstSource<TSource extends PanelHostSource>(
-  port: PanelHostPort<TSource>,
-  initialSource: TSource,
-): PanelHostPort<TSource> {
-  let cached: TSource | null = initialSource;
-  return {
-    ...port,
-    async source() {
-      if (cached !== null) {
-        const current = cached;
-        cached = null;
-        return current;
-      }
-      return port.source();
-    },
-  };
+interface ApplicationPreviewDescriptor {
+  kind: "empty" | "hosted" | "panel";
+  appId: string;
+  workspaceId?: string | null;
+  activeEntryId?: string | null;
+  hostedPreviewUrl?: string;
+  previewContext?: { kind: "build-test"; test: unknown };
+  candidate?: unknown;
+}
+
+function hostedPreviewSrc(hostedPreviewUrl: string): string {
+  if (hostedPreviewUrl.startsWith("/api/")) {
+    return apiUrl(hostedPreviewUrl.slice("/api".length));
+  }
+  return hostedPreviewUrl;
 }
 
 /**
- * Default resolver for workspace-backed applications:
- * 1. Probes the workspace panel candidate (`candidatePanelHost`). When present, mounts it through `PanelHost`
- *    under the workspace's build-test context (without fetching the candidate twice on initial mount).
- * 2. When no panel candidate files exist (HTTP 404), falls back to the legacy hosted preview flow
- *    (`GET /workspaces/:id/build-tests` + `POST /workspaces/:id/preview-token`), strictly preserving
- *    server-side authorization and reporting `legacy-sdk` / `empty` / `error` states cleanly.
+ * Default resolver for application-backed previews:
+ * queries the authoritative application preview descriptor (`GET /product-panels/preview/app/:appId`) and mounts
+ * either a candidate/live panel (`appCandidatePanelHost`) or a legacy hosted preview iframe without leaking preview
+ * tokens, build-test headers, or raw iframe URLs to panel scripts.
  */
 export async function defaultResolvePreview(
   request: PreviewResolutionRequest,
@@ -194,60 +190,23 @@ export async function defaultResolvePreview(
 ): Promise<ResolvedPreviewTarget> {
   if (signal?.aborted) return { kind: "empty" };
 
-  const pageKey = request.entryId?.trim() || "preview";
-  const address = `/app-preview/${encodeURIComponent(request.appId)}/${encodeURIComponent(request.revision)}/${encodeURIComponent(pageKey)}`;
-  const candidatePort = candidatePanelHost({
-    id: request.appId,
-    ref: request.revision,
-    pageKey,
-  });
+  const query = new URLSearchParams({ ref: request.revision });
+  if (request.entryId) query.set("entryId", request.entryId);
 
+  let descriptor: ApplicationPreviewDescriptor;
   try {
-    const source = await candidatePort.source();
-    if (signal?.aborted) return { kind: "empty" };
-    return {
-      kind: "panel",
-      port: memoizeFirstSource(candidatePort, source),
-      address,
-    };
+    descriptor = (await nodeApiGet(
+      `/product-panels/preview/app/${encodeURIComponent(request.appId)}?${query}`,
+    )) as ApplicationPreviewDescriptor;
   } catch (failure) {
     if (signal?.aborted) return { kind: "empty" };
 
     const legacy = detectLegacySdkError(failure);
     if (legacy) return { kind: "legacy-sdk", ...legacy };
 
-    // Authorization failures and invalid panel descriptors must surface immediately without falling back.
     if (isAuthorizationError(failure) || isInvalidCandidateError(failure)) {
       return { kind: "error", message: failureMessage(failure) };
     }
-
-    // Only fall back to legacy hosted preview when no panel candidate files exist.
-    if (!isNotFoundError(failure)) {
-      return { kind: "error", message: failureMessage(failure) };
-    }
-  }
-
-  const workspacePath = `/workspaces/${encodeURIComponent(request.appId)}`;
-  try {
-    const rawContext = await nodeApiGet(`${workspacePath}/build-tests`);
-    if (signal?.aborted) return { kind: "empty" };
-    const parsedContext = buildTestContextSchema.nullable().parse(rawContext);
-    const executionContext = buildExecutionContext(request.appId, parsedContext);
-
-    const { token } = (await nodeApiPost(`${workspacePath}/preview-token`, {})) as WorkspacePreviewToken;
-    if (signal?.aborted) return { kind: "empty" };
-
-    return {
-      kind: "hosted",
-      src: apiUrl(`${workspacePath}/preview/${encodeURIComponent(token)}/index.html`),
-      executionContext,
-      page: request.entryId ?? "/",
-    };
-  } catch (failure) {
-    if (signal?.aborted) return { kind: "empty" };
-
-    const legacy = detectLegacySdkError(failure);
-    if (legacy) return { kind: "legacy-sdk", ...legacy };
 
     if (isNotFoundError(failure)) {
       return { kind: "empty" };
@@ -255,6 +214,36 @@ export async function defaultResolvePreview(
 
     return { kind: "error", message: failureMessage(failure) };
   }
+
+  if (signal?.aborted) return { kind: "empty" };
+
+  if (descriptor.kind === "empty") {
+    return { kind: "empty" };
+  }
+
+  if (descriptor.kind === "panel") {
+    const candidate: AppCandidatePanelSource = appCandidatePanelSourceSchema.parse(descriptor.candidate);
+    const pageKey = descriptor.activeEntryId?.trim() || request.entryId?.trim() || "preview";
+    const address = `/app-preview/${encodeURIComponent(request.appId)}/${encodeURIComponent(request.revision)}/${encodeURIComponent(pageKey)}`;
+    return {
+      kind: "panel",
+      port: appCandidatePanelHost(candidate, pageKey),
+      address,
+    };
+  }
+
+  if (descriptor.kind === "hosted" && descriptor.hostedPreviewUrl) {
+    const parsedTest = buildTestContextSchema.nullable().parse(descriptor.previewContext?.test ?? null);
+    const executionContext = buildExecutionContext(descriptor.workspaceId ?? request.appId, parsedTest);
+    return {
+      kind: "hosted",
+      src: hostedPreviewSrc(descriptor.hostedPreviewUrl),
+      executionContext,
+      page: request.entryId ?? "/",
+    };
+  }
+
+  return { kind: "empty" };
 }
 
 function toPreviewSelectionItem(item: PageSelection): AppPreviewSelectionItem {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { applicationMetadataSchema } from "@ontomato/contracts/application-metadata";
 import { panelManifestSchema, panelThemeOverridesSchema } from "@ontomato/contracts/panel-manifest";
 import {
-  applicationDeliverySchema, applicationPanelUseSchema, panelDefinitionContentSchema,
+  applicationDeliverySchema, applicationPanelUseSchema, isApplicationPanelUse, panelApplicationEntryUseSchema, panelDefinitionContentSchema,
   productPanelContentSchema, productPanelInputSchema, productProjectionInputSchema,
   type ApplicationDelivery, type ApplicationPanelUse, type PanelDefinitionContent,
   type ProductPanelInput, type ProductProjectionInput,
@@ -30,7 +30,7 @@ export const applicationSourceManifestSchema = z.object({
   entryAccess: z.array(z.string().min(1)).min(1).optional(),
   framePanelId: z.string().min(1).optional(),
   theme: panelThemeOverridesSchema.optional(),
-  panelUses: z.array(applicationPanelUseSchema),
+  panelUses: z.array(panelApplicationEntryUseSchema),
   delivery: applicationDeliverySchema.optional(),
 }).strict();
 export type ApplicationSourceManifest = z.infer<typeof applicationSourceManifestSchema>;
@@ -434,7 +434,9 @@ export function diffFingerprints(
 export function applicationDirectPanelIds(application: Pick<ApplicationSourceManifest, "framePanelId" | "panelUses" | "delivery">): string[] {
   const ids = new Set<string>();
   if (application.framePanelId) ids.add(application.framePanelId);
-  for (const use of application.panelUses) ids.add(use.panelId);
+  for (const use of application.panelUses) {
+    if (isApplicationPanelUse(use)) ids.add(use.panelId);
+  }
   for (const panelId of application.delivery?.panels ?? []) ids.add(panelId);
   return [...ids].sort();
 }

@@ -3,6 +3,7 @@ import { localizedApplicationText } from "@ontomato/contracts/application-metada
 import type { BuildTestContext } from "@ontomato/contracts/build-tests";
 import type { AppCandidatePanelSource, ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import {
+  isApplicationPanelUse,
   panelDefinitionContentSchema,
   type PanelDefinitionContent,
   type ProductPanelInput,
@@ -182,12 +183,14 @@ function selectPanelFromSource(
   const sourcePanels = new Map(source.parsed.panels.map(p => [p.id, p.input]));
   const sourceProjections = new Map(source.parsed.projections.map(p => [p.id, p.input]));
   const loc = resolveLocale(locale);
-  const entries: BuilderPreviewEntry[] = source.parsed.application.panelUses.map(use => ({
-    id: use.id,
-    panelId: use.panelId,
-    label: (use.names && localizedApplicationText(use.names, loc)) || use.pageKey,
-    path: use.path,
-  }));
+  const entries: BuilderPreviewEntry[] = source.parsed.application.panelUses
+    .filter(isApplicationPanelUse)
+    .map(use => ({
+      id: use.id,
+      panelId: use.panelId,
+      label: (use.names && localizedApplicationText(use.names, loc)) || use.pageKey,
+      path: use.path,
+    }));
 
   if (!entries.length) return null;
   const home = source.parsed.application.entry.home;
@@ -280,40 +283,44 @@ export async function readApplicationPreviewDescriptor(
   const selected = selectPanelFromSource(source, credentials.locale, query.entryId);
   if (!selected) {
     // Entry references a live panel (e.g. builtin or foreign-owned panel) not in local panels/.
-    if (source.parsed.kind === "panel-app" && source.parsed.application.panelUses.length > 0) {
+    if (source.parsed.kind === "panel-app") {
       const loc = resolveLocale(credentials.locale);
-      const entries: BuilderPreviewEntry[] = source.parsed.application.panelUses.map(use => ({
-        id: use.id,
-        panelId: use.panelId,
-        label: (use.names && localizedApplicationText(use.names, loc)) || use.pageKey,
-        path: use.path,
-      }));
-      const chosen = (query.entryId ? entries.find(e => e.id === query.entryId) : undefined) ?? entries[0]!;
-      const livePanel = await readCurrentPanelRecord(owner, credentials, chosen.panelId);
-      const panel = panelDefinitionContentSchema.parse({
-        manifest: livePanel.manifest,
-        content: livePanel.content,
-      });
-      const domainComponents = await readPanelDomainComponents(
-        owner.domainId,
-        panel.manifest.components,
-        { authorId: owner.userId },
-      );
-      return {
-        kind: "panel",
-        appId,
-        materialized: source.materialized,
-        workspaceId: source.workspaceId,
-        entries,
-        activeEntryId: chosen.id,
-        candidate: {
-          kind: "app-candidate",
-          app: { id: appId, ref: source.ref, entryId: chosen.id },
-          panel,
-          ...(domainComponents && { domainComponents }),
-          previewContext: { kind: "build-test", test: source.test },
-        },
-      };
+      const entries: BuilderPreviewEntry[] = source.parsed.application.panelUses
+        .filter(isApplicationPanelUse)
+        .map(use => ({
+          id: use.id,
+          panelId: use.panelId,
+          label: (use.names && localizedApplicationText(use.names, loc)) || use.pageKey,
+          path: use.path,
+        }));
+      if (entries.length > 0) {
+        const chosen = (query.entryId ? entries.find(e => e.id === query.entryId) : undefined) ?? entries[0]!;
+        const livePanel = await readCurrentPanelRecord(owner, credentials, chosen.panelId);
+        const panel = panelDefinitionContentSchema.parse({
+          manifest: livePanel.manifest,
+          content: livePanel.content,
+        });
+        const domainComponents = await readPanelDomainComponents(
+          owner.domainId,
+          panel.manifest.components,
+          { authorId: owner.userId },
+        );
+        return {
+          kind: "panel",
+          appId,
+          materialized: source.materialized,
+          workspaceId: source.workspaceId,
+          entries,
+          activeEntryId: chosen.id,
+          candidate: {
+            kind: "app-candidate",
+            app: { id: appId, ref: source.ref, entryId: chosen.id },
+            panel,
+            ...(domainComponents && { domainComponents }),
+            previewContext: { kind: "build-test", test: source.test },
+          },
+        };
+      }
     }
     return {
       kind: "empty",
@@ -378,9 +385,10 @@ export async function resolveApplicationPreviewPath(
   let rootPanel = selected?.panel;
   if (!rootPanel && source.parsed.kind === "panel-app") {
     const { panelUses: uses, entry } = source.parsed.application;
-    const chosen = uses.find(use => use.id === query.entryId)
-      ?? uses.find(use => use.path === entry.home)
-      ?? uses[0];
+    const panelEntries = uses.filter(isApplicationPanelUse);
+    const chosen = panelEntries.find(use => use.id === query.entryId)
+      ?? panelEntries.find(use => use.path === entry.home)
+      ?? panelEntries[0];
     if (chosen) rootPanel = await readCurrentPanelRecord(owner, credentials, chosen.panelId);
   }
   if (!rootPanel) throw new HttpError(404, "No previewable panel found for this application", "NOT_FOUND");

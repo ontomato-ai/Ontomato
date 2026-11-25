@@ -5,7 +5,7 @@ import { domainApplicationIconSchema, recommendApplicationIcon } from "@ontomato
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { BuildTestContext } from "@ontomato/contracts/build-tests";
 import {
-  isBuiltinProductId, METRIC_CHART_COMPONENT,
+  isApplicationPanelUse, isBuiltinProductId, METRIC_CHART_COMPONENT,
   type ProductPanelInput, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import {
@@ -273,7 +273,7 @@ async function readWorkspaceFiles(
 }
 
 function previewEntriesFromManifest(manifest: ApplicationSourceManifest, locale?: string): BuilderPreviewEntry[] {
-  return manifest.panelUses.map(use => ({
+  return manifest.panelUses.filter(isApplicationPanelUse).map(use => ({
     id: use.id,
     panelId: use.panelId,
     label: (use.names && localizedApplicationText(use.names, resolveLocale(locale))) || use.id,

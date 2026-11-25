@@ -13,10 +13,10 @@ import {
   type ProductDefinitionRevision, type ProductDefinitionTarget,
 } from "@ontomato/contracts/product-subscriptions";
 import {
-  candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH,
+  appCandidatePanelSourceSchema, candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH,
   PANEL_READ_BATCH_MAX, PANEL_READ_BATCH_PATH,
   panelPersonalStateResponseSchema, productPanelNestedReadResponseSchema, productPanelReadBatchResponseSchema, productPanelReadResponseSchema,
-  type ProductPanelNestedReadRequest,
+  type AppCandidatePanelSource, type ProductPanelNestedReadRequest,
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
@@ -742,6 +742,67 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         defaultLocale: String(global.fallbackLocale.value),
         translate: (key, params) => global.t(key, params ?? {}),
       }, { kind: "candidate", workspace: source.workspace }), target, source.panel.content.module);
+    },
+    snapshot,
+    mode: { kind: "author", definitions: panelAuthorDefinitions() },
+  };
+}
+
+/**
+ * Application-scoped candidate preview host: runs a panel from an application's source (or unmaterialized live definition)
+ * in author mode under build-test context, reading nested members through `source.kind === "app-candidate"`.
+ */
+export function appCandidatePanelHost(
+  initial: AppCandidatePanelSource,
+  pageKey: string,
+): PanelHostPort<AppCandidatePanelSource> {
+  let cached: AppCandidatePanelSource | null = initial;
+  const query = new URLSearchParams({ ref: initial.app.ref });
+  if (initial.app.entryId) query.set("entryId", initial.app.entryId);
+  const refreshPath = `/product-panels/preview/app/${encodeURIComponent(initial.app.id)}?${query}`;
+  return {
+    async source() {
+      warmTemplateCompiler();
+      if (cached !== null) {
+        const current = cached;
+        cached = null;
+        return current;
+      }
+      const descriptor = await json(refreshPath) as { kind?: string; candidate?: unknown };
+      if (descriptor?.kind !== "panel") {
+        throw new Error("Application preview no longer resolves to a panel candidate");
+      }
+      return appCandidatePanelSourceSchema.parse(descriptor.candidate);
+    },
+    pageKey,
+    use: null,
+    panel,
+    release,
+    frame: (frame, source, open) => registerCandidateFrame(
+      frame,
+      buildExecutionContext(source.app.id, source.previewContext.test),
+      { id: source.app.id, ref: source.app.ref },
+      { pageKey, manifest: source.panel.manifest },
+      open,
+    ),
+    coded: (source, run, target) => {
+      const { global } = workbenchI18n();
+      return mountCoded(withNested({
+        manifest: source.panel.manifest,
+        run,
+        requests: platformRequests,
+        readProjection: readPlatformProjection,
+        ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
+        use: null,
+        read: request => readPanelData({ source: { kind: "app-candidate", app: source.app }, ...request }),
+        confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
+        expandPageComposer: expandDeclaredComposer,
+        navigate: panelNavigator(platformRouter()),
+        messages: source.panel.content.messages ?? {},
+        locale: global.locale,
+        defaultLocale: String(global.fallbackLocale.value),
+        translate: (key, params) => global.t(key, params ?? {}),
+      }, { kind: "app-candidate", app: source.app }), target, source.panel.content.module);
     },
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
