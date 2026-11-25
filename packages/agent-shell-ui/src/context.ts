@@ -1,3 +1,5 @@
+import type { ConversationDisplay } from "./conversation-display";
+import type { ShellPanelOperationsPort } from "./types";
 import { inject, onBeforeUnmount, onMounted, reactive, type InjectionKey, type Ref, type Slot } from "vue";
 import type { AgentPendingQuestion } from "@ontomato/contracts/agent-channel";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
@@ -124,4 +126,66 @@ export function useDisplayPlacement(element: Ref<HTMLElement | null>) {
     release = place?.(() => (getComputedStyle(element.value!).position === "fixed" ? "overlay" : "side"));
   });
   onBeforeUnmount(() => release?.());
+}
+
+/** Use the mounted page's prepared operation when the reader answers its confirmation. */
+export function displayQuestions(
+  base: ShellQuestions,
+  display: () => ConversationDisplay | null,
+  sessionId: () => string | null,
+  panelOperations?: ShellPanelOperationsPort,
+): ShellQuestions {
+  return {
+    ...base,
+    async answer(requestId, answer, selectedOption) {
+      const current = display();
+      const bound = await current?.waitPendingActionConfirmation(requestId);
+      if (bound && current) {
+        if (selectedOption === 1) {
+          const sameSession = bound.sessionId === sessionId();
+          const samePage =
+            current.page.value?.instance === bound.pageInstance
+            && current.pageInstanceId.value === bound.pageInstanceId;
+          if (!sameSession || !samePage) {
+            const reason = "The page or conversation changed after confirmation was requested.";
+            await bound.confirmation.cancel({ code: "FORM_CONFIRMATION_STALE", message: reason }).catch(() => undefined);
+            return base.answer(
+              requestId,
+              `${answer} [intent=${bound.confirmation.intentId}: stale - ${reason}]`,
+              selectedOption,
+            );
+          }
+          const dispatched = await bound.confirmation.dispatch();
+          const codePrefix = !dispatched.ok && dispatched.code ? `${dispatched.code}: ` : "";
+          const savedSuffix = !dispatched.ok && dispatched.savedFields?.length
+            ? ` (savedFields: ${dispatched.savedFields.join(", ")})`
+            : "";
+          const note = dispatched.ok
+            ? `[intent=${dispatched.intentId}: executed - ${dispatched.summary}]`
+            : `[intent=${dispatched.intentId}: ${dispatched.reason} - ${codePrefix}${dispatched.message}${savedSuffix}]`;
+          return base.answer(requestId, `${answer} ${note}`, selectedOption);
+        }
+        await bound.confirmation
+          .cancel({ code: "USER_CANCELLED", message: "User declined confirmation." })
+          .catch(() => undefined);
+        return base.answer(requestId, answer, selectedOption);
+      }
+      if (panelOperations?.cancelPendingQuestionIntent) {
+        const reason = selectedOption === 1
+          ? { code: "FORM_CONFIRMATION_STALE", message: "The original page instance is no longer open (reloaded, closed, or in another tab)." }
+          : { code: "USER_CANCELLED", message: "User declined confirmation." };
+        const checked = await panelOperations
+          .cancelPendingQuestionIntent(requestId, reason)
+          .catch(() => ({ stale: false as const, intentId: undefined }));
+        if (checked.stale && selectedOption === 1) {
+          return base.answer(
+            requestId,
+            `${answer} [intent=${checked.intentId ?? "unknown"}: stale - ${reason.message}]`,
+            selectedOption,
+          );
+        }
+      }
+      return base.answer(requestId, answer, selectedOption);
+    },
+  };
 }

@@ -66,8 +66,9 @@ it("creates one owned workspace for an unbound first conversation and reuses it 
   expect(RuntimeClient.prototype.request).toHaveBeenCalledTimes(1);
 });
 
-it("verifies an explicit workspace before persisting the binding and never allocates another", async () => {
-  const input = { agentId, workspaceId };
+it.each([{ workspaceId }, { context: { workspaceId } }])(
+  "verifies an explicit workspace before persisting the binding and never allocates another (%j)", async (workspace) => {
+  const input = { agentId, ...workspace };
   vi.mocked(RuntimeClient.prototype.request).mockRejectedValueOnce(new HttpError(404, "not owned", "NOT_FOUND"));
   await expect(assistantService.create(sessionId, owner, input, credentials)).rejects.toHaveProperty("status", 404);
   expect(persisted).toBeUndefined();

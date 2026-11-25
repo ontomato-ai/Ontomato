@@ -7,7 +7,7 @@ import {
   type PanelFormDescription, type PanelFormField, type PanelFormValues, type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
 import { AGENT_SESSION, APP_WORKSPACE, APP_WORKSPACE_CREATE, APP_WORKSPACE_PUBLISH, APP_WORKSPACE_SAVE } from "@ontomato/contracts/platform-object-types";
-import { isNativeApplicationEntry, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { isApplicationPanelUse, isFrameConversationEntry } from "@ontomato/contracts/product-panels";
 import { applicationDeclarationSchema, type ApplicationDeclaration, type CatalogApplication } from "@ontomato/contracts/platform-identity";
 import {
   workspaceIdSchema, workspaceNameSchema, workspacePageSchema, workspaceSchema,
@@ -47,7 +47,7 @@ function form(fields: PanelFormField[], values: PanelFormValues, operation: stri
 }
 
 export function catalogDeclaration(app: CatalogApplication): ApplicationDeclaration {
-  const panelUses = app.panelUses?.filter((entry): entry is ApplicationPanelUse => !isNativeApplicationEntry(entry));
+  const panelUses = app.panelUses?.filter(entry => isApplicationPanelUse(entry) || isFrameConversationEntry(entry));
   return {
     names: app.names, descriptions: app.descriptions, icon: app.icon, groups: app.groups ?? [], permissions: [],
     ...(panelUses && { panelUses }),
@@ -336,7 +336,7 @@ export class AppWorkspaceOwner {
       });
       return {
         className: AGENT_SESSION, primaryKey: session.id, label: title,
-        fields: { title, status, statusLabel: this.text(isOccupying ? "statusBusy" : `session.${status}`), isOccupying, updatedAt: session.updatedAt },
+        fields: { title, status, running: status === "running", statusLabel: this.text(isOccupying ? "statusBusy" : `session.${status}`), isOccupying, updatedAt: session.updatedAt },
         tones: { statusLabel: isOccupying ? "warning" : "default" },
         outputs: { openPath: `/agents/chat?${query}` },
       };

@@ -1,8 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { defineComponent, h, nextTick, provide, onBeforeUnmount, onMounted, ref } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { ApplicationEntryResolution, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { pageCounterKey, type ConversationDisplay, type SessionRunHandlers } from "@ontomato/agent-shell-ui";
+import { AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { provideApplicationFrame, providePageHeading, type DirectPanelRun } from "@ontomato/platform-shell";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -47,6 +50,15 @@ const appBHomeUse: ApplicationPanelUse = {
   access: { kind: "domain-member" },
 };
 
+const conversationUse: ApplicationEntryResolution["use"] = {
+  kind: "frame-conversation", id: "chat", pageKey: "chat", path: "/applications/app-b/chat",
+  access: { kind: "domain-member" },
+};
+const runFeed = vi.hoisted(() => ({ subscribe: vi.fn(), detach: vi.fn() }));
+vi.mock("@ontomato/workbench-ui/features/workbench/assistant-host", () => ({
+  createAssistantClient: () => ({ sessionRuns: { subscribe: runFeed.subscribe } }),
+}));
+
 const catalogApplications = ref<unknown[]>([]);
 const resolveApplicationEntryMock = vi.fn<[{ path?: string; useId?: string }], Promise<ApplicationEntryResolution>>();
 const readApplicationFrameManifestMock = vi.fn<
@@ -55,6 +67,8 @@ const readApplicationFrameManifestMock = vi.fn<
 >();
 const framePanelHostCalls: Array<{ applicationId: string; framePanelId: string; useId: string }> = [];
 const builtinFramePanelHostCalls: Array<{ applicationId: string; framePanelId: string }> = [];
+let frameDisplay: (() => ConversationDisplay) | undefined;
+let frameOwnsComposer = false;
 let frameChangedCallbacks: Array<(change: PanelObjectChange) => void> = [];
 let contentChangedCallbacks: Array<(change: PanelObjectChange) => void> = [];
 
@@ -76,7 +90,11 @@ vi.mock("../panel-host", () => ({
     use: ApplicationPanelUse,
     framePanelId: string,
     changed: (change: PanelObjectChange) => void,
+    _router: unknown,
+    chat: { display: () => ConversationDisplay; onPanelLoaded: (ownsComposer: boolean) => void },
   ) => {
+    frameDisplay = chat.display;
+    chat.onPanelLoaded(frameOwnsComposer);
     framePanelHostCalls.push({ applicationId, framePanelId, useId: use.id });
     frameChangedCallbacks.push(changed);
     return { kind: "frame" as const, applicationId, framePanelId };
@@ -89,7 +107,10 @@ vi.mock("../panel-host", () => ({
     applicationId: string,
     use: ApplicationPanelUse,
     changed: (change: PanelObjectChange) => void,
+    _mode: unknown,
+    pageSkill: (skill: PageSkillContext) => void,
   ) => {
+    void nextTick(() => pageSkill({ mode: "public", locator: { access: "domain-member", pageKey: use.pageKey } }));
     contentChangedCallbacks.push(changed);
     return { kind: "content" as const, applicationId, use };
   },
@@ -102,6 +123,7 @@ interface MountedPanelHostRecord {
   id: string;
   unmounted: boolean;
   refreshes: PanelObjectChange[];
+  applyState: ReturnType<typeof vi.fn>;
   emitSurfaceReady: (ready: boolean) => void;
   emitFrameState: (state: Record<string, unknown>) => void;
   emitFrameAddress: (address: string) => void;
@@ -135,6 +157,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
         id: port.kind === "frame" ? port.framePanelId : port.use.id,
         unmounted: false,
         refreshes: [],
+        applyState: vi.fn(),
         emitSurfaceReady: (ready: boolean) => emit("surface-ready", ready),
         emitFrameState: (state: Record<string, unknown>) => emit("display-state", state),
         emitFrameAddress: (address: string) => emit("display-address", { kind: "state", address }),
@@ -143,6 +166,11 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
       mountedHosts.push(record);
 
       expose({
+        applyState: record.applyState,
+        validateState() {},
+        blocksNavigation: () => false,
+        probePresentation: async () => undefined,
+        presentationAddress: (address: string) => address,
         refresh(target: PanelObjectChange["target"], affected?: PanelObjectChange["affected"], operation?: PanelObjectChange["operation"]) {
           record.refreshes.push({ target, affected, operation });
         },
@@ -153,6 +181,10 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
       }
 
       onMounted(() => {
+        if (port.kind === "content") {
+          emit("context", { url: props.address, label: port.use.id, state: { tab: port.use.id }, selection: [] });
+          emit("display-loaded", { status: "ready" });
+        }
         if (port.kind === "frame" && slotMountEl.value) {
           const handle = (props.currentEntry as DirectPanelRun["currentEntry"] | undefined)?.place(slotMountEl.value);
           disposePlacement = handle?.dispose ?? null;
@@ -259,8 +291,8 @@ const apps: PlatformAppDeclaration[] = [
 
 function resolutionOf(
   applicationId: string,
-  use: ApplicationPanelUse,
-  panelUses: ApplicationPanelUse[],
+  use: ApplicationEntryResolution["use"],
+  panelUses: ApplicationEntryResolution["use"][],
   framePanelId?: string,
 ): ApplicationEntryResolution {
   return {
@@ -310,6 +342,11 @@ async function mountPlatformShell(initialPath: string) {
     setup() {
       const heading = providePageHeading();
       const framed = provideApplicationFrame();
+      provide(pageCounterKey, {
+        agents: async () => [],
+        pageAgents: async () => ({ agents: [{ id: "agent", name: "Agent", description: "", enabled: true, icon: null }] }),
+        preferredAgentId: ref(null), ask: vi.fn(),
+      });
       return () => h(PlatformLayout, {
         apps,
         shownPage: router.currentRoute.value.path === "/home"
@@ -342,6 +379,10 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  runFeed.subscribe.mockReset().mockReturnValue(runFeed.detach);
+  runFeed.detach.mockClear();
+  frameDisplay = undefined;
+  frameOwnsComposer = false;
   mountedHosts.length = 0;
   framePanelHostCalls.length = 0;
   builtinFramePanelHostCalls.length = 0;
@@ -361,6 +402,47 @@ afterEach(() => {
 });
 
 describe("ApplicationFrameHost single persistent outer frame", () => {
+  it("switches a frame-only conversation to live content within the same frame using one session feed", async () => {
+    const entries = [conversationUse, appBHomeUse];
+    catalogApplications.value = [{ id: "app-b", framePanelId: appBFrameId, panelUses: entries }];
+    resolveApplicationEntryMock.mockImplementation(async ({ path }) =>
+      resolutionOf("app-b", path === conversationUse.path ? conversationUse : appBHomeUse, entries, appBFrameId),
+    );
+    frameOwnsComposer = true;
+    const { router, wrapper } = await mountPlatformShell(conversationUse.path);
+    await flushPromises();
+    const frame = mountedHosts.find(host => host.kind === "frame")!;
+    expect(frame.currentEntry?.entry.value).toMatchObject({ kind: "frame-conversation" });
+    expect(frame.currentEntry?.entry.value.panelId).toBeUndefined();
+    expect(mountedHosts.some(host => host.kind === "content")).toBe(false);
+    const display = frameDisplay!();
+    expect(display.snapshot()).toMatchObject({ known: true, target: null });
+    expect(display.pageSkill.value).toBeNull();
+
+    const frameInput = { type: "presentation" as const, sessionId: "session", runId: "run", toolCallId: "show" };
+    await display.present({ ...frameInput, target: { kind: "page", address: appBHomeUse.path } });
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe(appBHomeUse.path);
+    const content = mountedHosts.find(host => host.kind === "content")!;
+    expect(frame.unmounted).toBe(false);
+    expect(display.snapshot()).toMatchObject({ target: { url: appBHomeUse.path, state: { tab: appBHomeUse.id } } });
+    await display.present({ ...frameInput, target: { kind: "page", address: appBHomeUse.path, state: { tab: "detail" } } });
+    expect(content.applyState).toHaveBeenCalledWith({ tab: "detail" });
+    expect(wrapper.find(".page-ask").exists()).toBe(false);
+
+    expect(runFeed.subscribe).toHaveBeenCalledTimes(1);
+    const handlers: SessionRunHandlers = runFeed.subscribe.mock.calls[0]![0];
+    await handlers.frame({ type: "run_started", sessionId: "session", runId: "run" });
+    for (const host of [content, frame]) {
+      expect(host.refreshes.at(-1)).toMatchObject({
+        target: { objectType: AGENT_SESSION, primaryKey: "session" },
+        affected: { objectTypes: [AGENT_SESSION] },
+      });
+    }
+    wrapper.unmount();
+    expect(runFeed.detach).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the outer frame mounted across native <-> panel <-> panel <-> native switches in a hybrid app with zero teardown and live menu highlight", async () => {
     resolveApplicationEntryMock.mockImplementation(async ({ path }) => {
       if (path === objectsUse.path) return resolutionOf("ontology", objectsUse, [playgroundUse, objectsUse, relationsUse], ontologyFrameId);

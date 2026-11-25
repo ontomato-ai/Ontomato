@@ -56,7 +56,7 @@ export type DisplayHistory = "push" | "replace";
 /** Result of checking whether the initiating reader is admitted to open a target page address. */
 export type DisplayPageAdmissionResult =
   | { ok: true }
-  | { ok: false; reason: "forbidden" | "not_found" | "unsupported_target"; error?: { code: string; message: string } };
+  | { ok: false; reason: "forbidden" | "not_found" | "unsupported_target" | "outside_embedded_host"; error?: { code: string; message: string } };
 
 /** Live state patch handed to a newly opened panel instance (covering all declared public state fields). */
 export interface DisplayStateUpdate {
@@ -107,6 +107,8 @@ export interface ConversationDisplayHost {
   resolve?: (address: string) => DisplayPage | null;
   /** Optional live admission check run before opening a new page via `present`. */
   admit?: (address: string) => Promise<DisplayPageAdmissionResult>;
+  /** An embedded display keeps its page in place when a run presents an artifact. */
+  embedded?: boolean;
   /** The page a column entry opens; null when the entry is no page of this display. */
   feature?: (id: string) => DisplayPage | null;
   /**
@@ -242,8 +244,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       }
     }
     shown.value = next;
-    // A page opened anew reads what it shows from its owner, whatever happened while it was not open.
-    if (!sameInstance && next.target?.kind === "page") refreshObjects({ target: null });
+    // Embedded panels refresh through their host when shown. Beside a conversation the display initiates the read.
+    if (!host.embedded && !sameInstance && next.target?.kind === "page") refreshObjects({ target: null });
   }
 
   /** Whether going to `next` leaves the shown page instance while it holds unsaved changes. */
@@ -264,7 +266,11 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   /** One observation of what is shown, for a presentation result. */
   function snapshot(): DisplaySnapshot {
     const observedAt = new Date().toISOString();
-    return shown.value.target ? selected(observedAt) : { known: true, observedAt, target: null };
+    const target = shown.value.target;
+    if (!target || (host.embedded && target.kind === "page" && !controllers.has(target.instance))) {
+      return { known: true, observedAt, target: null };
+    }
+    return selected(observedAt);
   }
   function effectivePageInstanceId(instance?: string): string | null {
     const base = pageInstanceId.value;
@@ -1005,6 +1011,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         }
         const current = shown.value;
         if (frame.target.kind === "artifact") {
+          if (host.embedded) return notOpened("outside_embedded_host");
           const { artifact } = frame.target;
           const next: DisplayTarget = {
             kind: "artifact",
@@ -1076,7 +1083,11 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             if (address !== currentPage.address || !current.restorable || current.view !== nextView) {
               const addressTarget: DisplayTarget = { kind: "page", ...resolved, address };
               commit({ target: addressTarget, view: nextView, restorable: true });
-              await write(addressTarget, nextView, "replace");
+              const opened = await write(addressTarget, nextView, "replace");
+              if (host.embedded && !opened) {
+                commit(current);
+                return notOpened("forbidden");
+              }
               if (hasStatePatch) await nextTick();
             }
           }
@@ -1125,7 +1136,11 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             liveState.value = null;
           }
           commit({ target: nextTarget, view: nextView, restorable: true });
-          await write(resolved, nextView, "push");
+          const opened = await write(resolved, nextView, "push");
+          if (host.embedded && !opened) {
+            commit(current);
+            return notOpened("forbidden");
+          }
           await waitForLoadSettle(nextTarget);
         }
 

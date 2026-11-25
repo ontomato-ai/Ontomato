@@ -2,7 +2,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useId, useSlots, watch } from "vue";
 import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
 import { ElDrawer } from "@ontomato/foundation-ui/overlay";
-import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
+import { conversationQuestions, displayQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
 import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import {
@@ -29,8 +29,7 @@ import type {
   ShellWorkbenchDeclaration,
   ToolRendererOverride,
 } from "../types";
-import { pageSessionStream, sessionRunNotices } from "../session-run-notices";
-import { documentVisible } from "@ontomato/foundation-ui/visibility";
+import { conversationStreamShell, pageSessionStream, sessionRunNotices } from "../session-run-notices";
 import { useAgentConversation } from "../useAgentConversation";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
@@ -150,42 +149,7 @@ const conversation = useAgentConversation(
 );
 if (sessionStream) {
   onBeforeUnmount(
-    sessionStream.attach({
-      present: async (frame) => {
-        const verifyActive = () =>
-          !documentVisible()
-            ? ("view_unavailable" as const)
-            : frame.sessionId !== conversation.state.sessionId
-              ? ("not_viewing_session" as const)
-              : null;
-        const unavailableReason = verifyActive();
-        if (unavailableReason) {
-          // Never return another session's or hidden tab's display/form snapshot on rejection.
-          const unknown = { known: false as const, reason: unavailableReason };
-          if (frame.target.kind === "observe") {
-            return { status: "observed", reason: unavailableReason, current: unknown };
-          }
-          if (frame.target.kind === "fill_form") {
-            return { status: "not_filled", reason: unavailableReason, current: unknown };
-          }
-          if (frame.target.kind === "page_action") {
-            return { status: "not_executed", reason: unavailableReason, current: unknown };
-          }
-          return { status: "not_opened", reason: unavailableReason, current: unknown };
-        }
-        return display.present(frame, verifyActive);
-      },
-      objectChanged: ({ session, target, affected, operation }) => {
-        if (session.sessionId === conversation.state.sessionId) {
-          display.refreshObjects({
-            target,
-            ...(affected ? { affected } : {}),
-            ...(operation ? { operation } : {}),
-          });
-        }
-      },
-      ready: () => display.refreshObjects({ target: null }),
-    }),
+    sessionStream.attach(conversationStreamShell(display, () => conversation.state.sessionId)),
   );
 }
 provide(displayPlacementKey, display.placed);
@@ -249,61 +213,7 @@ provide(shellContextKey, {
     if (conversation.sending.value) throw new Error(props.labels.working);
     await send(message);
   },
-  questions: (() => {
-    const base = conversationQuestions(conversation);
-    return {
-      ...base,
-      async answer(requestId, answer, selectedOption) {
-        const bound = await display.waitPendingActionConfirmation(requestId);
-        if (bound) {
-          if (selectedOption === 1) {
-            const sameSession = bound.sessionId === conversation.state.sessionId;
-            const samePage =
-              display.page.value?.instance === bound.pageInstance
-              && display.pageInstanceId.value === bound.pageInstanceId;
-            if (!sameSession || !samePage) {
-              const reason = "The page or conversation changed after confirmation was requested.";
-              await bound.confirmation.cancel({ code: "FORM_CONFIRMATION_STALE", message: reason }).catch(() => undefined);
-              return base.answer(
-                requestId,
-                `${answer} [intent=${bound.confirmation.intentId}: stale - ${reason}]`,
-                selectedOption,
-              );
-            }
-            const dispatched = await bound.confirmation.dispatch();
-            const codePrefix = !dispatched.ok && dispatched.code ? `${dispatched.code}: ` : "";
-            const savedSuffix = !dispatched.ok && dispatched.savedFields?.length
-              ? ` (savedFields: ${dispatched.savedFields.join(", ")})`
-              : "";
-            const note = dispatched.ok
-              ? `[intent=${dispatched.intentId}: executed - ${dispatched.summary}]`
-              : `[intent=${dispatched.intentId}: ${dispatched.reason} - ${codePrefix}${dispatched.message}${savedSuffix}]`;
-            return base.answer(requestId, `${answer} ${note}`, selectedOption);
-          }
-          await bound.confirmation
-            .cancel({ code: "USER_CANCELLED", message: "User declined confirmation." })
-            .catch(() => undefined);
-          return base.answer(requestId, answer, selectedOption);
-        }
-        if (props.panelOperations?.cancelPendingQuestionIntent) {
-          const reason = selectedOption === 1
-            ? { code: "FORM_CONFIRMATION_STALE", message: "The original page instance is no longer open (reloaded, closed, or in another tab)." }
-            : { code: "USER_CANCELLED", message: "User declined confirmation." };
-          const checked = await props.panelOperations
-            .cancelPendingQuestionIntent(requestId, reason)
-            .catch(() => ({ stale: false as const, intentId: undefined }));
-          if (checked.stale && selectedOption === 1) {
-            return base.answer(
-              requestId,
-              `${answer} [intent=${checked.intentId ?? "unknown"}: stale - ${reason.message}]`,
-              selectedOption,
-            );
-          }
-        }
-        return base.answer(requestId, answer, selectedOption);
-      },
-    };
-  })(),
+  questions: displayQuestions(conversationQuestions(conversation), () => display, () => conversation.state.sessionId, props.panelOperations),
 });
 
 /**
@@ -419,27 +329,36 @@ function showEntry(text: string | null) {
 }
 /** An entry that arrived while the page's agents were being read; it waits for them, the latest one counting. */
 let waitingEntry: PanelConversationEntry | null = null;
-const expandEntry: PageComposerExpand = (request) => {
+const expandEntry: PageComposerExpand = async (request) => {
   if (nav.agentsState.value === "loading") {
     waitingEntry = request;
     return;
   }
   const named = entryAgent(request.target, nav.agents.value, nav.pageAgents.value?.defaultAgentId, nav.pageAgents.value?.presetAgentIds);
   if (!named) return showEntry(null);
-  if (named === agentId.value) return showEntry(request.prefill ?? null);
-  if (conversation.busy.value) {
+  const startsNew = named !== agentId.value || request.newSession === true;
+  if (startsNew && conversation.busy.value) {
     emit("error", props.labels.switchWhileRunning);
     return showEntry(null);
   }
-  nav.beginWith(named);
-  void nextTick(() => showEntry(request.prefill ?? null));
+  if (startsNew) {
+    nav.beginWith(named);
+    await nextTick();
+  }
+  const text = request.prefill?.trim();
+  if (request.submit && text) {
+    await display.setView("side");
+    await send(text);
+  } else {
+    showEntry(request.prefill ?? (startsNew ? "" : null));
+  }
 };
 watch(() => nav.agentsState.value, (state) => {
   const asked = waitingEntry;
   if (state === "loading" || !asked) return;
   waitingEntry = null;
   // Read: the entry takes effect among them. Failed: it ends here, the read's error shown where it failed.
-  if (state === "ready") expandEntry(asked);
+  if (state === "ready") void expandEntry(asked);
 });
 const serveEntry = inject(servePageComposerKey, null);
 const withdrawEntry = serveEntry?.(expandEntry);

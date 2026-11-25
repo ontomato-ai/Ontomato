@@ -5,7 +5,7 @@ import {
   type PageSkillLocator, type PageSkillMember, type PageSkillSource,
 } from "@ontomato/contracts/page-skills";
 import { config } from "../../config/application";
-import type { PanelUseRef } from "@ontomato/contracts/product-panels";
+import { isApplicationPanelUse, type PanelUseRef } from "@ontomato/contracts/product-panels";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
 import {
@@ -93,7 +93,7 @@ async function currentApplicationPanel(caller: PageSkillViewCaller, entrance: Pa
     throw error;
   }
   const { applicationId, use } = entry;
-  if (use.pageKey !== entrance.pageKey) return null;
+  if (!isApplicationPanelUse(use) || use.pageKey !== entrance.pageKey) return null;
   const actual = "permissionCode" in use.access ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
     : { access: "domain-member" as const, pageKey: use.pageKey };
   return entranceKey(actual) === entranceKey(entrance) ? { use, applicationId, entrance: actual } : null;

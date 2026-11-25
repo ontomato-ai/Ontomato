@@ -108,13 +108,30 @@ export const components: readonly ComponentMetadata[] = [
     meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame. In a panel, write `<html-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
+    componentId: "AppPreview",
+    module: "@ontomato/sdk/preview",
+    exportName: "AppPreview",
+    role: "presentation",
+    group: "content",
+    meaning:
+      "Embeds an application preview (candidate panel, live panel, or legacy hosted preview) through the platform host without exposing preview tokens or raw iframe URLs, reporting navigation, selection, and status.",
+    effects:
+      "Loads the target application preview through the platform host under server-enforced authorization; writes no business data itself.",
+    data: {},
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      activePage: { kind: "scalar", type: "string" },
+      selection: { kind: "json" },
+    },
+  }),
+  defineComponentMeta({
     componentId: "AgentChat",
     module: "@ontomato/sdk/chat",
     exportName: "AgentChat",
     role: "control",
     group: "conversation",
     meaning:
-      "Holds a live conversation with one declared platform agent inside a panel member (declaring `agent: 'page-default' | { kind: 'id', id } | { kind: 'preset', agentKind }`) or in a standalone page. Sessions and history stay on the agent platform (never duplicated per panel), access follows the signed-in reader's agent grants and business gates, optional `sessionId` state syncs the active session, and any application entry hosting it must declare `pageComposer: 'none'` so the page does not show two places to ask.",
+      "Holds a live conversation with one declared platform agent inside a panel member (declaring `agent: 'page-default' | { kind: 'id', id } | { kind: 'preset', agentKind }`) or in a standalone page. Sessions and history stay on the agent platform (never duplicated per panel), access follows the signed-in reader's agent grants and business gates, optional `sessionId` state syncs the active session, and the host suppresses its default composer while the chat owns that surface. Pass `sessionContext` as opaque session creation input, `collapsed` for a compact composer, and `greeting`, `greetingKey`, `description`, or `descriptionKey` to customize the empty state. The `composer-context` slot sits above the input, and `message-actions` receives `{ item, runId, outcome }` beneath each response. The component emits `expand`, `entry-triggered` (`{ slot, submit, newSession, sessionId }`), and `run-complete` (`{ sessionId, runId, ok, outcome? }`).",
     effects: "Sends the reader's messages to the agent platform as the signed-in user, shares its session history, and writes only the panel's optional `sessionId` state.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     data: {},
@@ -824,8 +841,8 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "conversation",
     meaning:
-      "Places a conversation entry targeting an agent — button (`button`) or embedded prompt box (`inline`, with `pageComposer: 'none'`); use to start agent chats. In its default button presentation, clicking asks the platform host to expand the page's composer with the projection's declared conversationEntry without sending a message; in presentation='inline', renders the platform's inline composer (agent selector and prompt input) directly inside the page and serves sibling ConversationEntry triggers while mounted (typically paired with pageComposer: 'none' on the application entry).",
-    effects: "In button mode, requests the host to expand the page's composer without sending; in inline mode, submits the reader's typed prompt to the platform agent counter.",
+      "Places a conversation entry targeting an agent — button (`button`) or embedded prompt box (`inline`, with `pageComposer: 'none'`); use to start agent chats. In its default button presentation, clicking asks the platform host to expand the page's composer with the projection's declared conversationEntry. Declare `submit: true` to send non-empty prefill on the click, or `newSession: true` to start a fresh conversation. The optional `prefill` prop supplies text at click time; in presentation='inline', renders the platform's inline composer (agent selector and prompt input) directly inside the page and serves sibling ConversationEntry triggers while mounted (typically paired with pageComposer: 'none' on the application entry).",
+    effects: "Applies the declared conversation behavior on click. In inline mode, sends the reader's typed prompt to the platform agent counter.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
     data: {},
@@ -866,7 +883,7 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAppId", "direction", "editMode",
+          "agentId", "agentKind", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAppId", "direction", "editMode",
           "entryId", "favoritesOnly", "filters", "group", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
           "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
           "runId", "sampleToken", "scope", "search", "section", "size", "sort", "source", "sourceType", "status",

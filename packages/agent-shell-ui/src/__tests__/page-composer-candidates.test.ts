@@ -361,3 +361,14 @@ it("serves entries only while it is drawn, and withdraws when the page goes", as
   apps.splice(apps.indexOf(drawn.app), 1);
   expect(drawn.served).toHaveLength(0);
 });
+
+
+it("hands a declared submission and its fresh-session choice to the counter on click", async () => {
+  const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant")], defaultAgentId: "assistant" }) });
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(drawn.ask).not.toHaveBeenCalled();
+  await drawn.served.at(-1)!({ target: { kind: "page-default" }, prefill: "Check the current selection", submit: true, newSession: true });
+  expect(drawn.ask).toHaveBeenCalledWith("assistant", "Check the current selection", "/dashboards?dashboardId=board-a", {
+    submit: true, newSession: true, pageSkill: dashboardSkill,
+  });
+});

@@ -19,6 +19,7 @@ import {
 } from "./agent-runtime-events";
 import {
   runtimeIdSchema,
+  runtimeJsonObjectSchema,
   runtimeKeySchema,
   runtimeRunStatusSchema,
   runtimeStopReasonSchema,
@@ -149,7 +150,7 @@ export const agentHostSessionPageSchema = z
   })
   .strict();
 export const agentHostCreateSessionSchema = z
-  .object({ agentId: runtimeIdSchema, workspaceId: runtimeIdSchema.optional() })
+  .object({ agentId: runtimeIdSchema, workspaceId: runtimeIdSchema.optional(), context: runtimeJsonObjectSchema.optional() })
   .strict();
 export const agentHostRenameSessionSchema = z.object({ title: z.string().trim().min(1).max(200) }).strict();
 export const agentHostCreateSessionResponseSchema = z

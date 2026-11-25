@@ -78,6 +78,7 @@ const DECLARED_DATA = {
   // Readable as a member it reads nothing; an empty table says so, and Node registers it on that declaration.
   ConversationEntry: {},
   AgentChat: {},
+  AppPreview: {},
   ObjectTree: { files: ["panelRecordList"] },
   ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
   AnnotatedCode: { content: ["annotatedCode"] },
@@ -456,10 +457,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
     }
-    for (const included of ["ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "PageHeader", "MarkdownView"]) {
+    for (const included of ["ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "AppPreview", "PageHeader", "MarkdownView"]) {
       const entry = catalogue.components.find((c) => c.componentId === included);
       assert.equal(entry?.panelUsable, true, `${included} must derive panelUsable === true`);
     }
+    assert.deepEqual(Object.keys(declared.get("AppPreview").readOnlyOutputs ?? {}).sort(), [
+      "activePage",
+      "selection",
+      "status",
+    ]);
     const uiPrimitivesDoc = readFileSync(join(out, version, "docs/components/ui-primitives.md"), "utf8");
     const themeTokensDoc = readFileSync(join(out, version, "docs/components/theme-tokens.md"), "utf8");
     assert.match(uiPrimitivesDoc, /`<sdk-button>`/);

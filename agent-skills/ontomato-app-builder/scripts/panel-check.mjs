@@ -530,15 +530,15 @@ export async function checkPanelWorkspace(directory, {
     for (const id of target.candidates?.panelIds ?? []) references.set(`panel:${id}`, ["panel", id]);
   }
 
-  const resolvedProjections = new Map();
+  const resolvedReferences = new Map();
   for (const [kind, id] of references.values()) {
     const record = records.get(kind)?.get(id) ?? (lookup && await lookup(kind, id));
+    resolvedReferences.set(`${kind}:${id}`, record);
     if (record === null) {
       throw new Error(`${resolve(directory, "panel.json")}: ${kind} ${id} was not found in the material or on the platform`);
     } else if (record === undefined) {
       unchecked.push({ kind, id });
     } else if (kind === "projection") {
-      resolvedProjections.set(id, record);
       const packageName = componentPackageName(record.componentId);
       const release = packageName && await loadPackage?.(packageName);
       const component = domainComponentId(record.componentId)
@@ -564,14 +564,56 @@ export async function checkPanelWorkspace(directory, {
     }
   }
   const agentChatComponent = checks.AGENT_CHAT_COMPONENT ?? "@ontomato/sdk:AgentChat";
-  const panelHasAgentChat = [...resolvedProjections.values()].some(record => record.componentId === agentChatComponent);
-  if (panelHasAgentChat && workspace.panel?.id) {
-    for (const { id: appId, input: { panelUses } } of material.applications ?? []) {
-      for (const use of panelUses ?? []) {
-        if (use.panelId === workspace.panel.id && use.pageComposer !== "none") {
+  async function resolveReference(kind, id) {
+    const key = `${kind}:${id}`;
+    if (!resolvedReferences.has(key)) {
+      resolvedReferences.set(key, records.get(kind).get(id) ?? await lookup?.(kind, id));
+    }
+    return resolvedReferences.get(key);
+  }
+
+  async function panelContainsAgentChat(panelId, seen = new Set()) {
+    if (seen.has(panelId)) return false;
+    seen.add(panelId);
+    const panelManifest = panelId === workspace.panel?.id ? manifest : (await resolveReference("panel", panelId))?.manifest;
+    if (!panelManifest) return undefined;
+    let unresolved = false;
+    for (const { target } of Object.values(panelManifest.members)) {
+      const projections = "projectionId" in target ? [target.projectionId] : target.candidates?.projectionIds ?? [];
+      for (const id of projections) {
+        const projection = await resolveReference("projection", id);
+        if (projection?.componentId === agentChatComponent) return true;
+        if (!projection) unresolved = true;
+      }
+      const panels = "panelId" in target ? [target.panelId] : target.candidates?.panelIds ?? [];
+      for (const id of panels) {
+        const contains = await panelContainsAgentChat(id, seen);
+        if (contains) return true;
+        if (contains === undefined) unresolved = true;
+      }
+    }
+    return unresolved ? undefined : false;
+  }
+
+  for (const { id: appId, input: { framePanelId, panelUses } } of material.applications ?? []) {
+    const frameHasAgentChat = framePanelId === undefined ? false : await panelContainsAgentChat(framePanelId);
+    for (const use of panelUses) {
+      if (use.kind === "frame-conversation") {
+        checks.frameConversationEntrySchema.parse(use);
+        if (frameHasAgentChat === false) {
+          throw new Error(`application ${appId}: frame conversation entry requires an application frame containing AgentChat`);
+        }
+      } else if (await panelContainsAgentChat(use.panelId)) {
+        if (frameHasAgentChat) {
+          throw new Error(`application ${appId}: Entry '${use.id}' cannot mount AgentChat because the application frame already mounts AgentChat`);
+        }
+        if (frameHasAgentChat === false && use.pageComposer !== "none") {
           throw new Error(`application ${appId}: panelUse '${use.id}' mounts AgentChat and must set "pageComposer": "none"`);
         }
       }
+    }
+    if (frameHasAgentChat === undefined) {
+      unchecked.push({ kind: "panel", id: framePanelId, reason: "Application entry validation requires the frame's AgentChat placements" });
     }
   }
   const descriptorFile = resolve(directory, "panel.json");
