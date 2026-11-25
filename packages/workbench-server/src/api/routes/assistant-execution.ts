@@ -23,6 +23,7 @@ import { HttpError } from "../../utils/errors";
 import {assistantRetrievalOperationSchema} from "@ontomato/contracts/assistant-retrieval";
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
 import { credentialsForRun, ownedRun, runForOwner } from "../../services/assistant/execution";
+import { sessionBuildTestWorkspace, WorkspaceBuildTests } from "../../services/app-builder/build-tests";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { adoptAppBuilderDefinition, executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
 import { authoringAdoptionRequestSchema, authoringKindSchema, authoringOperations } from "@ontomato/contracts/authoring";
@@ -71,6 +72,7 @@ const ontologyPosts = [
   "/metricView/find",
   "/metricView/test",
   "/metricView/testExecute",
+  "/metricView/execute",
   "/metricView/save",
   "/metricView/delete",
   "/function/save",
@@ -85,6 +87,10 @@ const ontologyPosts = [
   "/admin/getSchemaByClassName",
   "/admin/getRelationshipByClassNames",
 ];
+const buildTestOperations = new Set([
+  "/action/execute", "/metricView/execute", "/metricView/test", "/metricView/testExecute",
+  "/vectorResource/upload", "/vectorResource/delete", "/ontology/query/distinct-values", "/ontology/query/execute-dsl",
+]);
 const assetReadPaths = [
   "/metricView/queryById",
   "/metricView/queryList",
@@ -210,6 +216,15 @@ function callbackRun(req: Request, callback: RuntimeCallback | undefined) {
   return runId;
 }
 
+assistantExecutionRouter.get("/:runId/workbench/api/app-builder/workspace", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const { owner } = context(req);
+  const run = await runForOwner(owner, runId);
+  if (run.status !== "running" || run.channel?.authority.executionKind !== "build-test")
+    throw new HttpError(403, "An active App Builder run is required", "FORBIDDEN");
+  res.json({ workspaceId: await sessionBuildTestWorkspace(owner, run.sessionId) });
+}));
+
 for (const kind of ["action", "metric-view"] as const) {
   for (const [name, operation] of Object.entries(authoringOperations[kind])) {
     assistantExecutionRouter[operation.method === "GET" ? "get" : "post"](
@@ -265,6 +280,7 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const ownership = assistantDirectory || target === "workbench" && /^\/api\/(?:panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
   let credentials: AssistantCredentials = initiatorCredentials;
   let retrievalScopeId: string | null = null;
+  let executionContext = req.header(BUILD_TEST_HEADER);
   if (initiatorResourceRead || ownership || grantAction) {
     if (target === "ontology") {
       const { turn, run } = await ownedRun(owner, runId);
@@ -282,6 +298,12 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
     const resolved = await credentialsForRun(owner, runId, initiatorCredentials);
     credentials = resolved.credentials;
     retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
+    if (target === "ontology" && req.method === "POST" && buildTestOperations.has(path) &&
+        resolved.run.channel?.authority.executionKind === "build-test" && executionContext === undefined) {
+      const workspaceId = await sessionBuildTestWorkspace(owner, resolved.run.sessionId);
+      const current = await new WorkspaceBuildTests(owner, initiatorCredentials, workspaceId).current();
+      executionContext = JSON.stringify({ kind: "build-test", contextId: current?.contextId ?? null });
+    }
   }
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
   if (callback.businessGrant && !resourceRead && !assistantDirectory) {
@@ -291,7 +313,6 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   headers["X-Ontomato-Run-Id"] = runId;
   if (retrievalScopeId) headers["X-Ontomato-Retrieval-Caller-Id"] = retrievalScopeId;
   else delete headers["X-Ontomato-Retrieval-Caller-Id"];
-  const executionContext = req.header(BUILD_TEST_HEADER);
   if (executionContext !== undefined) headers[BUILD_TEST_HEADER] = executionContext;
   const reusePanel = req.header(PROJECTION_REUSE_PANEL_HEADER);
   if (reusePanel !== undefined) headers[PROJECTION_REUSE_PANEL_HEADER] = reusePanel;

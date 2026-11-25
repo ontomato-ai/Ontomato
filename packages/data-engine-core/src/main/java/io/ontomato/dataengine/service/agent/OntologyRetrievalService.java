@@ -351,7 +351,6 @@ public class OntologyRetrievalService {
     String contextUrl = base + "/ontology/retrievals/runtime-context";
     return JSONObject.of("language",context.language(),"input",message,"definition",definition,
       "authority", JSONObject.of("classNames", classes, "executionKind", "live"),
-      "environment",JSONObject.of("values",JSONObject.of(),"secrets",JSONObject.of()),
       "businessCallbacks", JSONObject.of(
         "ontology", retrievalCallback(base, java.net.URI.create(base + "/ontology/").getRawPath(), grant),
         "retrieval", retrievalCallback(contextUrl, java.net.URI.create(contextUrl).getRawPath(), grant)));

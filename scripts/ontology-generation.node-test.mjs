@@ -5,11 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generationCommand } from "../agent-skills/ontology-generation/scripts/generation.mjs";
 
-const env = {
-  ONTOMATO_ONTOLOGY_URL: "http://ontology.invalid/",
-  ONTOMATO_GENERATION_ID: "00000000-0000-4000-8000-000000000001",
-  ONTOMATO_TK: "fixture-generation-credential",
-};
+const runId = "00000000-0000-4000-8000-000000000001";
+const env = { ONTOMATO_GENERATION_URL: "http://ontology.invalid/generation", ONTOMATO_EXECUTION_CALLBACK: "session-credential" };
 test("business test sends exact file bytes and parameter definitions, never host paths", async () => {
   const dir = await mkdtemp(join(tmpdir(), "ontology-generation-"));
   try {
@@ -19,11 +16,12 @@ test("business test sends exact file bytes and parameter definitions, never host
     await writeFile(program, source); await writeFile(params, JSON.stringify(definitions));
     let calls = 0;
     const result = await generationCommand(["test", program, params], env, async (url, options) => {
+      assert.equal(options.headers["X-Ontomato-Callback-Credential"], env.ONTOMATO_EXECUTION_CALLBACK);
+      assert.equal(options.headers["X-Ontomato-Run-Id"], undefined);
+      if (url.endsWith("/runtime-context")) return Response.json({ runId, kind: "action" });
       calls++;
-      assert.equal(url, `http://ontology.invalid/ontology/ai/generation/${env.ONTOMATO_GENERATION_ID}/test`);
+      assert.equal(url, `${env.ONTOMATO_GENERATION_URL}/${runId}/test`);
       assert.deepEqual(JSON.parse(options.body), { code: source, parameterDefs: definitions });
-      assert.equal(options.headers.tk, env.ONTOMATO_TK);
-      assert.equal(options.headers["X-Ontomato-Run-Id"], env.ONTOMATO_GENERATION_ID);
       assert.equal(options.redirect, "error");
       return Response.json({ result: "ok", error: null });
     });
@@ -33,10 +31,12 @@ test("business test sends exact file bytes and parameter definitions, never host
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 test("source reading preserves requested line ranges and never fabricates a successful error result", async () => {
-  const read = async () => Response.json({ source: "first\nsecond\nthird\n" });
+  const read = async url => url.endsWith("/runtime-context")
+    ? Response.json({ runId, kind: "explain" })
+    : Response.json({ source: "first\nsecond\nthird\n" });
   assert.equal(await generationCommand(["source", "2", "3"], env, read), "second\nthird");
   await assert.rejects(generationCommand(["source"], env, async () => Response.json({ error: { code: "CLOSED", message: "Gate closed" } }, { status: 409 })), /Gate closed/);
-  await assert.rejects(generationCommand(["begin", "action"], env, read), /host already owns/);
+  await assert.rejects(generationCommand(["begin", "action"], env, read), /Commands:/);
 });
 
 test("Python business failures retain their corrective feedback", async () => {
@@ -47,11 +47,12 @@ test("Python business failures retain their corrective feedback", async () => {
 test("helpers renders the canonical API inside the current gate", async () => {
   const result = await generationCommand(["helpers"], env,
     async (url, options) => {
-      assert.equal(url, `http://ontology.invalid/ontology/ai/generation/${env.ONTOMATO_GENERATION_ID}/helpers`);
+      if (url.endsWith("/runtime-context")) return Response.json({ runId, kind: "action" });
+      assert.equal(url, `${env.ONTOMATO_GENERATION_URL}/${runId}/helpers`);
       assert.equal(options.method, "GET");
-      assert.equal(options.headers["X-Ontomato-Run-Id"], env.ONTOMATO_GENERATION_ID);
+      assert.equal(options.headers["X-Ontomato-Run-Id"], undefined);
       return Response.json({ markdown: "# Python helper API\n\ndef query(dsl):" });
     });
   assert.match(result.markdown, /def query\(dsl\):/);
-  await assert.rejects(generationCommand(["helpers"], { ONTOMATO_ONTOLOGY_URL: "http://ontology.invalid/" }), /generation gate/);
+  await assert.rejects(generationCommand(["helpers"], {}), /ONTOMATO_GENERATION_URL/);
 });

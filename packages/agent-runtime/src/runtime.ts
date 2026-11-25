@@ -224,10 +224,6 @@ export class AgentRuntime {
       businessCallbacks: request.businessCallbacks && Object.fromEntries(
         Object.entries(request.businessCallbacks).map(([name, callback]) => [name, callback.baseUrl]),
       ),
-      environment: {
-        values: request.environment.values,
-        secretNames: Object.keys(request.environment.secrets).sort(),
-      },
     });
     return this.locked(scope, sessionId, async () => {
       // Admission retries must work even when a dependency is unavailable or the version was unmounted.
@@ -276,10 +272,6 @@ export class AgentRuntime {
         resolvedSkills: skills.map(
           ({ directory: _directory, ...registered }) => registered,
         ),
-        environment: {
-          values: request.environment.values,
-          secretNames: Object.keys(request.environment.secrets).sort(),
-        },
       };
       const accepted = await this.store.admit(
         scope,

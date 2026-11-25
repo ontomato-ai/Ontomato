@@ -5,11 +5,17 @@ import { workspacePathSchema } from "@ontomato/contracts/workspaces";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { backendGet, backendPost, backendDelete } from "../../utils/backend-client";
 import { buildUrl, getApiConfig } from "../../config/data-query-api";
-import type { AssistantOwner } from "../assistant/store";
+import { assistantStore, type AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { HOSTED_SDK_MARKER, SDK_ASSET_PATH } from "../workspaces/hosted-sdk";
 import { readCurrentAppSdkRelease } from "./sdk";
+
+export async function sessionBuildTestWorkspace(owner: AssistantOwner, sessionId: string) {
+  const session = await assistantStore.session(sessionId, owner);
+  if (!session.workspace_id) throw new HttpError(422, "Build-test requires the run's workspace", "BUILD_TEST_WORKSPACE_REQUIRED");
+  return session.workspace_id;
+}
 
 function sampleFilePath(file: string) {
   const value=workspacePathSchema.safeParse(file);

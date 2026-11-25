@@ -71,7 +71,6 @@ const releaseId = "44444444-4444-4444-8444-444444444444";
 const mcpServiceId = "55555555-5555-4555-8555-555555555555";
 const analyst = { name: "analyst", namespace: { kind: "provider" as const, provider: "ontology" } };
 const digest = "a".repeat(64);
-const forbiddenEnvPattern = /(?:TK|API_KEY|CALLBACK|_URL|RETRIEVAL_CALLER_ID|EXTERNAL_VARIABLES|RUN_ID)$/;
 
 let server: Server;
 let baseUrl: string;
@@ -131,13 +130,6 @@ function basePreparation(executionUserId: string | null = null): AssistantPrepar
   } as unknown as AssistantPreparation;
 }
 
-function assertCleanEnvironment(env: { values: Record<string, string>; secrets: Record<string, string> }) {
-  expect(env.secrets).toEqual({});
-  for (const key of [...Object.keys(env.values), ...Object.keys(env.secrets)]) {
-    expect(key).not.toMatch(forbiddenEnvPattern);
-  }
-}
-
 async function callWithCredential(
   path: string,
   credential: string,
@@ -157,6 +149,7 @@ async function assertNarrowedCallbacks(callbacks: RuntimeBusinessCallbacks) {
     ontology: "/ontology/query/overview",
     panelOperations: "/read",
     authoring: "/action/context",
+    generation: "/runtime-context",
     retrieval: "",
     governance: "",
     product: "/tool-1",
@@ -178,8 +171,7 @@ async function assertNarrowedCallbacks(callbacks: RuntimeBusinessCallbacks) {
 
 it("declares narrowed businessCallbacks and strips addresses/credentials for user-initiated analyst runs", async () => {
   const run = runtimeStartRunRequestSchema.parse(await prepareAnalystRun(basePreparation(null)));
-  assertCleanEnvironment(run.environment);
-  expect(run.environment.values).toEqual({ ONTOMATO_ASSISTANT_SESSION_ID: sessionId });
+  expect(run).not.toHaveProperty("environment");
   expect(Object.keys(run.businessCallbacks ?? {}).sort()).toEqual([
     "authoring",
     "ontology",
@@ -193,7 +185,7 @@ it("declares narrowed businessCallbacks and strips addresses/credentials for use
 
 it("uses initiator credentials inside businessCallbacks for execution-user runs without leaking executor keys", async () => {
   const run = runtimeStartRunRequestSchema.parse(await prepareAnalystRun(basePreparation("executor")));
-  assertCleanEnvironment(run.environment);
+  expect(run).not.toHaveProperty("environment");
   expect(Object.keys(run.businessCallbacks ?? {}).sort()).toEqual([
     "authoring",
     "ontology",
@@ -209,7 +201,7 @@ it("uses initiator credentials inside businessCallbacks for execution-user runs 
 it("adds the governance callback only when a governance skill is loaded", async () => {
   mocks.hasGovernance.mockReturnValue(true);
   const run = runtimeStartRunRequestSchema.parse(await prepareAnalystRun(basePreparation(null)));
-  assertCleanEnvironment(run.environment);
+  expect(run).not.toHaveProperty("environment");
   expect(Object.keys(run.businessCallbacks ?? {}).sort()).toEqual([
     "authoring",
     "governance",
@@ -234,7 +226,7 @@ it("declares only the product callback for product-profile runs and keeps absolu
     issues: [],
   });
   const run = runtimeStartRunRequestSchema.parse(await prepareAnalystRun(basePreparation(null)));
-  assertCleanEnvironment(run.environment);
+  expect(run).not.toHaveProperty("environment");
   expect(Object.keys(run.businessCallbacks ?? {})).toEqual(["product"]);
   expect(run.businessCallbacks?.product?.baseUrl).toBe(
     `http://workbench.test/api/product-assets/profile/releases/${releaseId}/tools`,
@@ -255,11 +247,7 @@ it("declares workbench, ontology and authoring callbacks for app-builder runs wi
   const prep = basePreparation(null);
   prep.a.kind = "app-builder";
   const run = runtimeStartRunRequestSchema.parse(await prepareAppBuilderRun(prep));
-  assertCleanEnvironment(run.environment);
-  expect(run.environment.values).toEqual({
-    ONTOMATO_WORKSPACE_ID: workspaceId,
-    ONTOMATO_EXECUTION_KIND: "build-test",
-  });
+  expect(run).not.toHaveProperty("environment");
   expect(Object.keys(run.businessCallbacks ?? {}).sort()).toEqual([
     "authoring",
     "ontology",

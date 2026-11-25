@@ -48,8 +48,8 @@ ledger retains operation, target and canonical semantic fingerprint per scope.
 Same key + same request replays the original resource, even when stopped; changed
 input/definition/target returns 409. Resolve a matching prior admission before
 checking busy state or skill availability. Secret values and correlation
-IDs do not participate in fingerprints; public environment values, secret names,
-language, input and definition (including each skill digest) do. Retrying does not rotate an admitted run's
+IDs do not participate in fingerprints. Language, input and definition (including
+each skill digest) do. Retrying does not rotate an admitted run's
 credentials or re-resolve its skills. One session has one active run under a row
 lock. Persist admission, resolved definition, input and initial events before
 responding or executing. Do not append input twice.
@@ -98,10 +98,7 @@ type StartRun = {
     sandbox: {limits: CodeLimits};
     toolCallPolicy?: {maxCalls: number; maxSameShape: number};
   };
-  environment: {
-    values: Record<string,string>;
-    secrets: Record<string,string>;
-  };
+  businessCallbacks?: RuntimeBusinessCallbacks;
 };
 ```
 
@@ -129,8 +126,7 @@ commands it launches. Tool-call identity belongs to event metadata.
 
 `ONTOMATO_RUN_ID` belongs to standalone code execution, where it identifies the
 execution and is passed to its isolated worker. Session engine processes use the
-active-run bridge for run identity. Stored run environment metadata records
-public values and secret names. File references are relative to the workspace.
+active-run bridge for run identity. File references are relative to the workspace.
 
 The workspace and native engine state persist. The engine process and its
 read-only `/skills/<name>/` mounts belong to the open session sandbox. Enabled

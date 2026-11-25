@@ -223,24 +223,8 @@ public class ActionCreationService {
               "input",inputMessage,
               "definition",
               definitions.actionCreation(context.owner().domainId(), prompt, context.language(), remaining, skills),
-              "environment",
-              JSONObject.of(
-                  "values",
-                  JSONObject.of(
-                      "ONTOMATO_ONTOLOGY_URL",
-                      runtime.ontologyUrl(),
-                      "ONTOMATO_GENERATION_ID",
-                      run,
-                      "ONTOMATO_GENERATION_KIND",
-                      "action"),
-                  "secrets",
-                  JSONObject.of(
-                      // The generation skill reads one scoped credential as ONTOMATO_TK, the
-                      // same name OntologyGenerationService passes; this path carries two.
-                      "ONTOMATO_TK",
-                      generationToken,
-                      "ONTOMATO_QUERY_TK",
-                      queryToken)));
+              "businessCallbacks",
+              OntologyGenerationService.callbacks(runtime.ontologyUrl(), generationToken, queryToken));
     } catch (Exception error) {
       cancelProvider(id,run,owner);
       throw error;

@@ -120,7 +120,7 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
   async function run(content: string, engine: string) {
     const id = randomUUID();
     const request: RuntimeStartRunRequest = {
-      input: { role: "user", content, timestamp: Date.now() }, language: "en", environment: { values: {}, secrets: {} },
+      input: { role: "user", content, timestamp: Date.now() }, language: "en",
       definition: {
         engine, systemPrompt: "Use fixture_tool for the test.", modelId: null, skills: [], externalMcp: [],
         sandbox: { limits: codeLimitsSchema.parse({}) }, toolSurface: "product",

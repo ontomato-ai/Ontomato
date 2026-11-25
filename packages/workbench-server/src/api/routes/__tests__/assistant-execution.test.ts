@@ -2,7 +2,11 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn()}));
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn(),workspace:vi.fn(),buildTest:vi.fn()}));
+vi.mock('../../../services/app-builder/build-tests',()=>({
+ sessionBuildTestWorkspace:mocks.workspace,
+ WorkspaceBuildTests:class { current=mocks.buildTest; },
+}));
 vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring,adoptAppBuilderDefinition:mocks.adopt}));
 vi.mock('../../../core/skills/registry/manager',()=>({skillRegistryManager:{}}));
 vi.mock('../../../services/assistant/execution',()=>({credentialsForRun:mocks.restore,runForOwner:mocks.run,ownedRun:mocks.ownedRun}));
@@ -23,11 +27,32 @@ beforeAll(async()=>{
 });
 afterAll(async()=>{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
 afterEach(()=>{vi.unstubAllGlobals();});
-beforeEach(()=>{vi.clearAllMocks();mocks.run.mockResolvedValue({status:"running"});mocks.ownedRun.mockResolvedValue({turn:{id:run,retrieval_scope_id:run},run:{status:"running",channel:{agent:{agentId:"agent"}}}});mocks.restore.mockResolvedValue({executionUserId:'V',retrievalScopeId:run,credentials:{apiKey:'selected-user-key',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':run}}});});
+beforeEach(()=>{vi.clearAllMocks();mocks.run.mockResolvedValue({status:"running"});mocks.ownedRun.mockResolvedValue({turn:{id:run,retrieval_scope_id:run},run:{status:"running",channel:{agent:{agentId:"agent"}}}});mocks.restore.mockResolvedValue({run:{},executionUserId:'V',retrievalScopeId:run,credentials:{apiKey:'selected-user-key',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':run}}});});
 function credential() {return callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()+60000,token:'initiator-token',apiKey:''}).value;}
 async function call(path:string,extra:Record<string,string>={},method='POST',token=credential()) {
  return nativeFetch(base+`/api/assistant/executions/${run}/`+path,{method,headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':token,'X-Ontomato-Run-Id':run,...extra},...(method==='GET'?{}:{body:'{}'})});
 }
+it("resolves the workspace only for the active App Builder session", async () => {
+ const path = "workbench/api/app-builder/workspace";
+ expect((await call(path, {}, "GET")).status).toBe(403);
+ expect(mocks.workspace).not.toHaveBeenCalled();
+ mocks.run.mockResolvedValue({status:"running",sessionId:other,channel:{authority:{executionKind:"build-test"}}});
+ mocks.workspace.mockResolvedValue(run);
+ const response = await call(path, {}, "GET");
+ expect(await response.json()).toEqual({workspaceId:run});
+ expect(mocks.workspace).toHaveBeenCalledWith({userId:"U",domainId:"domain"},other);
+});
+it.each([{contextId:other},null])("binds action execution to the run workspace even if the sandbox leaves out the header: %j", async current => {
+ const upstream=vi.fn(async(_url: string,_init?:Parameters<typeof fetch>[1])=>Response.json({result:"test"}));
+ vi.stubGlobal("fetch",upstream);
+ mocks.restore.mockResolvedValue({run:{sessionId:other,channel:{authority:{executionKind:"build-test"}}},credentials:{locale:"en"}});
+ mocks.workspace.mockResolvedValue(run);
+ mocks.buildTest.mockResolvedValue(current);
+ expect((await call("ontology/action/execute")).status).toBe(200);
+ expect(mocks.workspace).toHaveBeenCalledWith({userId:"U",domainId:"domain"},other);
+ expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
+   .toBe(JSON.stringify({kind:"build-test",contextId:current?.contextId??null}));
+});
 it('restores the initiator before resolving the executor and forwards only ordinary business authentication',async()=>{
  const upstream=vi.fn(async()=>Response.json({rows:[{count:3}]}));vi.stubGlobal('fetch',upstream);
  const response=await call('ontology/ontology/query/execute-dsl',{'X-Ontomato-Query-Service-Token':'model-forged-service-token'});
@@ -411,7 +436,7 @@ it("resolves retrieval_scope_id from the server turn on retrieval and ontology c
  const scope="33333333-3333-4333-8333-333333333333";
  const upstream=vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1])=>Response.json({ok:true}));vi.stubGlobal('fetch',upstream);
  mocks.ownedRun.mockResolvedValue({turn:{id:run,retrieval_scope_id:scope},run:{status:"running",channel:{agent:{agentId:"agent"}}}});
- mocks.restore.mockResolvedValue({executionUserId:null,retrievalScopeId:scope,credentials:{token:'initiator-token',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':scope}}});
+ mocks.restore.mockResolvedValue({run:{},executionUserId:null,retrievalScopeId:scope,credentials:{token:'initiator-token',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':scope}}});
 
  // Status/close retrieval operations look up the turn's retrieval_scope_id via ownedRun.
  const statusRes=await nativeFetch(base+`/api/assistant/executions/${run}/retrieval`,{method:'POST',headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':credential(),'X-Ontomato-Run-Id':run,'X-Ontomato-Retrieval-Caller-Id':other},body:JSON.stringify({operation:'status',retrievalId:other,retrievalRunId:other,key:other})});
@@ -424,7 +449,7 @@ it("resolves retrieval_scope_id from the server turn on retrieval and ontology c
  expect(new Headers(upstream.mock.calls[1]![1]?.headers).get('X-Ontomato-Retrieval-Caller-Id')).toBe(scope);
 
  // When the turn has no retrieval scope (e.g. app-builder), no X-Ontomato-Retrieval-Caller-Id header is sent.
- mocks.restore.mockResolvedValue({executionUserId:null,retrievalScopeId:null,credentials:{token:'initiator-token',locale:'en'}});
+ mocks.restore.mockResolvedValue({run:{},executionUserId:null,retrievalScopeId:null,credentials:{token:'initiator-token',locale:'en'}});
  const appBuilderRes=await call('ontology/ontology/query/overview',{},'GET');
  expect(appBuilderRes.status).toBe(200);
  expect(new Headers(upstream.mock.calls[2]![1]?.headers).has('X-Ontomato-Retrieval-Caller-Id')).toBe(false);

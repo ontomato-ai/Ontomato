@@ -1,32 +1,36 @@
-import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 export async function generationCommand(args, env = process.env, request = fetch) {
   const [command, ...values] = args;
-  const base = env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
-  if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL");
-  const statePath = "work/.ontology-generation.json";
-  let state = env.ONTOMATO_GENERATION_ID ? { runId: env.ONTOMATO_GENERATION_ID } : null;
-  if (!state && command !== "begin" && command !== "helpers") state = JSON.parse(await readFile(statePath, "utf8"));
+  const base = env.ONTOMATO_GENERATION_URL?.replace(/\/$/, "");
+  if (!base) throw new Error("Set ONTOMATO_GENERATION_URL");
+  async function call(route, body) {
+    const response = await request(base + route, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Ontomato-Callback-Credential": env.ONTOMATO_EXECUTION_CALLBACK,
+      },
+      redirect: "error",
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(typeof result.error === "string" ? result.error : result.error?.message ?? `HTTP ${response.status}`);
+    return result;
+  }
   const bodyFile = async (name) => JSON.parse(await readFile(name.replace(/^@/, ""), "utf8"));
-  let route, body;
+  let operation = command, body;
   switch (command) {
-    case "begin":
-      if (env.ONTOMATO_GENERATION_ID) throw new Error("The host already owns this gate");
-      route = "/gates";
-      body = { kind: values[0], source: values[1] ? await readFile(values[1], "utf8") : null };
-      break;
     case "explain":
-      if (!state) throw new Error("The host must own this run before it can re-explain the draft");
-      route = `/${state.runId}/explainDraft`;
+      operation = "explainDraft";
       body = {};
       break;
     case "test-package": {
       if (!values[0] || !values[1]) throw new Error("test-package requires a package entry and column labels");
       const { collectPackage } = await import("../../data-retrieval/scripts/query-package.mjs");
       body = { queryPackage: await collectPackage(values[0]), columnLabels: await bodyFile(values[1]) };
-      route = `/${state.runId}/test`;
+      operation = "test";
       break;
     }
     case "test":
@@ -37,39 +41,14 @@ export async function generationCommand(args, env = process.env, request = fetch
       break;
     case "prepare": body = await bodyFile(values[0]); break;
     case "query": body = { dsl: await bodyFile(values[0]) }; break;
-    case "reset": case "close": body = {}; break;
-    case "source":
-      if (env.ONTOMATO_GENERATION_KIND && env.ONTOMATO_GENERATION_KIND !== "explain")
-        throw new Error("source is only available for explain runs; use explain to refresh the structured definition");
-      break;
-    case "helpers":
-      if (!state?.runId) throw new Error("helpers requires a generation gate; run begin first");
-      route = `/${state.runId}/helpers`; body = undefined; break;
-    default: throw new Error("Commands: begin, explain, helpers, source, test-package, test, prepare, reset, query, close");
+    case "reset": body = {}; break;
+    case "source": case "helpers": break;
+    default: throw new Error("Commands: explain, helpers, source, test-package, test, prepare, reset, query");
   }
-  route ??= `/${state.runId}/${command}`;
-  const response = await request(base + "/ontology/ai/generation" + route, {
-    method: body === undefined ? "GET" : "POST",
-    headers: {
-      "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest",
-      "X-Correlation-Id": state?.runId ?? randomUUID(),
-      ...(env.ONTOMATO_EXECUTION_CALLBACK
-        ? { "X-Ontomato-Callback-Credential": env.ONTOMATO_EXECUTION_CALLBACK }
-        : {
-          ...(state ? { "X-Ontomato-Run-Id": state.runId } : {}),
-          tk: env.ONTOMATO_TK ?? "",
-          ...(env.ONTOMATO_API_KEY ? { "X-API-Key": env.ONTOMATO_API_KEY } : {}),
-        }),
-    },
-    redirect: "error",
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const result = await response.json();
-  if (!response.ok || result.error) throw new Error(typeof result.error === "string" ? result.error : result.error?.message ?? `HTTP ${response.status}`);
-  if (command === "begin") {
-    await mkdir("work", { recursive: true });
-    await writeFile(statePath, JSON.stringify(result));
-  } else if (command === "close" && !env.ONTOMATO_GENERATION_ID) await rm(statePath, { force: true });
+  const { runId, kind } = await call("/runtime-context");
+  if (command === "source" && kind !== "explain")
+    throw new Error("source is only available for explain runs; use explain to refresh the structured definition");
+  const result = await call(`/${runId}/${operation}`, body);
   if (command === "source") {
     const start = values[0] === undefined ? 1 : Number(values[0]);
     const end = values[1] === undefined ? undefined : Number(values[1]);

@@ -105,7 +105,7 @@ it("prepares a diagnosis run on assistant_sessions using the agent row model and
   expect(prepared.definition.agentId).toBe(agentId);
   expect(prepared.definition.modelId).toBe("diagnosis-model");
   expect(prepared.definition.systemPrompt).not.toContain("Page operations:");
-  expect(prepared.environment).toEqual({ values: {}, secrets: {} });
+  expect(prepared).not.toHaveProperty("environment");
   expect(JSON.stringify(prepared)).not.toContain("secret-token");
   expect(Object.keys(prepared.businessCallbacks ?? {})).toEqual(["workbench"]);
   expect(prepared.businessCallbacks?.workbench).toMatchObject({

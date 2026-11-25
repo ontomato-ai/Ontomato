@@ -12,7 +12,6 @@ it("writes the same image-bearing opening input that a client reads from the SSE
   const runId = "11111111-1111-4111-8111-111111111111", sessionId = "22222222-2222-4222-8222-222222222222";
   const request = runtimeStartRunRequestSchema.parse({
     language: "en", definition: { systemPrompt: "", modelId: null, skills: [], externalMcp: [], sandbox: { limits: {} } },
-    environment: { values: {}, secrets: {} },
     input: { role: "user", timestamp: 1, content: [
       { type: "text", text: "Read the attached image" }, { type: "image", mimeType: "image/png", data: "AA==" },
     ] },

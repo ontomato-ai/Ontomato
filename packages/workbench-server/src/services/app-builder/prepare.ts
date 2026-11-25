@@ -8,7 +8,7 @@ import { currentAppSdk } from "./sdk";
 import { agentVisibilityPrompt } from "../agent-host/visibility";
 import { publishSkill, workbenchBuiltinSkillRoot } from "../agent-runtime/skills";
 
-export async function prepareAppBuilderRun({ a, session, turn, input, owner, credentials, reader }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
+export async function prepareAppBuilderRun({ a, turn, input, owner, credentials, reader }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
   const sdk = await currentAppSdk();
   const published = await Promise.all(APP_BUILDER.skills.map((ref) => publishSkill(workbenchBuiltinSkillRoot(ref), ref)));
   const skills = published.map(({ skill, digest }) => ({ skill, digest }));
@@ -20,7 +20,6 @@ export async function prepareAppBuilderRun({ a, session, turn, input, owner, cre
         "Current SDK (browser paths):\n" + JSON.stringify(sdk)].join("\n\n"),
       a.model_selection.modelId, skills, credentials.locale,
     ) },
-    environment: { values: { ONTOMATO_WORKSPACE_ID: session.workspace_id!, ONTOMATO_EXECUTION_KIND: "build-test" }, secrets: {} },
     businessCallbacks: executionBusinessCallbacks(owner, credentials, turn.id, { scope: "app-builder" }),
   };
 }

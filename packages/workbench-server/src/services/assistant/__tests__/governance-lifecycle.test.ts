@@ -52,13 +52,11 @@ it("governance-only preparation registers caller bounds without query preparatio
   mocks.overview.mockRejectedValue(new Error("Query permission denied"));
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
   expect(prepared.definition).toMatchObject({agentId,modelId:"provider/model",skills:[{skill,digest}]});
-  expect(prepared.environment).toEqual({values:{ONTOMATO_ASSISTANT_SESSION_ID:sessionId},secrets:{}});
+  expect(prepared).not.toHaveProperty("environment");
   expect(prepared.businessCallbacks).toMatchObject({
     ontology:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(`http://workbench/api/assistant/executions/${runId}/ontology`).pathname, baseUrl:`http://workbench/api/assistant/executions/${runId}/ontology`,credential:"wbc1.callback"},
     governance:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(`http://workbench/api/assistant/sessions/${sessionId}/governance-window`).pathname, baseUrl:`http://workbench/api/assistant/sessions/${sessionId}/governance-window`,credential:"wbc1.callback"},
   });
-  expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_SKILL_SCENARIO");
-  expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
   expect(mocks.callback.mock.calls.find(([claim])=>claim.pathPrefix.endsWith("/governance-window"))![0].expiresAt).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
   expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({continuationIds:[],recentUserMessages:[],executionUserId:null}),{token:"user"});expect(mocks.recordWindow).not.toHaveBeenCalled();
 });
@@ -110,8 +108,8 @@ it("the selected query skill opens and records its actual scope regardless of pr
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
   const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageControl:false});
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
+  expect(prepared).not.toHaveProperty("environment");
   expect(mocks.overview).toHaveBeenCalled();expect(mocks.scope).toHaveBeenCalledWith(runId,owner,runId);
-  expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
 });
 it("a failed scope opening never records an opened scope",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};

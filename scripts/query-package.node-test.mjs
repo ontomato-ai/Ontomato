@@ -64,7 +64,8 @@ test("exact related entity resolution rejects ambiguous, empty and partial match
 });
 import { metricViewCommand } from "../agent-skills/metricview-generation/scripts/generation.mjs";
 const fixture = JSON.parse(await readFile(new URL("../packages/contracts/examples/query-packages.json", import.meta.url), "utf8")).pythonAggregate;
-const env = { ONTOMATO_ONTOLOGY_URL: "http://ontology.invalid", ONTOMATO_GENERATION_ID: "00000000-0000-4000-8000-000000000001", ONTOMATO_TK: "fixture" };
+const runId = "00000000-0000-4000-8000-000000000001";
+const env = { ONTOMATO_GENERATION_URL: "http://ontology.invalid/generation", ONTOMATO_EXECUTION_CALLBACK: "fixture" };
 test("collector closes the manifest over exact source files and rejects links and traversal", async () => {
   const dir = await mkdtemp(join(tmpdir(), "query-package-"));
   try {
@@ -98,7 +99,8 @@ test("both generation clients submit the whole bundle, never source paths", asyn
     for (const command of [generationCommand, metricViewCommand]) {
       let calls = 0;
       await command(["test-package", manifest, labels], env, async (url, options) => {
-        calls++; assert.equal(url, `${env.ONTOMATO_ONTOLOGY_URL}/ontology/ai/generation/${env.ONTOMATO_GENERATION_ID}/test`);
+        if (url.endsWith("/runtime-context")) return Response.json({ runId, kind: "metric" });
+        calls++; assert.equal(url, `${env.ONTOMATO_GENERATION_URL}/${runId}/test`);
         assert.deepEqual(JSON.parse(options.body), { queryPackage: fixture, columnLabels: { total: "Total" } });
         return Response.json({ result: "ok" });
       });

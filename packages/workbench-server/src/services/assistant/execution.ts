@@ -26,6 +26,7 @@ export async function credentialsForRun(owner: AssistantOwner, runId: string, in
   const credentials = await agentExecutionCredentials(run.channel.agent.agentId, executionUserId, owner, initiatorCredentials);
   const retrievalScopeId = turn?.retrieval_scope_id ?? null;
   return {
+    run,
     executionUserId,
     retrievalScopeId,
     credentials: retrievalScopeId ? executionCallerCredentials(credentials, retrievalScopeId) : credentials,

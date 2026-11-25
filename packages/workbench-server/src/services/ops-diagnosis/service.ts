@@ -235,7 +235,6 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
     language: intent.language,
     input,
     definition: definition.data,
-    environment: { values: {}, secrets: {} },
     businessCallbacks: {
       workbench: {
         owner: "workbench", baseUrl, pathPrefix: new URL(baseUrl).pathname,

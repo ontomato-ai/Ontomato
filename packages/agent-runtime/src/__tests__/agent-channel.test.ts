@@ -100,7 +100,7 @@ function presentationAdmission(activeRunId: string | null = null) {
       language: request.language, input: request.input,
       definition: { systemPrompt: "", modelId: null, skills: [], externalMcp: [],
         sandbox: { limits: codeLimitsSchema.parse({ memoryBytes: 1_000_000_000, wallTimeMs: 60_000, cpuSeconds: 60 }) } },
-      environment: { values: {}, secrets: {} }, presentationCallback: callback,
+      presentationCallback: callback,
     };
     return Response.json(prepared);
   });

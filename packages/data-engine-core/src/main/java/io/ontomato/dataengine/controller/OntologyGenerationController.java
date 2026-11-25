@@ -12,6 +12,7 @@ import io.ontomato.dataengine.service.agent.*;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -102,6 +103,17 @@ public class OntologyGenerationController {
   public Object helpers(@PathVariable String run, HttpServletRequest request) throws Exception {
     owner(run, request);
     return JSONObject.of("markdown", PythonHelperDocs.markdown());
+  }
+
+  @GetMapping("/runtime-context")
+  public Object runtimeContext(HttpServletRequest request) throws Exception {
+    String run = request.getHeader("X-Ontomato-Run-Id");
+    if (!(request.getAttribute(QueryGrantService.ATTRIBUTE) instanceof JSONObject grant)
+        || !"ontology-generation".equals(grant.getString("purpose"))
+        || !Objects.equals(run, grant.getString("runId"))) throw AgentHttpException.missing();
+    owner(run, request);
+    var gate = store.one("SELECT kind FROM ontology_generations WHERE run_id=?", uuid(run));
+    return JSONObject.of("runId", run, "kind", gate.getString("kind"));
   }
 
   @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)

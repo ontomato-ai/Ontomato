@@ -21,7 +21,6 @@ import {
   runtimeRunInputSchema,
 } from "./agent-runtime-messages";
 import {
-  runtimeEnvironmentSchema,
   runtimeRegisteredSkillSchema,
   runtimeSkillVersionSchema,
 } from "./agent-runtime-skills";
@@ -92,7 +91,6 @@ export const runtimeStartRunRequestSchema = z
     channel: agentRunContextSchema.optional(),
     authority: agentAuthoritySchema.optional(),
     executionActor: agentExecutionActorRefSchema.nullable().optional(),
-    environment: runtimeEnvironmentSchema,
     presentationCallback: runtimePresentationCallbackSchema.optional(),
     /** Run-scoped Workbench capabilities kept outside the engine process. */
     businessCallbacks: runtimeBusinessCallbacksSchema.optional(),
@@ -131,10 +129,11 @@ const runtimeRunFields = {
   channel: agentRunContextSchema.optional(),
   executionUserId: runtimeKeySchema.nullable().optional(),
   resolvedSkills: z.array(runtimeRegisteredSkillSchema),
+  /** Legacy run snapshots may contain redacted environment metadata. */
   environment: z.object({
     values: z.record(z.string()),
     secretNames: z.array(z.string()),
-  }),
+  }).optional(),
 };
 export const runtimeRunSchema = z
   .object({
