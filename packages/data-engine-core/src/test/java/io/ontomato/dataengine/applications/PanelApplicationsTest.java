@@ -532,6 +532,11 @@ class PanelApplicationsTest {
         assertEquals("/settings/records/system-monitor", monitor.path());
         assertEquals("records", monitor.groupKey());
         assertEquals("activity", monitor.icon());
+        var iconsById = uses.stream().collect(java.util.stream.Collectors.toMap(ApplicationPanelUse::id, ApplicationPanelUse::icon));
+        assertEquals("sliders-horizontal", iconsById.get("general-settings"));
+        assertEquals("cable", iconsById.get("external-mcp"));
+        assertEquals("plug", iconsById.get("published-mcp"));
+        assertEquals("scroll-text", iconsById.get("audit-log"));
     }
 
     @Test void preservesPageComposerAndRejectsInvalidOrNativePageComposer() {
