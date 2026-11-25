@@ -9,62 +9,47 @@
     container: pm-page / inline-size;
   }
   .pm-body {
-    display: grid;
-    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-    gap: var(--spacing-lg);
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 48px);
-    min-width: 0;
-    align-items: start;
-  }
-  .pm-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-md);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-    min-width: 0;
-  }
-  .pm-detail {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-lg);
-    min-width: 0;
-  }
-  .pm-card {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
-    padding: var(--page-section-padding, var(--spacing-lg));
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 48px);
     min-width: 0;
   }
-  .pm-card-head {
+  .pm-services {
+    width: 100%;
+    min-width: 0;
+  }
+  .pm-services .sdk-object-list-cards {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-md);
+  }
+  .pm-services .sdk-object-list-card {
+    padding: var(--page-section-padding, var(--spacing-lg));
+    cursor: default;
+  }
+  .pm-services .sdk-object-list-card:hover {
+    background: var(--sdk-bg-color);
+  }
+  .pm-card-content {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
   }
-  .pm-section-title {
-    margin: 0;
-    font-size: var(--text-base, var(--text-sm));
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
+  .pm-tools-details {
+    margin-top: var(--spacing-xs);
+    min-width: 0;
   }
-  .pm-count {
-    font-size: var(--text-xs);
-    color: var(--sdk-text-color-secondary);
-  }
-  .pm-empty {
-    padding: var(--spacing-3xl) var(--spacing-lg);
-    text-align: center;
-    border: 1px dashed var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    color: var(--sdk-text-color-secondary);
+  .pm-tools-summary {
+    cursor: pointer;
     font-size: var(--text-sm);
+    font-weight: var(--font-medium, 500);
+    color: var(--sdk-text-color-primary);
+    user-select: none;
+  }
+  .pm-tools-body {
+    margin-top: var(--spacing-sm);
+    min-width: 0;
   }
   .pm-schema-details {
     min-width: 0;
@@ -90,11 +75,6 @@
   .pm-muted {
     color: var(--sdk-text-color-secondary);
   }
-  @container pm-page (max-width: 760px) {
-    .pm-body {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
 </style>
 
 <div id="app" v-cloak>
@@ -109,38 +89,31 @@
     </page-header>
 
     <div class="pm-body">
-      <aside class="pm-sidebar">
-        <h3 class="pm-section-title">{{ t('services.title') }}</h3>
-        <projection slot="services"></projection>
-      </aside>
+      <projection slot="services" class="pm-services">
+        <template #card="{ ref: serviceRef }">
+          <div class="pm-card-content">
+            <projection slot="serviceSummary" :inputs="{ target: serviceRef }"></projection>
 
-      <div class="pm-detail">
-        <template v-if="selectedKey">
-          <section class="pm-card">
-            <projection slot="serviceSummary"></projection>
-          </section>
-
-          <section class="pm-card">
-            <div class="pm-card-head">
-              <h3 class="pm-section-title">{{ t('tools.title') }}</h3>
-              <span v-if="toolTotal !== null" class="pm-count">{{ toolTotal }}</span>
-            </div>
-            <projection slot="serviceTools">
-              <template #cell-inputSchema="{ displayText }">
-                <details v-if="displayText" class="pm-schema-details">
-                  <summary>{{ t('tools.viewSchema') }}</summary>
-                  <pre class="pm-schema-code">{{ displayText }}</pre>
-                </details>
-                <span v-else class="pm-muted">—</span>
-              </template>
-            </projection>
-          </section>
+            <details
+              class="pm-tools-details"
+              @toggle="onToolsToggle(serviceRef.primaryKey, $event)"
+            >
+              <summary class="pm-tools-summary">{{ t('tools.title') }}</summary>
+              <div v-if="expandedCards[serviceRef.primaryKey]" class="pm-tools-body">
+                <projection slot="serviceTools" :inputs="{ target: serviceRef }">
+                  <template #cell-inputSchema="{ displayText }">
+                    <details v-if="displayText" class="pm-schema-details">
+                      <summary>{{ t('tools.viewSchema') }}</summary>
+                      <pre class="pm-schema-code">{{ displayText }}</pre>
+                    </details>
+                    <span v-else class="pm-muted">—</span>
+                  </template>
+                </projection>
+              </div>
+            </details>
+          </div>
         </template>
-
-        <div v-else class="pm-empty">
-          {{ t('detail.empty') }}
-        </div>
-      </div>
+      </projection>
     </div>
   </section>
 </div>

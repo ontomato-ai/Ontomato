@@ -1121,7 +1121,7 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
         };
       }
 
-      // Single-source mode
+      // Single-source mode: omit form sections so ObjectForm renders a continuous flow without extra headings or TOC.
       const selectedAdapter = adapters.find((a) => a.type === adapterMode);
       const storedConn = config.dataAdapterConnections[adapterMode];
       const connectionValues = !incoming || switchedMode
@@ -1131,6 +1131,7 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           isPlainObject(incoming.connection) ? incoming.connection : undefined,
         );
 
+      const { section: _omittedModeSection, ...singleModeField } = modeField;
       const connectionFields = selectedAdapter
         ? normalizeAdapterFields(selectedAdapter).map((field) =>
           buildConnectionField(
@@ -1138,25 +1139,17 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
             `/connection/${escapeJsonPointer(field.name)}`,
             field.secret && hasSavedSecretValue(storedConn, field.name),
             locale,
-            "connection",
+            undefined,
           ),
         )
         : [];
-
-      const sections: PanelFormSection[] = [
-        { key: "mode", title: t("panels.dataAdapters.sections.mode") },
-        ...(selectedAdapter && connectionFields.length > 0
-          ? [{ key: "connection", title: selectedAdapter.label }]
-          : []),
-      ];
 
       const errors = incoming && !switchedMode && selectedAdapter
         ? resolveConnectionPayload(selectedAdapter, connectionValues, storedConn, "/connection", locale).errors
         : [];
 
       return {
-        sections,
-        fields: [modeField, ...connectionFields],
+        fields: [singleModeField, ...connectionFields],
         values: {
           adapterMode,
           connection: connectionValues,

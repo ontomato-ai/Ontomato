@@ -296,6 +296,9 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
     });
     expect(JSON.stringify(form.values)).not.toContain("******");
 
+    expect(form.sections).toBeUndefined();
+    expect(form.fields.every((f) => f.section === undefined)).toBe(true);
+
     const modeField = form.fields.find((f) => f.path === "/adapterMode")!;
     expect(modeField.refreshOnChange).toBe(true);
     expect(modeField.control).toMatchObject({ kind: "select", presentation: "radio" });
@@ -336,6 +339,7 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
       }),
     );
 
+    expect(multiForm.sections?.map((s) => s.key)).toEqual(["mode", "dataSources", "classRoutes", "relationshipRoutes"]);
     const dsField = multiForm.fields.find((f) => f.path === "/dataSources")!;
     expect(dsField.control.kind).toBe("object-array");
     if (dsField.control.kind !== "object-array") throw new Error("expected object-array");

@@ -1,17 +1,21 @@
-import { computed } from "vue";
+import { ref } from "vue";
 import {
   mountPanel,
   usePanelContext,
-  usePanelOutput,
 } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
     const { instance, t } = usePanelContext();
-    const values = instance.state.values;
+    const expandedCards = ref({});
 
-    const selectedKey = computed(() => values.value.selected?.primaryKey ?? "");
-    const toolTotal = usePanelOutput("serviceTools", "total");
+    function onToolsToggle(key, event) {
+      const open = Boolean(event?.currentTarget?.open);
+      expandedCards.value = {
+        ...expandedCards.value,
+        [key]: open,
+      };
+    }
 
     function refresh() {
       instance.refreshObjects();
@@ -19,8 +23,8 @@ await mountPanel({
 
     return {
       t,
-      selectedKey,
-      toolTotal,
+      expandedCards,
+      onToolsToggle,
       refresh,
     };
   },

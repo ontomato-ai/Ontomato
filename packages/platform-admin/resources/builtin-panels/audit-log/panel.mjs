@@ -1,28 +1,31 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import {
   mountPanel,
   usePanelBack,
   usePanelContext,
-  usePanelNarrow,
 } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
     const { instance, t } = usePanelContext();
     const values = instance.state.values;
-    const root = ref(null);
-    const narrow = usePanelNarrow(root);
-    const drawerSize = computed(() => (narrow.value ? "94%" : "560px"));
 
-    const businessFilter = computed({
-      get: () => values.value.business ?? "",
-      set: (next) => instance.state.set("business", next || null),
-    });
+    const draftBusiness = ref(values.value.business ?? "");
+    const draftOperation = ref(values.value.operation ?? "");
 
-    const operationFilter = computed({
-      get: () => values.value.operation ?? "",
-      set: (next) => instance.state.set("operation", next || null),
-    });
+    watch(
+      () => values.value.business ?? "",
+      (next) => {
+        if (draftBusiness.value !== next) draftBusiness.value = next;
+      },
+    );
+
+    watch(
+      () => values.value.operation ?? "",
+      (next) => {
+        if (draftOperation.value !== next) draftOperation.value = next;
+      },
+    );
 
     const hasSelection = computed(() => Boolean(values.value.selectedLog));
 
@@ -41,10 +44,25 @@ await mountPanel({
       },
     });
 
-    function onRowAction({ id, ref: rowRef }) {
-      if (id === "detail" && rowRef) {
+    function openDetail(rowRef) {
+      if (rowRef) {
         instance.state.set("selectedLog", rowRef);
       }
+    }
+
+    function applyFilters() {
+      const nextBusiness = draftBusiness.value || null;
+      const nextOperation = draftOperation.value || null;
+      const curBusiness = values.value.business || null;
+      const curOperation = values.value.operation || null;
+      if (nextBusiness === curBusiness && nextOperation === curOperation) {
+        instance.refreshObjects();
+        return;
+      }
+      instance.state.setState({
+        business: nextBusiness,
+        operation: nextOperation,
+      });
     }
 
     function refresh() {
@@ -52,14 +70,13 @@ await mountPanel({
     }
 
     return {
-      root,
       t,
-      drawerSize,
-      businessFilter,
-      operationFilter,
+      draftBusiness,
+      draftOperation,
       detailOpen,
+      openDetail,
       closeDetail,
-      onRowAction,
+      applyFilters,
       refresh,
     };
   },
