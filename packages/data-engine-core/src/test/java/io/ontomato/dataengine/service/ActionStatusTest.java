@@ -8,11 +8,16 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.action.Action;
+import io.ontomato.dataengine.bean.action.ActionTarget;
 import io.ontomato.dataengine.bean.action.BusinessMeaning;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
+import io.ontomato.dataengine.dao.JSONRuleDao;
+import java.time.Instant;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import java.util.function.Supplier;
@@ -38,6 +43,8 @@ class ActionStatusTest {
   private final LangService langService = mock(LangService.class);
   private final OntologyGenerationService generationService = mock(OntologyGenerationService.class);
   private final OntologyScheduleReferences scheduledReferences = mock(OntologyScheduleReferences.class);
+  private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+  private ActionTrialStore trials;
   private final Map<String, Action> actions = new LinkedHashMap<>();
   private final JSONArray segments = JSONArray.of(JSONObject.of("id", "s1"));
 
@@ -45,6 +52,11 @@ class ActionStatusTest {
   void setup() {
     OntologyAgentStore store = mock(OntologyAgentStore.class);
     when(store.transaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
+    var schemas = mock(JSONRuleDao.class);
+    when(schemas.query("domain-a")).thenReturn(Map.of("classDef",
+        List.of(Map.of("className", "Order"), Map.of("className", "Invoice"))));
+    trials = new ActionTrialStore(jdbc, schemas, langService);
+    ReflectionTestUtils.setField(service, "actionTrials", trials);
     ReflectionTestUtils.setField(service, "store", store);
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
@@ -69,6 +81,7 @@ class ActionStatusTest {
   @Test
   void oneRefusalDoesNotStopTheOtherItems() {
     put(action("a1"));
+    seedTrial(actions.get("a1"), "PASSED");
 
     List<ActionService.StatusResult> results =
         service.setStatus("domain-a", "reviewer", List.of("missing", "a1"), Action.STATUS_PUBLISHED, "en");
@@ -90,6 +103,48 @@ class ActionStatusTest {
   }
 
   @Test
+  void publicationRequiresTheLatestTrialToPass() {
+    Action action = action("a1");
+    put(action);
+    assertEquals("ACTION_TRIAL_REQUIRED", publish(action).refusal().code());
+    seedTrial(action, "FAILED");
+    assertEquals("ACTION_TRIAL_FAILED", publish(action).refusal().code());
+    verify(actionDao, never()).updateStatus(any());
+
+    seedTrial(action, "PASSED");
+    assertEquals(Action.STATUS_PUBLISHED, publish(action).data().getStatus());
+  }
+
+  @Test
+  void changingCodeOrTargetRequiresAnotherTrial() {
+    Action action = action("a1");
+    action.setTarget(new ActionTarget("Order", "orderId"));
+    put(action);
+    seedTrial(action, "PASSED");
+    assertNotNull(publish(action).data());
+
+    action.setTarget(new ActionTarget("Invoice", "orderId"));
+    assertEquals("ACTION_TRIAL_REQUIRED", publish(action).refusal().code());
+    action.setTarget(new ActionTarget("Order", "orderId"));
+
+    action.getFunction().setCode(CODE + "\nprint('changed')");
+    action.setCodeHash(CodeHashUtil.sha256(action.getFunction().getCode()));
+    assertEquals("ACTION_TRIAL_REQUIRED", publish(action).refusal().code());
+  }
+
+  private ActionService.StatusResult publish(Action action) {
+    return service.setStatus("domain-a", "reviewer", List.of(action.getId()), Action.STATUS_PUBLISHED, "en").getFirst();
+  }
+
+  private void seedTrial(Action action, String status) {
+    var function = action.getFunction();
+    String digest = trials.digest(action.getDomainId(), function.getCode(), action.getTarget(), function.getParameters());
+    var trial = new ActionTrialStore.TrialSummary("trial", status, null, null, 2L, Instant.EPOCH);
+    doReturn(List.of(trial)).when(jdbc).query(anyString(), any(RowMapper.class),
+        eq(action.getDomainId()), eq(digest), eq(action.getId()));
+  }
+
+  @Test
   void aSystemActionIsARejectionRatherThanAFailure() {
     Action system = action("system");
     system.setOrigin(Action.ORIGIN_SYSTEM);
@@ -107,6 +162,7 @@ class ActionStatusTest {
   @Test
   void anExecutionFailureCarriesNoRefusalCode() {
     put(action("a1"));
+    seedTrial(actions.get("a1"), "PASSED");
     when(actionDao.updateStatus(any())).thenThrow(new RuntimeException("database unavailable"));
 
     ActionService.StatusResult result =
@@ -120,6 +176,7 @@ class ActionStatusTest {
   @Test
   void publishingRecordsTheReviewerAndReusesTheStoredExplanation() {
     put(action("a1"));
+    seedTrial(actions.get("a1"), "PASSED");
 
     ActionService.StatusResult result =
         service.setStatus("domain-a", "reviewer", List.of("a1"), Action.STATUS_PUBLISHED, "en").get(0);

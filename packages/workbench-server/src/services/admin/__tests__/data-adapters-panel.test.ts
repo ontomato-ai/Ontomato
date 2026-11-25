@@ -839,6 +839,7 @@ describe("dataAdapters.testConnection read operation", () => {
 
     expect(testedBodies[0]).toEqual({
       type: "opensearch",
+      sourceId: "search-idx",
       url: "https://search:9200",
       user: "admin",
       password: "pw",

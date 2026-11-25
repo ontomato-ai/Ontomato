@@ -108,6 +108,10 @@ describe("action catalog reads", () => {
         updatedAt: "2026-11-20T08:30:00.000Z",
       },
       tones: { status: "success" },
+      outputs: {
+        actionStatus: "PUBLISHED", trialStatus: "notRun", trialStatusLabel: null,
+        lastTrialAt: null, lastTrialError: null, publishBlockedCode: null, publishBlockedReason: null,
+      },
     });
     expect(records[1]?.tones).toEqual({ status: "warning" });
     expect(records[2]?.tones).toEqual({ status: "info" });
@@ -125,6 +129,27 @@ describe("action catalog reads", () => {
 
     expect((await createActionReadAdapter(owner, viewer).record("approve-order")).label).toBe("Approve order");
     expect(sent[0]?.body).toEqual({ id: "approve-order" });
+  });
+
+  it("projects the owner's trial error and publication block as separate details", async () => {
+    const pending = { ...approve, status: "PENDING_REVIEW" };
+    ownerAnswering({ "/action/queryById": ok({
+      ...pending,
+      trialStatus: "failed", trialStatusLabel: "Sandbox trial failed",
+      lastTrialAt: "2026-11-25T13:00:00Z", lastTrialError: "Order is closed",
+      publishBlockedCode: "ACTION_EXPLANATION_REQUIRED", publishBlockedReason: "Explain the saved action",
+    }) });
+
+    const summary = panelRecordSchema.parse(await createActionReadAdapter(owner, viewer).trialSummary(pending.id));
+    expect(summary).toMatchObject({
+      fields: { trialDetail: "Order is closed" },
+      tones: { trialStatus: "danger" },
+      outputs: {
+        actionStatus: pending.status, trialStatus: "failed", lastTrialError: "Order is closed",
+        publishBlockedCode: "ACTION_EXPLANATION_REQUIRED", publishBlockedReason: "Explain the saved action",
+      },
+    });
+    expect(summary.outputs).not.toHaveProperty("status");
   });
 
   it("asks the owner for the definition form of the action, with the draft values and the changed field", async () => {

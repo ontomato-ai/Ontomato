@@ -30,6 +30,7 @@ import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionForm;
 import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
+import io.ontomato.dataengine.service.ActionTrialStore;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.IdentitySnapshotLookup;
 import io.ontomato.dataengine.service.ActionFunctionAdmission;
@@ -83,6 +84,8 @@ public class ActionServiceImpl implements ActionService {
   @Autowired private ABCProgramService abcProgramService;
 
   @Autowired private LangService langService;
+
+  @Autowired private ActionTrialStore actionTrials;
 
   @Autowired private OntologyGenerationService generationService;
 
@@ -841,9 +844,7 @@ public class ActionServiceImpl implements ActionService {
           Action action = requireOwnedAction(id, domainId, lang);
           if (Action.STATUS_PUBLISHED.equals(status)) {
             requireActionFunction(action.getFunction(), lang);
-            if (!ActionCodeExplanationValidator.ready(action))
-              throw new OwnerRefusal("ACTION_EXPLANATION_REQUIRED",
-                  langService.get(lang, "Action.explanationRequired"));
+            actionTrials.requirePublishable(action, lang);
             action.setReviewedBy(userId);
           }
           action.setStatus(status);

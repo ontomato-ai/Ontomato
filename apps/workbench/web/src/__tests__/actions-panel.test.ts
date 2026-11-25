@@ -13,7 +13,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
-import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, SET_ACTION_STATUS, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, SET_ACTION_STATUS, TRIAL_ACTION, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -69,7 +69,15 @@ const actionTypeEntry = platformTypeTableEntrySchema.parse({
       effect: "write",
       batch: true,
       inputSchema: { type: "object" },
-      target: { source: "input", input: "actions" },
+      target: { source: "input", input: "action" },
+    },
+    {
+      id: TRIAL_ACTION,
+      kind: "action",
+      effect: "write",
+      batch: false,
+      inputSchema: { type: "object" },
+      target: { source: "input", input: "action" },
     },
     {
       id: DELETE_ACTION,
@@ -317,7 +325,7 @@ async function mountCatalogPanel(options: MountCatalogOptions = {}) {
                 label: "Change status",
                 effect: "write",
                 batch: true,
-                target: { source: "input", input: "actions" },
+                target: { source: "input", input: "action" },
                 inputSchema: {},
                 resultSchema: {},
               },
@@ -518,6 +526,24 @@ async function mountDetailPanel(options: MountDetailOptions = {}) {
             } as never,
           };
         }
+        if (member === "trial" || member === "publish") {
+          const trial = member === "trial";
+          return {
+            status: "ready",
+            value: {
+              [trial ? "trial" : "setStatus"]: {
+                kind: "action",
+                handlerRef: trial ? TRIAL_ACTION : SET_ACTION_STATUS,
+                label: trial ? "Run sandbox trial" : "Change status",
+                effect: "write",
+                batch: !trial,
+                target: { source: "input", input: "action" },
+                inputSchema: {},
+                resultSchema: {},
+              },
+            } as never,
+          };
+        }
         return { status: "ready", value: {} as never };
       }
 
@@ -525,6 +551,20 @@ async function mountDetailPanel(options: MountDetailOptions = {}) {
         if (typeof options.headerResponse === "function") return await options.headerResponse();
         if (options.headerResponse) return options.headerResponse;
         return { status: "ready", value: catalogRows[0] as never };
+      }
+      if (member === "trialSummary") {
+        return {
+          status: "ready",
+          value: {
+            primaryKey: "approve-order",
+            label: "Approve order",
+            fields: { trialStatus: "Not yet run" },
+            outputs: {
+              actionStatus: "PENDING_REVIEW", trialStatus: "notRun",
+              publishBlockedCode: "ACTION_TRIAL_REQUIRED", publishBlockedReason: "Sandbox trial required.",
+            },
+          },
+        };
       }
       if (member === "form") {
         if (request.dataName === "createForm") {
@@ -673,6 +713,9 @@ describe("builtin action-detail panel (action-detail)", () => {
       expect(element.querySelectorAll("header.sdk-page-header")).toHaveLength(1);
       expect(element.querySelector('[data-member="header"]')?.textContent).toContain("Approve order");
       expect(element.querySelector('[data-member="remove"] button')).not.toBeNull();
+      expect(element.querySelector<HTMLButtonElement>('[data-member="trial"] button')?.disabled).toBe(false);
+      expect(element.querySelector<HTMLButtonElement>('[data-member="publish"] button')?.disabled).toBe(true);
+      expect(element.querySelector('.ac-trial-bar [role="status"]')?.textContent).toContain("Sandbox trial required.");
       const form = instance.forms.handle("form");
       expect(form).toBeDefined();
       expect(form!.values.value.name).toBe("Approve order");
@@ -700,6 +743,7 @@ describe("builtin action-detail panel (action-detail)", () => {
     await vi.waitFor(() => {
       expect(formHandle.dirty.value).toBe(true);
       expect(saveButton?.disabled).toBe(false);
+      expect(element.querySelector<HTMLButtonElement>('[data-member="trial"] button')?.disabled).toBe(true);
       expect(element.querySelector(".sdk-page-header-unsaved")).not.toBeNull();
       expect(element.querySelector(".sdk-page-header-action.secondary")).not.toBeNull();
     });

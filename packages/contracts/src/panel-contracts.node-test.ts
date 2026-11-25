@@ -32,7 +32,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
-  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, EXTERNAL_MCP_SERVICE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIGGER, USER, WORKFLOW,
+  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, EXTERNAL_MCP_SERVICE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIAL_ACTION, TRIGGER, USER, WORKFLOW,
   RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
@@ -1944,6 +1944,7 @@ test("bridge and skill agree about the specific semantic reads", () => {
 
 test("Action definition reads and writes use distinct exact binding requests", () => {
   const definitions = binding(ACTION);
+  const trial = bindingKey({ kind: "PlatformOperation", id: TRIAL_ACTION });
   const deletion = bindingKey({ kind: "PlatformOperation", id: DELETE_ACTION });
   const status = bindingKey({ kind: "PlatformOperation", id: SET_ACTION_STATUS });
   for (const path of ["/action/queryList", "/action/queryById", "/action/definitionForm"]) {
@@ -1958,6 +1959,10 @@ test("Action definition reads and writes use distinct exact binding requests", (
   assert.ok(!clientSends([deletion], "DELETE", "/data-query", "/action/delete"));
   assert.ok(clientSends([status], "POST", "/data-query", "/action/setStatus", { ids: ["example"], status: 1 }));
   assert.ok(!clientSends([status], "POST", "", "/action/setStatus"));
+  assert.ok(clientSends([trial], "POST", "/data-query", "/action/trial", { id: "example" }));
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/action/trial"));
+  assert.ok(!clientSends([trial], "GET", "/data-query", "/action/trial"));
+  assert.ok(platformObjectTypes[ACTION].operations?.includes(TRIAL_ACTION));
 });
 
 test("Trigger definition reads and writes use exact binding requests", () => {

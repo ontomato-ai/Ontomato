@@ -1,6 +1,5 @@
 <!--
-  Action detail: single-row <page-header> (back link, action name/status, delete button, and Save/Discard draft controls)
-  above the three tabs (Definition form, Derived definition tables, and AnnotatedCode explanation).
+  Action detail: single-row <page-header> with action and draft controls, above the trial summary and three detail tabs.
 -->
 <style>
   [v-cloak] { display: none; }
@@ -35,6 +34,11 @@
     color: var(--sdk-text-color-secondary);
     font-size: var(--text-sm);
     line-height: 1.6;
+  }
+  .ac-trial-bar {
+    display: grid;
+    gap: var(--spacing-xs);
+    min-width: 0;
   }
   .ac-tabs {
     display: flex;
@@ -107,6 +111,8 @@
         <h1 v-else>{{ t('pageTitle') }}</h1>
       </template>
       <template v-if="detailReady" #actions>
+        <projection slot="trial" :disabled="draftDirty" :title="draftDirty ? t('trialSaveFirst') : undefined" :notify-success="false" @done="onTrialDone"></projection>
+        <projection v-if="showPublish" slot="publish" :parameters="publishParameters" :disabled="publishDisabled" :title="publishDisabledReason || undefined" :notify-success="false" @done="onPublishDone"></projection>
         <projection slot="remove" @done="onRemoveDone"></projection>
       </template>
     </page-header>
@@ -128,6 +134,10 @@
       <sdk-empty :description="t('missing')"></sdk-empty>
     </div>
     <section v-else class="ac-detail-body">
+      <div v-if="detailReady" class="ac-trial-bar" role="group" :aria-label="t('trial')" :aria-busy="trialStatus == null">
+        <projection slot="trialSummary"></projection>
+        <p v-if="publishDisabledReason" class="ac-hint" role="status">{{ publishDisabledReason }}</p>
+      </div>
       <div v-if="detailReady" class="ac-tabs" role="tablist">
         <button
           v-for="tab in tabs"
