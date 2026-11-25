@@ -651,11 +651,19 @@ it("keeps the author type table available when Java denies access to the custome
 
 it("identifies malformed registrations and missing author references without bypassing use grants", async () => {
   const summary = trial.projections.find(projection => projection.id === "projection-schedules-summary")!;
-  const { data: _data, ...input } = projectionRequest(summary.input, 0) as { data: unknown };
+  const { config: _config, ...input } = projectionRequest(summary.input, 0) as { config: unknown };
   const invalidProjection = await request("PUT", "product-projections/author-invalid", input);
   expect(invalidProjection.status).toBe(400);
   expect(await invalidProjection.json()).toMatchObject({ error: {
-    code: "INVALID_REQUEST", message: "Projection 'author-invalid', field 'data' is required",
+    code: "INVALID_REQUEST", message: "Projection 'author-invalid', field 'config' is required",
+  } });
+
+  const { data: _omittedData, ...summaryWithoutData } = projectionRequest(summary.input, 0) as { data: unknown };
+  const missingRequiredDatum = await request("PUT", "product-projections/author-missing-datum", summaryWithoutData);
+  expect(missingRequiredDatum.status).toBe(400);
+  expect(await missingRequiredDatum.json()).toMatchObject({ error: {
+    code: "PANEL_COMPONENT_DATA_REQUIRED",
+    message: "Projection 'author-missing-datum', field 'data.record' is required by component '@ontomato/sdk:ObjectSummary'",
   } });
 
   const panel = {
