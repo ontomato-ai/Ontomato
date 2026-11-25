@@ -151,16 +151,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/knowledge"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.use.id").value("knowledge-use"));
-        var knowledgeEntry = "[?(@.applicationId == 'ontology' && @.entryKey == 'knowledge-use')]";
-        var knowledgeMapping = "$.data.pageSkills" + knowledgeEntry;
-        http.perform(get("/platform/page-skills")).andExpect(status().isOk())
-            .andExpect(jsonPath(knowledgeMapping).value(org.hamcrest.Matchers.hasSize(1)))
-            .andExpect(jsonPath(knowledgeMapping + ".skill.name").value(org.hamcrest.Matchers.contains("knowledge-governance")))
-            .andExpect(jsonPath(knowledgeMapping + ".defaults[*].pageKey").value(org.hamcrest.Matchers.contains("knowledge")))
-            .andExpect(jsonPath(knowledgeMapping + ".defaults[*].defaultAgent.id").value(org.hamcrest.Matchers.contains("knowledge-agent")))
-            .andExpect(jsonPath("$.data.admittedEntrances" + knowledgeEntry + ".pageKey")
-                .value(org.hamcrest.Matchers.contains("knowledge")))
-            .andExpect(jsonPath("$.data.registeredSkills[0].name").value("knowledge-governance"));
+        PageSkillsContractTest.expectKnowledgeMapping(http.perform(get("/platform/page-skills")));
     }
 
     @Test void aDuplicateKeyNamesTheFileAndTheKey() {
