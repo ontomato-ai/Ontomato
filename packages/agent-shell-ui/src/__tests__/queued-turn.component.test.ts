@@ -263,7 +263,7 @@ it("shows a queued waiting indicator on delivery status 'starting' and transitio
   expect(conversation.busy.value).toBe(false);
 });
 
-it("releases the task connection during a steer POST and resumes it after the receipt", async () => {
+it("keeps task updates connected throughout a steer POST", async () => {
   const { client, send, readRun } = createClient();
   let tasksConnected = false;
   client.tasks!.subscribe = () => {
@@ -301,8 +301,8 @@ it("releases the task connection during a steer POST and resumes it after the re
   });
 
   const sending = conversation.send("agent-1", "Use ultramarine");
-  expect(connectedAtPost).toBe(false);
-  expect(tasksConnected).toBe(false);
+  expect(connectedAtPost).toBe(true);
+  expect(tasksConnected).toBe(true);
   expect(conversation.activeRunId.value).toBe(queuedRunId);
   finishSend(receipt);
   expect((await sending)?.delivery).toEqual(receipt.delivery);

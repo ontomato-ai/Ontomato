@@ -15,7 +15,7 @@ projection, using the runtime's stored namespace/name/digest/description.
 | --- | --- | --- |
 | GET `/agents` | — | `AgentHostAgentList` |
 | GET `/sessions` | `agentId`, optional opaque cursor/limit (30 default, 100 max) | `AgentHostSessionPage` |
-| GET `/sessions/run-events` | — | SSE lifecycle notices for the caller's readable sessions |
+| `/sessions/run-events` subscription | optional `viewId` | Lifecycle notices and live view events for the caller |
 | POST `/sessions/status` | `AgentHostSessionStatusRequest` (`{sessionIds}`) | `AgentHostSessionRunSnapshot` |
 | POST `/sessions` | `AgentHostCreateSession` | 201 `AgentHostCreateSessionResponse` |
 | GET `S` | — | `AgentHostSessionSnapshot` for complete evidence/history consumers |
@@ -23,7 +23,7 @@ projection, using the runtime's stored namespace/name/digest/description.
 | DELETE `S` | — | 204; active run: 409 `SESSION_BUSY` |
 | POST `S/runs` | `AgentHostSendRequest` (`{message,replyTo?}`) | 202 `AgentHostSendResult` |
 | GET `R` | — | `AgentHostRunSnapshot` |
-| GET `R/events` | `afterSeq`, `streamId` from snapshot cursor | SSE |
+| `R/events` subscription | `afterSeq`, `streamId` from snapshot cursor | `AgentHostStreamFrame` |
 | POST `R/cancel` | `{}`, including owned unadmitted intent | `AgentHostCancelResponse` |
 | GET `R/artifacts/resolve` | workspace-relative `path` | `AgentHostArtifactResolution` |
 | GET `F` | — | existing `RuntimeArtifact` |
@@ -59,8 +59,9 @@ full run read per row; the run's body arrives with `AgentHostSessionHistory` or
 a session row, including the row returned by session creation.
 
 The two list routes are user-level and accept no agent, workspace or other list
-selector. `GET /sessions/run-events` keeps one SSE connection per page; each frame is
-one `data:` JSON value with no `id` or cursor, and the event name is `session-run`.
+selector. A logical `/sessions/run-events` subscription carries JSON lifecycle notices
+without a cursor. A supplied `viewId` also binds the host’s live presentation frames
+to that subscription until it closes.
 The upstream `ready` is forwarded only after the runtime registered the subscription.
 Later `run_started`/`run_stopped` frames carry `sessionId` and `runId` only and are
 forwarded only while the entry's existing session read rule allows that caller;
@@ -87,8 +88,8 @@ Snapshots include the run's admitted `resolvedSkills: RuntimeRegisteredSkill[]`
 cursor and use contextSeq for consumed display order; replace partials. input_received
 records receipt before the same message is assigned to a run at message_end. A run
 can contain several user inputs inside one response.
-SSE uses `event: runtime`, JSON `AgentHostStreamFrame` and `id: <cursor.seq>` for
-event frames. Preserve IDs, cursors and deltas; heartbeat comments carry no state.
+Run subscriptions carry JSON `AgentHostStreamFrame` values. Event frames carry their
+sequence in the run cursor. Preserve IDs, cursors and deltas.
 Broken transport resumes from the last applied event cursor. On snapshot_required,
 the conversation shell repairs the missing history range and the current live remainder
 before resuming; a task's process retains its run-local snapshot recovery. A stopped final snapshot needs no stream. Disconnect never cancels. Cancel
@@ -142,3 +143,16 @@ Errors are `AgentHostError`: `{error:{code,message},correlationId}`. Standard co
 above, 503 DEPENDENCY_UNAVAILABLE. Never substitute empty history for failed reads;
 public errors contain no credentials or stacks. Business actions use host action
 slots and separate contracts, without extending this proxy protocol.
+
+## Workbench browser transport
+
+Workbench tabs share one physical `GET /api/browser-events` SSE connection under
+the edition’s current request identity (enterprise credentials or public anonymous identity). The response supplies a connection ID.
+The Workbench transport registers individual subscriptions by POSTing to the host
+paths above with the connection and subscription headers defined in
+[`browser-events.ts`](src/browser-events.ts). Each host applies its existing access
+rules. The physical stream delivers `subscribed`, `data` and `end` frames tagged
+with the subscription ID. Transport registration is separate from the upstream
+`ready` notice. `DELETE /api/browser-events/:subscriptionId` with the connection
+header closes that subscription only. Closing the connection releases all of its
+subscriptions. SDK applications use the same transport through their platform host.

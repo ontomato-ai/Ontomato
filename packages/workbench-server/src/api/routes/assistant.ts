@@ -40,6 +40,7 @@ const router: ReturnType<typeof Router> = Router(),
 import { context, id, wrap } from "../utils/agent-host";
 import { getRequestId } from "../../logging/log-context";
 import { createAgentHostRouter } from "./agent-host";
+import { publishBrowserEvents } from "./browser-events";
 
 function wrapDefinitionWrite(write: (req: Request, res: Response) => Promise<void>): RequestHandler {
   return wrap(async (req, res) => {
@@ -110,54 +111,41 @@ router.get("/sessions/:sessionId/tasks", wrap(async (req, res) => {
   res.json((await assistantService.tasks(id(req, "sessionId"), context(req).owner)).snapshot);
 }));
 /** Subscribe before reading the snapshot; runtime changes trigger projections without a polling loop. */
-router.get("/sessions/:sessionId/tasks/events", wrap(async (req, res) => {
-  const sessionId = id(req, "sessionId"), owner = context(req).owner;
-  await assistantService.snapshot(sessionId, owner);
-  const abort = new AbortController(); res.on("close", () => abort.abort());
-  const upstream = await new RuntimeClient(owner.domainId, undefined, owner.userId).channelStream(`/v1/channel/sessions/${sessionId}/events`, abort.signal);
-  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" }); res.flushHeaders();
-  const frameSchema = z.union([z.object({ type: z.literal("ready") }).strict(), agentTasksFrameSchema]);
-  try {
+router.post("/sessions/:sessionId/tasks/events", wrap(async (req, res) => {
+  const sessionId = id(req, "sessionId"), { owner } = context(req);
+  await publishBrowserEvents(req, res, async ({ signal, open, send }) => {
+    await assistantService.snapshot(sessionId, owner);
+    const upstream = await new RuntimeClient(owner.domainId, undefined, owner.userId)
+      .channelStream(`/v1/channel/sessions/${sessionId}/events`, signal);
+    open();
+    const frameSchema = z.union([z.object({ type: z.literal("ready") }).strict(), agentTasksFrameSchema]);
     await readSseFrames(upstream, value => frameSchema.parse(value), async frame => {
       if (frame.type === "ready") return;
       const current = await assistantService.tasks(sessionId, owner, frame);
-      res.write(`event: tasks\ndata: ${JSON.stringify({ type: "tasks_snapshot", ...current.snapshot, settled: false })}\n\n`);
-    }, abort.signal, comment => { res.write(`${comment}\n\n`); });
-  } finally { res.end(); }
+      send({ type: "tasks_snapshot", ...current.snapshot, settled: false });
+    }, signal);
+  });
 }));
 router.get("/sessions/:sessionId/tasks/:taskId/process", wrap(async (req, res) => {
   const { client, process } = await assistantService.taskProcess(id(req, "sessionId"), id(req, "taskId"), context(req).owner);
   res.json(publicSnapshot(await client.run(process.runtimeSessionId, process.runtimeRunId)));
 }));
 /** The retrieval task's own run events under the same public projection as the conversation's, on its own cursor. */
-router.get("/sessions/:sessionId/tasks/:taskId/process/events", wrap(async (req, res) => {
-  const { client, process } = await assistantService.taskProcess(id(req, "sessionId"), id(req, "taskId"), context(req).owner);
+router.post("/sessions/:sessionId/tasks/:taskId/process/events", wrap(async (req, res) => {
+  const sessionId = id(req, "sessionId"), taskId = id(req, "taskId"), { owner } = context(req);
   const after = {
     seq: z.coerce.number().int().nonnegative().parse(req.query.afterSeq),
     streamId: uuid.parse(req.query.streamId),
   };
-  const abort = new AbortController();
-  const onClose = () => abort.abort();
-  res.on("close", onClose);
-  try {
-    const upstream = await client.events(process.runtimeSessionId, process.runtimeRunId, after, abort.signal);
-    res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
-    res.flushHeaders();
-    try {
-      await readRuntimeFrames(upstream, async (raw) => {
-        const frame = publicFrame(raw);
-        if (frame) res.write(
-          `${frame.type === "event" ? `id: ${frame.envelope.cursor.seq}\n` : ""}event: runtime\ndata: ${JSON.stringify(frame)}\n\n`,
-        );
-      }, abort.signal, (comment) => { res.write(`${comment}\n\n`); });
-    } catch {
-      // As with the byte proxy, a body failure after headers closes this subscription.
-    } finally {
-      res.end();
-    }
-  } finally {
-    res.off("close", onClose);
-  }
+  await publishBrowserEvents(req, res, async ({ signal, open, send }) => {
+    const { client, process } = await assistantService.taskProcess(sessionId, taskId, owner);
+    const upstream = await client.events(process.runtimeSessionId, process.runtimeRunId, after, signal);
+    open();
+    await readRuntimeFrames(upstream, async raw => {
+      const frame = publicFrame(raw);
+      if (frame) send(frame);
+    }, signal);
+  });
 }));
 router.get(
   "/agent-definitions",
