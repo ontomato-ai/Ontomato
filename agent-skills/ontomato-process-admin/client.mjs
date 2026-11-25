@@ -163,7 +163,7 @@ async function post(backendPath, body) {
   } catch {
     die(`${backendPath} 返回非 JSON（HTTP ${r.status}）`, text.slice(0, 500));
   }
-  if (json.success === false) die(`${backendPath} 失败`, json.message || json);
+  if (json.success === false) die(json.code ? `${backendPath} 失败 (${json.code})` : `${backendPath} 失败`, json.message || json);
   return json.data !== undefined ? json.data : json;
 }
 
@@ -181,7 +181,7 @@ async function get(backendPath) {
   } catch {
     die(`${backendPath} 返回非 JSON（HTTP ${r.status}）`, text.slice(0, 500));
   }
-  if (json.success === false) die(`${backendPath} 失败`, json.message || json);
+  if (json.success === false) die(json.code ? `${backendPath} 失败 (${json.code})` : `${backendPath} 失败`, json.message || json);
   return json.data !== undefined ? json.data : json;
 }
 
@@ -209,6 +209,26 @@ async function saveActions(jsonArg) {
   if (!DRY) {
     console.log(JSON.stringify(Array.isArray(input) ? results : results[0], null, 2));
   }
+}
+
+async function trialAction(id, jsonArg) {
+  const body = { id };
+  if (jsonArg !== undefined) {
+    const extra = readJsonArg(jsonArg);
+    if (!extra || typeof extra !== 'object' || Array.isArray(extra)) {
+      die('action-trial 第二个参数应为 JSON 对象：{"sample"?:{...},"parameters"?:{...}}');
+    }
+    const unknown = Object.keys(extra).filter((key) => key !== 'sample' && key !== 'parameters');
+    if (unknown.length > 0) {
+      die(`action-trial 仅接受 sample 和 parameters 字段，发现多余字段: ${unknown.join(', ')}`);
+    }
+    if (extra.sample !== undefined) body.sample = extra.sample;
+    if (extra.parameters !== undefined) body.parameters = extra.parameters;
+  }
+  const data = await post('/action/trial', body);
+  if (DRY) return;
+  console.log(JSON.stringify(data, null, 2));
+  if (data && data.passed === false) process.exit(1);
 }
 
 async function setActionStatus(id, status) {
@@ -421,11 +441,13 @@ if (cmd === 'login') {
   console.log(JSON.stringify({ ok: true, id }, null, 2));
 } else if (cmd === 'actions') {
   const data = await post('/action/queryList', { status: args[0] || null });
-  console.log(JSON.stringify(rowsOf(data).map((a) => ({ id: a.id, name: a.name, status: a.status, approvalMode: a.approvalMode, operation: a.function && a.function.operation })), null, 2));
+  console.log(JSON.stringify(rowsOf(data).map((a) => ({ id: a.id, name: a.name, status: a.status, trialStatus: a.trialStatus, approvalMode: a.approvalMode, operation: a.function && a.function.operation })), null, 2));
 } else if (cmd === 'action-get') {
   console.log(JSON.stringify(await post('/action/queryById', { id: requireArg(args, 0, 'action-get <actionId>') }), null, 2));
 } else if (cmd === 'action-save') {
   await saveActions(requireArg(args, 0, 'action-save <json|@json>'));
+} else if (cmd === 'action-trial') {
+  await trialAction(requireArg(args, 0, 'action-trial <actionId> [<json|@json>]'), args[1]);
 } else if (cmd === 'action-reexplain') {
   const body = readJsonArg(requireArg(args, 0, 'action-reexplain <json>{ids:[...]}'));
   console.log(JSON.stringify(await post('/action/re-explain', { ...body, missingOnly: body.missingOnly ?? false }), null, 2));
@@ -585,8 +607,9 @@ if (cmd === 'login') {
   actions [status]                 动作列表
   action-get <id>                  动作详情
   action-save <json|@json>         保存动作草稿（新建省略 id，由服务端返回）
+  action-trial <id> [json|@json]   沙箱试跑已保存动作（唯一试跑入口，POST /action/trial）
   action-reexplain <json>          刷新动作解释
-  action-publish <id>              解释生成后把动作置为 PUBLISHED（setStatus）
+  action-publish <id>              解读就绪且当前版本试跑通过后置为 PUBLISHED（setStatus）
   action-retire <id>               把动作置为 UNUSED（退休，不删）（setStatus）
   wf-save <json>                   存流程草稿
   wf-query [id]                    查流程
