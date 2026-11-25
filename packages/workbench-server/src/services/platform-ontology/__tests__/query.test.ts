@@ -139,6 +139,13 @@ function okJson(data: unknown) {
   };
 }
 
+function graphFacts(data: Record<string, unknown> = {}) {
+  return {
+    ...okJson(null),
+    text: JSON.stringify({ policyGrants: [], roleActionGrants: [], roleWorkflowAuthoring: [], ...data }),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   assertPermissionMock.mockResolvedValue(undefined);
@@ -323,6 +330,9 @@ beforeEach(() => {
         { roleId: "r-1", roleCode: "Approver", capabilityKind: "ACTION", capabilityId: "act-1", inForce: true },
         { roleId: "r-1", roleCode: "Approver", capabilityKind: "ACTION", capabilityId: "act-retired", inForce: false },
       ]);
+    }
+    if (url.endsWith("/authorization/policies/graph-facts")) {
+      return graphFacts({ roleWorkflowAuthoring: [{ roleId: "r-1", workflowId: "wf-1", policyId: "p-1", verb: "EDIT" }] });
     }
     if (url.endsWith("/workflow/platform-access")) {
       return okJson([
@@ -1489,6 +1499,42 @@ describe("platform-ontology composite query", () => {
         node: { className: ROLE, primaryKey: "Approver" },
       }),
     ).rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
+  });
+
+  it("uses workflow authoring facts even when legacy platform access would allow another role", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/authorization/policies/graph-facts")) {
+        return graphFacts({ roleWorkflowAuthoring: [{ roleId: "r-author", workflowId: "wf-1", policyId: "p-1", verb: "EDIT" }] });
+      }
+      if (url.endsWith("/workflow/platform-access")) {
+        return okJson([{ roleId: "r-1", roleCode: "Approver", apiPermissions: ["/workflow/save"], managementRole: true }]);
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+    const result = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: WORKFLOW, primaryKey: "wf-1" },
+      relationKinds: ["role.can-author-workflow"],
+    });
+    expect(result.edges.map(edge => edge.from.primaryKey)).toEqual(["r-author"]);
+  });
+
+  it("shows independent action grants and deduplicates roles with step authorization", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/authorization/policies/graph-facts")) {
+        return graphFacts({ roleActionGrants: [
+          { roleId: "r-1", actionId: "act-1", policyId: "p-1" },
+          { roleId: "r-standalone", actionId: "act-1", policyId: "p-2", scopeKind: "all" },
+        ] });
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+    const result = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ACTION, primaryKey: "act-1" },
+      relationKinds: ["role.can-execute-action"],
+    });
+    expect(result.edges.map(edge => edge.from.primaryKey).sort()).toEqual(["r-1", "r-standalone"]);
   });
 
   it("keeps user.holds-role edges keyed by roleId even when /workflow/platform-access is refused", async () => {

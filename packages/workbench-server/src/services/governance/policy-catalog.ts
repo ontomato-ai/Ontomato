@@ -1,5 +1,7 @@
 import { BUILTIN_PRODUCT_ID_PREFIX } from "@ontomato/contracts/product-record-id";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
+import { currentProductRows } from "../../infrastructure/product-current";
+import { isPresetAgentKind, presetAgentDefinitions } from "../assistant/preset-definitions";
 import { assistantStore } from "../assistant/store";
 
 export interface PolicyCatalogOption {
@@ -58,22 +60,27 @@ export async function loadPolicyWorkbenchCatalog(
   domainId: string,
   locale?: string,
 ): Promise<PolicyWorkbenchCatalog> {
+  return (await readPolicyWorkbenchObjects(domainId, locale)).catalog;
+}
+
+type ProductCatalogRow = { id: string; definition: Record<string, unknown>; owner_id: string | null };
+
+export async function readPolicyWorkbenchObjects(domainId: string, locale?: string, includeDistribution = false) {
   const pool = getPostgresPool();
+  const productRows = (kind: "panel" | "projection") => includeDistribution
+    ? pool.query<ProductCatalogRow>(
+      `SELECT id, definition, owner_id FROM ${currentProductRows(kind)} AS products
+       WHERE domain_id = $1 OR domain_id IS NULL ORDER BY id ASC`, [domainId],
+    )
+    : pool.query<ProductCatalogRow>(
+      `SELECT id, definition, owner_id FROM ${t(kind === "panel" ? "product_panels" : "product_projections")}
+       WHERE domain_id = $1 AND NOT starts_with(id, $2) ORDER BY id ASC`, [domainId, BUILTIN_PRODUCT_ID_PREFIX],
+    );
   const [panelRows, projectionRows, componentRows, agents] = await Promise.all([
-    pool.query<{ id: string; definition: Record<string, unknown> }>(
-      `SELECT id, definition FROM ${t("product_panels")}
-       WHERE domain_id = $1 AND NOT starts_with(id, $2)
-       ORDER BY id ASC`,
-      [domainId, BUILTIN_PRODUCT_ID_PREFIX],
-    ),
-    pool.query<{ id: string; definition: Record<string, unknown> }>(
-      `SELECT id, definition FROM ${t("product_projections")}
-       WHERE domain_id = $1 AND NOT starts_with(id, $2)
-       ORDER BY id ASC`,
-      [domainId, BUILTIN_PRODUCT_ID_PREFIX],
-    ),
-    pool.query<{ id: string; definition: Record<string, unknown> }>(
-      `SELECT id, definition FROM ${t("domain_components")}
+    productRows("panel"),
+    productRows("projection"),
+    pool.query<ProductCatalogRow>(
+      `SELECT id, definition, owner_id FROM ${t("domain_components")}
        WHERE domain_id = $1
        ORDER BY id ASC`,
       [domainId],
@@ -94,7 +101,7 @@ export async function loadPolicyWorkbenchCatalog(
       })
       .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
 
-  return {
+  const catalog: PolicyWorkbenchCatalog = {
     panels: toOptions(panelRows.rows),
     projections: toOptions(projectionRows.rows),
     components: toOptions(componentRows.rows),
@@ -104,4 +111,20 @@ export async function loadPolicyWorkbenchCatalog(
       ...(agent.description?.trim() ? { description: agent.description.trim() } : {}),
     })),
   };
+  const ownerIds = {
+    PANEL: new Map(panelRows.rows.map(row => [row.id, row.owner_id])),
+    PROJECTION: new Map(projectionRows.rows.map(row => [row.id, row.owner_id])),
+    COMPONENT: new Map(componentRows.rows.map(row => [row.id, row.owner_id])),
+    AGENT: new Map(agents.map(agent => [agent.id, agent.owner_id])),
+  };
+  const presetAgentIds = new Set<string>();
+  if (includeDistribution) {
+    for (const agent of Object.values(presetAgentDefinitions)) {
+      catalog.agents.push({ id: `preset:${agent.kind}`, label: agent.name });
+    }
+  }
+  for (const agent of agents) {
+    if (isPresetAgentKind(agent.kind)) presetAgentIds.add(agent.id);
+  }
+  return { catalog, ownerIds, presetAgentIds };
 }

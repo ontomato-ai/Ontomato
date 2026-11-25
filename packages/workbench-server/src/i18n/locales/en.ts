@@ -767,6 +767,8 @@ export const en = {
   "panels.governance.policy.operations.save": "Save permission policy",
   "panels.governance.policy.operations.delete": "Delete permission policy",
   "panels.governance.policy.operations.refreshApiCatalog": "Refresh API catalog",
+  "panels.governance.policy.operations.grantEntries": "Grant access to entries",
+  "panels.governance.policy.operations.resolvePending": "Resolve pending grants",
   "panels.governance.policy.deleted": "Permission policy “{name}” deleted",
   "panels.governance.orgUnit.operations.save": "Save organization unit",
   "panels.governance.orgUnit.operations.delete": "Delete organization unit",

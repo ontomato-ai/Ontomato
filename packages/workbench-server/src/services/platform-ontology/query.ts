@@ -73,7 +73,6 @@ import {
 
 const logger = createLogger("platform-ontology");
 
-const WORKFLOW_SAVE_API = "/workflow/save";
 
 interface RawEdgeCandidate {
   from: PlatformOntologyNodeRef;
@@ -1246,62 +1245,46 @@ async function evaluateRelationKind(
     }
 
     case "role.can-execute-action": {
-      const res = await readers.grants();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const grant of res.data) {
-        if (!grant.inForce || grant.capabilityKind !== "ACTION" || !grant.capabilityId || !grant.roleId) continue;
+      const [grants, facts] = await Promise.all([readers.grants(), readers.authorizationGraphFacts()]);
+      if (!grants.ok) return { status: grants.status, reason: grants.reason, edges: [] };
+      if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
+      const edges = new Map<string, RawEdgeCandidate>();
+      function add(roleId: string, actionId: string, roleCode?: string) {
         if (
-          (node.className === ROLE && grant.roleId === node.primaryKey) ||
-          (node.className === ACTION && grant.capabilityId === node.primaryKey)
+          (node.className === ROLE && roleId === node.primaryKey) ||
+          (node.className === ACTION && actionId === node.primaryKey)
         ) {
-          edges.push({
-            from: { className: ROLE, primaryKey: grant.roleId },
-            to: { className: ACTION, primaryKey: grant.capabilityId },
-            fromLabel: grant.roleCode ?? undefined,
+          edges.set(JSON.stringify([roleId, actionId]), {
+            from: { className: ROLE, primaryKey: roleId },
+            to: { className: ACTION, primaryKey: actionId },
+            fromLabel: roleCode,
           });
         }
       }
-      return { status: "ok", edges };
+      for (const grant of facts.data.roleActionGrants) add(grant.roleId, grant.actionId);
+      for (const grant of grants.data) {
+        if (!grant.inForce || grant.capabilityKind !== "ACTION" || !grant.capabilityId || !grant.roleId) continue;
+        add(grant.roleId, grant.capabilityId, grant.roleCode ?? undefined);
+      }
+      return { status: "ok", edges: [...edges.values()] };
     }
 
     case "role.can-author-workflow": {
-      const accessRes = await readers.platformAccess();
-      if (!accessRes.ok) return { status: accessRes.status, reason: accessRes.reason, edges: [] };
-      const authoringRoles = accessRes.data.filter(
-        (a) => a.roleId && (a.managementRole || a.apiPermissions.includes(WORKFLOW_SAVE_API)),
-      );
-      if (node.className === ROLE) {
-        const roleAccess = authoringRoles.find((a) => a.roleId === node.primaryKey);
-        if (!roleAccess) return { status: "ok", edges: [] };
-        const wfRes = await readers.workflows();
-        if (!wfRes.ok) return { status: wfRes.status, reason: wfRes.reason, edges: [] };
-        return {
-          status: "ok",
-          edges: wfRes.data.map((wf) => ({
-            from: { className: ROLE, primaryKey: node.primaryKey },
-            to: { className: WORKFLOW, primaryKey: wf.id },
-            fromLabel: roleAccess.roleCode ?? undefined,
-            toLabel: wf.name,
-          })),
-        };
+      const facts = await readers.authorizationGraphFacts();
+      if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
+      const edges = new Map<string, RawEdgeCandidate>();
+      for (const { roleId, workflowId } of facts.data.roleWorkflowAuthoring) {
+        if (
+          (node.className === ROLE && roleId === node.primaryKey) ||
+          (node.className === WORKFLOW && workflowId === node.primaryKey)
+        ) {
+          edges.set(JSON.stringify([roleId, workflowId]), {
+            from: { className: ROLE, primaryKey: roleId },
+            to: { className: WORKFLOW, primaryKey: workflowId },
+          });
+        }
       }
-      if (node.className === WORKFLOW) {
-        const wfRes = await readers.workflows();
-        if (!wfRes.ok) return { status: wfRes.status, reason: wfRes.reason, edges: [] };
-        const wf = wfRes.data.find((item) => item.id === node.primaryKey);
-        if (!wf) return { status: "ok", edges: [] };
-        return {
-          status: "ok",
-          edges: authoringRoles.map((a) => ({
-            from: { className: ROLE, primaryKey: a.roleId! },
-            to: { className: WORKFLOW, primaryKey: wf.id },
-            fromLabel: a.roleCode ?? undefined,
-            toLabel: wf.name,
-          })),
-        };
-      }
-      return { status: "ok", edges: [] };
+      return { status: "ok", edges: [...edges.values()] };
     }
 
     case "role.owns-workflow-step": {

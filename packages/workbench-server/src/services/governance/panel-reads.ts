@@ -17,6 +17,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
+import { inspectPolicyAccess, inspectPolicyAccessInputSchema, listPendingPolicyGrants, previewEntryGrant } from "./policy-access";
 import type { PolicyWorkbenchCatalog } from "./policy-catalog";
 
 /*
@@ -147,6 +148,15 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       },
       record(id: string): Promise<PanelRecord> {
         return owner("governance-policy-record", "/panel/governance/policies/record", { id }, panelRecordSchema);
+      },
+      previewEntryGrant(domainId: string, policyId: string, params: Record<string, unknown>): Promise<PanelRecord> {
+        return previewEntryGrant(viewer, domainId, policyId, panelReadParameterSchemas.policyEntryIds.parse(params.entryIds));
+      },
+      pendingGrants(domainId: string, policyId: string): Promise<PanelRecord> {
+        return listPendingPolicyGrants(viewer, domainId, policyId);
+      },
+      inspectAccess(domainId: string, policyId: string, params: Record<string, unknown>): Promise<PanelRecord> {
+        return inspectPolicyAccess(viewer, domainId, policyId, inspectPolicyAccessInputSchema.parse(params));
       },
       async form(id: string, params: GovernanceFormParams): Promise<PanelFormDescription> {
         const workbenchCatalog = options.loadPolicyCatalog ? await options.loadPolicyCatalog() : undefined;

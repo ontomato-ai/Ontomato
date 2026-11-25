@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
@@ -12,6 +12,7 @@ import {
   DELETE_PERMISSION_POLICY,
   DELETE_ROLE,
   GENERATE_USER_API_KEY,
+  GRANT_POLICY_ENTRIES,
   ISSUE_USER_API_KEY_BATCH,
   ORG_GRANT,
   ORG_MEMBERSHIP,
@@ -23,6 +24,7 @@ import {
   REMOVE_ORG_MEMBERSHIP,
   REMOVE_USER,
   RESET_USER_PASSWORD,
+  RESOLVE_PENDING_POLICY_GRANT,
   REVOKE_USER_API_KEY,
   ROLE,
   SET_ORG_MEMBERSHIP_LOCKED,
@@ -51,6 +53,14 @@ import {
   valuesForTarget,
   type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
+import {
+  grantPolicyEntries,
+  grantPolicyEntriesInputSchema,
+  grantPolicyEntriesResultSchema,
+  resolvePendingPolicyGrants,
+  resolvePendingPolicyGrantsInputSchema,
+  resolvePendingPolicyGrantsResultSchema,
+} from "./policy-access";
 
 /*
  * Enterprise governance owners as panel server operations: form saves, destructive/impactful actions with confirmation
@@ -65,6 +75,20 @@ const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict
 const emptyInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
 const refreshCatalogResultSchema = z.object({ refreshed: z.boolean() }).strict();
+
+async function writePolicyGrants(
+  target: PanelOperationTarget,
+  write: (policyId: string) => Promise<z.infer<typeof grantPolicyEntriesResultSchema> | z.infer<typeof resolvePendingPolicyGrantsResultSchema>>,
+): Promise<SinglePanelOperationOutcome> {
+  if (target.kind !== "object") throw new Error("Policy grants require a selected permission policy");
+  try {
+    const data = await write(target.primaryKey);
+    return { kind: "success", data, affected: affected(PERMISSION_POLICY, target.primaryKey, [PERMISSION_POLICY, ROLE, USER]) };
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
+    return { kind: "refusal", code: error.code ?? "POLICY_GRANT_WRITE_REFUSED", message: error.message };
+  }
+}
 
 const resetPasswordInputSchema = z.object({
   newPassword: z.string().min(1),
@@ -724,6 +748,42 @@ export const governanceServerOperations = [
           affected: { objects: [], objectTypes: [PERMISSION_POLICY] },
         }),
       );
+    },
+  },
+  {
+    handlerRef: GRANT_POLICY_ENTRIES,
+    labelKey: "panels.governance.policy.operations.grantEntries",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: GRANT_POLICY_ENTRIES },
+    effect: "write",
+    batch: false,
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: grantPolicyEntriesInputSchema,
+    resultSchema: grantPolicyEntriesResultSchema,
+    targetInput: "policy",
+    targetLabel: (host: Host, target: PanelRecordTarget) =>
+      governanceTargetLabel(host, target, "/panel/governance/policies/record", "PERMISSION_POLICY_UNAVAILABLE"),
+    execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>) {
+      return writePolicyGrants(target, policyId => grantPolicyEntries(host.executor.credentials, policyId, input));
+    },
+  },
+  {
+    handlerRef: RESOLVE_PENDING_POLICY_GRANT,
+    labelKey: "panels.governance.policy.operations.resolvePending",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: RESOLVE_PENDING_POLICY_GRANT },
+    effect: "write",
+    batch: false,
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: resolvePendingPolicyGrantsInputSchema,
+    resultSchema: resolvePendingPolicyGrantsResultSchema,
+    targetInput: "policy",
+    targetLabel: (host: Host, target: PanelRecordTarget) =>
+      governanceTargetLabel(host, target, "/panel/governance/policies/record", "PERMISSION_POLICY_UNAVAILABLE"),
+    execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>) {
+      return writePolicyGrants(target, policyId => resolvePendingPolicyGrants(host.executor.credentials, policyId, input));
     },
   },
 
