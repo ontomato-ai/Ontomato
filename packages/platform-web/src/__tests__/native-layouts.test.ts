@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { createMemoryHistory, createRouter } from "vue-router";
+import { OPS_DIAGNOSIS_KIND } from "@ontomato/contracts/ops-diagnosis";
 import { appDeclarations } from "../partition";
 import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
 import { catalogFixture } from "./fixtures";
 import { catalogPartition } from "../native-layouts";
+import { observePageRoutes } from "../observe-routes";
 import { appAt } from "../apps";
 
 
@@ -149,16 +152,41 @@ describe("the operations application's unified platform frame", () => {
     expect(feedbackOnly.groups!.flatMap((group) => group.pages.map((page) => page.id))).toEqual(["/ops/feedback"]);
   });
 
-  it("opens on turn evidence for an observer and lists unified frame menu entries including feedback when granted", () => {
+  it("opens on turn evidence for an observer and lists unified frame menu entries including feedback when granted without /ops/diagnosis", () => {
     const observer = operations(["observer", "user-feedback"]);
     expect(observer.framePanelId).toBe("builtin-product-platform-frame");
     expect(observer.home).toBe("/ops/turn");
-    expect(observer.groups!.flatMap((group) => group.pages.map((page) => page.id))).toEqual(
-      expect.arrayContaining(["/ops/knowledge", "/ops/feedback"]),
-    );
+    const pageIds = observer.groups!.flatMap((group) => group.pages.map((page) => page.id));
+    expect(pageIds).toEqual(expect.arrayContaining(["/ops/turn", "/ops/knowledge", "/ops/feedback"]));
+    expect(pageIds).not.toContain("/ops/diagnosis");
   });
 
   it("does not open on user feedback for a reader the catalogue gives no such entry", () => {
     expect(operations(["user-feedback"], withoutFeedback).home).not.toBe("/ops/feedback");
+  });
+
+  it("redirects legacy /ops/diagnosis links to /agents/chat with ops-diagnosis selected and prefills without auto-sending", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { name: "Chat", path: "/agents/chat", component: { render: () => null } },
+        ...observePageRoutes(),
+      ],
+    });
+
+    await router.push("/ops/diagnosis");
+    expect(router.currentRoute.value.path).toBe("/agents/chat");
+    expect(router.currentRoute.value.query).toEqual({ agentKind: OPS_DIAGNOSIS_KIND });
+
+    await router.push("/ops/diagnosis?sessionId=session-123");
+    expect(router.currentRoute.value.path).toBe("/agents/chat");
+    expect(router.currentRoute.value.query).toEqual({ agentKind: OPS_DIAGNOSIS_KIND, sessionId: "session-123" });
+
+    await router.push("/ops/diagnosis?diagnose=1&sourceSessionId=sess-1&sourceRunId=run-2");
+    expect(router.currentRoute.value.path).toBe("/agents/chat");
+    expect(router.currentRoute.value.query.agentKind).toBe(OPS_DIAGNOSIS_KIND);
+    expect(router.currentRoute.value.query.prompt).toBeUndefined();
+    expect(String(router.currentRoute.value.query.prefill)).toContain("sess-1");
+    expect(String(router.currentRoute.value.query.prefill)).toContain("run-2");
   });
 });

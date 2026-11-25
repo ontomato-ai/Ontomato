@@ -12,7 +12,7 @@ import { operationHost } from "../operation-host";
 
 const mocks = vi.hoisted(() => ({
   ids: vi.fn(), allowed: vi.fn(), records: vi.fn(), set: vi.fn(), share: vi.fn(), agents: vi.fn(), findAgent: vi.fn(),
-  appBuilder: vi.fn(), readDiagnosis: vi.fn(), saveDiagnosis: vi.fn(), saveBuilder: vi.fn(),
+  appBuilder: vi.fn(), opsDiagnosis: vi.fn(), saveDiagnosis: vi.fn(), saveBuilder: vi.fn(),
 }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
 vi.mock("../../product-governance/grants", () => ({
@@ -27,12 +27,12 @@ vi.mock("../../product-governance/grants", () => ({
 }));
 vi.mock("../../app-builder/agents", () => ({ saveBuilderModel: mocks.saveBuilder }));
 vi.mock("../../ops-diagnosis/model-settings", () => ({
-  readDiagnosisModel: mocks.readDiagnosis, saveDiagnosisModel: mocks.saveDiagnosis,
+  saveOpsDiagnosisModel: mocks.saveDiagnosis,
 }));
 vi.mock("../../assistant/store", () => ({
   assistantStore: {
     channelAgents: mocks.agents, findAgent: mocks.findAgent, appBuilder: mocks.appBuilder,
-    agent: mocks.findAgent,
+    opsDiagnosis: mocks.opsDiagnosis, agent: mocks.findAgent,
   },
 }));
 
@@ -51,6 +51,7 @@ const systemIds = [builderId, DIAGNOSIS_AGENT_ID, retrievalId];
 const modelSelection = { modelId: "chat-model" };
 const retrieval = { id: retrievalId, kind: "retrieval", name: "Data retrieval", modelSelection };
 const builder = { id: builderId, kind: "app-builder", model_selection: modelSelection };
+const diagnosis = { id: DIAGNOSIS_AGENT_ID, kind: "ops-diagnosis", model_selection: modelSelection };
 const preset = { id: presetId, name: "Preset", description: "", enabled: true, kind: "regular" };
 const custom = { id: customId, name: "Custom", description: "", enabled: false, kind: customId };
 const fetchOwner = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>();
@@ -69,10 +70,10 @@ beforeEach(() => {
   mocks.ids.mockResolvedValue([presetId, customId, ...systemIds]);
   mocks.allowed.mockResolvedValue(true);
   mocks.records.mockResolvedValue({ grants: storedGrants });
-  mocks.agents.mockResolvedValue([preset, custom, builder]);
+  mocks.agents.mockResolvedValue([preset, custom, builder, diagnosis]);
   mocks.appBuilder.mockResolvedValue(builder);
-  mocks.findAgent.mockImplementation(async (id: string) => [builder, preset, custom].find(agent => agent.id === id));
-  mocks.readDiagnosis.mockResolvedValue({ modelSelection });
+  mocks.opsDiagnosis.mockResolvedValue(diagnosis);
+  mocks.findAgent.mockImplementation(async (id: string) => [builder, diagnosis, preset, custom].find(agent => agent.id === id));
   mocks.saveBuilder.mockResolvedValue({ modelSelection });
   mocks.saveDiagnosis.mockResolvedValue({ modelSelection });
   fetchOwner.mockImplementation(async () => Response.json({ success: true, data: retrieval }));
@@ -103,7 +104,7 @@ it("omits hidden system agents without reading their model settings", async () =
   expect(rows.map(row => row.primaryKey)).toEqual([customId, builderId]);
   expect(rows.find(row => row.primaryKey === builderId)?.outputs).toMatchObject({ category: "system", canEdit: false, canGrant: false });
   await expect(directory.count()).resolves.toMatchObject({ total: 2 });
-  expect(mocks.readDiagnosis).not.toHaveBeenCalled();
+  expect(mocks.opsDiagnosis).not.toHaveBeenCalled();
   expect(fetchOwner).not.toHaveBeenCalled();
   mocks.ids.mockResolvedValue([]);
   await expect(directory.list()).resolves.toEqual([]);
@@ -175,7 +176,7 @@ it("routes model saves to the three owners with the initiator's credentials", as
     expect(mocks.allowed).toHaveBeenCalledWith(id, "edit", credentials);
   }
   expect(mocks.saveBuilder).toHaveBeenCalledWith(owner, builderId, modelSelection);
-  expect(mocks.saveDiagnosis).toHaveBeenCalledWith(owner.domainId, modelSelection);
+  expect(mocks.saveDiagnosis).toHaveBeenCalledWith(owner, DIAGNOSIS_AGENT_ID, modelSelection);
   expect(fetchOwner).toHaveBeenCalledWith(`http://owner.test/ontology/ai/agent-models/${retrievalId}`, expect.objectContaining({
     method: "PUT", body: JSON.stringify({ modelSelection }), headers: expect.any(Headers),
   }));

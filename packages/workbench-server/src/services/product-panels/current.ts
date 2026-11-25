@@ -219,7 +219,11 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
 
     const { defaultAgent } = use;
     if (!defaultAgent) continue;
-    definitions ??= await assistantStore.agents(domainId);
+    if (!definitions) {
+      const stored = await assistantStore.agents(domainId);
+      const diagnosis = await assistantStore.opsDiagnosis?.(domainId);
+      definitions = diagnosis ? [...stored, diagnosis] : stored;
+    }
     const unavailable = (reason: "missing" | "disabled" | "missingSkill") => new HttpError(
       409,
       tForLocale(locale, `panels.productCatalog.defaultAgent.${reason}`),

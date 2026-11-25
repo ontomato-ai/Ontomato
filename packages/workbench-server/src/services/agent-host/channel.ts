@@ -5,6 +5,7 @@ import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import path from "node:path";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { isAppBuilderKind } from "../app-builder/definition";
+import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
@@ -63,6 +64,10 @@ export const agentChannelService = {
       } else {
         const session = await assistantStore.session(body.sessionId, owner);
         if (body.authority.executionKind === "build-test") await assertAppBuilderAccess(credentials);
+        const agent = assistantStore.findAgent ? await assistantStore.findAgent(session.agent_id, domain) : undefined;
+        if (agent && isOpsDiagnosisKind(agent.kind)) {
+          await workbenchIdentity().assertObserveAccess({ domainId: domain, token: credentials.token, apiKey: credentials.apiKey });
+        }
         await requireProductGrant(session.agent_id, "use", credentials);
       }
       if (body.agent.providerId === "workbench" &&
@@ -78,6 +83,7 @@ export const agentChannelService = {
       return { accepted: true };
     }
     let prepared;
+    // Legacy "observe" provider compatibility layer for `/api/observe/agent/*` and pre-migration ops_sessions.
     if (provider === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
       await createDiagnosis(body.sessionId, owner, credentials, null, true);

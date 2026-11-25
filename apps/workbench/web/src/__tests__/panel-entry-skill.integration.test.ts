@@ -111,7 +111,7 @@ async function openAt(path: string) {
   });
   const router: Router = createRouter({
     history: createMemoryHistory(),
-    routes: [platformLayoutRoute(workbenchPages(BusinessWorkbench, { component: { render: () => null } }), counter)],
+    routes: [platformLayoutRoute(workbenchPages(BusinessWorkbench), counter)],
   });
   await router.push(path);
   await router.isReady();

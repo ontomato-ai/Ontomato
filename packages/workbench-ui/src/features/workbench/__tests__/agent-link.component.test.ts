@@ -17,8 +17,9 @@ const i18n = workbenchI18n();
 const agents = vi.hoisted(() => [
   { id: "11111111-1111-4111-8111-111111111111", name: "Sales", description: "", icon: null, enabled: true },
   { id: "22222222-2222-4222-8222-222222222222", name: "Retired", description: "", icon: null, enabled: false },
+  { id: "55555555-5555-4555-8555-555555555555", name: "Operations diagnosis", description: "", icon: "wrench", enabled: true, kind: "ops-diagnosis" },
 ]);
-const [sales, retired] = agents;
+const [sales, retired, opsDiagnosis] = agents;
 const sent = vi.hoisted(() => [] as string[]);
 const filled = vi.hoisted(() => [] as string[]);
 
@@ -38,6 +39,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
     ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
     useAgentNav: (options: { setSessionId(id: string | null): void; onLeaveConversation(): void }) => ({
       agents: { value: agents },
+      sessions: { value: [] },
       loadAgents: async () => {},
       loadSessions: async () => {},
       startNew: () => {
@@ -66,6 +68,7 @@ const wrappers: ReturnType<typeof mount>[] = [];
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
   localStorage.clear();
+  sessionStorage.clear();
   sent.splice(0);
   filled.splice(0);
   vi.restoreAllMocks();
@@ -130,6 +133,34 @@ describe("a link to one agent", () => {
     expect(sent).toEqual([]);
     // The question is not lost: it waits in the composer for the reader.
     expect(filled).toEqual(["Anyone there?"]);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+
+  it("selects an agent by kind and prefills the composer without sending", async () => {
+    const { router, shell } = await openChat({
+      agentKind: "ops-diagnosis",
+      prefill: "Diagnose this Turn (sessionId: s-1, runId: r-1).",
+    });
+    expect(shell.props("agentId")).toBe(opsDiagnosis!.id);
+    expect(shell.props("sessionId") ?? null).toBeNull();
+    expect(sent).toEqual([]);
+    expect(filled).toEqual(["Diagnose this Turn (sessionId: s-1, runId: r-1)."]);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+
+  it("switches to ops-diagnosis and prefills when navigated while already on /agents/chat", async () => {
+    const { router, shell } = await openChat({ agentId: sales!.id });
+    expect(shell.props("agentId")).toBe(sales!.id);
+
+    await router.push({
+      path: platformRoutes.chat.path,
+      query: { agentKind: "ops-diagnosis", prefill: "Diagnose this Turn (sessionId: s-2, runId: r-2)." },
+    });
+    for (let index = 0; index < 3; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(shell.props("agentId")).toBe(opsDiagnosis!.id);
+    expect(sent).toEqual([]);
+    expect(filled).toEqual(["Diagnose this Turn (sessionId: s-2, runId: r-2)."]);
     expect(router.currentRoute.value.query).toEqual({});
   });
 });

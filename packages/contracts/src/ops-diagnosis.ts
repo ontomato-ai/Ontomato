@@ -2,6 +2,7 @@ import { z } from "zod";
 import { runtimeJsonValueSchema } from "./agent-runtime-values";
 import { serviceLogQuerySchema, serviceLogServiceSchema } from "./service-logging";
 
+export const OPS_DIAGNOSIS_KIND = "ops-diagnosis";
 export const DIAGNOSIS_AGENT_ID = "64348621-8f48-4734-b498-a265598c19f0";
 export const diagnosisTargetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("assistant-run"), sessionId: z.string().uuid(), runId: z.string().uuid() }).strict(),

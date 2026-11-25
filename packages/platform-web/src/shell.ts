@@ -4,7 +4,7 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Code, FlaskConical, ListChecks, MessageSquare, Terminal } from "lucide-vue-next";
+import { Code, FlaskConical, ListChecks, Terminal } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
@@ -153,7 +153,6 @@ export function createServiceManager(options: {
  * in Batch 2. Every entry uses the `observer` permission code so the menu and route guards stay in agreement.
  */
 const operationsNativePages: readonly PlatformPage[] = [
-  { path: platformRoutes.diagnosis.path, titleKey: "ops.diagnosis", icon: MessageSquare, permissions: ["observer"], group: "platform", ownHeader: true },
   { path: platformRoutes.test.path, titleKey: "ops.tests", icon: FlaskConical, permissions: ["observer"], group: "platform", ownHeader: true },
   { path: platformRoutes.cases.path, titleKey: "ops.cases", icon: ListChecks, permissions: ["observer"], group: "platform", ownHeader: true },
   { path: platformRoutes.logs.path, titleKey: "ops.logs", icon: Terminal, permissions: ["observer"], group: "platform", ownHeader: true },

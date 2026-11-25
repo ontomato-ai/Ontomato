@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { mount } from "@vue/test-utils";
 import { createI18n } from "vue-i18n";
 import { createRouter, createMemoryHistory } from "vue-router";
+import { OPS_DIAGNOSIS_KIND } from "@ontomato/contracts/ops-diagnosis";
 import TurnDiagnoseButton from "../TurnDiagnoseButton.vue";
 import en from "../../../../locales/en";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../../access";
@@ -11,7 +12,7 @@ const router = createRouter({
   history: createMemoryHistory(),
   routes: [
     { path: "/", component: { template: "<div />" } },
-    { path: "/ops/diagnosis", component: { template: "<div />" } },
+    { path: "/agents/chat", component: { template: "<div />" } },
   ],
 });
 
@@ -28,12 +29,13 @@ function render(access: TurnDiagnosisAccess = ossAccess) {
   });
 }
 
-it("opens that run's diagnosis page in the platform router", async () => {
+it("opens the agent platform pre-selected on ops-diagnosis with a prefilled prompt containing the turn IDs", async () => {
   await render().find("button").trigger("click");
-  await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/ops/diagnosis"));
-  expect(router.currentRoute.value.query).toMatchObject({
-    sourceSessionId: "session-1", sourceRunId: "run-1", diagnose: "1",
-  });
+  await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/agents/chat"));
+  expect(router.currentRoute.value.query.agentKind).toBe(OPS_DIAGNOSIS_KIND);
+  expect(router.currentRoute.value.query.prompt).toBeUndefined();
+  expect(String(router.currentRoute.value.query.prefill)).toContain("session-1");
+  expect(String(router.currentRoute.value.query.prefill)).toContain("run-1");
 });
 
 it("calls prepare once on mount and follows the assembled visibility reactively", async () => {

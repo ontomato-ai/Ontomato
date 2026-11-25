@@ -28,7 +28,7 @@ export type { WorkbenchPermissionData, WorkbenchPermissionGroupData } from "./fe
 export { workbenchFeatures } from "./features/workbench";
 export { readRememberedAgent, readRememberedSession } from "./features/workbench/remembered-agent";
 export { relativeTime } from "./utils/relative-time";
-export { ObserveLayout } from "./features/diagnosis";
+export { turnDiagnosisPrefill } from "./features/diagnosis/prefill";
 export type { ObserveAccount } from "./features/diagnosis/components/layout/types";
 export {
   ontologyServiceAccessKey,

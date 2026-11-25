@@ -84,7 +84,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
       {
         key: "operations:pages",
         paths: [
-          platformRoutes.diagnosis.path,
           platformRoutes.turn.path,
           platformRoutes.test.path,
           platformRoutes.results.path,

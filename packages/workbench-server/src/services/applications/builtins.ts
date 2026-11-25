@@ -262,6 +262,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-ops-turn-evidence",
         "path": "/ops/turn",
         "access": { "permissionCode": "observer" },
+        "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "microscope",
         "names": {
           "en": "Turn evidence",
@@ -283,6 +284,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-ops-autotest-results",
         "path": "/ops/results",
         "access": { "permissionCode": "observer" },
+        "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "clipboard-list",
         "inputs": { "caseDetailPath": { "literal": "/ops/autotest/case" } },
         "names": {
@@ -304,13 +306,15 @@ export const workbenchApplications: BuiltinApplication[] = [
         "pageKey": "ops-autotest-case-artifact",
         "panelId": "builtin-product-ops-autotest-case-artifact",
         "path": "/ops/autotest/case",
-        "access": { "permissionCode": "observer" }
+        "access": { "permissionCode": "observer" },
+        "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" }
       }, {
         "id": "ops-knowledge",
         "pageKey": "ops-knowledge",
         "panelId": "builtin-product-ops-knowledge",
         "path": "/ops/knowledge",
         "access": { "permissionCode": "observer" },
+        "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "knowledge",
         "names": {
           "en": "Operations knowledge",

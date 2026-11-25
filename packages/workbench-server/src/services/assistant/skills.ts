@@ -2,6 +2,7 @@ import { configuredAssistantSkills } from "./skill-selection";
 import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
+import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import path from "node:path";
 import { runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import type { PageSkillContext, PageSkillLocator } from "@ontomato/contracts/page-skills";
@@ -113,9 +114,14 @@ export function effectiveAssistantSkills(
   productProfile = false,
 ): RuntimeSkillRef[] {
   if (productProfile) return [];
+  const pageSkills = isOpsDiagnosisKind(agent.kind)
+    ? view.pageSkills
+        .filter(group => "permissionCode" in group.locator && group.locator.permissionCode === "observer")
+        .flatMap(group => group.skills)
+    : view.pageSkills.flatMap(group => group.skills);
   return configuredAssistantSkills(
     { kind: agent.kind, skills: agent.skills.filter(view.hasSkill) },
-    view.pageSkills.flatMap(group => group.skills),
+    pageSkills,
   );
 }
 
@@ -256,4 +262,26 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
   return { skills, pageControl: skills.some(({ skill }) => view.pageSkillIsAvailable(skill)),
     currentPage: currentPage && loadedPageSkillVersion(currentPage.member.ref, skills) ? currentPage : null,
     ...((skipped.length > 0 || sourceUnavailable) && { skippedPageSkills: { items: skipped, sourceUnavailable } }) };
+}
+
+/** Resolves and publishes the active page skill for a system agent turn that receives a pageSkillContext. */
+export async function prepareCurrentPageSkill(
+  domainId: string,
+  initiatorCredentials: AssistantCredentials,
+  pageSkillContext: PageSkillContext,
+): Promise<{ skill: RuntimeSkillVersion; currentPage: Omit<AuthorizedPageSkillMember, "packageContext"> | null } | null> {
+  const view = await readAssistantSkillView(domainId, initiatorCredentials);
+  let currentPage: Omit<AuthorizedPageSkillMember, "packageContext"> | null = null;
+  let packageContext: SkillPackageContext | undefined;
+  if (pageSkillContext.mode === "member" && pageSkillContext.member) {
+    const resolved = await resolveCurrentPageSkillMember(view, pageSkillContext.locator, pageSkillContext.member);
+    if (!resolved) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
+    ({ packageContext, ...currentPage } = resolved);
+  }
+  const ref = currentPage?.member.ref ??
+    (pageSkillContext.mode === "public" ? view.publicPageSkill(pageSkillContext.locator) : null);
+  if (!ref) return null;
+  if (!view.hasSkill(ref)) throw unavailableRunSkill();
+  const skill = await publishSelectedSkill(domainId, ref, view, packageContext);
+  return { skill, currentPage };
 }
