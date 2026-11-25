@@ -31,7 +31,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
     },
     emits: ["update:selected", "update:selected-edges", "activate", "blank", "connect", "move", "viewport", "progress", "resized"],
     setup(props, { emit, expose }) {
-      canvas.emit = emit;
+      canvas.emit = (event, ...args) => emit(event as never, ...args);
       expose({
         zoomBy: async () => {},
         zoomTo: async () => {},
@@ -352,7 +352,7 @@ it("GroupedGrid consumes customer ObjectType.query, preserves rowOperations, sho
       total: 1200,
     } as never,
     rowOperations: {
-      "Room:r-1": { delete: { allowed: true } },
+      "Room:r-1": { delete: { available: true } },
     },
   }));
 
