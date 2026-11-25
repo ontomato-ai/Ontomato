@@ -121,7 +121,7 @@ async function post(backendPath, body) {
 
 /** 平台有两套响应外壳：Action/MetricView 用 {success,message}，sys 控制器用 {success,code,data}。统一拆。 */
 function unwrap(json, what) {
-  if (json.success === false) die(`${what} 失败`, json.message || json);
+  if (json.success === false) die(json.code ? `${what} 失败 (${json.code})` : `${what} 失败`, json.message || json);
   return json.data !== undefined ? json.data : json;
 }
 
@@ -186,6 +186,25 @@ async function saveActions(jsonArg) {
   return Array.isArray(input) ? results : results[0];
 }
 
+async function trialAction(id, jsonArg) {
+  const body = { id };
+  if (jsonArg !== undefined) {
+    const extra = readJsonArg(jsonArg);
+    if (!extra || typeof extra !== 'object' || Array.isArray(extra)) {
+      die('action-trial 第二个参数应为 JSON 对象：{"sample"?:{...},"parameters"?:{...}}');
+    }
+    const unknown = Object.keys(extra).filter((key) => key !== 'sample' && key !== 'parameters');
+    if (unknown.length > 0) {
+      die(`action-trial 仅接受 sample 和 parameters 字段，发现多余字段: ${unknown.join(', ')}`);
+    }
+    if (extra.sample !== undefined) body.sample = extra.sample;
+    if (extra.parameters !== undefined) body.parameters = extra.parameters;
+  }
+  const data = unwrap(await post('/action/trial', body), 'action/trial');
+  console.log(JSON.stringify(data, null, 2));
+  if (data && data.passed === false) process.exit(2);
+}
+
 // ---------------------------------------------------------------- 子命令
 const [cmd, ...args] = process.argv.slice(2);
 
@@ -245,12 +264,15 @@ if (cmd === 'login') {
   const j = await post('/action/queryList', { status: args[0] || null });
   const data = unwrap(j, 'queryList');
   const rows = Array.isArray(data) ? data : (data && (data.records || data.list)) || [];
-  console.log(JSON.stringify(rows.map((a) => ({ id: a.id, name: a.name, status: a.status, operation: a.function && a.function.operation })), null, 2));
+  console.log(JSON.stringify(rows.map((a) => ({ id: a.id, name: a.name, status: a.status, trialStatus: a.trialStatus, operation: a.function && a.function.operation })), null, 2));
 } else if (cmd === 'action-get') {
   const j = await post('/action/queryById', { id: args[0] });
   console.log(JSON.stringify(unwrap(j, 'queryById'), null, 2));
 } else if (cmd === 'action-save') {
   console.log(JSON.stringify(await saveActions(args[0]), null, 2));
+} else if (cmd === 'action-trial') {
+  if (!args[0]) die('用法: action-trial <actionId> [<json|@json>]');
+  await trialAction(args[0], args[1]);
 } else if (cmd === 'action-reexplain') {
   const body = readJsonArg(args[0]);
   const j = await post('/action/re-explain', { ...body, missingOnly: body.missingOnly ?? false });
@@ -327,8 +349,9 @@ if (cmd === 'login') {
   actions [status]                 列出动作
   action-get <actionId>            动作详情（含 function 与 submissionCriteria）
   action-save <json|@json>         保存动作草稿（新建省略 id，由服务端返回）
+  action-trial <id> [json|@json]   沙箱试跑已保存动作（唯一试跑入口，POST /action/trial）
   action-reexplain <json>          刷新动作解释 {ids:[...],missingOnly?}
-  action-publish <actionId>        解释生成后把动作置为 PUBLISHED（setStatus）
+  action-publish <actionId>        解读就绪且当前版本试跑通过后置为 PUBLISHED（setStatus）
   wf-save <json>                   存流程草稿，保留已激活版本
   wf-query [id] [--active]         查可编辑定义，--active 查生效快照
   wf-activate <id>                 激活：冻结版本 + 落授权

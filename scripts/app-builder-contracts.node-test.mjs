@@ -974,20 +974,42 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   }
 });
 
-test("App Builder saves Action drafts without authoring services and uses the owner publication operation", async () => {
+test("App Builder uses the single save -> trial -> publish Action lifecycle without legacy authoring steps", async () => {
   const definition = { name: "Action", function: { code: "print('ok')" } };
+  const sample = { objDatas: [{ className: "task", rows: [{ id: "t-1" }] }], relDatas: [], vectorDatas: [] };
+  const parameters = { task_id: "t-1" };
   const requests = [];
+  let publishAttempt = 0;
   const server = createServer(async (request, response) => {
     let text = "";
     for await (const chunk of request) text += chunk;
-    requests.push({ path: request.url, body: JSON.parse(text) });
+    const body = JSON.parse(text);
+    requests.push({ path: request.url, body });
     response.setHeader("content-type", "application/json");
     if (request.url === "/ontology/action/save") {
       response.end(JSON.stringify({ success: true, data: { id: "saved", status: "PENDING_REVIEW" } }));
+    } else if (request.url === "/ontology/action/trial") {
+      if (body.id === "invalid") {
+        response.end(JSON.stringify({ success: false, code: "ACTION_TRIAL_INVALID", message: "bad sample" }));
+      } else if (body.parameters?.fail) {
+        response.end(JSON.stringify({
+          success: true,
+          data: { trialId: "tr-2", actionId: body.id, status: "FAILED", passed: false, error: "boom", trialStatus: "failed" },
+        }));
+      } else {
+        response.end(JSON.stringify({
+          success: true,
+          data: { trialId: "tr-1", actionId: body.id, status: "PASSED", passed: true, result: "{\"completed\":true}", error: null, trialStatus: "passed" },
+        }));
+      }
     } else if (request.url === "/ontology/action/setStatus") {
-      response.end(JSON.stringify({ success: true, data: { items: [
+      publishAttempt += 1;
+      const refusals = [
         { id: "saved", outcome: "refusal", code: "ACTION_EXPLANATION_REQUIRED", error: { message: "Explanation missing" } },
-      ] } }));
+        { id: "saved", outcome: "refusal", code: "ACTION_TRIAL_REQUIRED", error: { message: "Trial required" } },
+        { id: "saved", outcome: "success", data: { id: "saved", status: "PUBLISHED" } },
+      ];
+      response.end(JSON.stringify({ success: true, data: { items: [refusals[publishAttempt - 1]] } }));
     } else {
       response.writeHead(404).end();
     }
@@ -999,12 +1021,95 @@ test("App Builder saves Action drafts without authoring services and uses the ow
       "agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "action", ...args,
     ], { env: { ...process.env, ONTOMATO_ONTOLOGY_URL: base + "/ontology", ONTOMATO_API_KEY: "save-key" } });
 
-    const result = await run("generate", "--save", JSON.stringify(definition));
-    assert.equal(JSON.parse(result.stdout).status, "PENDING_REVIEW");
+    const saved = await run("save", JSON.stringify(definition));
+    assert.equal(JSON.parse(saved.stdout).status, "PENDING_REVIEW");
+    await assert.rejects(run("generate", "--save", JSON.stringify(definition)), /usage: scripts\/ontomato\.mjs/);
     await assert.rejects(run("publish", "saved"), /ACTION_EXPLANATION_REQUIRED/);
+    await assert.rejects(run("publish", "saved"), /ACTION_TRIAL_REQUIRED/);
+
+    const pureTrial = await run("trial", "saved");
+    assert.equal(JSON.parse(pureTrial.stdout).passed, true);
+    const fullTrial = await run("trial", "saved", "--sample", JSON.stringify(sample), "--parameters", JSON.stringify(parameters));
+    assert.equal(JSON.parse(fullTrial.stdout).trialStatus, "passed");
+    await assert.rejects(run("trial", "saved", "--parameters", JSON.stringify({ fail: true })), error => {
+      assert.equal(JSON.parse(error.stdout).passed, false);
+      assert.equal(JSON.parse(error.stdout).error, "boom");
+      return true;
+    });
+    await assert.rejects(run("trial", "invalid"), /ACTION_TRIAL_INVALID: bad sample/);
+
+    const published = await run("publish", "saved");
+    assert.equal(JSON.parse(published.stdout).status, "PUBLISHED");
     assert.deepEqual(requests, [
       { path: "/ontology/action/save", body: definition },
       { path: "/ontology/action/setStatus", body: { ids: ["saved"], status: "PUBLISHED" } },
+      { path: "/ontology/action/setStatus", body: { ids: ["saved"], status: "PUBLISHED" } },
+      { path: "/ontology/action/trial", body: { id: "saved" } },
+      { path: "/ontology/action/trial", body: { id: "saved", sample, parameters } },
+      { path: "/ontology/action/trial", body: { id: "saved", parameters: { fail: true } } },
+      { path: "/ontology/action/trial", body: { id: "invalid" } },
+      { path: "/ontology/action/setStatus", body: { ids: ["saved"], status: "PUBLISHED" } },
+    ]);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test("process-admin and workflow-maker clients call single POST /action/trial and surface failures", async () => {
+  const sample = { objDatas: [{ className: "ticket", rows: [{ id: "tk-1" }] }], relDatas: [], vectorDatas: [] };
+  const parameters = { ticket_id: "tk-1" };
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let text = "";
+    for await (const chunk of request) text += chunk;
+    const body = text ? JSON.parse(text) : undefined;
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/ontology/user/getCur") {
+      response.end(JSON.stringify({ success: true, data: { id: "u-1", loginCode: "admin", domainId: "d-1" } }));
+    } else if (request.url === "/ontology/action/trial") {
+      requests.push({ path: request.url, body });
+      if (body.id === "refused") {
+        response.end(JSON.stringify({ success: false, code: "ACTION_TRIAL_FORBIDDEN", message: "forbidden" }));
+      } else if (body.parameters?.fail) {
+        response.end(JSON.stringify({ success: true, data: { trialId: "tr-f", actionId: body.id, status: "FAILED", passed: false, error: "bad python", trialStatus: "failed" } }));
+      } else {
+        response.end(JSON.stringify({ success: true, data: { trialId: "tr-ok", actionId: body.id, status: "PASSED", passed: true, result: "{\"completed\":true}", error: null, trialStatus: "passed" } }));
+      }
+    } else {
+      response.writeHead(404).end();
+    }
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const env = { ...process.env, ONTOMATO_ONTOLOGY_URL: base + "/ontology", ONTOMATO_TK: "test-token" };
+    const runClient = (script, ...args) => promisify(execFile)(process.execPath, [script, ...args], { env });
+
+    const adminClient = "agent-skills/ontomato-process-admin/client.mjs";
+    const wfClient = "agent-skills/ontomato-workflow-maker/wf-client.mjs";
+
+    const adminOk = await runClient(adminClient, "action-trial", "act-1", JSON.stringify({ sample, parameters }));
+    assert.equal(JSON.parse(adminOk.stdout).passed, true);
+    await assert.rejects(runClient(adminClient, "action-trial", "act-1", JSON.stringify({ parameters: { fail: true } })), error => {
+      assert.equal(JSON.parse(error.stdout).passed, false);
+      return true;
+    });
+    await assert.rejects(runClient(adminClient, "action-trial", "refused"), /ACTION_TRIAL_FORBIDDEN/);
+    await assert.rejects(runClient(adminClient, "action-trial", "act-1", JSON.stringify({ ticket_id: "tk-1" })), /仅接受 sample 和 parameters/);
+
+    const wfOk = await runClient(wfClient, "action-trial", "act-2");
+    assert.equal(JSON.parse(wfOk.stdout).passed, true);
+    await assert.rejects(runClient(wfClient, "action-trial", "act-2", JSON.stringify({ parameters: { fail: true } })), error => {
+      assert.equal(JSON.parse(error.stdout).passed, false);
+      return true;
+    });
+    await assert.rejects(runClient(wfClient, "action-trial", "refused"), /ACTION_TRIAL_FORBIDDEN/);
+
+    assert.deepEqual(requests, [
+      { path: "/ontology/action/trial", body: { id: "act-1", sample, parameters } },
+      { path: "/ontology/action/trial", body: { id: "act-1", parameters: { fail: true } } },
+      { path: "/ontology/action/trial", body: { id: "refused" } },
+      { path: "/ontology/action/trial", body: { id: "act-2" } },
+      { path: "/ontology/action/trial", body: { id: "act-2", parameters: { fail: true } } },
+      { path: "/ontology/action/trial", body: { id: "refused" } },
     ]);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
