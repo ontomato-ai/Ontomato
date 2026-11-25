@@ -101,7 +101,7 @@
       <projection slot="favoriteStatus"></projection>
     </div>
 
-    <page-header :back-label="backLabel" @back="goBack">
+    <page-header :back-label="t('od.back')" @back="goBack">
       <template #title>
         <span class="od-title-group">
           <span v-if="hasSelected" v-show="headerStatus === 'ready'" class="od-title-text">
