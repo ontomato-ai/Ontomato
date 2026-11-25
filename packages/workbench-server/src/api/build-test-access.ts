@@ -5,10 +5,19 @@ import { HttpError } from "../utils/errors";
 
 type Access = readonly [method: string, path: RegExp];
 
+const assistantBuildTestOperations = new Set([
+  "/action/execute", "/metricView/execute", "/metricView/test", "/metricView/testExecute",
+  "/vectorResource/upload", "/vectorResource/delete", "/ontology/query/distinct-values", "/ontology/query/execute-dsl",
+]);
+
+export function isAssistantBuildTestOperation(method: string, path: string): boolean {
+  return method === "POST" && assistantBuildTestOperations.has(path);
+}
+
 /**
  * Node routes that a build-test request may reach. Only reads of definitions, metadata and
- * identity, plus parameter conversion and test-context status, are declared here. Writes,
- * executions and anything that can read live business data stay out and are refused below.
+ * identity, plus parameter conversion and test-context status, are declared here.
+ * The scoped assistant proxy also admits test operations enforced by their Java owner.
  *
  * The declaration is owned by the route module named in each group; adding a route that may
  * receive a preview header means adding its entry here in the same change.
@@ -54,6 +63,8 @@ const ALLOWED: readonly Access[] = [
 ];
 
 function isAllowed(method: string, path: string): boolean {
+  const callback = /^\/assistant\/executions\/[0-9a-f-]{36}\/ontology(\/.*)$/iu.exec(path);
+  if (callback && isAssistantBuildTestOperation(method, callback[1]!)) return true;
   return ALLOWED.some(([allowedMethod, pattern]) => allowedMethod === method && pattern.test(path));
 }
 
