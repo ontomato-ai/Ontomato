@@ -619,7 +619,9 @@ export class AgentChannel {
       const children = await this.runtime.locked(scope,candidate.session.sessionId,async () => {
         const current = await this.facts.intent(scope,candidate.id);
         this.takePresentationBinding(current);
-        const cancelHost=current.cancelMode==="model" || current.status!=="starting" && current.status!=="cancelled";
+        const cancelHost = current.status !== "starting"
+          && (current.status !== "cancelled" || current.cancelMode === "model")
+          && await this.facts.hasRun(scope, current.id);
         current.cancelled = true;current.cancelMode=undefined;
         await this.facts.closePending(scope,current.session.sessionId,current.id);
         if (current.status === "starting") current.status = "cancelled";

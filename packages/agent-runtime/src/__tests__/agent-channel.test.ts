@@ -148,6 +148,53 @@ it.each(["cancel", "stop"] as const)("drops a queued binding on %s before later 
   expect(queued.prepares[0]).not.toHaveProperty("presentationBinding");
 });
 
+it.each([200, 404])("cancels only admitted executions when the child host returns %i", async hostStatus => {
+  const { runtime, channel: port } = channel();
+  const parent = await port.facts.intent(scope, runId);
+  const child = (id: string, status: AgentRunIntent["status"]): AgentRunIntent => ({
+    ...parent, id, session: { ...parent.session, sessionId: id }, status,
+    channel: { ...parent.channel, requestedBy: source },
+  });
+  const preparing = child(sessionId, "starting");
+  const rejected = child(inputId, "failed");
+  const running = child("44444444-4444-4444-8444-444444444444", "running");
+  const failedAfterAdmission = child("55555555-5555-4555-8555-555555555555", "failed");
+  const children = [preparing, rejected, running, failedAfterAdmission];
+  const intents = new Map([parent, ...children].map(intent => [intent.id, intent]));
+  const admitted = new Set([parent.id, running.id, failedAfterAdmission.id]);
+  vi.mocked(port.facts.intent).mockImplementation(async (_scope, id) => intents.get(id)!);
+  vi.spyOn(port.facts, "children").mockImplementation(async (_domain, execution) =>
+    execution.runId === parent.id ? children.map(intent => ({ scope, intent })) : []);
+  vi.spyOn(port.facts, "hasRun").mockImplementation(async (_scope, id) => admitted.has(id));
+  vi.spyOn(port.facts, "closePending").mockResolvedValue();
+  vi.spyOn(port.facts, "update").mockResolvedValue();
+  runtime.cancel = vi.fn();
+
+  const hostCancellations: string[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    expect(new URL(url).pathname).toBe("/channel/cancel");
+    const { execution } = JSON.parse(String(init.body));
+    hostCancellations.push(execution.runId);
+    if (execution.runId === running.id && hostStatus === 404) {
+      return Response.json({ error: { code: "NOT_FOUND", message: "Hosted execution is missing" } }, { status: hostStatus });
+    }
+    return Response.json({ accepted: true });
+  });
+
+  const result = port.cancel(scope, parent);
+  if (hostStatus === 200) await expect(result).resolves.toBeUndefined();
+  else await expect(result).rejects.toMatchObject({
+    name: "AggregateError",
+    errors: [expect.objectContaining({ status: 404, code: "NOT_FOUND", message: "Hosted execution is missing" })],
+  });
+
+  expect(new Set(hostCancellations)).toEqual(admitted);
+  expect(runtime.cancel).toHaveBeenCalledWith(scope, running.id, true);
+  expect(runtime.cancel).toHaveBeenCalledWith(scope, parent.id, true);
+  expect(preparing).toMatchObject({ status: "cancelled", cancelled: true });
+  expect(rejected.cancelled).toBe(true);
+});
+
 it("cannot prepare a bound run again after its delivery has settled", async () => {
   const settled = presentationAdmission();
   await settled.submit();
