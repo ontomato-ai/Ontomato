@@ -251,6 +251,21 @@ const productCatalogueOperations = (type: string, collection: string) => [
 ];
 const modelListByClass = { source: "type", parameterMode: "fixed", params: { className: "className" }, result: "panelRecordList" } as const;
 
+const scheduledTaskRowOutputs = {
+  revision: { kind: "scalar", type: "number" },
+  enabled: { kind: "scalar", type: "boolean" },
+  paused: { kind: "scalar", type: "boolean" },
+  pauseCode: { kind: "scalar", type: "string" },
+  latestResultPath: { kind: "scalar", type: "string" },
+  hasEarlierResult: { kind: "scalar", type: "boolean" },
+  lastRunStatus: { kind: "scalar", type: "string" },
+  isRunning: { kind: "scalar", type: "boolean" },
+  needsIntervention: { kind: "scalar", type: "boolean" },
+  attentionGroup: { kind: "scalar", type: "string" },
+  latestRunId: { kind: "scalar", type: "string" },
+  openPath: { kind: "scalar", type: "string" },
+} as const;
+
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
 export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDeclaration>> = {
   [SCHEDULED_TASK]: {
@@ -258,20 +273,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       list: {
         source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList",
-        outputs: {
-          revision: { kind: "scalar", type: "number" },
-          enabled: { kind: "scalar", type: "boolean" },
-          paused: { kind: "scalar", type: "boolean" },
-          pauseCode: { kind: "scalar", type: "string" },
-          latestResultPath: { kind: "scalar", type: "string" },
-          hasEarlierResult: { kind: "scalar", type: "boolean" },
-          lastRunStatus: { kind: "scalar", type: "string" },
-          isRunning: { kind: "scalar", type: "boolean" },
-          needsIntervention: { kind: "scalar", type: "boolean" },
-          attentionGroup: { kind: "scalar", type: "string" },
-          latestRunId: { kind: "scalar", type: "string" },
-          openPath: { kind: "scalar", type: "string" },
-        },
+        outputs: scheduledTaskRowOutputs,
+      },
+      catalogue: {
+        source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword" }, result: "panelRecordList",
+        outputs: scheduledTaskRowOutputs,
       },
       counts: { source: "type", parameterMode: "fixed", params: { by: "keyword" }, result: "panelGroupCounts" },
       status: {
@@ -756,6 +762,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
       usedBy: { ...catalogueRecord, result: "productProjectionUsedBy" },
       usedByRows: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
+      referenceGraph: { ...catalogueRecord, result: "panelRecord" },
       grants: { ...catalogueRecord, result: "productObjectAccess" },
       grantRows: { ...catalogueRecord, result: "panelRecordList" },
       dataRows: { ...catalogueRecord, result: "panelRecordList" },
@@ -791,6 +798,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
       usedBy: { ...catalogueRecord, result: "productPanelUsedBy" },
       usedByRows: { ...catalogueRecord, result: "panelRecordList" },
+      referenceGraph: { ...catalogueRecord, result: "panelRecord" },
       grants: { ...catalogueRecord, result: "productObjectAccess" },
       grantRows: { ...catalogueRecord, result: "panelRecordList" },
       members: { ...catalogueRecord, result: "productPanelMembers" },
@@ -842,6 +850,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       entries: { ...catalogueRecord, result: "applicationEntries" },
       entryRows: { ...catalogueRecord, result: "panelRecordList" },
       usedPanels: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
+      referenceGraph: { ...catalogueRecord, result: "panelRecord" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       grantRows: { ...catalogueRecord, result: "panelRecordList" },
       form: {

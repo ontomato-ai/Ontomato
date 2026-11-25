@@ -615,6 +615,7 @@ describe("action catalog reads", () => {
 
     const result = await adapter.annotatedExplanation("approve-order");
     expect(annotatedCodeSchema.parse(result)).toEqual(result);
+    expect(result.language).toBe("python");
     expect(result.code).toBe("def run(order_id, order):\n    pass\n");
     expect(result.segments).toHaveLength(2);
     expect(result.segments[0]).toMatchObject({
@@ -667,6 +668,7 @@ describe("action catalog reads", () => {
     const emptyAnnotated = await adapter.annotatedExplanation("approve-order");
     expect(annotatedCodeSchema.parse(emptyAnnotated)).toEqual({
       code: "# ontomato-python:2",
+      language: "python",
       segments: [],
     });
   });

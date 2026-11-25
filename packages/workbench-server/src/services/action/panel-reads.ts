@@ -898,6 +898,7 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
       }
       return annotatedCodeSchema.parse({
         ...(action.function?.code != null && { code: action.function.code }),
+        language: "python",
         segments,
         ...(summary.length > 0 && { summary }),
       });

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   decide: vi.fn(),
   retire: vi.fn(),
   panelUsers: vi.fn(),
+  panelsUsingProjection: vi.fn(),
   homePanelId: vi.fn(),
   readHomePanel: vi.fn(),
   saveHomePanel: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock("../../product-governance/authorization", async original => ({
   },
   retireObject: mocks.retire,
 }));
-vi.mock("../used-by", () => ({ panelUsers: mocks.panelUsers, panelsUsingProjection: vi.fn() }));
+vi.mock("../used-by", () => ({ panelUsers: mocks.panelUsers, panelsUsingProjection: mocks.panelsUsingProjection }));
 vi.mock("../../platform-home/store", () => ({
   platformHomeStore: { homePanelId: mocks.homePanelId },
 }));
@@ -44,7 +45,7 @@ vi.mock("../../platform-home/service", () => ({
   saveHomePanel: mocks.saveHomePanel,
 }));
 
-import { createProductPanelReadAdapter } from "../catalog-reads";
+import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../catalog-reads";
 
 const owner = { domainId: "domain", userId: "author" };
 const credentials = { token: "reader-token", locale: "en" };
@@ -109,6 +110,7 @@ beforeEach(() => {
   });
   mocks.retire.mockReset();
   mocks.panelUsers.mockReset().mockResolvedValue({ panels: [], applicationEntries: [], classNames: [], hiddenCount: 0 });
+  mocks.panelsUsingProjection.mockReset().mockResolvedValue({ panels: [], hiddenCount: 0 });
   mocks.homePanelId.mockReset().mockResolvedValue(null);
   mocks.readHomePanel.mockReset().mockResolvedValue(null);
   mocks.saveHomePanel.mockReset().mockResolvedValue(undefined);
@@ -235,4 +237,71 @@ it("resolves ProductPanel.homePanel across default, usable custom, and unavailab
     affected: { objectTypes: [PRODUCT_PANEL] },
   });
   expect(mocks.saveHomePanel).toHaveBeenCalledWith(owner, credentials, null);
+});
+
+it("builds local referenceGraph payloads for panels and projections (PN-03, PJ-06)", async () => {
+  mocks.decide.mockImplementation(async (requests: ObjectDecisionRequest[]) => requests.map(() => ({ allowed: true })));
+  mocks.panelUsers.mockResolvedValueOnce({
+    panels: [{ id: "parent-panel", name: "Parent dashboard" }],
+    applicationEntries: [{ applicationId: "app-ops", applicationName: "Operations", entryId: "main", path: "/operations" }],
+    classNames: ["Order"],
+    hiddenCount: 0,
+  });
+  const panelGraphRecord = panelRecordSchema.parse(await adapter.referenceGraph("healthy-panel"));
+  const panelGraph = (panelGraphRecord.fields.graph as { kind: "json"; value: { nodes: Array<{ id: string }>; edges: Array<{ source: string; target: string }> } }).value;
+  expect(panelGraph.nodes.map(node => node.id)).toEqual(expect.arrayContaining([
+    "asset:healthy-panel",
+    "asset:parent-panel",
+    "asset:app-ops",
+    "object-type:Order",
+  ]));
+  expect(panelGraph.edges).toEqual(expect.arrayContaining([
+    expect.objectContaining({ source: "asset:parent-panel", target: "asset:healthy-panel" }),
+    expect.objectContaining({ source: "asset:app-ops", target: "asset:healthy-panel" }),
+  ]));
+
+  const projAdapter = createProductProjectionReadAdapter(owner, credentials);
+  const projRow: CurrentProductRow = {
+    id: "proj-orders",
+    domainId: owner.domainId,
+    ownerId: owner.userId,
+    revision: 2,
+    createdAt: new Date("2026-11-23"),
+    updatedAt: new Date("2026-11-24"),
+    definition: {
+      name: "Orders list",
+      description: "",
+      visibility: "private",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      data: {
+        rows: {
+          source: { type: { kind: "ObjectType", id: "Order" } },
+          read: "query",
+          params: {},
+        },
+      },
+      config: {},
+    },
+  };
+  mocks.query.mockImplementation(async (sql: string, args: unknown[]) => {
+    if (sql.startsWith("SELECT id,domain_id") && args[1] === "proj-orders") return { rows: [projRow] };
+    return { rows: [] };
+  });
+  mocks.panelsUsingProjection.mockResolvedValueOnce({
+    panels: [{ id: "healthy-panel", name: "Orders" }],
+    hiddenCount: 0,
+  });
+  const projGraphRecord = panelRecordSchema.parse(await projAdapter.referenceGraph("proj-orders"));
+  const projGraph = (projGraphRecord.fields.graph as { kind: "json"; value: { nodes: Array<{ id: string }>; edges: Array<{ source: string; target: string }> } }).value;
+  expect(projGraph.nodes.map(node => node.id)).toEqual(expect.arrayContaining([
+    "asset:proj-orders",
+    "asset:healthy-panel",
+    "object-type:Order",
+  ]));
+  expect(projGraph.edges).toEqual(expect.arrayContaining([
+    expect.objectContaining({ source: "asset:healthy-panel", target: "asset:proj-orders" }),
+    expect.objectContaining({ source: "asset:proj-orders", target: "object-type:Order" }),
+  ]));
 });
