@@ -53,13 +53,6 @@
     font-size: var(--text-sm);
     color: var(--sdk-text-color-secondary);
   }
-  .da-source-picker {
-    flex: 0 1 260px;
-    min-width: 200px;
-  }
-  .da-source-select {
-    width: 100%;
-  }
   .da-form-wrap {
     width: 100%;
     min-width: 0;
@@ -77,10 +70,37 @@
     gap: var(--spacing-sm);
     min-width: 0;
   }
-  .da-muted {
-    margin: 0;
-    font-size: var(--text-sm);
+  .da-source-card-footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .da-source-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+  .da-routing-name {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+    color: var(--sdk-text-color-primary);
+  }
+  .da-routing-ends {
+    color: var(--sdk-text-color-regular);
+  }
+  .da-routing-derived {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    white-space: nowrap;
+  }
+  .da-routing-muted {
     color: var(--sdk-text-color-secondary);
+  }
+  .da-cell-empty {
+    display: inline-block;
   }
 </style>
 
@@ -95,13 +115,91 @@
     <div class="da-body">
       <section class="da-section">
         <div class="da-form-wrap">
-          <projection slot="adapterForm" @saved="(_target, outcome) => onAdapterSaved(outcome)"></projection>
+          <projection slot="adapterForm" @saved="(_target, outcome) => onAdapterSaved(outcome)">
+            <template #array-item-footer-dataSources="{ item, key, disabled }">
+              <div class="da-source-card-footer">
+                <div
+                  class="da-source-card-actions"
+                  @click.capture="onCardTestTrigger(item, key)"
+                >
+                  <projection
+                    slot="testConnection"
+                    :parameters="{ sourceId: sourceIdOf(item) }"
+                    :show-result="false"
+                    :disabled="disabled || !sourceIdOf(item)"
+                    @read="(result) => onCardTestRead(item, key, result)"
+                    @error="(error) => onCardTestError(item, key, error)"
+                  ></projection>
+                </div>
+                <data-adapter-test-report
+                  v-if="cardTestOutcome(key)"
+                  :result="cardTestOutcome(key).result"
+                  :error="cardTestOutcome(key).error"
+                ></data-adapter-test-report>
+              </div>
+            </template>
+          </projection>
+        </div>
+      </section>
+
+      <section v-if="!isMultiMode" class="da-section da-test-section">
+        <div class="da-section-head">
+          <div class="da-section-title-group">
+            <h2 class="da-section-title">{{ t('test.title') }}</h2>
+            <p class="da-section-hint">{{ t('test.description') }}</p>
+          </div>
+        </div>
+        <div class="da-test-action" @click.capture="onSingleTestTrigger">
+          <projection
+            slot="testConnection"
+            :show-result="false"
+            :disabled="singleTestDisabled"
+            @read="onSingleTestRead"
+            @error="onSingleTestError"
+          ></projection>
+          <data-adapter-test-report
+            v-if="singleTestOutcome"
+            :result="singleTestOutcome.result"
+            :error="singleTestOutcome.error"
+          ></data-adapter-test-report>
         </div>
       </section>
 
       <section v-if="isMultiMode" class="da-section">
         <div class="da-form-wrap">
-          <projection slot="routingForm" @saved="(_target, outcome) => onRoutingSaved(outcome)"></projection>
+          <projection slot="routingForm" @saved="(_target, outcome) => onRoutingSaved(outcome)">
+            <template #field-classRoutes.*.className="{ value }">
+              <span class="da-routing-name">{{ value }}</span>
+            </template>
+            <template #field-relationshipRoutes.*.relationship="{ value }">
+              <span class="da-routing-name">{{ value }}</span>
+            </template>
+            <template #field-relationshipRoutes.*.ends="{ value }">
+              <span class="da-routing-ends">{{ value }}</span>
+            </template>
+            <template #field-relationshipRoutes.*.source="{ index }">
+              <span class="da-routing-derived">
+                <template v-if="relationshipRow(index)?.crossSource">
+                  <sdk-tag type="warning" size="small">{{ t('routing.crossSource') }}</sdk-tag>
+                  <span>{{ relationshipRow(index).fromSource }} → {{ relationshipRow(index).toSource }}</span>
+                </template>
+                <span v-else-if="relationshipRow(index)?.source">{{ relationshipRow(index).source }}</span>
+                <span v-else class="da-routing-muted">{{ t('routing.unrouted') }}</span>
+              </span>
+            </template>
+            <template #field-relationshipRoutes.*.realEdge="{ value, index, disabled, set }">
+              <sdk-input
+                v-if="relationshipRow(index)?.edgeEditable"
+                :model-value="typeof value === 'string' ? value : ''"
+                :disabled="disabled"
+                :placeholder="relationshipRow(index)?.relationship || ''"
+                :aria-label="t('routing.realEdge')"
+                clearable
+                @update:model-value="(next) => set(typeof next === 'string' ? next : '')"
+              ></sdk-input>
+              <span v-else class="da-cell-empty"></span>
+            </template>
+          </projection>
         </div>
       </section>
 
@@ -119,45 +217,6 @@
           ></projection>
         </div>
         <projection slot="sandboxCapability"></projection>
-      </section>
-
-      <section class="da-section da-test-section">
-        <div class="da-section-head">
-          <div class="da-section-title-group">
-            <h2 class="da-section-title">{{ t('test.title') }}</h2>
-            <p class="da-section-hint">
-              {{ isMultiMode ? t('test.multiDescription') : t('test.description') }}
-            </p>
-          </div>
-          <div v-if="isMultiMode" class="da-source-picker">
-            <sdk-select
-              v-model="selectedTestSource"
-              class="da-source-select"
-              :placeholder="t('test.sourcePlaceholder')"
-              :disabled="multiSources.length === 0"
-              :aria-label="t('test.sourceLabel')"
-              clearable
-            >
-              <sdk-option
-                v-for="source in multiSources"
-                :key="source.id"
-                :value="source.id"
-                :label="source.optionLabel"
-              ></sdk-option>
-            </sdk-select>
-          </div>
-        </div>
-        <p v-if="isMultiMode && multiSources.length === 0" class="da-muted">
-          {{ t('test.noSources') }}
-        </p>
-        <div class="da-test-action" @click.capture="onTestTrigger">
-          <projection
-            slot="testConnection"
-            :key="testResetKey"
-            :disabled="testDisabled"
-            @read="onTestRead"
-          ></projection>
-        </div>
       </section>
     </div>
   </section>

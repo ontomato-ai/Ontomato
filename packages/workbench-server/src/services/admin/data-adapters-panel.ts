@@ -7,7 +7,6 @@ import {
   type ConfigurationProblem,
   type DataAdapterConnection,
   type DataAdapterInfo,
-  type DataAdapterTestResult,
   type DataSourceEntry,
   type MultiDataSourceDefinition,
 } from "@ontomato/contracts/data-adapters";
@@ -72,6 +71,7 @@ const SECRET_MASK = "******";
 const SANDBOX_AFFECTED_TYPES = [DATA_ADAPTER_CONFIG, ACTION];
 const SAVE_OP = `${DATA_ADAPTER_CONFIG}.save`;
 const SECRET_NAME_RE = /(password|secret|token|private.?key|access.?key|api.?key)/i;
+const FULL_WIDTH_FIELD_NAMES = new Set(["url", "jdbcUrl", "hosts", "httpPath", "privateKey", "serverHostname"]);
 
 const KNOWN_FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
   url: "panels.dataAdapters.connectionFields.url",
@@ -211,7 +211,7 @@ function savedConfig(adapterMode: string, data: unknown): SinglePanelOperationOu
     affected: affected(DATA_ADAPTER_CONFIG, DOMAIN_KEY, SANDBOX_AFFECTED_TYPES),
   };
 }
-const markdownResultSchema = panelReadOperationJsonResultSchema.options[0];
+const jsonResultSchema = panelReadOperationJsonResultSchema.options[1];
 const testParamsSchema = z.object({
   sourceId: z.string().nullish(),
 }).passthrough();
@@ -251,7 +251,7 @@ function normalizeAdapterFields(adapter: DataAdapterInfo): NormalizedFieldInfo[]
       required: Boolean(info.required),
       secret: Boolean(info.secret || SECRET_NAME_RE.test(info.name)),
       example: info.example ?? adapter.examples?.[info.name] ?? null,
-      fullWidth: Boolean(info.fullWidth),
+      fullWidth: Boolean(info.fullWidth || FULL_WIDTH_FIELD_NAMES.has(info.name)),
     }));
   }
   return (adapter.fields ?? []).map((name) => ({
@@ -260,7 +260,7 @@ function normalizeAdapterFields(adapter: DataAdapterInfo): NormalizedFieldInfo[]
     required: false,
     secret: SECRET_NAME_RE.test(name),
     example: adapter.examples?.[name] ?? null,
-    fullWidth: false,
+    fullWidth: FULL_WIDTH_FIELD_NAMES.has(name),
   }));
 }
 
@@ -323,6 +323,7 @@ function buildConnectionField(
     return {
       path,
       ...(section ? { section } : {}),
+      ...(field.fullWidth ? { fullWidth: true } : {}),
       label,
       ...(hasSavedSecret ? { help: t("panels.dataAdapters.secretSavedHelp") } : {}),
       required,
@@ -331,6 +332,7 @@ function buildConnectionField(
       control: {
         kind: "text",
         secret: true,
+        clearable: true,
         placeholder: hasSavedSecret ? SECRET_MASK : (field.example ?? SECRET_MASK),
       },
     };
@@ -338,12 +340,14 @@ function buildConnectionField(
   return {
     path,
     ...(section ? { section } : {}),
+    ...(field.fullWidth ? { fullWidth: true } : {}),
     label,
     required: field.required,
     readOnly: false,
     valueSchema: cachedZodToRuntimeJsonSchema(field.required ? z.string().min(1) : z.string()),
     control: {
       kind: "text",
+      clearable: true,
       ...(field.example ? { placeholder: field.example } : {}),
     },
   };
@@ -451,6 +455,18 @@ function normalizeMultiSourceRowsFromIncoming(
   });
 }
 
+function extractIncomingClassRoutes(rawRoutes: unknown): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!Array.isArray(rawRoutes)) return map;
+  for (const row of rawRoutes) {
+    if (!isPlainObject(row)) continue;
+    const className = typeof row.className === "string" ? row.className : "";
+    if (!className) continue;
+    map.set(className, typeof row.sourceId === "string" ? row.sourceId : "");
+  }
+  return map;
+}
+
 function extractIncomingRealEdges(rawRoutes: unknown): Map<string, string> {
   const map = new Map<string, string>();
   if (!Array.isArray(rawRoutes)) return map;
@@ -458,10 +474,7 @@ function extractIncomingRealEdges(rawRoutes: unknown): Map<string, string> {
     if (!isPlainObject(row)) continue;
     const name = typeof row.relationship === "string" ? row.relationship : "";
     if (!name) continue;
-    const edgeObj = isPlainObject(row.edge) ? row.edge : null;
-    if (edgeObj && typeof edgeObj.realEdge === "string") {
-      map.set(name, edgeObj.realEdge);
-    } else if (typeof row.realEdge === "string") {
+    if (typeof row.realEdge === "string") {
       map.set(name, row.realEdge);
     }
   }
@@ -583,8 +596,9 @@ function mapMultiSourceProblemToFieldError(
   const classMatch = /^(?:classDef|classes)\[(.+)\]$/.exec(path);
   if (classMatch) {
     const className = classMatch[1]!;
-    if (ontology.classNames.includes(className)) {
-      return { field: `/classRoutes/${escapeJsonPointer(className)}`, code: "invalid_option", message };
+    const classIndex = ontology.classNames.indexOf(className);
+    if (classIndex >= 0) {
+      return { field: `/classRoutes/${classIndex}/sourceId`, code: "invalid_option", message };
     }
     return { field: "/adapterMode", code: "invalid_option", message };
   }
@@ -596,7 +610,7 @@ function mapMultiSourceProblemToFieldError(
     if (relIndex >= 0) {
       const lower = detail.toLowerCase();
       return {
-        field: lower.includes("edge") ? `/relationshipRoutes/${relIndex}/edge/realEdge` : `/relationshipRoutes/${relIndex}`,
+        field: lower.includes("edge") ? `/relationshipRoutes/${relIndex}/realEdge` : `/relationshipRoutes/${relIndex}`,
         code: "invalid_format",
         message,
       };
@@ -605,77 +619,6 @@ function mapMultiSourceProblemToFieldError(
   }
 
   return { field: "/adapterMode", code: "invalid_format", message };
-}
-
-function escapeMarkdownCell(value: string): string {
-  return value.replaceAll("|", "\\|").replaceAll("\n", " ");
-}
-
-function formatTestReportMarkdown(
-  report: DataAdapterTestResult,
-  adapter: DataAdapterInfo,
-  locale?: string,
-  sourceId?: string,
-): string {
-  const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
-  const lines: string[] = [
-    `### ${t("panels.dataAdapters.test.succeeded")}`,
-    "",
-    `| ${t("panels.dataAdapters.test.colField")} | ${t("panels.dataAdapters.test.colValue")} |`,
-    "| --- | --- |",
-  ];
-  if (sourceId) {
-    lines.push(`| ${t("panels.dataAdapters.test.dataSource")} | \`${escapeMarkdownCell(sourceId)}\` |`);
-  }
-  lines.push(`| ${t("panels.dataAdapters.test.adapter")} | ${escapeMarkdownCell(adapter.label)} (\`${escapeMarkdownCell(adapter.type)}\`) |`);
-  lines.push(`| ${t("panels.dataAdapters.test.duration")} | ${report.elapsedMs} ms |`);
-
-  if (report.kind === "catalog") {
-    lines.push(`| ${t("panels.dataAdapters.test.database")} | ${escapeMarkdownCell(`${report.databaseProduct} ${report.databaseVersion}`.trim())} |`);
-    lines.push(`| ${t("panels.dataAdapters.test.driver")} | ${escapeMarkdownCell(`${report.driverName} ${report.driverVersion}`.trim())} |`);
-    if (report.catalog !== null) {
-      lines.push(`| ${t("panels.dataAdapters.test.catalog")} | \`${escapeMarkdownCell(report.catalog)}\` |`);
-    }
-    if (report.schema !== null) {
-      lines.push(`| ${t("panels.dataAdapters.test.schema")} | \`${escapeMarkdownCell(report.schema)}\` |`);
-    }
-    lines.push("", `#### ${t("panels.dataAdapters.test.tablesHeading", { count: report.tables.length })}`, "");
-    if (report.tables.length > 0) {
-      lines.push(`| ${t("panels.dataAdapters.test.colName")} | ${t("panels.dataAdapters.test.colType")} |`, "| --- | --- |");
-      for (const table of report.tables) {
-        lines.push(`| \`${escapeMarkdownCell(table.name)}\` | ${escapeMarkdownCell(table.type)} |`);
-      }
-    } else {
-      lines.push(`_${t("panels.dataAdapters.test.noTables")}_`);
-    }
-  } else {
-    const engine = [report.databaseProduct, report.databaseVersion ?? ""].filter(Boolean).join(" ");
-    lines.push(`| ${t("panels.dataAdapters.test.searchEngine")} | ${escapeMarkdownCell(engine)} |`);
-    if (report.clusterName !== null) {
-      lines.push(`| ${t("panels.dataAdapters.test.cluster")} | \`${escapeMarkdownCell(report.clusterName)}\` |`);
-    }
-    lines.push("", `#### ${t("panels.dataAdapters.test.indicesHeading", { count: report.indices.length })}`, "");
-    if (report.indices.length > 0) {
-      for (const indexName of report.indices) {
-        lines.push(`- \`${escapeMarkdownCell(indexName)}\``);
-      }
-    } else {
-      lines.push(`_${t("panels.dataAdapters.test.noIndices")}_`);
-    }
-  }
-
-  if (report.sandboxCapability) {
-    const { status, detail } = sandboxPermissionPresentation(report.sandboxCapability, locale);
-    lines.push(
-      "", `#### ${t("panels.dataAdapters.sandbox.title")}`, "",
-      `| ${t("panels.dataAdapters.sandbox.status")} | ${t("panels.dataAdapters.sandbox.detail")} |`,
-      "| --- | --- |",
-      `| ${status} | ${escapeMarkdownCell(detail)} |`,
-    );
-    if (report.sandboxCapability.supported) lines.push("", t("panels.dataAdapters.sandbox.probeNote"));
-  }
-
-  return lines.join("\n");
 }
 
 function summarizeRecord(
@@ -838,6 +781,7 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
       const modeField: PanelFormField = {
         path: "/adapterMode",
         section: "mode",
+        fullWidth: true,
         label: t("panels.dataAdapters.fields.adapterMode"),
         required: true,
         readOnly: false,
@@ -889,6 +833,7 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
         const dataSourcesField: PanelFormField = {
           path: "/dataSources",
           section: "dataSources",
+          fullWidth: true,
           label: t("panels.dataAdapters.fields.dataSources"),
           help: dataSources.length === 0 ? t("panels.dataAdapters.multiSourceNoSources") : undefined,
           required: true,
@@ -896,6 +841,8 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           valueSchema: cachedZodToRuntimeJsonSchema(z.array(z.record(z.unknown()))),
           control: {
             kind: "object-array",
+            columns: 2,
+            reorderable: false,
             itemKeyPath: "/id",
             defaultItem: {
               id: "",
@@ -910,7 +857,7 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
                 required: true,
                 readOnly: false,
                 valueSchema: cachedZodToRuntimeJsonSchema(z.string().min(1)),
-                control: { kind: "text", placeholder: t("panels.dataAdapters.fields.sourceIdPlaceholder") },
+                control: { kind: "text", clearable: true, placeholder: t("panels.dataAdapters.fields.sourceIdPlaceholder") },
               },
               {
                 path: "/label",
@@ -918,7 +865,7 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
                 required: false,
                 readOnly: false,
                 valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-                control: { kind: "text" },
+                control: { kind: "text", clearable: true },
               },
               {
                 path: "/readOnly",
@@ -930,17 +877,20 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
               },
               {
                 path: "/adapter",
+                fullWidth: true,
                 label: t("panels.dataAdapters.fields.sourceConnection"),
                 required: true,
                 readOnly: false,
                 valueSchema: cachedZodToRuntimeJsonSchema(z.record(z.unknown())),
                 control: {
                   kind: "object",
+                  columns: 2,
                   defaultObject: { adapterType: defaultSourceType, connection: {} },
                   variantBy: "/adapterType",
                   fields: [
                     {
                       path: "/adapterType",
+                      fullWidth: true,
                       label: t("panels.dataAdapters.fields.sourceAdapterType"),
                       required: true,
                       readOnly: false,
@@ -955,15 +905,15 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           },
         };
 
-        const storedClassRoutes: Record<string, string> = {};
-        for (const entry of storedMulti?.classes ?? []) {
-          storedClassRoutes[entry.forOntoMap] = entry.sourceId;
-        }
+        const storedClassRoutes = (storedMulti?.classes ?? []).map((entry) => ({
+          className: entry.forOntoMap,
+          sourceId: entry.sourceId,
+        }));
         const storedRelationshipRoutes = (storedMulti?.relationships ?? []).map((entry) => ({
           relationship: entry.forOntoMap,
-          edge: { realEdge: entry.realEdge },
+          realEdge: entry.realEdge,
         }));
-        const classRoutes = incoming && !switchedMode && isPlainObject(incoming.classRoutes)
+        const classRoutes = incoming && !switchedMode && Array.isArray(incoming.classRoutes)
           ? incoming.classRoutes
           : storedClassRoutes;
         const relationshipRoutes = incoming && !switchedMode && Array.isArray(incoming.relationshipRoutes)
@@ -975,7 +925,7 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           label: t("panels.dataAdapters.fields.classRoutes"),
           required: false,
           readOnly: false,
-          valueSchema: cachedZodToRuntimeJsonSchema(z.record(z.string())),
+          valueSchema: cachedZodToRuntimeJsonSchema(z.array(z.record(z.unknown()))),
           control: { kind: "hidden" },
         };
         const hiddenRelationshipRoutesField: PanelFormField = {
@@ -1081,15 +1031,31 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
         : null;
 
       const storedClassMap = new Map((storedMulti?.classes ?? []).map((c) => [c.forOntoMap, c.sourceId]));
-      const incomingClassRoutes = incoming && isPlainObject(incoming.classRoutes)
-        ? incoming.classRoutes
+      const incomingClassRoutes = incoming && Array.isArray(incoming.classRoutes)
+        ? extractIncomingClassRoutes(incoming.classRoutes)
         : undefined;
-      const classRoutes: Record<string, string> = {};
-      for (const className of ontology.classNames) {
-        const candidate = incomingClassRoutes && typeof incomingClassRoutes[className] === "string"
-          ? (incomingClassRoutes[className] as string)
-          : (incomingClassRoutes ? "" : (storedClassMap.get(className) ?? ""));
-        classRoutes[className] = candidate;
+      const classRouteMap = new Map<string, string>();
+      const classRoutes = ontology.classNames.map((className) => {
+        const sourceId = incomingClassRoutes
+          ? (incomingClassRoutes.get(className) ?? "")
+          : (storedClassMap.get(className) ?? "");
+        classRouteMap.set(className, sourceId);
+        return { className, sourceId };
+      });
+
+      const classSourceOptions: PanelFormOption[] = [...routableOptions];
+      const seenClassOptionIds = new Set(routableIds);
+      for (const { sourceId } of classRoutes) {
+        if (sourceId && !seenClassOptionIds.has(sourceId)) {
+          seenClassOptionIds.add(sourceId);
+          classSourceOptions.push({
+            value: sourceId,
+            label: sourceId,
+            description: null,
+            disabled: true,
+            disabledReason: t("panels.dataAdapters.errors.unknownSource", { id: sourceId }),
+          });
+        }
       }
 
       const storedRealEdges = new Map((storedMulti?.relationships ?? []).map((r) => [r.forOntoMap, r.realEdge]));
@@ -1106,8 +1072,8 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
       }
 
       const relationshipRoutes = ontology.relationships.map((rel) => {
-        const from = classRoutes[rel.fromClass]?.trim() || fallbackSource?.id || undefined;
-        const to = classRoutes[rel.toClass]?.trim() || fallbackSource?.id || undefined;
+        const from = classRouteMap.get(rel.fromClass)?.trim() || fallbackSource?.id || undefined;
+        const to = classRouteMap.get(rel.toClass)?.trim() || fallbackSource?.id || undefined;
         const sameSourceId = from !== undefined && from === to ? from : undefined;
         const crossSource = from !== undefined && to !== undefined && from !== to;
         const sourceType = sameSourceId ? sourceAdapterTypeById.get(sameSourceId) : undefined;
@@ -1116,75 +1082,74 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           ? incomingRealEdges.get(rel.name)!
           : (storedRealEdges.get(rel.name) ?? "");
         const edgeEditable = isGraph || realEdge.trim().length > 0;
-        const sourceSummary = crossSource
-          ? t("panels.dataAdapters.multiSourceCrossSourceSummary", { from, to })
-          : sameSourceId ?? t("panels.dataAdapters.multiSourceUnrouted");
         return {
           relationship: rel.name,
           ends: `${rel.fromClass} → ${rel.toClass}`,
-          sourceSummary,
-          edge: {
-            mode: edgeEditable ? "editable" : "readonly",
-            realEdge,
-          },
+          source: sameSourceId ?? "",
+          fromSource: from ?? "",
+          toSource: to ?? "",
+          crossSource,
+          edgeEditable,
+          realEdge,
         };
       });
-      const anyEdgeEditable = relationshipRoutes.some((row) => row.edge.mode === "editable");
+      const anyEdgeEditable = relationshipRoutes.some((row) => row.edgeEditable);
 
-      const classRouteFields: PanelFormField[] = ontology.classNames.length > 0
-        ? ontology.classNames.map((className): PanelFormField => {
-          const current = classRoutes[className] ?? "";
-          const options: PanelFormOption[] = [...routableOptions];
-          if (current && !routableIds.includes(current)) {
-            options.push({
-              value: current,
-              label: current,
-              description: null,
-              disabled: true,
-              disabledReason: t("panels.dataAdapters.errors.unknownSource", { id: current }),
-            });
-          }
-          return {
-            path: `/classRoutes/${escapeJsonPointer(className)}`,
-            section: "classRoutes",
-            label: className,
-            required: false,
-            readOnly: routableIds.length === 0,
-            refreshOnChange: true,
-            valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-            control: {
-              kind: "select",
-              options,
-              placeholder: fallbackSource ? fallbackSource.id : t("panels.dataAdapters.multiSourceUnrouted"),
+      const classRoutesField: PanelFormField = {
+        path: "/classRoutes",
+        section: "classRoutes",
+        label: t("panels.dataAdapters.fields.classRoutes"),
+        required: false,
+        readOnly: routableIds.length === 0 || ontology.classNames.length === 0,
+        valueSchema: cachedZodToRuntimeJsonSchema(z.array(z.record(z.unknown()))),
+        control: {
+          kind: "object-array",
+          presentation: "table",
+          fixedRows: true,
+          reorderable: false,
+          itemKeyPath: "/className",
+          emptyText: t("panels.dataAdapters.multiSourceNoClasses"),
+          itemFields: [
+            {
+              path: "/className",
+              label: t("panels.action.explanation.details.class"),
+              required: false,
+              readOnly: true,
+              valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+              control: { kind: "text" },
             },
-          };
-        })
-        : [
-          {
-            path: "/classRoutesNotice",
-            section: "classRoutes",
-            label: t("panels.dataAdapters.fields.classRoutes"),
-            required: false,
-            readOnly: true,
-            valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-            control: { kind: "text" },
-          },
-        ];
+            {
+              path: "/sourceId",
+              label: t("panels.dataAdapters.test.dataSource"),
+              required: false,
+              readOnly: routableIds.length === 0,
+              refreshOnChange: true,
+              valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+              control: {
+                kind: "select",
+                options: classSourceOptions,
+                clearable: true,
+                placeholder: fallbackSource ? fallbackSource.id : t("panels.dataAdapters.multiSourceUnrouted"),
+              },
+            },
+          ],
+        },
+      };
 
       const relationshipRoutesField: PanelFormField = {
         path: "/relationshipRoutes",
         section: "relationshipRoutes",
         label: t("panels.dataAdapters.fields.relationshipRoutes"),
-        help: ontology.relationships.length === 0
-          ? t("panels.dataAdapters.multiSourceNoRelationships")
-          : undefined,
         required: false,
         readOnly: !anyEdgeEditable || ontology.relationships.length === 0,
-        refreshOnChange: anyEdgeEditable,
         valueSchema: cachedZodToRuntimeJsonSchema(z.array(z.record(z.unknown()))),
         control: {
           kind: "object-array",
+          presentation: "table",
+          fixedRows: true,
+          reorderable: false,
           itemKeyPath: "/relationship",
+          emptyText: t("panels.dataAdapters.multiSourceNoRelationships"),
           itemFields: [
             {
               path: "/relationship",
@@ -1203,77 +1168,23 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
               control: { kind: "text" },
             },
             {
-              path: "/sourceSummary",
-              label: t("panels.dataAdapters.fields.relationshipSource"),
+              path: "/source",
+              label: t("panels.dataAdapters.test.dataSource"),
               required: false,
               readOnly: true,
               valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
               control: { kind: "text" },
             },
             {
-              path: "/edge",
-              label: t("panels.dataAdapters.fields.realEdgeSection"),
-              required: true,
+              path: "/realEdge",
+              label: t("panels.dataAdapters.fields.realEdge"),
+              required: false,
               readOnly: false,
-              valueSchema: cachedZodToRuntimeJsonSchema(z.record(z.unknown())),
+              valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
               control: {
-                kind: "object",
-                defaultObject: { mode: "readonly", realEdge: "" },
-                variantBy: "/mode",
-                fields: [
-                  {
-                    path: "/mode",
-                    label: t("panels.dataAdapters.fields.edgeMode"),
-                    required: true,
-                    readOnly: true,
-                    valueSchema: cachedZodToRuntimeJsonSchema(z.enum(["editable", "readonly"])),
-                    control: {
-                      kind: "select",
-                      options: [
-                        {
-                          value: "editable",
-                          label: t("panels.dataAdapters.edgeMode.editable"),
-                          description: null,
-                          disabled: false,
-                          disabledReason: null,
-                        },
-                        {
-                          value: "readonly",
-                          label: t("panels.dataAdapters.edgeMode.readonly"),
-                          description: null,
-                          disabled: false,
-                          disabledReason: null,
-                        },
-                      ],
-                    },
-                  },
-                ],
-                variants: {
-                  editable: [
-                    {
-                      path: "/realEdge",
-                      label: t("panels.dataAdapters.fields.realEdge"),
-                      required: false,
-                      readOnly: false,
-                      valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-                      control: {
-                        kind: "text",
-                        placeholder: t("panels.dataAdapters.fields.realEdgePlaceholder"),
-                      },
-                    },
-                  ],
-                  readonly: [
-                    {
-                      path: "/realEdge",
-                      label: t("panels.dataAdapters.fields.realEdge"),
-                      required: false,
-                      readOnly: true,
-                      readOnlyReason: t("panels.dataAdapters.fields.realEdgeReadOnlyReason"),
-                      valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-                      control: { kind: "text" },
-                    },
-                  ],
-                },
+                kind: "text",
+                clearable: true,
+                placeholder: t("panels.dataAdapters.fields.realEdgePlaceholder"),
               },
             },
           ],
@@ -1307,15 +1218,13 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
 
       const values: PanelFormValues = {
         sourceCatalog,
-        ...(ontology.classNames.length > 0
-          ? { classRoutes }
-          : { classRoutesNotice: t("panels.dataAdapters.multiSourceNoClasses") }),
+        classRoutes,
         relationshipRoutes,
       };
 
       return {
         sections,
-        fields: [sourceCatalogField, ...classRouteFields, relationshipRoutesField],
+        fields: [sourceCatalogField, classRoutesField, relationshipRoutesField],
         values,
         errors: [],
         save: {
@@ -1447,9 +1356,9 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
 
         // Submit routes synced from `routingForm` when present, or preserve stored routes so
         // saving data sources never depends on `/admin/getSchema`.
-        const classes = isPlainObject(values.classRoutes)
-          ? Object.entries(values.classRoutes).flatMap(([className, rawSourceId]) => {
-              const sourceId = typeof rawSourceId === "string" ? rawSourceId.trim() : "";
+        const classes = Array.isArray(values.classRoutes)
+          ? [...extractIncomingClassRoutes(values.classRoutes).entries()].flatMap(([className, rawSourceId]) => {
+              const sourceId = rawSourceId.trim();
               return sourceId ? [{ forOntoMap: className, sourceId }] : [];
             })
           : (config.multiDataSource?.classes ?? []).map(({ forOntoMap, sourceId }) => ({ forOntoMap, sourceId }));
@@ -1550,9 +1459,9 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
         };
       }
 
-      const rawClassRoutes = isPlainObject(values.classRoutes) ? values.classRoutes : {};
+      const incomingClassRoutes = extractIncomingClassRoutes(values.classRoutes);
       const classes = ontology.classNames.flatMap((className) => {
-        const sourceId = typeof rawClassRoutes[className] === "string" ? (rawClassRoutes[className] as string).trim() : "";
+        const sourceId = incomingClassRoutes.get(className)?.trim() ?? "";
         return sourceId ? [{ forOntoMap: className, sourceId }] : [];
       });
 
@@ -1615,7 +1524,7 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
     target: { source: "draft" },
     targetSchema: dataAdapterTargetSchema.optional(),
     inputSchema: panelReadOperationInputSchema,
-    resultSchema: markdownResultSchema,
+    resultSchema: jsonResultSchema,
     async execute(
       host: PanelOperationHost,
       call: z.infer<typeof panelReadOperationCallSchema>,
@@ -1708,8 +1617,8 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
       }
 
       return {
-        kind: "markdown" as const,
-        markdown: formatTestReportMarkdown(report.data, targetAdapter, locale, testedSourceId),
+        kind: "json" as const,
+        value: report.data,
       };
     },
   } satisfies PanelReadServerOperation,
