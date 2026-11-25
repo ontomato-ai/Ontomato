@@ -1,6 +1,6 @@
 import type { EdgeData, NodeData } from "@antv/g6";
 import { graphCategorySlot, readGraphPalette } from "./palette";
-import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "./types";
+import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint, GraphCanvasStyleOverrides } from "./types";
 
 /*
  * What the G6 canvas hands G6 for each node and edge. Kept apart from the component so the drawing rules — colours,
@@ -35,6 +35,8 @@ export interface G6Colors {
   accent: string;
   /** The solid ring and thickened edge of a `path` element, distinct from `accent`. */
   path?: string;
+  /** Subtle drop shadow for nodes when a specialized canvas enables shadows. */
+  shadow?: string;
   /** The categorical palette, in slot order. */
   palette: string[];
 }
@@ -50,6 +52,7 @@ export function readG6Colors(element: Element): G6Colors {
     primary: role("--el-color-primary"),
     accent: role("--el-color-primary-light-5"),
     path: role("--el-color-warning"),
+    shadow: role("--el-box-shadow-color") || "rgba(15, 23, 42, 0.14)",
     palette: readGraphPalette(element),
   };
 }
@@ -69,7 +72,14 @@ export interface G6Look {
   labelWidth: number;
 }
 
-export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories: readonly string[], choosable: boolean, look: G6Look) {
+export function g6NodeStyle(
+  node: GraphCanvasNode,
+  colors: G6Colors,
+  categories: readonly string[],
+  choosable: boolean,
+  look: G6Look,
+  overrides?: GraphCanvasStyleOverrides,
+) {
   // An anchor is drawn transparent at size 1, not 0: G6 places a node of size 0 at the origin, whatever its x and y.
   if (node.anchor) return { size: 1, opacity: 0, lineWidth: 0, labelText: "", cursor: "default" as const };
   const warmHighlight = node.tone === "path" || node.tone === "neighbor";
@@ -79,9 +89,15 @@ export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories:
       ? colors.primary
       : colors.palette[graphCategorySlot(node.category, categories, colors.palette.length)],
     stroke: warmHighlight ? (colors.path || colors.primary) : node.tone === "accent" ? colors.accent : colors.surface,
-    lineWidth: warmHighlight ? 5 : 4,
+    lineWidth: warmHighlight ? (overrides?.highlightedNodeLineWidth ?? 5) : (overrides?.nodeLineWidth ?? 4),
     lineDash: node.tone === "accent" ? [4, 3] : [],
-    opacity: node.tone === "muted" ? 0.18 : 1,
+    opacity: node.tone === "muted" ? (overrides?.mutedNodeOpacity ?? 0.18) : 1,
+    ...(overrides?.nodeShadowBlur !== undefined
+      ? {
+          shadowColor: colors.shadow || "rgba(15, 23, 42, 0.14)",
+          shadowBlur: overrides.nodeShadowBlur,
+        }
+      : {}),
     labelText: node.label,
     // G6 only cuts a node's name when it wraps; one line of wrapping ends it in an ellipsis.
     labelMaxWidth: look.labelWidth,
@@ -92,7 +108,7 @@ export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories:
     labelFontSize: look.labelSize,
     labelFontWeight: 600,
     labelPlacement: "bottom" as const,
-    labelOffsetY: 6,
+    labelOffsetY: overrides?.nodeLabelOffsetY ?? 6,
     // Edges run under the nodes; the backing keeps a name readable where one crosses it.
     labelBackground: true,
     labelBackgroundFill: colors.surface,
@@ -111,7 +127,12 @@ export function g6Node(node: GraphCanvasNode, position: GraphCanvasPoint, style:
  * node to itself is a loop above it, further out for each further loop, and round the whole group when the node is an
  * anchor of one. Edges naming a node that is not drawn are left out.
  */
-export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<string, GraphCanvasNode>, colors: G6Colors): EdgeData[] {
+export function g6Edges(
+  edges: readonly GraphCanvasEdge[],
+  nodes: ReadonlyMap<string, GraphCanvasNode>,
+  colors: G6Colors,
+  overrides?: GraphCanvasStyleOverrides,
+): EdgeData[] {
   const drawn = edges.filter((edge) => nodes.has(edge.source) && nodes.has(edge.target));
   const large = isLargeGraph(nodes.size, drawn.length);
   const pairs = new Map<string, number[]>();
@@ -119,6 +140,7 @@ export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<st
     const key = JSON.stringify([edge.source, edge.target].sort());
     pairs.set(key, [...(pairs.get(key) ?? []), index]);
   });
+  const pillLabels = overrides?.edgeLabelShape === "pill";
   return drawn.map((edge, index) => {
     const pair = pairs.get(JSON.stringify([edge.source, edge.target].sort()))!;
     const place = pair.indexOf(index);
@@ -128,6 +150,11 @@ export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<st
       : { type: pair.length > 1 ? "quadratic" : "line", style: { curveOffset: edge.source < edge.target ? offset : -offset } };
     const dashed = edge.line === "dashed";
     const warmHighlight = edge.tone === "path" || edge.tone === "neighbor";
+    const baseWidth = warmHighlight
+      ? (overrides?.highlightedEdgeLineWidth ?? 3)
+      : edge.tone === "accent"
+        ? 2
+        : (overrides?.edgeLineWidth ?? 1.5);
     return {
       id: edge.id,
       source: edge.source,
@@ -136,17 +163,26 @@ export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<st
       style: {
         ...geometry.style,
         stroke: warmHighlight ? (colors.path || colors.primary) : edge.tone === "accent" ? colors.primary : dashed ? colors.muted : colors.edge,
-        lineWidth: Math.min(7, (warmHighlight ? 3 : edge.tone === "accent" ? 2 : 1.5) + (edge.weight === undefined ? 0 : Math.log2(edge.weight + 1))),
+        lineWidth: Math.min(7, baseWidth + (edge.weight === undefined ? 0 : Math.log2(edge.weight + 1))),
         lineDash: dashed ? [5, 4] : [],
-        opacity: edge.tone === "muted" ? 0.15 : 1,
+        opacity: edge.tone === "muted" ? (overrides?.mutedEdgeOpacity ?? 0.15) : 1,
         endArrow: !large,
         labelText: edge.label ?? "",
-        labelFill: warmHighlight ? colors.text : colors.muted,
-        labelFontSize: 11,
+        labelFill: pillLabels ? colors.text : (warmHighlight ? colors.text : colors.muted),
+        labelFontSize: overrides?.edgeLabelFontSize ?? (pillLabels ? 12 : 11),
         labelBackground: true,
         labelBackgroundFill: colors.surface,
-        labelBackgroundOpacity: 0.92,
-        labelBackgroundPadding: [2, 4],
+        labelBackgroundOpacity: pillLabels ? 1 : 0.92,
+        labelBackgroundPadding: pillLabels ? [3, 8] : [2, 4],
+        ...(pillLabels
+          ? {
+              labelBackgroundStroke: colors.edge,
+              labelBackgroundLineWidth: 1,
+              labelBackgroundRadius: overrides?.edgeLabelRadius ?? 999,
+            }
+          : overrides?.edgeLabelRadius !== undefined
+            ? { labelBackgroundRadius: overrides.edgeLabelRadius }
+            : {}),
       },
     };
   });

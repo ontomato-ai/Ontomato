@@ -29,6 +29,9 @@ export const baseComponents = {
   SectionGroup: () => import("./base/SectionGroup.vue").then(module => module.default),
   ReferencePicker: () => import("./base/ReferencePicker.vue").then(module => module.default),
   ObjectGraph: () => import("./base/ObjectGraph.vue").then(module => module.default),
+  ProductAssetGraph: () => import("./base/ProductAssetGraph.vue").then(module => module.default),
+  OntologyModelGraph: () => import("./base/OntologyModelGraph.vue").then(module => module.default),
+  VisualModelingGraph: () => import("./base/VisualModelingGraph.vue").then(module => module.default),
   PathTree: () => import("@ontomato/foundation-ui/tree").then(module => module.PathTree),
   // The platform's interface components a panel draws its own parts with, as template tags (never imported by a panel).
   MarkdownView: () => import("@ontomato/foundation-ui/markdown").then(module => module.MarkdownView),

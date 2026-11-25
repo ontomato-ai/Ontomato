@@ -487,10 +487,30 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
       }
     }
-    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench", "DataAdapterTestReport"]) {
+    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench", "DataAdapterTestReport", "ProductAssetGraph", "OntologyModelGraph", "VisualModelingGraph"]) {
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
     }
+    const objectGraph = declared.get("ObjectGraph");
+    const objectGraphConfigNames = (objectGraph.config ?? []).map((prop) => prop.name);
+    assert.ok(objectGraphConfigNames.includes("export-background"), "ObjectGraph exposes single-page export-background prop");
+    assert.ok(objectGraphConfigNames.includes("export-filename"), "ObjectGraph exposes single-page export-filename prop");
+    assert.doesNotMatch(
+      objectGraph.meaning,
+      /exportBackground|exportFilename|export-background|export-filename/u,
+      "ObjectGraph meaning must not list single-page PNG export presentation attributes",
+    );
+    for (const forbidden of ["style-overrides", "toolbar-placement", "connect-ports", "show-pending-edge", "pending-edge"]) {
+      assert.equal(
+        objectGraphConfigNames.includes(forbidden),
+        false,
+        `ObjectGraph must not expose dedicated platform prop '${forbidden}'`,
+      );
+    }
+    assert.ok(
+      (objectGraph.ports?.events ?? []).some((event) => event.name === "choose"),
+      "ObjectGraph declares the choose activation event matching ObjectList",
+    );
     assert.deepEqual(
       declared.get("TestcaseWorkbench").bindsElement,
       ["PlatformObjectType:platform:AutotestCaseSet"],

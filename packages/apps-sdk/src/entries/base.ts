@@ -92,6 +92,20 @@ export { default as WorkbenchLayout } from "../base/WorkbenchLayout.vue";
 export { default as SectionGroup } from "../base/SectionGroup.vue";
 export { default as ReferencePicker } from "../base/ReferencePicker.vue";
 export { default as ObjectGraph } from "../base/ObjectGraph.vue";
+export { default as ProductAssetGraph } from "../base/ProductAssetGraph.vue";
+export type {
+  ProductAssetGraphCategory,
+  ProductAssetGraphColumn,
+  ProductAssetGraphData,
+  ProductAssetGraphEdge,
+  ProductAssetGraphLayout,
+  ProductAssetGraphNode,
+  ProductAssetGraphRelation,
+  ProductAssetGraphTarget,
+} from "../base/product-asset-graph-types";
+export { default as OntologyModelGraph } from "../base/OntologyModelGraph.vue";
+export { default as VisualModelingGraph } from "../base/VisualModelingGraph.vue";
+export type { PendingGraphEdge } from "../base/object-graph-export";
 export { default as ObjectTree } from "../base/ObjectTree.vue";
 export { default as ObjectTextReader } from "../base/ObjectTextReader.vue";
 export { default as AnnotatedCode } from "../base/AnnotatedCode.vue";
