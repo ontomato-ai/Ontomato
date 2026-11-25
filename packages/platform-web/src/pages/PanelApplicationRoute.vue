@@ -270,7 +270,7 @@ function ensureTransitionTimer() {
 /** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
 const opened = computed(() => props.address ?? route.fullPath);
 const openedPath = computed(() => opened.value.split("?")[0]!);
-const catalogApp = computed(() => catalog.applications.value.find((app) => app.id === props.applicationId) ?? null);
+const catalogApp = computed(() => catalog.applicationById(props.applicationId));
 const currentResolution = computed(() =>
   resolution.value?.applicationId === props.applicationId ? resolution.value : null,
 );
@@ -328,12 +328,12 @@ async function requestEntryResolution(
   }
 }
 
-function refreshEntryTable({ refreshCatalog }: { refreshCatalog: boolean }) {
+function refreshEntryTable({ refreshApplication }: { refreshApplication: boolean }) {
   if (unmounted || verifying.value) return Promise.resolve();
   if (refreshInFlight) return refreshInFlight;
   const applicationId = props.applicationId;
   const path = entryPath.value;
-  if (refreshCatalog) void catalog.refresh();
+  if (refreshApplication) void catalog.refreshApplication(applicationId).catch(() => undefined);
   if (!path) return Promise.resolve();
   const epoch = ++resolveEpoch;
   const task = requestEntryResolution(applicationId, path, { blocking: false, epoch }).finally(() => {
@@ -383,13 +383,13 @@ watch([() => props.applicationId, entryPath], ([applicationId, path]) => {
 }, { immediate: true });
 
 const stopVisibility = onDocumentVisibility((visible) => {
-  if (visible) void refreshEntryTable({ refreshCatalog: true });
+  if (visible) void refreshEntryTable({ refreshApplication: true });
 });
 const stopReadDenied = onPanelReadDenied(() => {
-  void refreshEntryTable({ refreshCatalog: true });
+  void refreshEntryTable({ refreshApplication: true });
 });
 const refreshTimer = setInterval(() => {
-  if (documentVisible()) void refreshEntryTable({ refreshCatalog: true });
+  if (documentVisible()) void refreshEntryTable({ refreshApplication: true });
 }, ENTRY_TABLE_REFRESH_MS);
 
 onBeforeUnmount(() => {

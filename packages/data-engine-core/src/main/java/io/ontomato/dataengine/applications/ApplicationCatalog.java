@@ -211,10 +211,9 @@ public class ApplicationCatalog {
     public List<JSONObject> visible(User user) {
         return access.withPageSkillAuthorization(user, () -> {
             var apps = applicationsInDomain(user.getDomainId());
-            var pageKeys = new BuiltinPageKeys(apps);
             var enterable = access.enterableApplicationIds(apps, user);
             return apps.stream().filter(app -> enterable.contains(app.getString("id")) && hasAssignedPanelPaths(app))
-                .map(app -> view(app, user, pageKeys, true)).toList();
+                .map(ApplicationCatalog::summaryView).toList();
         });
     }
     private record CatalogueKey(String id, String name, Instant updatedAt) {}
@@ -511,13 +510,15 @@ public class ApplicationCatalog {
         });
     }
 
-    private JSONObject view(JSONObject app, User user, BuiltinPageKeys pageKeys, boolean enterable) {
+    private static JSONObject summaryView(JSONObject app) {
         var result = new JSONObject(app);
         result.put("entry", publicEntry(app));
         result.put("allowStandalone", allowsStandalone(app));
         result.remove("permissions");
         var settings = app.getJSONObject("panelSettings");
         result.remove("panelSettings");
+        result.remove("panelUses");
+        result.remove("pageSkills");
         String resolvedFrame = null;
         if (settings != null && settings.containsKey("framePanelId")) {
             var framePanelId = settings.getString("framePanelId");
@@ -525,6 +526,11 @@ public class ApplicationCatalog {
         }
         if (resolvedFrame != null) result.put("framePanelId", resolvedFrame);
         else if (panelManaged(app)) result.put("framePanelId", DEFAULT_FRAME_PANEL_ID);
+        return result;
+    }
+
+    private JSONObject view(JSONObject app, User user, BuiltinPageKeys pageKeys, boolean enterable) {
+        var result = summaryView(app);
         if (hasPanelUseRegistration(app))
             result.put("panelUses", enterable ? visiblePanelUses(app, user, pageKeys) : List.of());
         return result;

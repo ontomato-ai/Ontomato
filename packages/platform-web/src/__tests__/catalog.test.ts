@@ -4,7 +4,13 @@ import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { catalogFixture } from "./fixtures";
-import { resetApplicationCatalog, useApplicationCatalog } from "../catalog";
+import {
+  builtinApplicationForPath,
+  firstVisiblePanelPath,
+  panelEntryApplication,
+  resetApplicationCatalog,
+  useApplicationCatalog,
+} from "../catalog";
 import {catalogPartition} from '../native-layouts';
 
 /*
@@ -96,5 +102,43 @@ describe("the application catalog", () => {
     expect(catalog.applications.value).toEqual([]);
     expect(catalog.error.value).toBeNull();
     expect(catalog.loading.value).toBe(true);
+  });
+
+  it("loads a single application on demand, merges it over navigation summaries, and clears it on reset", async () => {
+    resetApplicationCatalog();
+    const fullApps = catalogFixture();
+    const ontologyFull = fullApps.find((app) => app.id === "ontology")!;
+    const summaries = fullApps.map(({ panelUses: _omitted, ...summary }) => summary);
+
+    const catalog = useApplicationCatalog();
+    const refreshTask = catalog.ensureCatalog();
+    answer({ success: true, data: summaries });
+    await refreshTask;
+
+    // Navigation summaries omit panelUses, yet builtinApplicationForPath still locates the owning application.
+    expect(catalog.applicationById("ontology")?.panelUses).toBeUndefined();
+    expect(panelEntryApplication("/ontology/objects")).toBeNull();
+    expect(builtinApplicationForPath("/ontology/objects")?.id).toBe("ontology");
+
+    // Concurrent ensureApplication calls share one single-application request.
+    const first = catalog.ensureApplication("ontology");
+    const second = catalog.ensureApplication("ontology");
+    expect(pending).toHaveLength(1);
+    answer({ success: true, data: ontologyFull });
+    const [resolvedFirst, resolvedSecond] = await Promise.all([first, second]);
+    expect(resolvedFirst.id).toBe("ontology");
+    expect(resolvedSecond.id).toBe("ontology");
+    expect(catalog.applicationById("ontology")?.panelUses?.length).toBeGreaterThan(0);
+    expect(panelEntryApplication("/ontology/objects")).toBe("ontology");
+    expect(firstVisiblePanelPath(ontologyFull)).toBe("/ontology/playground");
+
+    // Subsequent ensureApplication reuses the loaded detail without another network read.
+    await catalog.ensureApplication("ontology");
+    expect(pending).toHaveLength(0);
+
+    // resetApplicationCatalog clears both summaries and single-application details.
+    resetApplicationCatalog();
+    expect(catalog.details.value.size).toBe(0);
+    expect(catalog.applicationById("ontology")).toBeNull();
   });
 });

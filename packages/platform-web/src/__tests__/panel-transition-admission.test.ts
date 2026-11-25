@@ -53,6 +53,7 @@ const appBUse: ApplicationPanelUse = {
 
 const resolveApplicationEntryMock = vi.fn<[{ path?: string; useId?: string }], Promise<ApplicationEntryResolution>>();
 const catalogRefreshMock = vi.fn<[], Promise<unknown[]>>().mockResolvedValue([]);
+const refreshApplicationMock = vi.fn<[string], Promise<unknown>>().mockResolvedValue(null);
 const catalogApplications = ref<unknown[]>([]);
 const readDeniedListeners = new Set<() => void>();
 const visibilityListeners = new Set<(visible: boolean) => void>();
@@ -62,6 +63,9 @@ vi.mock("../catalog", () => ({
   useApplicationCatalog: () => ({
     applications: catalogApplications,
     loading: ref(false),
+    applicationById: (id: string) => (catalogApplications.value as Array<{ id: string }>).find((app) => app.id === id) ?? null,
+    ensureApplication: vi.fn().mockResolvedValue(null),
+    refreshApplication: refreshApplicationMock,
     refresh: catalogRefreshMock,
   }),
 }));
@@ -222,6 +226,7 @@ beforeEach(() => {
   visibilityListeners.clear();
   resolveApplicationEntryMock.mockReset();
   catalogRefreshMock.mockReset().mockResolvedValue([]);
+  refreshApplicationMock.mockReset().mockResolvedValue(null);
   catalogApplications.value = [];
 });
 
@@ -401,10 +406,12 @@ describe("entry-table admission, refresh, and transition experience", () => {
     expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(1);
     expect(wrapper.find('[data-content-use="use-tasks"]').exists()).toBe(true);
 
-    // 1. Visibility return refreshes catalog and entry table.
+    // 1. Visibility return refreshes the current application's entry table without fetching the full catalog.
     for (const listener of visibilityListeners) listener(true);
     await flushPromises();
-    expect(catalogRefreshMock).toHaveBeenCalledTimes(1);
+    expect(refreshApplicationMock).toHaveBeenCalledTimes(1);
+    expect(refreshApplicationMock).toHaveBeenLastCalledWith(appA);
+    expect(catalogRefreshMock).not.toHaveBeenCalled();
     expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(2);
 
     // 2. Periodic 5-minute timer refreshes when visible, and skips when hidden.
@@ -416,13 +423,17 @@ describe("entry-table admission, refresh, and transition experience", () => {
     isDocVisible = true;
     vi.advanceTimersByTime(5 * 60 * 1000);
     await flushPromises();
-    expect(catalogRefreshMock).toHaveBeenCalledTimes(2);
+    expect(refreshApplicationMock).toHaveBeenCalledTimes(2);
+    expect(refreshApplicationMock).toHaveBeenLastCalledWith(appA);
+    expect(catalogRefreshMock).not.toHaveBeenCalled();
     expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(3);
 
     // 3. HTTP 403 read denial triggers immediate refresh and revokes the page when access was removed.
     for (const listener of readDeniedListeners) listener();
     await flushPromises();
-    expect(catalogRefreshMock).toHaveBeenCalledTimes(3);
+    expect(refreshApplicationMock).toHaveBeenCalledTimes(3);
+    expect(refreshApplicationMock).toHaveBeenLastCalledWith(appA);
+    expect(catalogRefreshMock).not.toHaveBeenCalled();
     expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(4);
     expect(wrapper.find('[data-content-use="use-tasks"]').exists()).toBe(false);
     expect(wrapper.get("[role=alert]").text()).toBe(`${tasksUse.path} is not a panel of this application`);
