@@ -102,12 +102,10 @@ function taskRecord(
     if (run.status === "failed" || run.status === "skipped") {
       return run.error ? formatRunError(run.error, translate) : "";
     }
-    if (run.status === "completed") {
-      const preview = run.resultSummary ? previewMarkdownText(run.resultSummary) : "";
-      if (preview) return preview;
-      if (run.spendTime !== null) {
-        return translate("platformSchedules.duration.took", { time: formatDuration(run.spendTime, translate) });
-      }
+    const preview = run.resultSummary ? previewMarkdownText(run.resultSummary) : "";
+    if (preview) return preview;
+    if (run.status === "completed" && run.spendTime !== null) {
+      return translate("platformSchedules.duration.took", { time: formatDuration(run.spendTime, translate) });
     }
     return "";
   })();

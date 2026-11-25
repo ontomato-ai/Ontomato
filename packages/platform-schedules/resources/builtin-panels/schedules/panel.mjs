@@ -208,7 +208,7 @@ await mountPanel({
     }
 
     // ---------- credential renewal on mount (SC-07) ----------
-    onMounted(async () => {
+    async function renewCredential() {
       try {
         const receipt = await opRenew.run({});
         const outcome = outcomeOf(receipt);
@@ -221,6 +221,14 @@ await mountPanel({
       } catch (error) {
         renewalProblem.value = error?.message ?? String(error);
       }
+    }
+    onMounted(() => {
+      if (opRenew.operation.value) return void renewCredential();
+      const stop = watch(opRenew.operation, (operation) => {
+        if (!operation) return;
+        stop();
+        void renewCredential();
+      });
     });
 
     // ---------- card row operation outcomes (SC-14) ----------
@@ -247,6 +255,8 @@ await mountPanel({
         if (operation === "runNow" && outcome?.code === "TASK_RUNNING") {
           notify({ kind: "info", text: t("message.runActive") });
           if (taskId) showRecords(taskId);
+          const active = outcome.details?.activeRunId;
+          if (typeof active === "string" && active) instance.state.set("runId", active);
           return;
         }
         refused(outcome ?? { kind: "unknown" }, taskId);
@@ -306,6 +316,8 @@ await mountPanel({
         if (outcome.code === "TASK_RUNNING") {
           notify({ kind: "info", text: t("message.runActive") });
           if (selectedId.value) showRecords(selectedId.value);
+          const active = outcome.details?.activeRunId;
+          if (typeof active === "string" && active) instance.state.set("runId", active);
           return;
         }
         refused(outcome, selectedId.value);
@@ -403,15 +415,14 @@ await mountPanel({
       if (!next) closeFormDialog();
     }
     async function requestCancelEdit() {
-      const handle = instance.forms.get("editForm");
-      if (handle?.dirty?.value) {
-        const discarded = await handle.reset({ confirm: true });
+      if (instance.forms.dirty("editForm")) {
+        const discarded = await instance.forms.reset("editForm", { confirm: true });
         if (!discarded) return;
       }
       closeFormDialog();
     }
     async function recomputeForm(slotName) {
-      const handle = instance.forms.get(slotName);
+      const handle = instance.forms.handle(slotName);
       if (!handle) return;
       try {
         await handle.refreshDraft();
@@ -420,10 +431,11 @@ await mountPanel({
       }
     }
     async function loadLatestEdit(discard) {
-      const handle = instance.forms.get("editForm");
+      const handle = instance.forms.handle("editForm");
       if (handle) {
         try {
           await handle.reset({ confirm: false });
+          instance.refreshObjects();
           return;
         } catch (error) {
           notifyActionError(error);
