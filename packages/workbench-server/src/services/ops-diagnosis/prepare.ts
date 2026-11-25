@@ -41,7 +41,7 @@ export async function prepareOpsDiagnosisRun({
       publishSkill(path.join(workbenchServerResourceRoot, "resources/runtime-skills/ops-diagnosis"), OPS_DIAGNOSIS_SKILL),
       ...chartSources.map(({ root, ref }) => publishSkill(root, ref)),
     ]),
-    pageSkillContext ? prepareCurrentPageSkill(owner.domainId, credentials, pageSkillContext) : Promise.resolve(null),
+    pageSkillContext ? prepareCurrentPageSkill(owner.domainId, credentials, pageSkillContext, owner.userId) : Promise.resolve(null),
   ]);
   const skills = [
     ...published.map(({ skill, digest }) => ({ skill, digest })),

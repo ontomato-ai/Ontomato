@@ -30,18 +30,23 @@ await mountPanel({
     });
 
     const appsStatus = usePanelOutput("applications", "status");
-    const appsCount = usePanelOutput("applications", "loadedCount");
+    const appsFiltered = usePanelOutput("applications", "filteredCount");
+    const appsLoaded = usePanelOutput("applications", "loadedCount");
     const agentsStatus = usePanelOutput("agents", "status");
-    const agentsCount = usePanelOutput("agents", "loadedCount");
+    const agentsFiltered = usePanelOutput("agents", "filteredCount");
+    const agentsLoaded = usePanelOutput("agents", "loadedCount");
+
+    const appsCount = computed(() => appsFiltered.value ?? appsLoaded.value ?? 0);
+    const agentsCount = computed(() => agentsFiltered.value ?? agentsLoaded.value ?? 0);
 
     const showApplications = computed(() => category.value !== "agents");
     const showAgents = computed(() => category.value === "all" || category.value === "agents");
 
     const appsReadyEmpty = computed(() =>
-      (appsStatus.value === "ready" || appsStatus.value === "empty") && (appsCount.value ?? 0) === 0,
+      (appsStatus.value === "ready" || appsStatus.value === "empty") && appsCount.value === 0,
     );
     const agentsReadyEmpty = computed(() =>
-      (agentsStatus.value === "ready" || agentsStatus.value === "empty") && (agentsCount.value ?? 0) === 0,
+      (agentsStatus.value === "ready" || agentsStatus.value === "empty") && agentsCount.value === 0,
     );
 
     const showCombinedEmpty = computed(() =>
@@ -57,8 +62,8 @@ await mountPanel({
       category.value === "all"
       && !hideEmptyApplicationsInAll.value
       && !hideEmptyAgentsInAll.value
-      && (appsCount.value ?? 0) > 0
-      && (agentsCount.value ?? 0) > 0,
+      && appsCount.value > 0
+      && agentsCount.value > 0,
     );
     const filtered = computed(() => category.value !== "all" || searchText.value.trim() !== "");
 

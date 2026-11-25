@@ -24,10 +24,11 @@ import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame, servePageComposer } from "./app-host";
+import { readHomePanel } from "./features/home/api";
 import { panelNavigator } from "./panel-navigate";
 import {
   adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, createPanelOverlayRoot, newPanelInstanceName, scopedPanelStyle,
-  type CodedPanelTarget, type DirectPanelMount, type DirectPanelRun, type PanelHostPort, type PanelHostState, type PanelSdkRelease,
+  type CodedPanelTarget, type DirectPanelRun, type PanelHostPort, type PanelHostState, type PanelSdkRelease,
 } from "@ontomato/platform-shell";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import {
@@ -225,6 +226,34 @@ function warmPanelProjectionComponents(manifest: PanelManifest, bundled?: Record
   if (ids.length) void preloadCatalogueComponents(ids);
 }
 
+/** Checks whether a panel declares an inline `ConversationEntry` member so the route avoids a duplicate bottom composer. */
+export function panelHasInlineConversationEntry(
+  panel: Pick<ProductPanel, "manifest" | "content">,
+  projections?: Readonly<Record<string, BundledPanelProjection>> | readonly BundledPanelProjection[],
+): boolean {
+  const projectionList = Array.isArray(projections) ? projections : projections ? Object.values(projections) : [];
+  if (projectionList.some((entry) =>
+    entry.status === "ready"
+    && (entry.projection.componentId === "@ontomato/sdk:ConversationEntry" || entry.projection.componentId === "ConversationEntry")
+    && entry.projection.config?.presentation === "inline",
+  )) {
+    return true;
+  }
+  for (const member of Object.values(panel.manifest.members ?? {})) {
+    const raw = member as Record<string, unknown>;
+    const component = typeof raw.component === "string" ? raw.component : "";
+    const config = raw.config && typeof raw.config === "object" ? (raw.config as Record<string, unknown>) : null;
+    if (
+      (component === "ConversationEntry" || component === "@ontomato/sdk:ConversationEntry")
+      && config?.presentation === "inline"
+    ) {
+      return true;
+    }
+  }
+  const html = panel.content?.html ?? "";
+  return /<(?:projection|conversation-entry)\b[^>]*\bpresentation\s*=\s*["']inline["']/i.test(html);
+}
+
 /**
  * The platform's panel host for one use relation of the application whose page is showing it. `changed` is that page's:
  * a change its frame's operations report reaches the page through it.
@@ -239,6 +268,8 @@ export function platformPanelHost(
   pageCounter?: PageCounter | null,
   /** Optional hook called while an embedded AgentChat is mounted so the page suppresses its bottom PageComposer. */
   claimComposer?: () => () => void,
+  /** Notified whenever the entry panel (and any bundled projections) is loaded so the route can inspect composer metadata. */
+  onPanelLoaded?: (loaded: ProductPanel, projections?: Readonly<Record<string, BundledPanelProjection>>) => void,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const panelChatHost = createPanelChatHost(use.defaultAgent, claimComposer);
   const shown: PanelUseRef = { applicationId, useId: use.id };
@@ -300,6 +331,14 @@ export function platformPanelHost(
             lastPanel = cached;
             mountUnavailable = forbidden;
             sourceReconciled = true;
+            const cachedProjections: Record<string, BundledPanelProjection> = {};
+            for (const member of Object.values(cached.manifest.members)) {
+              if ("target" in member && "projectionId" in member.target) {
+                const entry = getCachedProjection(member.target.projectionId);
+                if (entry) cachedProjections[member.target.projectionId] = { status: "ready", projection: entry.projection };
+              }
+            }
+            onPanelLoaded?.(cached, cachedProjections);
             return { kind: "registered", applicationId, use, panel: cached };
           }
           invalidateCachedPanel(use.panelId);
@@ -313,6 +352,7 @@ export function platformPanelHost(
         panelDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
         sourceReconciled = true;
+        onPanelLoaded?.(answer.panel, answer.projections);
         return { kind: "registered", applicationId, use, panel: answer.panel };
       } catch (failure) {
         sourceFailed = true;
@@ -355,7 +395,17 @@ export function platformPanelHost(
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
-      return names(await resolveApplicationEntry(shown));
+      const answer = await resolveApplicationEntry(shown);
+      if (applicationId === "home" && use.id === "home") {
+        if (answer.use.id !== use.id) return false;
+        try {
+          const { panel: customHome } = await readHomePanel();
+          return (customHome?.id ?? answer.use.panelId) === use.panelId;
+        } catch {
+          return false;
+        }
+      }
+      return names(answer);
     },
     // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
     // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.

@@ -151,6 +151,7 @@
             v-if="showApplications"
             class="gallery-group"
             :class="{ 'is-hidden': hideEmptyApplicationsInAll }"
+            :aria-hidden="hideEmptyApplicationsInAll ? 'true' : undefined"
           >
             <h2 v-if="showSectionHeadings" class="gallery-group-title">{{ t("panel.section.applications") }}</h2>
             <projection
@@ -164,6 +165,7 @@
             v-if="showAgents"
             class="gallery-group"
             :class="{ 'is-hidden': hideEmptyAgentsInAll }"
+            :aria-hidden="hideEmptyAgentsInAll ? 'true' : undefined"
           >
             <h2 v-if="showSectionHeadings" class="gallery-group-title">{{ t("panel.section.agents") }}</h2>
             <projection

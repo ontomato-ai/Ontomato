@@ -53,8 +53,8 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
   ref: PanelUseRef & Pick<PanelOperationRef, "root">) {
   if (ref.root === "frame")
     throw new HttpError(403, "This run does not have the application frame's skill", "PANEL_FRAME_SKILL_REQUIRED");
-  const { use, framePanelId } = await requirePanelUseEntry(credentials, ref);
-  const view = await readAssistantSkillView(owner.domainId, credentials);
+  const { use, framePanelId } = await requirePanelUseEntry(credentials, ref, owner);
+  const view = await readAssistantSkillView(owner.domainId, credentials, owner.userId);
   const entrance: PageSkillEntrance = "permissionCode" in use.access
     ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
     : { access: "domain-member", pageKey: use.pageKey };
@@ -101,7 +101,7 @@ async function operationForUse(
     const { panel, entry, framePanelId } = await requireRegisteredPanelRoot(owner, credentials, { kind: ref.root, applicationId, useId });
     return declaredOperation(owner, credentials, entry, ref, target, panel, { framePanelId, ...options });
   }
-  const { use, framePanelId } = await requirePanelUseEntry(credentials, ref);
+  const { use, framePanelId } = await requirePanelUseEntry(credentials, ref, owner);
   return declaredOperation(owner, credentials, use, ref, target, undefined, { framePanelId, ...options });
 }
 

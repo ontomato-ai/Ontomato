@@ -46,7 +46,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   const source=await profileSourceForSession(owner,session.id,session.agent_id);
   mark("profile-source");
-  const prepared=source?null:await prepareAssistantSkills(owner.domainId,a,credentials,pageSkillContext);
+  const prepared=source?null:await prepareAssistantSkills(owner.domainId,a,credentials,pageSkillContext,owner.userId);
   mark("skills");
   const skills=prepared?.skills??[];
   const skillRefs=skills.map(({skill})=>skill);

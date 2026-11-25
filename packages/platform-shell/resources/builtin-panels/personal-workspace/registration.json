@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-personal-workspace",
+      "input": {
+        "name": "Personal workspace",
+        "description": "Your greeting, quick ask composer, tasks, dashboards, favorite apps, conversations, objects, and recent visits."
+      }
+    }
+  ]
+}

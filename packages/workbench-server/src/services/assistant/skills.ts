@@ -71,8 +71,8 @@ export async function registerAssistantSkills() {
     await publishSkill(skill.path, { namespace: { kind: "provider", provider: "workbench" }, name: skill.id });
 }
 
-export async function readAssistantSkillView(domainId: string, initiatorCredentials: AssistantCredentials) {
-  const view = await readSkillView(domainId, initiatorCredentials);
+export async function readAssistantSkillView(domainId: string, initiatorCredentials: AssistantCredentials, userId?: string) {
+  const view = await readSkillView(domainId, initiatorCredentials, userId);
   const builtins = builtinSkillOptions(initiatorCredentials.locale);
   const builtinKeys = new Set(builtins.map(option => runtimeSkillKey(option.skill)));
   const options = new Map(builtins
@@ -208,9 +208,9 @@ function publicationFailure(error: unknown): PageSkillFailure {
 
 /** One initiator view binds this turn to the versions returned by the selected publishers. */
 export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] },
-  initiatorCredentials: AssistantCredentials, pageSkillContext?: PageSkillContext,
+  initiatorCredentials: AssistantCredentials, pageSkillContext?: PageSkillContext, userId?: string,
 ) {
-  const view = await readAssistantSkillView(domainId, initiatorCredentials);
+  const view = await readAssistantSkillView(domainId, initiatorCredentials, userId);
   for (const ref of agent.skills) {
     view.requireCertainStoredSkill(ref);
     view.requireReadableManifest(ref);
@@ -270,8 +270,9 @@ export async function prepareCurrentPageSkill(
   domainId: string,
   initiatorCredentials: AssistantCredentials,
   pageSkillContext: PageSkillContext,
+  userId?: string,
 ): Promise<{ skill: RuntimeSkillVersion; currentPage: Omit<AuthorizedPageSkillMember, "packageContext"> | null } | null> {
-  const view = await readAssistantSkillView(domainId, initiatorCredentials);
+  const view = await readAssistantSkillView(domainId, initiatorCredentials, userId);
   let currentPage: Omit<AuthorizedPageSkillMember, "packageContext"> | null = null;
   let packageContext: SkillPackageContext | undefined;
   if (pageSkillContext.mode === "member" && pageSkillContext.member) {

@@ -1236,6 +1236,9 @@ export default {
     "moveLater": "Move {name} later",
     "loadFailed": "Personal workspace could not be loaded: {reason}",
     "retry": "Retry",
+    "customHomeUnavailable": "Your custom home panel is no longer available or you do not have access to it.",
+    "restoreDefaultWorkspace": "Restore default workspace",
+    "restoreDefaultWorkspaceFailed": "Could not restore default workspace: {reason}",
     "dashboardPicker": {
       "title": "Dashboards on personal workspace",
       "shown": "Shown on personal workspace",

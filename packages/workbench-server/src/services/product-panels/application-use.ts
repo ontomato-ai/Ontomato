@@ -5,10 +5,15 @@ import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import { platformHomeStore, type PlatformHomeOwner } from "../platform-home/store";
 
 const responseSchema = z.object({ success: z.literal(true), data: applicationEntryResolutionSchema });
 
-export async function requirePanelEntry(credentials: AssistantCredentials, { applicationId, useId }: PanelUseRef) {
+export async function requirePanelEntry(
+  credentials: AssistantCredentials,
+  { applicationId, useId }: PanelUseRef,
+  owner?: PlatformHomeOwner,
+) {
   const query = new URLSearchParams({ applicationId, useId });
   const response = await backendGet(
     "resolve-panel-entry", `${config.dataQuery.baseUrl}/platform/applications/resolve-entry?${query}`,
@@ -24,12 +29,22 @@ export async function requirePanelEntry(credentials: AssistantCredentials, { app
   const { data } = responseSchema.parse(JSON.parse(response.text));
   if (data.applicationId !== applicationId || data.use.id !== useId)
     throw new HttpError(502, "The entry owner returned another application or use", "PANEL_ENTRY_SOURCE_MISMATCH");
+  if (applicationId === "home" && useId === "home" && owner) {
+    const homePanelId = await platformHomeStore.homePanelId(owner);
+    if (homePanelId !== null) {
+      return { ...data, use: { ...data.use, panelId: homePanelId } };
+    }
+  }
   return data;
 }
 
-export async function requirePanelUseEntry(credentials: AssistantCredentials, ref: PanelUseRef) {
+export async function requirePanelUseEntry(
+  credentials: AssistantCredentials,
+  ref: PanelUseRef,
+  owner?: PlatformHomeOwner,
+) {
   try {
-    return await requirePanelEntry(credentials, ref);
+    return await requirePanelEntry(credentials, ref, owner);
   } catch (error) {
     if (error instanceof HttpError && error.status === 404)
       throw new HttpError(403, error.message, "FORBIDDEN");
@@ -37,6 +52,10 @@ export async function requirePanelUseEntry(credentials: AssistantCredentials, re
   }
 }
 
-export async function requirePanelUse(credentials: AssistantCredentials, ref: PanelUseRef) {
-  return (await requirePanelUseEntry(credentials, ref)).use;
+export async function requirePanelUse(
+  credentials: AssistantCredentials,
+  ref: PanelUseRef,
+  owner?: PlatformHomeOwner,
+) {
+  return (await requirePanelUseEntry(credentials, ref, owner)).use;
 }

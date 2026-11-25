@@ -33,6 +33,7 @@ export interface SkillSourceIdentity {
 
 interface PageSkillViewCaller {
   domainId: string;
+  userId?: string;
   initiatorCredentials: AssistantCredentials;
 }
 
@@ -83,7 +84,8 @@ async function currentApplicationPanel(caller: PageSkillViewCaller, entrance: Pa
 ) {
   let entry;
   try {
-    entry = await requirePanelEntry(caller.initiatorCredentials, source);
+    const owner = caller.userId ? { domainId: caller.domainId, userId: caller.userId } : undefined;
+    entry = await requirePanelEntry(caller.initiatorCredentials, source, owner);
   } catch (error) {
     if (error instanceof HttpError && [400, 403, 404].includes(error.status)) return null;
     if (error instanceof HttpError && error.code === "PANEL_ENTRY_SOURCE_MISMATCH")
@@ -194,14 +196,14 @@ export async function readRegisteredPanelPageSkillContext(
   entrance: PageSkillEntrance,
   source: ApplicationUseSkillSource,
   loadedPanel: { id: string },
-  provider: { id: string; findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials):
+  provider: { id: string; findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials, panelIdOverride?: string):
     Promise<ProtectedSkillOffering | SkillSourceFailure | null> },
 ): Promise<PageSkillContext> {
   const absent = { mode: "member" as const, locator: entrance, member: null };
   const actual = await currentApplicationPanel(caller, entrance, source);
   if (!actual || actual.use.panelId !== loadedPanel.id) return absent;
   const use = { applicationId: actual.applicationId, useId: actual.use.id };
-  const sourceFact = await provider.findByUse(caller.domainId, use, caller.initiatorCredentials);
+  const sourceFact = await provider.findByUse(caller.domainId, use, caller.initiatorCredentials, actual.use.panelId);
   if (!sourceFact || sourceFact.sourceKey !== loadedPanel.id) return absent;
 
   const ref = protectedSourceSkillRef(provider.id, caller.domainId, sourceFact);
@@ -233,8 +235,8 @@ export async function readRegisteredPanelPageSkillContext(
 }
 
 /** Resolve one current view. All supply closures and existence facts refer to this source enumeration. */
-export async function readSkillView(domainId: string, initiatorCredentials: AssistantCredentials) {
-  const caller = { domainId, initiatorCredentials };
+export async function readSkillView(domainId: string, initiatorCredentials: AssistantCredentials, userId?: string) {
+  const caller: PageSkillViewCaller = { domainId, ...(userId !== undefined && { userId }), initiatorCredentials };
   const java = await javaPageSkillProjection(initiatorCredentials);
   let pages!: ReturnType<typeof pageAuthorization>;
   const registry = await skillRegistryManager.forDomain(domainId, async (sources, failures) => {
@@ -249,7 +251,7 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
       protected: skill => pages.admitted.has(runtimeSkillKey(skill)),
       admittedEntrances: skill => pages.admitted.get(runtimeSkillKey(skill))?.entrances,
     };
-  }, initiatorCredentials);
+  }, initiatorCredentials, userId);
   const items = [...registry.failedManifests.values()];
   const sourceUnavailable = pages.uncertain.size > 0;
   const diagnostics: SkillCatalogDiagnostics | undefined = items.length || sourceUnavailable ? { items, sourceUnavailable } : undefined;

@@ -22,6 +22,7 @@ export interface SkillPackageContext {
 /** The verified domain and reader for provider-owned content. */
 export interface SkillSourceContext {
   readonly domainId: string;
+  readonly userId?: string;
   readonly reader: AssistantCredentials;
   reportSourceFailure(failure: SkillSourceFailure): void;
 }

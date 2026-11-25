@@ -2,7 +2,7 @@
 import { computed, inject, markRaw, onBeforeUnmount, reactive, ref, shallowRef, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { ElSkeleton } from "element-plus";
+import { ElButton, ElSkeleton } from "element-plus";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import {
@@ -15,14 +15,14 @@ import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { applicationFrameContextOf, isNativeApplicationEntry, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { applicationFrameContextOf, isNativeApplicationEntry, type ApplicationEntryResolution, type ApplicationPanelUse, type BundledPanelProjection, type ProductPanel } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import { APPLICATION, FAVORITE } from "@ontomato/contracts/platform-object-types";
-import { HOME_PREFERENCES_CHANGED } from "../features/home/api";
-import { onPanelReadDenied, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import { APPLICATION, FAVORITE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { HOME_PREFERENCES_CHANGED, readHomePanel, saveHomePanel } from "../features/home/api";
+import { onPanelReadDenied, panelHasInlineConversationEntry, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import {
   applicationFrameHostKey,
   deepLinkDefaultsOf,
@@ -169,7 +169,8 @@ function changed(change: PanelObjectChange) {
   if (
     change.affected?.objectTypes?.includes(APPLICATION)
     || change.affected?.objectTypes?.includes(FAVORITE)
-    || change.affected?.objects?.some((item) => item.objectType === APPLICATION || item.objectType === FAVORITE)
+    || change.affected?.objectTypes?.includes(PRODUCT_PANEL)
+    || change.affected?.objects?.some((item) => item.objectType === APPLICATION || item.objectType === FAVORITE || item.objectType === PRODUCT_PANEL)
   ) {
     window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
   }
@@ -405,15 +406,101 @@ const keptUse = computed<ApplicationPanelUse | null>(() => {
   return kept.value.find((page) => panelUsePath(page.use.path) === path)?.use ?? null;
 });
 /**
- * The use relation the opened address names: admitted immediately when present in this application's known entry table
- * or already kept in this application (and confirmed by resolve-entry for direct links), and null while awaiting
- * direct-link verification or once refused.
+ * The base use relation the opened address names before any per-user home panel override.
  */
-const use = computed<ApplicationPanelUse | null>(() => {
+const baseUse = computed<ApplicationPanelUse | null>(() => {
   const path = entryPath.value;
   if (!path || verifying.value || deniedPath.value === path) return null;
   return resolvedUse.value ?? listedUse.value ?? keptUse.value;
 });
+
+const isHomeMainEntry = computed(() => props.applicationId === "home" && baseUse.value?.id === "home");
+const homePanelStatus = ref<"idle" | "loading" | "ready" | "unavailable">("idle");
+const customHomePanel = shallowRef<ProductPanel | null>(null);
+const customHomeHasInlineComposer = ref(false);
+const homePanelError = ref("");
+const restoringDefaultHome = ref(false);
+let homePanelEpoch = 0;
+
+async function loadCustomHomePanel(options: { blocking: boolean }) {
+  const epoch = ++homePanelEpoch;
+  if (options.blocking) {
+    homePanelStatus.value = "loading";
+    homePanelError.value = "";
+  }
+  try {
+    const { panel } = await readHomePanel();
+    if (unmounted || epoch !== homePanelEpoch || !isHomeMainEntry.value) return;
+    customHomePanel.value = panel;
+    customHomeHasInlineComposer.value = panel ? panelHasInlineConversationEntry(panel) : false;
+    homePanelError.value = "";
+    homePanelStatus.value = "ready";
+  } catch {
+    if (unmounted || epoch !== homePanelEpoch || !isHomeMainEntry.value) return;
+    customHomePanel.value = null;
+    customHomeHasInlineComposer.value = false;
+    homePanelError.value = t("home.customHomeUnavailable");
+    homePanelStatus.value = "unavailable";
+  }
+}
+
+async function restoreDefaultHomeWorkspace() {
+  if (restoringDefaultHome.value) return;
+  restoringDefaultHome.value = true;
+  try {
+    await saveHomePanel(null);
+    await loadCustomHomePanel({ blocking: true });
+  } catch (reason) {
+    const detail = reason instanceof Error && reason.message ? reason.message : String(reason);
+    homePanelError.value = t("home.restoreDefaultWorkspaceFailed", { reason: detail });
+  } finally {
+    restoringDefaultHome.value = false;
+  }
+}
+
+watch(isHomeMainEntry, (active) => {
+  homePanelEpoch += 1;
+  if (!active) {
+    homePanelStatus.value = "idle";
+    customHomePanel.value = null;
+    customHomeHasInlineComposer.value = false;
+    homePanelError.value = "";
+    return;
+  }
+  void loadCustomHomePanel({ blocking: true });
+}, { immediate: true });
+
+function onHomePreferencesChanged() {
+  if (isHomeMainEntry.value) {
+    void loadCustomHomePanel({ blocking: false });
+  }
+}
+window.addEventListener(HOME_PREFERENCES_CHANGED, onHomePreferencesChanged);
+onBeforeUnmount(() => {
+  window.removeEventListener(HOME_PREFERENCES_CHANGED, onHomePreferencesChanged);
+});
+
+/**
+ * The effective use relation the opened address names: admitted immediately when present in this application's known
+ * entry table or already kept in this application (and confirmed by resolve-entry for direct links), overridden by
+ * the user's custom `homePanelId` on the `"home"` entry when set, and null while awaiting verification or once refused.
+ */
+const use = computed<ApplicationPanelUse | null>(() => {
+  const resolved = baseUse.value;
+  if (!resolved) return null;
+  if (props.applicationId === "home" && resolved.id === "home") {
+    if (homePanelStatus.value === "loading" || homePanelStatus.value === "unavailable") return null;
+    if (customHomePanel.value) {
+      return {
+        ...resolved,
+        panelId: customHomePanel.value.id,
+        pageComposer: customHomeHasInlineComposer.value ? "none" : "bottom",
+      };
+    }
+  }
+  return resolved;
+});
+const homeUnavailableBanner = computed(() => isHomeMainEntry.value && homePanelStatus.value === "unavailable");
 /**
  * The application's theme from Java's answer (a `panels` application's only). At full page the platform's layout assigns
  * it on the application's area, its menu and its page; beside a conversation it is assigned on this content alone.
@@ -422,7 +509,13 @@ const area = ref<HTMLElement | null>(null);
 if (props.navigate) useAppTheme(area, () => currentResolution.value?.theme, hostThemeMode);
 else useApplicationTheme(() => currentResolution.value?.theme);
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
-const missing = computed(() => !verifying.value && !use.value ? t("platform.panelNotInApplication", { path: openedPath.value }) : "");
+const missing = computed(() =>
+  !verifying.value
+  && !(isHomeMainEntry.value && (homePanelStatus.value === "loading" || homePanelStatus.value === "unavailable"))
+  && !use.value
+    ? t("platform.panelNotInApplication", { path: openedPath.value })
+    : "",
+);
 watch(missing, (message) => {
   if (message) emit("display-loaded", panelUnavailable(new Error(message)));
 });
@@ -524,6 +617,7 @@ if (outerFrame) {
 
 const showContentLoading = computed(() =>
   !missing.value
+  && !homeUnavailableBanner.value
   && !displayedPage.value
   && !(outerFrame?.active.value && !outerFrame.surfaceReady.value),
 );
@@ -727,6 +821,13 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     surfaceReady: true,
     lastShown: ++showings,
   };
+  const onPanelLoaded = props.applicationId === "home" && use.id === "home"
+    ? (loaded: ProductPanel, projections?: Readonly<Record<string, BundledPanelProjection>>) => {
+        if (customHomePanel.value?.id === loaded.id) {
+          customHomeHasInlineComposer.value = panelHasInlineConversationEntry(loaded, projections);
+        }
+      }
+    : undefined;
   page.port = markRaw(platformPanelHost(
     props.applicationId, use, changed, undefined, (context) => reportPageSkill(page, context),
     // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
@@ -743,6 +844,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
         else embeddedChatCounts[use.id] = next;
       };
     },
+    onPanelLoaded,
   ));
   return page;
 }
@@ -802,8 +904,20 @@ function reportDirty(page: KeptPage, dirty: boolean) {
 <template>
   <div ref="area" class="panel-application-area">
     <p v-if="failure" class="panel-application-status platform-page-gutter" role="alert">{{ failure }}</p>
+    <div v-else-if="homeUnavailableBanner" class="panel-application-home-recovery platform-page-gutter" role="alert" data-testid="custom-home-unavailable">
+      <p class="panel-application-home-recovery-text">{{ homePanelError || t("home.customHomeUnavailable") }}</p>
+      <ElButton
+        type="primary"
+        size="small"
+        :loading="restoringDefaultHome"
+        data-testid="restore-default-home-btn"
+        @click="restoreDefaultHomeWorkspace"
+      >
+        {{ t("home.restoreDefaultWorkspace") }}
+      </ElButton>
+    </div>
     <p v-else-if="missing" class="panel-application-status platform-page-gutter" role="alert">{{ missing }}</p>
-    <EntryUnit v-if="!failure">
+    <EntryUnit v-if="!failure && !homeUnavailableBanner">
       <PanelHost
         v-for="page in kept"
         v-show="page === displayedPage"
@@ -843,7 +957,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         </div>
       </div>
       <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
-      <template v-if="!props.navigate && shownPage?.use.pageComposer !== 'none' && !(shownPage && embeddedChatCounts[shownPage.use.id]) && ((shownPage && shownSkill) || composerProblem)" #foot>
+      <template v-if="!props.navigate && (use?.pageComposer ?? shownPage?.use.pageComposer) !== 'none' && !(shownPage && embeddedChatCounts[shownPage.use.id]) && ((shownPage && shownSkill) || composerProblem)" #foot>
         <PageComposer
           v-if="shownPage && shownSkill"
           :page="shownPage.reported"
@@ -874,6 +988,23 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   flex-shrink: 0;
   margin: 0;
   padding-block: var(--page-content-gap);
+}
+.panel-application-home-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md, 12px);
+  margin: var(--page-content-gap, 16px) var(--page-gutter, 20px);
+  padding: var(--spacing-md, 16px) var(--spacing-lg, 20px);
+  border: 1px solid var(--el-color-warning-light-5, var(--el-border-color));
+  border-radius: var(--radius-md, 8px);
+  background: var(--el-color-warning-light-9, var(--el-fill-color-light));
+}
+.panel-application-home-recovery-text {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm, 14px);
 }
 .panel-application-loading {
   display: flex;
