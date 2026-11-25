@@ -357,7 +357,7 @@
     <sdk-dialog
       v-model="modelDialogOpen"
       :title="modelDialogMode === 'edit' ? t('models.editTitle') : t('models.addTitle')"
-      width="640px"
+      width="720px"
       append-to-body
       destroy-on-close
     >
@@ -375,7 +375,12 @@
           @saved="onModelSaved"
           @discarded="closeModelDialog"
           @cancel="closeModelDialog"
-        ></projection>
+        >
+          <template #actions="{ saving, asking, save, cancel }">
+            <sdk-button text :disabled="saving" @click="cancel()">{{ $t('platform.cancel') }}</sdk-button>
+            <sdk-button type="primary" :disabled="asking" :loading="saving" @click="save()">{{ t('models.add') }}</sdk-button>
+          </template>
+        </projection>
       </div>
     </sdk-dialog>
 

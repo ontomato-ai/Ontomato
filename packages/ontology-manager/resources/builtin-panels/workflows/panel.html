@@ -28,6 +28,13 @@
     align-items: center;
     gap: 4px;
   }
+  .wf-steps-summary {
+    display: block;
+    max-width: min(100%, 220px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .wf-grant-link {
     display: inline-block;
     max-width: 100%;
@@ -133,6 +140,9 @@
                 {{ badge }}
               </sdk-tag>
             </span>
+          </template>
+          <template #cell-stepsSummary="{ displayText }">
+            <span class="wf-steps-summary" :title="displayText">{{ displayText }}</span>
           </template>
           <template #cell-grantsSummary="{ ref, displayText, tone }">
             <button
