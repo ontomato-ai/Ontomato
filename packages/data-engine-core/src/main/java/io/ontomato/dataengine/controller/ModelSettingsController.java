@@ -1,7 +1,7 @@
 package io.ontomato.dataengine.controller;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import io.ontomato.dataengine.service.agent.*;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import io.ontomato.dataengine.service.authorization.ManagementOperations.Operation;
@@ -47,14 +47,14 @@ public class ModelSettingsController {
   private final AgentRuntimeClient runtime;
   private final OntologyAgentAccess access;
   private final OntologyAgentModelSettings agents;
-  private final ProductGrantService productGrants;
+  private final RetrieverAccess retrieverAccess;
 
-  public ModelSettingsController(AgentRuntimeClient runtime, OntologyAgentAccess access, OntologyAgentModelSettings agents, ProductGrantService productGrants,
+  public ModelSettingsController(AgentRuntimeClient runtime, OntologyAgentAccess access, OntologyAgentModelSettings agents, RetrieverAccess retrieverAccess,
       ManagementRequestAccess management) {
     this.runtime = runtime;
     this.access = access;
     this.agents = agents;
-    this.productGrants = productGrants;
+    this.retrieverAccess = retrieverAccess;
     this.management = management;
   }
 
@@ -110,7 +110,12 @@ public class ModelSettingsController {
 
   @GetMapping("/ontology/ai/agent-models")
   @Owned
-  public Object agents() { return success(agents.list(management.require(AGENTS_READ).getDomainId())); }
+  public Object agents(HttpServletRequest request) {
+    management.require(AGENTS_READ);
+    var caller = access.authenticated(request).owner();
+    boolean retrieverVisible = retrieverAccess.decide(retrieverAccess.subject(caller), Verb.VIEW).allowed();
+    return success(agents.list(caller.domainId(), retrieverVisible));
+  }
 
   @GetMapping("/ontology/ai/agent-models/{id}")
   @Owned
@@ -118,9 +123,11 @@ public class ModelSettingsController {
     if (!OntologyAgentStore.RETRIEVER.equals(id))
       return success(agents.read(management.require(AGENTS_READ).getDomainId(), id));
     var owner = access.authenticated(request).owner();
-    if (!productGrants.allowedFor(owner.domainId(), owner.userId(), id, "view"))
-      throw new AgentHttpException(403, "FORBIDDEN", "Retriever view Grant required");
-    return success(agents.read(owner.domainId(), id));
+    var subject = retrieverAccess.subject(owner);
+    retrieverAccess.require(subject, Verb.VIEW);
+    var model = agents.read(owner.domainId(), id);
+    model.put("editable", retrieverAccess.decide(subject, Verb.EDIT).allowed());
+    return success(model);
   }
 
   @PutMapping("/ontology/ai/agent-models/{id}")
@@ -129,8 +136,7 @@ public class ModelSettingsController {
     if (!OntologyAgentStore.RETRIEVER.equals(id))
       return success(agents.save(management.require(AGENTS_CHANGE).getDomainId(), id, body));
     var owner = access.authenticated(request).owner();
-    if (!productGrants.allowedFor(owner.domainId(), owner.userId(), id, "edit"))
-      throw new AgentHttpException(403, "FORBIDDEN", "Agent edit Grant required");
+    retrieverAccess.require(retrieverAccess.subject(owner), Verb.EDIT);
     return success(agents.save(owner.domainId(), id, body));
   }
 

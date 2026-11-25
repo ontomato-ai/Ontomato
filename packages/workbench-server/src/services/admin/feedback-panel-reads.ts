@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
+import { panelReadOperationJsonResultSchema } from "@ontomato/contracts/panel-operations";
 import { EXPORT_FEEDBACK } from "@ontomato/contracts/platform-object-types";
 import type { FeedbackRecord } from "@ontomato/contracts/feedback";
 import { panelReadParameterSchemas, type PanelGroupCounts, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
@@ -22,6 +23,7 @@ const queryInputSchema = z.object({
   search: z.string().optional(),
   sourceType: panelReadParameterSchemas.feedbackSourceType.optional(),
   rating: panelReadParameterSchemas.feedbackRating.optional(),
+  page: panelReadParameterSchemas.page.optional(),
   cursor: z.string().regex(/^\d+$/).optional(),
   size: z.number().int().positive().optional(),
 }).strict();
@@ -34,6 +36,13 @@ const countsInputSchema = z.object({
 }).strict();
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PREVIEW_MAX_LENGTH = 80;
+
+/** Collapses whitespace and truncates long feedback text to an 80-character table preview. */
+function previewText(text?: string): string {
+  const normalized = String(text ?? "").replace(/\s+/g, " ").trim();
+  return normalized.length > PREVIEW_MAX_LENGTH ? `${normalized.slice(0, PREVIEW_MAX_LENGTH)}…` : normalized;
+}
 
 function feedbackRow(record: FeedbackRecord, fieldLabels: Record<string, string>): PanelRecord {
   return {
@@ -43,11 +52,19 @@ function feedbackRow(record: FeedbackRecord, fieldLabels: Record<string, string>
     fieldLabels,
     fields: {
       sourceType: record.sourceTypeLabel,
-      rating: record.ratingLabel,
+      // Value-carried tag tone (green for like, red for dislike) without a separate sidecar map.
+      rating: {
+        kind: "tag",
+        label: record.ratingLabel,
+        tone: record.rating === "like" ? "success" : "danger",
+      },
       userId: record.userName || record.userId,
       userInput: record.userInput ?? "",
+      userInputPreview: previewText(record.userInput),
       assistantOutput: record.assistantOutput ?? "",
+      assistantOutputPreview: previewText(record.assistantOutput),
       feedbackText: record.feedbackText ?? "",
+      feedbackTextPreview: previewText(record.feedbackText),
       turnKey: record.turnKey,
       relatedId: record.taskId || record.threadId || record.targetId,
       updatedAt: new Date(record.updatedAt).toISOString(),
@@ -62,8 +79,11 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
     rating: t("api.feedback.filters.rating"),
     userId: t("api.feedbackExport.columns.user"),
     userInput: t("api.feedbackExport.columns.input"),
+    userInputPreview: t("api.feedbackExport.columns.input"),
     assistantOutput: t("api.feedbackExport.columns.output"),
+    assistantOutputPreview: t("api.feedbackExport.columns.output"),
     feedbackText: t("api.feedbackExport.columns.feedback"),
+    feedbackTextPreview: t("api.feedbackExport.columns.feedback"),
     turnKey: t("api.feedbackExport.columns.turnKey"),
     relatedId: t("api.feedbackExport.columns.relatedId"),
     updatedAt: t("api.feedbackExport.columns.updatedAt"),
@@ -73,14 +93,17 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
   return {
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       await requireAccess();
-      const { search, sourceType, rating, cursor, size } = queryInputSchema.parse(params);
-      const offset = cursor === undefined ? 0 : Number(cursor);
+      const { search, sourceType, rating, page: pageParam, cursor, size } = queryInputSchema.parse(params);
+      const effectiveSize = pageParam?.size ?? size;
+      const offset = pageParam
+        ? (pageParam.number - 1) * pageParam.size
+        : (cursor === undefined ? 0 : Number(cursor));
       const page = await listFeedback({
         domainId: owner.domainId,
         keyword: search || undefined,
         sourceType: sourceType && sourceType !== "all" ? sourceType : undefined,
         rating: rating && rating !== "all" ? rating : undefined,
-        limit: size,
+        limit: effectiveSize,
         offset,
         locale: viewer.locale,
       });
@@ -140,7 +163,7 @@ export const feedbackExportOperation = {
   target: { source: "none" },
   targetSchema: z.undefined(),
   inputSchema: exportInputSchema,
-  resultSchema: panelDownloadReceiptSchema,
+  resultSchema: z.union([panelDownloadReceiptSchema, panelReadOperationJsonResultSchema]),
   async execute({ executor: { owner, credentials } }, call) {
     await assertManagement(workbenchManagement.feedbackExport, owner, credentials);
     const { search, sourceType, rating, timeZone } = exportInputSchema.parse(call.input);
@@ -152,6 +175,13 @@ export const feedbackExportOperation = {
       locale: credentials.locale,
       timeZone: feedbackExportTimeZone(timeZone),
     });
-    return { kind: "file", ...file };
+    if (file.count === 0) {
+      return {
+        kind: "json",
+        value: { exported: 0, empty: true },
+        message: tForLocale(credentials.locale, "panels.feedback.exportEmpty"),
+      };
+    }
+    return { kind: "file", bytes: file.bytes, suggestedName: file.suggestedName, mime: file.mime };
   },
 } satisfies PanelReadServerOperation & { labelKey: string };

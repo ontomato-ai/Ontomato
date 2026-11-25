@@ -104,7 +104,8 @@ public final class ActionForm {
             PanelFormFields.objectArray(
                 FunctionForm.parameterFields(lang, langService, readOnlyReason),
                 FunctionForm.defaultParameter(),
-                null),
+                null,
+                "inline"),
             PanelFormFields.arraySchema(PanelFormFields.schema("object")),
             false,
             readOnlyReason != null,

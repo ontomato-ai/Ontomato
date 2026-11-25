@@ -50,6 +50,13 @@ export const assistantSkillInputSchema = runtimeSkillRefSchema.extend({
       .strict(),
   ]),
 });
+export const agentPublicationAccessSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("private") }).strict(),
+  z.object({ kind: z.literal("domain") }).strict(),
+  z.object({ kind: z.literal("policy"), policyId: z.string().trim().min(1) }).strict(),
+]);
+export type AgentPublicationAccess = z.infer<typeof agentPublicationAccessSchema>;
+
 export const assistantAgentInputSchema = assistantAgentDefinitionSchema
   .omit({
     id: true,
@@ -60,16 +67,17 @@ export const assistantAgentInputSchema = assistantAgentDefinitionSchema
     sortOrder: assistantAgentDefinitionSchema.shape.sortOrder.removeDefault().optional(),
     modelSelection: modelSelectionSchema.default({ modelId: null }),
     skills: z.array(assistantSkillInputSchema),
+    publicationAccess: agentPublicationAccessSchema.optional(),
   });
 /** An omitted skills field preserves the definition's existing selection. */
-export const assistantAgentUpdateInputSchema = assistantAgentInputSchema.extend({ engine: assistantEngineSchema.optional() }).partial({ skills: true });
+export const assistantAgentUpdateInputSchema = assistantAgentInputSchema.omit({ publicationAccess: true }).extend({ engine: assistantEngineSchema.optional() }).partial({ skills: true });
 export type AssistantAgentUpdateInput = z.infer<typeof assistantAgentUpdateInputSchema>;
 
 /** The settings panel carries unedited MCP and avatar values, and leaves sorting to the native owner. */
 export const assistantAgentPanelValuesSchema = assistantAgentInputSchema.omit({ sortOrder: true }).extend({
   enabledMcpServiceIds: assistantAgentInputSchema.shape.enabledMcpServiceIds.removeDefault(),
 });
-export const assistantAgentPanelUpdateValuesSchema = assistantAgentPanelValuesSchema.extend({ engine: assistantEngineSchema.optional() }).partial({ skills: true });
+export const assistantAgentPanelUpdateValuesSchema = assistantAgentPanelValuesSchema.omit({ publicationAccess: true }).extend({ engine: assistantEngineSchema.optional() }).partial({ skills: true });
 const agentValidationTargetSchema = z.object({ objectType: z.literal(AGENT_DEFINITION) }).strict();
 export const assistantAgentValidationSchema = z.union([
   z.object({ target: agentValidationTargetSchema.extend({ id: z.string().uuid() }), form: assistantAgentUpdateInputSchema }).strict(),

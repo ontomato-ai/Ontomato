@@ -51,7 +51,6 @@ await mountPanel({
       openImport,
       closeImport,
       onImported,
-      refresh: () => instance.refreshObjects(),
     };
   },
 });

@@ -4,6 +4,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { components } from "../../../../../apps-sdk/src/catalogue";
 import * as panelCheck from "@ontomato/contracts/panel-check";
+import { PERMISSION_POLICY } from "@ontomato/contracts/platform-object-types";
 import { installContentLayout } from "../../../content/layout";
 
 vi.mock("../../app-builder/sdk", () => ({
@@ -87,9 +88,31 @@ describe("readBuiltinProducts", () => {
       expect(agentDetail.manifest.members).toHaveProperty("shareStatusDesc");
       expect(agentDetail.manifest.members).toHaveProperty("shareEnable");
       expect(agentDetail.manifest.members).toHaveProperty("shareDisable");
-      expect(agentDetail.manifest.members).toHaveProperty("userPicker");
-      expect(agentDetail.manifest.members).toHaveProperty("rolePicker");
-      expect(agentDetail.manifest.members).toHaveProperty("grantSubmit");
+      const agentProjection = (slot: string) => {
+        const member = agentDetail.manifest.members[slot];
+        if (member && "target" in member && "projectionId" in member.target) {
+          return projections.get(member.target.projectionId);
+        }
+      };
+      expect(agentDetail.manifest.state.grantPolicy?.type).toEqual({ kind: "object", objectType: PERMISSION_POLICY });
+      expect(agentProjection("policyPicker")).toMatchObject({
+        componentId: "@ontomato/sdk:ReferencePicker",
+        data: {
+          options: { source: { type: { id: PERMISSION_POLICY } }, read: "options" },
+          selected: { source: { type: { id: PERMISSION_POLICY } }, read: "resolve" },
+        },
+      });
+      expect(agentProjection("grantSubmit")?.operations).toMatchObject({
+        grant: {
+          operation: { kind: "PlatformOperation", id: "agents.grant" },
+          params: { policyId: { input: "policyId" }, verb: { input: "verb" } },
+        },
+      });
+      expect(agentProjection("grantsList")?.operations?.revoke).toMatchObject({
+        operation: { kind: "PlatformOperation", id: "agents.revoke" },
+      });
+      expect(agentDetail.manifest.members).not.toHaveProperty("userPicker");
+      expect(agentDetail.manifest.members).not.toHaveProperty("rolePicker");
       expect(agentDetail.content.html).not.toContain('v-if="detailReady" #actions');
 
       const functionsCatalog = panels.get("builtin-product-ontology-functions")!;

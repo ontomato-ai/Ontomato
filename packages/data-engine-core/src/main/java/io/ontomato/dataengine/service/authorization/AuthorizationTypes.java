@@ -28,6 +28,7 @@ public final class AuthorizationTypes {
     public record PolicyRef(String roleId, String policyId, PolicyKind kind) {}
 
     public record ObjectGrant(String policyId, ObjectTarget target, Verb verb, GrantScope scope) {}
+    public record AgentPolicyGrant(String policyId, String name, Verb level) {}
 
     public record PendingGrant(long id, String source, String changeKey, String actorId,
                                ObjectTarget entry, ObjectGrant grant) {}

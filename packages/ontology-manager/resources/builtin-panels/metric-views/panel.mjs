@@ -1,16 +1,17 @@
 import { computed } from "vue";
-import { mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 const DETAIL_PATH = "/ontology/assets/metrics/detail";
 
 /*
- * Metric views catalog panel: full-width searchable table with checked-row batch publication status updates.
- * Row selection and creation navigate to the dedicated non-menu detail entry.
+ * Metric views catalog panel: full-width unpaged searchable table with matched count and checked-row batch publication
+ * status updates. Row selection and creation navigate to the dedicated non-menu detail entry.
  */
 await mountPanel({
   setup() {
     const { instance, navigate } = usePanelContext();
     const state = instance.state.values;
+    const listTotal = usePanelOutput("list", "total");
 
     const batchStatus = computed({
       get: () => state.value.batchStatus || "PUBLISHED",
@@ -27,10 +28,10 @@ await mountPanel({
     }
 
     return {
+      listTotal,
       batchStatus,
       openDetail,
       startCreate,
-      refresh: () => instance.refreshObjects(),
     };
   },
 });

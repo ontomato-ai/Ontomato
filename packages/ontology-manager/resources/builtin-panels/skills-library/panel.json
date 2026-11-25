@@ -58,15 +58,18 @@
           "emptyText": "panel.empty",
           "noMatchText": "panel.noMatch",
           "rowActions": {
+            "placement": "header",
             "maxVisible": 2,
             "items": [
               {
                 "kind": "operation",
-                "operation": "export"
+                "operation": "export",
+                "icon": "download"
               },
               {
                 "kind": "operation",
                 "operation": "remove",
+                "icon": "trash",
                 "tone": "danger"
               }
             ]
@@ -81,7 +84,6 @@
       "zh-CN": {
         "panel.title": "技能",
         "panel.description": "管理智能体可用的技能包与文件",
-        "panel.refresh": "刷新",
         "panel.import": "导入技能",
         "panel.importIntro": "上传一个 .zip 格式的技能包。",
         "panel.importRuleRoot": "SKILL.md 放在包的根目录：直接放在 zip 根部，或放在 zip 里唯一的顶层文件夹中。",
@@ -97,7 +99,6 @@
       "en": {
         "panel.title": "Skills",
         "panel.description": "Manage skill packages and files available to agents",
-        "panel.refresh": "Refresh",
         "panel.import": "Import Skill",
         "panel.importIntro": "Upload one skill package as a .zip file.",
         "panel.importRuleRoot": "SKILL.md sits at the package root: directly in the zip, or inside its single top-level folder.",
@@ -113,7 +114,6 @@
       "zh-TW": {
         "panel.title": "技能",
         "panel.description": "管理智慧體可用的技能包與檔案",
-        "panel.refresh": "重新整理",
         "panel.import": "匯入技能",
         "panel.importIntro": "上傳一個 .zip 格式的技能包。",
         "panel.importRuleRoot": "SKILL.md 放在包的根目錄：直接放在 zip 根部，或放在 zip 裡唯一的頂層資料夾中。",
@@ -129,7 +129,6 @@
       "ja": {
         "panel.title": "スキル",
         "panel.description": "エージェントが利用できるスキルパッケージとファイルを管理します",
-        "panel.refresh": "更新",
         "panel.import": "スキルをインポート",
         "panel.importIntro": "スキルパッケージを .zip ファイルで 1 つアップロードします。",
         "panel.importRuleRoot": "SKILL.md はパッケージのルートに置きます（zip の直下、または zip 内の唯一の最上位フォルダー）。",
@@ -145,7 +144,6 @@
       "ar": {
         "panel.title": "المهارات",
         "panel.description": "إدارة حزم المهارات وملفاتها المتاحة للوكلاء",
-        "panel.refresh": "تحديث",
         "panel.import": "استيراد مهارة",
         "panel.importIntro": "ارفع حزمة مهارة واحدة بصيغة zip.",
         "panel.importRuleRoot": "يوضع SKILL.md في جذر الحزمة: مباشرة داخل ملف zip أو داخل المجلد الوحيد في مستواه الأعلى.",
@@ -161,7 +159,6 @@
       "fr": {
         "panel.title": "Compétences",
         "panel.description": "Gérer les paquets de compétences et leurs fichiers pour les agents",
-        "panel.refresh": "Actualiser",
         "panel.import": "Importer une compétence",
         "panel.importIntro": "Importez un paquet de compétence au format .zip.",
         "panel.importRuleRoot": "SKILL.md se trouve à la racine du paquet : directement dans le zip, ou dans son unique dossier de premier niveau.",
@@ -177,7 +174,6 @@
       "de": {
         "panel.title": "Skills",
         "panel.description": "Verfügbare Skill-Pakete und Dateien für Agenten verwalten",
-        "panel.refresh": "Aktualisieren",
         "panel.import": "Skill importieren",
         "panel.importIntro": "Laden Sie ein Skill-Paket als .zip-Datei hoch.",
         "panel.importRuleRoot": "SKILL.md liegt im Stammverzeichnis des Pakets: direkt im ZIP oder in dessen einzigem Ordner der obersten Ebene.",
@@ -193,7 +189,6 @@
       "it": {
         "panel.title": "Skill",
         "panel.description": "Gestisci i pacchetti skill e i file disponibili per gli agenti",
-        "panel.refresh": "Aggiorna",
         "panel.import": "Importa skill",
         "panel.importIntro": "Carica un pacchetto skill in formato .zip.",
         "panel.importRuleRoot": "SKILL.md si trova nella radice del pacchetto: direttamente nello zip o nella sua unica cartella di primo livello.",

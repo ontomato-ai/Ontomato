@@ -25,7 +25,13 @@ vi.mock("../../../services/assistant/execution-setting", () => ({ validateExecut
 vi.mock("../../../services/assistant/store", () => ({ assistantStore: { agent: mocks.agent } }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: mocks.pool }));
 vi.mock("../../../services/skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
-vi.mock("../../../services/product-governance/grants", () => ({ requireProductGrant: mocks.grant, productGrantAllowed: mocks.canEdit }));
+vi.mock("../../../services/assistant/authorization", () => ({
+  requireAgent: mocks.grant,
+  agentAllowed: mocks.canEdit,
+  requireAgentCreation: async ({ token }: { token?: string }) => {
+    if (token === "bob") throw new HttpError(403, "Denied", "CREATE_FORBIDDEN");
+  },
+}));
 import assistantRouter from "../assistant";
 
 configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
@@ -102,7 +108,7 @@ it("cannot forge the old reference or bypass a setting rejection", async () => {
   expect(mocks.pool).not.toHaveBeenCalled();
   expect((await request({ target: createDraftTarget, form, oldExecutionUserId: "other" })).status).toBe(400);
 });
-it("requires the same analysis-agent permission as a save", async () => {
+it("requires the same create-agent permission as a save", async () => {
   const request = await app();
   expect((await request({ target: createDraftTarget, form }, "bob")).status).toBe(403);
   expect(mocks.model).not.toHaveBeenCalled();
@@ -274,12 +280,12 @@ it("opens a view-only object form without menu permission and refuses edit valid
   const opened = await response.json();
   expect(opened.fields.length).toBeGreaterThan(0);
   expect(opened.fields.every((field: { readOnly: boolean }) => field.readOnly)).toBe(true);
-  expect(mocks.grant).toHaveBeenCalledWith(id, "view", expect.objectContaining({ token: "bob" }));
+  expect(mocks.grant).toHaveBeenCalledWith(expect.any(Object), "VIEW", expect.objectContaining({ token: "bob" }));
 
   mocks.grant.mockRejectedValueOnce(new HttpError(403, "Product edit Grant required", "PRODUCT_FORBIDDEN"));
   const denied = await request({ target: { ...createDraftTarget, id }, form }, "bob");
   expect(denied.status).toBe(403);
   expect((await denied.json()).error.code).toBe("PRODUCT_FORBIDDEN");
-  expect(mocks.grant).toHaveBeenLastCalledWith(id, "edit", expect.objectContaining({ token: "bob" }));
+  expect(mocks.grant).toHaveBeenLastCalledWith(expect.any(Object), "EDIT", expect.objectContaining({ token: "bob" }));
   expect(mocks.model).not.toHaveBeenCalled();
 });

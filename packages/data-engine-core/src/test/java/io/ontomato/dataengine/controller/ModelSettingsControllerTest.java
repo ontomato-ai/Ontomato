@@ -7,9 +7,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.service.ProductGrantService;
-import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
-import io.ontomato.dataengine.service.sys.bean.UserDetail;
+import static io.ontomato.dataengine.service.authorization.AuthorizationService.*;
+import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
+
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.agent.*;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,9 +25,20 @@ class ModelSettingsControllerTest {
   private final AgentRuntimeClient runtime = mock(AgentRuntimeClient.class);
   private final OntologyAgentAccess access = mock(OntologyAgentAccess.class);
   private final OntologyAgentModelSettings agents = mock(OntologyAgentModelSettings.class);
-  private final ProductGrantService productGrants = mock(ProductGrantService.class);
   private final ManagementRequestAccess management = mock(ManagementRequestAccess.class);
-  private final ModelSettingsController controller = new ModelSettingsController(runtime, access, agents, productGrants, management);
+  private final AuthorizationService authorization = mock(AuthorizationService.class);
+  private final RetrieverAccess retrieverAccess = new RetrieverAccess(authorization, mock(AuthorizationStore.class));
+  private final VerifiedIdentity viewer = new VerifiedIdentity("verified-domain", "user", CredentialLimit.UNRESTRICTED);
+  private final SubjectContext subject = new SubjectContext(viewer, null, null, null, null);
+
+  private void permit(Verb verb, boolean allowed) {
+    when(authorization.resolveSubject(viewer)).thenReturn(subject);
+    when(authorization.decide(subject, new ObjectAccess(
+        new ObjectTarget("verified-domain", Kind.AGENT, OntologyAgentStore.RETRIEVER), verb,
+        new OwnerFacts(null, DefinitionState.PUBLISHED))))
+        .thenReturn(new Decision(allowed, "OBJECT_FORBIDDEN", "Agent permission is required"));
+  }
+  private final ModelSettingsController controller = new ModelSettingsController(runtime, access, agents, retrieverAccess, management);
 
   private void identity() {
     var user = new UserDetail();
@@ -84,41 +97,50 @@ class ModelSettingsControllerTest {
         .andExpect(jsonPath("$.success").value(true)).andExpect(jsonPath("$.data.content").value("pong"));
   }
 
-  @Test void retrieverModelReadRequiresRetrieverViewGrant() throws Exception {
+  @Test void retrieverModelReadRequiresViewAndReportsEditability() throws Exception {
     identity();
     var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+    permit(Verb.VIEW, false);
     mvc.perform(get("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER))
-        .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("OBJECT_FORBIDDEN"));
     verifyNoInteractions(agents);
 
-    when(productGrants.allowedFor("verified-domain", "user", OntologyAgentStore.RETRIEVER, "view")).thenReturn(true);
+    permit(Verb.VIEW, true);
+    permit(Verb.EDIT, false);
     when(agents.read("verified-domain", OntologyAgentStore.RETRIEVER))
         .thenReturn(JSONObject.of("id", OntologyAgentStore.RETRIEVER, "kind", "retrieval"));
     mvc.perform(get("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER).header("X-Domain-Id", "untrusted-domain"))
-        .andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(OntologyAgentStore.RETRIEVER));
-    verify(agents).read("verified-domain", OntologyAgentStore.RETRIEVER);
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(OntologyAgentStore.RETRIEVER))
+        .andExpect(jsonPath("$.data.editable").value(false));
+    permit(Verb.EDIT, true);
+    mvc.perform(get("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.editable").value(true));
   }
 
-  @Test void modelingTaskListAndWriteDoNotRequireRetrieverProductGrant() throws Exception {
+  @Test void modelingTasksRemainAvailableWithoutRetrieverView() throws Exception {
     identity();
     var mvc = MockMvcBuilders.standaloneSetup(controller).build();
-    when(agents.list("verified-domain")).thenReturn(JSONObject.of("agents", java.util.List.of()));
+    permit(Verb.VIEW, false);
+    when(agents.list("verified-domain", false)).thenReturn(JSONObject.of("agents", java.util.List.of()));
     when(agents.save(eq("verified-domain"), eq(ActionCreationService.AGENT), any()))
         .thenReturn(JSONObject.of("id", ActionCreationService.AGENT));
     mvc.perform(get("/ontology/ai/agent-models")).andExpect(status().isOk());
+    verify(agents).list("verified-domain", false);
+    clearInvocations(authorization);
     mvc.perform(put("/ontology/ai/agent-models/" + ActionCreationService.AGENT)
         .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":null}}"))
         .andExpect(status().isOk());
-    verifyNoInteractions(productGrants);
+    verifyNoInteractions(authorization);
   }
 
   @Test void retrieverModelWriteRequiresEditEvenWithView() throws Exception {
     identity();
-    when(productGrants.allowedFor("verified-domain", "user", OntologyAgentStore.RETRIEVER, "view")).thenReturn(true);
+    permit(Verb.VIEW, true);
+    permit(Verb.EDIT, false);
     MockMvcBuilders.standaloneSetup(controller).build()
         .perform(put("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER)
             .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":null}}"))
-        .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("OBJECT_FORBIDDEN"));
     verifyNoInteractions(agents);
   }
 
@@ -130,10 +152,10 @@ class ModelSettingsControllerTest {
         .thenReturn(JSONObject.parseObject("{\"models\":[{\"name\":\"alt1\",\"type\":\"chat\"}]}"));
     when(jdbc.queryForList(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER)))
         .thenReturn(java.util.List.of(java.util.Map.of("model_selection", storedSelection)));
-    when(productGrants.allowedFor(eq("verified-domain"), eq("user"), anyString(), eq("edit"))).thenReturn(true);
+    permit(Verb.EDIT, true);
     // Exercise MVC deserialization and the real selection service, mocking only its dependencies.
     var service = new OntologyAgentModelSettings(jdbc, runtime);
-    return MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, service, productGrants, management)).build();
+    return MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, service, retrieverAccess, management)).build();
   }
 
   @Test void mvcSavesAnExistingModelUsingTheVerifiedDomain() throws Exception {
@@ -186,7 +208,7 @@ class ModelSettingsControllerTest {
         .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(response));
     var client = new AgentRuntimeClient("http://runtime.invalid", "fixture-host-token", "http://ontology.invalid");
     ReflectionTestUtils.setField(client, "http", transport);
-    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(client, access, agents, productGrants, management)).build();
+    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(client, access, agents, retrieverAccess, management)).build();
     var result = mvc.perform(post("/model-settings/test").contentType(MediaType.APPLICATION_JSON)
         .content("{\"model\":{\"type\":\"chat\",\"timeoutSeconds\":25,\"maxRetries\":0}}"))
         .andExpect(request().asyncStarted()).andReturn();

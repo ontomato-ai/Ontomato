@@ -79,10 +79,15 @@ vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: vi.fn(() => mockRuntime),
 }));
 vi.mock("../../product-governance/grants", () => ({
-  grantedProductIds: (...args: unknown[]) => mockGrantedProductIds(...args),
   productGrantAllowed: vi.fn(async () => false),
   readProductGrantRecords: vi.fn(async () => ({ grants: [] })),
   requireProductGrant: vi.fn(async () => undefined),
+}));
+vi.mock("../../assistant/authorization", () => ({
+  allowedAgents: async (agents: { id: string }[], verb: string, credentials: unknown) => {
+    const ids = await mockGrantedProductIds(verb, credentials);
+    return agents.filter(agent => ids.includes(agent.id));
+  },
 }));
 vi.mock("../../assistant/store", () => ({
   assistantStore: {

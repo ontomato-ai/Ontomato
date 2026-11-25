@@ -18,10 +18,11 @@ conversation, tested here, and filled into the live form for a person to review 
   mounts only in create mode or once the selected metric record is ready; `loading`, `awaiting`, `forbidden`, `error`,
   and `missing` states render in place without mounting the form.
 - `testMarkdown` (`testMarkdown.test` / `metricViews.test`) and `testJson` (`testJson.testExecute` /
-  `metricViews.testExecute`) are standalone `OperationButton` projections mounted inside the test dialog when
-  `testOpen: true`. They read the live `definition` draft together with `testParameters` (selected via
-  `testSource: "explicit"` or `"binding:<index>"`) and render Markdown preview/source or formatted JSON with truncation
-  warnings without saving.
+  `metricViews.testExecute`) are `PanelData` operations bound through `usePanelOperation` and triggered from the test
+  dialog footer when `testOpen: true`. They share a single busy guard, read the live `definition` draft together with
+  `testParameters` (selected via `testSource: "explicit"` or `"binding:<index>"`), and display Markdown preview/source
+  or formatted JSON with truncation warnings via `<operation-result>` inside the result tabs without saving. JSON
+  execution tests require the current draft status to be `PUBLISHED` (in addition to the owner's own executability check).
 
 ## Common practice
 
@@ -39,9 +40,10 @@ conversation, tested here, and filled into the live form for a person to review 
    JSON output with truncation metadata). Neither saves anything. Treat a truncated result as partial, never as the
    complete numbers.
 3. **Save or discard.** Invoke `page_action({ operation: "definition.save" })` (confirmed in conversation by default),
-   or let the reader use the page header **Save** / **Discard** controls. Saving a newly created metric automatically
-   switches the URL to `/ontology/assets/metrics/detail?selected=<id>` and clears `mode`; discarding a creation draft
-   returns to `/ontology/assets/metrics`.
+   or let the reader use the page header **Save** / **Discard** controls. Saving edits to an existing metric returns to
+   `/ontology/assets/metrics`; saving a newly created metric automatically switches the URL to
+   `/ontology/assets/metrics/detail?selected=<id>` and clears `mode`; discarding a creation draft returns to
+   `/ontology/assets/metrics`.
 4. **Delete.** Confirm with the reader before invoking `remove.delete` (`metricViews.delete`); deletion reports the
    bindings removed with the metric and returns to `/ontology/assets/metrics` on success.
 

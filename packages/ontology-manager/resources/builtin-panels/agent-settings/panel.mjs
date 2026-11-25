@@ -86,8 +86,7 @@ await mountPanel({
       themeObserver = null;
     });
 
-    // Probe the owner's createForm admission rule directly so view-only readers (e.g. ontology-modeling
-    // without analysis-agent) see the real create availability and reason before opening the dialog.
+    // Probe the owner's createForm admission rule directly so view-only readers see the real create availability and reason before opening the dialog.
     const createFormStateRef = shallowRef(null);
     const hasMemberContext = typeof instance.memberContext === "function";
     if (hasMemberContext) {

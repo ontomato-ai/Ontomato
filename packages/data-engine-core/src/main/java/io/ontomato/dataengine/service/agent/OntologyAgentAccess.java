@@ -59,8 +59,6 @@ public class OntologyAgentAccess {
       identity.getCurrentCredentialExpiresAt(), null);
   }
 
-  public boolean governanceAllowed() { return identity.hasKnowledgeGovernanceAccess(); }
-
   public Context forAgent(HttpServletRequest request, String agent) {
     if (!OntologyAgentStore.isKnownAgent(agent)) throw AgentHttpException.missing();
     return current(request);
@@ -71,8 +69,22 @@ public class OntologyAgentAccess {
     return forAgent(request, store.session(session,owner).getString("agent_id"));
   }
 
+  public Context forAgentUse(HttpServletRequest request, String agent) {
+    return OntologyAgentStore.RETRIEVER.equals(agent)
+        ? current(request, queries.forRetrievalAdmission(request))
+        : forAgent(request, agent);
+  }
+
+  public Context forSessionUse(HttpServletRequest request, String session) {
+    var owner = authenticated(request).owner();
+    return forAgentUse(request, store.session(session, owner).getString("agent_id"));
+  }
+
   public Context current(HttpServletRequest request) {
-    var access = queries.access(request);
+    return current(request, queries.access(request));
+  }
+
+  private Context current(HttpServletRequest request, QueryAccessService.Access access) {
     if (access.grant() != null && !"retrieval-exploration".equals(access.grant().getString("purpose")))
       throw new AgentHttpException(403, "FORBIDDEN", "A current user credential is required");
     String caller = request.getHeader("X-Ontomato-Retrieval-Caller-Id");
@@ -85,7 +97,14 @@ public class OntologyAgentAccess {
 
   /** Retrieval operations consume an existing caller; ordinary authentication only captures its reference. */
   public Context executionContext(HttpServletRequest request) {
-    var context=current(request);
+    return scopedExecution(request, current(request));
+  }
+
+  public Context retrievalAdmission(HttpServletRequest request) {
+    return scopedExecution(request, current(request, queries.forRetrievalAdmission(request)));
+  }
+
+  private Context scopedExecution(HttpServletRequest request, Context context) {
     if(context.callerId()==null)return context;
     var row=executionCaller(context.access(),context.callerId());
     if(!row.getString("user_id").equals(context.access().user().getId()))service(request);

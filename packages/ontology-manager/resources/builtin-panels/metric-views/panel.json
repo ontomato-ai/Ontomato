@@ -31,7 +31,7 @@
         "component": "ObjectList",
         "type": "platform:MetricView",
         "data": {
-          "rows": "query"
+          "rows": "list"
         },
         "state": {
           "checked": "checked",
@@ -39,34 +39,41 @@
         },
         "config": {
           "showChevron": true,
+          "showFooter": false,
           "columns": [
             {
               "key": "label",
               "labelKey": "metricViews.columnName",
-              "subtitleKey": "subtitle"
+              "subtitleKey": "subtitle",
+              "subtitleEmptyKey": "metricViews.emptyDescription"
             },
             {
-              "key": "function"
+              "key": "function",
+              "emptyKey": "metricViews.emptyValue"
             },
             {
-              "key": "origin"
+              "key": "origin",
+              "emptyKey": "metricViews.emptyValue"
             },
             {
               "key": "status",
               "kind": "tag"
             },
             {
-              "key": "createdBy"
+              "key": "createdBy",
+              "emptyKey": "metricViews.emptyValue"
             },
             {
-              "key": "reviewedBy"
+              "key": "reviewedBy",
+              "emptyKey": "metricViews.emptyValue"
             },
             {
               "key": "modified",
-              "kind": "time"
+              "kind": "time",
+              "timeFormat": "datetime",
+              "emptyKey": "metricViews.emptyValue"
             }
           ],
-          "pageSize": 20,
           "emptyText": "metricViews.empty"
         },
         "name": "指标目录",
@@ -100,9 +107,11 @@
       "en": {
         "metricViews.title": "Metric Views",
         "metricViews.description": "Maintain business metric definitions, parameter bindings, and draft tests",
-        "metricViews.refresh": "Refresh",
         "metricViews.new": "New Metric View",
+        "metricViews.itemCount": "{count} items",
         "metricViews.empty": "No metric views found",
+        "metricViews.emptyDescription": "No description",
+        "metricViews.emptyValue": "-",
         "metricViews.columnName": "Metric View",
         "metricViews.batchStatus": "Set publication status",
         "metricViews.batchApply": "Update status",
@@ -113,9 +122,11 @@
       "zh-CN": {
         "metricViews.title": "指标视图",
         "metricViews.description": "维护业务指标定义、参数绑定与测试",
-        "metricViews.refresh": "刷新",
         "metricViews.new": "新建指标视图",
+        "metricViews.itemCount": "{count} 项",
         "metricViews.empty": "未找到指标视图",
+        "metricViews.emptyDescription": "未填写说明",
+        "metricViews.emptyValue": "-",
         "metricViews.columnName": "指标视图",
         "metricViews.batchStatus": "目标发布状态",
         "metricViews.batchApply": "批量修改状态",

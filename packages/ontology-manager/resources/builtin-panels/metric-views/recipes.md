@@ -7,9 +7,9 @@ description, batch-change publication status on checked rows, click a row to ope
 
 ## Page structure
 
-- `list` reads the owner's catalog (`query` read, searchable via deep-linked panel state `search`), showing name,
-  description, linked function, origin, status, creator, reviewer and last updated time. Pagination stays local and is
-  not written into the URL.
+- `list` reads the owner's unpaged catalog (`list` read, searchable via deep-linked panel state `search`), showing
+  the matching total beside the search box and all matching rows with name, description, linked function, origin,
+  status, creator, reviewer and last updated time.
 - Checking one or more rows reveals the batch publication bar with `batchStatus` (`PENDING_REVIEW`, `PUBLISHED`,
   `UNUSED`) and `publishStatus` (`publishStatus.setStatus` / `metricViews.setStatus`), updating checked rows in one
   batch and reporting per-metric outcomes.

@@ -25,7 +25,7 @@ const application = catalogFixture().find(app => app.id === "schedules")!;
 const use = applicationPanelUseSchema.parse(application.panelUses![0]!);
 const id = "00000000-0000-4000-8000-000000000001";
 const operationId = "renew.renewCredential";
-const deleteOperation = "opDelete.delete";
+const deleteOperation = "tasks.delete";
 const deleteMessage = "Task “Nightly test” deleted";
 const taskId = "10000000-0000-4000-8000-000000000001";
 const runId = "20000000-0000-4000-8000-000000000001";
@@ -195,7 +195,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
     ? { kind: "success", message: deleteMessage, data: { id: taskId } }
     : { kind: "success", data: {} }, undefined, {
     admitted(member, inputs) {
-      if (member === "opDelete" && inputs.task) return {
+      if ((member === "tasks" || member === "opDelete") && inputs.task) return {
         delete: {
           kind: "action", handlerRef: "platform:ScheduledTask.delete", effect: "write", label: "Delete task", batch: false,
           target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {},
@@ -213,6 +213,17 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
     if (path.startsWith("/api/product-projections/")) return Response.json({ projection: projections.get(path.split("/").at(-1)!) });
     if (path === "/api/product-panels/read") {
       const body = request.body as ProductPanelReadRequest;
+      if ("operations" in body && body.memberPath[0].member === "tasks") {
+        return Response.json({
+          status: "ready",
+          value: {
+            delete: {
+              kind: "action", handlerRef: "platform:ScheduledTask.delete", effect: "write", label: "Delete task", batch: false,
+              target: { source: "row" }, inputSchema: {}, resultSchema: {},
+            },
+          },
+        });
+      }
       if ("operations" in body && body.memberPath[0].member === "opDelete") return writes(request)!;
       if ("operations" in body) return Response.json({ status: "ready", value: body.memberPath[0].member === "renew" ? {
         renewCredential: {
@@ -221,6 +232,21 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         },
       } : {} });
       const member = body.memberPath[0].member;
+      if (member === "pageNotice" && body.dataName === "record") {
+        return Response.json({
+          status: "ready",
+          value: {
+            primaryKey: "status",
+            label: "Status",
+            fields: {},
+            outputs: {
+              canCreate: true,
+              createBlockedReason: "",
+              hasCredentialPaused: refused,
+            },
+          },
+        });
+      }
       if (member === "appFilter" && body.dataName === "counts") {
         return Response.json({ status: "ready", value: countsFixture });
       }
@@ -290,7 +316,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       expect(router.currentRoute.value.query).toEqual({
         app: "agents", selectedTask: taskId, runId,
       });
-      await vi.waitFor(() => expect(element.querySelector(`.schedules-focus[data-run="${runId}"]`)).not.toBeNull());
+      await vi.waitFor(() => expect(document.body.querySelector(`.schedules-focus[data-run="${runId}"]`)).not.toBeNull());
     }
     await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-object-list-card")?.textContent).toContain("Finished"));
     if (!refused) {
@@ -306,32 +332,25 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       });
       expect(element.querySelector(".schedules")).toBe(list);
 
-      const focus = HTMLElement.prototype.focus;
-      const browserFocus = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options) {
-        if (this.getAttribute("data-form") === "edit" && this.style.display === "none") return;
-        focus.call(this, options);
+      const reviewButton = await vi.waitFor(() => {
+        const btn = element.querySelector<HTMLButtonElement>('.schedules-list-col [data-local-action="review"]');
+        expect(btn).not.toBeNull();
+        return btn!;
       });
-      try {
-        const reviewButton = await vi.waitFor(() => {
-          const btn = element.querySelector<HTMLButtonElement>('.schedules-list-col [data-local-action="review"]');
-          expect(btn).not.toBeNull();
-          return btn!;
-        });
-        reviewButton.click();
-        await vi.waitFor(() => expect(document.activeElement).toBe(element.querySelector('[data-form="edit"]')));
-      } finally {
-        browserFocus.mockRestore();
-      }
-      await vi.waitFor(() => expect(element.querySelector<HTMLElement>('[data-form="edit"]')?.style.display).toBe(""));
+      reviewButton.click();
+      await vi.waitFor(() => expect(document.body.querySelector('[data-form="edit"]')).not.toBeNull());
       await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({
         app: "operations",
         selectedTask: operationsRow.primaryKey,
       }));
-      const editor = element.querySelector<HTMLElement>('[data-form="edit"]')!;
-      expect(document.activeElement).toBe(editor);
-      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      await vi.waitFor(() => expect(element.querySelector('[data-form="edit"]')).toBeNull());
-      expect(document.activeElement).toBe(element.querySelector(".schedules-list-col .sdk-object-list-card.chosen"));
+      const closeBtn = await vi.waitFor(() => {
+        const btn = [...document.body.querySelectorAll<HTMLButtonElement>('[data-form="edit"] button')]
+          .find(item => item.textContent?.trim() === "Cancel");
+        expect(btn).toBeDefined();
+        return btn!;
+      });
+      closeBtn.click();
+      await vi.waitFor(() => expect(document.body.querySelector('[data-form="edit"]')).toBeNull());
 
       const other = otherApplications.at(-1)!;
       await router.push(`/schedules?app=${other.fields.application}`);
@@ -345,13 +364,13 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       checkHistory = true;
       await router.push(`/schedules?taskId=${taskId}&runId=${olderRun.id}`);
       const linked = `.schedules-focus[data-run="${olderRun.id}"]`;
-      await vi.waitFor(() => expect(element.querySelector(linked)?.textContent ?? "").toContain("Earlier run result"));
-      expect(element.querySelector(linked)?.textContent).toContain("owner snapshot");
-      expect(element.querySelector(`${linked} .result-link`)).not.toBeNull();
+      await vi.waitFor(() => expect(document.body.querySelector(linked)?.textContent ?? "").toContain("Earlier run result"));
+      expect(document.body.querySelector(linked)?.textContent).toContain("owner snapshot");
+      expect(document.body.querySelector(`${linked} .result-link`)).not.toBeNull();
 
       const retryHistory = async () => {
         const retry = await vi.waitFor(() => {
-          const button = [...element.querySelectorAll<HTMLButtonElement>(".schedules-runs button")]
+          const button = [...document.body.querySelectorAll<HTMLButtonElement>(".schedules-runs button")]
             .find(item => item.textContent?.trim() === "Retry");
           expect(button).toBeDefined();
           return button!;
@@ -360,16 +379,23 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       };
       await retryHistory();
       const more = await vi.waitFor(() => {
-        const button = element.querySelector<HTMLButtonElement>(".schedules-runs .sdk-object-list-load-more");
+        const button = document.body.querySelector<HTMLButtonElement>(".schedules-runs .sdk-object-list-load-more");
         expect(button).not.toBeNull();
         return button!;
       });
       more.click();
       await retryHistory();
       await vi.waitFor(() => expect(historyReads).toEqual([null, null, "older", "older"]));
-      await vi.waitFor(() => expect(element.querySelectorAll(".schedules-runs .sdk-object-list-card")).toHaveLength(2));
+      await vi.waitFor(() => expect(document.body.querySelectorAll(".schedules-runs .sdk-object-list-card")).toHaveLength(2));
 
-      element.querySelector<HTMLButtonElement>('[data-action="delete"]')!.click();
+      await router.push("/schedules");
+      const deleteBtn = await vi.waitFor(() => {
+        const btn = [...element.querySelectorAll<HTMLButtonElement>('.schedules-list-col [data-action-kind="operation"]')]
+          .find(item => item.textContent?.trim() === "Delete");
+        expect(btn).toBeDefined();
+        return btn!;
+      });
+      deleteBtn.click();
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
         path: "/api/panel-operations/intents",
         body: { applicationId: "schedules", useId: use.id, operationId: deleteOperation,

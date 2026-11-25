@@ -3,55 +3,41 @@ import { recentUserMessages } from "../assistant/user-quotes";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import path from "node:path";
-import { assertAppBuilderAccess } from "../app-builder/access";
 import { isAppBuilderKind } from "../app-builder/definition";
-import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
+import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema } from "@ontomato/contracts/agent-channel";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { assistantService } from "../assistant/service";
 import { assistantName,assistantDescription } from "../assistant/labels";
 import { assistantStore } from "../assistant/store";
-import { diagnosisService, createDiagnosis, diagnosisGrantResourceId, prepareDiagnosis } from "../ops-diagnosis/service";
-import { requireProductGrant } from "../product-governance/grants";
+import { diagnosisService, createDiagnosis, requireDiagnosisAgent, prepareDiagnosis } from "../ops-diagnosis/service";
+import { allowedAgents } from "../assistant/authorization";
 import { restoreAgentCaller } from "./caller";
-import { workbenchIdentity } from "../../identity/installed";
 import { answerText } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { presentationCallback, releasePresentationRun, visibilityReader } from "./presentation";
 
-async function caller(body: { actor: AgentRunContext["actor"] }, domain: string, provider?: string, readOnly = false, credentials: AssistantCredentials = {}) {
-  const current = await restoreAgentCaller(body.actor, domain, readOnly, credentials);
-  if (provider === "observe" && !readOnly) await workbenchIdentity().assertObserveAccess({ domainId: domain, ...current.credentials });
-  return current;
-}
 export const agentChannelService = {
   async list(raw: unknown, domain: string, supplied: AssistantCredentials = {}) {
     const body = agentProviderListRequestSchema.parse(raw);
     if (!["workbench","observe"].includes(body.providerId)) throw new HttpError(404,"Agent provider not found","NOT_FOUND");
-    const { owner, credentials } = await caller(body, domain, undefined, false, supplied);
+    const { owner, credentials } = await restoreAgentCaller(body.actor, domain, false, supplied);
     if (body.providerId === "workbench") {
       const agents = [];
-      for (const agent of await assistantStore.channelAgents(domain)) {
-        if (!agent.enabled) continue;
-        try { await assistantService.admitAgent(agent.id, owner, credentials); }
-        catch (error) { if (error instanceof HttpError && error.status === 403) continue; throw error; }
+      const enabled = (await assistantStore.channelAgents(domain)).filter(agent => agent.enabled);
+      for (const agent of await allowedAgents(enabled, "USE", credentials)) {
         agents.push({ ref: { providerId: "workbench", agentId: agent.id }, name: assistantName(agent,body.language), description: assistantDescription(agent,body.language),
           ...(isAppBuilderKind(agent.kind) ? { contextSchema: { type: "object", properties: { workspaceId: { type: "string", format: "uuid" } }, required: ["workspaceId"], additionalProperties: false } } : {}) });
       }
       return { agents };
     }
-    try {
-      await workbenchIdentity().assertObserveAccess({ domainId: domain, ...credentials });
-      const { agents: diagnosisAgents } = await diagnosisService.agents(owner, { ...credentials, locale: body.language });
-      return { agents: diagnosisAgents.map(({ id, name, description }) => ({
-        ref: { providerId: "observe", agentId: id }, name, description,
-      })) };
-    } catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
-    return { agents: [] };
+    const { agents } = await diagnosisService.agents(owner, { ...credentials, locale: body.language });
+    return { agents: agents.map(({ id, name, description }) => ({
+      ref: { providerId: "observe", agentId: id }, name, description,
+    })) };
   },
   async prepare(raw: unknown, domain: string, supplied: AssistantCredentials = {}) {
-    const body = agentPrepareRequestSchema.parse(raw), restored = await caller(body, domain, body.agent.providerId, false, supplied);
+    const body = agentPrepareRequestSchema.parse(raw), restored = await restoreAgentCaller(body.actor, domain, false, supplied);
     const owner = restored.owner, credentials = { ...restored.credentials,locale: body.language };
     const provider = body.agent.providerId;
     if (provider !== "workbench" && provider !== "observe") throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
@@ -60,15 +46,10 @@ export const agentChannelService = {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
       if (provider === "observe") {
-        await requireProductGrant(await diagnosisGrantResourceId(domain), "use", credentials);
+        await requireDiagnosisAgent(owner, credentials);
       } else {
         const session = await assistantStore.session(body.sessionId, owner);
-        if (body.authority.executionKind === "build-test") await assertAppBuilderAccess(credentials);
-        const agent = assistantStore.findAgent ? await assistantStore.findAgent(session.agent_id, domain) : undefined;
-        if (agent && isOpsDiagnosisKind(agent.kind)) {
-          await workbenchIdentity().assertObserveAccess({ domainId: domain, token: credentials.token, apiKey: credentials.apiKey });
-        }
-        await requireProductGrant(session.agent_id, "use", credentials);
+        await assistantService.admitAgent(session.agent_id, owner, credentials, body.authority);
       }
       if (body.agent.providerId === "workbench" &&
         (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {
@@ -96,7 +77,7 @@ export const agentChannelService = {
     return callback ? { ...prepared, presentationCallback: callback } : prepared;
   },
   async execution(raw: unknown, domain: string) {
-    const body = agentProviderExecutionSchema.parse(raw), { owner, credentials } = await caller(body, domain, body.execution.session.providerId, true);
+    const body = agentProviderExecutionSchema.parse(raw), { owner, credentials } = await restoreAgentCaller(body.actor, domain, true);
     const service = body.execution.session.providerId === "observe" ? diagnosisService : body.execution.session.providerId === "workbench" ? assistantService : null;
     if (!service) throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
     await service.ownRun(body.execution.session.sessionId, body.execution.runId, owner);

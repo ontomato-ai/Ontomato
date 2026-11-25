@@ -28,7 +28,7 @@ vi.mock("../../../identity/management", () => ({
   assertManagement,
 }));
 
-import { createFeedbackReadAdapter } from "../feedback-panel-reads";
+import { createFeedbackReadAdapter, feedbackExportOperation } from "../feedback-panel-reads";
 
 const owner = { domainId: "domain-1", userId: "reader-1" };
 const viewer = { token: "viewer-token", locale: "en" };
@@ -127,19 +127,29 @@ it("queries feedback with search, treats 'all' as unfiltered, pages by cursor/si
           rating: "Rating",
           userId: "User",
           userInput: "Question",
+          userInputPreview: "Question",
           assistantOutput: "Answer",
+          assistantOutputPreview: "Answer",
           feedbackText: "Comment",
+          feedbackTextPreview: "Comment",
           turnKey: "Turn key",
           relatedId: "Related",
           updatedAt: "Last updated",
         },
         fields: {
           sourceType: "Query",
-          rating: "Like",
+          rating: {
+            kind: "tag",
+            label: "Like",
+            tone: "success",
+          },
           userId: "user-1",
           userInput: "Total sales?",
+          userInputPreview: "Total sales?",
           assistantOutput: "Total sales are 100.",
+          assistantOutputPreview: "Total sales are 100.",
           feedbackText: "Helpful answer",
+          feedbackTextPreview: "Helpful answer",
           turnKey: `turn.${session1}.4`,
           relatedId: run1,
           updatedAt: "2026-11-20T08:00:00.000Z",
@@ -219,4 +229,58 @@ it("reads one feedback record by UUID and enforces the feedback read operation",
 
   assertManagement.mockRejectedValueOnce(new HttpError(403, "Forbidden", "PERMISSION_DENIED"));
   await expect(reads.query({})).rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
+});
+
+it("supports page/size offset paging, 80-char collapsed previews, and danger tone on dislike", async () => {
+  const longText = `Line one\n   line two   ${"x".repeat(90)}`;
+  runMessages.mockReturnValueOnce([
+    { id: "msg-user", message: { role: "user", content: longText } },
+    { id: target1, message: { role: "assistant", content: `Ans\t\n${"y".repeat(85)}` } },
+  ]);
+  query.mockResolvedValueOnce({
+    rows: [feedbackDbRow({ rating: "dislike", text: `Comment\n\n${"z".repeat(85)}`, total: 45 })],
+  });
+
+  const reads = createFeedbackReadAdapter(owner, viewer);
+  const paged = panelReadResultSchemas.panelRecordQuery.parse(await reads.query({
+    page: { number: 2, size: 20 },
+  }));
+
+  const [, params] = query.mock.calls[0] as [string, unknown[]];
+  expect(params.slice(-2)).toEqual([20, 20]);
+  expect(paged.total).toBe(45);
+  expect(paged.rows[0]!.fields.rating).toEqual({
+    kind: "tag",
+    label: "Dislike",
+    tone: "danger",
+  });
+  expect(String(paged.rows[0]!.fields.userInputPreview)).toHaveLength(81);
+  expect(String(paged.rows[0]!.fields.userInputPreview)).toMatch(/^Line one line two x+…$/);
+  expect(String(paged.rows[0]!.fields.userInput)).toBe(longText);
+  expect(String(paged.rows[0]!.fields.assistantOutputPreview)).toHaveLength(81);
+  expect(String(paged.rows[0]!.fields.feedbackTextPreview)).toHaveLength(81);
+});
+
+it("returns a readable empty receipt when export matches zero records and a CSV file otherwise", async () => {
+  const host = { executor: { owner, credentials: viewer } } as Parameters<typeof feedbackExportOperation.execute>[0];
+
+  query.mockResolvedValueOnce({ rows: [] });
+  const emptyResult = await feedbackExportOperation.execute(host, {
+    input: { sourceType: "qa", rating: "dislike", search: "none", timeZone: "Asia/Shanghai" },
+  });
+  expect(emptyResult).toEqual({
+    kind: "json",
+    value: { exported: 0, empty: true },
+    message: "No feedback records match the current filters",
+  });
+
+  query.mockResolvedValueOnce({ rows: [feedbackDbRow({ total: 1 })] });
+  const fileResult = await feedbackExportOperation.execute(host, {
+    input: { sourceType: "all", rating: "all", timeZone: "Asia/Shanghai" },
+  });
+  expect(fileResult.kind).toBe("file");
+  if (fileResult.kind === "file") {
+    expect(fileResult.mime).toBe("text/csv");
+    expect(fileResult.suggestedName).toMatch(/^feedback_records_\d{4}-\d{2}-\d{2}\.csv$/);
+  }
 });

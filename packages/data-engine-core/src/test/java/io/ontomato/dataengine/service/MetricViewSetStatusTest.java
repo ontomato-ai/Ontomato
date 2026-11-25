@@ -169,6 +169,28 @@ class MetricViewSetStatusTest {
   }
 
   @Test
+  void testExecuteRefusesAStoredPublishedMetricWhenDraftStatusBecomesUnused() {
+    MetricView stored = metric("published-metric", MetricView.ORIGIN_USER);
+    stored.setStatus(MetricView.STATUS_PUBLISHED);
+    stored.setCreatedBy("author");
+    put(stored);
+
+    MetricView draft = metric("published-metric", MetricView.ORIGIN_USER);
+    draft.setStatus(MetricView.STATUS_UNUSED);
+    draft.setCreatedBy("author");
+
+    User author = mock(User.class);
+    when(author.getId()).thenReturn("author");
+    when(author.getDomainId()).thenReturn("domain-a");
+
+    OwnerRefusal refusal = assertThrows(OwnerRefusal.class, () -> service.testExecute(
+        draft, null, new JSONObject(), "en", author, new UserDataPermission(), 1));
+
+    assertEquals("METRIC_VIEW_NOT_EXECUTABLE", refusal.code());
+    assertEquals("Executable read metric not found", refusal.getMessage());
+  }
+
+  @Test
   void testExecuteReportsAMissingMetricAsNotFound() {
     MetricView absent = metric("missing", MetricView.ORIGIN_USER);
     User reader = mock(User.class);

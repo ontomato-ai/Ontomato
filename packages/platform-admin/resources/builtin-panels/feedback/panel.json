@@ -33,58 +33,6 @@
       }
     },
     "members": {
-      "source": {
-        "component": "SegmentedControl",
-        "type": "platform:FeedbackRecord",
-        "data": {
-          "counts": {
-            "read": "counts",
-            "params": {
-              "by": {
-                "literal": "sourceType"
-              }
-            }
-          }
-        },
-        "state": {
-          "value": "sourceType",
-          "search": "search",
-          "rating": "rating"
-        },
-        "config": {
-          "ariaLabelKey": "panel.filterSource",
-          "defaultValue": "all"
-        },
-        "name": "Feedback source filter",
-        "description": "Filter feedback records by source type",
-        "id": "builtin-product-39e50e61-fbee-4176-b517-cd8eda49262e"
-      },
-      "rating": {
-        "component": "SegmentedControl",
-        "type": "platform:FeedbackRecord",
-        "data": {
-          "counts": {
-            "read": "counts",
-            "params": {
-              "by": {
-                "literal": "rating"
-              }
-            }
-          }
-        },
-        "state": {
-          "value": "rating",
-          "search": "search",
-          "sourceType": "sourceType"
-        },
-        "config": {
-          "ariaLabelKey": "panel.filterRating",
-          "defaultValue": "all"
-        },
-        "name": "Feedback rating filter",
-        "description": "Filter feedback records by rating",
-        "id": "builtin-product-59c4c4c3-fb91-4f95-b7ff-f3cdd145c1ef"
-      },
       "list": {
         "component": "ObjectList",
         "type": "platform:FeedbackRecord",
@@ -92,35 +40,67 @@
           "rows": "query"
         },
         "state": {
-          "selected": "selected",
           "search": "search",
           "sourceType": "sourceType",
           "rating": "rating"
         },
         "config": {
+          "searchable": false,
           "pageSize": 20,
+          "pagination": "pages",
           "columns": [
             {
               "key": "updatedAt",
-              "kind": "time"
+              "kind": "time",
+              "timeFormat": "datetime",
+              "width": 180
             },
             {
-              "key": "sourceType"
+              "key": "sourceType",
+              "width": 120
             },
             {
               "key": "rating",
-              "kind": "tag"
+              "kind": "tag",
+              "width": 100
             },
             {
-              "key": "userId"
+              "key": "userId",
+              "width": 150
             },
             {
-              "key": "userInput"
+              "key": "turnKey",
+              "minWidth": 180
+            },
+            {
+              "key": "userInputPreview",
+              "minWidth": 220
+            },
+            {
+              "key": "assistantOutputPreview",
+              "minWidth": 240
+            },
+            {
+              "key": "feedbackTextPreview",
+              "minWidth": 220
             }
-          ]
+          ],
+          "rowActions": {
+            "labelKey": "panel.detail",
+            "width": 90,
+            "fixed": "right",
+            "items": [
+              {
+                "kind": "local",
+                "id": "detail",
+                "labelKey": "panel.detail",
+                "tone": "primary"
+              }
+            ]
+          }
         },
         "name": "Feedback records",
-        "description": "Server-paged list of user feedback records with keyword search",
+        "description": "Server-paged list of user feedback records with explicit filter submission",
         "id": "builtin-product-7e7cfb2c-21fd-4811-a538-086ab691c190"
       },
       "detail": {
@@ -128,6 +108,21 @@
         "target": "selected",
         "data": {
           "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "density": "compact",
+          "bordered": true,
+          "fields": [
+            "userId",
+            "sourceType",
+            "rating",
+            "turnKey",
+            "userInput",
+            "assistantOutput",
+            "feedbackText",
+            "relatedId"
+          ]
         },
         "name": "Feedback detail",
         "description": "Full content of the selected feedback record",
@@ -149,21 +144,39 @@
         "panel.name": "用户反馈",
         "panel.filterSource": "来源",
         "panel.filterRating": "评价",
+        "panel.source.qa": "问答",
+        "panel.source.analysis_task": "分析任务",
+        "panel.rating.like": "点赞",
+        "panel.rating.dislike": "点踩",
+        "panel.searchPlaceholder": "搜索用户、提问、回答或反馈内容",
+        "panel.query": "查询",
+        "panel.refresh": "刷新",
         "panel.export": "导出 CSV",
         "panel.exporting": "正在导出…",
         "panel.exportDone": "反馈记录已导出",
+        "panel.exportEmpty": "当前筛选条件下没有可导出的反馈记录",
         "panel.exportFailed": "导出失败",
-        "panel.selectHint": "在列表中选择一条反馈查看完整内容"
+        "panel.detail": "详情",
+        "panel.detailTitle": "反馈详情"
       },
       "en": {
         "panel.name": "User feedback",
         "panel.filterSource": "Source",
         "panel.filterRating": "Rating",
+        "panel.source.qa": "Query",
+        "panel.source.analysis_task": "Analysis task",
+        "panel.rating.like": "Like",
+        "panel.rating.dislike": "Dislike",
+        "panel.searchPlaceholder": "Search user, question, answer, or comment",
+        "panel.query": "Query",
+        "panel.refresh": "Refresh",
         "panel.export": "Export CSV",
         "panel.exporting": "Exporting…",
         "panel.exportDone": "Feedback records exported",
+        "panel.exportEmpty": "No feedback records match the current filters",
         "panel.exportFailed": "Export failed",
-        "panel.selectHint": "Select a feedback record in the list to read it"
+        "panel.detail": "Detail",
+        "panel.detailTitle": "Feedback detail"
       }
     }
   }

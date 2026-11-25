@@ -1,12 +1,11 @@
 import { appWorkspaceSlot, appBuilderProjectStore } from "../app-builder/project-store";
 import { authorizeBuilderProject, ensureMaterializedWorkspace } from "../app-builder/project-service";
-import { requireProductGrant } from "../product-governance/grants";
+import { requireAgent } from "./authorization";
 import { closeGovernanceWindow } from "./governance";
 import { closeAuthoringRun } from "./authoring";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
 import { agentHostSendResultSchema, type AgentHostCreateSession, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
-import { assertAppBuilderAccess } from "../app-builder/access";
 import { ChannelProcessClient } from "../agent-host/process";
 import { agentExecutionCredentials, executionActor } from "./execution";
 import { openAgentCaller } from "../agent-host/caller";
@@ -18,7 +17,6 @@ import { visibilityReader } from "../agent-host/presentation";
 import {isAppBuilderKind} from '../app-builder/definition';
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import { prepareOpsDiagnosisRun } from "../ops-diagnosis/prepare";
-import { workbenchIdentity } from "../../identity/installed";
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -82,10 +80,6 @@ function requiredBuilderAppId(context: AgentHostCreateSession["context"]) {
 }
 export const assistantService = {
   presentationHost: "workbench" as const,
-  async isAppBuilder(owner: AssistantOwner, input: { agentId: string } | { sessionId: string }) {
-    const agentId = "agentId" in input ? input.agentId : (await assistantStore.session(input.sessionId, owner)).agent_id;
-    return isAppBuilderKind((await assistantStore.agent(agentId, owner)).kind);
-  },
   agents: listAssistantAgents,
   /** Scheduled tasks start their conversations here too, marked with their origin. */
   async create(id: string, owner: AssistantOwner, input: AgentHostCreateSession, credentials: AssistantCredentials, origin: SessionRow["origin"] = "user") {
@@ -341,15 +335,7 @@ export const assistantService = {
       a.class_names = a.class_names.length ? a.class_names.filter(name => authority.classNames.includes(name)) : authority.classNames;
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
-    if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
-    if (isOpsDiagnosisKind(a.kind)) {
-      await workbenchIdentity().assertObserveAccess({
-        domainId: owner.domainId,
-        token: credentials.token,
-        apiKey: credentials.apiKey,
-      });
-    }
-    await requireProductGrant(a.id, "use", credentials);
+    await requireAgent(a, "USE", credentials);
     return { agent: a };
   },
   async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials, entry: "human" | "background" | "external") {
