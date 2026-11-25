@@ -182,6 +182,7 @@ class ActionExplanationReuseTest {
       finish.countDown();
     }
     assertEquals(!changedAgain, completed.get(5, TimeUnit.SECONDS));
+    verify(generation).captureContext(owner, "en");
     if (changedAgain) verify(actions, never()).updateExplanation(any());
     else verify(actions).updateExplanation(argThat(item -> CodeHashUtil.sha256(
         item.getFunction().getCode()).equals(item.getCodeHash())));

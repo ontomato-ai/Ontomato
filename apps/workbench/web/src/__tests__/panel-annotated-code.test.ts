@@ -258,6 +258,16 @@ describe("AnnotatedCode", () => {
     });
     await vi.waitFor(() => expect(empty.element.querySelector("[data-state='empty']")?.textContent).toContain("No explanation has been generated yet."));
 
+    // Code present without explanation segments renders both the code lines and emptyText in the explanation pane.
+    const codeWithoutSegments = mountAnnotatedCode({
+      config: { emptyText: "customEmpty" },
+      messages: { en: { customEmpty: "Explanation not generated" } },
+      answer: () => ({ status: "ready", value: { code: "x = 1\ny = 2", segments: [] } as never }),
+    });
+    await vi.waitFor(() => expect(codeWithoutSegments.element.querySelectorAll(".sdk-annotated-code-line")).toHaveLength(2));
+    expect(codeWithoutSegments.element.querySelector(".sdk-annotated-code-body")?.classList.contains("is-single-pane")).toBe(false);
+    expect(codeWithoutSegments.element.querySelector(".sdk-annotated-code-seg-empty")?.textContent?.trim()).toBe("Explanation not generated");
+
     // Awaiting state when the required target object is not selected yet.
     const awaiting = mountAnnotatedCode({
       state: { targetObj: { type: { kind: "object", objectType: "Script" } } },

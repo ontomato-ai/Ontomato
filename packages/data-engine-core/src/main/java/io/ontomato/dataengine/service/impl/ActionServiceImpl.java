@@ -42,6 +42,7 @@ import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.ParameterForms;
 import io.ontomato.dataengine.service.SandboxService;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
+import io.ontomato.dataengine.service.agent.OntologyAgentAccess;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner;
@@ -368,11 +369,19 @@ public class ActionServiceImpl implements ActionService {
     String code = function.getCode();
     String codeHash = CodeHashUtil.sha256(code);
     List<Parameter> parameters = function.getParameters();
+    OntologyAgentAccess.Context capturedContext = generationService.captureContext(owner, lang);
+    String sourceRun = capturedContext != null
+        && (capturedContext.token() != null || capturedContext.apiKey() != null)
+        ? null : OntologyGenerationService.sourceRun();
     Thread.startVirtualThread(() -> {
       try {
-        OntologyGenerationService.asOwner(new SimpleUser(owner.userId(), null, null, true, domain),
-            () -> explainCode(parameters, code, domain, lang, UUID.randomUUID().toString(),
-                (explanation, segments, meaning) -> writeExplanation(id, domain, codeHash, segments, meaning)));
+        OntologyGenerationService.Work<Object> explain = () -> explainCode(parameters, code, domain, lang,
+            UUID.randomUUID().toString(),
+            (explanation, segments, meaning) -> writeExplanation(id, domain, codeHash, segments, meaning));
+        OntologyGenerationService.Work<Object> run = sourceRun == null
+            ? explain : () -> OntologyGenerationService.asSourceRun(sourceRun, explain);
+        if (capturedContext != null) OntologyGenerationService.asContext(capturedContext, run);
+        else OntologyGenerationService.asOwner(new SimpleUser(owner.userId(), null, null, true, domain), run);
       } catch (Exception error) {
         log.warn("Could not explain action {}", id, error);
       }

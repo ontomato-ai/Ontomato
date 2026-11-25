@@ -600,6 +600,7 @@ describe("action catalog reads", () => {
         title: statusField.label, oneOf: [{ const: "PUBLISHED", title: statusField.control.options[0].label }],
       } } },
     });
+    expect((status.inputSchema.properties as { status: Record<string, unknown> }).status.description).toBeUndefined();
     expect(sent).toEqual([{ path: "/action/definitionForm", body: { target: { kind: "draft" }, changedField: null } }]);
     expect(status.inspectImpact?.handlerRef).toBe(`${status.handlerRef}.inspect-impact`);
     expect(remove).toMatchObject({
