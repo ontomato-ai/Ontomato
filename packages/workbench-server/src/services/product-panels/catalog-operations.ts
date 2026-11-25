@@ -440,7 +440,7 @@ const applicationSave: PanelWriteServerOperation = {
         const existingIndex = entriesValues.panelUses.findIndex(item => item.id === currentEntryId);
         const existingEntry = existingIndex >= 0 ? entriesValues.panelUses[existingIndex] : undefined;
         const baseEntry = (existingEntry
-          ?? { id: "", pageKey: "", panelId: "", path: `/applications/${id}/`, access: { kind: "domain-member" } }) as Parameters<typeof applySubmittedFields>[0];
+          ?? { id: "", pageKey: "", panelId: "", path: `/applications/${id}/` }) as Parameters<typeof applySubmittedFields>[0];
         const body = submittedFields === undefined
           ? (existingEntry?.icon !== undefined && !("icon" in values) ? { ...values, icon: existingEntry.icon } : values)
           : applySubmittedFields(baseEntry, values, submittedFields);

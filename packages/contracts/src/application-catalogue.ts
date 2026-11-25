@@ -30,6 +30,7 @@ const applicationCatalogueEntrySchema = z.object({
   path: panelUseEntry.path,
   renderer: panelUseEntry.renderer.optional(),
   home: panelUseEntry.home,
+  entryKey: panelUseEntry.entryKey,
 }).strict();
 
 export const applicationCatalogueEntriesSchema = applicationPanelUsesResponseSchema.extend({

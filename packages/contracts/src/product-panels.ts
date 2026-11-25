@@ -799,7 +799,7 @@ export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplica
 /** Current Java-owned entry and use relations; Java owns their access checks. */
 export const applicationPanelUsesResponseSchema = z.object({
   applicationId: id,
-  entry: z.object({ path, renderer: id, home: path.optional() }).strict(),
+  entry: z.object({ path, renderer: id, home: path.optional(), entryKey: id.optional() }).strict(),
   panelUses: z.array(applicationMenuEntrySchema),
 }).strict();
 export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesResponseSchema>;

@@ -481,7 +481,7 @@ beforeAll(async () => {
       data: examples.applications.response.applications.map(({ id }) => ({
         id, kind: "native", names: { en: id, "zh-CN": id === task.appId ? "应用名称" : id },
         descriptions: {}, icon: "apps", rail: "apps", category: "business", sort: 0,
-        entry: { path: `/${id}` }, entryAccess: ["domain-member"], scheduleAdapter: `java:${id}`, releaseId: null,
+        entry: { path: `/${id}`, entryKey: id }, scheduleAdapter: `java:${id}`, releaseId: null,
       })),
     });
   });

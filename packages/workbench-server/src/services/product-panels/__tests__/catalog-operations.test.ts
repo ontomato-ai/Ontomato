@@ -363,3 +363,19 @@ it("preserves existing entry icons when saving entries from a form that does not
     panelUses: [expect.objectContaining({ id: "entry-roles", icon: "user-cog", names: { en: "Roles bulk" } })],
   }));
 });
+
+it("saves a new entry from submitted fields using the registration DTO", async () => {
+  const save = productCatalogServerOperations.find(op => op.handlerRef === `${APPLICATION}.save`)!;
+  if (save.kind !== "form.save") throw new Error("Expected a form save");
+  const entry = { path: "/applications/app-1", renderer: "panels" };
+  const use = { id: "roles", pageKey: "roles-view", panelId: "panel-roles", path: `${entry.path}/roles` };
+  applicationForm.mockResolvedValue({ values: { entry, panelUses: [] }, fields: [] });
+  applicationSaveEntries.mockResolvedValue(undefined);
+
+  await save.execute(impactHost, { kind: "object", objectType: APPLICATION, primaryKey: "app-1" }, {
+    values: use,
+    submittedFields: ["/id", "/pageKey", "/panelId", "/path"],
+  }, "intent-new-entry");
+
+  expect(applicationSaveEntries).toHaveBeenCalledWith("app-1", { entry, panelUses: [use] });
+});

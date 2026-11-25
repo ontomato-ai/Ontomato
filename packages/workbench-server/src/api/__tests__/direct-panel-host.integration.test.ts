@@ -170,8 +170,8 @@ beforeAll(async () => {
     expect(req.query.purpose).toBe("navigation");
     res.json({ success: true, data: req.header("tk") !== "host-reader" ? [] : [{
       id: "app-builder", kind: "native", names: { en: "App Builder" }, descriptions: {}, icon: "Hammer",
-      rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder" },
-      entryAccess: ["app-builder"], scheduleAdapter: null, releaseId: null,
+      rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder", renderer: "app-builder", entryKey: "app-builder" },
+      scheduleAdapter: null, releaseId: null,
     }] });
   });
   app.get("/ontology/model/object-types", (req, res) => {

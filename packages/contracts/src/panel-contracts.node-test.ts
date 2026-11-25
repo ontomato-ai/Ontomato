@@ -1200,7 +1200,7 @@ test("current entry is supplied from the resolved use and its slot cannot overri
   assert.equal(applicationEntryResolutionQuerySchema.safeParse({ path, applicationId, useId }).success, false);
   const use = {
     id: useId, pageKey: "school.orders", panelId: "orders-panel", path,
-    access: { kind: "domain-member" as const }, inputs: { term: { literal: "A" } },
+    inputs: { term: { literal: "A" } },
   };
   const menu = { singleEntry: true, groups: [], panelUses: [use] };
   const frameContext = applicationFrameContextOf({ applicationId, use, menu });
@@ -1221,7 +1221,7 @@ test("entry resolution and personal-state scope use the actual use and nested pa
   const { panelDefinitionSnapshotSchema } = await import("./product-subscriptions");
   const use = {
     id: "tasks", pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "schedule-list",
-    access: { kind: "domain-member" }, names: { en: "Tasks" }, groupKey: "plan",
+    names: { en: "Tasks" }, groupKey: "plan",
     inputs: { term: { frameState: "term" }, role: { literal: null } },
   };
   const response = {
