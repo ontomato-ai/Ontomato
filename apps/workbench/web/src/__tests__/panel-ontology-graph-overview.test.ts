@@ -970,3 +970,49 @@ it("exposes overview diagnostics outputs, clickable group headings, NOT_GENERATE
   expect(instance.state.values.value.selectedGroup).toBe("Factory");
   expect(factoryHeading!.classList.contains("is-selected")).toBe(true);
 });
+
+it("displays an overview notice listing omitted relationships and their reasons from deferred connections", async () => {
+  const { element } = mountDirect(
+    overviewManifest(),
+    { "sampled-graph": overviewProjection() },
+    (request) => {
+      if (request.dataName === "overview") return ready(readyOverviewPayload(false));
+      if (request.dataName === "connections") {
+        return ready({
+          version: "v-1",
+          truncated: false,
+          edges: [
+            {
+              id: "e-conn-1",
+              relationKind: "produces",
+              label: "Produces",
+              from: { className: "Factory", primaryKey: "f-1" },
+              to: { className: "Order", primaryKey: "o-1" },
+              direction: "outgoing" as const,
+              derived: false,
+            },
+          ],
+          relations: [
+            { relationKind: "produces", label: "Produces", status: "ok", edgeCount: 1 },
+            {
+              relationKind: "rel_r014",
+              label: "Related task",
+              status: "unavailable",
+              edgeCount: 0,
+              reason: "This relationship does not declare join fields; add them to read it.",
+            },
+          ],
+        });
+      }
+      return ready({ node: factory1, neighbors: [], edges: [], relations: [] });
+    },
+  );
+
+  await vi.waitFor(() => {
+    const notice = element.querySelector("[data-graph-state='overview-relations-omitted']");
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent).toContain("1");
+    expect(notice?.textContent).toContain("Related task");
+    expect(notice?.textContent).toContain("This relationship does not declare join fields; add them to read it.");
+  });
+});

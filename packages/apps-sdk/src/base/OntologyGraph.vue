@@ -535,6 +535,7 @@ const overviewData = shallowRef<PanelGraphOverview | null>(null);
 const overviewNodes = shallowRef<Map<string, PlatformGraphNode>>(new Map());
 const overviewEdges = shallowRef<readonly PlatformGraphEdge[]>([]);
 const overviewEdgesTruncated = ref(false);
+const overviewRelations = shallowRef<readonly PlatformGraphRelationStatus[]>([]);
 const overviewBasePositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 const localSelectedOverviewId = ref<string | null>(null);
 
@@ -1486,6 +1487,12 @@ const relationSummary = computed(() =>
   activeRelationStatuses.value ? summarizeGraphRelations(activeRelationStatuses.value) : null,
 );
 
+const overviewOmittedRelations = computed<readonly PlatformGraphRelationStatus[]>(() =>
+  activeMode.value === "overview"
+    ? overviewRelations.value.filter((entry) => entry.status !== "ok")
+    : [],
+);
+
 const focusedNodeLabel = computed(() => {
   const targetId = focusedNodeId.value ?? (props.selected ? encodeGraphNodeId(props.selected) : null) ?? rootNodeId.value;
   if (!targetId) return "";
@@ -1592,6 +1599,7 @@ async function loadOverviewMode(generation: number) {
   errorMessage.value = null;
   versionChanged.value = false;
   overviewEdgesTruncated.value = false;
+  overviewRelations.value = [];
   try {
     const result = await graphSource.overview();
     if (generation !== loadGeneration) return;
@@ -1600,6 +1608,7 @@ async function loadOverviewMode(generation: number) {
     if (result.status !== "READY") {
       overviewNodes.value = new Map();
       overviewEdges.value = [];
+      overviewRelations.value = [];
       overviewBasePositions.value = new Map();
       loading.value = false;
       if (result.status === "GENERATING") {
@@ -1626,6 +1635,7 @@ async function loadOverviewMode(generation: number) {
     if (result.edges !== undefined) {
       overviewEdges.value = result.edges;
       overviewEdgesTruncated.value = Boolean(result.edgesTruncated);
+      overviewRelations.value = result.relations ?? [];
       loading.value = false;
       await nextTick();
       fitGraph();
@@ -1633,6 +1643,7 @@ async function loadOverviewMode(generation: number) {
     }
 
     overviewEdges.value = [];
+    overviewRelations.value = result.relations ?? [];
     loading.value = false;
     await nextTick();
     fitGraph();
@@ -1647,6 +1658,9 @@ async function loadOverviewMode(generation: number) {
         if (generation !== loadGeneration) return;
         overviewEdges.value = connections.edges;
         overviewEdgesTruncated.value = Boolean(connections.truncated);
+        if (connections.relations !== undefined) {
+          overviewRelations.value = connections.relations;
+        }
       } catch (reason: unknown) {
         if (generation !== loadGeneration) return;
         recordFailure(reason);
@@ -2283,6 +2297,14 @@ onBeforeUnmount(() => {
       data-graph-state="edges-truncated"
     >
       {{ t("platform.graphEdgesTruncated") }}
+    </div>
+    <div
+      v-if="activeMode === 'overview' && overviewData?.status === 'READY' && overviewOmittedRelations.length > 0 && !loading && !loadingConnections"
+      class="sdk-ontology-graph-notice is-muted"
+      role="status"
+      data-graph-state="overview-relations-omitted"
+    >
+      {{ t("platform.graphOverviewRelationsOmitted", { count: overviewOmittedRelations.length, relations: formatRelationNames(overviewOmittedRelations) }) }}
     </div>
 
     <template v-if="relationSummary && !loading">
