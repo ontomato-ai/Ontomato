@@ -372,7 +372,7 @@ class QueryRuntimeBoundaryTest {
             + " text,description text,status text,match_questions text,class_names text,domain_id"
             + " text,create_timestamp bigint,modify_timestamp bigint,origin_check_result"
             + " text,origin_question text,created_by varchar(64),reviewed_by varchar(64),"
-            + "adopted boolean NOT NULL DEFAULT false)");
+            + "adopted boolean NOT NULL DEFAULT false,previously_published boolean NOT NULL DEFAULT false)");
     var dao = new io.ontomato.dataengine.dao.MetricViewDao();
     org.springframework.test.util.ReflectionTestUtils.setField(dao, "jdbcTemplate", jdbc);
     org.springframework.test.util.ReflectionTestUtils.setField(
@@ -386,8 +386,8 @@ class QueryRuntimeBoundaryTest {
           i == 3 ? "domain-b" : "domain-a",
           i == 2 ? "OPERATION_WRITE" : "OPERATION_READ");
       jdbc.update(
-          "INSERT INTO metric_view(id,name,type,function_id,status,class_names,domain_id)"
-              + " VALUES(?,?,?,?,?,?,?)",
+          "INSERT INTO metric_view(id,name,type,function_id,status,class_names,domain_id,previously_published)"
+              + " VALUES(?,?,?,?,?,?,?,TRUE)",
           "m" + i,
           "Sales_" + i,
           "GENERAL",
