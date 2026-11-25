@@ -136,7 +136,7 @@ public class ActionDraftService {
     String sourcePath = result.getString("sourcePath");
     if (sourcePath == null || !sourcePath.startsWith("outputs/") || !sourcePath.endsWith(".py"))
       throw new AgentHttpException(422, "INVALID_RESULT",
-          "result.json sourcePath must name a tested program under outputs/");
+          "result.json sourcePath must name a program under outputs/");
     String code = file(owner.domainId(), sessionId, runId, sourcePath);
     String codeHash = CodeHashUtil.sha256(code);
     String draftHash = CodeHashUtil.sha256(code + "\n" + AgentJson.canonical(result));
@@ -184,12 +184,9 @@ public class ActionDraftService {
     action.setName(name);
     action.setOrigin(Action.ORIGIN_USER);
     action.setFunction(function);
-    action.setStatus(Action.STATUS_PUBLISHED);
+    action.setStatus(Action.STATUS_PENDING_REVIEW);
     action.setDomainId(owner.domainId());
-    // A draft is authored and published by the same subject at this point; the snapshot carries it so
-    // saving the draft does not have to re-derive who wrote it.
     action.setCreatedBy(owner.userId());
-    action.setReviewedBy(owner.userId());
     action.setSubmissionCriteria(result.getJSONObject("submissionCriteria"));
     action.setTarget(result.getObject("target", io.ontomato.dataengine.bean.action.ActionTarget.class));
     actionDao.validateDefinition(action);
@@ -200,8 +197,10 @@ public class ActionDraftService {
       explanationMissing = true;
       log.warn("Draft explanation failed for action run {}: {}", runId, error.getMessage());
     }
-    action.setCodeHash(codeHash);
-    action.setExplanationVersion(Action.EXPLANATION_VERSION);
+    if (!explanationMissing) {
+      action.setCodeHash(codeHash);
+      action.setExplanationVersion(Action.EXPLANATION_VERSION);
+    }
     action.setDefinition(ActionDefinitionProjector.project(action));
 
     String draftId = UUID.randomUUID().toString();
@@ -262,6 +261,7 @@ public class ActionDraftService {
     } catch (Exception error) {
       throw new AgentHttpException(422, "EXPLAIN_FAILED", error.getMessage());
     }
+    action.setCodeHash(CodeHashUtil.sha256(action.getFunction().getCode()));
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
     actionDao.validateDefinition(action);
     action.setDefinition(ActionDefinitionProjector.project(action));
@@ -287,9 +287,15 @@ public class ActionDraftService {
 
   public Action save(String draftId, String lang) throws Exception {
     Owner owner = owner();
+    Action saved = store.transaction(() -> saveSnapshot(draftId, owner, lang));
+    actions.completeDraftInBackground(saved, owner, lang);
+    return saved;
+  }
+
+  private Action saveSnapshot(String draftId, Owner owner, String lang) {
     var row =
         store.one(
-            "SELECT * FROM action_drafts WHERE id=? AND owner_id=? AND domain_id=?",
+            "SELECT * FROM action_drafts WHERE id=? AND owner_id=? AND domain_id=? FOR UPDATE",
             uuid(draftId),
             owner.userId(),
             owner.domainId());
@@ -306,17 +312,15 @@ public class ActionDraftService {
       throw new AgentHttpException(422, "INVALID_DRAFT", "The draft has no function");
     ActionFunctionAdmission.requireSupported(function, langService, lang);
     if (!program.equals(function.getCode())
-        || action.getCodeHash() == null
-        || !action.getCodeHash().equals(codeHash)
         || !codeHash.equals(row.getString("code_hash")))
       throw new AgentHttpException(409, "DRAFT_CHANGED", "The draft no longer matches its code");
     function.setDomainId(owner.domainId());
     action.setDomainId(owner.domainId());
-    ActionCodeExplanationValidator.requireReady(action);
+    if (!ActionCodeExplanationValidator.ready(action)) ActionServiceImpl.clearExplanation(action);
     if (action.getCreatedBy() == null) action.setCreatedBy(owner.userId());
-    action.setReviewedBy(owner.userId());
-    action.setDefinition(ActionDefinitionProjector.project(action));
-    Action saved = actionDao.saveWithFunction(action, lang);
+    action.setReviewedBy(null);
+    action.setStatus(Action.STATUS_PENDING_REVIEW);
+    Action saved = actions.persistDraft(action, lang);
     store.update("UPDATE action_drafts SET consumed_at=now() WHERE id=?", uuid(draftId));
     return saved;
   }

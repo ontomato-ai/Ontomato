@@ -231,8 +231,10 @@ public class PlatformAuthoringService {
         String digest = operations.actionDigest(owner.domainId(),
             AgentJson.text(definition.getJSONObject("function"), "code"),
             definition.getJSONObject("function").getJSONArray("parameters"));
-        var same = id != null && digest.equals(currentActionDigest(id, owner));
-        return accepted(definition, run, kind, new DefinitionDigests(digest, Set.of(digest)), evidenceScope, same);
+        if (id != null) requireCurrentAction(id, owner);
+        var test = operations.latestTest(run, kind, digest, evidenceScope);
+        return JSONObject.of("definition", definition, "executionId", test == null ? null : test.executionId(),
+            "digest", digest);
       }
       if (!Function.OPERATION_READ.equals(function.getOperation()))
         throw AgentHttpException.invalid("MetricView requires a read Function");
@@ -259,15 +261,12 @@ public class PlatformAuthoringService {
     return JSONObject.of("definition", definition, "executionId", executionId, "digest", digests.primary());
   }
 
-  private String currentActionDigest(String id, Owner owner) {
+  private void requireCurrentAction(String id, Owner owner) {
     actionDao.lock(id, owner.domainId());
     var action = actions.queryById(id);
     if (action == null || !owner.domainId().equals(action.getDomainId())
-        || Action.ORIGIN_SYSTEM.equals(action.getOrigin())) throw AgentHttpException.missing();
-    var function = action.getFunction();
-    if (!owner.domainId().equals(function.getDomainId())) throw AgentHttpException.missing();
-    JSONArray parameters = function.getParameters() == null ? null : JSONArray.from(function.getParameters());
-    return operations.actionDigest(owner.domainId(), function.getCode(), parameters);
+        || Action.ORIGIN_SYSTEM.equals(action.getOrigin())
+        || !owner.domainId().equals(action.getFunction().getDomainId())) throw AgentHttpException.missing();
   }
 
   private MetricView currentMetric(String id, Owner owner) {

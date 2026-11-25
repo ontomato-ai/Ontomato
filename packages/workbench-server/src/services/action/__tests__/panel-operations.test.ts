@@ -174,6 +174,23 @@ describe("action panel server operations", () => {
     expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ id: "a1" });
   });
 
+  it("shows the owner's trial and missing explanation in the publication review", async () => {
+    const operation = batchAction(SET_ACTION_STATUS);
+    const trial = "Recorded trial result";
+    const explanation = "Missing explanation";
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: {
+      name: "Approve order", sandboxTrialLabel: trial, explanationMissingLabel: explanation,
+    } }));
+
+    const impact = await operation.inspectImpact.inspect(host, [
+      { target: actionTarget, input: { status: "PUBLISHED" } },
+    ]);
+
+    expect(impact?.objects[0]?.label).toContain(trial);
+    expect(impact?.objects[0]?.label).toContain(explanation);
+    expect(sent[0]?.path).toBe("/api/data-query/action/queryById");
+  });
+
   it("reads the system-action delete reason from its owner", async () => {
     const operation = action(DELETE_ACTION);
     const reason = "系统自带动作不能删除";

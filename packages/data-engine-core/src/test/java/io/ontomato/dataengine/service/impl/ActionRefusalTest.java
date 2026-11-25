@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.action.Action;
@@ -15,7 +16,10 @@ import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
+import io.ontomato.dataengine.service.agent.OntologyAgentStore;
+import java.util.function.Supplier;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
+import io.ontomato.dataengine.util.CodeHashUtil;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +39,9 @@ class ActionRefusalTest {
 
   @BeforeEach
   void setup() {
+    OntologyAgentStore store = mock(OntologyAgentStore.class);
+    when(store.transaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
+    ReflectionTestUtils.setField(service, "store", store);
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "langService", langService);
@@ -42,6 +49,14 @@ class ActionRefusalTest {
     ReflectionTestUtils.setField(service, "scheduledReferences", scheduledReferences);
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
     when(scheduledReferences.referencesAction(anyString())).thenReturn(false);
+  }
+
+  @Test
+  void refusesPublicationThroughSaveBeforeWriting() {
+    var submitted = action(null, Action.ORIGIN_USER, Action.STATUS_PUBLISHED);
+    var refusal = assertThrows(OwnerFieldRefusal.class, () -> service.save(submitted, null, null, "en"));
+    assertEquals("ACTION_STATUS_INVALID", refusal.code());
+    verifyNoInteractions(actionDao, functionDao, generationService);
   }
 
   @Test
@@ -57,12 +72,34 @@ class ActionRefusalTest {
   }
 
   @Test
+  void renamingAPublishedActionPreservesItsPublicationAndExplanation() throws Exception {
+    Action stored = action("a1", Action.ORIGIN_USER, Action.STATUS_PUBLISHED);
+    stored.setCodeSegments(JSONArray.of(JSONObject.of("id", "compute")));
+    stored.setCodeHash(CodeHashUtil.sha256(CODE));
+    stored.setExplanationVersion(Action.EXPLANATION_VERSION);
+    stored.setReviewedBy("reviewer");
+    when(actionDao.queryById("a1")).thenReturn(new Object[] {stored, "f-a1"});
+    when(functionDao.queryById("f-a1")).thenReturn(stored.getFunction());
+    when(actionDao.saveDraft(any(), eq("en"))).thenAnswer(call -> call.getArgument(0));
+
+    Action submitted = action("a1", Action.ORIGIN_USER, null);
+    submitted.setName("Approve the order");
+    Action saved = service.save(submitted, null, null, "en");
+
+    assertEquals("Approve the order", saved.getName());
+    assertEquals(Action.STATUS_PUBLISHED, saved.getStatus());
+    assertEquals(stored.getCodeHash(), saved.getCodeHash());
+    assertEquals("reviewer", saved.getReviewedBy());
+    verify(actionDao).saveDraft(argThat(item -> Action.STATUS_PUBLISHED.equals(item.getStatus())), eq("en"));
+  }
+
+  @Test
   void refusesToChangeTheCodeOfAPublishedAction() {
     Action stored = action("a1", Action.ORIGIN_USER, Action.STATUS_PUBLISHED);
     stored.getFunction().setCode("# ontomato-python:2\nprint('old')");
     when(actionDao.queryById("a1")).thenReturn(new Object[] {stored, "f-a1"});
     when(functionDao.queryById("f-a1")).thenReturn(stored.getFunction());
-    Action submitted = action("a1", Action.ORIGIN_USER, Action.STATUS_PUBLISHED);
+    Action submitted = action("a1", Action.ORIGIN_USER, Action.STATUS_PENDING_REVIEW);
     submitted.getFunction().setCode("# ontomato-python:2\nprint('new')");
 
     OwnerFieldRefusal error = assertThrows(OwnerFieldRefusal.class,
@@ -113,7 +150,7 @@ class ActionRefusalTest {
     draft.getFunction().setId(null);
     doThrow(new OwnerFieldRefusal("ACTION_DEFINITION_INVALID", "/target", "invalid_object",
         "Action.target.className requires one primary key: /Order"))
-        .when(actionDao).validateDefinition(any());
+        .when(actionDao).saveDraft(any(), eq("en"));
 
     OwnerFieldRefusal error = assertThrows(OwnerFieldRefusal.class,
         () -> service.save(draft, null, null, "en"));
@@ -123,7 +160,7 @@ class ActionRefusalTest {
     assertEquals("/target", error.errors().get(0).get("field").asText());
     assertEquals("invalid_object", error.errors().get(0).get("code").asText());
     verifyNoInteractions(generationService);
-    verify(actionDao, never()).saveWithFunction(any(), anyString());
+
   }
 
   @Test

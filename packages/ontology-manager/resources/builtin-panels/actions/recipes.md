@@ -33,16 +33,14 @@ opening line; the reader sends the message. The action starts with you:
 1. Write the action: its target object type and key parameter (a `TYPE_STRING` parameter carrying the object's primary
    key), and its write function fields (`name`, typed `parameters`, `returnDef.classNames`, `logic`, and Python `code`
    by the owner's protocol).
-2. Run it in the owner's sandbox under `$ONTOMATO_AUTHORING_URL` (`GET /action/context`, `POST /action/prepare`,
-   `POST /action/reset`, `POST /action/test`, optionally `POST /action/explain-draft`) with headers
-   `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` until the owner accepts the exact code and
-   parameters with no `result.error`. The session bridge supplies the active run header.
+2. Offer a sandbox trial under `$ONTOMATO_AUTHORING_URL` to verify the exact code and parameters.
+   The publication review shows the trial status.
 3. Open the detail entry in create mode via `present` at `/ontology/assets/actions/detail` with
    `{ state: { selected: null, creating: true, activeTab: "definition" } }`, read `form.createForm`, and fill the live
-   `form` via `fill_form` using the individual field paths (`/name`, `/description`, `/status`, `/target`,
+   `form` via `fill_form` using the individual field paths (`/name`, `/description`, `/target`,
    `/function/name`, `/function/parameters`, `/function/returnDef/classNames`, `/function/logic`, `/function/code`).
    Do **not** pass a whole `function` object or `explanationRef`.
-4. Let the reader review and save in the header, or invoke `page_action` `form.save` when explicitly requested.
+4. Let the reader review and save in the header, or invoke `page_action` `form.save` when explicitly requested. The save creates a pending draft and generates its explanation in the background.
 
 ## Opening an action's detail
 

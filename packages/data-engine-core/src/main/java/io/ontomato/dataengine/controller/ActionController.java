@@ -47,6 +47,7 @@ import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
+import io.ontomato.dataengine.service.agent.GenerationOperations;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
@@ -85,6 +86,8 @@ public class ActionController {
 
 	@Autowired
 	private ActionDraftService actionDraftService;
+
+	@Autowired private GenerationOperations generationOperations;
 
 	@Autowired
 	private SubjectDirectory subjectDirectory;
@@ -166,6 +169,8 @@ public class ActionController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
+			String requestedStatus = request.getString("status");
+			ActionForm.requireDraftStatus(requestedStatus);
 			JSONObject param = submittedValues(request, user.getDomainId(), lang);
 			Function acceptedFunction;
 			try {
@@ -175,11 +180,9 @@ public class ActionController {
 			}
             Action action = param.to(Action.class);
             action.setFunction(acceptedFunction);
+            action.setStatus(requestedStatus);
 			action.setDomainId(user.getDomainId());
-			// The nested Function always belongs to the authenticated caller's domain.
-			if (action.getFunction() != null) action.getFunction().setDomainId(user.getDomainId());
 			action.setCreatedBy(user.getId());
-			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) action.setReviewedBy(user.getId());
 			Action saved = actionService.save(action, param.getString("explanationRef"),
 					new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner(user.getId(), user.getDomainId()), lang);
 			ret.put("data", withDisplay(saved, subjectNames(user.getDomainId()), lang));
@@ -225,7 +228,7 @@ public class ActionController {
 		return ret;
 	}
 
-	/** Saves the draft snapshot directly; it never asks the explain agent to run again. */
+	/** Saves the snapshot as a pending draft, with explanation work done outside the request. */
 	@PostMapping("/action/saveDraft")
     @ResponseBody
     public JSONObject saveDraft(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -277,7 +280,18 @@ public class ActionController {
 			}
 			Action action = actionService.queryById(id);
 			ret.put("success", true);
-			ret.put("data", action == null ? null : withDisplay(action, subjectNames(user.getDomainId()), lang));
+			if (action == null || !user.getDomainId().equals(action.getDomainId())) {
+				ret.put("data", null);
+			} else {
+				ObjectNode display = withDisplay(action, subjectNames(user.getDomainId()), lang);
+				if ("publication-review".equals(param.getString("purpose"))) {
+					display.put("sandboxTrialLabel", langService.get(lang,
+							"Action.sandboxTrial." + generationOperations.actionTrialStatus(action)));
+					if (action.getCodeSegments() == null || action.getCodeSegments().isEmpty())
+						display.put("explanationMissingLabel", langService.get(lang, "Action.explanationMissing"));
+				}
+				ret.put("data", display);
+			}
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
 		} catch (Exception e) {
@@ -413,11 +427,10 @@ public class ActionController {
 	@PostMapping("/action/import")
 	@ResponseBody
 	public JSONObject importActions(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
-			@RequestParam("file") MultipartFile file,
-			@RequestParam(value = "allowMissingExplanation", required = false, defaultValue = "false") boolean allowMissingExplanation) {
+			@RequestParam("file") MultipartFile file) {
 		JSONObject ret = new JSONObject();
 		try {
-			ret = actionService.importActions(file.getBytes(), lang, allowMissingExplanation);
+			ret = actionService.importActions(file.getBytes(), lang);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);

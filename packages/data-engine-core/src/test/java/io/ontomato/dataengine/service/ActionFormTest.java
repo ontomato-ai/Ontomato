@@ -61,11 +61,12 @@ class ActionFormTest {
   }
 
   @Test
-  void aPublishedActionOnlyFreezesItsCode() {
+  void aPublishedActionFreezesItsCodeAndTheDefinitionFormDoesNotSubmitItsStatus() {
     put(action("a1", Action.ORIGIN_USER, Action.STATUS_PUBLISHED));
 
     JSONObject form = form(objectTarget("a1"));
 
+    assertFalse(form.getJSONObject("values").containsKey("status"));
     JSONObject code = field(form, "/function/code");
     assertTrue(code.getBooleanValue("readOnly"));
     assertEquals("Action.publishedIsFrozen", code.getString("readOnlyReason"));

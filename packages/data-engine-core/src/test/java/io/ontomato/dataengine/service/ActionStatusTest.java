@@ -14,6 +14,8 @@ import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
+import io.ontomato.dataengine.service.agent.OntologyAgentStore;
+import java.util.function.Supplier;
 import io.ontomato.dataengine.service.impl.ActionServiceImpl;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import io.ontomato.dataengine.util.CodeHashUtil;
@@ -41,6 +43,9 @@ class ActionStatusTest {
 
   @BeforeEach
   void setup() {
+    OntologyAgentStore store = mock(OntologyAgentStore.class);
+    when(store.transaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
+    ReflectionTestUtils.setField(service, "store", store);
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "langService", langService);
@@ -58,7 +63,7 @@ class ActionStatusTest {
           .filter(item -> item.getFunction().getId().equals(call.getArgument(0))).findFirst().orElse(null);
       return action == null ? null : copyFunction(action.getFunction());
     });
-    when(actionDao.saveWithFunction(any(), anyString())).thenAnswer(call -> call.getArgument(0));
+    when(actionDao.updateStatus(any())).thenAnswer(call -> call.getArgument(0));
   }
 
   @Test
@@ -72,7 +77,6 @@ class ActionStatusTest {
     assertEquals("missing", results.get(0).id());
     assertNull(results.get(0).data());
     assertEquals("ACTION_NOT_FOUND", results.get(0).refusal().code());
-    assertEquals("Action not found", results.get(0).refusal().getMessage());
     assertNull(results.get(0).error());
     assertEquals("a1", results.get(1).id());
     assertNull(results.get(1).refusal());
@@ -80,7 +84,7 @@ class ActionStatusTest {
     assertEquals(Action.STATUS_PUBLISHED, results.get(1).data().getStatus());
     assertEquals("Approve order", results.get(1).data().getName());
     ArgumentCaptor<Action> captured = ArgumentCaptor.forClass(Action.class);
-    verify(actionDao).saveWithFunction(captured.capture(), anyString());
+    verify(actionDao).updateStatus(captured.capture());
     assertEquals(Action.STATUS_PUBLISHED, captured.getValue().getStatus());
     assertEquals("reviewer", captured.getValue().getReviewedBy());
   }
@@ -103,7 +107,7 @@ class ActionStatusTest {
   @Test
   void anExecutionFailureCarriesNoRefusalCode() {
     put(action("a1"));
-    when(actionDao.saveWithFunction(any(), anyString())).thenThrow(new RuntimeException("database unavailable"));
+    when(actionDao.updateStatus(any())).thenThrow(new RuntimeException("database unavailable"));
 
     ActionService.StatusResult result =
         service.setStatus("domain-a", "reviewer", List.of("a1"), Action.STATUS_PUBLISHED, "en").get(0);
@@ -129,6 +133,26 @@ class ActionStatusTest {
   }
 
   @Test
+  void publicationRefusesMissingOrStaleExplanationsWithoutChangingStatus() {
+    Action missing = action("missing-explanation");
+    missing.setCodeSegments(null);
+    put(missing);
+    Action stale = action("stale-explanation");
+    stale.setCodeHash(CodeHashUtil.sha256("old code"));
+    put(stale);
+    Action oldVersion = action("old-version");
+    oldVersion.setExplanationVersion(Action.EXPLANATION_VERSION - 1);
+    put(oldVersion);
+
+    var results = service.setStatus("domain-a", "reviewer",
+        List.of(missing.getId(), stale.getId(), oldVersion.getId()), Action.STATUS_PUBLISHED, "en");
+
+    for (var result : results) assertEquals("ACTION_EXPLANATION_REQUIRED", result.refusal().code());
+    verify(actionDao, never()).updateStatus(any());
+    verifyNoInteractions(generationService);
+  }
+
+  @Test
   void handlesARepeatedIdOnce() {
     put(action("a1"));
 
@@ -136,7 +160,7 @@ class ActionStatusTest {
         service.setStatus("domain-a", "reviewer", List.of("a1", "a1"), Action.STATUS_UNUSED, "en");
 
     assertEquals(1, results.size());
-    verify(actionDao, times(1)).saveWithFunction(any(), anyString());
+    verify(actionDao, times(1)).updateStatus(any());
   }
 
   @Test

@@ -600,6 +600,30 @@
     "value": "A published action cannot be changed; publish a new one instead"
   },
   {
+    "key": "Action.explanationMissing",
+    "value": "Explanation not generated"
+  },
+  {
+    "key": "Action.explanationRequired",
+    "value": "Generate an explanation for the current action code before publishing."
+  },
+  {
+    "key": "Action.sandboxTrial.notRun",
+    "value": "Sandbox trial: not run for this definition"
+  },
+  {
+    "key": "Action.sandboxTrial.passed",
+    "value": "Sandbox trial: passed"
+  },
+  {
+    "key": "Action.sandboxTrial.failed",
+    "value": "Sandbox trial: failed"
+  },
+  {
+    "key": "Action.sandboxTrial.incomplete",
+    "value": "Sandbox trial: no completed result"
+  },
+  {
     "key": "Action.parseCodeExplainFailed",
     "value": "Failed to parse code explanation result"
   },

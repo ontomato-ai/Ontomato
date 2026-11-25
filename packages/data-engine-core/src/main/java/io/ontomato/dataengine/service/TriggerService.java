@@ -95,7 +95,7 @@ public class TriggerService {
 			throw new IllegalArgumentException("target.kind: expected object or draft");
 		}
 
-		List<Action> domainActions = actions.queryList(null, null, null, domainId);
+		List<Action> domainActions = actions.queryList(Action.STATUS_PUBLISHED, null, null, domainId);
 		List<Workflow> domainWorkflows = workflows.queryList(null, domainId);
 		JSONObject values = request.getJSONObject("values");
 		String changedField = request.getString("changedField");
@@ -128,7 +128,7 @@ public class TriggerService {
 		}
 
 		if (param.get("conditionKind") == null) param.put("conditionKind", Trigger.CONDITION_TIME);
-		List<Action> domainActions = actions.queryList(null, null, null, user.getDomainId());
+		List<Action> domainActions = actions.queryList(Action.STATUS_PUBLISHED, null, null, user.getDomainId());
 		List<Workflow> domainWorkflows = workflows.queryList(null, user.getDomainId());
 		List<ObjectNode> errors = TriggerForm.fieldErrors(
 				param, actionIds(domainActions), workflowIds(domainWorkflows), lang, langService);
@@ -169,6 +169,13 @@ public class TriggerService {
 				&& !Trigger.STATUS_UNUSED.equals(status)
 				&& !Trigger.STATUS_PENDING_REVIEW.equals(status)) {
 			throw new OwnerRefusal("TRIGGER_STATUS_INVALID", text(lang, "Trigger.statusInvalid"));
+		}
+		if (Trigger.STATUS_PUBLISHED.equals(status) && Trigger.EFFECT_ACTION.equals(trigger.getEffectKind())) {
+			var action = actions.queryById(trigger.getEffect().getString("actionId"));
+			if (action == null || !user.getDomainId().equals(action.getDomainId())
+					|| !Action.STATUS_PUBLISHED.equals(action.getStatus()))
+				throw new OwnerFieldRefusal("TRIGGER_INVALID", "/effect/actionId", "target_unavailable",
+						text(lang, "PanelForm.trigger.targetMissing"));
 		}
 		trigger.setStatus(status);
 		// Arming follows publication: an unpublished trigger has no slot, so it cannot fire.

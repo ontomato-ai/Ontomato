@@ -21,10 +21,11 @@ import io.ontomato.dataengine.util.CodeHashUtil;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** A draft is the generation-time snapshot: saving it must never ask the explain agent again. */
+/** Saving uses the snapshot without waiting on the code explainer. */
 class ActionDraftServiceTest {
   OntologyAgentStore store;
   AgentRuntimeClient runtime;
@@ -40,6 +41,7 @@ class ActionDraftServiceTest {
   @BeforeEach
   void setup() {
     store = mock(OntologyAgentStore.class);
+    when(store.transaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
     runtime = mock(AgentRuntimeClient.class);
     admin = mock(AdminService.class);
     actions = mock(ActionServiceImpl.class);
@@ -89,14 +91,30 @@ class ActionDraftServiceTest {
     action.setTarget(target);
     JSONObject row = row(action, code, Instant.now().plusSeconds(3600).toString(), null);
     when(store.one(anyString(), any(), any(), any())).thenReturn(row);
-    when(functions.save(any(), anyString())).thenAnswer(call -> call.getArgument(0));
-    when(actionDao.saveWithFunction(any(), anyString())).thenAnswer(call -> call.getArgument(0));
+    when(actions.persistDraft(any(), anyString())).thenAnswer(call -> call.getArgument(0));
 
     Action saved = service.save(UUID.randomUUID().toString(), "en");
 
     assertEquals(target, saved.getTarget());
     verify(actions, never()).explainForDraft(any(), any());
-    verify(actionDao).saveWithFunction(any(), eq("en"));
+    verify(actions).persistDraft(any(), eq("en"));
+  }
+
+  @Test
+  void savesTheSnapshotWhenExplanationFailed() throws Exception {
+    Action action = actionWith(code);
+    action.setCodeSegments(null);
+    action.setCodeHash(null);
+    action.setExplanationVersion(null);
+    when(store.one(anyString(), any(), any(), any())).thenReturn(
+        row(action, code, Instant.now().plusSeconds(3600).toString(), null));
+    when(actions.persistDraft(any(), anyString())).thenAnswer(call -> call.getArgument(0));
+
+    Action saved = service.save(UUID.randomUUID().toString(), "en");
+
+    assertNull(saved.getCodeSegments());
+    verify(actions, never()).explainForDraft(any(), any());
+    verify(actions).completeDraftInBackground(eq(saved), any(), eq("en"));
   }
 
   @Test

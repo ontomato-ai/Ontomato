@@ -175,6 +175,11 @@ async function generateAsset(api, prefix, args, workspaceId) {
   const kind = prefix === "action" ? "action" : "metric-view";
   const save = takeFlag(args, "--save");
   const sample = kind === "action" ? takeOption(args, "--sample") : null;
+  if (kind === "action" && save) {
+    if (args.length !== 1 || sample !== null) die("Usage: action generate --save <definition JSON or @file>");
+    return printData(await requestJson({ ...api, executionContext: undefined }, "POST", "/action/save",
+      JSON.parse(readInput(args[0]))));
+  }
   if (args.length !== 1 || (kind === "action" && sample === null)) {
     const sampleOption = kind === "action" ? " --sample <JSON or @file>" : "";
     die(`Usage: ${kind} generate [--save]${sampleOption} <definition JSON or @file>`);
@@ -280,6 +285,13 @@ async function assetCommand(api, prefix, argv, workspaceId) {
   }
   if (sub === "publish") {
     if (rest.length !== 1) die(`${prefix} publish requires an id`);
+    if (prefix === "action") {
+      const response = await requestJson(api, "POST", "/action/setStatus", { ids: rest, status: "PUBLISHED" });
+      const [item] = response.data.items;
+      if (item.outcome !== "success") throw new Error(`${item.code ?? item.outcome}: ${item.error.message}`);
+      print(item.data);
+      return;
+    }
     const definition = (await requestJson(api, "POST", `/${prefix}/queryById`, { id: rest[0] })).data;
     definition.status = "PUBLISHED";
     const saved = (await requestJson(api, "POST", `/${prefix}/save`, definition)).data;
@@ -631,7 +643,8 @@ function usage() {
   metric-view publish <id>
   metric-view delete <id>
   action context [--workspace <id>]
-  action generate [--save] --sample <JSON or @file> <definition JSON or @file>
+  action generate --sample <JSON or @file> <definition JSON or @file>
+  action generate --save <definition JSON or @file>
   action find|get|save|publish|delete ...   (same arguments as metric-view)
   action re-explain [--missing] [--id <id> ...]
   action execute <id> [<param json|@file>] [--file <path> ...]`);

@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
@@ -50,7 +51,7 @@ public class ActionDao extends BaseDao {
 
 	private static final String TABLE_NAME = "action";
 
-	private static final String COLUMNS = "id, name, description, origin, function_id, code_segments, business_meaning, code_hash, explanation_version, status, class_names, domain_id, submission_criteria, target, create_timestamp, modify_timestamp, created_by, reviewed_by, approval_mode";
+	private static final String COLUMNS = "id, name, description, origin, function_id, code_segments, business_meaning, code_hash, explanation_version, status, class_names, domain_id, submission_criteria, target, create_timestamp, modify_timestamp, created_by, reviewed_by, approval_mode, adopted";
 
 	@PostConstruct
 	public void initIndex() {
@@ -80,6 +81,7 @@ public class ActionDao extends BaseDao {
 						+ "created_by VARCHAR(64), "
 						+ "reviewed_by VARCHAR(64), "
 						+ "approval_mode VARCHAR(16), "
+						+ "adopted BOOLEAN NOT NULL DEFAULT FALSE, "
 						+ "brief TEXT, "
 						+ "brief_vector vector"
 						+ ")");
@@ -89,6 +91,9 @@ public class ActionDao extends BaseDao {
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(64)");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS approval_mode VARCHAR(16)");
+		// Existing rows predate claim tracking. Preserve them on upgrade.
+		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS adopted BOOLEAN NOT NULL DEFAULT TRUE");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ALTER COLUMN adopted SET DEFAULT FALSE");
 		jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE_NAME + "_domain_id ON " + TABLE_NAME + "(domain_id)");
 	}
 
@@ -112,18 +117,26 @@ public class ActionDao extends BaseDao {
 		}
 	}
 
+	@Transactional
 	public Action saveWithFunction(Action action, String lang) {
+		String domain = action.getDomainId();
+		return retrievalGate.write(domain, () -> {
+			if (action.getId() != null) lock(action.getId(), domain);
+			validateDefinition(action);
+			action.setFunction(functions.save(action.getFunction(), lang));
+			String brief = buildBrief(action.getName(), action.getDescription());
+			return persist(action, brief, new PGvector(embeddingService.embedding(brief, domain)), false);
+		});
+	}
+
+	@Transactional
+	public Action saveDraft(Action action, String lang) {
 		validateDefinition(action);
 		action.setFunction(functions.save(action.getFunction(), lang));
-		return persist(action);
+		return persist(action, buildBrief(action.getName(), action.getDescription()), null, true);
 	}
 
-	public Action save(Action action) {
-		validateDefinition(action);
-		return persist(action);
-	}
-
-	private Action persist(Action action) {
+	private Action persist(Action action, String brief, PGvector vector, boolean preserveVector) {
 		if (action.getId() == null) {
 			action.setId(UUID.randomUUID().toString());
 		}
@@ -133,15 +146,10 @@ public class ActionDao extends BaseDao {
 		}
 		action.setModifyTimestamp(now);
 		Function function = action.getFunction();
-		String domainId = function.getDomainId();
-
 		String classNamesStr = buildClassNamesStr(function);
-		String brief = buildBrief(action.getName(), action.getDescription());
 
-		retrievalGate.write(domainId, () -> {
-			PGvector pgVector = new PGvector(embeddingService.embedding(brief, domainId));
-			return jdbcTemplate.update(
-				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
+		jdbcTemplate.update(
+				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
 						+ "origin = EXCLUDED.origin, function_id = EXCLUDED.function_id, code_segments = EXCLUDED.code_segments, business_meaning = EXCLUDED.business_meaning, code_hash = EXCLUDED.code_hash, explanation_version = EXCLUDED.explanation_version, "
 						+ "status = EXCLUDED.status, class_names = EXCLUDED.class_names, domain_id = EXCLUDED.domain_id, submission_criteria = EXCLUDED.submission_criteria, target = EXCLUDED.target, "
@@ -151,14 +159,15 @@ public class ActionDao extends BaseDao {
 						+ "reviewed_by = COALESCE(EXCLUDED.reviewed_by, action.reviewed_by), "
 						// An update that omits approvalMode must not silently open the gate.
 						+ "approval_mode = COALESCE(EXCLUDED.approval_mode, action.approval_mode), "
-						+ "brief = EXCLUDED.brief, brief_vector = EXCLUDED.brief_vector",
+						+ "adopted = action.adopted OR EXCLUDED.adopted, "
+						+ "brief = EXCLUDED.brief, brief_vector = CASE WHEN ? AND action.brief = EXCLUDED.brief "
+						+ "THEN action.brief_vector ELSE EXCLUDED.brief_vector END",
 				action.getId(), action.getName(), action.getDescription(), action.getOrigin(),
 				function.getId(), JSON.toJSONString(action.getCodeSegments(), Feature.WriteMapNullValue), JSON.toJSONString(action.getBusinessMeaning(), Feature.WriteMapNullValue),
 				action.getCodeHash(), action.getExplanationVersion(),
 				action.getStatus(), classNamesStr, action.getDomainId(), JSON.toJSONString(action.getSubmissionCriteria(), Feature.WriteMapNullValue),
 				action.getTarget() == null ? null : JSON.toJSONString(action.getTarget()), action.getCreateTimestamp(), action.getModifyTimestamp(),
-				action.getCreatedBy(), action.getReviewedBy(), action.getApprovalMode(), brief, pgVector);
-		});
+				action.getCreatedBy(), action.getReviewedBy(), action.getApprovalMode(), action.isAdopted(), brief, vector, preserveVector);
 		return action;
 	}
 
@@ -196,6 +205,40 @@ public class ActionDao extends BaseDao {
 
 	public void delete(String id) {
 		jdbcTemplate.update("DELETE FROM " + TABLE_NAME + " WHERE id = ?", id);
+	}
+
+	public void deleteExpiredCandidate(String id, long cutoff) {
+		jdbcTemplate.update("DELETE FROM " + TABLE_NAME
+				+ " WHERE id = ? AND status = ? AND NOT adopted AND modify_timestamp < ?",
+				id, Action.STATUS_PENDING_REVIEW, cutoff);
+	}
+
+	public void indexDraft(String id, String domainId, String name, String description) {
+		String brief = buildBrief(name, description);
+		retrievalGate.write(domainId, () -> {
+			if (jdbcTemplate.queryForList("SELECT id FROM " + TABLE_NAME
+					+ " WHERE id = ? AND brief = ? AND brief_vector IS NULL", String.class, id, brief).isEmpty()) return 0;
+			var vector = new PGvector(embeddingService.embedding(brief, domainId));
+			return jdbcTemplate.update("UPDATE " + TABLE_NAME
+					+ " SET brief_vector = ?::vector WHERE id = ? AND brief = ? AND brief_vector IS NULL",
+					vector, id, brief);
+		});
+	}
+
+	public void updateExplanation(Action action) {
+		jdbcTemplate.update("UPDATE " + TABLE_NAME
+				+ " SET code_segments = ?, business_meaning = ?, code_hash = ?, explanation_version = ? WHERE id = ?",
+				JSON.toJSONString(action.getCodeSegments()), JSON.toJSONString(action.getBusinessMeaning()),
+				action.getCodeHash(), action.getExplanationVersion(), action.getId());
+	}
+
+	public Action updateStatus(Action action) {
+		long now = System.currentTimeMillis();
+		jdbcTemplate.update("UPDATE " + TABLE_NAME
+				+ " SET status = ?, reviewed_by = ?, modify_timestamp = ? WHERE id = ?",
+				action.getStatus(), action.getReviewedBy(), now, action.getId());
+		action.setModifyTimestamp(now);
+		return action;
 	}
 
 	/**
@@ -381,6 +424,7 @@ public class ActionDao extends BaseDao {
 		action.setCreatedBy(rs.getString("created_by"));
 		action.setReviewedBy(rs.getString("reviewed_by"));
 		action.setApprovalMode(rs.getString("approval_mode"));
+		action.setAdopted(rs.getBoolean("adopted"));
 		action.setTarget(JSON.parseObject(rs.getString("target"), ActionTarget.class));
 		String submissionCriteria = rs.getString("submission_criteria");
 		action.setSubmissionCriteria(submissionCriteria == null ? null : JSONObject.parseObject(submissionCriteria));

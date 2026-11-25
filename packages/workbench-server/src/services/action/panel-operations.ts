@@ -127,6 +127,37 @@ const deleteActionImpact: PanelImpactInspector = {
   },
 };
 
+const publishReviewSchema = z.object({
+  name: z.string(),
+  sandboxTrialLabel: z.string(),
+  explanationMissingLabel: z.string().optional(),
+});
+
+const publishActionImpact: PanelImpactInspector = {
+  handlerRef: `${SET_ACTION_STATUS}.inspect-impact`,
+  async inspect(host, calls) {
+    const publishing = calls.filter(call => call.input.status === "PUBLISHED");
+    if (publishing.length === 0) return null;
+    const objects = await Promise.all(publishing.map(async call => {
+      const target = call.target as PanelRecordTarget;
+      const result = await ownerPost(host, "/action/queryById", {
+        id: target.primaryKey, purpose: "publication-review",
+      }, ownerEnvelopeSchema);
+      if (!result.success) throw readRefusal(result, "ACTION_READ_FAILED", "The owner could not read the action");
+      const action = publishReviewSchema.parse(result.data);
+      return {
+        target: { objectType: target.objectType, primaryKey: target.primaryKey },
+        label: [action.name, action.sandboxTrialLabel, action.explanationMissingLabel].filter(Boolean).join(" · "),
+      };
+    }));
+    return {
+      summary: tForLocale(host.locale, "panels.action.operations.setStatus"),
+      objects,
+      total: objects.length,
+    };
+  },
+};
+
 
 export const m6ServerOperations = [
   {
@@ -181,6 +212,7 @@ export const m6ServerOperations = [
     targetSchema: actionObjectTarget,
     inputSchema: statusInputSchema,
     describeInputSchema: describeStatusInputSchema,
+    inspectImpact: publishActionImpact,
     resultSchema: savedIdSchema,
     targetInput: "action",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/action/queryById", "ACTION_UNAVAILABLE"),

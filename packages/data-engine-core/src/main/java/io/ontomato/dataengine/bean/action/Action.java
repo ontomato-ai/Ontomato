@@ -40,6 +40,7 @@ public class Action {
 	private String codeHash;
 	private Integer explanationVersion;
 	private String status;
+	private boolean adopted;
 	/**
 	 * Approval gate of this action as a capability. Null means the deployment's default
 	 * applies (see ONTOMATO_ACTION_DEFAULT_APPROVAL); it is never guessed from the workflow.

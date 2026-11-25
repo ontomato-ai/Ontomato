@@ -969,46 +969,38 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   }
 });
 
-test("App Builder Action generation tests and adopts the actual definition before an explicit save", async () => {
-  const sample = { objDatas: [], relDatas: [] };
-  const definition = { name: "Action", function: { code: "print('ok')", parameters: [{ name: "value", type: "TYPE_STRING", value: "sample" }] } };
-  const explained = { ...definition, explanationRef: "22222222-2222-4222-8222-222222222222" };
-  const accepted = { ...explained, name: "Accepted definition" };
+test("App Builder saves Action drafts without authoring services and uses the owner publication operation", async () => {
+  const definition = { name: "Action", function: { code: "print('ok')" } };
   const requests = [];
   const server = createServer(async (request, response) => {
     let text = "";
     for await (const chunk of request) text += chunk;
-    const body = JSON.parse(text);
-    requests.push({ path: request.url, body, callback: request.headers["x-ontomato-callback-credential"], key: request.headers["x-api-key"] });
-    assert.equal(request.headers["x-ontomato-run-id"], undefined);
+    requests.push({ path: request.url, body: JSON.parse(text) });
     response.setHeader("content-type", "application/json");
-    const operation = request.url.split("/").at(-1);
-    const replies = {
-      prepare: { prepared: true }, reset: { reset: true }, test: { result: { result: "completed" } },
-      "explain-draft": { explanationRef: explained.explanationRef }, adopt: { definition: accepted },
-      save: { data: { ...accepted, id: "saved" } },
-    };
-    response.end(JSON.stringify(replies[operation] ?? { success: false, message: "Unexpected request" }));
+    if (request.url === "/ontology/action/save") {
+      response.end(JSON.stringify({ success: true, data: { id: "saved", status: "PENDING_REVIEW" } }));
+    } else if (request.url === "/ontology/action/setStatus") {
+      response.end(JSON.stringify({ success: true, data: { items: [
+        { id: "saved", outcome: "refusal", code: "ACTION_EXPLANATION_REQUIRED", error: { message: "Explanation missing" } },
+      ] } }));
+    } else {
+      response.writeHead(404).end();
+    }
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
-    const result = await promisify(execFile)(process.execPath, [
-      "agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "action", "generate", "--save", "--sample",
-      JSON.stringify(sample), JSON.stringify(definition),
-    ], {
-      env: { ...process.env, ONTOMATO_SKILL_SCENARIO: "platform",
-        ONTOMATO_AUTHORING_URL: base + "/authoring", ONTOMATO_WORKBENCH_URL: base,
-        ONTOMATO_ONTOLOGY_URL: base + "/ontology", ONTOMATO_EXECUTION_CALLBACK: "run-callback", ONTOMATO_API_KEY: "save-key" },
-    });
-    const author = (path, body) => ({ path: "/authoring/action/" + path, body, callback: "run-callback", key: undefined });
-    const input = { code: definition.function.code, parameterDefs: definition.function.parameters };
+    const run = (...args) => promisify(execFile)(process.execPath, [
+      "agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "action", ...args,
+    ], { env: { ...process.env, ONTOMATO_ONTOLOGY_URL: base + "/ontology", ONTOMATO_API_KEY: "save-key" } });
+
+    const result = await run("generate", "--save", JSON.stringify(definition));
+    assert.equal(JSON.parse(result.stdout).status, "PENDING_REVIEW");
+    await assert.rejects(run("publish", "saved"), /ACTION_EXPLANATION_REQUIRED/);
     assert.deepEqual(requests, [
-      author("prepare", sample), author("reset", {}), author("test", input),
-      author("explain-draft", input), author("adopt", { definition: explained }),
-      { path: "/ontology/action/save", body: accepted, callback: undefined, key: "save-key" },
+      { path: "/ontology/action/save", body: definition },
+      { path: "/ontology/action/setStatus", body: { ids: ["saved"], status: "PUBLISHED" } },
     ]);
-    assert.equal(JSON.parse(result.stdout).id, "saved");
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
