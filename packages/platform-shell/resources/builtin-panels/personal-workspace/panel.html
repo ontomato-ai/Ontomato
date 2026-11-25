@@ -154,11 +154,8 @@
   .pw-block-body {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm, 10px);
-    height: 100%;
+    gap: var(--spacing-sm, 12px);
     min-width: 0;
-    min-height: 0;
-    overflow: auto;
   }
   .pw-block-subsection {
     display: flex;
@@ -518,7 +515,7 @@
 
             <div v-else-if="itemId === 'dashboards'" class="pw-block-body">
               <div class="pw-block-subsection">
-                <h3 class="pw-block-subsection-title">{{ t("block.dashboardsList") }}</h3>
+                <h3 v-if="hasFavoriteDashboards" class="pw-block-subsection-title">{{ t("block.dashboardsList") }}</h3>
                 <projection
                   slot="favoriteDashboards"
                   :ref="bindProjection('favoriteDashboards')"
@@ -534,23 +531,15 @@
                   </template>
                 </projection>
               </div>
-              <div class="pw-block-subsection">
+              <div class="pw-block-subsection" :class="{ 'is-hidden': !hasFavoriteDashboards }">
                 <h3 class="pw-block-subsection-title">{{ t("block.dashboardCardsList") }}</h3>
                 <projection
                   slot="favoriteDashboardCards"
                   :ref="bindProjection('favoriteDashboardCards')"
                   class="pw-block-list"
-                  @choose="onChooseCard"
-                >
-                  <template #empty>
-                    <div class="pw-empty">
-                      <p>{{ t("empty.dashboardCards") }}</p>
-                      <sdk-button size="small" text type="primary" @click="openPath('/dashboards')">
-                        {{ t("empty.action.dashboards") }}
-                      </sdk-button>
-                    </div>
-                  </template>
-                </projection>
+                  :empty-text="t('empty.dashboardCards')"
+                  @select="onSelectCard"
+                ></projection>
               </div>
             </div>
 
@@ -559,17 +548,10 @@
                 slot="scheduledTasks"
                 :ref="bindProjection('scheduledTasks')"
                 class="pw-block-list"
-                @choose="onChooseTask"
-              >
-                <template #empty>
-                  <div class="pw-empty">
-                    <p>{{ t("empty.tasks") }}</p>
-                    <sdk-button size="small" text type="primary" @click="openPath('/schedules')">
-                      {{ t("empty.action.tasks") }}
-                    </sdk-button>
-                  </div>
-                </template>
-              </projection>
+                :empty-text="t('empty.tasks')"
+                @select="onSelectTask"
+                @resolve="onResolveTask"
+              ></projection>
             </div>
 
             <div v-else-if="itemId === 'conversations'" class="pw-block-body">
@@ -800,7 +782,7 @@
   >
     <template #header>
       <div class="pw-drawer-header">
-        <h2 class="pw-drawer-title">{{ t("drawer.cardTitle") }}</h2>
+        <h2 class="pw-drawer-title">{{ selectedCardTitle || t("drawer.cardTitle") }}</h2>
         <div class="pw-drawer-actions">
           <projection slot="askCard"></projection>
           <projection slot="explainCard"></projection>
@@ -829,7 +811,7 @@
   >
     <template #header>
       <div class="pw-drawer-header">
-        <h2 class="pw-drawer-title">{{ t("drawer.taskTitle") }}</h2>
+        <h2 class="pw-drawer-title">{{ selectedTaskTitle || t("drawer.taskTitle") }}</h2>
         <div class="pw-drawer-actions">
           <projection slot="askTask"></projection>
           <sdk-button

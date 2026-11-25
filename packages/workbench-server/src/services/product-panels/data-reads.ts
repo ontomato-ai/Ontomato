@@ -636,6 +636,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
       runRecords: (selection, params) => schedules.runRecords(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
       runRecord: (selection, params) => schedules.runRecord(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
+      latestRunRecord: selection => schedules.latestRunRecord(selection.primaryKey!),
       form: (selection, params) => schedules.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => schedules.createForm({
         ...formParams(params), defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),

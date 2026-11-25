@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
+import { platformTaskRunSchema, platformTaskSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import examples from "../../../contracts/examples/platform-schedules.json";
 import { createScheduledTaskReads } from "../panel-reads";
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextEn } from "../panel-text";
@@ -128,12 +128,16 @@ it("classifies task attention groups and supports counts(by='attention')", async
     needsIntervention: row.outputs?.needsIntervention,
     latestRunId: row.outputs?.latestRunId,
     openPath: row.outputs?.openPath,
+    activeRunId: row.fields.activeRunId,
+    lastRunStatus: row.fields.lastRunStatus,
+    pauseMessage: row.fields.pauseMessage,
+    lastRunError: row.fields.lastRunError,
   }))).toEqual([
-    { id: "task-running", attentionGroup: "running", needsIntervention: false, latestRunId: "run-live", openPath: "/schedules?taskId=task-running&runId=run-live" },
-    { id: "task-failed", attentionGroup: "issues", needsIntervention: true, latestRunId: "run-failed", openPath: "/schedules?taskId=task-failed&runId=run-failed" },
-    { id: "task-paused", attentionGroup: "issues", needsIntervention: true, latestRunId: completedRun.id, openPath: `/schedules?taskId=task-paused&runId=${encodeURIComponent(completedRun.id)}` },
-    { id: "task-done", attentionGroup: "results", needsIntervention: false, latestRunId: completedRun.id, openPath: `/schedules?taskId=task-done&runId=${encodeURIComponent(completedRun.id)}` },
-    { id: "task-idle", attentionGroup: "idle", needsIntervention: false, latestRunId: "", openPath: "/schedules?taskId=task-idle" },
+    { id: "task-running", attentionGroup: "running", needsIntervention: false, latestRunId: "run-live", openPath: "/schedules?taskId=task-running&runId=run-live", activeRunId: "run-live", lastRunStatus: undefined, pauseMessage: undefined, lastRunError: undefined },
+    { id: "task-failed", attentionGroup: "issues", needsIntervention: true, latestRunId: "run-failed", openPath: "/schedules?taskId=task-failed&runId=run-failed", activeRunId: undefined, lastRunStatus: "failed", pauseMessage: undefined, lastRunError: "boom" },
+    { id: "task-paused", attentionGroup: "issues", needsIntervention: true, latestRunId: completedRun.id, openPath: `/schedules?taskId=task-paused&runId=${encodeURIComponent(completedRun.id)}`, activeRunId: undefined, lastRunStatus: "completed", pauseMessage: "Paused after failures", lastRunError: undefined },
+    { id: "task-done", attentionGroup: "results", needsIntervention: false, latestRunId: completedRun.id, openPath: `/schedules?taskId=task-done&runId=${encodeURIComponent(completedRun.id)}`, activeRunId: undefined, lastRunStatus: "completed", pauseMessage: undefined, lastRunError: undefined },
+    { id: "task-idle", attentionGroup: "idle", needsIntervention: false, latestRunId: "", openPath: "/schedules?taskId=task-idle", activeRunId: undefined, lastRunStatus: undefined, pauseMessage: undefined, lastRunError: undefined },
   ]);
 
   const counts = await reads.counts("attention");
@@ -142,4 +146,113 @@ it("classifies task attention groups and supports counts(by='attention')", async
     { key: "results", label: "Recent results", count: 1 },
     { key: "running", label: "Running", count: 1 },
   ]);
+});
+
+it("loads latestRunRecord with full run output, pause notice without run, and summary fallback", async () => {
+  const baseTask = platformTaskSchema.parse(examples.creates[0]!.response);
+  const completedRun = platformTaskRunSchema.parse(examples.runs.find(item => item.response.status === "completed")!.response);
+  const taskWithCompletedRun = {
+    ...baseTask,
+    activeRunId: null,
+    lastRun: {
+      id: completedRun.id,
+      taskId: baseTask.id,
+      trigger: completedRun.trigger,
+      status: completedRun.status,
+      scheduledAt: completedRun.scheduledAt,
+      startedAt: completedRun.startedAt,
+      finishedAt: completedRun.finishedAt,
+      error: completedRun.error,
+      resultSummary: completedRun.resultSummary,
+      resultLink: completedRun.resultLink,
+      spendTime: completedRun.spendTime,
+    },
+  };
+  const fullRun = {
+    ...completedRun,
+    result: "First paragraph\n\nSecond paragraph",
+    resultSummary: "Short summary",
+  };
+  const pausedNoRunTask = {
+    ...baseTask,
+    id: "task-paused-empty",
+    activeRunId: null,
+    lastRun: null,
+    pause: { code: "credential_invalid" as const, message: "Credential expired" },
+  };
+  const fallbackTask = {
+    ...baseTask,
+    id: "task-fallback",
+    activeRunId: null,
+    lastRun: {
+      id: "run-missing",
+      taskId: "task-fallback",
+      trigger: "manual" as const,
+      status: "failed" as const,
+      scheduledAt: null,
+      startedAt: "2026-11-25T08:00:00Z",
+      finishedAt: "2026-11-25T08:00:10Z",
+      error: { code: "run_failed" as const, message: "Timeout" },
+      resultSummary: null,
+      resultLink: null,
+      spendTime: 10_000,
+    },
+  };
+
+  const byId = new Map<string, PlatformTask>([
+    [taskWithCompletedRun.id, taskWithCompletedRun],
+    [pausedNoRunTask.id, pausedNoRunTask],
+    [fallbackTask.id, fallbackTask],
+  ]);
+
+  const reads = createScheduledTaskReads({
+    async list() {
+      return { tasks: [], timeZone: baseTask.timeZone };
+    },
+    async task(id) {
+      return byId.get(id)!;
+    },
+    async form() {
+      throw new Error("unused");
+    },
+    async runs() {
+      return { runs: [], nextCursor: null };
+    },
+    async run(taskId) {
+      if (taskId === fallbackTask.id) throw new Error("not found");
+      return fullRun;
+    },
+    async applications() {
+      return [];
+    },
+  }, "en", translate);
+
+  const completed = await reads.latestRunRecord(taskWithCompletedRun.id);
+  expect(completed.primaryKey).toBe(fullRun.id);
+  expect(completed.fields).toMatchObject({
+    status: "completed",
+    trigger: fullRun.trigger,
+    startedAt: fullRun.startedAt,
+    finishedAt: fullRun.finishedAt,
+    timeZone: fullRun.snapshot.timeZone,
+    result: "First paragraph\n\nSecond paragraph",
+    resultSummary: "Short summary",
+  });
+
+  const pausedEmpty = await reads.latestRunRecord(pausedNoRunTask.id);
+  expect(pausedEmpty.fields).toMatchObject({
+    pauseMessage: "Credential expired",
+    timeZone: pausedNoRunTask.timeZone,
+  });
+  expect(pausedEmpty.fields.status).toBeUndefined();
+  expect(pausedEmpty.fields.startedAt).toBeUndefined();
+
+  const fallback = await reads.latestRunRecord(fallbackTask.id);
+  expect(fallback.fields).toMatchObject({
+    status: "failed",
+    trigger: "manual",
+    startedAt: "2026-11-25T08:00:00Z",
+    finishedAt: "2026-11-25T08:00:10Z",
+  });
+  expect(String(fallback.fields.errorMessage)).toContain("Timeout");
 });

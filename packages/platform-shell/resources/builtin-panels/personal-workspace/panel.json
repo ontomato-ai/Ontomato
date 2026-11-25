@@ -166,6 +166,10 @@
           "columns": 12,
           "rowHeight": 112,
           "gap": 16,
+          "itemSurface": "section",
+          "rowSizing": "auto",
+          "itemHeaderDivider": "none",
+          "controlsVisibility": "hover",
           "editable": true,
           "showGroupHeaders": false,
           "showItemHeaders": true,
@@ -434,7 +438,7 @@
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000007"
       },
       "favoriteDashboardCards": {
-        "component": "ObjectList",
+        "component": "DashboardMetricPreview",
         "type": "platform:Favorite",
         "data": {
           "rows": {
@@ -446,98 +450,27 @@
             }
           }
         },
-        "operations": {
-          "moveUp": {
-            "type": "platform:Favorite",
-            "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
-            "params": {
-              "direction": {
-                "literal": "up"
-              }
-            }
-          },
-          "moveDown": {
-            "type": "platform:Favorite",
-            "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
-            "params": {
-              "direction": {
-                "literal": "down"
-              }
-            }
-          },
-          "unfavorite": {
-            "type": "platform:Favorite",
-            "operation": "favorites.remove",
-            "target": {
-              "row": true
-            }
-          }
-        },
         "config": {
-          "layout": "cards",
-          "searchable": false,
-          "showHeader": false,
-          "showFooter": false,
-          "subtitleField": "dashboardName",
-          "emptyText": "empty.dashboardCards",
-          "rowActions": {
-            "placement": "header",
-            "maxVisible": 0,
-            "items": [
-              {
-                "kind": "operation",
-                "operation": "moveUp",
-                "labelKey": "action.moveUp",
-                "disabledWhen": {
-                  "field": "canMoveUp",
-                  "equals": false
-                }
-              },
-              {
-                "kind": "operation",
-                "operation": "moveDown",
-                "labelKey": "action.moveDown",
-                "disabledWhen": {
-                  "field": "canMoveDown",
-                  "equals": false
-                }
-              },
-              {
-                "kind": "operation",
-                "operation": "unfavorite",
-                "labelKey": "action.unfavorite",
-                "danger": true
-              }
-            ]
-          }
+          "maxMetrics": 6,
+          "maxCharts": 4,
+          "chartHeight": "220px"
         },
         "name": "Pinned dashboard cards",
-        "description": "Pinned metric and chart cards from followed dashboards.",
+        "description": "Live KPI numerals and thumbnail charts for followed dashboards.",
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000008"
       },
       "scheduledTasks": {
-        "component": "ObjectList",
+        "component": "ScheduledTaskSummaryList",
         "type": "platform:ScheduledTask",
         "data": {
           "rows": "list"
         },
         "config": {
-          "layout": "list",
-          "searchable": false,
-          "showHeader": false,
-          "showFooter": false,
-          "subtitleField": "frequency",
-          "statusField": "stateLabel",
-          "emptyText": "empty.tasks"
+          "maxPerGroup": 6,
+          "showResolveAction": true
         },
         "name": "My scheduled tasks",
-        "description": "Scheduled tasks owned by or accessible to the current user.",
+        "description": "Scheduled task attention summary, priority sections, and inline resolve actions.",
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000009"
       },
       "pinnedSessions": {
@@ -870,18 +803,17 @@
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000014"
       },
       "taskSummary": {
-        "component": "ObjectSummary",
+        "component": "ScheduledTaskRunDetail",
         "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
-          "record": "record"
+          "record": "latestRunRecord"
         },
         "config": {
-          "showTitle": true,
-          "emptyText": "drawer.taskEmpty"
+          "showRefresh": true
         },
-        "name": "Selected task summary",
-        "description": "Key schedule, status, and recent execution metadata for the selected task.",
+        "name": "Selected task recent run",
+        "description": "Pause/failure callouts, status strip, timestamps, and cleaned output for the task's latest run.",
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000015"
       },
       "askObject": {
