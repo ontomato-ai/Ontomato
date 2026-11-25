@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -32,7 +33,9 @@ import io.ontomato.dataengine.service.TriggerService;
 import io.ontomato.dataengine.service.WorkflowService;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -81,8 +84,8 @@ class TriggerPanelEndpointTest {
     when(langService.get("en", "Trigger.condition.time")).thenReturn("Schedule");
     when(langService.get("en", "Trigger.effect.action")).thenReturn("Action");
     when(langService.get("en", "Trigger.cadence.daily")).thenReturn("Daily at {time}");
-    when(subjectDirectory.subjectsInDomain("domain"))
-        .thenReturn(List.of(new SubjectDirectory.Subject("u1", "alice", "Alice", Set.of())));
+    when(subjectDirectory.displayNamesInDomain("domain", Set.of("u1")))
+        .thenReturn(new HashMap<>(Map.of("u1", "Alice")));
     Action act = new Action();
     act.setId("act-1");
     act.setName("Check stock");
@@ -136,6 +139,24 @@ class TriggerPanelEndpointTest {
     assertEquals("Alice", row.getString("executorName"));
     assertEquals("2026-11-23T01:00:00Z", row.getString("nextRunAt"));
     assertEquals("2026-11-22T01:00:00Z", row.getString("lastFiredAt"));
+    verify(subjectDirectory).displayNamesInDomain("domain", Set.of("u1"));
+    verify(subjectDirectory, never()).subjectsInDomain(any());
+  }
+
+  @Test
+  void anEmptyListDoesNotReadDisplayNames() throws Exception {
+    when(triggers.queryList("domain", null)).thenReturn(List.of());
+
+    String body = mvc.perform(post("/trigger/queryList")
+            .header("lang", "en")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isOk())
+        .andReturn().getResponse().getContentAsString();
+    JSONObject json = JSON.parseObject(body);
+    assertTrue(json.getBooleanValue("success"));
+    assertTrue(json.getJSONArray("data").isEmpty());
+    verifyNoInteractions(subjectDirectory, actionService, workflowService);
   }
 
   @Test

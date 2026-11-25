@@ -7,9 +7,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -185,7 +187,7 @@ public class ActionController {
 			action.setCreatedBy(user.getId());
 			Action saved = actionService.save(action, param.getString("explanationRef"),
 					new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner(user.getId(), user.getDomainId()), lang);
-			ret.put("data", withDisplay(saved, subjectNames(user.getDomainId()), lang));
+			ret.put("data", withDisplay(saved, subjectNames(user.getDomainId(), List.of(saved)), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
@@ -283,7 +285,7 @@ public class ActionController {
 			if (action == null || !user.getDomainId().equals(action.getDomainId())) {
 				ret.put("data", null);
 			} else {
-				ObjectNode display = withDisplay(action, subjectNames(user.getDomainId()), lang);
+				ObjectNode display = withDisplay(action, subjectNames(user.getDomainId(), List.of(action)), lang);
 				if ("publication-review".equals(param.getString("purpose"))) {
 					display.put("sandboxTrialLabel", langService.get(lang,
 							"Action.sandboxTrial." + generationOperations.actionTrialStatus(action)));
@@ -616,18 +618,16 @@ public class ActionController {
 	}
 
 	private ArrayNode withDisplay(List<Action> actions, String domainId, String lang) {
-		Map<String, String> names = subjectNames(domainId);
+		Map<String, String> names = subjectNames(domainId, actions);
 		ArrayNode items = objectMapper.createArrayNode();
 		for (Action action : actions) items.add(withDisplay(action, names, lang));
 		return items;
 	}
 
-	private Map<String, String> subjectNames(String domainId) {
-		Map<String, String> names = new HashMap<>();
-		for (SubjectDirectory.Subject subject : subjectDirectory.subjectsInDomain(domainId))
-			names.put(subject.id(), subject.displayName() == null || subject.displayName().isBlank()
-					? subject.loginCode() : subject.displayName());
-		return names;
+	private Map<String, String> subjectNames(String domainId, List<Action> actions) {
+		var ids = actions.stream().flatMap(row -> Stream.of(row.getCreatedBy(), row.getReviewedBy()))
+				.filter(Objects::nonNull).collect(Collectors.toSet());
+		return subjectDirectory.displayNamesInDomain(domainId, ids);
 	}
 
 	private String statusLabel(String status, String lang) {
