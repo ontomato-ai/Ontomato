@@ -95,7 +95,7 @@ const inlineMemberSchema = z.object({
   agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
   prefill: panelConversationEntryFields.shape.prefill.describe("ConversationEntry text placed in the page composer without sending it."),
   prefillKey: panelConversationEntryFields.shape.prefillKey.describe("ConversationEntry opening sentence as a key in this panel's content.messages, read in the reader's language. Use it instead of prefill in a panel shipped to several languages."),
-  sourceCard: dashboardCardRequestSchema.optional().describe("Required for MetricChart. Use {dashboardId, cardId}; the source owner registers the chart and assigns its projection ID."),
+  sourceCard: dashboardCardRequestSchema.optional().describe("Optional for MetricChart. Use {dashboardId, cardId} to bind an existing dashboard card through the chart owner, or omit it and bind MetricChart data directly."),
   name: z.string().optional().describe("Projection display name. Defaults to the member name."),
   description: z.string().optional().describe("Projection description. Defaults to the member name."),
 }).strict().superRefine((member, ctx) => {

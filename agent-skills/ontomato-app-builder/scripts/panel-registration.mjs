@@ -96,6 +96,10 @@ export function panelRegistrationRecords({ projections = [], panels = [], applic
             throw new Error(`panelUses[${index}].icon '${entryIcon}' is not available for a domain application. Choose one of ${choices.join(", ")}`);
           }
         }
+        const pageComposer = input.panelUses[index]?.pageComposer;
+        if (pageComposer !== undefined && pageComposer !== "bottom" && pageComposer !== "none") {
+          throw new Error(`panelUses[${index}].pageComposer '${pageComposer}' must be 'bottom' or 'none'`);
+        }
       }
       if (input.declaration === undefined) continue;
       const { icon } = input.declaration;

@@ -225,10 +225,15 @@ events, output types and defaults.
   `config.groupBy` groups by a returned field (e.g. category), with collapsible headings and per-group counts for
   the current result. `groupEmptyLabel` names the empty group. Match the owner read parameter type when binding a
   filter. For example, a boolean `template` filter uses a nullable boolean scalar, with `null` for all records.
-- **Table display:** Use `config.layout: "table"` for columns, `columns[].subtitleKey` for secondary text,
-  `wrap: true` for a multiline cell, `kind: "tag"` for an owner tone or exact-match `valueMap`, and
-  `kind: "tags"` for multiple values (empty renders an em dash). For list-valued cells, use `listSeparator` to
-  set the inline separator and `listStyle` to choose the rendering (for example `"inline"` or `"tags"`).
+- **Table, tabs, dynamic columns, and CSV export:** Use `config.layout: "table"` for columns,
+  `columns[].subtitleKey` for secondary text, `wrap: true` for a multiline cell, `kind: "tag"` for an owner tone or
+  exact-match `valueMap`, and `kind: "tags"` for multiple values (empty renders an em dash). For list-valued cells,
+  use `listSeparator` to set the inline separator and `listStyle` to choose the rendering (for example `"inline"` or
+  `"tags"`). Set `config.dynamicColumns: true` (without static `columns`) to derive columns from owner `fieldLabels`
+  and record `fields` (preserving headers across empty results in the same scope). Enable `showColumnToggle: true` for
+  a local column-visibility popover, and `exportable: true` (with optional `exportFileName`) to export the currently
+  loaded page as UTF-8 BOM CSV in visible-column order. Use `config.layout: "tabs"` for a horizontal tab strip with
+  overflow scroll buttons, compact per-tab `rowActions`, and a trailing `#tabs-extra` slot.
   Reference cells emit `@navigate` without selecting
   the row. Give every column a `labelKey` defined in `content.messages`. Owner row labels cannot supply table
   headers when there are no rows. `showFooter: false` hides the footer.
@@ -282,6 +287,22 @@ events, output types and defaults.
 }
 ```
 
+### `GroupedGrid`
+
+Arranges `data.rows` (`panelRecordList`) into collapsible groups on a responsive CSS grid (`columns`, `rowHeight`,
+`gap`), with optional parent `data.record` (`groupsField` to order groups and preserve empty groups), stacked section
+tracks (`sectionField`, `sectionOrder`, per-section `rowHeight`), drag-and-drop reordering, pointer cell resizing
+(`colSpanField`, `rowSpanField`), `selected` state, and per-item `rowActions`. Render each cell body through `#item`
+(alongside `#item-header-actions`, `#group-header-actions`, `#group-empty`, `#empty`); `layout-change` fires only when
+the reader finishes a drag or resize interaction. When declaring row operations on `GroupedGrid`, specify the row target
+explicitly: `{ "type": "<rowType>", "operation": "<opId>", "target": "row" }`.
+
+### `OperationResult`
+
+Pure presentation component (`<operation-result :result="..." />`) for rendering the response of a read-only panel
+operation: `markdown`, `json`, `file`, or multi-section `sections` (tabbed `records` tables, language-tagged `code`,
+and `json` panes).
+
 ### `ObjectHeader`
 
 Bind `data.record` to the selected object. `config.subtitleField` displays a single truncated line by default.
@@ -331,6 +352,10 @@ page-specific follow-up; the built-in receipt carries the batch outcomes.
 ```
 
 For row actions, use `ObjectList.config.rowActions`. `OperationButton` does not accept a `{ fromSlot: true }` target.
+
+For a multi-target platform operation declaring `targetTypes` (accepting multiple `platformTypes` and/or
+`customerObjects`, such as unified `platform:Favorite` operations), declare the operation's owner `type` (e.g.
+`"type": "platform:Favorite"`) alongside a `target` pointing to a state of any accepted object type.
 
 For a read-only trial of a live form draft, bind a draft read operation and a public parameter object:
 
@@ -399,9 +424,13 @@ Bind the parent's `files` read to `ObjectTree.data.files` and `state.selected` t
 Use `config.pathField` if it differs from the key and `config.fallbackToFirst: true` for an unspecified initial path.
 On the text reader bind the same parent target and a read such as
 `data: { record: { read: "file", params: { path: { state: "filePath" } } } }`.
-`config.textField: "content"` picks the text and `format: "auto"` uses the extension. An explicit unavailable file
-path stays selected and the reader shows the owner's result. For long segmented texts use `data.sources` and
-`data.page` and let the reader request subsequent pages.
+`config.textField: "content"` picks the text and `format: "auto"` infers Markdown (with optional YAML frontmatter
+separation), CSV/TSV `table` preview, or read-only `code` from `pathField` / `record.label` / `record.primaryKey`;
+pass `format: "plain" | "markdown" | "table" | "code" | "diff"` to override (`diff` parses standard unified diffs into
+file summaries, per-file change cards, binary notices, and line-numbered hunks). Clicking a relative `.md` link in
+Markdown writes the normalized path to `activePath`. An explicit unavailable file path stays selected and the reader
+shows the owner's result. For long segmented texts use `data.sources` and `data.page` and let the reader request
+subsequent pages.
 
 ### `AnnotatedCode`
 
@@ -411,12 +440,15 @@ line/segment focus. `@select-ref` emits the `refKey` string. Use it to select th
 object-internal position and activate the relevant tab in one public state update. Keep the other tabs mounted.
 Read `status`, `activeSegmentId` and `selectedRef` as read-only outputs when needed.
 
-### `ObjectGraph`
+### `ObjectGraph` and `OntologyGraph`
 
-- Displays nodes (`panelRecordList`) and edges (`panelRecordList`) with zoom, fit, relayout, PNG export, search
-  highlighting (`highlightedNodes`, `highlightedEdges`), and directed shortest-path (`pathFrom`, `pathTo`).
-- **Visible-graph scope note:** `pathFrom` / `pathTo` computes the directed shortest path over the **visible nodes and
-  edges currently loaded in the canvas** (not an external unpaged server traversal).
+- **`ObjectGraph`**: displays nodes (`panelRecordList`) and edges (`panelRecordList`) with zoom, fit, relayout, PNG
+  export, search highlighting (`highlightedNodes`, `highlightedEdges`), and directed shortest-path (`pathFrom`,
+  `pathTo`) computed over the **visible nodes and edges currently loaded in the canvas**.
+- **`OntologyGraph`**: renders type mode (`schema`/`counts`), sampled overview mode (`overview` and optional deferred
+  `connections`, with group headings, aggregated inter-group edges, and version-conflict recovery), and paginated
+  one-hop instance expansion (`neighbors` with `offset`, `limit`, `direction`, `targetClass`, `relationKinds`,
+  `layers`), plus per-person saved `positions` (`json`) and `#toolbar` / `#overlay` slots.
 
 ## Customer `ObjectType` forms and targetless Actions
 
@@ -785,17 +817,29 @@ node "$SKILL/scripts/panel-check.mjs" ./my-panel --sdk-dir "$SDK_RELEASE" --type
 component catalogue, reports unchecked references, and needs no running service. Use the online
 `ontomato.mjs panel check` for already-registered references that need server lookup.
 
-### Metric charts from dashboard cards
+### Metric charts and single-member refresh
 
-For a calculated MetricView chart, declare `component: "MetricChart"` and `sourceCard: { dashboardId, cardId }`, and
-connect its inputs in `state`. If the card is not yet registered, `panel check` lists it in `unchecked` and
-`panel register` asks the card owner to register it and writes the projection ID.
+For a calculated MetricView chart from an existing dashboard card, declare `component: "MetricChart"` and
+`sourceCard: { dashboardId, cardId }`, and connect its inputs in `state` (if unregistered, `panel check` lists it in
+`unchecked` and `panel register` asks the card owner to register it and writes the projection ID). `MetricChart` also
+supports binding its data directly without `sourceCard` when rendering a standalone or preview chart. To refresh a
+single mounted projection in place (for example one dashboard card) without reloading the whole panel, attach a Vue
+template `ref` to `<projection slot="...">` and call `memberRef.value?.refresh()`.
 
-## Open the page composer
+## Open the page composer and inline conversation entries
 
-A dialog or conversation entry pointing to a specific agent is also a projection. Add a `ConversationEntry` member when
-the page needs a button that opens the composer with a specific agent and an optional opening line (`prefill` or
-multi-locale `prefillKey` in `content.messages`). The reader still sends the message.
+Conversation shell chrome (history list, message stream, dockable page area) belongs to the platform shell rather than
+an application panel — do not build a custom chat page inside a panel.
+
+- **Button entry (`presentation="button"`, default):** Add a `ConversationEntry` projection when the page needs a button
+  that opens the composer with a specific agent (`agent: "page-default" | { kind: "id", id } | { kind: "preset", agentKind }`)
+  and an optional opening line (`prefill` or multi-locale `prefillKey` in `content.messages`). The reader still sends
+  the message.
+- **Inline composer (`presentation="inline"`):** When a page itself serves as a conversation entry (such as a workspace
+  home), place a `ConversationEntry` member with `presentation="inline"` (supporting `placeholderKey`, `minLines`,
+  `agentPickerVariant`, `attachPage`, and `@sent`) and set `"pageComposer": "none"` on that entry in `panelUses` so the
+  host hides the bottom floating composer. While mounted, the inline `ConversationEntry` also serves sibling
+  `ConversationEntry` buttons on the same page.
 
 ## Register and open
 
@@ -805,7 +849,8 @@ Registration writes each new projection's UUID into `panel.json` as `id` (keep i
 
 - Application IDs start with `app-`, and paths start with `/applications/<application-id>/`.
 - Give every `panelUse` a domain-unique `pageKey`. Include `names` for menu entries; omit `names` for detail entries
-  opened only via navigation or deep links.
+  opened only via navigation or deep links. Optional per-entry `icon` uses any key from `sdk icons`, and optional
+  `pageComposer: "none"` suppresses the host's bottom floating composer (defaults to `"bottom"`).
 - For domain-member apps, set `entryAccess: ["domain-member"]` and `access: { kind: "domain-member" }`. For restricted
   apps, declare app-owned permissions (e.g. `app:app-my-app:view`).
 - Set `"allowStandalone": true` when the application should support standalone external links (`standalone=1`, copied
