@@ -137,8 +137,8 @@
         "config": {
           "presentation": "inline",
           "placeholderKey": "hero.askPlaceholder",
-          "minLines": 2,
-          "agentPickerVariant": "chip"
+          "minLines": 4,
+          "agentPickerVariant": "home"
         },
         "name": "Quick ask composer",
         "description": "Inline conversation composer embedded in the personal workspace hero band.",
@@ -151,8 +151,7 @@
         "config": {
           "presentation": "button",
           "labelKey": "hero.customize",
-          "size": "small",
-          "plain": true
+          "type": "default"
         },
         "name": "Customize workspace",
         "description": "Prefills the workspace composer to ask an agent to customize the user's personal workspace.",
@@ -303,15 +302,17 @@
           }
         },
         "config": {
-          "layout": "list",
+          "layout": "cards",
           "searchable": false,
           "showHeader": false,
           "showFooter": false,
           "leadingIconField": "icon",
           "leadingIconKind": "application",
           "openOutput": "openPath",
+          "subtitleLines": 2,
           "emptyText": "empty.apps",
           "rowActions": {
+            "placement": "header",
             "maxVisible": 0,
             "items": [
               {
@@ -539,6 +540,94 @@
         "description": "Scheduled tasks owned by or accessible to the current user.",
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000009"
       },
+      "pinnedSessions": {
+        "component": "ObjectList",
+        "type": "platform:Favorite",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "targetGroup": {
+                "literal": "sessions"
+              }
+            }
+          }
+        },
+        "operations": {
+          "moveUp": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "up"
+              }
+            }
+          },
+          "moveDown": {
+            "type": "platform:Favorite",
+            "operation": "favorites.move",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "direction": {
+                "literal": "down"
+              }
+            }
+          },
+          "unfavorite": {
+            "type": "platform:Favorite",
+            "operation": "favorites.remove",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "openOutput": "openPath",
+          "rowActions": {
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "unfavorite",
+                "labelKey": "action.unfavorite",
+                "icon": "star-filled",
+                "iconOnly": true,
+                "active": true
+              },
+              {
+                "kind": "operation",
+                "operation": "moveUp",
+                "labelKey": "action.moveUp",
+                "disabledWhen": {
+                  "field": "canMoveUp",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "moveDown",
+                "labelKey": "action.moveDown",
+                "disabledWhen": {
+                  "field": "canMoveDown",
+                  "equals": false
+                }
+              }
+            ]
+          }
+        },
+        "name": "Pinned analyses",
+        "description": "Pinned agent conversations with quick unpin and reorder actions.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000019"
+      },
       "recentConversations": {
         "component": "ObjectList",
         "type": "platform:AgentSession",
@@ -583,17 +672,14 @@
           "openOutput": "openPath",
           "emptyText": "empty.conversations",
           "rowActions": {
-            "maxVisible": 0,
+            "maxVisible": 1,
             "items": [
-              {
-                "kind": "operation",
-                "operation": "rename",
-                "labelKey": "action.rename"
-              },
               {
                 "kind": "operation",
                 "operation": "favorite",
                 "labelKey": "action.favorite",
+                "icon": "star",
+                "iconOnly": true,
                 "when": {
                   "field": "favorite",
                   "equals": false
@@ -603,10 +689,18 @@
                 "kind": "operation",
                 "operation": "unfavorite",
                 "labelKey": "action.unfavorite",
+                "icon": "star-filled",
+                "iconOnly": true,
+                "active": true,
                 "when": {
                   "field": "favorite",
                   "equals": true
                 }
+              },
+              {
+                "kind": "operation",
+                "operation": "rename",
+                "labelKey": "action.rename"
               }
             ]
           }
@@ -719,8 +813,6 @@
           "searchable": false,
           "showHeader": false,
           "showFooter": false,
-          "leadingIconField": "icon",
-          "leadingIconKind": "application",
           "openOutput": "openPath",
           "emptyText": "empty.recent"
         },
@@ -799,8 +891,7 @@
         "config": {
           "presentation": "button",
           "labelKey": "drawer.askAgent",
-          "size": "small",
-          "plain": true
+          "type": "primary"
         },
         "name": "Ask agent about object",
         "description": "Prefills the workspace composer to ask an agent to analyze the selected object.",
@@ -813,12 +904,24 @@
         "config": {
           "presentation": "button",
           "labelKey": "drawer.askAgent",
-          "size": "small",
-          "plain": true
+          "type": "primary"
         },
         "name": "Ask agent about metric card",
-        "description": "Prefills the workspace composer to ask an agent to explain the selected dashboard card.",
+        "description": "Prefills the workspace composer to ask an agent to analyze the selected dashboard card.",
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000017"
+      },
+      "explainCard": {
+        "component": "ConversationEntry",
+        "agent": "page-default",
+        "prefillKey": "drawer.explainCardPrefill",
+        "config": {
+          "presentation": "button",
+          "labelKey": "drawer.explainMetric",
+          "type": "default"
+        },
+        "name": "Explain metric card",
+        "description": "Prefills the workspace composer to ask an agent to explain the selected metric definition.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000020"
       },
       "askTask": {
         "component": "ConversationEntry",
@@ -827,8 +930,7 @@
         "config": {
           "presentation": "button",
           "labelKey": "drawer.askAgent",
-          "size": "small",
-          "plain": true
+          "type": "primary"
         },
         "name": "Ask agent about task",
         "description": "Prefills the workspace composer to ask an agent to inspect the selected scheduled task.",
@@ -842,7 +944,6 @@
         "hero.greeting.morning": "Good morning",
         "hero.greeting.afternoon": "Good afternoon",
         "hero.greeting.evening": "Good evening",
-        "hero.subtitle": "Your apps, agents, dashboards, scheduled tasks, pinned objects, and recent work in one place.",
         "hero.askPlaceholder": "Ask an agent anything, analyze a metric, or customize this workspace...",
         "hero.customize": "Customize workspace",
         "hero.customizePrefill": "Help me customize my personal workspace layout and blocks.",
@@ -902,13 +1003,26 @@
         "notice.presetApplied": "Layout preset applied.",
         "notice.layoutReset": "Default layout restored.",
         "notice.restoredDefaultHome": "Default personal workspace restored.",
-        "notice.actionFailed": "Action failed: {reason}"
+        "notice.actionFailed": "Action failed: {reason}",
+        "hero.refresh": "Refresh",
+        "hero.quickLinksLabel": "Quick links",
+        "hero.startAnalysis": "Start analysis",
+        "hero.exploreApps": "Explore applications",
+        "block.pinnedConversations": "Pinned analyses",
+        "block.recentConversations": "Recent analyses",
+        "link.appBuilder": "App Builder",
+        "drawer.explainMetric": "Explain metric",
+        "drawer.explainCardPrefill": "Please explain the definition, calculation logic, and business meaning of this dashboard metric.",
+        "empty.action.apps": "Open Application Gallery",
+        "empty.action.dashboards": "Open Dashboards",
+        "empty.action.tasks": "Open Schedules",
+        "empty.action.conversations": "Start analysis",
+        "empty.action.objects": "Open Object Browser"
       },
       "zh-CN": {
         "hero.greeting.morning": "早上好",
         "hero.greeting.afternoon": "下午好",
         "hero.greeting.evening": "晚上好",
-        "hero.subtitle": "集中管理常用应用、智能体、仪表盘、定时任务、关注对象与最近访问。",
         "hero.askPlaceholder": "向智能体提问、分析指标，或让我帮你调整个人工作台...",
         "hero.customize": "帮我调整工作台",
         "hero.customizePrefill": "请帮我调整个人工作台的布局和区块内容。",
@@ -968,13 +1082,26 @@
         "notice.presetApplied": "已应用布局预设。",
         "notice.layoutReset": "已恢复默认布局。",
         "notice.restoredDefaultHome": "已恢复默认个人工作台。",
-        "notice.actionFailed": "操作失败：{reason}"
+        "notice.actionFailed": "操作失败：{reason}",
+        "hero.refresh": "刷新",
+        "hero.quickLinksLabel": "快捷入口",
+        "hero.startAnalysis": "开始分析",
+        "hero.exploreApps": "探索应用",
+        "block.pinnedConversations": "置顶分析",
+        "block.recentConversations": "最近分析",
+        "link.appBuilder": "应用构建",
+        "drawer.explainMetric": "解释此指标",
+        "drawer.explainCardPrefill": "请解释当前指标卡片的口径定义、计算逻辑和业务含义。",
+        "empty.action.apps": "去应用广场",
+        "empty.action.dashboards": "去仪表盘",
+        "empty.action.tasks": "去定时任务",
+        "empty.action.conversations": "开始对话",
+        "empty.action.objects": "去对象浏览器"
       },
       "zh-TW": {
         "hero.greeting.morning": "早安",
         "hero.greeting.afternoon": "午安",
         "hero.greeting.evening": "晚安",
-        "hero.subtitle": "集中管理常用應用、智慧體、儀表板、排程任務、關注物件與最近造訪。",
         "hero.askPlaceholder": "向智慧體提問、分析指標，或讓我幫你調整個人工作台...",
         "hero.customize": "幫我調整工作台",
         "hero.customizePrefill": "請幫我調整個人工作台的版面與區塊內容。",
@@ -1034,13 +1161,26 @@
         "notice.presetApplied": "已套用版面預設。",
         "notice.layoutReset": "已恢復預設版面。",
         "notice.restoredDefaultHome": "已恢復預設個人工作台。",
-        "notice.actionFailed": "操作失敗：{reason}"
+        "notice.actionFailed": "操作失敗：{reason}",
+        "hero.refresh": "重新整理",
+        "hero.quickLinksLabel": "快捷入口",
+        "hero.startAnalysis": "開始分析",
+        "hero.exploreApps": "探索應用",
+        "block.pinnedConversations": "置頂分析",
+        "block.recentConversations": "最近分析",
+        "link.appBuilder": "應用建置",
+        "drawer.explainMetric": "解釋此指標",
+        "drawer.explainCardPrefill": "請解釋目前指標卡片的口徑定義、計算邏輯與業務含義。",
+        "empty.action.apps": "前往應用廣場",
+        "empty.action.dashboards": "前往儀表板",
+        "empty.action.tasks": "前往排程任務",
+        "empty.action.conversations": "開始對話",
+        "empty.action.objects": "前往物件瀏覽器"
       },
       "ja": {
         "hero.greeting.morning": "おはようございます",
         "hero.greeting.afternoon": "こんにちは",
         "hero.greeting.evening": "こんばんは",
-        "hero.subtitle": "アプリ、エージェント、ダッシュボード、スケジュールタスク、ピン留めオブジェクト、最近のアクセスを一か所に。",
         "hero.askPlaceholder": "エージェントに質問する、指標を分析する、またはワークスペースをカスタマイズ...",
         "hero.customize": "ワークスペースを調整",
         "hero.customizePrefill": "個人ワークスペースのレイアウトとブロックを調整してください。",
@@ -1100,13 +1240,26 @@
         "notice.presetApplied": "プリセットを適用しました。",
         "notice.layoutReset": "デフォルトレイアウトに戻しました。",
         "notice.restoredDefaultHome": "デフォルトの個人ワークスペースに戻しました。",
-        "notice.actionFailed": "操作に失敗しました: {reason}"
+        "notice.actionFailed": "操作に失敗しました: {reason}",
+        "hero.refresh": "更新",
+        "hero.quickLinksLabel": "クイックリンク",
+        "hero.startAnalysis": "分析を開始",
+        "hero.exploreApps": "アプリを探索",
+        "block.pinnedConversations": "ピン留め分析",
+        "block.recentConversations": "最近の分析",
+        "link.appBuilder": "アプリ構築",
+        "drawer.explainMetric": "この指標を説明",
+        "drawer.explainCardPrefill": "選択したダッシュボード指標の定義、計算ロジック、業務上の意味を説明してください。",
+        "empty.action.apps": "アプリギャラリーを開く",
+        "empty.action.dashboards": "ダッシュボードを開く",
+        "empty.action.tasks": "スケジュールを開く",
+        "empty.action.conversations": "分析を開始",
+        "empty.action.objects": "オブジェクトブラウザを開く"
       },
       "de": {
         "hero.greeting.morning": "Guten Morgen",
         "hero.greeting.afternoon": "Guten Tag",
         "hero.greeting.evening": "Guten Abend",
-        "hero.subtitle": "Ihre Apps, Agenten, Dashboards, geplanten Aufgaben, angehefteten Objekte und letzten Besuche an einem Ort.",
         "hero.askPlaceholder": "Fragen Sie einen Agenten, analysieren Sie Kennzahlen oder passen Sie diesen Bereich an...",
         "hero.customize": "Bereich anpassen",
         "hero.customizePrefill": "Hilf mir, Layout und Blöcke meines persönlichen Arbeitsbereichs anzupassen.",
@@ -1166,13 +1319,26 @@
         "notice.presetApplied": "Layout-Vorlage angewendet.",
         "notice.layoutReset": "Standardlayout wiederhergestellt.",
         "notice.restoredDefaultHome": "Standard-Arbeitsbereich wiederhergestellt.",
-        "notice.actionFailed": "Aktion fehlgeschlagen: {reason}"
+        "notice.actionFailed": "Aktion fehlgeschlagen: {reason}",
+        "hero.refresh": "Aktualisieren",
+        "hero.quickLinksLabel": "Schnellzugriff",
+        "hero.startAnalysis": "Analyse starten",
+        "hero.exploreApps": "Anwendungen erkunden",
+        "block.pinnedConversations": "Angeheftete Analysen",
+        "block.recentConversations": "Letzte Analysen",
+        "link.appBuilder": "App-Builder",
+        "drawer.explainMetric": "Kennzahl erklären",
+        "drawer.explainCardPrefill": "Bitte erkläre die Definition, Berechnungslogik und geschäftliche Bedeutung dieser Dashboard-Kennzahl.",
+        "empty.action.apps": "Anwendungsgalerie öffnen",
+        "empty.action.dashboards": "Dashboards öffnen",
+        "empty.action.tasks": "Zeitpläne öffnen",
+        "empty.action.conversations": "Analyse starten",
+        "empty.action.objects": "Objekt-Browser öffnen"
       },
       "fr": {
         "hero.greeting.morning": "Bonjour",
         "hero.greeting.afternoon": "Bon après-midi",
         "hero.greeting.evening": "Bonsoir",
-        "hero.subtitle": "Vos applications, agents, tableaux de bord, tâches planifiées, objets épinglés et visites récentes réunis.",
         "hero.askPlaceholder": "Posez une question à un agent, analysez un indicateur ou personnalisez cet espace...",
         "hero.customize": "Personnaliser l'espace",
         "hero.customizePrefill": "Aide-moi à personnaliser la disposition et les blocs de mon espace personnel.",
@@ -1232,13 +1398,26 @@
         "notice.presetApplied": "Modèle appliqué.",
         "notice.layoutReset": "Disposition par défaut rétablie.",
         "notice.restoredDefaultHome": "Espace personnel par défaut rétabli.",
-        "notice.actionFailed": "Échec de l'action : {reason}"
+        "notice.actionFailed": "Échec de l'action : {reason}",
+        "hero.refresh": "Actualiser",
+        "hero.quickLinksLabel": "Accès rapides",
+        "hero.startAnalysis": "Démarrer une analyse",
+        "hero.exploreApps": "Explorer les applications",
+        "block.pinnedConversations": "Analyses épinglées",
+        "block.recentConversations": "Analyses récentes",
+        "link.appBuilder": "Créateur d'applications",
+        "drawer.explainMetric": "Expliquer l'indicateur",
+        "drawer.explainCardPrefill": "Veuillez expliquer la définition, la logique de calcul et la signification métier de cet indicateur.",
+        "empty.action.apps": "Ouvrir la galerie",
+        "empty.action.dashboards": "Ouvrir les tableaux de bord",
+        "empty.action.tasks": "Ouvrir les planifications",
+        "empty.action.conversations": "Démarrer une analyse",
+        "empty.action.objects": "Ouvrir l'explorateur d'objets"
       },
       "it": {
         "hero.greeting.morning": "Buongiorno",
         "hero.greeting.afternoon": "Buon pomeriggio",
         "hero.greeting.evening": "Buonasera",
-        "hero.subtitle": "App, agenti, dashboard, attività pianificate, oggetti fissati e visite recenti in un unico posto.",
         "hero.askPlaceholder": "Chiedi a un agente, analizza una metrica o personalizza quest'area...",
         "hero.customize": "Personalizza area",
         "hero.customizePrefill": "Aiutami a personalizzare layout e blocchi della mia area personale.",
@@ -1298,13 +1477,26 @@
         "notice.presetApplied": "Layout applicato.",
         "notice.layoutReset": "Layout predefinito ripristinato.",
         "notice.restoredDefaultHome": "Area personale predefinita ripristinata.",
-        "notice.actionFailed": "Operazione non riuscita: {reason}"
+        "notice.actionFailed": "Operazione non riuscita: {reason}",
+        "hero.refresh": "Aggiorna",
+        "hero.quickLinksLabel": "Collegamenti rapidi",
+        "hero.startAnalysis": "Avvia analisi",
+        "hero.exploreApps": "Esplora applicazioni",
+        "block.pinnedConversations": "Analisi fissate",
+        "block.recentConversations": "Analisi recenti",
+        "link.appBuilder": "Creazione app",
+        "drawer.explainMetric": "Spiega metrica",
+        "drawer.explainCardPrefill": "Spiega la definizione, la logica di calcolo e il significato aziendale di questa metrica.",
+        "empty.action.apps": "Apri galleria app",
+        "empty.action.dashboards": "Apri dashboard",
+        "empty.action.tasks": "Apri pianificazioni",
+        "empty.action.conversations": "Avvia analisi",
+        "empty.action.objects": "Apri browser oggetti"
       },
       "ar": {
         "hero.greeting.morning": "صباح الخير",
         "hero.greeting.afternoon": "مساء الخير",
         "hero.greeting.evening": "مساء الخير",
-        "hero.subtitle": "تطبيقاتك ووكلاؤك ولوحات المعلومات والمهام المجدولة والعناصر المثبتة والزيارات الأخيرة في مكان واحد.",
         "hero.askPlaceholder": "اسأل وكيلاً أو حلل مؤشراً أو خصص مساحة العمل هذه...",
         "hero.customize": "تخصيص مساحة العمل",
         "hero.customizePrefill": "ساعدني في تخصيص تخطيط وكتل مساحة العمل الشخصية.",
@@ -1364,7 +1556,21 @@
         "notice.presetApplied": "تم تطبيق قالب التخطيط.",
         "notice.layoutReset": "تمت استعادة التخطيط الافتراضي.",
         "notice.restoredDefaultHome": "تمت استعادة مساحة العمل الافتراضية.",
-        "notice.actionFailed": "فشل الإجراء: {reason}"
+        "notice.actionFailed": "فشل الإجراء: {reason}",
+        "hero.refresh": "تحديث",
+        "hero.quickLinksLabel": "روابط سريعة",
+        "hero.startAnalysis": "بدء التحليل",
+        "hero.exploreApps": "استكشاف التطبيقات",
+        "block.pinnedConversations": "التحليلات المثبتة",
+        "block.recentConversations": "التحليلات الأخيرة",
+        "link.appBuilder": "منشئ التطبيقات",
+        "drawer.explainMetric": "شرح المؤشر",
+        "drawer.explainCardPrefill": "يرجى شرح تعريف هذا المؤشر ومنطق حسابه ومعناه التجاري.",
+        "empty.action.apps": "فتح معرض التطبيقات",
+        "empty.action.dashboards": "فتح لوحات المعلومات",
+        "empty.action.tasks": "فتح الجداول",
+        "empty.action.conversations": "بدء التحليل",
+        "empty.action.objects": "فتح متصفح العناصر"
       }
     }
   }

@@ -35,7 +35,7 @@ import {
 } from "../platform-home/service";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import type { ProductOwner } from "../product-governance/grants";
-import { cleanSessionDisplayTitle, sessionOpenPath } from "./agent-session-panel";
+import { cleanSessionDisplayTitle, formatShortDateTime, sessionOpenPath } from "./agent-session-panel";
 import { applicationCatalogueClient } from "./application-catalogue";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
@@ -337,11 +337,14 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
           const session = sessionsMap.get(sessionId);
           const available = Boolean(session);
           const displayTitle = available ? cleanSessionDisplayTitle(session!.title, untitledSession) : unavailableLabel;
+          const subtitle = available
+            ? [session!.agentName, formatShortDateTime(session!.updatedAt, language)].filter(Boolean).join(" · ")
+            : "";
           rows.push({
             className: AGENT_SESSION,
             primaryKey: sessionId,
             label: displayTitle,
-            ...(available && session!.agentName ? { subtitle: session!.agentName } : {}),
+            ...(subtitle ? { subtitle } : {}),
             fields: {
               className: AGENT_SESSION,
               primaryKey: sessionId,

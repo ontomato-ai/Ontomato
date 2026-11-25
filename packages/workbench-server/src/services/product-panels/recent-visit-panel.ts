@@ -6,8 +6,22 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { personalWorkspaceStore } from "../personal-workspace/store";
 import type { ProductOwner } from "../product-governance/grants";
 import { applicationCatalogueClient } from "./application-catalogue";
+import { formatShortDateTime } from "./agent-session-panel";
 
 const recentText = (locale: string | undefined, key: string) => tForLocale(locale, `panels.recentVisit.${key}`);
+
+function extractVisitContext(rawPath: string): string {
+  try {
+    const url = new URL(rawPath, "https://workspace.invalid");
+    const objectKey = url.searchParams.get("key") ?? url.searchParams.get("primaryKey");
+    if (objectKey?.trim()) return objectKey.trim();
+    const sessionId = url.searchParams.get("sessionId");
+    if (sessionId?.trim()) return sessionId.trim().slice(0, 8);
+  } catch {
+    // Ignore malformed relative paths.
+  }
+  return "";
+}
 
 export function createRecentVisitReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const language = resolveLocale(viewer.locale);
@@ -33,18 +47,24 @@ export function createRecentVisitReadAdapter(owner: ProductOwner, viewer: Assist
       return visible.slice(0, limit).map(item => {
         const app = appsById.get(item.appId);
         const appName = app ? (localizedApplicationText(app.names, language) ?? app.id) : item.appId;
-        const subtitle = appName;
+        const context = extractVisitContext(item.path);
+        const formattedVisitedAt = formatShortDateTime(item.visitedAt, language);
+        const subtitle = [
+          appName && appName !== item.title ? appName : "",
+          context && context !== item.title ? context : "",
+          formattedVisitedAt,
+        ].filter(Boolean).join(" · ");
         return {
           className: RECENT_VISIT,
           primaryKey: item.path,
           label: item.title,
-          ...(subtitle && subtitle !== item.title ? { subtitle } : {}),
+          ...(subtitle ? { subtitle } : {}),
           fields: {
             appId: item.appId,
             appName,
             icon: app?.icon ?? "",
             title: item.title,
-            context: "",
+            context,
             path: item.path,
             visitedAt: item.visitedAt,
           },
