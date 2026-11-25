@@ -214,7 +214,7 @@ interface KeptPage {
  */
 // Typed as the pages themselves: unwrapping each page's port and contexts as reactive state is too deep to type.
 const kept = ref([]) as Ref<KeptPage[]>;
-/** Number of mounted embedded AgentChatPanel projections per entry use ID (suppresses bottom PageComposer). */
+/** Number of mounted embedded AgentChat projections per entry use ID (suppresses bottom PageComposer). */
 const embeddedChatCounts = reactive<Record<string, number>>({});
 let showings = 0;
 const failure = ref("");

@@ -74,7 +74,7 @@ const builtinProductRecordFields = {
 const builtinVisibility = z.literal("platform");
 
 export const METRIC_CHART_COMPONENT = "@ontomato/sdk:MetricChart";
-export const AGENT_CHAT_PANEL_COMPONENT = "@ontomato/sdk:AgentChatPanel";
+export const AGENT_CHAT_COMPONENT = "@ontomato/sdk:AgentChat";
 export const chartProjectionSourceSchema = dashboardCardRequestSchema;
 export type ChartProjectionSource = z.infer<typeof chartProjectionSourceSchema>;
 

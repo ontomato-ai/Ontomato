@@ -2,7 +2,7 @@
 import { computed, inject, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import {
-  AgentChatPanel as ShellAgentChatPanel,
+  AgentChat as ShellAgentChat,
   usePanelChatHost,
   type AgentHostAgent,
   type AgentHostClient,
@@ -132,7 +132,7 @@ async function loadDeclaredAgent() {
   const target = slot?.projection.conversationEntry?.target;
   if (!target) {
     status.value = "error";
-    loadFailure.value = "This AgentChatPanel projection declares no agent target";
+    loadFailure.value = "This AgentChat projection declares no agent target";
     emit("error", loadFailure.value);
     return;
   }
@@ -212,7 +212,7 @@ defineExpose({
 </script>
 
 <template>
-  <ShellAgentChatPanel
+  <ShellAgentChat
     v-if="standalone && client && agentId"
     ref="innerRef"
     :client="client"
@@ -225,33 +225,33 @@ defineExpose({
     @run-complete="emit('runComplete', $event)"
     @error="emit('error', $event)"
   />
-  <div v-else class="sdk-agent-chat-panel">
-    <div v-if="status === 'loading'" class="sdk-agent-chat-panel-state" role="status" aria-busy="true">
+  <div v-else class="sdk-agent-chat">
+    <div v-if="status === 'loading'" class="sdk-agent-chat-state" role="status" aria-busy="true">
       {{ t("common.loading") }}
     </div>
-    <div v-else-if="status === 'forbidden'" class="sdk-agent-chat-panel-state" role="status">
-      <p class="sdk-agent-chat-panel-message">{{ t("assistant.agentUnavailable") }}</p>
+    <div v-else-if="status === 'forbidden'" class="sdk-agent-chat-state" role="status">
+      <p class="sdk-agent-chat-message">{{ t("assistant.agentUnavailable") }}</p>
     </div>
-    <div v-else-if="status === 'error'" class="sdk-agent-chat-panel-state" role="alert">
-      <p class="sdk-agent-chat-panel-message">{{ loadFailure || t("assistant.loadFailed") }}</p>
-      <button type="button" class="sdk-agent-chat-panel-btn" @click="loadDeclaredAgent">
+    <div v-else-if="status === 'error'" class="sdk-agent-chat-state" role="alert">
+      <p class="sdk-agent-chat-message">{{ loadFailure || t("assistant.loadFailed") }}</p>
+      <button type="button" class="sdk-agent-chat-btn" @click="loadDeclaredAgent">
         {{ t("assistant.retry") }}
       </button>
     </div>
     <template v-else-if="activeClient && resolvedAgent">
-      <header v-if="showHeader" class="sdk-agent-chat-panel-header">
-        <span class="sdk-agent-chat-panel-title">{{ resolvedAgent.name }}</span>
+      <header v-if="showHeader" class="sdk-agent-chat-header">
+        <span class="sdk-agent-chat-title">{{ resolvedAgent.name }}</span>
         <button
           type="button"
-          class="sdk-agent-chat-panel-btn"
+          class="sdk-agent-chat-btn"
           :disabled="!currentSessionId || innerBusy"
           @click="startNewChat"
         >
           {{ t("assistant.newConversation") }}
         </button>
       </header>
-      <div class="sdk-agent-chat-panel-body">
-        <ShellAgentChatPanel
+      <div class="sdk-agent-chat-body">
+        <ShellAgentChat
           ref="innerRef"
           :key="resolvedAgent.id"
           :client="activeClient"
@@ -270,7 +270,7 @@ defineExpose({
 </template>
 
 <style scoped>
-.sdk-agent-chat-panel {
+.sdk-agent-chat {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -282,7 +282,7 @@ defineExpose({
   overflow: hidden;
 }
 
-.sdk-agent-chat-panel-header {
+.sdk-agent-chat-header {
   flex: none;
   display: flex;
   align-items: center;
@@ -292,7 +292,7 @@ defineExpose({
   border-bottom: 1px solid var(--sdk-border-color, var(--el-border-color-lighter, #e4e7ed));
 }
 
-.sdk-agent-chat-panel-title {
+.sdk-agent-chat-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--sdk-text-primary, var(--el-text-color-primary, #1f2329));
@@ -301,14 +301,14 @@ defineExpose({
   white-space: nowrap;
 }
 
-.sdk-agent-chat-panel-body {
+.sdk-agent-chat-body {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.sdk-agent-chat-panel-state {
+.sdk-agent-chat-state {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -322,13 +322,13 @@ defineExpose({
   font-size: 13px;
 }
 
-.sdk-agent-chat-panel-message {
+.sdk-agent-chat-message {
   margin: 0;
   max-width: 420px;
   line-height: 1.5;
 }
 
-.sdk-agent-chat-panel-btn {
+.sdk-agent-chat-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -342,7 +342,7 @@ defineExpose({
   cursor: pointer;
 }
 
-.sdk-agent-chat-panel-btn:disabled {
+.sdk-agent-chat-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

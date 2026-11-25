@@ -100,9 +100,9 @@ export const components: readonly ComponentMetadata[] = [
     meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame. In a panel, write `<html-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
-    componentId: "AgentChatPanel",
+    componentId: "AgentChat",
     module: "@ontomato/sdk/chat",
-    exportName: "AgentChatPanel",
+    exportName: "AgentChat",
     role: "control",
     meaning:
       "Holds a live conversation with one declared platform agent inside a panel member (declaring `agent: 'page-default' | { kind: 'id', id } | { kind: 'preset', agentKind }`) or in a standalone page. Sessions and history stay on the agent platform (never duplicated per panel), access follows the signed-in reader's agent grants and business gates, optional `sessionId` state syncs the active session, and any application entry hosting it must declare `pageComposer: 'none'` so the page does not show two places to ask.",
@@ -127,7 +127,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentShell",
     role: "control",
     meaning:
-      "Platform-owned full conversation shell (sidebar, conversation stream, and side page dock) for the platform host itself — not a panel projection member. Inside a panel, place `AgentChatPanel` for an embedded conversation or `ConversationEntry` to open/hand off to the platform shell.",
+      "Platform-owned full conversation shell (sidebar, conversation stream, and side page dock) for the platform host itself — not a panel projection member. Inside a panel, place `AgentChat` for an embedded conversation or `ConversationEntry` to open/hand off to the platform shell.",
     effects: "Sends the reader's messages to the agent service as the signed-in user.",
   }),
   defineComponentMeta({

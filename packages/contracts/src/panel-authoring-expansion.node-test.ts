@@ -1204,9 +1204,9 @@ test("customer ObjectList expands json state bindings for server filters and sor
   }));
 });
 
-test("AgentChatPanel short member expands declared agent target and optional sessionId state", async () => {
+test("AgentChat short member expands declared agent target and optional sessionId state", async () => {
   const { builtinProductProjectionInputSchema, productProjectionInputSchema } = await import("./product-panels");
-  const chatComponent = buildComponent("AgentChatPanel", {
+  const chatComponent = buildComponent("AgentChat", {
     data: {},
     inputs: { sessionId: { kind: "scalar", type: "string" } },
     outputs: { sessionId: { kind: "scalar", type: "string" } },
@@ -1220,7 +1220,7 @@ test("AgentChatPanel short member expands declared agent target and optional ses
   const agentId = "11111111-1111-4111-8111-111111111111";
 
   const withId = panelAuthoringMemberSchema.parse({
-    component: "AgentChatPanel",
+    component: "AgentChat",
     agent: { kind: "id", id: agentId },
     state: { sessionId: "sessionId" },
     config: { showHeader: false },
@@ -1230,7 +1230,7 @@ test("AgentChatPanel short member expands declared agent target and optional ses
     state: chatState, components: [chatComponent], typeTable,
   });
   assert.deepEqual(expanded.projection, {
-    componentId: "@ontomato/sdk:AgentChatPanel",
+    componentId: "@ontomato/sdk:AgentChat",
     inputs: { sessionId: { kind: "scalar", type: "string" } },
     outputs: { sessionId: { kind: "scalar", type: "string" } },
     data: {},
@@ -1248,7 +1248,7 @@ test("AgentChatPanel short member expands declared agent target and optional ses
   }).success, false);
 
   const withDefault = panelAuthoringMemberSchema.parse({
-    component: "AgentChatPanel",
+    component: "AgentChat",
     agent: "page-default",
   });
   assert("component" in withDefault);
@@ -1257,13 +1257,13 @@ test("AgentChatPanel short member expands declared agent target and optional ses
   });
   assert.deepEqual(defaultExpanded.projection.conversationEntry, { target: { kind: "page-default" } });
 
-  // AgentChatPanel requires agent and forbids prefill/prefillKey/data.
-  assert.equal(panelAuthoringMemberSchema.safeParse({ component: "AgentChatPanel" }).success, false);
+  // AgentChat requires agent and forbids prefill/prefillKey/data.
+  assert.equal(panelAuthoringMemberSchema.safeParse({ component: "AgentChat" }).success, false);
   assert.equal(panelAuthoringMemberSchema.safeParse({
-    component: "AgentChatPanel", agent: "page-default", prefill: "hi",
+    component: "AgentChat", agent: "page-default", prefill: "hi",
   }).success, false);
   assert.equal(panelAuthoringMemberSchema.safeParse({
-    component: "AgentChatPanel", agent: "page-default", data: { rows: "list" },
+    component: "AgentChat", agent: "page-default", data: { rows: "list" },
   }).success, false);
 });
 

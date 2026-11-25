@@ -237,7 +237,7 @@ export function platformPanelHost(
   beside?: (address: string) => void,
   /** Platform page counter provided by the outer layout, bridged into direct-mounted panel Vue apps for inline composers. */
   pageCounter?: PageCounter | null,
-  /** Optional hook called while an embedded AgentChatPanel is mounted so the page suppresses its bottom PageComposer. */
+  /** Optional hook called while an embedded AgentChat is mounted so the page suppresses its bottom PageComposer. */
   claimComposer?: () => () => void,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const panelChatHost = createPanelChatHost(use.defaultAgent, claimComposer);
