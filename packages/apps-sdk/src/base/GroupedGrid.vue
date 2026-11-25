@@ -185,7 +185,7 @@ const props = withDefaults(
     groupSurface: "plain",
     itemSurface: "card",
     rowSizing: "fixed",
-    itemHeaderDivider: "line",
+    itemHeaderDivider: undefined,
     controlsVisibility: "hover",
     items: undefined,
     groups: undefined,
