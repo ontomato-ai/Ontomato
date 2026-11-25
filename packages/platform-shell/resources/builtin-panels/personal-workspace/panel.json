@@ -165,7 +165,7 @@
         "config": {
           "columns": 12,
           "rowHeight": 112,
-          "gap": 16,
+          "gap": 24,
           "itemSurface": "section",
           "rowSizing": "auto",
           "itemHeaderDivider": "none",
@@ -311,7 +311,7 @@
           "showHeader": false,
           "showFooter": false,
           "leadingIconField": "icon",
-          "leadingIconKind": "application",
+          "leadingIconKind": "auto",
           "openOutput": "openPath",
           "subtitleLines": 2,
           "emptyText": "empty.apps",
@@ -695,8 +695,18 @@
           "showFooter": false,
           "emptyText": "empty.objects",
           "rowActions": {
-            "maxVisible": 0,
+            "maxVisible": 1,
             "items": [
+              {
+                "kind": "conversation",
+                "id": "askObject",
+                "target": {
+                  "kind": "page-default"
+                },
+                "labelKey": "action.askAgent",
+                "prefillKey": "action.askObjectPrefill",
+                "icon": "sparkles"
+              },
               {
                 "kind": "operation",
                 "operation": "moveUp",
@@ -781,6 +791,23 @@
         "name": "Selected card preview",
         "description": "Live KPI metric preview for the selected dashboard card.",
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000013"
+      },
+      "cardChartPreview": {
+        "component": "MetricChart",
+        "type": "platform:DashboardCard",
+        "target": "selectedCard",
+        "data": {
+          "template": "chartTemplate",
+          "result": "result"
+        },
+        "config": {
+          "minHeight": "320px",
+          "allowViewToggle": true,
+          "allowZoom": true
+        },
+        "name": "Selected chart preview",
+        "description": "Interactive chart preview for the selected dashboard chart card.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000021"
       },
       "cardMetricSource": {
         "component": "ObjectSummary",
@@ -952,7 +979,12 @@
         "empty.action.dashboards": "Open Dashboards",
         "empty.action.tasks": "Open Schedules",
         "empty.action.conversations": "Start analysis",
-        "empty.action.objects": "Open Object Browser"
+        "empty.action.objects": "Open Object Browser",
+        "hero.greetingNamed.morning": "Good morning, {name}",
+        "hero.greetingNamed.afternoon": "Good afternoon, {name}",
+        "hero.greetingNamed.evening": "Good evening, {name}",
+        "action.askAgent": "Ask agent",
+        "action.askObjectPrefill": "Please analyze {label}."
       },
       "zh-CN": {
         "hero.greeting.morning": "早上好",
@@ -1031,7 +1063,12 @@
         "empty.action.dashboards": "去仪表盘",
         "empty.action.tasks": "去定时任务",
         "empty.action.conversations": "开始对话",
-        "empty.action.objects": "去对象浏览器"
+        "empty.action.objects": "去对象浏览器",
+        "hero.greetingNamed.morning": "早上好，{name}",
+        "hero.greetingNamed.afternoon": "下午好，{name}",
+        "hero.greetingNamed.evening": "晚上好，{name}",
+        "action.askAgent": "问智能体",
+        "action.askObjectPrefill": "请分析 {label}。"
       },
       "zh-TW": {
         "hero.greeting.morning": "早安",
@@ -1110,7 +1147,12 @@
         "empty.action.dashboards": "前往儀表板",
         "empty.action.tasks": "前往排程任務",
         "empty.action.conversations": "開始對話",
-        "empty.action.objects": "前往物件瀏覽器"
+        "empty.action.objects": "前往物件瀏覽器",
+        "hero.greetingNamed.morning": "早安，{name}",
+        "hero.greetingNamed.afternoon": "午安，{name}",
+        "hero.greetingNamed.evening": "晚安，{name}",
+        "action.askAgent": "問智慧體",
+        "action.askObjectPrefill": "請分析 {label}。"
       },
       "ja": {
         "hero.greeting.morning": "おはようございます",
@@ -1189,7 +1231,12 @@
         "empty.action.dashboards": "ダッシュボードを開く",
         "empty.action.tasks": "スケジュールを開く",
         "empty.action.conversations": "分析を開始",
-        "empty.action.objects": "オブジェクトブラウザを開く"
+        "empty.action.objects": "オブジェクトブラウザを開く",
+        "hero.greetingNamed.morning": "おはようございます、{name}さん",
+        "hero.greetingNamed.afternoon": "こんにちは、{name}さん",
+        "hero.greetingNamed.evening": "こんばんは、{name}さん",
+        "action.askAgent": "エージェントに聞く",
+        "action.askObjectPrefill": "{label} を分析してください。"
       },
       "de": {
         "hero.greeting.morning": "Guten Morgen",
@@ -1268,7 +1315,12 @@
         "empty.action.dashboards": "Dashboards öffnen",
         "empty.action.tasks": "Zeitpläne öffnen",
         "empty.action.conversations": "Analyse starten",
-        "empty.action.objects": "Objekt-Browser öffnen"
+        "empty.action.objects": "Objekt-Browser öffnen",
+        "hero.greetingNamed.morning": "Guten Morgen, {name}",
+        "hero.greetingNamed.afternoon": "Guten Tag, {name}",
+        "hero.greetingNamed.evening": "Guten Abend, {name}",
+        "action.askAgent": "Agenten fragen",
+        "action.askObjectPrefill": "Bitte analysiere {label}."
       },
       "fr": {
         "hero.greeting.morning": "Bonjour",
@@ -1347,7 +1399,12 @@
         "empty.action.dashboards": "Ouvrir les tableaux de bord",
         "empty.action.tasks": "Ouvrir les planifications",
         "empty.action.conversations": "Démarrer une analyse",
-        "empty.action.objects": "Ouvrir l'explorateur d'objets"
+        "empty.action.objects": "Ouvrir l'explorateur d'objets",
+        "hero.greetingNamed.morning": "Bonjour, {name}",
+        "hero.greetingNamed.afternoon": "Bon après-midi, {name}",
+        "hero.greetingNamed.evening": "Bonsoir, {name}",
+        "action.askAgent": "Demander à l'agent",
+        "action.askObjectPrefill": "Veuillez analyser {label}."
       },
       "it": {
         "hero.greeting.morning": "Buongiorno",
@@ -1426,7 +1483,12 @@
         "empty.action.dashboards": "Apri dashboard",
         "empty.action.tasks": "Apri pianificazioni",
         "empty.action.conversations": "Avvia analisi",
-        "empty.action.objects": "Apri browser oggetti"
+        "empty.action.objects": "Apri browser oggetti",
+        "hero.greetingNamed.morning": "Buongiorno, {name}",
+        "hero.greetingNamed.afternoon": "Buon pomeriggio, {name}",
+        "hero.greetingNamed.evening": "Buonasera, {name}",
+        "action.askAgent": "Chiedi all'agente",
+        "action.askObjectPrefill": "Analizza {label}."
       },
       "ar": {
         "hero.greeting.morning": "صباح الخير",
@@ -1505,7 +1567,12 @@
         "empty.action.dashboards": "فتح لوحات المعلومات",
         "empty.action.tasks": "فتح الجداول",
         "empty.action.conversations": "بدء التحليل",
-        "empty.action.objects": "فتح متصفح العناصر"
+        "empty.action.objects": "فتح متصفح العناصر",
+        "hero.greetingNamed.morning": "صباح الخير، {name}",
+        "hero.greetingNamed.afternoon": "مساء الخير، {name}",
+        "hero.greetingNamed.evening": "مساء الخير، {name}",
+        "action.askAgent": "اسأل الوكيل",
+        "action.askObjectPrefill": "يرجى تحليل {label}."
       }
     }
   }

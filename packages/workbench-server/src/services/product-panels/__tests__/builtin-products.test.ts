@@ -287,19 +287,66 @@ describe("readBuiltinProducts", () => {
         rowSizing: "auto",
         itemHeaderDivider: "none",
         controlsVisibility: "hover",
+        gap: 24,
+      });
+      expect(pwMemberProjection("favoriteApps")?.config).toMatchObject({
+        layout: "cards",
+        leadingIconField: "icon",
+        leadingIconKind: "auto",
+      });
+      expect(pwMemberProjection("pinnedObjects")?.config).toMatchObject({
+        rowActions: {
+          maxVisible: 1,
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "conversation",
+              id: "askObject",
+              target: { kind: "page-default" },
+              labelKey: "action.askAgent",
+              prefillKey: "action.askObjectPrefill",
+              icon: "sparkles",
+            }),
+          ]),
+        },
       });
       expect(pwMemberProjection("favoriteDashboardCards")?.componentId).toBe("@ontomato/sdk:DashboardMetricPreview");
+      expect(pwMemberProjection("cardChartPreview")?.componentId).toBe("@ontomato/sdk:MetricChart");
+      expect(pwMemberProjection("cardChartPreview")?.data).toEqual({
+        template: expect.objectContaining({ read: "chartTemplate" }),
+        result: expect.objectContaining({ read: "result" }),
+      });
       expect(pwMemberProjection("scheduledTasks")?.componentId).toBe("@ontomato/sdk:ScheduledTaskSummaryList");
       expect(pwMemberProjection("taskSummary")?.componentId).toBe("@ontomato/sdk:ScheduledTaskRunDetail");
       expect(pwMemberProjection("taskSummary")?.data).toEqual({
         record: expect.objectContaining({ read: "latestRunRecord" }),
       });
+      expect(personalWorkspace!.content.html).toContain("<object-title");
+      expect(personalWorkspace!.content.html).toContain('slot="cardChartPreview"');
+      expect(personalWorkspace!.content.module).toContain("currentUser");
       expect(personalWorkspace!.content.html).not.toMatch(/<el-|--el-|:deep\(/);
       expect(personalWorkspace!.content.module).not.toContain("usePanelData");
+
+      const applicationGallery = panels.get("builtin-product-application-gallery");
+      expect(applicationGallery).toBeDefined();
+      const galleryMember = applicationGallery!.manifest.members.applications;
+      const galleryProjection = galleryMember && "projectionId" in galleryMember.target
+        ? projections.get(galleryMember.target.projectionId)
+        : undefined;
+      expect(galleryProjection?.config).toMatchObject({
+        layout: "cards",
+        leadingIconField: "icon",
+        leadingIconKind: "auto",
+        skeletonCount: 6,
+        actionErrorPlacement: "top",
+      });
 
       const repoRoot = path.resolve(packagesRoot, "..");
       const { checkBuiltinPanelSource } = await import(
         path.join(repoRoot, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")
+      );
+      await checkBuiltinPanelSource(
+        path.join(packagesRoot, "platform-shell/resources/builtin-panels/application-gallery"),
+        { ...panelCheck, draftReadOperationIds: [] },
       );
       await checkBuiltinPanelSource(
         path.join(packagesRoot, "platform-shell/resources/builtin-panels/personal-workspace"),
