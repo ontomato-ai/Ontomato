@@ -13,6 +13,13 @@ class GaussDBAdapterUnsupportedOperationTest {
 
 	private final GaussDBAdapter adapter = new GaussDBAdapter(null, null);
 
+    @Test
+    void sandboxPermissionIsUnsupportedWithoutOpeningAConnection() {
+        org.junit.jupiter.api.Assertions.assertFalse(adapter.supportsWriteActions());
+        org.junit.jupiter.api.Assertions.assertFalse(adapter.supportsSandbox());
+        org.junit.jupiter.api.Assertions.assertEquals("unsupported", adapter.probeSandboxPermission("dep001").status());
+    }
+
 	@Test
 	void unsupportedOperationsThrow() {
 		assertThrowsUnsupported(() -> adapter.createNamespace("ns"), "createNamespace");

@@ -67,6 +67,7 @@ class BusinessConfigControllerMultiDataSourceTest {
 				new FakeDataAdapterProvider("duckdb", "DuckDB", List.of("url")),
 				multi), new DataRagConfig());
 		ReflectionTestUtils.setField(multi, "registry", registry);
+		ReflectionTestUtils.setField(controller, "sandboxPermissions", mock(io.ontomato.dataengine.service.SandboxPermissionService.class));
 		ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
 		ReflectionTestUtils.setField(controller, "dataAdapterRegistry", registry);
 		ReflectionTestUtils.setField(controller, "adminService", adminService);

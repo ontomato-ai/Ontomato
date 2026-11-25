@@ -186,7 +186,7 @@ class MetricViewBindingContractTest {
     ReflectionTestUtils.setField(controller, "identityService", identity);
     ReflectionTestUtils.setField(controller, "businessConfigService", configs);
     ReflectionTestUtils.setField(controller, "metricViewService", service);
-    var buildTests=mock(io.ontomato.dataengine.service.BuildTestContextService.class);
+    var buildTests=mock(io.ontomato.dataengine.service.DataSandboxService.class);
     when(buildTests.resolve(any())).thenReturn(io.ontomato.dataengine.service.ExecutionTarget.LIVE);
     ReflectionTestUtils.setField(controller,"buildTests",buildTests);
     var mvc = MockMvcBuilders.standaloneSetup(controller).build();

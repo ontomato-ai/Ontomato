@@ -54,6 +54,58 @@ class EsAdapterHttpTest {
 	}
 
 	// ----------------------------------------------------------------------------------
+	@Test
+	void sandboxProbeDeletesItsOwnIndexAndReportsDropFailures() throws Exception {
+		server.setHandler(request -> {
+			if (request.method().equals("PUT")) return ok("{\"acknowledged\":true}");
+			if (request.method().equals("DELETE")) return new MockResponse(403, "{\"error\":\"drop denied\"}");
+			return new MockResponse(404, "{}");
+		});
+		var adapter = new EsAdapter(connection(), Map.of(), EsDialect.ELASTICSEARCH);
+		assertTrue(adapter.supportsWriteActions());
+		var result = adapter.probeSandboxPermission("dep001");
+		assertEquals("failed", result.status());
+		assertEquals("drop", result.details().getString("operation"));
+		assertTrue(result.reason().contains("drop denied"));
+		var requests = server.requests();
+		assertEquals(2, requests.size());
+		assertTrue(requests.get(0).uri().matches("/ot_sb_dep001_p_[a-z0-9]{8}"));
+		assertEquals(requests.get(0).uri(), requests.get(1).uri());
+	}
+
+	@Test
+	void recordedIndexCleanupTreatsAMissingIndexAsDroppedButReportsDeniedDeletion() {
+		var adapter = new EsAdapter(connection(), Map.of(), EsDialect.ELASTICSEARCH);
+		var resource = JSONObject.of("kind", "index", "name", "ot_sb_dep001_abcdefgh_c01");
+
+		server.setHandler(request -> new MockResponse(404, "{\"error\":{\"type\":\"index_not_found_exception\"}}"));
+		adapter.dropRecordedResource(resource);
+
+		server.setHandler(request -> new MockResponse(403, "{\"error\":\"drop denied\"}"));
+		var failure = assertThrows(IllegalStateException.class, () -> adapter.dropRecordedResource(resource));
+		assertTrue(failure.getCause().getMessage().contains("drop denied"));
+	}
+
+	@Test
+	void sandboxDdlReportsTheLogicalClassOrRelationshipAndTheBackendReason() {
+		server.setHandler(request -> new MockResponse(403, "{\"error\":\"create denied\"}"));
+		var rule = Map.<String, Object>of("relationship_rule", Map.of("lines", JSONObject.of(
+				"type", "n:n", "fromclass", "Order", "toclass", "Product",
+				"fromField", "id", "toField", "id", "linkTable", "order_lines",
+				"linkTableFromField", "order_id", "linkTableToField", "product_id")));
+		var target = new SandboxTarget("sandbox", "dep001", "abcdefgh", Map.of("Order", "ot_sb_dep001_abcdefgh_c01"),
+				Map.of("lines", "ot_sb_dep001_abcdefgh_r01"), Map.of());
+		var adapter = new EsAdapter(connection(), rule, EsDialect.ELASTICSEARCH).forSandbox(target);
+		var order = JSONObject.of("className", "Order", "attrs", List.of());
+
+		var classFailure = assertThrows(IllegalStateException.class, () -> adapter.createClass(target.namespace(), order));
+		assertTrue(classFailure.getMessage().contains("Cannot create class [Order]"));
+		assertTrue(classFailure.getMessage().contains("create denied"));
+		var edgeFailure = assertThrows(IllegalStateException.class, () -> adapter.createEdgeType(target.namespace(), "lines"));
+		assertTrue(edgeFailure.getMessage().contains("Cannot create relationship [lines]"));
+		assertTrue(edgeFailure.getMessage().contains("create denied"));
+	}
+
 	// Connection report
 	// ----------------------------------------------------------------------------------
 

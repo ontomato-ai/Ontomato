@@ -2,7 +2,7 @@ package io.ontomato.dataengine.controller;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.service.BuildTestContextService;
+import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -27,7 +27,7 @@ public class BuildTestAccessInterceptor implements HandlerInterceptor {
   @Override
   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
       throws IOException {
-    if (request.getHeader(BuildTestContextService.HEADER) == null) return true;
+    if (request.getHeader(DataSandboxService.HEADER) == null) return true;
     var declaration = handler instanceof HandlerMethod method
         ? AnnotatedElementUtils.findMergedAnnotation(method.getMethod(), BuildTestAccess.class)
         : null;

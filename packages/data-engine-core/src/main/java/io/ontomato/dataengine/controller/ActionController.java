@@ -66,7 +66,7 @@ public class ActionController {
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    private io.ontomato.dataengine.service.BuildTestContextService buildTests;
+    private io.ontomato.dataengine.service.DataSandboxService buildTests;
 
 
 	@Autowired
@@ -321,6 +321,16 @@ public class ActionController {
 			ret.put("message", e.getMessage());
 		}
 		return ret;
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired
+	private io.ontomato.dataengine.service.SandboxPermissionService sandboxPermissions;
+
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@GetMapping("/action/sandboxCapability")
+	public JSONObject sandboxCapability() {
+		User user = SystemUtils.getCurUser();
+		return JSONObject.of("success", true, "data", sandboxPermissions.read(user.getDomainId()));
 	}
 
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)

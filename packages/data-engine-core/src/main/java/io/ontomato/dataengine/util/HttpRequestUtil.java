@@ -66,7 +66,7 @@ public class HttpRequestUtil {
 
 		Object[] dsl_selectAsFilePathsMap_vectorResourceAsSet;
 		try {
-			dsl_selectAsFilePathsMap_vectorResourceAsSet = DslUtil.splitToVector(queryJson, classDefs, vectorResourceDao, domainId);
+			dsl_selectAsFilePathsMap_vectorResourceAsSet = DslUtil.splitToVector(queryJson, classDefs, vectorResourceDao, domainId, adapter::sandboxVectorTable);
 		} catch (Exception e) {
 			log.error("Failed to process vector: " + e.getMessage(), e);
 			DslExecutionResult failResult = DslExecutionResult.failure(new JSONObject(), e);
@@ -108,7 +108,7 @@ public class HttpRequestUtil {
 
 		Object[] dsl_selectAsFilePathsMap_vectorResourceAsSet;
 		try {
-			dsl_selectAsFilePathsMap_vectorResourceAsSet = DslUtil.splitToVector(queryJson, classDefs, vectorResourceDao, domainId);
+			dsl_selectAsFilePathsMap_vectorResourceAsSet = DslUtil.splitToVector(queryJson, classDefs, vectorResourceDao, domainId, adapter::sandboxVectorTable);
 		} catch (RuntimeException e) {
 			throw e;
 		} catch (Exception e) {

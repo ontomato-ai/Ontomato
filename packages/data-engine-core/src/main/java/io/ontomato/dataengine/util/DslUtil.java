@@ -562,7 +562,18 @@ public class DslUtil {
 		return asClassAttrFunctionMap;
 	}
 
+	private static List<VectorResource> findVectors(VectorResourceDao dao, String query, int topK,
+			String className, String attribute, String domainId, String sandboxTable) {
+		return sandboxTable == null ? dao.find(query, topK, className, attribute, domainId)
+			: dao.find(query, topK, className, attribute, domainId, sandboxTable);
+	}
+
 	public static Object[] splitToVector(String dslStr, List<Map<String, Object>> classDefs, VectorResourceDao vectorResourceDao, String domainId) throws Exception {
+		return splitToVector(dslStr, classDefs, vectorResourceDao, domainId, (name, attr) -> null);
+	}
+
+	public static Object[] splitToVector(String dslStr, List<Map<String, Object>> classDefs, VectorResourceDao vectorResourceDao,
+			String domainId, java.util.function.BiFunction<String, String, String> sandboxVectorTable) throws Exception {
 		JSONArray dsls = JSON.parseArray(dslStr);
 		Map<String, Map<String, Object>> classDefMap = new HashMap<String, Map<String, Object>>();
 		for (Map<String, Object> classDef : classDefs) {
@@ -609,8 +620,7 @@ public class DslUtil {
 							if (vectorAttrs.contains(cond.getString("field")) && cond.getString("query") != null && !"".equals(cond.getString("query").trim())) {
 								// Query the vector store
 								String queryStr = cond.getString("query").trim();
-								List<VectorResource> vectorResources = vectorResourceDao.find(queryStr,
-										DslGrammarValidator.vectorTopK(cond), className, cond.getString("field"), domainId);
+								List<VectorResource> vectorResources = findVectors(vectorResourceDao, queryStr, DslGrammarValidator.vectorTopK(cond), className, cond.getString("field"), domainId, sandboxVectorTable.apply(className, cond.getString("field")));
 								Set<String> objIds = new HashSet<String>();
 								for (VectorResource vectorResource : vectorResources) {
 									objIds.add(vectorResource.getObjectId());
@@ -664,8 +674,7 @@ public class DslUtil {
 					if (field.getString("query") != null && !"".equals(field.getString("query").trim())) {
 						// Query the vector store
 						String queryStr = field.getString("query").trim();
-						List<VectorResource> vectorResources = vectorResourceDao.find(queryStr,
-								DslGrammarValidator.vectorTopK(field), className, attrName, domainId);
+						List<VectorResource> vectorResources = findVectors(vectorResourceDao, queryStr, DslGrammarValidator.vectorTopK(field), className, attrName, domainId, sandboxVectorTable.apply(className, attrName));
 						Set<String> objIds = new HashSet<String>();
 						List<String> filePaths = new ArrayList<String>();
 						for (VectorResource vectorResource : vectorResources) {

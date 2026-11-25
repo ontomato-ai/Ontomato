@@ -20,6 +20,7 @@ import io.ontomato.dataengine.dataAdapter.MultiDataSourceValidator;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.SandboxPermissionService;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
 import io.ontomato.dataengine.service.vector.VectorRebuildStatus;
 import io.ontomato.dataengine.util.SystemUtils;
@@ -61,6 +62,9 @@ public class BusinessConfigController {
 
 	@Autowired
 	private AdminService adminService;
+
+	@Autowired
+	private SandboxPermissionService sandboxPermissions;
 	
 	@GetMapping("/businessConfig/vectorRebuildStatus")
     @ResponseBody
@@ -230,6 +234,8 @@ public class BusinessConfigController {
     		businessConfig.getDataAdapterConnections().put(provider.type(), connection);
     		businessConfig.setDataAdapter(provider.type());
     		businessConfigService.set(businessConfig, user.getDomainId());
+            ret.put("data", JSONObject.of("sandboxCapability",
+                    sandboxPermissions.check(user.getDomainId(), businessConfig)));
     		ret.put("success", true);
     	} catch (Exception e) {
     		log.error(e.getMessage(), e);
@@ -270,6 +276,8 @@ public class BusinessConfigController {
     			problems = dataAdapterRegistry.create(businessConfig, jsonRule).validateOntoMap(jsonRule);
     			if (problems.isEmpty()) {
     				businessConfigService.set(businessConfig, user.getDomainId());
+                    ret.put("data", JSONObject.of("sandboxCapability",
+                            sandboxPermissions.check(user.getDomainId(), businessConfig)));
     				ret.put("success", true);
     				return ret;
     			}
@@ -300,7 +308,9 @@ public class BusinessConfigController {
     					stored.getDataAdapterConnections().get(provider.type()), candidate);
     		}
     		DataAdapter adapter = dataAdapterRegistry.createForTest(provider.type(), candidate);
-    		ret.put("data", adapter.testConnection());
+            JSONObject report = adapter.testConnection();
+            report.put("sandboxCapability", sandboxPermissions.test(SystemUtils.getCurUser().getDomainId(), provider.type(), candidate, adapter));
+            ret.put("data", report);
     		ret.put("success", true);
     	} catch (Exception e) {
     		log.error(e.getMessage(), e);
@@ -364,6 +374,18 @@ public class BusinessConfigController {
                 "fields", fields);
     }
 
+    @PostMapping("/businessConfig/checkSandboxPermission")
+    public JSONObject checkSandboxPermission() {
+        try {
+            String domain = SystemUtils.getCurUser().getDomainId();
+            return JSONObject.of("success", true,
+                    "data", JSONObject.of("sandboxCapability", sandboxPermissions.check(domain)));
+        } catch (Exception failure) {
+            log.error(failure.getMessage(), failure);
+            return JSONObject.of("success", false, "message", failure.getMessage());
+        }
+    }
+
 	@GetMapping("/businessConfig/getConfig")
     @ResponseBody
     public JSONObject getConfig() {
@@ -375,7 +397,9 @@ public class BusinessConfigController {
 			BusinessConfig view = connectionSecretCodec == null
 					? businessConfig
 					: connectionSecretCodec.maskedCopy(businessConfig);
-			ret.put("data", view);
+			JSONObject data = JSONObject.from(view);
+			data.put("sandboxCapability", sandboxPermissions.read(user.getDomainId(), businessConfig));
+			ret.put("data", data);
     		ret.put("success", true);
     	} catch (Exception e) {
     		log.error(e.getMessage(), e);

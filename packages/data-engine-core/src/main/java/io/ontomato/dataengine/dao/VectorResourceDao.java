@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.dao;
 
+import com.alibaba.fastjson2.JSONObject;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -73,7 +75,11 @@ public class VectorResourceDao extends BaseDao {
 	 * this method only mirrors how {@link #generateIndexName} and {@link #insert} form the path.
 	 */
 	public String generatePath(String className, String attrName, String domainId, String fileId) {
-		return generateIndexName(className, attrName, domainId) + "/" + fileId;
+		return generatePath(className, attrName, domainId, fileId, null);
+	}
+
+	public String generatePath(String className, String attrName, String domainId, String fileId, String sandboxTable) {
+		return (sandboxTable == null ? generateIndexName(className, attrName, domainId) : sandboxTable) + "/" + fileId;
 	}
 
 	private String quotedTable(String indexName) {
@@ -162,38 +168,35 @@ public class VectorResourceDao extends BaseDao {
 						+ ")");
 	}
 
-    public com.alibaba.fastjson2.JSONObject plannedSandboxVector(String className,String attrName,String domain) {
-      String logical=generateIndexName(className,attrName,domain);
-      return com.alibaba.fastjson2.JSONObject.of("logicalName",logical,"className",className,"attrName",attrName,
-          "directory",new File("conf/"+dirName+"/"+logical).getAbsolutePath());
+    public JSONObject planSandboxVector(String name) {
+        return JSONObject.of("kind", "vector", "name", name, "logicalName", name,
+            "directory", new File("conf/" + dirName + "/" + name).getAbsolutePath());
     }
 
-    /** Ask PostgreSQL to normalize identifiers before DDL; never silently share one physical table. */
-    public void validateSandboxVectorNames(List<com.alibaba.fastjson2.JSONObject> planned) {
-      var names=new java.util.HashMap<String,String>();
-      for(var resource:planned) {
-        String logical=resource.getString("logicalName");
-        String actual=jdbcTemplate.queryForObject("SELECT ?::name::text",String.class,logical);
-        String previous=names.putIfAbsent(actual,logical);
-        if(previous!=null) throw new IllegalArgumentException("Sandbox vector table collision: "+previous+" and "+logical+" resolve to "+actual);
-      }
+    public void createSandboxVector(JSONObject resource) {
+        ensureVectorTable(resource.getString("name"));
     }
 
-    public com.alibaba.fastjson2.JSONObject createRecordedVector(com.alibaba.fastjson2.JSONObject planned,String domain) {
-      ensureVectorTable(planned.getString("className"),planned.getString("attrName"),domain);
-      var actual=jdbcTemplate.queryForMap("SELECT c.relname,n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=to_regclass(?)",quotedTable(planned.getString("logicalName")));
-      try {
-        return com.alibaba.fastjson2.JSONObject.of("kind","vector","name",actual.get("relname"),"schema",actual.get("nspname"),
-            "directory",new File(planned.getString("directory")).getCanonicalPath());
-      } catch(java.io.IOException failure) { throw new ResourceDirectoryException("Cannot identify created vector directory",failure); }
+    public void dropRecordedVector(JSONObject resource) {
+        String table = resource.getString("name");
+        File directory = new File(resource.getString("directory"));
+        deleteFilesInDirectory(directory);
+        if (directory.exists() && !directory.delete())
+            throw new IllegalStateException("Cannot delete vector directory: " + directory);
+        jdbcTemplate.execute("DROP TABLE IF EXISTS " + quotedTable(table));
+        forgetVectorIndexes(table);
     }
 
-    public void dropRecordedVector(com.alibaba.fastjson2.JSONObject resource) {
-      File directory=new File(resource.getString("directory"));
-      deleteFilesInDirectory(directory);
-      if(directory.exists() && !directory.delete()) throw new IllegalStateException("Cannot delete vector directory: "+directory);
-      jdbcTemplate.execute("DROP TABLE IF EXISTS "+quotedTable(resource.getString("schema"))+"."+quotedTable(resource.getString("name")));
-      forgetVectorIndexes(directory.getName());
+    public void cleanupSandboxOrphans(String prefix, java.util.function.Predicate<String> orphan) {
+        for (String table : jdbcTemplate.queryForList("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema=current_schema() AND table_type='BASE TABLE'
+                AND starts_with(table_name, ?)
+            """, String.class, prefix)) {
+            if (table.matches(prefix + "[a-z0-9]{8}_v[0-9]{2,}") && orphan.test(table)) {
+                dropRecordedVector(planSandboxVector(table));
+            }
+        }
     }
 
 	/**
@@ -204,7 +207,10 @@ public class VectorResourceDao extends BaseDao {
 	 * creation inside {@link #insert}, so the two callers share one idempotent rule.</p>
 	 */
 	public void ensureVectorTable(String className, String attrName, String domainId) {
-		String indexName = generateIndexName(className, attrName, domainId);
+		ensureVectorTable(generateIndexName(className, attrName, domainId));
+	}
+
+	private void ensureVectorTable(String indexName) {
         try { java.nio.file.Files.createDirectories(new File("conf/" + dirName + "/" + indexName).toPath()); }
         catch(java.io.IOException failure) { throw new ResourceDirectoryException("Cannot create vector resource directory: " + indexName, failure); }
 		ensureTable(indexName);
@@ -225,6 +231,11 @@ public class VectorResourceDao extends BaseDao {
 	 * embeds the content here.
 	 */
 	public VectorResource insert(VectorResource vectorResource, InputStream is, String suffix, String domainId, float[] vector) {
+		return insert(vectorResource, is, suffix, domainId, vector, null);
+	}
+
+	public VectorResource insert(VectorResource vectorResource, InputStream is, String suffix, String domainId,
+			float[] vector, String sandboxTable) {
 		if (vectorResource.getContent() == null || vectorResource.getContent().trim().isEmpty()) {
 			throw new IllegalArgumentException("content is required");
 		}
@@ -236,7 +247,7 @@ public class VectorResourceDao extends BaseDao {
 			suffix = "txt";
 		}
 
-		String indexName = generateIndexName(vectorResource.getClassName(), vectorResource.getAttrName(), domainId);
+		String indexName = sandboxTable == null ? generateIndexName(vectorResource.getClassName(), vectorResource.getAttrName(), domainId) : sandboxTable;
 		File dir = new File("conf/" + dirName + "/" + indexName);
 		dir.mkdirs();
 		String id = UUID.randomUUID().toString();
@@ -292,10 +303,15 @@ public class VectorResourceDao extends BaseDao {
 	 * count is the caller's: no score threshold trims it.
 	 */
 	public List<VectorResource> find(String question, int topK, String className, String attrName, String domainId) {
+		return find(question, topK, className, attrName, domainId, null);
+	}
+
+	public List<VectorResource> find(String question, int topK, String className, String attrName, String domainId,
+			String sandboxTable) {
 		if (topK <= 0) {
 			throw new IllegalArgumentException("topK must be positive: " + topK);
 		}
-		return retrievalGate.read(domainId, () -> search(question, topK, className, attrName, domainId));
+		return retrievalGate.read(domainId, () -> search(question, topK, sandboxTable == null ? generateIndexName(className, attrName, domainId) : sandboxTable, domainId));
 	}
 
 	/** The nearest-first search of one table; its filter and ordering match the index of {@link #ensureVectorIndex}. */
@@ -312,8 +328,7 @@ public class VectorResourceDao extends BaseDao {
 	 * HNSW index; {@code hnsw.ef_search} is raised to at least {@code topK}, otherwise the index scan
 	 * would return fewer rows than asked.
 	 */
-	private List<VectorResource> search(String question, int topK, String className, String attrName, String domainId) {
-		String indexName = this.generateIndexName(className, attrName, domainId);
+	private List<VectorResource> search(String question, int topK, String indexName, String domainId) {
 		float[] findVector = null;
 		String queryString = "";
 		try {
@@ -366,7 +381,11 @@ public class VectorResourceDao extends BaseDao {
 	 * @param path the stored relative path ({@code indexName/id.suffix}), matching {@link VectorResource#getPath()}
 	 */
 	public void delete(String className, String attrName, String objectId, String path, String domainId) {
-		String indexName = this.generateIndexName(className, attrName, domainId);
+		delete(className, attrName, objectId, path, domainId, null);
+	}
+
+	public void delete(String className, String attrName, String objectId, String path, String domainId, String sandboxTable) {
+		String indexName = sandboxTable == null ? generateIndexName(className, attrName, domainId) : sandboxTable;
 		Path root = Paths.get("conf", dirName).toAbsolutePath();
 		Path indexDir = root.resolve(indexName).normalize();
 		Path file = root.resolve(path).normalize();
@@ -388,7 +407,11 @@ public class VectorResourceDao extends BaseDao {
 	 * table does not exist yet.
 	 */
 	public void deleteByObjectId(String className, String attrName, String objectId, String domainId) {
-		String indexName = this.generateIndexName(className, attrName, domainId);
+		deleteByObjectId(className, attrName, objectId, domainId, null);
+	}
+
+	public void deleteByObjectId(String className, String attrName, String objectId, String domainId, String sandboxTable) {
+		String indexName = sandboxTable == null ? generateIndexName(className, attrName, domainId) : sandboxTable;
 		String tableName = quotedTable(indexName);
 		Integer cnt = jdbcTemplate.queryForObject(
 				"SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?",
@@ -418,7 +441,11 @@ public class VectorResourceDao extends BaseDao {
 	 * when inside a sandbox; {@code fileId} is the last path segment ({@code id.suffix}).
 	 */
 	public void update(String className, String attrName, String objectId, String fileId, String content, InputStream is, String domainId) {
-		String indexName = this.generateIndexName(className, attrName, domainId);
+		update(className, attrName, objectId, fileId, content, is, domainId, null);
+	}
+
+	public void update(String className, String attrName, String objectId, String fileId, String content, InputStream is, String domainId, String sandboxTable) {
+		String indexName = sandboxTable == null ? generateIndexName(className, attrName, domainId) : sandboxTable;
 		String path = indexName + "/" + fileId;
 		Path root = Paths.get("conf", dirName).toAbsolutePath();
 		Path indexDir = root.resolve(indexName).normalize();

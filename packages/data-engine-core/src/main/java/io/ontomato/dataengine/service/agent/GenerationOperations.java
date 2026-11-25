@@ -10,7 +10,6 @@ import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.util.*;
 import java.util.*;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.springframework.context.annotation.Lazy;
@@ -25,7 +24,7 @@ public class GenerationOperations {
   private OntologyQueryService ontology;
   private final OntologyAgentStore store;
   private final io.ontomato.dataengine.dao.JSONRuleDao schemas;
-  private final SandboxService sandboxService;
+  private final DataSandboxService sandboxService;
   private final WriteFunctionOperationService writes;
   private final PythonExecuteService python;
   private final QueryGrantService grants;
@@ -35,7 +34,7 @@ public class GenerationOperations {
   public GenerationOperations(
       OntologyAgentStore store,
       io.ontomato.dataengine.dao.JSONRuleDao schemas,
-      SandboxService sandboxService,
+      DataSandboxService sandboxService,
       WriteFunctionOperationService writes,
       PythonExecuteService python,
       QueryGrantService grants, @Lazy DataPermissionLookup permissions, ABCProgramService programs, @Lazy IdentityService identity) {
@@ -78,11 +77,11 @@ public class GenerationOperations {
   }
 
   record Window(String run, Owner owner, String kind, Supplier<JSONObject> gate,
-      QueryAccessService.Access access, Consumer<JSONObject> samples, Check recheck, String evidenceScope) {}
+      QueryAccessService.Access access, Check recheck, String evidenceScope) {}
 
   private Window legacy(String run, Owner owner, String kind) {
     return new Window(run, owner, kind, () -> gate(run, owner), executionAccess(run, owner),
-        data -> storeGenerationSamples(run, data), () -> {}, null);
+        () -> {}, null);
   }
 
   Window external(String run, Owner owner, String kind, QueryAccessService.Access requestAccess, Check recheck) {
@@ -93,7 +92,7 @@ public class GenerationOperations {
         deadline, QueryAccessService.classScope(requestAccess.permission(), requestAccess.classNames()),
         requestAccess.target());
     return new Window(run, owner, kind, () -> gate(run, owner), access,
-        data -> storeGenerationSamples(run, data), () -> {
+        () -> {
           if (access.expiresAt() <= System.currentTimeMillis()) throw closed();
           recheck.run();
         }, externalEvidenceScope(owner));
@@ -103,10 +102,6 @@ public class GenerationOperations {
     return AgentJson.hash(JSONObject.of("external", owner.userId()));
   }
 
-  private void storeGenerationSamples(String run, JSONObject data) {
-    store.update("UPDATE ontology_generations SET test_data=?::jsonb WHERE run_id=?",
-        AgentJson.json(data), uuid(run));
-  }
 
   public String source(String run, Owner owner) {
     return store.transaction(() -> gate(run, owner).getString("source"));
@@ -125,15 +120,8 @@ public class GenerationOperations {
     }).distinct().sorted().toList();
   }
 
-  void createSandbox(String sandbox, String domain, List<String> classes) {
-    if (classes.isEmpty()) return;
-    sandboxService.createSampleStructure(sandbox, emptySample(classes), domain);
-  }
-
-  private static JSONObject emptySample(List<String> classes) {
-    var objects = new JSONArray();
-    for (String name : classes) objects.add(JSONObject.of("className", name, "rows", new JSONArray()));
-    return JSONObject.of("objDatas", objects);
+  String openSandbox(String run, Owner owner, long expiresAt, List<String> classes) {
+    return sandboxService.open(owner.domainId(), owner.userId(), run, expiresAt, classes);
   }
 
   private static void requireSampleAccess(String name, List<String> allowed) {
@@ -151,12 +139,7 @@ public class GenerationOperations {
   }
 
   public void dropSandbox(String sandbox, String domain) {
-    try {
-      sandboxService.truncateNamespace(sandbox, domain);
-      sandboxService.dropNamespace(sandbox, domain);
-    } catch (Exception error) {
-      throw new IllegalStateException("Cannot remove generation sandbox", error);
-    }
+    sandboxService.close(sandbox, domain);
   }
 
   private String sandbox(JSONObject row) {
@@ -193,30 +176,15 @@ public class GenerationOperations {
       var row = window.gate().get();
       String sandboxId = sandbox(row), domain = window.owner().domainId();
       var declared = row.getList("sandboxClasses", String.class);
-      var previous = row.getJSONObject("test_data");
-      var before = sampleClassSet(declared, previous);
-      var after = sampleClassSet(declared, data);
-      if (!before.equals(after)) {
-        if (before.isEmpty()) createSandbox(sandboxId, domain, List.copyOf(after));
-        else sandboxService.replaceSampleStructure(sandboxId, emptySample(List.copyOf(after)), domain);
-      }
-      window.samples().accept(data);
+      var classes = new TreeSet<String>();
+      if (declared != null) classes.addAll(declared);
+      classes.addAll(data.getList("classNames", String.class));
+      sandboxService.replaceClasses(sandboxId, List.copyOf(classes), data, domain);
       return null;
     });
     return JSONObject.of("prepared", true);
   }
 
-  private static Set<String> sampleClassSet(List<String> declared, JSONObject samples) {
-    var classes = new TreeSet<String>();
-    if (declared != null) classes.addAll(declared);
-    if (samples != null) {
-      var names = samples.getList("classNames", String.class);
-      if (names != null) classes.addAll(names);
-      else for (var item : samples.getJSONArray("objDatas").toJavaList(JSONObject.class))
-        classes.add(item.getString("className"));
-    }
-    return classes;
-  }
 
   public JSONObject reset(String run, Owner owner) {
     return reset(legacy(run, owner, "action"));
@@ -227,18 +195,7 @@ public class GenerationOperations {
         () -> {
           var row = window.gate().get();
           String sandboxId = sandbox(row), domainId = window.owner().domainId();
-          JSONObject data = row.getJSONObject("test_data");
-          if (data == null)
-            throw AgentHttpException.invalid("Prepare test data first").localized("Authoring.prepareFirst", Map.of());
-          try {
-            sandboxService.truncateNamespace(sandboxId, domainId);
-            sandboxService.loadSample(sandboxId, data, Map.of(), domainId);
-          } catch (RuntimeException error) {
-            throw error;
-          } catch (Exception error) {
-            throw AgentHttpException.invalid("Reset failed: " + error.getMessage())
-                .localized("Authoring.resetFailed", Map.of("reason", String.valueOf(error.getMessage())));
-          }
+          sandboxService.reset(sandboxId, domainId);
           return JSONObject.of("reset", true);
         });
   }

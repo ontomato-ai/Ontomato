@@ -47,7 +47,7 @@ import lombok.extern.slf4j.Slf4j;
  * handed to that one source.</p>
  */
 @Slf4j
-public class MultiDataSourceAdapter implements DataAdapter {
+public class MultiDataSourceAdapter extends SandboxDataAdapter {
 
 	private final Map<String, Object> jsonRule;
 	private final MultiDataSourceDefinition definition;
@@ -146,7 +146,7 @@ public class MultiDataSourceAdapter implements DataAdapter {
 				Map<String, Object> relationshipDef = (Map<String, Object>) value;
 				if (id.equals(resolveSourceOfClass((String) relationshipDef.get("fromclass")))
 						&& id.equals(resolveSourceOfClass((String) relationshipDef.get("toclass")))) {
-					relationships.put(router.physicalEdgeName(name), relationshipDef);
+					relationships.put(executionEdgeName(name), relationshipDef);
 				}
 			});
 			JSONObject view = new JSONObject(jsonRule);
@@ -156,7 +156,8 @@ public class MultiDataSourceAdapter implements DataAdapter {
 	}
 
 	private DataAdapter delegate(String sourceId) {
-		return factory.create(definition.source(sourceId), viewFor(sourceId));
+		var adapter = factory.create(definition.source(sourceId), viewFor(sourceId));
+		return sandboxTarget == null || !adapter.supportsSandbox() ? adapter : adapter.forSandbox(sandboxTarget);
 	}
 
 	private DataAdapter delegateOfClass(String className) {
@@ -342,6 +343,32 @@ public class MultiDataSourceAdapter implements DataAdapter {
       String source=configSourceOfClass(classNameOf(definition));
       var resource=delegate(source).createRecordedClass(namespace,definition);resource.put("sourceId",source);return resource;
     }
+    @Override
+    public JSONObject sandboxClassArtifact(String namespace, String name) {
+      String source = configSourceOfClass(name);
+      var artifact = delegate(source).sandboxClassArtifact(namespace, name);
+      artifact.put("sourceId", source);
+      return artifact;
+    }
+
+    @Override
+    public boolean supportsSandboxRelationship(String name) {
+      var relation = OntologyRelation.of(name, relationshipRule(jsonRule).get(name), name);
+      return configSourceOfClass(relation.fromClass()).equals(configSourceOfClass(relation.toClass()));
+    }
+
+    @Override
+    public JSONObject sandboxEdgeArtifact(String name) {
+      String source = sourceOfRelationship(name);
+      var artifact = delegate(source).sandboxEdgeArtifact(name);
+      if (artifact != null) artifact.put("sourceId", source);
+      return artifact;
+    }
+
+    private String executionEdgeName(String name) {
+      return sandboxTarget == null ? router.physicalEdgeName(name) : name;
+    }
+
     @Override public void dropRecordedResource(JSONObject resource) {
       delegate(resource.getString("sourceId")).dropRecordedResource(resource);
     }
@@ -349,11 +376,36 @@ public class MultiDataSourceAdapter implements DataAdapter {
     private java.util.List<DataAdapter> sandboxSources(java.util.List<String> classes) {
       return classes.stream().map(this::configSourceOfClass).distinct().map(this::delegate).toList();
     }
+    @Override
+    public SandboxCapability probeSandboxPermission(String deployTag) {
+      var details = new JSONObject();
+      var outcome = SandboxCapability.unsupported();
+      for (var source : definition.getDataSources()) {
+        var capability = source.isReadOnly()
+            ? SandboxCapability.unsupported("This data source is configured as read-only.")
+            : delegate(source.getId()).probeSandboxPermission(deployTag);
+        details.put(source.getId(), capability.json());
+        if ("failed".equals(capability.status()) || !outcome.supported() && capability.supported()) {
+          outcome = capability;
+        }
+      }
+      return outcome.withDetails(details);
+    }
+
+    @Override
+    public List<JSONObject> listSandboxArtifacts(String deploymentPrefix) {
+      return definition.getDataSources().stream().filter(source -> !source.isReadOnly()).flatMap(source ->
+          delegate(source.getId()).listSandboxArtifacts(deploymentPrefix).stream().peek(artifact ->
+              artifact.put("sourceId", source.getId()))).toList();
+    }
+
     @Override public boolean supportsSandbox() {
-      return definition.getDataSources().stream().allMatch(source -> delegate(source.getId()).supportsSandbox());
+      return definition.getDataSources().stream()
+          .anyMatch(source -> !source.isReadOnly() && delegate(source.getId()).supportsSandbox());
     }
     @Override public boolean supportsSandbox(java.util.List<String> classes) {
-      return sandboxSources(classes).stream().allMatch(DataAdapter::supportsSandbox);
+      return classes.stream().map(this::configSourceOfClass).distinct()
+          .allMatch(sourceId -> !definition.source(sourceId).isReadOnly() && delegate(sourceId).supportsSandbox());
     }
     @Override public void createNamespace(String namespace, java.util.List<String> classes) {
       sandboxSources(classes).forEach(adapter -> adapter.createNamespace(namespace));
@@ -384,7 +436,7 @@ public class MultiDataSourceAdapter implements DataAdapter {
 
 	@Override
 	public void createEdgeType(String namespace, String edgeName) {
-		delegate(sourceOfRelationship(edgeName)).createEdgeType(namespace, router.physicalEdgeName(edgeName));
+		delegate(sourceOfRelationship(edgeName)).createEdgeType(namespace, executionEdgeName(edgeName));
 	}
 
 	@Override
@@ -407,14 +459,14 @@ public class MultiDataSourceAdapter implements DataAdapter {
 	public void createEdge(String namespace, String relationName, String sourceClassName, String sourceObjId,
 			String targetClassName, String targetObjId) throws Exception {
 		delegate(sourceOfEdge(relationName, sourceClassName, targetClassName)).createEdge(namespace,
-				router.physicalEdgeName(relationName), sourceClassName, sourceObjId, targetClassName, targetObjId);
+				executionEdgeName(relationName), sourceClassName, sourceObjId, targetClassName, targetObjId);
 	}
 
 	@Override
 	public void deleteEdge(String namespace, String relationName, String sourceClassName, String sourceObjId,
 			String targetClassName, String targetObjId) throws Exception {
 		delegate(sourceOfEdge(relationName, sourceClassName, targetClassName)).deleteEdge(namespace,
-				router.physicalEdgeName(relationName), sourceClassName, sourceObjId, targetClassName, targetObjId);
+				executionEdgeName(relationName), sourceClassName, sourceObjId, targetClassName, targetObjId);
 	}
 
 	@Override
@@ -457,7 +509,7 @@ public class MultiDataSourceAdapter implements DataAdapter {
 						continue;
 					}
 					for (int t = 0; t < types.size(); t++) {
-						types.set(t, router.physicalEdgeName(types.getString(t)));
+						types.set(t, executionEdgeName(types.getString(t)));
 					}
 				}
 			}
@@ -467,7 +519,13 @@ public class MultiDataSourceAdapter implements DataAdapter {
 
 	@Override
 	public JSONArray queryVectorAttr(Map<String, Object> classDef, String attrName, String objectId) throws Exception {
-		return delegateOfClass(classNameOf(classDef)).queryVectorAttr(classDef, attrName, objectId);
+		String className = classNameOf(classDef);
+		if (sandboxTarget != null) {
+			className = sandboxTarget.classTables().keySet().stream()
+				.filter(name -> sandboxClassName(sandboxTarget.namespace(), name).equals(classNameOf(classDef)))
+				.findFirst().orElseThrow();
+		}
+		return delegateOfClass(className).queryVectorAttr(classDef, attrName, objectId);
 	}
 
 	/**
@@ -488,6 +546,11 @@ public class MultiDataSourceAdapter implements DataAdapter {
 	 * which is what this does; an adapter that prefixes ids per source cannot be honoured through this
 	 * signature (its own overload carrying the class name would be needed).</p>
 	 */
+	@Override
+	public String sandboxObjectId(String namespace, String className, String objectId) {
+		return delegateOfClass(className).sandboxObjectId(namespace, objectId);
+	}
+
 	@Override
 	public String sandboxObjectId(String sandboxId, String objectId) {
 		return objectId;

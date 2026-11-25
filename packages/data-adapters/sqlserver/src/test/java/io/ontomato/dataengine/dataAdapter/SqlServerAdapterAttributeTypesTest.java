@@ -12,4 +12,19 @@ class SqlServerAdapterAttributeTypesTest {
 			assertFalse(SqlServerAdapter.columnType(type).isBlank(), type);
 		}
 	}
+
+    @Test
+    void resolvesSandboxClassesByMappedPhysicalName() {
+        String longName = "期中检查材料提交记录复核归档表";
+        var target = new SandboxTarget("sandbox", "dep001", "abcdefgh",
+            java.util.Map.of(longName, "ot_sb_dep001_abcdefgh_c01", "e2e-expense", "ot_sb_dep001_abcdefgh_c02"),
+            java.util.Map.of(), java.util.Map.of());
+        var adapter = new SqlServerAdapter(new DataAdapterConnection(), java.util.Map.of()).forSandbox(target);
+        org.junit.jupiter.api.Assertions.assertTrue(adapter.supportsWriteActions());
+        org.junit.jupiter.api.Assertions.assertTrue(adapter.supportsSandbox());
+        org.junit.jupiter.api.Assertions.assertEquals(target.classTable(longName),
+            adapter.sandboxClassName(target.namespace(), longName));
+        org.junit.jupiter.api.Assertions.assertEquals(target.classTable("e2e-expense"),
+            adapter.sandboxClassName(target.namespace(), "e2e-expense"));
+    }
 }

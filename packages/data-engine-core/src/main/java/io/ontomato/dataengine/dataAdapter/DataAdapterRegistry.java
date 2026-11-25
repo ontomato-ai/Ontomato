@@ -53,6 +53,10 @@ public class DataAdapterRegistry {
 		return provider(type).create(connection, dataRagConfig, null);
 	}
 
+	public boolean supportsSandbox(BusinessConfig config) {
+		return create(config, null).supportsSandbox();
+	}
+
 	public List<DataAdapterProvider> installed() {
 		return providers.values().stream().sorted(Comparator.comparing(DataAdapterProvider::label)).toList();
 	}

@@ -60,13 +60,13 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_deliveries (
   UNIQUE(run_id,source,source_id));
 CREATE TABLE IF NOT EXISTS ontology_generations (
   run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id), business_id text NOT NULL,
-  kind text NOT NULL, owner_node text NOT NULL, sandbox_id text, source text, test_data jsonb, settled boolean NOT NULL DEFAULT false);
+  kind text NOT NULL, owner_node text NOT NULL, sandbox_id text, source text, settled boolean NOT NULL DEFAULT false);
 CREATE TABLE IF NOT EXISTS ontology_generation_tests (
   run_id uuid NOT NULL, digest text NOT NULL,
   execution_id uuid PRIMARY KEY, result jsonb, created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS ontology_platform_authoring_runs (
   run_id uuid PRIMARY KEY, session_id uuid NOT NULL, user_id text NOT NULL, domain_id text NOT NULL,
-  closed text, sandbox_id text, sandbox_context text, test_data jsonb);
+  closed text, sandbox_id text, sandbox_context text);
 CREATE TABLE IF NOT EXISTS ontology_retrievals (
   id uuid PRIMARY KEY REFERENCES ontology_agent_sessions(id), input jsonb NOT NULL,
   current_run_id uuid NOT NULL, decisions jsonb NOT NULL DEFAULT '[]', revision integer NOT NULL DEFAULT 0);

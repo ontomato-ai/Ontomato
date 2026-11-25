@@ -64,6 +64,7 @@ class BusinessConfigControllerVectorRebuildTest {
 
         when(businessConfigService.get("d1")).thenReturn(stored);
         when(langService.get(any(), anyString())).thenAnswer(invocation -> invocation.getArgument(1));
+        ReflectionTestUtils.setField(controller, "sandboxPermissions", mock(io.ontomato.dataengine.service.SandboxPermissionService.class));
         ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
         ReflectionTestUtils.setField(controller, "langService", langService);
         ReflectionTestUtils.setField(controller, "vectorRebuildService", vectorRebuildService);

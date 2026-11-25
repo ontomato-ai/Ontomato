@@ -16,7 +16,7 @@ import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterConnection;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.agent.AgentJson;
-import io.ontomato.dataengine.service.impl.SandboxServiceImpl;
+import io.ontomato.dataengine.service.DataSandboxService;
 import java.util.List;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -52,9 +52,7 @@ class SandboxConnectionBindingTest {
     when(adapter.supportsSandbox(List.of("item"))).thenReturn(true);
     var registry = mock(DataAdapterRegistry.class);
     when(registry.create(any(), any())).thenReturn(adapter);
-    var sandbox = new SandboxServiceImpl();
-    ReflectionTestUtils.setField(sandbox, "businessConfigService", configs);
-    ReflectionTestUtils.setField(sandbox, "jsonRuleDao", rules);
+    var sandbox = new DataSandboxService(null, null, rules, configs, null, null, null);
     ReflectionTestUtils.setField(sandbox, "dataAdapterRegistry", registry);
     var binding = sandbox.bindSample(JSON.parseObject("{\"objDatas\":[{\"className\":\"item\",\"rows\":[]}]}"), "domain");
     // Existing contexts fingerprinted the default JSON representation, which omits unset fields.

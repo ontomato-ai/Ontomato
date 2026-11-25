@@ -60,34 +60,57 @@ public interface DataAdapter {
 	/** Refuse an attribute this data source cannot key a class's objects by. */
 	public void validatePrimaryKeyName(String attrName) throws Exception;
 	
-	/** Resource discovery uses the database result metadata, including server-normalized names. */
-    default JSONObject createRecordedClass(String namespace, Map<String,Object> definition) {
+    default JSONObject createRecordedClass(String namespace, Map<String, Object> definition) {
+      String className = (String) definition.get("className");
       createClass(namespace, definition);
-      try (var connection=openConnection(); var statement=connection.createStatement();
-          var rows=statement.executeQuery("SELECT * FROM " + sandboxClassName(namespace,(String)definition.get("className")) + " WHERE 1=0")) {
-        var metadata=rows.getMetaData();
-        String name=metadata.getTableName(1);
-        if(name==null || name.isBlank()) throw new IllegalStateException("Database did not identify the created table");
-        return JSONObject.of("kind","table","name",name,"schema",metadata.getSchemaName(1),"catalog",metadata.getCatalogName(1));
-      } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot identify sandbox table",failure); }
+      String name = sandboxClassName(namespace, className);
+      return listSandboxArtifacts(name).stream().filter(artifact -> name.equals(artifact.getString("name")))
+          .findFirst().orElseThrow(() -> new IllegalStateException(
+              "Database did not identify the sandbox table for class [" + className + "]: " + name));
     }
     default void validateSandboxClasses(String namespace, List<Map<String,Object>> classes) {}
     default void createRecordedNamespaces(String namespace, List<String> classes, java.util.function.Consumer<JSONObject> save) {
       createNamespace(namespace,classes);
     }
+    default JSONObject sandboxClassArtifact(String namespace, String name) {
+      return JSONObject.of("kind", "table", "name", sandboxClassName(namespace, name));
+    }
+
+    default boolean supportsSandboxRelationship(String name) { return true; }
+
+    /** Returns the recorded carrier of a junction, or null when the source stores native edges. */
+    default JSONObject sandboxEdgeArtifact(String name) {
+      throw new UnsupportedOperationException("This source has no relationship table");
+    }
+
     default void dropRecordedResource(JSONObject resource) {
       if(!"table".equals(resource.getString("kind"))) throw new IllegalArgumentException("Unknown sandbox resource: "+resource);
       try(var connection=openConnection();var statement=connection.createStatement()) {
-        String quote=connection.getMetaData().getIdentifierQuoteString().trim();
-        java.util.function.Function<String,String> quoted=value->quote+value.replace(quote,quote+quote)+quote;
-        String name=quoted.apply(resource.getString("name"));
+        String name=JdbcSandboxArtifacts.quote(connection, resource.getString("name"));
         String schema=resource.getString("schema"),catalog=resource.getString("catalog");
-        if(schema!=null && !schema.isBlank()) name=quoted.apply(schema)+"."+name;
-        if(catalog!=null && !catalog.isBlank() && connection.getMetaData().supportsCatalogsInTableDefinitions()) name=quoted.apply(catalog)+"."+name;
+        if(schema!=null && !schema.isBlank()) name=JdbcSandboxArtifacts.quote(connection, schema)+"."+name;
+        if(catalog!=null && !catalog.isBlank() && connection.getMetaData().supportsCatalogsInTableDefinitions()) name=JdbcSandboxArtifacts.quote(connection, catalog)+"."+name;
         statement.execute("DROP TABLE IF EXISTS "+name);
       } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot drop recorded sandbox table: "+resource,failure); }
     }
+    default DataAdapter forSandbox(SandboxTarget target) {
+      throw new UnsupportedOperationException("This data source type does not support write actions");
+    }
+
+    default String sandboxVectorTable(String physicalClass, String attribute) { return null; }
+
+    default String sandboxObjectId(String namespace, String className, String objectId) {
+      return sandboxObjectId(namespace, objectId);
+    }
+
     default boolean supportsSandbox() { return false; }
+    default boolean supportsWriteActions() { return supportsSandbox(); }
+    default SandboxCapability probeSandboxPermission(String deployTag) {
+      return supportsSandbox() ? JdbcSandboxArtifacts.probe(this, deployTag) : SandboxCapability.unsupported();
+    }
+    default List<JSONObject> listSandboxArtifacts(String deploymentPrefix) {
+      return supportsSandbox() ? JdbcSandboxArtifacts.list(this, deploymentPrefix) : List.of();
+    }
     default boolean supportsSandbox(java.util.List<String> classes) { return supportsSandbox(); }
     default void createNamespace(String namespace, java.util.List<String> classes) { createNamespace(namespace); }
     default void dropNamespace(String namespace, java.util.List<String> classes) { dropNamespace(namespace); }
@@ -131,24 +154,11 @@ public interface DataAdapter {
 	 */
 	public JSONArray queryVectorAttr(Map<String, Object> classDef, String attrName, String objectId) throws Exception;
 
-	/**
-	 * Resolve the sandbox-scoped class (table) name for the given plain class name.
-	 *
-	 * <p>M3 adapters strip the namespace segment from {@code /namespace/ClassName} and return
-	 * {@code /sandboxId/ClassName}; relational adapters simply prefix the plain class name
-	 * ({@code sandboxId + className}). This mirrors exactly how each adapter names its business
-	 * table inside a sandbox, so vector-table names stay aligned with reads.</p>
-	 */
-	public String sandboxClassName(String sandboxId, String className);
+	/** Resolve a class through the bound target, or the namespace used by environment import. */
+	public String sandboxClassName(String namespace, String className);
 
-	/**
-	 * Resolve the sandbox-scoped object id for the given plain object id.
-	 *
-	 * <p>M3 adapters prefix the id ({@code sandboxId + objectId}), matching the id value the M3
-	 * store actually holds for a sandbox object; relational adapters leave the plain primary-key
-	 * value unchanged (they never prefix the id column).</p>
-	 */
-	public String sandboxObjectId(String sandboxId, String objectId);
+	/** Resolve the stored identifier for a sandbox object. */
+	public String sandboxObjectId(String namespace, String objectId);
 
 	/**
 	 * Report the problems this adapter finds in a domain's ontomap under its own routing rules.

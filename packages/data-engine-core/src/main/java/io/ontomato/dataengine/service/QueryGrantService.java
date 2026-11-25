@@ -51,7 +51,7 @@ public class QueryGrantService {
   }
 
   @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
-  private BuildTestContextService contexts;
+  private DataSandboxService contexts;
 
   public java.util.List<String> revokeContext(String contextId) {
     var executions=jdbc.queryForList("SELECT run_id FROM query_runtime_grants WHERE context_id=?",String.class,contextId);

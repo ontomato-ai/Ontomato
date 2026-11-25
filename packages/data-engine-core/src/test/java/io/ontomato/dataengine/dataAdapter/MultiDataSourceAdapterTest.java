@@ -52,6 +52,7 @@ class MultiDataSourceAdapterTest {
 		Map<String, Object> jsonRule;
 		boolean closed = false;
 		Exception writeFailure;
+		boolean sandbox;
 
 		RecordingAdapter(String name) {
 			this.name = name;
@@ -184,6 +185,23 @@ class MultiDataSourceAdapterTest {
 			return objectId;
 		}
 
+		@Override
+		public boolean supportsSandbox() {
+			return sandbox;
+		}
+
+		@Override
+		public SandboxCapability probeSandboxPermission(String deployTag) {
+			record("probeSandboxPermission:" + deployTag);
+			return SandboxCapability.passed();
+		}
+
+		@Override
+		public List<JSONObject> listSandboxArtifacts(String deploymentPrefix) {
+			record("listSandboxArtifacts:" + deploymentPrefix);
+			return List.of(JSONObject.of("kind", "table", "name", deploymentPrefix + "abcdefgh_c01"));
+		}
+
 		private void failIfWriteFails() {
 			if (writeFailure != null) {
 				throw new UnsupportedDataAdapterOperationException(name, "write");
@@ -272,6 +290,41 @@ class MultiDataSourceAdapterTest {
 		DataAdapterRegistry registry = new DataAdapterRegistry(providers, dataRagConfig);
 		multiProvider.registry = registry;
 		return new MultiDataSourceAdapter(registry, businessConfig, dataRagConfig, null);
+	}
+
+	@Test
+	void sandboxCapabilityAndSweepsExcludeSourcesConfiguredReadOnly() {
+		var provider = new RecordingProvider("postgresql");
+		var writable = provider.adapter("jdbc:crm", "crm");
+		writable.sandbox = true;
+		var readOnly = provider.adapter("jdbc:erp", "erp");
+		var definition = new MultiDataSourceDefinition();
+		var primary = source("crm", "postgresql");
+		var reporting = source("erp", "postgresql");
+		reporting.setReadOnly(true);
+		definition.getDataSources().addAll(List.of(primary, reporting));
+		definition.getClasses().addAll(List.of(classRoute("Person", "crm"), classRoute("Invoice", "erp")));
+		providers.add(provider);
+		var adapter = build(definition);
+
+		assertTrue(adapter.supportsSandbox());
+		assertTrue(adapter.supportsSandbox(List.of("Person")));
+		// A source's read-only setting wins even when the adapter could write.
+		readOnly.sandbox = true;
+		assertFalse(adapter.supportsSandbox(List.of("Invoice")));
+		var report = adapter.probeSandboxPermission("dep001");
+		assertEquals("passed", report.status());
+		var readOnlyReport = report.details().getJSONObject("erp");
+		assertEquals("unsupported", readOnlyReport.getString("status"));
+		assertTrue(readOnlyReport.getString("reason").contains("read-only"));
+		assertEquals(List.of("crm"), adapter.listSandboxArtifacts("ot_sb_dep001_").stream()
+				.map(artifact -> artifact.getString("sourceId")).toList());
+		assertTrue(writable.called("probeSandboxPermission:dep001"));
+		assertTrue(writable.called("listSandboxArtifacts:ot_sb_dep001_"));
+		assertTrue(readOnly.calls.isEmpty());
+
+		primary.setReadOnly(true);
+		assertFalse(adapter.supportsSandbox());
 	}
 
 	/** Two sources of one adapter type, one class each, routed. */

@@ -348,7 +348,7 @@ class JacksonAgentBoundaryTest {
 
   @Test
   void testContextRefusesBatchVectorUploadsBeforeEitherWriterRuns() throws Exception {
-    var contexts = mock(BuildTestContextService.class);
+    var contexts = mock(DataSandboxService.class);
     var vectors = mock(VectorResourceService.class);
     var writes = mock(WriteFunctionOperationService.class);
     var controller = new VectorResourceController();

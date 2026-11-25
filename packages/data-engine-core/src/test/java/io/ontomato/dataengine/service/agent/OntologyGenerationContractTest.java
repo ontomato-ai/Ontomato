@@ -42,7 +42,7 @@ class OntologyGenerationContractTest {
   RuntimeCodeClient code;
   SessionRegistryService sessions;
   IdentityService identity;
-  SandboxService sandboxService;
+  DataSandboxService sandboxService;
   PythonExecuteService python;
   String stop = "stop", source = "# ontomato-python:2\nprint('ok')\n";
   boolean inherited = false, failedTest = false;
@@ -79,7 +79,9 @@ class OntologyGenerationContractTest {
         .thenReturn(Map.of("classDef", List.of(), "relationship_rule", Map.of()));
     python = mock(PythonExecuteService.class);
     identity = mock(IdentityService.class);
-    sandboxService = mock(SandboxService.class);
+    sandboxService = mock(DataSandboxService.class);
+    when(sandboxService.open(anyString(), anyString(), anyString(), anyLong(), anyList()))
+        .thenAnswer(call -> java.util.UUID.randomUUID().toString());
     when(sandboxService.validateSample(any(),any(),anyString())).thenAnswer(call->call.getArgument(0));
     when(python.execute(anyString(), anyString(), anyInt(), anyString(), any(), any(), any()))
         .thenAnswer(

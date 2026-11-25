@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.QueryGrantService;
 import org.springframework.core.annotation.Order;
 import com.alibaba.fastjson2.JSON;
-import io.ontomato.dataengine.service.BuildTestContextService;
+import io.ontomato.dataengine.service.DataSandboxService;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import java.io.IOException;
@@ -15,10 +15,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 @Order(-190)
 public class BuildTestExecutionFilter extends OncePerRequestFilter {
-  private final BuildTestContextService contexts;
-  public BuildTestExecutionFilter(BuildTestContextService contexts) { this.contexts=contexts; }
+  private final DataSandboxService contexts;
+  public BuildTestExecutionFilter(DataSandboxService contexts) { this.contexts=contexts; }
   @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain) throws ServletException,IOException {
-    String header=request.getHeader(BuildTestContextService.HEADER), id=null;
+    String header=request.getHeader(DataSandboxService.HEADER), id=null;
     if(header!=null) {
       try { var declaration=JSON.parseObject(header); if(declaration!=null) id=declaration.getString("contextId"); }
       catch(RuntimeException invalid) { response.sendError(400,"BUILD_TEST_CONTEXT_REQUIRED"); return; }
