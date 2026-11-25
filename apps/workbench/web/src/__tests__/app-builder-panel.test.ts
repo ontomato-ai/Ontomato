@@ -167,9 +167,10 @@ describe("builtin-product-app-builder three-column panel", () => {
               id: "agent-app-builder",
               name: "App Builder",
               description: "Builds applications",
+              icon: null,
               kind: "app-builder",
               enabled: true,
-              builtin: true,
+              workspaceBound: true,
             },
           ],
         });
@@ -336,9 +337,17 @@ describe("builtin-product-app-builder three-column panel", () => {
       "AppPreview queried preview descriptor for app-orders",
     );
 
-    // Verify all three columns render and carried context chip reflects active app.
+    // Verify all three columns render, chat agent resolved, and carried context chip reflects active app.
     expect(mounted.element.querySelector(".ab-chat-col")).not.toBeNull();
     expect(mounted.element.querySelector(".ab-pane")).not.toBeNull();
+    await waitFor(
+      () => {
+        const chatCol = mounted.element.querySelector(".ab-chat-col");
+        return chatCol !== null && chatCol.querySelector("textarea") !== null;
+      },
+      "embedded AgentChat resolved app-builder preset and rendered composer",
+    );
+    expect(mounted.element.querySelector(".ab-chat-col")?.textContent ?? "").not.toContain("This agent is not available");
     await waitFor(
       () => (mounted.element.textContent ?? "").includes("Orders Portal"),
       "carried page chip shows Orders Portal",
@@ -395,5 +404,142 @@ describe("builtin-product-app-builder three-column panel", () => {
 
     // Assert zero Vue undefined-property warnings occurred.
     expect(vueWarnings.filter((w) => w.includes("was accessed during render"))).toEqual([]);
+  });
+
+  it("reconciles a stale ?app= query to the first available project once projects load", async () => {
+    const previewRequests: string[] = [];
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: use.path, component: { template: "<div />" } }],
+    });
+
+    installPlatform((request: Sent) => {
+      const { path } = request;
+      if (path === `/api/data-query/platform/applications/${APP_ID}/panel-uses`) {
+        return Response.json({
+          data: { applicationId: APP_ID, entry: { path: ENTRY_PATH, renderer: "panels" }, panelUses: [use] },
+        });
+      }
+      if (path === `/api/product-panels/${appBuilderPanel.id}`) return panelAnswer(appBuilderPanel, request);
+      if (path === `/api/product-panels/${appBuilderPanel.id}/snapshot`) {
+        return panelSnapshot(appBuilderPanel, Object.fromEntries(projections), request);
+      }
+      if (path.startsWith("/api/product-projections/")) {
+        return Response.json({ projection: projections.get(path.split("/").at(-1)!) });
+      }
+      if (path.startsWith("/api/product-panels/preview/app/")) {
+        previewRequests.push(path);
+        return Response.json({ kind: "empty", appId: path.split("/").at(-1) });
+      }
+      if (path === "/api/assistant/agents") {
+        return Response.json({
+          agents: [
+            {
+              id: "agent-app-builder",
+              name: "App Builder",
+              description: "Builds applications",
+              icon: null,
+              kind: "app-builder",
+              enabled: true,
+              workspaceBound: true,
+            },
+          ],
+        });
+      }
+      if (path === "/api/assistant/sessions") {
+        return Response.json({ sessions: [], hasMore: false, nextCursor: null });
+      }
+      if (path === "/api/product-panels/read") {
+        const body = request.body as ProductPanelReadRequest;
+        const member = body.memberPath[0]?.member;
+        if ("operations" in body) return Response.json({ status: "ready", value: {} });
+        if (member === "projects") {
+          return Response.json({
+            status: "ready",
+            value: [
+              {
+                className: APPLICATION,
+                primaryKey: "app-orders",
+                label: "Orders Portal",
+                fields: { icon: "package", statusTag: "Draft", published: false },
+              },
+            ],
+          });
+        }
+        if (member === "project") {
+          const targetKey = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
+          if (targetKey !== "app-orders") {
+            return Response.json({ status: "error", message: "Application not found" });
+          }
+          return Response.json({
+            status: "ready",
+            value: {
+              className: APPLICATION,
+              primaryKey: "app-orders",
+              label: "Orders Portal",
+              fields: { shortHeadCommit: "abc1234", busyLabel: "Idle", buildTestStatusLabel: "Ready", buildTestSampleName: "" },
+              outputs: {
+                name: "Orders Portal",
+                icon: "package",
+                published: false,
+                openPath: "",
+                managePath: "",
+                headCommit: "abc1234567890",
+                busy: false,
+                hasDrift: false,
+                driftCount: 0,
+                driftItemsJson: "[]",
+                hasConflicts: false,
+                conflictCount: 0,
+                conflictFilesJson: "[]",
+                previewEntriesJson: "[]",
+                buildTestStatus: "NONE",
+                buildTestSampleName: "",
+                buildTestCanRestart: false,
+              },
+            },
+          });
+        }
+        if (member === "sessions" || member === "releases" || member === "sourceFiles") {
+          return Response.json({ status: "ready", value: [] });
+        }
+        return Response.json({ status: "ready", value: { primaryKey: "app-orders", label: "Orders Portal", fields: {} } });
+      }
+      return nothingAt(request);
+    });
+
+    const catalog = useApplicationCatalog();
+    catalog.applications.value = [
+      {
+        id: APP_ID,
+        kind: "product",
+        names: { en: "App builder" },
+        descriptions: {},
+        icon: "builder",
+        rail: "apps",
+        category: "build",
+        sort: 0,
+        entry: { path: ENTRY_PATH, renderer: "panels" },
+        entryAccess: ["domain-member"],
+        scheduleAdapter: null,
+        releaseId: null,
+        panelUses: [use],
+      },
+    ];
+
+    await router.push(
+      panelAddress(use.path, { app: { className: APPLICATION, primaryKey: "app-deleted-stale" } }, appBuilderPanel.manifest),
+    );
+    const Host = defineComponent({
+      setup() {
+        return () => h(PanelApplicationRoute, { applicationId: APP_ID });
+      },
+    });
+    const mounted = mountPlatformPage(() => h(Host), router);
+    await waitFor(
+      () => previewRequests.some((url) => url.includes("/api/product-panels/preview/app/app-orders")),
+      "stale app state reconciled to first available project app-orders",
+    );
+    expect(mounted.element.textContent ?? "").toContain("Orders Portal");
   });
 });

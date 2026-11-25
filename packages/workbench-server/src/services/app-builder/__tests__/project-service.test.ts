@@ -308,6 +308,13 @@ it("lists without snapshots or source files and gates detail, publish and rollba
   const detail = panelRecordSchema.parse(await new ApplicationBuilderReadAdapter(owner, credentials).builderProject("app-drift"));
   expect(detail.outputs?.hasDrift).toBe(true);
   expect(detail.fields.driftItems).toMatchObject({ kind: "json", value: [{ kind: "panel", id: panelId, status: "modified" }] });
+  const files = await new ApplicationBuilderReadAdapter(owner, credentials).sourceFiles("app-drift", {});
+  const nestedHtml = files.find(file => file.primaryKey === panelPath);
+  expect(nestedHtml).toMatchObject({
+    primaryKey: panelPath,
+    label: "panel.html",
+    fields: { path: panelPath },
+  });
   await expect(publishApplicationBuilderSource(owner, credentials, "app-drift", { commit: release.commit }))
     .rejects.toMatchObject({ code: "APPLICATION_SOURCE_DRIFT", status: 409 });
   await expect(rollbackApplicationBuilderRelease(owner, credentials, "app-drift", release.releaseId))

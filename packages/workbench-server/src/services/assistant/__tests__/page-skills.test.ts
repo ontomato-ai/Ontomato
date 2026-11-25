@@ -182,7 +182,7 @@ it("offers the builder only after its application and use gates both pass", asyn
   expect((await listAssistantAgents(owner, credentials)).agents.some(agent => agent.id === builder.id)).toBe(false);
 
   const directory = await listAssistantAgents(owner, credentials);
-  expect(directory.agents).toContainEqual(expect.objectContaining({ id: builder.id, workspaceBound: true }));
+  expect(directory.agents).toContainEqual(expect.objectContaining({ id: builder.id, kind: "app-builder", workspaceBound: true }));
   expect(directory.presetAgentIds?.["app-builder"]).toBe(builder.id);
 });
 
@@ -203,5 +203,5 @@ it.each<PageSkillEntrance>([
   const result = await listAssistantAgents(owner, credentials, assistantAgentsQuerySchema.parse(entrance));
   expect(result.defaultAgentId).toBe(builder.id);
   expect(result.presetAgentIds?.["app-builder"]).toBe(builder.id);
-  expect(result.agents.find(agent => agent.id === builder.id)).toMatchObject({ id: builder.id, workspaceBound: true });
+  expect(result.agents.find(agent => agent.id === builder.id)).toMatchObject({ id: builder.id, kind: "app-builder", workspaceBound: true });
 });

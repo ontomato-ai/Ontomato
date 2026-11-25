@@ -232,9 +232,10 @@ export class ApplicationBuilderReadAdapter {
     const files = await readApplicationSourceFiles(this.owner, this.credentials, appId, commit);
     return files.map(file => {
       const language = fileLanguageForPath(file.path);
+      const basename = file.path.split("/").pop() || file.path;
       return {
         primaryKey: file.path,
-        label: file.path,
+        label: basename,
         fields: {
           path: file.path,
           size: file.size,

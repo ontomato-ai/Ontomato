@@ -25,6 +25,7 @@ await mountPanel({
     const { instance, navigate, t } = usePanelContext();
     const values = instance.state.values;
 
+    const projectsOutputs = usePanelOutputs("projects");
     const projectOutputs = usePanelOutputs("project");
     const chatOutputs = usePanelOutputs("chat");
 
@@ -371,6 +372,37 @@ await mountPanel({
       projectsRef.value?.refresh?.();
     }
 
+    let initialProjectsReconciled = false;
+    function onProjectsListed(refs) {
+      if (initialProjectsReconciled || !Array.isArray(refs)) return;
+      if (projectsOutputs.value.status === "error") return;
+      initialProjectsReconciled = true;
+      if (refs.length === 0) {
+        if (currentAppId.value) {
+          instance.state.setState({
+            app: null,
+            session: null,
+            selectedSession: null,
+            publishDrawerOpen: false,
+            publishCommit: null,
+          });
+        }
+        return;
+      }
+      if (currentAppId.value && !refs.some((item) => item && item.primaryKey === currentAppId.value)) {
+        const first = refs[0];
+        if (first && first.primaryKey) {
+          instance.state.setState({
+            app: { className: first.className || APPLICATION_TYPE, primaryKey: first.primaryKey },
+            session: null,
+            selectedSession: null,
+            publishDrawerOpen: false,
+            publishCommit: null,
+          });
+        }
+      }
+    }
+
     function onProjectRowAction({ id, ref: appRef }) {
       if (!appRef || !appRef.primaryKey) return;
       if (id === "newChat") {
@@ -534,6 +566,7 @@ await mountPanel({
       onChooseSession,
       openCreateDialog,
       onDraftCreated,
+      onProjectsListed,
       onProjectRowAction,
       onMetaSaved,
       openPublishDrawer,
