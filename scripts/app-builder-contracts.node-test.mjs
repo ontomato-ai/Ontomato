@@ -582,7 +582,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "register", JSON.stringify(badIcon)), error =>
       error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
     badIcon.applications[0].mode = "create";
-    badIcon.applications[0].input.entryAccess = ["domain-member"];
+    badIcon.applications[0].input.initialOpenEntryIds = [];
     badIcon.applications[0].input.declaration.icon = "settings";
     await writeFile(badIconFile, JSON.stringify(badIcon));
     await assert.rejects(run("panel", "check", directory, "--material", badIconFile), error =>
@@ -653,11 +653,13 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const detailMaterialFile = join(detailDir, "registration.json");
     const detailMaterial = JSON.parse(await readFile(detailMaterialFile, "utf8"));
     const [app] = detailMaterial.applications;
-    const { declaration, entryAccess, ...updateInput } = app.input;
+    const { declaration, initialOpenEntryIds, ...updateInput } = app.input;
     app.mode = "update";
     app.input = updateInput;
     requests.length = 0;
-    for (const [key, value] of Object.entries({ entryAccess, groups: declaration.groups, permissions: declaration.permissions })) {
+    for (const [key, value] of Object.entries({
+      initialOpenEntryIds, entryAccess: ["domain-member"], groups: declaration.groups, permissions: [],
+    })) {
       await writeFile(detailMaterialFile, JSON.stringify({
         ...detailMaterial, applications: [{ ...app, input: { ...updateInput, [key]: value } }],
       }));
@@ -715,15 +717,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
         id: "app-chat-only",
         mode: "create",
         input: {
-          declaration: { names: { en: "Chat" }, descriptions: { en: "Chat" }, groups: [], permissions: [] },
-          entryAccess: ["domain-member"],
+          declaration: { names: { en: "Chat" }, descriptions: { en: "Chat" }, groups: [] },
+          initialOpenEntryIds: ["chat-use"],
           entry: { path: "/applications/app-chat-only", renderer: "panels" },
           panelUses: [{
             id: "chat-use",
             pageKey: "chat-home",
             panelId: "chat-panel",
             path: "/applications/app-chat-only/home",
-            access: { kind: "domain-member" },
             names: { en: "Home" },
           }],
         },
