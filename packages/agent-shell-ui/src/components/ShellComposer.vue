@@ -130,7 +130,7 @@ defineExpose({ focus: () => input.value?.focus() });
     :aria-label="labels.expandComposer"
     @click="unfold"
   >
-    <MessageSquare :size="18" />
+    <MessageSquare :size="20" :stroke-width="2.1" aria-hidden="true" />
   </button>
   <form v-else class="composer" :class="{ disabled, floating }" @submit.prevent="submit">
     <!-- A floating box's upper layer: its fold, then the agent the message goes to and the host's own choices. -->
@@ -275,19 +275,47 @@ defineExpose({ focus: () => input.value?.focus() });
   background: var(--el-fill-color);
 }
 /*
- * Folded: a round button floating at the page's lower right, aligned to the foot's trailing edge so the page behind it
- * keeps its whole height and stays clickable everywhere else.
+ * Folded: a prominent brand-filled round FAB floating at the page's lower right, aligned to the foot's trailing edge
+ * so it remains unmistakable across light/dark surfaces while the page behind it keeps its whole height and stays
+ * clickable everywhere else.
  */
 .composer-unfold {
   margin-inline-start: auto;
   pointer-events: auto;
-  width: var(--control-height-lg);
-  height: var(--control-height-lg);
-  border: 1px solid var(--el-border-color);
+  width: 44px;
+  height: 44px;
+  border: 1px solid color-mix(in srgb, var(--on-primary) 22%, var(--el-color-primary));
   border-radius: var(--radius-full);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-  box-shadow: var(--elevation-composer);
+  background: var(--el-color-primary);
+  color: var(--on-primary);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--el-bg-color) 88%, transparent),
+    0 6px 18px color-mix(in srgb, var(--el-color-primary) 34%, rgba(0, 0, 0, 0.2)),
+    0 2px 6px rgba(0, 0, 0, 0.14);
+  transition:
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+.composer-unfold:hover {
+  background: var(--brand-primary-hover);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--el-bg-color) 92%, transparent),
+    0 8px 22px color-mix(in srgb, var(--el-color-primary) 44%, rgba(0, 0, 0, 0.24)),
+    0 3px 8px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+}
+.composer-unfold:active {
+  transform: translateY(0) scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-unfold {
+    transition: none;
+  }
+  .composer-unfold:hover,
+  .composer-unfold:active {
+    transform: none;
+  }
 }
 .composer-agent,
 .composer-tools {
@@ -382,5 +410,8 @@ textarea::placeholder {
 .composer-unfold:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
+}
+.composer-unfold:focus-visible {
+  outline-offset: 3px;
 }
 </style>

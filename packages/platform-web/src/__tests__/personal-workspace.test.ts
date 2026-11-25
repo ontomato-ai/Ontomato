@@ -17,7 +17,11 @@ vi.mock("@ontomato/workbench-ui", async (importOriginal) => ({
   nodeApiRequest: api.request,
   readRememberedAgent: () => null,
 }));
-vi.mock("@ontomato/agent-shell-ui", () => ({ AgentPicker: { template: '<div />' }, ShellComposer: { name: "ShellComposer", template: '<div><slot name="tools" /></div>' } }));
+vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
+  AgentPicker: { template: '<div />' },
+  ShellComposer: { name: "ShellComposer", template: '<div><slot name="tools" /></div>' },
+}));
 vi.mock("@ontomato/workbench-ui/features/dashboard", () => ({ DashboardCardPicker: { template: '<div />' }, DashboardMetricDetail: { template: '<div>Live metric details</div>' }, DashboardMetricPreview: { name: "DashboardMetricPreview", props: ["dashboardId", "revision"], template: '<div class="metric-preview-stub">{{ dashboardId }}<button class="select-metric" @click="$emit(\'select\', {id: \'card-a\', name: \'Revenue\'})">Revenue</button></div>' } }));
 
 const application = { id: "app-orders", kind: "hosted", category: "business", names: { en: "Orders" }, descriptions: {}, icon: "pages", rail: "apps", sort: 0, entry: { path: "/orders" }, entryAccess: ["orders"], scheduleAdapter: null, releaseId: "release" };

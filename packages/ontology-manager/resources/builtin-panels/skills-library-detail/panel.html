@@ -43,7 +43,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    padding: var(--spacing-md) var(--page-gutter) var(--spacing-lg);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--spacing-lg) + var(--pane-dock-space, 0px));
     box-sizing: border-box;
   }
   .skill-package {
@@ -82,7 +82,7 @@
   @container skill-detail-page (max-width: 45rem) {
     .skill-detail-body {
       overflow-y: auto;
-      padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+      padding: var(--spacing-sm) var(--spacing-md) calc(var(--spacing-md) + var(--pane-dock-space, 0px));
     }
     .skill-package {
       grid-template-columns: minmax(0, 1fr);

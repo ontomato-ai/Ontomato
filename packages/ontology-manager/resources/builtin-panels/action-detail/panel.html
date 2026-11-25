@@ -16,7 +16,7 @@
     flex-direction: column;
     gap: var(--spacing-md);
     min-width: 0;
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
   .ac-section {
     display: flex;
@@ -89,7 +89,7 @@
 
   @container action-detail-page (max-width: 640px) {
     .ac-detail-body {
-      padding-block: var(--spacing-sm) calc(var(--page-content-gap) + 56px);
+      padding-block: var(--spacing-sm) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
       gap: var(--spacing-sm);
     }
   }

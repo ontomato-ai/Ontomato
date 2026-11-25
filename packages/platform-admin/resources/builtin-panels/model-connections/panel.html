@@ -12,7 +12,7 @@
     display: grid;
     grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
     gap: var(--spacing-lg);
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     min-width: 0;
     align-items: start;
   }

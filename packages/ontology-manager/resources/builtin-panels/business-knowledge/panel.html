@@ -15,7 +15,7 @@
     gap: var(--spacing-md);
     min-width: 0;
     min-height: 0;
-    padding: var(--spacing-md) var(--page-gutter) var(--spacing-lg);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--spacing-lg) + var(--pane-dock-space, 0px));
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -65,7 +65,7 @@
     flex-direction: column;
     gap: var(--spacing-md);
     overflow-y: auto;
-    padding: var(--page-section-padding, var(--spacing-lg)) var(--page-section-padding, var(--spacing-lg)) calc(var(--page-section-padding, var(--spacing-lg)) + 56px);
+    padding: var(--page-section-padding, var(--spacing-lg));
   }
   .bk-back {
     display: none;

@@ -11,7 +11,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
   .ot-toolbar {
     display: flex;
@@ -81,7 +81,7 @@
     flex: 1 1 auto;
     align-items: center;
     justify-content: center;
-    padding: var(--spacing-2xl) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--spacing-2xl) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
   .ot-error-state {
     padding: var(--page-content-gap) var(--page-gutter);
@@ -93,7 +93,7 @@
     display: grid;
     grid-template-columns: minmax(280px, 0.85fr) minmax(440px, 1.5fr);
     gap: var(--page-content-gap);
-    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     align-items: start;
   }
   .ot-detail-main {
@@ -226,7 +226,7 @@
   @container objects-page (max-width: 900px) {
     .ot-detail-body {
       grid-template-columns: minmax(0, 1fr);
-      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
   }
   @container objects-page (max-width: 560px) {
