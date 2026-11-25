@@ -848,6 +848,42 @@ class OntologyModelServiceImplTest {
 		verify(jsonRuleDao, never()).save(any(), any());
 	}
 
+	@Test
+	void inlineFormsDeclareSubmitOnForVisualModelingWhileKeepingStandardFormsExplicit() {
+		var standardObject = service.objectTypeForm(open("object", "platform:ObjectType", "Device"), user, "en");
+		assertFalse(fieldOf(standardObject, "/showName").has("submitOn"));
+		assertFalse(fieldOf(standardObject, "/classDesc").has("submitOn"));
+		assertEquals("text", fieldOf(standardObject, "/className").get("control").get("kind").asText());
+
+		var inlineObject = service.objectTypeInlineForm(open("object", "platform:ObjectType", "Device"), user, "en");
+		assertEquals("blur", fieldOf(inlineObject, "/showName").get("submitOn").asText());
+		assertEquals("blur", fieldOf(inlineObject, "/classDesc").get("submitOn").asText());
+		assertEquals("hidden", fieldOf(inlineObject, "/className").get("control").get("kind").asText());
+
+		var standardAttr = service.attributeForm(
+				open("object", "platform:Attribute", "[\"Device\",\"site_id\"]"), user, "en");
+		assertFalse(fieldOf(standardAttr, "/showName").has("submitOn"));
+		assertFalse(fieldOf(standardAttr, "/enable").has("submitOn"));
+		assertEquals("hidden", fieldOf(standardAttr, "/type").get("control").get("kind").asText());
+
+		var inlineAttr = service.attributeInlineForm(
+				open("object", "platform:Attribute", "[\"Device\",\"site_id\"]"), user, "en");
+		assertEquals("text", fieldOf(inlineAttr, "/type").get("control").get("kind").asText());
+		assertTrue(fieldOf(inlineAttr, "/type").get("readOnly").asBoolean());
+		assertEquals("blur", fieldOf(inlineAttr, "/showName").get("submitOn").asText());
+		assertEquals("blur", fieldOf(inlineAttr, "/attrDesc").get("submitOn").asText());
+		assertEquals("change", fieldOf(inlineAttr, "/enable").get("submitOn").asText());
+		assertEquals("change", fieldOf(inlineAttr, "/businessKey").get("submitOn").asText());
+		assertEquals("change", fieldOf(inlineAttr, "/primaryKey").get("submitOn").asText());
+		assertFalse(fieldOf(inlineAttr, "/primaryKey").get("readOnly").asBoolean());
+
+		// Primary-key attribute locks enable and primaryKey in inline mode just like standard mode.
+		var lockedInlineAttr = service.attributeInlineForm(
+				open("object", "platform:Attribute", "[\"Device\",\"id\"]"), user, "en");
+		assertTrue(fieldOf(lockedInlineAttr, "/enable").get("readOnly").asBoolean());
+		assertTrue(fieldOf(lockedInlineAttr, "/primaryKey").get("readOnly").asBoolean());
+	}
+
 	private static FormRequest open(String kind, String objectType, String primaryKey) {
 		return new FormRequest(new FormTarget(kind, objectType, primaryKey), null, null);
 	}

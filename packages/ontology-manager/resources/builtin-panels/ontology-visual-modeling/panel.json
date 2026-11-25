@@ -56,7 +56,7 @@
     },
     "members": {
       "graph": {
-        "component": "ObjectGraph",
+        "component": "VisualModelingGraph",
         "type": "platform:ObjectType",
         "data": {
           "nodes": {
@@ -72,10 +72,7 @@
             "source": "/fromclass",
             "target": "/toclass"
           },
-          "editable": true,
           "nodeCategory": "/className",
-          "nodeSize": 62,
-          "labelSize": 13,
           "layout": "force"
         },
         "state": {
@@ -150,6 +147,19 @@
         },
         "operation": "platform:ObjectType.save",
         "id": "builtin-product-d3d2e0f4-bbad-45f4-b553-e25b7a6f5099"
+      },
+      "classInlineForm": {
+        "component": "ObjectForm",
+        "type": "platform:ObjectType",
+        "target": "selectedNode",
+        "data": {
+          "form": "inlineForm"
+        },
+        "operation": "platform:ObjectType.save",
+        "config": {
+          "actions": "none"
+        },
+        "id": "builtin-product-2b1e7c44-4d8a-4e2f-9c1a-77a9e60f3d11"
       },
       "classCreate": {
         "component": "ObjectForm",
@@ -261,92 +271,31 @@
             }
           }
         },
-        "state": {
-          "selected": "selectedAttribute"
+        "operations": {
+          "delete": "attributes.delete"
         },
         "config": {
           "layout": "cards",
+          "selectable": false,
+          "subtitleField": "name",
           "showFooter": false,
           "searchable": false,
-          "emptyText": "visualModeling.noAttributes",
-          "columns": [
-            {
-              "key": "name",
-              "labelKey": "visualModeling.attrApiName"
-            },
-            {
-              "key": "type",
-              "labelKey": "visualModeling.attrType",
-              "kind": "tag"
-            },
-            {
-              "key": "attrDesc",
-              "labelKey": "visualModeling.attrDesc",
-              "emptyKey": "visualModeling.dash",
-              "wrap": true
-            },
-            {
-              "key": "primaryKey",
-              "labelKey": "visualModeling.attrPrimaryKey",
-              "valueMap": {
-                "true": {
-                  "labelKey": "visualModeling.yes",
-                  "tone": "success"
-                },
-                "false": {
-                  "labelKey": "visualModeling.no"
-                }
-              }
-            },
-            {
-              "key": "businessKey",
-              "labelKey": "visualModeling.attrBusinessKey",
-              "valueMap": {
-                "true": {
-                  "labelKey": "visualModeling.yes",
-                  "tone": "info"
-                },
-                "false": {
-                  "labelKey": "visualModeling.no"
-                }
-              }
-            },
-            {
-              "key": "enable",
-              "labelKey": "visualModeling.attrEnable",
-              "kind": "tag",
-              "valueMap": {
-                "true": {
-                  "labelKey": "visualModeling.enabled",
-                  "tone": "success"
-                },
-                "false": {
-                  "labelKey": "visualModeling.disabled",
-                  "tone": "warning"
-                }
-              }
-            }
-          ]
+          "emptyText": "visualModeling.noAttributes"
         },
         "id": "builtin-product-7f166790-0c94-4ff8-b0c4-4495a0a18149"
       },
-      "attributeForm": {
+      "attributeInlineForm": {
         "component": "ObjectForm",
         "type": "platform:Attribute",
         "target": "selectedAttribute",
         "data": {
-          "form": "form"
+          "form": "inlineForm"
         },
         "operation": "platform:Attribute.save",
         "config": {
-          "fixedFields": {
-            "/className": {
-              "state": "selectedNode",
-              "path": "/primaryKey"
-            }
-          }
+          "actions": "none"
         },
-        "id": "builtin-product-b98efdcd-7768-45b5-bed2-722db3ac17f1"
+        "id": "builtin-product-6c3a9f18-8b2d-4f6a-a1d5-4e92b0c7d823"
       },
       "attributeCreate": {
         "component": "ObjectForm",
@@ -364,24 +313,6 @@
           }
         },
         "id": "builtin-product-a30326f9-4bfb-493e-9ffc-7079b65d3ab1"
-      },
-      "attributeDelete": {
-        "component": "OperationButton",
-        "type": "platform:Attribute",
-        "target": "selectedAttribute",
-        "operation": "attributes.delete",
-        "config": {
-          "type": "danger"
-        },
-        "id": "builtin-product-b2e3db01-f770-4033-9fd6-9bc4fe918092"
-      },
-      "attributePrimaryKey": {
-        "component": "OperationButton",
-        "type": "platform:Attribute",
-        "target": "selectedAttribute",
-        "operation": "attributes.setPrimaryKey",
-        "config": {},
-        "id": "builtin-product-bea3ba82-f7da-4b78-99c3-3e56ec5f9c85"
       }
     }
   },
@@ -395,7 +326,7 @@
         "visualModeling.addRelation": "添加关系类型",
         "visualModeling.edit": "编辑",
         "visualModeling.delete": "删除",
-        "visualModeling.hint": "拖动节点摆放位置，滚轮缩放，点节点或关系查看详情；Shift 从一个节点拖到另一个节点可直接新建关系。",
+        "visualModeling.hint": "拖动节点摆放位置，双击节点或关系编辑，悬停节点从连接桩拖线（或按住 Shift 拖线）新建关系。",
         "visualModeling.selectedType": "已选对象类型：{name}",
         "visualModeling.selectedRelation": "已选关系类型：{name}",
         "visualModeling.noSelection": "未选择节点",
@@ -447,7 +378,7 @@
         "visualModeling.addRelation": "Add relation type",
         "visualModeling.edit": "Edit",
         "visualModeling.delete": "Delete",
-        "visualModeling.hint": "Drag nodes to place them, scroll to zoom, click a node or a relation for its details; hold Shift and drag from one node to another to create a relation.",
+        "visualModeling.hint": "Drag nodes to arrange, double-click a node or relation to edit, or drag from hover connection ports (or Shift-drag) to create a relation.",
         "visualModeling.selectedType": "Selected object type: {name}",
         "visualModeling.selectedRelation": "Selected relation type: {name}",
         "visualModeling.noSelection": "No node selected",

@@ -393,6 +393,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
       detailPanelForm: modelReads.form,
+      inlineForm: modelReads.form,
+      productGraph: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecord" },
       record: {
         ...modelReads.record,
         outputs: {
@@ -413,6 +415,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("attribute", "fact"),
     reads: {
       ...modelReads, list: modelListByClass, count: countRead,
+      inlineForm: modelReads.form,
       record: {
         ...modelReads.record,
         outputs: {

@@ -10,12 +10,45 @@ import {
 
 /*
  * The ontology graph: composes official projections for counts (`ObjectCount`), resource lists (`ObjectList`),
- * graph canvas & shortest-path finding (`ObjectGraph`), path pickers (`ReferencePicker`), and inspector details
- * (`ObjectHeader`, `TypedValue`, `ObjectRefCard`, `ObjectList`). Reads zero raw record fields and performs zero
- * business calculations; coordinates only public panel state, visual layout, and navigation.
+ * graph canvas & shortest-path finding (`OntologyModelGraph`), product asset overview (`ProductAssetGraph`),
+ * path pickers (`ReferencePicker`), and inspector details (`ObjectHeader`, `TypedValue`, `ObjectRefCard`,
+ * `ObjectList`). Reads zero raw record fields and performs zero business calculations; coordinates only public
+ * panel state, visual layout, and navigation.
  */
 
 const OBJECT_TYPE = "platform:ObjectType";
+const PRODUCT_PROJECTION = "platform:ProductProjection";
+const PRODUCT_PANEL = "platform:ProductPanel";
+const APPLICATION = "platform:Application";
+const AGENT_DEFINITION = "platform:AgentDefinition";
+
+const TECHNICAL_ERROR_PATTERN =
+  /\b(TypeError|ReferenceError|SyntaxError|RangeError|ZodError|Error:|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|fetch failed|Unexpected token|SQLSTATE|NullPointerException|IllegalStateException|Backend service unavailable|HTTP \d{3})\b|https?:\/\/|\n\s*at\s+/i;
+
+function safeReaderError(raw, fallback) {
+  if (typeof raw !== "string") return fallback;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 240 || TECHNICAL_ERROR_PATTERN.test(trimmed)) return fallback;
+  return trimmed;
+}
+
+function productAssetRoute(target) {
+  const id = target?.primaryKey || target?.assetId;
+  if (!id) return null;
+  if (target.className === PRODUCT_PROJECTION) {
+    return panelAddress("/ontology/projections/detail", { selected: id });
+  }
+  if (target.className === PRODUCT_PANEL) {
+    return panelAddress("/ontology/panels/detail", { selected: id });
+  }
+  if (target.className === APPLICATION) {
+    return panelAddress("/ontology/applications/detail", { selected: id });
+  }
+  if (target.className === AGENT_DEFINITION) {
+    return panelAddress("/ontology/agents/detail", { selected: id });
+  }
+  return null;
+}
 
 await mountPanel({
   setup() {
@@ -45,6 +78,7 @@ await mountPanel({
     const objectRelationsTotal = usePanelOutput("objectRelations", "total");
 
     const navigationError = ref("");
+    const productGraphOpen = ref(false);
     const listEl = ref(null);
 
     // Opaque object reference lists reported by official ObjectList projections for canvas browse highlighting
@@ -91,7 +125,30 @@ await mountPanel({
         relationListStatus.value === "loading",
     );
     const graphEmpty = computed(() => graphStatus.value === "empty");
-    const readError = computed(() => (graphStatus.value === "error" && graphError.value ? String(graphError.value) : ""));
+    const graphEverReady = ref(false);
+    watch(
+      graphStatus,
+      (status) => {
+        if (status === "ready") {
+          graphEverReady.value = true;
+        } else if (status === "empty" || status === "forbidden") {
+          graphEverReady.value = false;
+        }
+      },
+      { immediate: true },
+    );
+    const readError = computed(() =>
+      graphStatus.value === "error"
+        ? safeReaderError(graphError.value, t("ontologyGraph.graphReadFailedDesc"))
+        : "",
+    );
+    const showGraphWorkspace = computed(() => !readError.value || graphEverReady.value);
+    const safeObjectHeaderError = computed(() =>
+      safeReaderError(objectHeaderError.value, t("ontologyGraph.readFailedFallback")),
+    );
+    const safeRelationHeaderError = computed(() =>
+      safeReaderError(relationHeaderError.value, t("ontologyGraph.readFailedFallback")),
+    );
 
     // Mirror SDK #303 `previous` semantics: once the current target has loaded, a same-target reread failure
     // keeps the element details visible with an error banner instead of mislabelling it as deleted.
@@ -390,12 +447,36 @@ await mountPanel({
       }
     }
 
-    // Esc or browser Back clears an active object/relation selection cleanly.
+    // Esc or browser Back clears an active object/relation selection cleanly; closes the product graph dialog first.
     usePanelBack(
       () => Boolean(requestedObjectKey.value || requestedRelationKey.value),
       clearSelection,
       { pushHistory: true },
     );
+    usePanelBack(
+      () => productGraphOpen.value,
+      () => {
+        productGraphOpen.value = false;
+      },
+      { pushHistory: false },
+    );
+
+    function openProductGraph() {
+      navigationError.value = "";
+      productGraphOpen.value = true;
+    }
+
+    async function onOpenProductAsset(target) {
+      const address = productAssetRoute(target);
+      if (!address) return;
+      navigationError.value = "";
+      productGraphOpen.value = false;
+      try {
+        await instance.navigate(address);
+      } catch {
+        navigationError.value = t("ontologyGraph.navigationFailed");
+      }
+    }
 
     async function openModeling() {
       navigationError.value = "";
@@ -413,8 +494,8 @@ await mountPanel({
       );
       try {
         await instance.navigate(address);
-      } catch (reason) {
-        navigationError.value = reason instanceof Error ? reason.message : String(reason);
+      } catch {
+        navigationError.value = t("ontologyGraph.navigationFailed");
       }
     }
 
@@ -424,8 +505,15 @@ await mountPanel({
       loading,
       refreshing,
       graphEmpty,
+      graphEverReady,
       graphHint,
       readError,
+      showGraphWorkspace,
+      safeObjectHeaderError,
+      safeRelationHeaderError,
+      productGraphOpen,
+      openProductGraph,
+      onOpenProductAsset,
       search,
       setSearch,
       filter,

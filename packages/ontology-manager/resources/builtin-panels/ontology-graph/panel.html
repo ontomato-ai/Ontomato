@@ -513,6 +513,19 @@
       padding-bottom: calc(var(--spacing-lg) + var(--pane-dock-space, 0px));
     }
   }
+  .og-product-graph-body {
+    height: calc(100dvh - 110px);
+    min-height: 360px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .og-product-graph-body > [data-member] {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   @container (max-width: 560px) {
     .og-summary {
       flex-wrap: wrap;
@@ -535,6 +548,10 @@
           <projection slot="relationStats"></projection>
         </div>
         <sdk-button
+          data-action="product-relation-graph"
+          @click="openProductGraph"
+        >{{ t("ontologyGraph.productRelationGraph") }}</sdk-button>
+        <sdk-button
           text
           icon="refresh-cw"
           :loading="refreshing"
@@ -546,11 +563,20 @@
       </template>
     </page-header>
 
-    <div v-if="readError" class="og-errors">
-      <sdk-alert :title="readError" type="error" :closable="false" show-icon></sdk-alert>
+    <div v-if="readError" class="og-errors" data-graph-read-error>
+      <info-banner
+        :compact="graphEverReady"
+        tone="danger"
+        :title="t('ontologyGraph.graphReadFailedTitle')"
+        :text="readError"
+      >
+        <template #actions>
+          <sdk-button size="small" @click="retryDetail">{{ t("ontologyGraph.retry") }}</sdk-button>
+        </template>
+      </info-banner>
     </div>
 
-    <div v-else class="og-grid">
+    <div v-show="showGraphWorkspace" class="og-grid">
       <aside class="og-explorer">
         <div class="og-search-box">
           <sdk-input
@@ -680,7 +706,7 @@
                   compact
                   tone="danger"
                   :title="t('ontologyGraph.objectReadFailedTitle')"
-                  :text="objectHeaderError || t('ontologyGraph.readFailedFallback')"
+                  :text="safeObjectHeaderError"
                 >
                   <template #actions>
                     <sdk-button size="small" @click="retryDetail">{{ t("ontologyGraph.retry") }}</sdk-button>
@@ -735,7 +761,7 @@
                 compact
                 tone="danger"
                 :title="t('ontologyGraph.objectReadFailedTitle')"
-                :text="objectHeaderError || t('ontologyGraph.readFailedFallback')"
+                :text="safeObjectHeaderError"
               ></info-banner>
               <code class="og-missing-key">{{ requestedObjectKey }}</code>
               <div class="og-state-actions">
@@ -776,7 +802,7 @@
                   compact
                   tone="danger"
                   :title="t('ontologyGraph.relationReadFailedTitle')"
-                  :text="relationHeaderError || t('ontologyGraph.readFailedFallback')"
+                  :text="safeRelationHeaderError"
                 >
                   <template #actions>
                     <sdk-button size="small" @click="retryDetail">{{ t("ontologyGraph.retry") }}</sdk-button>
@@ -815,7 +841,7 @@
                 compact
                 tone="danger"
                 :title="t('ontologyGraph.relationReadFailedTitle')"
-                :text="relationHeaderError || t('ontologyGraph.readFailedFallback')"
+                :text="safeRelationHeaderError"
               ></info-banner>
               <code class="og-missing-key">{{ requestedRelationKey }}</code>
               <div class="og-state-actions">
@@ -841,5 +867,22 @@
         </section>
       </aside>
     </div>
+
+    <sdk-dialog
+      v-model="productGraphOpen"
+      :title="t('ontologyGraph.productGraphTitle')"
+      fullscreen
+      append-to-body
+      destroy-on-close
+      data-product-graph-dialog
+    >
+      <div class="og-product-graph-body">
+        <projection
+          v-if="productGraphOpen"
+          slot="productGraph"
+          @open="onOpenProductAsset"
+        ></projection>
+      </div>
+    </sdk-dialog>
   </section>
 </div>

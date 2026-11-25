@@ -74,6 +74,7 @@ export interface OntologyModelReadAdapter {
   count(typeId: string): Promise<PanelRecordQuery>;
   record(typeId: string, primaryKey: string): Promise<PanelRecord>;
   form(typeId: string, primaryKey: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
+  inlineForm(typeId: string, primaryKey: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
   createForm(typeId: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
   /** The `<operation>.describe` read: the action as the coordinator dispatches it, labelled in the viewer's language. */
   describe(operation: OntologyModelAction): PanelOwnerOperationDescriptor;
@@ -195,6 +196,7 @@ interface ModelReads {
   count(): Promise<PanelRecordQuery>;
   record(primaryKey: string): Promise<PanelRecord>;
   form(primaryKey: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
+  inlineForm(primaryKey: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
   createForm(params?: OntologyModelFormParams): Promise<PanelFormDescription>;
 }
 
@@ -298,10 +300,12 @@ export function createOntologyModelReadAdapter(
     };
   }
 
-  function modelForms(typeId: string, formPath: string): Pick<ModelReads, "form" | "createForm"> {
+  function modelForms(typeId: string, formPath: string): Pick<ModelReads, "form" | "inlineForm" | "createForm"> {
     return {
       form: (primaryKey, params) =>
         describeForm(formPath, { kind: "object", objectType: typeId, primaryKey }, params),
+      inlineForm: (primaryKey, params) =>
+        describeForm(`${formPath}?mode=inline`, { kind: "object", objectType: typeId, primaryKey }, params),
       createForm: params =>
         describeForm(formPath, { kind: "draft" }, params),
     };
@@ -422,6 +426,7 @@ export function createOntologyModelReadAdapter(
     count: typeId => readerFor(typeId).count(),
     record: async (typeId, primaryKey) => readerFor(typeId).record(primaryKey),
     form: async (typeId, primaryKey, params) => readerFor(typeId).form(primaryKey, params),
+    inlineForm: async (typeId, primaryKey, params) => readerFor(typeId).inlineForm(primaryKey, params),
     createForm: async (typeId, params) => readerFor(typeId).createForm(params),
   };
 }

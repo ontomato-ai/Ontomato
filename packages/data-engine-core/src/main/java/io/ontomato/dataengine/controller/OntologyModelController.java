@@ -301,6 +301,7 @@ public class OntologyModelController {
 
 	@PostMapping("/object-type/form")
 	public FormDescription objectTypeForm(@RequestBody FormRequest body,
+			@RequestParam(value = "mode", required = false) String mode,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
@@ -311,11 +312,15 @@ public class OntologyModelController {
 			}
 			requireBodyValueClassScope(target, body.values(), "className");
 		}
+		if ("inline".equals(mode)) {
+			return service.objectTypeInlineForm(body, user, lang);
+		}
 		return service.objectTypeForm(body, user, lang);
 	}
 
 	@PostMapping("/attribute/form")
 	public FormDescription attributeForm(@RequestBody FormRequest body,
+			@RequestParam(value = "mode", required = false) String mode,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
@@ -328,6 +333,9 @@ public class OntologyModelController {
 				}
 			}
 			requireBodyValueClassScope(target, body.values(), "className");
+		}
+		if ("inline".equals(mode)) {
+			return service.attributeInlineForm(body, user, lang);
 		}
 		return service.attributeForm(body, user, lang);
 	}

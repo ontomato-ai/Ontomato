@@ -616,6 +616,59 @@ describe("ontology model read adapter", () => {
     expect(adapter.describe(DELETE_RELATIONSHIP).target).toEqual({ source: "input", input: "relationship" });
   });
 
+  it("forwards mode=inline for inlineForm reads and preserves submitOn declarations", async () => {
+    const requestedUrls: string[] = [];
+    stubOwner(request => {
+      if (request.method === "POST" && request.url.pathname === "/ontology/model/object-type/form") {
+        requestedUrls.push(`${request.url.pathname}${request.url.search}`);
+        return Response.json({
+          ...objectTypeForm,
+          fields: [
+            {
+              path: "/showName",
+              label: "Display name",
+              required: false,
+              readOnly: false,
+              valueSchema: { type: "string" },
+              control: { kind: "text" },
+              submitOn: "blur",
+            },
+          ],
+        });
+      }
+      if (request.method === "POST" && request.url.pathname === "/ontology/model/attribute/form") {
+        requestedUrls.push(`${request.url.pathname}${request.url.search}`);
+        return Response.json({
+          ...objectTypeForm,
+          fields: [
+            {
+              path: "/enable",
+              label: "Enabled",
+              required: false,
+              readOnly: false,
+              valueSchema: { type: "boolean" },
+              control: { kind: "switch" },
+              submitOn: "change",
+            },
+          ],
+          values: { className: "Device", name: "site_id", enable: true },
+        });
+      }
+      return catalogRoute(request);
+    });
+    const adapter = createOntologyModelReadAdapter(owner, viewer);
+    const objectInline = panelFormDescriptionSchema.parse(await adapter.inlineForm(OBJECT_TYPE, "Device"));
+    const attrInline = panelFormDescriptionSchema.parse(
+      await adapter.inlineForm(ATTRIBUTE, JSON.stringify(["Device", "site_id"])),
+    );
+    expect(requestedUrls).toEqual([
+      "/ontology/model/object-type/form?mode=inline",
+      "/ontology/model/attribute/form?mode=inline",
+    ]);
+    expect(objectInline.fields[0]?.submitOn).toBe("blur");
+    expect(attrInline.fields[0]?.submitOn).toBe("change");
+  });
+
   it("offers the classes as picker options and resolves chosen class names, keeping a vanished one as unavailable", async () => {
     stubOwner(request => request.url.pathname === "/ontology/model/object-types"
       ? Response.json([{ ...objectTypes[0], showName: "Site" }, objectTypes[1]])
