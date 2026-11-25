@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -33,6 +34,7 @@ class ActionFormTest {
   void setup() {
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
+    ReflectionTestUtils.setField(service, "authorization", mock(ActionAuthorization.class));
     ReflectionTestUtils.setField(service, "adminService", adminService);
     ReflectionTestUtils.setField(service, "langService", langService);
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
@@ -119,7 +121,7 @@ class ActionFormTest {
     request.put("values", values);
     request.put("changedField", "/function/parameters");
 
-    JSONObject form = service.definitionForm(request, "en", "domain-a");
+    JSONObject form = service.definitionForm(request, "en", new QueryAccessService.GrantUser("author", "domain-a"));
 
     assertSame(values, form.getJSONObject("values"));
     JSONArray keyOptions = field(field(form, "/target").getJSONObject("control").getJSONArray("fields"), "/keyParameter")
@@ -161,7 +163,7 @@ class ActionFormTest {
     JSONObject request = JSONObject.of("target", JSONObject.of("kind", "draft"));
     request.put("values", values);
     request.put("changedField", null);
-    JSONObject form = service.definitionForm(request, "en", "domain-a");
+    JSONObject form = service.definitionForm(request, "en", new QueryAccessService.GrantUser("author", "domain-a"));
     return (List<ObjectNode>) form.get("errors");
   }
 
@@ -174,7 +176,7 @@ class ActionFormTest {
   }
 
   private JSONObject form(JSONObject request) {
-    return service.definitionForm(request, "en", "domain-a");
+    return service.definitionForm(request, "en", new QueryAccessService.GrantUser("author", "domain-a"));
   }
 
   private JSONObject objectTarget(String id) {

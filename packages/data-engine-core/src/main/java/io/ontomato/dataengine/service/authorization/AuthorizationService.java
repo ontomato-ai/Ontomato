@@ -29,7 +29,7 @@ public final class AuthorizationService {
     public sealed interface ActionPath permits Standalone, WorkflowStep {}
     public record Standalone() implements ActionPath {}
     /** Constructed by the workflow owner after resolving the actual run and its current step. */
-    public record WorkflowStep(String workflowId, int version, int stepNo) implements ActionPath {}
+    public record WorkflowStep(String workflowId, int version, int stepNo, String runId, String targetClass, String targetKey) implements ActionPath {}
     public record Action(ObjectTarget target, ActionPath path, ExecutionTarget execution, OwnerFacts ownerFacts)
             implements Request {}
 
@@ -154,24 +154,21 @@ public final class AuthorizationService {
         for (var grant : policies.objectGrants(target, Verb.EXECUTE, ctx.objectPolicyIds())) {
             var scope = grant.scope();
             if (scope.kind() == GrantScope.Kind.all) return Admission.ALL;
-            List<String> values = switch (scope.kind()) {
-                case initiated_by_self, assigned_to_self -> List.of(ctx.identity().userId());
-                case self_organization, self_subtree, self_descendants ->
-                        subjects.organizationCodes(target.domainId(), roots(ctx, grant.policyId()), scope.kind());
-                case all -> throw new AssertionError();
-            };
-            if (!values.isEmpty()) matches.add(new Match(scope.className(), scope.field(), values));
+            for (var edge : ctx.policyRefsByRole().entrySet()) {
+                if (edge.getValue().stream().noneMatch(ref -> ref.kind() == PolicyKind.OBJECT
+                        && ref.policyId().equals(grant.policyId()))) continue;
+                List<String> values = switch (scope.kind()) {
+                    case initiated_by_self, assigned_to_self -> List.of(ctx.identity().userId());
+                    case self_organization, self_subtree, self_descendants -> {
+                        var roots = ctx.roles().rootsForRole(edge.getKey());
+                        yield roots.isEmpty() ? List.of() : subjects.organizationCodes(target.domainId(), roots, scope.kind());
+                    }
+                    case all -> throw new AssertionError();
+                };
+                if (!values.isEmpty()) matches.add(new Match(scope.className(), scope.field(), values));
+            }
         }
         return new Admission(false, List.copyOf(matches));
-    }
-
-    private Set<String> roots(SubjectContext ctx, String policyId) {
-        var roots = new LinkedHashSet<String>();
-        for (var edge : ctx.policyRefsByRole().entrySet()) {
-            if (edge.getValue().stream().anyMatch(ref -> ref.policyId().equals(policyId)))
-                roots.addAll(ctx.roles().rootsForRole(edge.getKey()));
-        }
-        return roots;
     }
 
     public UserDataPermission resolveData(SubjectContext ctx, Data request) {

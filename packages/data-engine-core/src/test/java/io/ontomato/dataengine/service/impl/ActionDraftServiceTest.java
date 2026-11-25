@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -51,6 +52,7 @@ class ActionDraftServiceTest {
     actionDao = mock(ActionDao.class);
     service =
         new ActionDraftService(store, runtime, admin, actions, lang, identity, actionDao);
+    org.springframework.test.util.ReflectionTestUtils.setField(service, "authorization", mock(ActionAuthorization.class));
     User user = mock(User.class);
     when(user.getId()).thenReturn("fixture-user");
     when(user.getDomainId()).thenReturn("fixture-domain");

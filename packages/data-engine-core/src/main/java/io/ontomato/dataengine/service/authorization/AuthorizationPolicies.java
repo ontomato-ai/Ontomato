@@ -102,7 +102,12 @@ public final class AuthorizationPolicies {
         var row = actions.queryById(target.id());
         if (row == null || !target.domainId().equals(((Action) row[0]).getDomainId()))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The action must exist in the policy domain.");
-        grant.scope().requireTarget(((Action) row[0]).getTarget(), admin.getJSONRule(target.domainId()));
+        Action action = (Action) row[0];
+        if (!Action.STATUS_PUBLISHED.equals(action.getStatus()))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The action must be published.");
+        var rule = admin.getJSONRule(target.domainId());
+        if (action.getTarget() != null) action.getTarget().definition(rule);
+        grant.scope().requireTarget(action.getTarget(), rule);
     }
 
     static void requireGrant(Kind kind, String id, Verb verb, GrantScope scope, boolean candidate) {

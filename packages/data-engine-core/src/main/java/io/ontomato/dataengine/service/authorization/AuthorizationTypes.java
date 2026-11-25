@@ -42,7 +42,9 @@ public final class AuthorizationTypes {
             Map<String, Set<String>> grantRootsByRole,
             boolean administrator) {
         public Set<String> rootsForRole(String roleId) {
-            return directRoleIds.contains(roleId) ? membershipRoots : grantRootsByRole.getOrDefault(roleId, Set.of());
+            var roots = new java.util.LinkedHashSet<>(grantRootsByRole.getOrDefault(roleId, Set.of()));
+            if (directRoleIds.contains(roleId)) roots.addAll(membershipRoots);
+            return roots;
         }
     }
 }

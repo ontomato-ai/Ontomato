@@ -36,7 +36,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   private final ABCProgramService programs;
   private final IdentityService identity;
   private final OntologyScheduleReferences references;
-  private final CapabilityGrantLookup grants;
+  private final io.ontomato.dataengine.service.authorization.ActionAuthorization authorization;
 
   public String id() {
     return "ontology";
@@ -84,7 +84,11 @@ public class OntologyScheduleApplication implements ScheduleApplication {
 
   private boolean permitted(String actionId, Actor actor) {
     try {
-      if (actionId != null) return grants.admission(actor.creator(), actor.domain(), CapabilityGrantLookup.ACTION, actionId).admitted();
+      if (actionId != null) {
+        var action = actions.queryById(actionId);
+        return action != null && Action.STATUS_PUBLISHED.equals(action.getStatus())
+            && authorization.standalone(authorization.subject(actor.domain(), actor.creator()), action, ExecutionTarget.LIVE).admitted();
+      }
       identity.requireActionExecutionAccess(actor.creator(), actor.domain());
       return true;
     } catch (org.springframework.web.server.ResponseStatusException denied) {

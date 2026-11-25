@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -42,6 +43,7 @@ class ActionRefusalTest {
     OntologyAgentStore store = mock(OntologyAgentStore.class);
     when(store.transaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
     ReflectionTestUtils.setField(service, "store", store);
+    ReflectionTestUtils.setField(service, "authorization", mock(ActionAuthorization.class));
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "langService", langService);
@@ -54,7 +56,7 @@ class ActionRefusalTest {
   @Test
   void refusesPublicationThroughSaveBeforeWriting() {
     var submitted = action(null, Action.ORIGIN_USER, Action.STATUS_PUBLISHED);
-    var refusal = assertThrows(OwnerFieldRefusal.class, () -> service.save(submitted, null, null, "en"));
+    var refusal = assertThrows(OwnerFieldRefusal.class, () -> service.save(submitted, null, new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner("author", "domain-a"), "en"));
     assertEquals("ACTION_STATUS_INVALID", refusal.code());
     verifyNoInteractions(actionDao, functionDao, generationService);
   }
@@ -65,7 +67,7 @@ class ActionRefusalTest {
     when(actionDao.queryById("a1")).thenReturn(new Object[] {stored, "f-a1"});
 
     OwnerRefusal error = assertThrows(OwnerRefusal.class,
-        () -> service.save(action("a1", Action.ORIGIN_USER, Action.STATUS_PENDING_REVIEW), null, null, "en"));
+        () -> service.save(action("a1", Action.ORIGIN_USER, Action.STATUS_PENDING_REVIEW), null, new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner("author", "domain-a"), "en"));
 
     assertEquals("ACTION_SYSTEM", error.code());
     assertEquals("Action.cannotModifySystem", error.getMessage());
@@ -84,7 +86,7 @@ class ActionRefusalTest {
 
     Action submitted = action("a1", Action.ORIGIN_USER, null);
     submitted.setName("Approve the order");
-    Action saved = service.save(submitted, null, null, "en");
+    Action saved = service.save(submitted, null, new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner("author", "domain-a"), "en");
 
     assertEquals("Approve the order", saved.getName());
     assertEquals(Action.STATUS_PUBLISHED, saved.getStatus());
@@ -103,7 +105,7 @@ class ActionRefusalTest {
     submitted.getFunction().setCode("# ontomato-python:2\nprint('new')");
 
     OwnerFieldRefusal error = assertThrows(OwnerFieldRefusal.class,
-        () -> service.save(submitted, null, null, "en"));
+        () -> service.save(submitted, null, new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner("author", "domain-a"), "en"));
 
     assertEquals("ACTION_PUBLISHED_FROZEN", error.code());
     assertEquals("Action.publishedIsFrozen", error.getMessage());
@@ -121,12 +123,13 @@ class ActionRefusalTest {
   @Test
   void refusesToDeleteAnActionReferencedByAScheduledTask() {
     when(scheduledReferences.referencesAction("a1")).thenReturn(true);
+    when(actionDao.queryById("a1")).thenReturn(new Object[] {action("a1", Action.ORIGIN_USER, Action.STATUS_PUBLISHED), "f-a1"});
 
-    OwnerRefusal error = assertThrows(OwnerRefusal.class, () -> service.delete("a1", "en"));
+    OwnerRefusal error = assertThrows(OwnerRefusal.class, () -> service.delete("a1", "en", new io.ontomato.dataengine.service.QueryAccessService.GrantUser("author", "domain-a")));
 
     assertEquals("ACTION_REFERENCED", error.code());
     assertEquals("Action is referenced by a scheduled task", error.getMessage());
-    verifyNoInteractions(actionDao, functionDao);
+    verify(actionDao, never()).delete("a1");
   }
 
   @Test
@@ -137,7 +140,7 @@ class ActionRefusalTest {
     assertEquals("Action.cannotDeleteSystem", service.systemDeletionRefusal("a1", "domain-a", "en"));
     assertEquals("ACTION_NOT_FOUND", assertThrows(OwnerRefusal.class,
         () -> service.systemDeletionRefusal("a1", "domain-b", "en")).code());
-    OwnerRefusal error = assertThrows(OwnerRefusal.class, () -> service.delete("a1", "en"));
+    OwnerRefusal error = assertThrows(OwnerRefusal.class, () -> service.delete("a1", "en", new io.ontomato.dataengine.service.QueryAccessService.GrantUser("author", "domain-a")));
 
     assertEquals("ACTION_SYSTEM", error.code());
     assertEquals("Action.cannotDeleteSystem", error.getMessage());
@@ -153,7 +156,7 @@ class ActionRefusalTest {
         .when(actionDao).saveDraft(any(), eq("en"));
 
     OwnerFieldRefusal error = assertThrows(OwnerFieldRefusal.class,
-        () -> service.save(draft, null, null, "en"));
+        () -> service.save(draft, null, new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner("author", "domain-a"), "en"));
 
     assertEquals("ACTION_DEFINITION_INVALID", error.code());
     assertEquals("Action.target.className requires one primary key: /Order", error.getMessage());
@@ -170,7 +173,7 @@ class ActionRefusalTest {
     draft.setFunction(null);
 
     OwnerFieldRefusal error = assertThrows(OwnerFieldRefusal.class,
-        () -> service.save(draft, null, null, "en"));
+        () -> service.save(draft, null, new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner("author", "domain-a"), "en"));
 
     assertEquals("ACTION_FUNCTION_INVALID", error.code());
     assertEquals("Function.cannotBeEmpty", error.getMessage());
