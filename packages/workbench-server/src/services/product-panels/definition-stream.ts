@@ -4,10 +4,8 @@ import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
 import {currentProductRecord,findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
-import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import {requireProductGrant} from '../product-governance/grants';
 import {resolvePanelMemberPath} from './member-path';
-import {checkpoint,subscriptions} from './subscription-state';
 
 type AuthorStream = {
   owner: ProductOwner;
@@ -17,9 +15,9 @@ type AuthorStream = {
 };
 const authorStreams = new Set<AuthorStream>();
 
-export function assertSubscriptionCapacity(owner:ProductOwner){
+function assertSubscriptionCapacity(owner:ProductOwner){
   const owned=({owner:other}:{owner:ProductOwner})=>other.domainId===owner.domainId&&other.userId===owner.userId;
-  if([...subscriptions.values(),...authorStreams].filter(owned).length>=10)
+  if([...authorStreams].filter(owned).length>=10)
     throw new HttpError(429,'Too many active subscriptions','SUBSCRIPTION_LIMIT');
 }
 
@@ -40,19 +38,16 @@ export async function authorizeDefinitionStream(
 }
 export async function requirePanelDefinitions(
   owner: ProductOwner, credentials: AssistantCredentials, panelId: string,
-  readPageSkillContext?: (root: PanelDefinitionSnapshot['panel']) => Promise<PanelDefinitionSnapshot['pageSkillContext']>,
 ): Promise<PanelDefinitionSnapshot> {
   const row = await requireDefinition(owner, credentials, 'panel', panelId);
   const panel = productPanelSchema.parse(currentProductRecord(row, false));
-  return snapshotPanelDefinitions(owner, credentials, panel, readPageSkillContext);
+  return snapshotPanelDefinitions(owner, credentials, panel);
 }
 
 export async function snapshotPanelDefinitions(
   owner: ProductOwner, credentials: AssistantCredentials, panel: ProductPanel,
-  readPageSkillContext?: (root: PanelDefinitionSnapshot['panel']) => Promise<PanelDefinitionSnapshot['pageSkillContext']>,
 ): Promise<PanelDefinitionSnapshot> {
   const root = { id: panel.id, revision: panel.revision };
-  const pageSkillContext = await readPageSkillContext?.(root);
   const fixedMembers = Object.entries(panel.manifest.members).filter(([, { target }]) =>
     'projectionId' in target || 'panelId' in target);
   const members = await Promise.all(fixedMembers.map(async ([member]): Promise<PanelMemberSnapshot> => {
@@ -71,7 +66,7 @@ export async function snapshotPanelDefinitions(
     if (member.status === 'ready' && member.target.kind === 'projection')
       projections.set(member.target.id, { id: member.target.id, revision: member.revision });
   }
-  return { panel: root, members, projections: [...projections.values()], ...(pageSkillContext && { pageSkillContext }) };
+  return { panel: root, members, projections: [...projections.values()] };
 }
 export async function requireDefinition(owner:ProductOwner,credentials:AssistantCredentials,kind:CurrentProductKind,id:string){
   await requireProductGrant(id,'use',credentials);
@@ -103,22 +98,10 @@ export function closeDeletedDefinitionStreams(domainId: string, target: ProductD
 /** An author's stream follows only the explicitly authorized collection. */
 export async function notifyProductDefinitionChanged(event:ProductDefinitionChangedEvent){
   const {domainId,target}=event;
-  const matches=({kind,id}:ProductDefinitionTarget)=>kind===target.kind&&id===target.id;
   const follows=(stream:AuthorStream)=>observes(stream,domainId,target);
   if([...authorStreams].some(follows)){
     const definition=await definitionRevision(domainId,target);
     for(const stream of authorStreams)
       if(follows(stream))stream.send({kind:'definition-changed',definition});
   }
-  if(target.kind!=='projection')return;
-  const db=getPostgresPool();
-  const active=[...subscriptions.values()].filter(({owner,expiresAt,target})=>
-    owner.domainId===domainId&&expiresAt>Date.now()&&target.kind==='product-definition'&&matches(target.target));
-  for(const subscription of active){subscription.events.push(event);subscription.events=subscription.events.slice(-20);}
-  await db.query(`UPDATE ${t('product_subscriptions')} SET state=jsonb_set(state,'{events}',
-    (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements((state->'events')||$2::jsonb) WITH ORDINALITY AS queued(value,ordinal)
-      WHERE ordinal>jsonb_array_length((state->'events')||$2::jsonb)-20))
-    WHERE domain_id=$1 AND target->>'kind'='product-definition' AND target->'target'=$3::jsonb
-      AND expires_at>now() AND NOT(id=ANY($4::text[]))`,[event.domainId,JSON.stringify([event]),JSON.stringify(target),active.map(subscription=>subscription.id)]);
-  await Promise.all(active.map(checkpoint));
 }

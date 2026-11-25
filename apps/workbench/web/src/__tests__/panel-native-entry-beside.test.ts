@@ -56,8 +56,8 @@ it("shows a built-in application's entry beside the conversation as that applica
   const beside = mountPlatformPage(() => h(page.component, { ...page.props, onDisplaySkill: (context: PageSkillContext) => skills.push(context) }), router);
   try {
     await vi.waitFor(() => expect(beside.element.querySelector(".panel-host-coded")).not.toBeNull());
-    // The panel is read as that application's use, for its own page: the skill a message beside it reaches.
-    expect(sent.some(request => request.path === `/api/product-panels/${panel.id}/page-skill-context` && request.search.includes("applicationId=ontology"))).toBe(true);
+    const openings = sent.filter(request => request.path === "/api/product-panels/application-entry");
+    expect(openings.map(request => new URLSearchParams(request.search).get("path"))).toEqual([components.path]);
     await vi.waitFor(() => expect(skills.length).toBeGreaterThan(0));
   } finally {
     beside.app.unmount();

@@ -179,12 +179,10 @@ interface PageHeaderDraft {
   readonly saving?: boolean;
   /** Optional explicit save-enabled override; defaults to `dirty && !saving`. */
   readonly canSave?: boolean;
-  /** Whether clicking Discard asks for a confirmation dialog before invoking `discard` and emitting `discard`. */
-  readonly confirmDiscard?: boolean;
   /** Optional handler invoked when Save is clicked (alternative to listening for `@save`). */
   readonly save?: () => void;
-  /** Optional handler invoked when Discard is clicked (alternative to listening for `@discard`); returning `false` suppresses the `discard` event. */
-  readonly discard?: () => void | boolean | Promise<void | boolean>;
+  /** Optional handler invoked when Discard is clicked (alternative to listening for `@discard`). */
+  readonly discard?: () => void;
 }
 ```
 

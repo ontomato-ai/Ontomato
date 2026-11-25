@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.ProductGrantService.OwnerFacts;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -71,11 +72,12 @@ public class ApplicationController {
     @GetMapping("/platform/applications/catalogue")
     public R<JSONObject> catalogue(@RequestParam(defaultValue = "") String search,
             @RequestParam(defaultValue = "visible") String scope, @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer page,
             @RequestParam(defaultValue = "30") int size, @RequestParam(defaultValue = "id") String sort,
             @RequestParam(defaultValue = "false") boolean countOnly, Locale locale) {
         User user = current();
         return R.of(countOnly ? catalog.catalogueCount(user)
-                : catalog.catalogue(user, search, scope, cursor, size, sort, locale));
+                : catalog.catalogue(user, search, scope, cursor, page, size, sort, locale));
     }
 
     @GetMapping("/platform/applications/catalogue/{id}")
@@ -102,6 +104,14 @@ public class ApplicationController {
         if (path == null && applicationId != null && !applicationId.isBlank() && useId != null && !useId.isBlank())
             return R.of(catalog.resolveEntry(applicationId, useId, current()));
         throw ApplicationCatalog.bad("Supply either path or both applicationId and useId");
+    }
+
+    @GetMapping("/platform/applications/registered-entry")
+    @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+    public R<JSONObject> registeredEntry(HttpServletRequest request, @RequestParam String applicationId,
+            @RequestParam String useId) {
+        authentication.authenticate(request);
+        return R.of(catalog.registeredEntry(applicationId, useId, current()));
     }
 
     @GetMapping("/platform/applications/{id}/panel-uses")
@@ -179,8 +189,6 @@ public class ApplicationController {
     public R<?> get(@PathVariable String id) {
         return R.of(catalog.view(id, current()));
     }
-    @GetMapping("/platform/applications/platform-assets-access")
-    public R<?> productAssetsAccess(){return R.of(Map.of("allowed",catalog.canReconcileProducts(current())));}
     public record IconUpdate(String icon) {}
     @PutMapping("/platform/applications/{id}/icon") public R<?> updateIcon(@PathVariable String id,@RequestBody IconUpdate body){catalog.updateIcon(id,body.icon(),current());return R.of(Map.of("icon",body.icon()));}
     @PutMapping("/platform/applications/{id}/hosted-publication")
@@ -188,5 +196,10 @@ public class ApplicationController {
         return R.of(catalog.publish(id, body.declaration(), body.releaseId(), current()));
     }
     @PutMapping("/platform/applications/{id}/product-publication")
-    public R<JSONObject> publishProduct(@PathVariable String id,@RequestBody Publication body){return R.of(catalog.publishProduct(id,body.declaration(),body.releaseId(),current()));}
+    public R<JSONObject> publishProduct(@PathVariable String id, @RequestBody ProductPublication body, HttpServletRequest request) {
+        authentication.authenticate(request);
+        return R.of(catalog.publishProduct(id, body.declaration(), body.releaseId(), current(), body.ownerFacts()));
+    }
+
+    public record ProductPublication(ApplicationCatalog.Declaration declaration, String releaseId, OwnerFacts ownerFacts) {}
 }

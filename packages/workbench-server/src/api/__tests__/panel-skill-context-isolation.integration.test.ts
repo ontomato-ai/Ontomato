@@ -9,7 +9,7 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { panelOptionListSchema, panelRecordQuerySchema } from "@ontomato/contracts/panel-projection";
 import { PANEL_MEMBER_RENDER_HEADER, productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
-import { productPanelPageSkillContextResponseSchema } from "@ontomato/contracts/product-panels";
+import { applicationEntryResolutionSchema } from "@ontomato/contracts/product-panels";
 import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import { SDK_COMPONENT, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -23,6 +23,7 @@ import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { installWorkbenchIdentity } from "../../identity/installed";
@@ -129,7 +130,8 @@ beforeAll(async () => {
     return known && (token === "reader" ? denied !== id : token === "executor" && executorDenied !== id);
   };
   app.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: allowed(req.body.id, req.body.verb, req.header("tk")) });
+    const token = req.header("tk");
+    res.json(productGrantCheck(req.body, token, (id, verb) => allowed(id, verb, token)));
   });
   app.post("/product-governance/check-batch", (req, res) => {
     res.json({ allowed: Object.fromEntries(req.body.ids.map((id: string) => [id, allowed(id, req.body.verb, req.header("tk"))])) });
@@ -138,14 +140,18 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("reader");
     res.json({ ids: [...registered].filter(id => id !== denied) });
   });
-  app.get("/platform/applications/resolve-entry", (req, res) => {
+  app.get(["/platform/applications/resolve-entry", "/platform/applications/registered-entry"], (req, res) => {
     expect(["reader", "executor"]).toContain(req.header("tk"));
     const entry = [...entries, library].find(({ useId, applicationId }) => req.query.useId === useId && req.query.applicationId === applicationId);
-    if (!entry || (req.header("tk") === "reader" && entry.useId === deniedEntrance)) {
+    if (!entry) { res.sendStatus(404); return; }
+    const registered = req.path.endsWith("/registered-entry");
+    if (registered) expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    if (!registered && req.header("tk") === "reader" && (entry.useId === deniedEntrance || entry.panelId === denied)) {
       res.sendStatus(403);
       return;
     }
-    res.json({ success: true, data: { applicationId: entry.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
+    res.json({ success: true, data: { applicationId: entry.applicationId,
+      ...(!registered && { menu: { singleEntry: true, groups: [], panelUses: [] } }),
       use: { id: entry.useId, panelId: entry.panelId, path: entry.path, pageKey: entry.entrance.pageKey,
         access: { permissionCode: entry.entrance.permissionCode } } } });
   });
@@ -237,9 +243,12 @@ beforeEach(() => {
 });
 
 function read(entry: typeof good, route: string) {
-  const { applicationId, useId, entrance, panelId } = entry;
-  const query = new URLSearchParams({ applicationId, useId, ...entrance });
-  return fetch(`${state.base}/api/product-panels/${panelId}${route}?${query}`);
+  return fetch(`${state.base}/api/product-panels/${entry.panelId}${route || "?view=1"}`);
+}
+
+function open(entry: typeof good) {
+  const query = new URLSearchParams({ applicationId: entry.applicationId, useId: entry.useId });
+  return fetch(`${state.base}/api/product-panels/application-entry?${query}`);
 }
 
 it("keeps a registered panel across SDK releases and refuses only an incompatible rendered projection", async () => {
@@ -275,7 +284,7 @@ it("keeps a registered panel across SDK releases and refuses only an incompatibl
       const current = await read(entry, route);
       expect(current.status).toBe(200);
       expect(await current.json()).toMatchObject({
-        panel: { revision: 1 }, pageSkillContext: { member: { ref: skillRef(entry) } },
+        panel: { revision: 1 },
       });
     }
     expect((await projection("projection-good")).status).toBe(200);
@@ -295,7 +304,7 @@ it("keeps a registered panel across SDK releases and refuses only an incompatibl
     for (const route of ["", "/snapshot"]) {
       const current = await read(entry, route);
       expect(current.status).toBe(200);
-      expect(await current.json()).toMatchObject({ panel: { revision: 1 }, pageSkillContext: { member: null } });
+      expect(await current.json()).toMatchObject({ panel: { revision: 1 } });
     }
     const removedComponent = await projection("projection-good");
     expect(removedComponent.status).toBe(400);
@@ -360,7 +369,7 @@ it("derives SDK catalogue reads from the page and serves them through the run's 
   );
 
   executorDenied = "projection-skill-library";
-  expect(await (await readFromRun("components")).json()).toEqual({ status: "forbidden" });
+  expect(await (await readFromRun("components")).json()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
 
   state.runForOwner.mockResolvedValue({ ...run, resolvedSkills: [] });
   state.credentialsForRun.mockClear();
@@ -380,10 +389,10 @@ it("reads header.record and detail table rows on the real builtin component entr
 
   const ref = panelSkillRef(domainId, componentsPage.panelId);
   expect(ref.namespace).toEqual({ kind: "provider", provider: "workbench" });
-  const panelResponse = await read(componentsPage, "");
+  const panelResponse = await open(componentsPage);
   expect(panelResponse.status).toBe(200);
   expect(await panelResponse.json()).toMatchObject({
-    panel: { id: componentsPage.panelId },
+    use: { panelId: componentsPage.panelId },
     pageSkillContext: { locator: componentsPage.entrance, member: { ref } },
   });
   const { panelSkillProvider } = await import("../../services/product-panels/skill-provider");
@@ -555,103 +564,70 @@ it("rejects old uncertain roots without writes and gives old hidden roots preced
   }
 });
 
-const contextRoutes = ["", "/snapshot", "/page-skill-context"];
+it("includes the authorized member in an opening without reading a sibling skill", async () => {
+  const response = await open(good);
+  const body = applicationEntryResolutionSchema.parse(await response.json());
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  const source = { kind: "application-use", applicationId, useId: good.useId };
+  expect(body.pageSkillContext).toEqual({ mode: "member", locator: good.entrance, entry: source,
+    member: { source, memberPath: [], ref: skillRef(good) } });
+});
 
-it.each(contextRoutes)("serves the authorized member on GET %s despite a broken sibling", async route => {
+it.each(["", "/snapshot"])("keeps ordinary GET %s separate from opening", async route => {
+  deniedEntrance = good.useId;
   const response = await read(good, route);
   const body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(200);
-  if (route === "/page-skill-context") {
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(productPanelPageSkillContextResponseSchema.safeParse(body).success).toBe(true);
-  }
-  expect(body.pageSkillContext).toEqual({ mode: "member", locator: good.entrance,
-    member: { source: { kind: "application-use", applicationId, useId: good.useId }, memberPath: [],
-      ref: protectedSkillRef("product-panels", domainId, good.panelId) } });
-});
-
-it.each(contextRoutes)("reports the authorized broken projection and field on GET %s", async route => {
-  const response = await read(broken, route);
-  const body = await response.json();
-  expect(response.status, JSON.stringify(body)).toBe(502);
-  expect(body.error.code).toBe("SKILL_SOURCE_UNAVAILABLE");
-  expect(body.error.message).toContain(`Panel '${broken.panelId}'`);
-  expect(body.error.message).toContain(`projection '${brokenProjection}'`);
-  expect(body.error.message).toMatch(/field 'data\.operation\.source': .+/);
-  expect(JSON.stringify(body)).not.toContain(privateOperation);
-});
-
-it("still reads the panel record separately when its skill context fails", async () => {
-  const response = await fetch(`${state.base}/api/product-panels/${broken.panelId}`);
-  const body = await response.json();
-  expect(response.status, JSON.stringify(body)).toBe(200);
-  expect(body.panel.id).toBe(broken.panelId);
+  expect(body.panel.id).toBe(good.panelId);
   expect(body).not.toHaveProperty("pageSkillContext");
+  expect((await open(good)).status).toBe(403);
 });
 
-it.each(contextRoutes)("withholds the member on GET %s when its invalid dependency is not granted", async route => {
+it("defers package validation while keeping an invalid definition private to the admitted skill view", async () => {
+  const record = await read(broken, "");
+  expect(record.status).toBe(200);
+  expect(await record.json()).not.toHaveProperty("pageSkillContext");
+  const snapshot = await read(broken, "/snapshot");
+  expect(snapshot.status).toBe(422);
+  expect(await snapshot.json()).toMatchObject({ error: { code: "PRODUCT_DEFINITION_INVALID" } });
+  const response = await open(broken);
+  const body = await response.json();
+  expect(response.status, JSON.stringify(body)).toBe(200);
+  expect(body.pageSkillContext.member.ref).toEqual(skillRef(broken));
+  expect(JSON.stringify(body)).not.toContain(privateOperation);
+  const { readSkillView } = await import("../../services/skills/view");
+  const view = await readSkillView(domainId, { token: "reader" });
+  expect(() => view.requireReadableManifest(skillRef(broken))).toThrow("The selected skill source is unavailable");
+});
+
+it("withholds the member when the caller lacks access to a dependency", async () => {
   denied = brokenProjection;
-  const response = await read(broken, route);
+  const response = await open(broken);
   const body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(200);
-  expect(body.pageSkillContext).toEqual({ mode: "member", locator: broken.entrance, member: null });
+  expect(body.pageSkillContext).toEqual({ mode: "member", locator: broken.entrance,
+    entry: { kind: "application-use", applicationId, useId: broken.useId }, member: null });
   expect(JSON.stringify(body)).not.toContain(privateOperation);
 });
 
-it.each(contextRoutes)("denies GET %s before exposing the invalid dependency of an inaccessible panel", async route => {
+it("denies opening and runtime definition reads of an inaccessible panel", async () => {
   denied = broken.panelId;
-  const response = await read(broken, route);
-  const body = await response.json();
-  expect(response.status, JSON.stringify(body)).toBe(403);
-  expect(body.error.code).toBe("PRODUCT_FORBIDDEN");
-  expect(JSON.stringify(body)).not.toContain(privateOperation);
-});
-
-it.each(contextRoutes)("keeps the displayed panel distinct from its repointed use on GET %s", async route => {
-  entries = [{ ...good, panelId: broken.panelId }, broken];
-  const response = await read(good, route);
-  const body = await response.json();
-  expect(response.status, JSON.stringify(body)).toBe(200);
-  if (route !== "/page-skill-context") expect(body.panel.id).toBe(good.panelId);
-  expect(body.pageSkillContext).toEqual({ mode: "member", locator: good.entrance, member: null });
-});
-
-it.each(["", "/snapshot"])("keeps another panel's dependency failure private on GET %s", async route => {
-  const other = "other-private-panel";
-  listSources = async () => [{ ...good, panelId: other }];
-  const response = await read(good, route);
-  const body = await response.json();
-  expect(response.status, JSON.stringify(body)).toBe(200);
-  expect(body.pageSkillContext).toEqual({ mode: "member", locator: good.entrance, member: null });
-  expect(JSON.stringify(body)).not.toContain(other);
-});
-
-it.each(["", "/snapshot"])("classifies a single use with unknown dependencies on GET %s before reporting it", async route => {
-  const entry = changing;
-  entries = [entry];
-  // The route has already loaded its panel when the service lists the matching use.
-  // Change its actual stored dependencies at that boundary, so both reads use the real provider.
-  const panels = `"${state.schema}".product_panels`;
-  for (const hasRootGrant of [false, true]) {
-    denied = undefined;
-    await state.pool!.query(`UPDATE ${panels} SET definition=jsonb_set(definition,'{manifest,members}','{}') WHERE id=$1 AND domain_id=$2`,
-      [entry.panelId, domainId]);
-    listSources = async () => {
-      await state.pool!.query(`UPDATE ${panels} SET definition=jsonb_set(definition,'{manifest,members}',to_jsonb($3::text))
-        WHERE id=$1 AND domain_id=$2`, [entry.panelId, domainId, privateOperation]);
-      denied = hasRootGrant ? undefined : entry.panelId;
-      return entries;
-    };
-    const response = await read(entry, route);
+  expect((await open(broken)).status).toBe(403);
+  for (const route of ["", "/snapshot"]) {
+    const response = await read(broken, route);
     const body = await response.json();
-    if (hasRootGrant) {
-      expect(response.status, JSON.stringify(body)).toBe(502);
-      expect(body.error.code).toBe("SKILL_SOURCE_UNAVAILABLE");
-      for (const privateValue of [entry.panelId, skillRef(entry).name, "manifest", privateOperation])
-        expect(JSON.stringify(body)).not.toContain(privateValue);
-    } else {
-      expect(response.status, JSON.stringify(body)).toBe(200);
-      expect(body.pageSkillContext).toEqual({ mode: "member", locator: entry.entrance, member: null });
-    }
+    expect(response.status, JSON.stringify(body)).toBe(403);
+    expect(body.error.code).toBe("PRODUCT_FORBIDDEN");
+    expect(JSON.stringify(body)).not.toContain(privateOperation);
   }
+});
+
+it("uses the current registered panel even when a use has been repointed", async () => {
+  entries = [{ ...good, panelId: broken.panelId }, broken];
+  const response = await open(good);
+  const body = applicationEntryResolutionSchema.parse(await response.json());
+  expect(response.status).toBe(200);
+  expect(body.use).toMatchObject({ panelId: broken.panelId });
+  expect(body.pageSkillContext).toMatchObject({ locator: good.entrance, member: { ref: skillRef(broken) } });
 });

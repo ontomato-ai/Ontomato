@@ -11,7 +11,7 @@ vi.mock('../../../infrastructure/postgres',()=>({qualifiedTable:(name:string)=>n
 vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(fn:(client:{query:typeof mocks.query})=>unknown)=>fn({query:mocks.query})}));
 vi.mock('../validation',()=>({validateProduct:mocks.validate,validatePageBindings:vi.fn()}));
 vi.mock('../ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOntology:async()=>{}}));
-import {saveProduct,getApplicationProduct} from '../store';
+import {saveProduct,getProduct,getApplicationProduct} from '../store';
 const owner={domainId:'one',userId:'alice'},credentials={token:'test-caller'};
 const input=()=>productAssetInputSchema.parse({name:'Text',document:{kind:'widget',widget:{id:'text',kind:'text',title:'Note',span:12,text:'Hello'}}});
 beforeEach(()=>{mocks.query.mockReset();mocks.validate.mockReset();mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'native'}}})});access.use=new Set(['shared','home','hidden','chart']);access.edit=new Set(['home','chart']);});
@@ -66,23 +66,6 @@ describe('product mutation boundary',()=>{
     await expect(getApplicationProduct(owner,'missing')).rejects.toMatchObject({code:'PRODUCT_UNAVAILABLE'});
     mocks.query.mockResolvedValue({rows:[{id:'one'},{id:'two'}]});
     await expect(getApplicationProduct(owner,'ambiguous')).rejects.toMatchObject({code:'PRODUCT_CONFLICT'});
-  });
-  it('creates new homes from Page and CollectionView documents without closed platform widgets',async()=>{
-    const records=new Map<string,Record<string,unknown>>(),overlays=new Map<string,unknown>();
-    mocks.query.mockImplementation(async(sql:string,args:unknown[]=[])=>{
-      if(sql.includes('INSERT INTO product_user_overlays')){overlays.set(String(args[2]),JSON.parse(String(args[3])));return {rows:[]};}
-      if(sql.includes('INSERT INTO product_assets')){const previous=records.get(String(args[1]));records.set(String(args[1]),{id:args[1],ownerId:args[2],name:args[3],description:args[4],visibility:args[5],document:JSON.parse(String(args[6])),revision:Number(previous?.revision??0)+1,createdAt:new Date(),updatedAt:new Date()});return {rows:[]};}
-      if(sql.includes('SELECT owner_id,revision')){const record=records.get(String(args[1]));return {rows:record?[{owner_id:record.ownerId,revision:record.revision,document:record.document,visibility:record.visibility}]:[]};}
-      if(sql.includes('SELECT id, owner_id'))return {rows:records.has(String(args[1]))?[records.get(String(args[1]))]:[]};
-      if(sql.includes('SELECT preferences'))return {rows:overlays.has(String(args[2]))?[{preferences:overlays.get(String(args[2]))}]:[]};
-      return {rows:[]};
-    });
-    const {personalHome}=await import('../store');
-    const home=await personalHome(owner,credentials);
-    expect(home.document.kind).toBe('page');
-    expect([...records.values()].some(record=>(record.document as {kind:string}).kind==='widget')).toBe(false);
-    expect([...records.values()].some(record=>(record.document as {kind:string}).kind==='collection-view')).toBe(true);
-    expect(home.document).not.toHaveProperty('workspace');
   });
   it('does not reuse a deleted identity whose revisions remain referenced by history',async()=>{
     mocks.query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM product_asset_revisions')?[{exists:1}]:[]}));
@@ -167,13 +150,12 @@ describe('product mutation boundary',()=>{
     expect(result.items[0]).not.toHaveProperty('document');
     expect(mocks.query.mock.calls[2][1]).toEqual(['one',['chart']]);
   });
-  it('keeps an explicitly empty asset composition empty on subsequent home reads',async()=>{
+  it('reads an explicitly empty page composition without synthesizing or writing children',async()=>{
     const document={kind:'page',compositionVersion:2,workspace:{schemaVersion:1,layout:'data',dashboardIds:[],applicationIds:[]},children:[]};
-    mocks.query.mockImplementation(async(sql:string)=>({rows:sql.includes('SELECT asset_id')?[{asset_id:'home'}]:sql.includes('SELECT id, owner_id')?[{id:'home',ownerId:'alice',name:'Home',description:'',visibility:'private',document,revision:1,createdAt:new Date(),updatedAt:new Date()}]:[]}));
-    const {personalHome}=await import('../store');
-    const result=await personalHome(owner,credentials);
+    mocks.query.mockResolvedValue({rows:[{id:'home',ownerId:'alice',name:'Home',description:'',visibility:'private',document,revision:1,createdAt:new Date(),updatedAt:new Date()}]});
+    const result=await getProduct(owner,'home');
     expect(result.document).toMatchObject({compositionVersion:2,children:[]});
-    expect(mocks.query.mock.calls.some(([sql])=>sql.includes('INSERT'))).toBe(false);
+    expect(mocks.query.mock.calls.map(([sql])=>sql)).toEqual([expect.stringMatching(/^SELECT /)]);
   });
   it('filters template pages and orders the entire visible result before pagination',async()=>{
     mocks.query.mockResolvedValueOnce({rows:[{total:0}]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]});

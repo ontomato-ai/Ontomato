@@ -18,8 +18,9 @@ import { knowledgeEntrySchema } from "./panel-operations";
  * counts of its tabs, one entry, and the form. The owner keeps entries whole by domain and has no single read, so every
  * entry read fetches the whole domain and selects here. The list keeps the page it replaces: space-separated terms
  * matched case-insensitively somewhere in title, content or tags, entries whose title hits more terms first, then the
- * status filter and cursor paging over the result. Field labels and the two status names come from the owner's form
- * description in the reader's language — the one source the owner gives them in, not a second one written here.
+ * status filter returning one continuous matching list without cursor paging. Field labels and the two status names
+ * come from the owner's form description in the reader's language — the one source the owner gives them in, not a
+ * second one written here.
  */
 
 type KnowledgeEntry = z.infer<typeof knowledgeEntrySchema>;
@@ -84,34 +85,14 @@ function textHighlights(text: string, terms: readonly string[]): PanelTextHighli
   return merged;
 }
 
-/** Strips common Markdown punctuation so compact list previews read cleanly as plain prose. */
-function plainSummaryText(text: string): string {
-  return text
-    .replace(/```[^\n]*\n?([\s\S]*?)```/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/(\*\*|__)([^\n]+?)\1/g, "$2")
-    .replace(/~~([^\n]+?)~~/g, "$1")
-    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|[.,;:!?，。；：！？]|$)/g, "$1$2")
-    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
-    .replace(/^[ \t]*>[ \t]?/gm, "")
-    .replace(/^[ \t]*[-*+][ \t]+/gm, "")
-    .replace(/\r?\n+/g, " ")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
-}
-
 /**
- * The content as a list row shows it under the title, as the page it replaces did: plain prose stripped of raw Markdown
- * syntax, starting shortly before the first hit so the match stays inside the two lines a row shows.
+ * The content as a list row shows it under the title, as the page it replaces did: raw text preserving newlines and
+ * original characters, starting shortly before the first hit so the match stays inside the two lines a row shows.
  */
 function contentSummary(text: string, terms: readonly string[]): string {
-  const plain = plainSummaryText(text);
-  const lower = plain.toLowerCase();
+  const lower = text.toLowerCase();
   const first = Math.min(...terms.map(term => lower.indexOf(term)).filter(index => index >= 0));
-  const from = Number.isFinite(first) && first > 24 ? `…${plain.slice(first - 12)}` : plain;
-  return from.slice(0, 200);
+  return Number.isFinite(first) && first > 24 ? `…${text.slice(first - 12)}` : text;
 }
 
 function rowHighlights(
@@ -216,16 +197,17 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
   }
 
   return {
-    /** The searched and filtered entries, paged by cursor, with the total the filter keeps. */
+    /**
+     * The searched and filtered entries as one complete matching list without cursor paging, with the matching total
+     * (and when called without search or status, the domain's unfiltered total).
+     */
     async query(params: Record<string, unknown>) {
-      const { search, status, cursor, size } = queryInputSchema.parse(params);
+      const { search, status } = queryInputSchema.parse(params);
       const [entries, text] = await Promise.all([ownerEntries(), ownerEntryText()]);
       const terms = searchTerms(search);
       const kept = statusFiltered(searchedEntries(entries, terms), status ?? "all");
-      const offset = cursor === undefined ? 0 : Number(cursor);
       return {
-        rows: kept.slice(offset, size === undefined ? undefined : offset + size).map(entry => entryRow(entry, text, terms)),
-        ...(size !== undefined && offset + size < kept.length ? { nextCursor: String(offset + size) } : {}),
+        rows: kept.map(entry => entryRow(entry, text, terms)),
         total: kept.length,
       };
     },

@@ -10,7 +10,7 @@ import { useApplicationCatalog } from "../../../../../packages/platform-web/src/
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
-  sentPanelReadItems, isPanelDataRead,
+  APPLICATION_ENTRY_PATH, sentPanelReadItems, isPanelDataRead,
   ignoreChanges, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
   panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, type Sent,
 } from "./panel-frame";
@@ -99,12 +99,14 @@ afterEach(() => {
   leaveFrame();
 });
 
-it("opens the first visible use at its own URL when entering a panel application", async () => {
+it("admits the first use at its own URL even when it has no menu label", async () => {
   const { app, router, sent } = await open(`/applications/${appB}`, { platformRoutes: true });
   try {
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`/applications/${appB}/summary`));
     // The page's panel runs as the application use this address opened.
     await vi.waitFor(() => expect(document.querySelector(".panel-host-coded [data-member='summary']")).not.toBeNull());
+    expect(sent.filter(request => request.path === APPLICATION_ENTRY_PATH)
+      .map(request => new URLSearchParams(request.search).get("path"))).toEqual([useQ.path]);
     expect(sent.some(request => request.path.endsWith("/policy"))).toBe(false);
   } finally {
     app.unmount();
@@ -139,12 +141,14 @@ it("reconciles definitions and objects on foreground without replacing an unchan
   const foreground = visibility();
   const { app, element, sent } = await open(panelAddress(useQ.path, deepState));
   const definitionReads = () => sent.filter(request => /\/api\/product-(panels|projections)\//.test(request.path)
-    && !request.path.endsWith("/snapshot") && !isPanelDataRead(request));
+    && request.path !== APPLICATION_ENTRY_PATH && !request.path.endsWith("/snapshot") && !isPanelDataRead(request));
+  const openings = () => sent.filter(request => request.path === APPLICATION_ENTRY_PATH);
   try {
     await vi.waitFor(() => expect(summaryTitle()).toBe(task.title));
     const panel = element.querySelector(".panel-host-coded > *");
     const initialDefinitions = definitionReads().length;
     const initialReads = reads(sent).length;
+    const initialOpenings = openings().length;
 
     // The task changed while the page was hidden: its record is read again, and nothing else.
     foreground.set("hidden");
@@ -153,6 +157,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     await vi.waitFor(() => expect(summaryTitle()).toBe("Changed while hidden"));
     expect(reads(sent).length).toBeGreaterThan(initialReads);
     expect(definitionReads().slice(initialDefinitions)).toEqual([]);
+    expect(openings()).toHaveLength(initialOpenings + 1);
 
     // The projection changed while hidden: it alone is read again, and the panel stays the same instance.
     foreground.set("hidden");
@@ -160,6 +165,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     foreground.set("visible");
     await vi.waitFor(() => expect(firstLabel()).toBe("Settings"));
     expect(definitionReads().slice(initialDefinitions).map(request => request.path)).toEqual([`/api/product-projections/${summary.id}`]);
+    expect(openings()).toHaveLength(initialOpenings + 2);
     expect(element.querySelector(".panel-host-coded > *")).toBe(panel);
   } finally {
     app.unmount();

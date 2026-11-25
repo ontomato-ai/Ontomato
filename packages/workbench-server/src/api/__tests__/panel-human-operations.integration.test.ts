@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -75,7 +76,7 @@ beforeAll(async () => {
 
   const app = express();
   app.use(express.json());
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== "app-tasks") { next(); return; }
     if (req.header("tk") !== "alice") { res.sendStatus(403); return; }
     res.json({ success: true, data: {

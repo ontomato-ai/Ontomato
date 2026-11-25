@@ -23,16 +23,29 @@ beforeEach(()=>{
 });
 afterEach(()=>{route?.unmount();route=undefined;elements.splice(0).forEach(element=>element.remove());vi.restoreAllMocks();});
 describe("explicit frame execution bindings",()=>{
-  it('admits only frozen Trigger dependencies backed by declared CollectionViews',async()=>{
-    const source=frame();elements[elements.length-1].setAttribute('sandbox','allow-scripts');registerLiveFrame(source,'published');
-    vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({id:'subscription'}));
-    const input={method:'POST',body:JSON.stringify({kind:'trigger',id:'entered',parameters:{}})};
-    await expect(host().request!(source,'/product-assets/subscriptions',input,'')).rejects.toThrow();
-    publication.triggers=[{id:'entered',definitionId:'members'}];publication.contracts=[{kind:'trigger',id:'entered'}];
+  it('keeps published collections within frozen dependencies and refuses the retired Trigger subscription',async()=>{
+    const source=frame();
+    elements[elements.length-1].setAttribute('sandbox','allow-scripts');
+    registerLiveFrame(source,'published');
+    const request=vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({rows:[]}));
+    const path='/product-assets/definitions/members/query';
+    const input={method:'POST',body:JSON.stringify({parameters:{},fields:['id']})};
+    await expect(host().request!(source,path,input,'')).rejects.toThrow('Collection is outside published dependencies');
+
+    publication.triggers=[{id:'entered',definitionId:'members'}];
+    publication.contracts=[{kind:'trigger',id:'entered'}];
     publication.assets=[{id:'collection',name:'Members',ownerId:'author',visibility:'private',revision:1,editable:false,createdAt:'now',updatedAt:'now',document:{kind:'collection-view',renders:{kind:'Definition',id:'members'},parameters:{},fields:['id']}}];
-    await expect(host().request!(source,'/product-assets/subscriptions',input,'')).resolves.toBeInstanceOf(Response);
+    const subscription={method:'POST',body:JSON.stringify({kind:'trigger',id:'entered',parameters:{}})};
+    await expect(host().request!(source,'/product-assets/subscriptions',subscription,'')).rejects.toThrow('cannot edit');
+    await expect(host().request!(source,path,{
+      method:'POST',body:JSON.stringify({parameters:{},fields:['id','other']}),
+    },'')).rejects.toThrow('Collection fields are outside');
+    expect(request).not.toHaveBeenCalled();
+
+    await expect(host().request!(source,path,input,'')).resolves.toBeInstanceOf(Response);
     publication.issues=[{assetId:'collection'}];
-    await expect(host().request!(source,'/product-assets/subscriptions',input,'')).rejects.toThrow();
+    await expect(host().request!(source,path,input,'')).rejects.toThrow('Collection is outside published dependencies');
+    expect(request).toHaveBeenCalledTimes(1);
   });
   it('rejects undeclared data capabilities from an opaque source application',async()=>{
     const source=frame();elements[elements.length-1].setAttribute('sandbox','allow-scripts');registerLiveFrame(source,'published');

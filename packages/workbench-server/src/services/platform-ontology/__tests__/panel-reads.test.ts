@@ -72,6 +72,17 @@ configureI18n({
         "panels.platformOntology.dirApplications": "Localized application directory",
       },
     },
+    "zh-CN": {
+      ...enLocaleMeta,
+      messages: {
+        ...en,
+        "platformOntology.types.metricView": "指标视图",
+        "platformOntology.types.action": "动作",
+        "platformOntology.types.function": "函数",
+        "platformOntology.relations.metric-view.uses-function": "使用函数",
+        "platformOntology.relations.action.uses-function": "使用函数",
+      },
+    },
   },
 });
 
@@ -538,5 +549,87 @@ describe("platform ontology catalogue reads", () => {
         derived: false, owner: "node-product-panels",
       },
     });
+  });
+
+  it("provides distinguishable owner relation labels and endpoint metadata shared across filter, schema, and neighbors", async () => {
+    stubOwnerHttp();
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+
+    const kinds = panelReadResultSchemas.panelRecordList.parse(reads.relationKinds());
+    const labels = kinds.map((row) => row.label);
+    expect(new Set(labels).size).toBe(labels.length);
+
+    const metricUsesFn = kinds.find((row) => row.primaryKey === "metric-view.uses-function");
+    const actionUsesFn = kinds.find((row) => row.primaryKey === "action.uses-function");
+    expect(metricUsesFn).toMatchObject({
+      label: "Metric view uses function",
+      subtitle: "Metric view → Function",
+      fields: { fromLabel: "Metric view", toLabel: "Function", endpoints: "Metric view → Function" },
+    });
+    expect(actionUsesFn).toMatchObject({
+      label: "Action uses function",
+      subtitle: "Action → Function",
+      fields: { fromLabel: "Action", toLabel: "Function", endpoints: "Action → Function" },
+    });
+
+    const schema = panelReadResultSchemas.panelGraphSchema.parse(await reads.schema());
+    expect(schema.relationKinds.find((r) => r.id === "metric-view.uses-function")?.label).toBe("Metric view uses function");
+    expect(schema.relationKinds.find((r) => r.id === "action.uses-function")?.label).toBe("Action uses function");
+
+    // Locales with colliding base translations are automatically disambiguated by source type label.
+    const dupReads = createPlatformOntologyReadAdapter(owner, { token: "viewer-token-1", locale: "zh-CN" });
+    const dupKinds = panelReadResultSchemas.panelRecordList.parse(dupReads.relationKinds());
+    expect(dupKinds.find((row) => row.primaryKey === "metric-view.uses-function")).toMatchObject({
+      label: "指标视图 · 使用函数",
+      subtitle: "指标视图 → 函数",
+    });
+    expect(dupKinds.find((row) => row.primaryKey === "action.uses-function")).toMatchObject({
+      label: "动作 · 使用函数",
+      subtitle: "动作 → 函数",
+    });
+    const dupSchema = panelReadResultSchemas.panelGraphSchema.parse(await dupReads.schema());
+    expect(dupSchema.relationKinds.find((r) => r.id === "metric-view.uses-function")?.label).toBe("指标视图 · 使用函数");
+    expect(dupSchema.relationKinds.find((r) => r.id === "action.uses-function")?.label).toBe("动作 · 使用函数");
+  });
+
+  it("supports cross-type readable search via wildcard type while preserving per-owner access boundaries", async () => {
+    const { seenRequests } = stubOwnerHttp({
+      "/workflow/query": () => jsonResponse({ message: "Workflow forbidden" }, 403),
+    });
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+
+    // Blank cross-type search short-circuits without hitting owners.
+    const empty = panelReadResultSchemas.panelOntologyObjects.parse(await reads.objects({ type: ONTOLOGY_TYPE, search: "   " }));
+    expect(empty.status).toBe("ok");
+    expect(empty.items).toEqual([]);
+    expect(empty.total).toBe(0);
+    expect(seenRequests).toHaveLength(0);
+
+    // Non-empty keyword matches across readable types by name and description, skipping refused owners.
+    const byName = panelReadResultSchemas.panelOntologyObjects.parse(await reads.objects({ type: ONTOLOGY_TYPE, search: "Order" }));
+    expect(byName.status).toBe("ok");
+    expect(byName.items.map((item) => `${item.node.className}:${item.node.primaryKey}`)).toEqual(
+      expect.arrayContaining([
+        `${OBJECT_TYPE}:Order`,
+        `${ACTION}:act-1`,
+        `${ACTION}:act-2`,
+      ]),
+    );
+    expect(byName.items.find((item) => item.node.className === ACTION && item.node.primaryKey === "act-1")?.detail)
+      .toContain("Action");
+
+    // Description match finds Order via its classDesc ("Customer order record").
+    const byDescription = panelReadResultSchemas.panelOntologyObjects.parse(
+      await reads.objects({ type: ONTOLOGY_TYPE, search: "Customer order record" }),
+    );
+    expect(byDescription.status).toBe("ok");
+    expect(byDescription.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node: { className: OBJECT_TYPE, primaryKey: "Order" },
+          label: "Sales Order",
+        }),
+      ]),
+    );
   });
 });

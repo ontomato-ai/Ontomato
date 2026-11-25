@@ -1,7 +1,8 @@
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";
 
 const DETAIL_PATH = "/ontology/applications/detail";
+const APPLICATION_TYPE = "platform:Application";
 
 const ApplicationsCatalogPanel = {
   setup() {
@@ -15,6 +16,13 @@ const ApplicationsCatalogPanel = {
         if (!open && creating.value) cancelCreate();
       },
     });
+    const copySourceKey = computed(() => values.value.copySource?.primaryKey ?? "");
+    const copyDialog = computed({
+      get: () => Boolean(copySourceKey.value),
+      set: (open) => {
+        if (!open && copySourceKey.value) cancelCopy();
+      },
+    });
 
     const scopeModel = computed({
       get: () => values.value.scope || "visible",
@@ -26,8 +34,33 @@ const ApplicationsCatalogPanel = {
     });
     const scopeOptions = computed(() => [
       { value: "visible", label: t("scope.visible") },
+      { value: "mine", label: t("scope.mine") },
+      { value: "shared", label: t("scope.shared") },
       { value: "maintainable", label: t("scope.maintainable") },
     ]);
+
+    // Prefill default copy suffix once when the copy form loads so the user can submit immediately or edit.
+    const copyNameSeededFor = ref("");
+    watch(
+      [copySourceKey, () => instance.forms.handle("copyForm")?.values.value?.declaration?.names],
+      ([sourceKey, names]) => {
+        if (!sourceKey) {
+          copyNameSeededFor.value = "";
+          return;
+        }
+        if (copyNameSeededFor.value === sourceKey || !names || typeof names !== "object") return;
+        const handle = instance.forms.handle("copyForm");
+        if (!handle) return;
+        const entries = Object.entries(names).filter(([, v]) => typeof v === "string" && v.trim());
+        if (!entries.length) return;
+        copyNameSeededFor.value = sourceKey;
+        const nextNames = Object.fromEntries(
+          entries.map(([lang, text]) => [lang, t("copy.suffix", { name: text.trim() })]),
+        );
+        handle.set("/declaration/names", nextNames);
+      },
+      { deep: true },
+    );
 
     function detailAddress(primaryKey) {
       return panelAddress(DETAIL_PATH, { selected: primaryKey });
@@ -52,6 +85,27 @@ const ApplicationsCatalogPanel = {
       void navigateToDetail(item.primaryKey);
     }
 
+    function onRowAction({ id, ref: rowRef }) {
+      if (id === "copy" && rowRef?.primaryKey) {
+        instance.state.set("copySource", { className: APPLICATION_TYPE, primaryKey: rowRef.primaryKey });
+      }
+    }
+
+    function cancelCopy() {
+      copyNameSeededFor.value = "";
+      instance.state.set("copySource", null);
+    }
+
+    function onCopied(saved) {
+      copyNameSeededFor.value = "";
+      instance.state.set("copySource", null);
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("notify.copied") });
+      if (saved?.primaryKey) {
+        void navigateToDetail(saved.primaryKey);
+      }
+    }
+
     function startCreate() {
       instance.state.set("creating", true);
     }
@@ -73,10 +127,14 @@ const ApplicationsCatalogPanel = {
       t,
       creating,
       createDialog,
+      copyDialog,
       scopeModel,
       scopeOptions,
       sortModel,
       openDetail,
+      onRowAction,
+      cancelCopy,
+      onCopied,
       startCreate,
       cancelCreate,
       onCreated,

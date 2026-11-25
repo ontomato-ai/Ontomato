@@ -36,13 +36,14 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 	}
 
 	@Override
+	public void initializeBusinessConfig(String domainId) {
+		businessConfigDao.initialize(BusinessConfig.from(dataRagConfig), domainId);
+	}
+
+	@Override
 	public BusinessConfig get(String domainId) {
 		BusinessConfig businessConfig = businessConfigDao.query(domainId);
-		if (businessConfig == null) {
-			businessConfig = BusinessConfig.from(
-					dataRagConfig);
-			set(businessConfig, domainId);
-		}
+		if (businessConfig == null) throw new IllegalStateException("Business configuration is not initialized for domain " + domainId);
 		return businessConfig;
 	}
 

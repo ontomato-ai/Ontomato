@@ -376,7 +376,8 @@ class PanelApplicationsTest {
 
     @Test void deniesLegacyPublicationForAnAlreadyManagedPanelsApplication() {
         doReturn(List.of(app("app-panel-a", "panels", List.of()))).when(catalog).all();
-        assertThrows(ResponseStatusException.class, () -> catalog.publishProduct("app-panel-a", metadata(), "release", user));
+        assertThrows(ResponseStatusException.class, () -> catalog.publishProduct("app-panel-a", metadata(), "release", user,
+            new io.ontomato.dataengine.service.ProductGrantService.OwnerFacts("author", "current")));
         verify(db, never()).update(anyString(), any(Object[].class));
     }
 

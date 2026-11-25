@@ -14,7 +14,7 @@
 | `selected` | 实例模式当前选中的节点；它的全部一跳关系显示在右侧 `relations` 中 | 是 |
 | `selectedType` | 当前选中的类型标识（字符串，例如 `platform:Action`），用于图谱节点、对象列表与类详情子表 | 是 |
 | `selectedTypeRef` | 与 `selectedType` 双向同步的 `platform:OntologyType` 对象引用，供类型列表、类型选择器与类详情头/摘要使用 | 否 |
-| `query` | 搜索关键字（图形视图高亮已画出的节点；类型列表视图本地过滤类型） | 否 |
+| `query` | 单一搜索框关键字（实例模式下由属主按可读范围跨类型检索名称或说明，并在画布上高亮已加载节点；类型模式下实时筛选类型列表并高亮类型节点） | 否 |
 | `relationKinds` | 过滤显示的关系种类列表（`platform:OntologyRelationKind` 引用数组；为空时显示全部关系种类） | 否 |
 | `visibleLayers` | 画布启用的本体层标识列表（如 `["fact", "capability"]`；为 `null` 时启用全部可用层），与 `graph` 双向同步 | 否 |
 | `expandedNodes` | 实例模式中除起点外已展开一跳邻居的节点引用列表，与 `graph` 双向同步，供智能体复现当前子图 | 否 |
@@ -29,7 +29,7 @@
 | 成员 | 组件 | 数据来源 | 用途 |
 | --- | --- | --- | --- |
 | `graph` | `OntologyGraph` | `platform:OntologyType`（`schema`、`counts`、`start`、`neighbors`） | 四层类型图谱与实例一跳展开画布 |
-| `typeList` | `ObjectList` | `platform:OntologyType.list` | 类型模式「按层分组」视图，按 `layer` 分组展示类型、可读计数/状态徽标与原因 |
+| `typeList` | `ObjectList` | `platform:OntologyType.list` | 类型模式「按层分组」列表视图，按 `layer` 分组展示类型、可读计数/状态徽标与原因 |
 | `typePicker` | `ReferencePicker` | `platform:OntologyType.list` | 按类型挑选起点时的可过滤类型下拉选择器（按 `layer` 分组） |
 | `typeHeader` | `ObjectHeader` | `platform:OntologyType.record` | 类型模式右侧类详情标题、类型标识、计数状态徽标，并发布 `directoryPath`/`directoryName` 只读输出 |
 | `typeSummary` | `ObjectSummary` | `platform:OntologyType.record` | 类详情所属层、可读实例数与说明、一句话定义、创建与使用规则 |
@@ -38,8 +38,9 @@
 | `typeReads` | `ObjectList` | `platform:OntologyType.reads` | 选中类型登记的具名读法表 |
 | `typeOperations` | `ObjectList` | `platform:OntologyType.operations` | 选中类型登记的可发起操作表 |
 | `relations` | `ObjectRelations` | `platform:OntologyType.neighbors` | 实例模式右侧一跳关系检视（含关系种类过滤、设为起点、绑定读法/操作标签、摘要与空分组折叠） |
-| `relationKindFilter` | `ObjectList` | `platform:OntologyRelationKind.list` | 类型模式图形视图工具栏中的关系种类多选过滤列表 |
+| `relationKindFilter` | `ObjectList` | `platform:OntologyRelationKind.list` | 类型模式图形视图工具栏中的关系种类多选过滤列表（带可辨别名称与端点说明） |
 | `typeObjects` | `ObjectList` | `platform:OntologyType.objects` | 按 `selectedType` 列出可读实例，点击即以该对象为起点打开实例模式 |
+| `searchResults` | `ObjectList` | `platform:OntologyType.objects`（`platform:OntologyType` 跨类型检索） | 实例模式下跨四层可读对象搜索结果列表，点选命中项即收起无关节点并聚焦该节点及其一跳邻居 |
 | `userPicker` | `ObjectList` | `platform:OntologyType.objects`（固定 `platform:User`） | 切换实例模式的起点用户 |
 
 ## 看四层平台类详情
@@ -74,9 +75,10 @@
 
 ## 搜索行为
 
-- 在图形视图下，搜索框（`query`）只把**已经画在画布上**的匹配节点高亮，不会去全库查找，也不会隐藏其他节点。
-- 在类型模式的「按层分组」列表视图下，同一个搜索框会对 `typeList` 进行本地即时过滤；此时隐藏的 `graph` 不会挂载或发请求。
-- 要找还没画出来的对象：切到类型模式或展开「按类型挑选起点」，选定类型后在 `typeObjects` 中按 `typeObjectsSearch` 过滤并挑选。
+- 工具栏提供带搜索图标与内置清除按钮的单一搜索框（`query`）。
+- 在实例模式下，输入关键字后由属主按当前读者的可读范围跨四层类型检索名称或说明（`searchResults`），同时在画布上高亮已加载节点；点击任意命中项将收起无关节点（清空 `expandedNodes`），直接以该命中节点为起点聚焦其一跳邻居。
+- 在类型模式下，同一个搜索框会对「按层分组」列表视图按名称、标识与说明实时筛选，并在类型画布上高亮匹配的类型节点。
+- 仍保留逐跳探索与右侧「切换起点用户 / 按类型挑选起点」的完整能力。
 
 ## 选中节点与关系检视
 

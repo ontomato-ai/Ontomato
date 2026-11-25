@@ -153,17 +153,17 @@ it("labels a class without business keys by the primary key", async () => {
   expect(page.rows[0]).toMatchObject({ primaryKey: "l9", label: "l9" });
 });
 
-it("reports the owner's data-permission refusal on a class page as forbidden", async () => {
+it("keeps no visible fields distinct from forbidden and an empty page", async () => {
   stubOwner(request => {
     const route = catalogRoute(request);
     if (route) return route;
     if (request.url.pathname === "/data/getWholeClassDataByPage")
-      return Response.json({ success: false, code: "DATA_PERMISSION_DENIED", message: "您没有数据权限" });
+      return Response.json({ success: false, code: "NO_VISIBLE_FIELDS", message: "您没有数据权限" });
     return undefined;
   });
 
   await expect(createCustomerOntologyReadAdapter(owner, viewer).query("person", {}))
-    .rejects.toMatchObject({ status: 403, code: "CUSTOMER_DATA_PERMISSION" });
+    .rejects.toMatchObject({ status: 422, code: "NO_VISIBLE_FIELDS" });
 });
 
 it("reads one object and restores the primary-key value the owner omits", async () => {
@@ -316,7 +316,7 @@ it("marks the relationship failed when the owner's execution fails, with its rea
   const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor });
 
   expect(result.relations).toEqual([{
-    relationKind: "person_to_org", label: "Belongs to", status: "failed", edgeCount: 0, truncated: false, reason: "upstream adapter failed",
+    relationKind: "person_to_org", label: "Belongs to", status: "failed", edgeCount: 0, truncated: false, reason: "Failed to read this relationship. Please try again later.",
   }]);
 });
 

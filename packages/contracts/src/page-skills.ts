@@ -30,8 +30,11 @@ export const pageSkillGroupSchema = z.object({
 }).strict();
 export type PageSkillGroup = z.infer<typeof pageSkillGroupSchema>;
 
+const applicationPageSkillSourceSchema = z.object({
+  kind: z.literal("application-use"), applicationId: z.string().min(1), useId: z.string().min(1),
+}).strict();
 export const pageSkillSourceSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("application-use"), applicationId: z.string().min(1), useId: z.string().min(1) }).strict(),
+  applicationPageSkillSourceSchema,
   z.object({
     kind: z.literal("object-detail"),
     useId: z.string().min(1),
@@ -51,7 +54,10 @@ export type PageSkillMember = z.infer<typeof pageSkillMemberSchema>;
 
 export const pageSkillContextSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("public"), locator: pageSkillEntranceSchema }).strict(),
-  z.object({ mode: z.literal("member"), locator: pageSkillEntranceSchema, member: pageSkillMemberSchema.nullable() }).strict(),
+  z.object({
+    mode: z.literal("member"), locator: pageSkillEntranceSchema, member: pageSkillMemberSchema.nullable(),
+    entry: applicationPageSkillSourceSchema.optional(),
+  }).strict(),
 ]);
 export type PageSkillContext = z.infer<typeof pageSkillContextSchema>;
 

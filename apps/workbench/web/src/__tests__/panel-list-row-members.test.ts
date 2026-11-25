@@ -253,7 +253,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
           items: [
             { kind: "local", id: "edit", labelKey: "action.edit" },
             { kind: "operation", operation: "runNow", ...(!hideWhenUnavailable && { when: { field: "status", equals: "active" } }) },
-            { kind: "operation", operation: "remove", danger: true, hideWhenUnavailable },
+            { kind: "operation", operation: "remove", tone: "danger", hideWhenUnavailable },
           ],
         },
       },
@@ -926,7 +926,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       config: {
         columns: [{ key: "label", labelKey: "col.panel" }],
         rowActions: {
-          items: [{ kind: "operation", operation: "deletePanel", danger: true }],
+          items: [{ kind: "operation", operation: "deletePanel", tone: "danger" }],
         },
       },
       data: {

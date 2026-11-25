@@ -604,6 +604,84 @@ describe("ontology model server operations", () => {
     });
   });
 
+  it("previews and commits primary key replacement when editing an attribute", async () => {
+    const old = { ...attributeView, name: "id", showName: "ID", type: "varchar", primaryKey: true };
+    const candidate = { ...attributeView, name: "serial_no", showName: "Serial No", type: "varchar", primaryKey: false };
+    const updated = { ...candidate, showName: "Serial Number", primaryKey: true };
+    const { host, requests } = owner((path, init) => ({
+      status: 200,
+      body: init.method === "POST"
+        ? updated
+        : path.includes("/object-type?")
+          ? deviceView
+          : [old, candidate],
+    }));
+    const target = { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","serial_no"]' } as const;
+    const input = {
+      values: { showName: "Serial Number", attrDesc: "", enable: true, businessKey: false, primaryKey: true },
+      submittedFields: ["/showName", "/primaryKey"],
+    };
+
+    const impact = panelOperationImpactSchema.parse(await saveAttribute.inspectImpact!.inspect(host, [{ target, input }]));
+    expect(impact.objects.map(item => item.target)).toEqual([
+      { objectType: ATTRIBUTE, primaryKey: '["Device","serial_no"]' },
+      { objectType: ATTRIBUTE, primaryKey: '["Device","id"]' },
+    ]);
+    // Partial edits that do not submit `/primaryKey` or edits on an existing primary key require no replacement confirmation.
+    expect(await saveAttribute.inspectImpact!.inspect(host, [{
+      target,
+      input: { values: { showName: "Renamed", primaryKey: true }, submittedFields: ["/showName"] },
+    }])).toBeNull();
+    expect(await saveAttribute.inspectImpact!.inspect(host, [{
+      target: { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","id"]' },
+      input: { values: { primaryKey: true }, submittedFields: ["/primaryKey"] },
+    }])).toBeNull();
+
+    const outcome = await saveAttribute.execute(host, target, input, "edit-key");
+    expect(outcome).toMatchObject({
+      kind: "success",
+      affected: {
+        objects: [
+          { objectType: ATTRIBUTE, primaryKey: '["Device","serial_no"]' },
+          { objectType: OBJECT_TYPE, primaryKey: "Device" },
+          { objectType: ATTRIBUTE, primaryKey: '["Device","id"]' },
+        ],
+      },
+    });
+    const post = requests.find(req => req.method === "POST" && req.path.endsWith("/attribute/update"));
+    expect(post?.body).toEqual({
+      className: "Device",
+      name: "serial_no",
+      showName: "Serial Number",
+      attrDesc: "",
+      enable: true,
+      businessKey: false,
+      primaryKey: true,
+    });
+  });
+
+  it("evaluates attribute delete availability in a single batch for row operations", async () => {
+    const pk = { ...attributeView, name: "id", type: "varchar", primaryKey: true };
+    const joined = { ...attributeView, name: "site_id", type: "varchar", primaryKey: false };
+    const free = { ...attributeView, name: "note", type: "varchar", primaryKey: false };
+    const { host, requests } = owner(path => ({
+      status: 200,
+      body: path.includes("/relationships") ? [relationshipView] : [pk, joined, free],
+    }));
+
+    const reasons = await deleteAttribute.unavailableBatch!(host, [
+      { rowKey: "r-pk", target: { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","id"]' } },
+      { rowKey: "r-joined", target: { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' } },
+      { rowKey: "r-free", target: { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","note"]' } },
+    ]);
+
+    expect(reasons.get("r-pk")?.reason).toMatch(/primary key/i);
+    expect(reasons.get("r-joined")?.reason).toContain("owns");
+    expect(reasons.has("r-free")).toBe(false);
+    // Single attributes read + single relationships read regardless of row count.
+    expect(requests).toHaveLength(2);
+  });
+
   it("blocks setting existing, disabled or non-text keys and deleting referenced or primary-key attributes", async () => {
     const eligible = { ...attributeView, type: "varchar" };
     const choices = [eligible, { ...eligible, primaryKey: true }, { ...eligible, enable: false }, attributeView];

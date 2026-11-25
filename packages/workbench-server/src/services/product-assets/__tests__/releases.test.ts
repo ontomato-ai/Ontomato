@@ -1,4 +1,4 @@
-import {beforeEach,expect,it,vi} from 'vitest';
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({query:vi.fn(),get:vi.fn(),describe:vi.fn(),post:vi.fn(),put:vi.fn()}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,backendPut:mocks.put,buildBackendHeaders:()=>({})}));
 vi.mock('../../assistant/execution',()=>({credentialsForDefinition:async()=>({token:'agent-execution',executionUserId:'executor'})}));
@@ -9,7 +9,8 @@ vi.mock('../store',()=>({getProduct:mocks.get,lockProducts:vi.fn()}));
 vi.mock('../grants',()=>({requireProductUse:vi.fn(),withProductGrants:async(_owner:unknown,action:()=>unknown)=>action()}));
 vi.mock('../../dashboard/metric-client',()=>({DashboardMetricClient:class{describe=mocks.describe;}}));
 import {readProductRelease,validateReleaseContracts,contractHash,snapshotAsset,releaseSnapshotSchema,rollbackProductBundle,activeProductBundle,productReleaseIssues,productReleaseDiff,captureProductRelease,synchronizeBundlePublication} from '../releases';
-beforeEach(()=>{vi.resetAllMocks();mocks.put.mockResolvedValue({text:'{"success":true}'});});
+beforeEach(()=>{vi.resetAllMocks();vi.stubEnv('ONTOMATO_QUERY_SERVICE_TOKEN','fixture-service');mocks.put.mockResolvedValue({text:'{"success":true}'});});
+afterEach(()=>{vi.unstubAllEnvs();});
 const owner={domainId:'domain',userId:'reader'};
 const snapshot=()=>releaseSnapshotSchema.parse({schemaVersion:1,roots:['root'],assets:[{id:'root',name:'Original',description:'',ownerId:'author',visibility:'domain',revision:1,editable:false,createdAt:'now',updatedAt:'now',document:{kind:'widget',widget:{id:'w',kind:'metric',title:'Count',span:12,resourceId:'metric',valueField:'count'}}}],contracts:[{kind:'metric',id:'metric',hash:contractHash({parameters:[],outputs:[{key:'count'}]})}]});
 it('resolves target release contents and rejects historical releases without a snapshot',async()=>{
@@ -115,7 +116,7 @@ it('retains failed directory publications and retries the frozen declaration rat
   await expect(synchronizeBundlePublication(owner,'app-example',{})).rejects.toThrow();
   expect(mocks.query.mock.calls.some(([sql])=>sql.startsWith('DELETE FROM product_publication_outbox'))).toBe(false);
   await synchronizeBundlePublication(owner,'app-example',{});
-  expect(mocks.put.mock.lastCall?.[2]).toMatchObject({declaration:{names:{en:'Frozen name'}}});
+  expect(mocks.put.mock.lastCall?.[2]).toMatchObject({ownerFacts:{ownerId:'author',state:'current'},declaration:{names:{en:'Frozen name'}}});
   expect(mocks.query.mock.calls.some(([sql])=>sql.startsWith('DELETE FROM product_publication_outbox'))).toBe(true);
 });
 it('does not run a new active snapshot while its application directory publication is pending',async()=>{

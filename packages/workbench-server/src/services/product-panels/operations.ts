@@ -99,7 +99,8 @@ async function operationForUse(
 ) {
   if (ref.root === "frame") {
     const { applicationId, useId } = ref;
-    const { panel, entry, framePanelId } = await requireRegisteredPanelRoot(owner, credentials, { kind: ref.root, applicationId, useId });
+    const { panel, entry, framePanelId } = await requireRegisteredPanelRoot(owner, credentials,
+      { kind: ref.root, applicationId, useId }, { admitEntry: true });
     return declaredOperation(owner, credentials, panel, panel.id, entry, ref, target, { framePanelId, ...options });
   }
   const { use, framePanelId } = await requirePanelUseEntry(credentials, ref, owner);

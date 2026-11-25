@@ -19,6 +19,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
+import { tApp } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
@@ -729,6 +730,12 @@ function effectiveInputs(
   return values;
 }
 
+const extendedApplicationScopeSchema = z.enum(["visible", "maintainable", "mine", "shared"]);
+function parseReadParameter(parameter: keyof typeof panelReadParameterSchemas, value: unknown): unknown {
+  if (parameter === "applicationScope") return extendedApplicationScopeSchema.parse(value);
+  return panelReadParameterSchemas[parameter].parse(value);
+}
+
 async function readParameters(
   projection: ProductProjection, member: ReadMember, dataName: string, data: DirectProjectionData,
   declaration: PlatformReadDeclaration, inputs: ReadInputs, runtimeParams: ProductPanelReadRequest["runtimeParams"],
@@ -743,7 +750,7 @@ async function readParameters(
       if (!parameter || !names.includes(name))
         throw new HttpError(400, `Runtime parameter '${name}' is not declared for data '${dataName}'`, "PANEL_RUNTIME_PARAMETER_UNKNOWN");
       if (value == null) continue;
-      const parsed = panelReadParameterSchemas[parameter].parse(value);
+      const parsed = parseReadParameter(parameter, value);
       if (!authoredReadParameterSource(data.params, name, member)) resolved.set(name, parsed);
     }
   }
@@ -753,7 +760,7 @@ async function readParameters(
     const parameter = panelReadParameterId(declaration, name);
     if (!source || !parameter) continue;
     const value = "literal" in source ? source.literal : inputs["input" in source ? source.input : name];
-    if (value != null) resolved.set(name, panelReadParameterSchemas[parameter].parse(value));
+    if (value != null) resolved.set(name, parseReadParameter(parameter, value));
     else if (readParameterUsesStateField(source, member))
       throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
   }
@@ -924,9 +931,16 @@ export async function readProductPanelData(
       ...(rowOperations && { rowOperations }),
     };
   } catch (error) {
-    if (error instanceof HttpError && (error.status === 401 || error.status === 403)) return { status: "forbidden" };
-    if (error instanceof HttpError && error.code === "GRAPH_VERSION_CHANGED")
+    if (error instanceof HttpError && error.status === 403) {
+      return { status: "forbidden", reason: error.message || tApp("foundation.error.unauthorized") };
+    }
+    if (error instanceof HttpError && error.status === 401) {
+      return { status: "error", message: tApp("foundation.error.unauthorized"), code: "UNAUTHENTICATED" };
+    }
+    if (error instanceof HttpError && (error.code === "GRAPH_VERSION_CHANGED"
+      || error.code === "NO_VISIBLE_FIELDS" || error.code === "NO_READABLE_OBJECT_KEY")) {
       return { status: "error", message: error.message, code: error.code };
+    }
     if (error instanceof HttpError || error instanceof BackendUnavailableError || error instanceof z.ZodError || error instanceof SyntaxError)
       return { status: "error", message: error.message };
     if (batchCache) {

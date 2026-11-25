@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -27,6 +28,7 @@ import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureOpsDiagnosisSchema } from "../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
@@ -201,7 +203,8 @@ beforeAll(async () => {
     return id === agentId || resourceIds.has(id) || (verb === "use" && id.startsWith("builtin-product-"));
   };
   app.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: allowed(req.body.id, req.body.verb, req.header("tk")) });
+    const token = req.header("tk");
+    res.json(productGrantCheck(req.body, "reader", (id, verb) => allowed(id, verb, token)));
   });
   app.post("/product-governance/check-batch", (req, res) => {
     res.json({ allowed: Object.fromEntries(req.body.ids.map((id: string) => [id, allowed(id, req.body.verb, req.header("tk"))])) });
@@ -210,7 +213,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ ids: [...resourceIds, agentId] });
   });
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== "schedules") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     const uses = workbenchApplications.find(app => app.id === "schedules")!.declaration.panelUses!;
@@ -219,7 +222,7 @@ beforeAll(async () => {
       use: uses.find(use => use.id === req.query.useId),
     } });
   });
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== "app-schedules") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
@@ -229,7 +232,7 @@ beforeAll(async () => {
         access: { kind: "domain-member" } },
     } });
   });
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== "ontology-pilot") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     // Java answers the one admitted entry the request names.
@@ -278,7 +281,7 @@ beforeAll(async () => {
       primary, { ...primary, name: "name", showName: "Name", primaryKey: false, businessKey: true },
     ]);
   });
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== "agent-settings") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
@@ -330,7 +333,7 @@ beforeAll(async () => {
     }
     res.json({ canSetExecutionUser: false, users: [] });
   });
-  app.get("/platform/applications/resolve-entry", (req, res) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res) => {
     const family = String(req.query.applicationId);
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
@@ -718,7 +721,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
     } }],
   });
   ownerTasks = [task];
-  expect(await (await read("related", "record", { task: taskRef })).json()).toEqual({ status: "forbidden" });
+  expect(await (await read("related", "record", { task: taskRef })).json()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(await (await read("summary", "record", { task: { ...taskRef, primaryKey: "removed" } })).json()).toEqual({
     status: "error", message: "Task no longer exists",
   });
@@ -1074,7 +1077,7 @@ it("reads agent settings and reference options with the panel viewer", async () 
     status: "ready", value: { save: { kind: "form.save", target: { source: "draft", slot: "definition" } } },
   });
   const disabled = { primaryKey: agentId, label: "Inventory analyst",
-    fields: { name: "Inventory analyst", description: "Inventory summary", enabled: "Disabled", category: "Custom" }, tones: { enabled: "default" } };
+    fields: { name: "Inventory analyst", description: "Inventory summary", icon: "", agentTitle: ["Inventory analyst", ""], enabled: "Disabled", category: "Custom" }, tones: { enabled: "default" } };
   expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining(disabled));
   expect(await ready("summary", "record", { agent })).toMatchObject({
     ...disabled, fieldLabels: { description: "Description", enabled: "Enabled", category: "Category" },
@@ -1152,8 +1155,8 @@ it("reads agent settings and reference options with the panel viewer", async () 
   }]);
 
   state.allowAgentReads = false;
-  expect(await read("definition", "createForm")).toEqual({ status: "forbidden" });
-  expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden" });
+  expect(await read("definition", "createForm")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
+  expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
 });
 
 async function ownerReadPanel(
@@ -1514,7 +1517,7 @@ it("gives a metric parameter the chosen object's key and keeps the owner's trunc
     });
     for (const [year, { status, message }] of Object.entries(metricRefusals))
       expect(await read({ customer, year: Number(year) }))
-        .toEqual(status === 403 ? { status: "forbidden" } : { status: "error", message });
+        .toEqual(status === 403 ? { status: "forbidden", reason: message } : { status: "error", message });
   });
 });
 

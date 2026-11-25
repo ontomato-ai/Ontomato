@@ -29,6 +29,7 @@ it('does not label a locally derived renders edge as synchronized when the ontol
   mocks.query.mockResolvedValue({rows:[]});
   mocks.post.mockResolvedValue({text:JSON.stringify({nodes:[{id:'view',name:'View',kind:'metric-widget',revision:1}],edges:[{source:'view',relation:'renders',target_kind:'MetricView',target_id:'count',is_default:false}]})});
   await expect(registeredProductGraph({domainId:'domain',userId:'human'},[asset])).rejects.toMatchObject({code:'PRODUCT_ONTOLOGY_PENDING'});
+  expect(mocks.query.mock.calls.map(([sql])=>sql)).toEqual([expect.stringMatching(/^SELECT /)]);
 });
 it('includes use and edit governance edges for bundles the caller can edit',async()=>{
   const base={name:'App',visibility:'private',ownerId:'human',revision:1,createdAt:'now',updatedAt:'now',document:{kind:'application',applicationId:'app',children:[]}};

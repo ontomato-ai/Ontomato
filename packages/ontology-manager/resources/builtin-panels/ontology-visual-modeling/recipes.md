@@ -5,9 +5,9 @@
 ## 看页面上是什么
 
 - 画布上是本域的全部对象类型和关系类型，节点和边都写属主给的名字，不是内码。
-- `selectedNode` 是选中的对象类型（主键是类的 API 名），`selectedEdge` 是选中的关系类型（主键是关系名）；两者互斥（后选中的会覆盖清空前一个，改选关系时同时清空 `selectedAttribute`），点画布空白处或按 Esc 清空选中。地址里带 `?selectedNode=<类>` 或 `?selectedEdge=<关系名>` 就是直接打开并选中它。
-- 属性列表（`attributes`）直接按当前 `selectedNode` 的主键加载，不另存中转状态；`selectedAttribute` 指向其中一条属性（可写入地址），切换节点或改选关系时自动清空。
-- `dialog` 是页面开着的对话框：`class`（新建对象类型）、`relation`（新建关系类型），仅公开状态、不写入地址，页头两个命令打开的就是它；关闭对话框（设回 `null`）或直接设 `dialog: "relation"`（未同批传入 `connectFrom`/`connectTo`）时会自动清掉残留的连线端点，保证新建关系表单干净可填。
+- `selectedNode` 是选中的对象类型（主键是类的 API 名），`selectedEdge` 是选中的关系类型（主键是关系名）；两者互斥（后选中的会覆盖清空前一个，改选关系时同时清空 `selectedAttribute`），点画布空白处或按 Esc 清空选中。只有选中节点时才展开右侧检查栏，单击边保持全幅画布并通过画布顶栏的编辑、删除按钮操作。地址里带 `?selectedNode=<类>` 或 `?selectedEdge=<关系名>` 就是直接打开并选中它；由本体图谱跳转进入时附带 `back=playground`，页头显示「返回图谱」按钮。
+- 属性列表（`attributes`）直接按当前 `selectedNode` 的主键加载，不另存中转状态；`selectedAttribute` 指向其中一条属性（可写入地址），切换节点或改选关系时自动清空；新建属性通过独立弹窗（`dialog: "attribute"` + `attributeCreate`）完成，固定所属对象类型。
+- `dialog` 是页面开着的对话框：`class`（新建对象类型）、`editClass`（编辑对象类型）、`relation`（新建关系类型）、`editRelation`（编辑关系类型）、`attribute`（新建属性），仅公开状态、不写入地址；新建对象类型或关系类型成功后自动选中新建节点或新建边；关闭对话框（设回 `null`）或直接设 `dialog: "relation"`（未同批传入 `connectFrom`/`connectTo`）时会自动清掉残留的连线端点。
 - 回答“现在选了什么、在改什么”时，先看这几个状态，再用本页声明的读取（`nodeHeader`、`edgeHeader`、`attributes` 及对应表单）取当前字段，不要凭记忆。
 
 ## 填写表单（经保存后才写入）
@@ -28,5 +28,4 @@
 
 ## 跳转
 
-- 选中一个类时可以“浏览数据”：打开 `/browser/data/<类的 API 名>`。
-- 本体图谱页 `/ontology/playground` 选中某个类或关系后“去建模”会带着它打开本页（`/ontology/visual-modeling?selectedNode=<类>` 或 `/ontology/visual-modeling?selectedEdge=<关系名>`）。
+- 本体图谱页 `/ontology/playground` 选中某个类或关系后“去建模”会带着它与 `back=playground` 打开本页（`/ontology/visual-modeling?selectedNode=<类>&back=playground` 或 `/ontology/visual-modeling?selectedEdge=<关系名>&back=playground`），页头此时显示「返回图谱」按钮。

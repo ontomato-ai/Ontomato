@@ -1317,6 +1317,7 @@ export const platformRelationKindDeclarationSchema = z.object({
   from: identifier,
   to: z.union([identifier, z.array(identifier)]),
   labelKey: identifier,
+  label: z.string().min(1).optional(),
   derived: z.boolean(),
   owner: identifier,
 }).strict();

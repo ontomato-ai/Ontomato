@@ -1,6 +1,7 @@
 <!--
   Agents catalog panel: full-width searchable ObjectList table backed by platform:AgentDefinition.list,
-  plus a centered creation dialog for minimal required fields (/name and optional /description).
+  rendering 28px agent avatars in the name cell, plus a centered creation dialog gated by the owner's
+  createForm admission rule.
   Shared by Ontology Manager (/ontology/agents -> /ontology/agents/detail) and
   Agent Platform (/agents/settings -> /agents/settings/detail) via the entry-wired `detailPath` input.
 -->
@@ -26,9 +27,37 @@
     flex: 1 1 auto;
     min-height: 0;
   }
+  .agents-new-wrap {
+    display: inline-flex;
+  }
   .agents-btn-icon {
     margin-inline-end: 6px;
     flex-shrink: 0;
+  }
+  .agents-name-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .agents-avatar {
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    box-sizing: border-box;
+    border-radius: 30%;
+    color: var(--sdk-color-primary);
+  }
+  .agents-name-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--font-medium);
+    color: var(--sdk-text-color-primary);
   }
   .agents-forbidden {
     margin: 0;
@@ -67,19 +96,86 @@
             <path d="M8 16H3v5" />
           </svg>
         </sdk-button>
-        <sdk-button v-if="listStatus !== 'forbidden'" type="primary" :disabled="creating" @click="startCreate">
-          <svg class="agents-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 5v14" />
-            <path d="M5 12h14" />
-          </svg>
-          <span>{{ t("agents.new") }}</span>
-        </sdk-button>
+        <sdk-tooltip
+          v-if="listStatus !== 'forbidden'"
+          :disabled="!createUnavailableReason"
+          :content="createUnavailableReason"
+          placement="bottom"
+        >
+          <span class="agents-new-wrap" :title="createUnavailableReason || undefined">
+            <sdk-button type="primary" :disabled="createButtonDisabled" @click="startCreate">
+              <svg class="agents-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+              </svg>
+              <span>{{ t("agents.new") }}</span>
+            </sdk-button>
+          </span>
+        </sdk-tooltip>
       </template>
     </page-header>
 
     <p v-if="listStatus === 'forbidden'" class="agents-forbidden" role="alert">{{ t("agents.accessDenied") }}</p>
     <div v-show="listStatus !== 'forbidden'" class="agents-catalog">
-      <projection slot="list" class="agents-list-slot" @choose="openDetail"></projection>
+      <projection slot="list" class="agents-list-slot" @choose="openDetail">
+        <template #cell-agentTitle="{ value, displayText }">
+          <span class="agents-name-cell" :title="agentCellName(value, displayText)">
+            <span class="agents-avatar" :style="avatarStyle(agentCellIcon(value))" aria-hidden="true">
+              <component :is="avatarAppIcon(agentCellIcon(value))" v-if="avatarAppIcon(agentCellIcon(value))" :size="17" />
+              <svg
+                v-else-if="avatarSvgKey(agentCellIcon(value)) === 'TrendingUp'"
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M16 7h6v6" />
+                <path d="m22 7-8.5 8.5-5-5L2 17" />
+              </svg>
+              <svg
+                v-else-if="avatarSvgKey(agentCellIcon(value)) === 'Target'"
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="6" />
+                <circle cx="12" cy="12" r="2" />
+              </svg>
+              <svg
+                v-else
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 18V5" />
+                <path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" />
+                <path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" />
+                <path d="M17.997 5.125a4 4 0 0 1 2.526 5.77" />
+                <path d="M18 18a4 4 0 0 0 2-7.464" />
+                <path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" />
+                <path d="M6 18a4 4 0 0 1-2-7.464" />
+                <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
+              </svg>
+            </span>
+            <span class="agents-name-text">{{ agentCellName(value, displayText) }}</span>
+          </span>
+        </template>
+      </projection>
     </div>
 
     <sdk-dialog

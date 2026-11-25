@@ -48,18 +48,19 @@
       }
     },
     "members": {
-      "governance": {
-        "component": "ConversationEntry",
-        "agent": {
-          "kind": "preset",
-          "agentKind": "knowledge-governance"
+      "domainCount": {
+        "component": "ObjectCount",
+        "type": "platform:BusinessKnowledge",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {}
+          }
         },
-        "prefillKey": "panel.governancePrefill",
         "config": {
-          "labelKey": "panel.governance",
-          "icon": "book-open"
+          "appearance": "badge"
         },
-        "id": "builtin-product-6fbcf139-2ed6-46d3-919f-f06e4ed7bb58"
+        "id": "builtin-product-0e3c78d1-5b9a-4e82-9d63-41f8c2a6b701"
       },
       "tabs": {
         "component": "SegmentedControl",
@@ -105,8 +106,7 @@
           "statusStyle": "dot",
           "tagsField": "knowledgeTags",
           "fallbackToFirst": true,
-          "pageSize": 20,
-          "pagination": "pages",
+          "showFooter": false,
           "subtitleLines": 2,
           "searchable": false,
           "emptyText": "panel.empty",
@@ -210,9 +210,7 @@
       "zh-CN": {
         "panel.name": "业务知识",
         "panel.description": "维护业务规则与术语，审核待确认的知识",
-        "panel.refresh": "刷新",
         "panel.governance": "业务知识治理",
-        "panel.governancePrefill": "请帮我治理当前的业务知识，先从待审核的条目开始。",
         "panel.add": "添加知识",
         "panel.editTitle": "编辑知识",
         "panel.searchPlaceholder": "搜索标题、内容、标签，多个词用空格分隔",
@@ -228,9 +226,7 @@
       "en": {
         "panel.name": "Business knowledge",
         "panel.description": "Maintain business rules and terminology, and review pending knowledge",
-        "panel.refresh": "Refresh",
         "panel.governance": "Knowledge Governance",
-        "panel.governancePrefill": "Help me govern the business knowledge on this page, starting with the entries pending review.",
         "panel.add": "Add Knowledge",
         "panel.editTitle": "Edit Knowledge",
         "panel.searchPlaceholder": "Search titles, content and tags; separate terms with spaces",

@@ -210,6 +210,7 @@ type ListedPanelSummary = {
   updatedAt: string;
   editable: boolean;
   template?: boolean;
+  memberCount?: number;
 };
 
 function panelSourceEntries(panel: CurrentPanelRecord): { path: string; content: string }[] {
@@ -261,6 +262,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
         template: panelWord(isTemplate ? "templateYes" : "templateNo"),
         isTemplate,
         editable: editableLabel,
+        memberCount: item.memberCount ?? 0,
         revision: item.revision,
         updatedAt: item.updatedAt,
       },
@@ -270,6 +272,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
         visibility: catalogWord("visibility"),
         template: panelWord("templateKind"),
         editable: panelWord("access"),
+        memberCount: catalogWord("members"),
         revision: panelWord("revision"),
         updatedAt: appWord("updatedAt"),
       },
@@ -1028,10 +1031,17 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
   async function describeForm(id: string, values: Record<string, unknown>, editable: boolean, revision?: number, chart = false) {
     const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform");
     if (chart) return formResult("projection", id, fields, values, revision);
+    const schema = directProjectionPortsSchema.shape;
+    if (revision === undefined && values.componentId === METRIC_CHART_COMPONENT) {
+      return formResult("projection", id, [
+        ...fields,
+        field("/componentId", schema.componentId, { kind: "text" }, { labelKey: "component", readOnly: true }),
+        field("/data", schema.data, { kind: "code", language: "json" }, { readOnly: true }),
+      ], values, revision);
+    }
     const components = await readAuthorComponentCatalogue(owner);
     const candidates = [...components].filter(([key, item]) => key !== METRIC_CHART_COMPONENT && item.declaration.data !== undefined);
     const component = typeof values.componentId === "string" ? components.get(values.componentId)?.declaration : undefined;
-    const schema = directProjectionPortsSchema.shape;
     return formResult("projection", id, [
       ...fields,
       field("/componentId", schema.componentId, {

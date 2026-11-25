@@ -154,7 +154,7 @@
                 "kind": "local",
                 "id": "review",
                 "labelKey": "card.review",
-                "primary": true,
+                "tone": "primary",
                 "when": {
                   "field": "pauseCode",
                   "equals": "definition_changed"
@@ -179,7 +179,7 @@
                 "kind": "local",
                 "id": "delete",
                 "labelKey": "action.delete",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }

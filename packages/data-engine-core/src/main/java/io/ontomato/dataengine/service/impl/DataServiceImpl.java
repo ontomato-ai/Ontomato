@@ -559,7 +559,14 @@ public class DataServiceImpl implements DataService {
 		}
 
 		FieldPermission fieldPermission = permission.getFieldPermissionByClassName(className);
-		if (permission.isFullData() || fieldPermission != null && !fieldPermission.isEmpty()) {
+		List<String> readableFields = withBizzKey ? List.of() : attributes.stream()
+				.map(attribute -> (String) attribute.get("name"))
+				.filter(field -> QueryPermissions.allowed(permission, className, field, QueryPermissions.Use.DETAIL))
+				.toList();
+		boolean canRead = withBizzKey
+				? permission.isFullData() || fieldPermission != null && !fieldPermission.isEmpty()
+				: !readableFields.isEmpty();
+		if (canRead) {
 			// Query details by page
 			String sessionId = UUID.randomUUID().toString();
 			JSONArray dsls = new JSONArray();
@@ -624,16 +631,14 @@ public class DataServiceImpl implements DataService {
                 io.ontomato.dataengine.service.QuerySourceAnalysis.fromDsl(dsl, classDefs), permission);
             ret.put("data", rows);
             if (!withBizzKey) {
-                ret.put("readable_fields", attributes.stream().map(attr -> (String) attr.get("name"))
-                        .filter(field -> QueryPermissions.allowed(permission, className, field, QueryPermissions.Use.DETAIL))
-                        .toList());
+                ret.put("readable_fields", readableFields);
             }
     		ret.put("total_count", totalCount);
     		ret.put("total_page", totalPage);
     		ret.put("cur_page", pageNum);
     		ret.put("success", true);
 		} else {
-			ret.put("code", "DATA_PERMISSION_DENIED");
+			ret.put("code", withBizzKey ? "DATA_PERMISSION_DENIED" : "NO_VISIBLE_FIELDS");
 			ret.put("message", langService.get(lang, "Data.dataPermission.noPermission"));
 			ret.put("success", false);
 		}

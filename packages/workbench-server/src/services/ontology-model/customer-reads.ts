@@ -14,10 +14,14 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyNode } from "@ontomato/contracts/platform-ontology";
 import { config } from "../../config/application";
+import { tApp } from "../../i18n";
+import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+
+const logger = createLogger("ontology:customer-reads");
 
 /** One class attribute from the Java model catalog (GET /ontology/model/attributes). */
 const attributeOptionSchema = z.object({
@@ -57,7 +61,7 @@ type ClassRelationship = z.infer<typeof classRelationshipsSchema>[number];
 /** POST /data/getWholeClassDataByPage: the class's rows with the real total, or the owner's refusal. */
 const classPageSchema = z.union([
   z.object({ success: z.literal(true), data: z.array(z.record(z.unknown())), total_count: z.number(), readable_fields: z.array(z.string()) }),
-  z.object({ success: z.literal(false), code: z.literal("DATA_PERMISSION_DENIED"), message: z.string() }),
+  z.object({ success: z.literal(false), code: z.literal("NO_VISIBLE_FIELDS"), message: z.string() }),
 ]);
 
 /** POST /data/queryInfoByNode: the object's attribute values, or the owner's reason. */
@@ -625,15 +629,19 @@ export function createCustomerOntologyReadAdapter(
     try {
       const response = await backendPost("customer-neighbor-edges", `${baseUrl}/dsl/executeV1`, dsl, options);
       const answer = dslAnswerSchema.parse(JSON.parse(response.text));
-      return "error" in answer
-        ? { ok: false, status: "failed", reason: answer.error }
-        : { ok: true, rows: answer.data[0].answer };
+      if ("error" in answer) {
+        logger.warn(`Relationship read failed: ${answer.error}`);
+        return { ok: false, status: "failed", reason: tApp("panels.objectDetail.relationReadFailed") };
+      }
+      return { ok: true, rows: answer.data[0].answer };
     } catch (error) {
       if (error instanceof HttpError && (error.status === 401 || error.status === 403))
         return { ok: false, status: "refused", reason: error.message };
       if (error instanceof HttpError || error instanceof BackendUnavailableError
-        || error instanceof z.ZodError || error instanceof SyntaxError)
-        return { ok: false, status: "failed", reason: error.message };
+        || error instanceof z.ZodError || error instanceof SyntaxError) {
+        logger.warn("Relationship read failed", error);
+        return { ok: false, status: "failed", reason: tApp("panels.objectDetail.relationReadFailed") };
+      }
       throw error;
     }
   }
@@ -649,9 +657,9 @@ export function createCustomerOntologyReadAdapter(
         options,
       );
       const answer = classPageSchema.parse(JSON.parse(response.text));
-      if (!answer.success) throw new HttpError(403, answer.message, "CUSTOMER_DATA_PERMISSION");
+      if (!answer.success) throw new HttpError(422, answer.message, answer.code);
       if (answer.data.length && !answer.readable_fields.includes(primaryKeyName(attributes)))
-        throw new HttpError(403, "The object's primary key is unreadable", "CUSTOMER_DATA_PERMISSION");
+        throw new HttpError(422, "The object's primary key is unreadable", "NO_READABLE_OBJECT_KEY");
       const readable = new Set(answer.readable_fields);
       const fieldLabels = Object.fromEntries(attributes
         .filter(attribute => attribute.enable && readable.has(attribute.name) && !ARRAY_TYPES.has(attribute.type.toLowerCase()))

@@ -270,14 +270,17 @@ workflow_run_id = identity.get("workflowRunId")  # 仅有唯一归属时才有�
 
 所以：**做业务判断读快照，业务授权由平台按角色、范围和目标可读性判断。** 不要因为「能读到 principalId」就以为可以跳过 `submissionCriteria`——那是两回事。
 
-### 4.4 保存草稿，生成解释，再发布
+### 4.4 三步闭环：保存草稿 → 沙箱试跑 → 发布
 
-1. 用 `node wf-client.mjs action-save ./actions.json` 保存上面的 `PENDING_REVIEW` 动作。客户端接受单个对象或数组，逐条调用 `POST /action/save`，保存立刻返回、代码解读在后台异步生成。**新建动作时严禁自编 `id`（以及 `function.id`），省略 `id` 由服务端生成并返回**；仅修改已有草稿时才带 `id`。记下服务端返回的动作 `id`（例如 `<actionId>`），后续用于填入 `workflow.json` 的 `steps[].actionId`。
-2. 存完不要立刻发布（后台解读未落库时发布会报 `ACTION_EXPLANATION_REQUIRED`）。先用 `node wf-client.mjs action-get <actionId>` 确认 `codeSegments` 非空且带当前代码的 `codeHash` 与 `explanationVersion`；若尚未生成，可稍等几秒再查，或运行 `node wf-client.mjs action-reexplain '{"ids":["<actionId>"],"missingOnly":true}'`（`POST /action/re-explain`）同步补齐解读（检查外层 `success` 与 `data.failureCount=0`，失败就停在草稿读 `data.failures[].message`）。
-3. 审阅程序与服务器生成的解释无误后，用 `node wf-client.mjs action-publish <actionId>`（`POST /action/setStatus`，`{"ids":["<actionId>"],"status":"PUBLISHED"}`）发布；不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
-4. 用 `node wf-client.mjs action-get <actionId>` 核对状态已为 `PUBLISHED`、目标和提交条件正确，再把服务端返回的 `id` 编入流程 `steps[].actionId` 并激活。
+1. **保存草稿**：用 `node wf-client.mjs action-save ./actions.json` 保存 `PENDING_REVIEW` 动作。客户端接受单个对象或数组，逐条调用 `POST /action/save`，不要求试跑、保存立刻返回，代码解读在后台异步生成。**新建动作时严禁自编 `id`（以及 `function.id`），省略 `id` 由服务端生成并返回**；仅修改已有草稿时才带 `id`。记下服务端返回的动作 `id`（例如 `<actionId>`），后续用于填入 `workflow.json` 的 `steps[].actionId`。
+2. **沙箱试跑（唯一对外入口）**：用 `node wf-client.mjs action-trial <actionId> '{"sample":{"objDatas":[{"className":"<技术类名>","rows":[{"id":"sample-1"}]}],"relDatas":[],"vectorDatas":[]},"parameters":{"<参数名>":"<试跑实参值>"}}'` 调 `POST /action/trial` 试跑已保存动作（支持 `PENDING_REVIEW`）。
+   - `sample` 可省略（默认空样例，仅允许纯计算 Python，禁止任何数据读写、绝不落入实库）；有目标类或读写类的动作须在 `sample.objDatas` 中提供对应类的样例行。
+   - 服务端一次走完开业务库短表沙箱 → 载入样例 → 校验前置条件并执行 → 按规范摘要 `(domainId, codeHash, target {className, keyParameter}, parameters [{name, type, classNames}])` 记录回执 → 自动关闭沙箱。改代码、改目标类/主键参数、改参数声明结构均会使旧试跑失效并须重跑；仅换试跑实参值不失效。
+   - 试跑返回完整 JSON（含 `trialId`、`digest`、`status`、`passed`、`result`、`error`、`spendTime`、`testedAt`、`trialStatus`、`trialStatusLabel`）；`passed=false` 时命令以非零码退出。
+3. **核对解读与试跑后发布**：先用 `node wf-client.mjs action-get <actionId>` 确认两件事——`codeSegments` 非空且带当前代码的 `codeHash` 与 `explanationVersion`，且 `trialStatus` 为 `"passed"`（同时返回 `lastTrialAt`、`lastTrialError`、`publishBlockedCode`、`publishBlockedReason`）。若解读尚未生成，稍等几秒再查，或运行 `node wf-client.mjs action-reexplain '{"ids":["<actionId>"],"missingOnly":true}'` 同步补齐。审阅无误后调 `node wf-client.mjs action-publish <actionId>`（`POST /action/setStatus`，`{"ids":["<actionId>"],"status":"PUBLISHED"}`）；不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
+4. **编入流程**：用 `node wf-client.mjs action-get <actionId>` 核对状态已为 `PUBLISHED`、目标和提交条件正确，再把服务端返回的 `id` 编入流程 `steps[].actionId` 并激活。
 
-不要把缺解释的骨架直接发布为 `PUBLISHED`，也不要自行编造解释、哈希或版本号。
+不要把缺解释或未试跑通过的草稿直接发布为 `PUBLISHED`，也不要自行编造解释、哈希或版本号。
 
 ## 第 5 步：存流程草稿
 
@@ -427,6 +430,10 @@ node wf-client.mjs dsl '{"problem":"查运行对象","answer":{"steps":[{"graph"
 | `Action.publishedIsFrozen` | 想改已发布动作的代码；新建动作代替 |
 | `Precondition failed: ...` 或你的 `message` | 单据业务条件不满足（阶段或状态） |
 | `Function.notWrite` | `operation` 不是 `OPERATION_WRITE` |
+| `ACTION_EXPLANATION_REQUIRED` | 发布时后台代码解读尚未生成或已过期；等待几秒或调 `action-reexplain` 后重试 |
+| `ACTION_TRIAL_REQUIRED` | 从未试跑，或改代码/目标类/参数结构后未重跑；先调 `action-trial` |
+| `ACTION_TRIAL_FAILED` | 当前版本最近一次试跑失败；查 `lastTrialError` / 试跑返回 `error` 修复后重跑再发布 |
+| `ACTION_TRIAL_INVALID` / `ACTION_TRIAL_FORBIDDEN` / `ACTION_TRIAL_SANDBOX_UNAVAILABLE` | 试跑入参不合法 / 样例类越权或无动作执行权限 / 业务库沙箱不可用 |
 | workflow save `ClassCastException`（旧版本） | 已修复；若仍出现，说明后端不是当前分支 |
 
 ## 不要做的事

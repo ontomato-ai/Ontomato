@@ -9,8 +9,8 @@
 ## 页面现在显示什么
 
 - **单行页头**（`<page-header>`）：
-  - **查看态**：左侧「返回面板」（跳 `/ontology/panels`）+ 面板标题与可见性状态（`headerTitle`，`ObjectHeader`）；右侧主操作「编辑」（仅可编辑且非不可用时显示）+「更多」菜单（复制、另存为模板、从模板创建、域共享与授权、红色语义「删除」）；不可用面板直接展示红色「删除」按钮。
-  - **编辑态**：右侧换为「取消」与平台草稿条（未保存提示、放弃、主按钮「保存」，由 `usePanelFormDraft("form")` 驱动）；点击「取消」、按 Escape 或离开页面时若有未保存改动，都会经过平台未保存确认（`confirmLeaveUnsaved`）。
+  - **查看态**：左侧「返回面板」（跳 `/ontology/panels`）+ 面板标题与可见性状态（`headerTitle`，`ObjectHeader`）；右侧提供「设为个人首页」（`setAsHome.setAsHome`，对应 `productPanels.setAsHome`）、主操作「编辑」（仅可编辑且非不可用时显示）+「更多」菜单（复制、另存为模板、从模板创建、域共享与授权、红色语义「删除」）；不可用面板直接展示红色「删除」按钮。
+  - **编辑态**：右侧收口为单一退出动作「取消」与主按钮「保存」（由 `usePanelFormDraft("form")` 与 `formBack` 驱动，不再并排出现取消与放弃）；点击「取消」、按 Escape 或离开页面时若有未保存改动，统一经过一次平台未保存确认（`confirmLeaveUnsaved`）。
 - **查看态六个页签**（`tab`）：
   1. **概览**（`overview`）：`overviewSummary`（`ObjectSummary`）展示 ID、名称、说明、所属人、共享范围、模板用途、权限、修订号、创建/更新时间与所属类。
   2. **源码**（`source`）：`sourceTree`（`ObjectTree`，读法 `sourceFiles`）列出 `panel.html`、`panel.mjs`、`panel.css`、`recipes.md`、`messages.json`、`manifest.json`、`theme.json`，联动 `sourceViewer`（`ObjectTextReader`，读法 `sourceFile`）只读查看当前文件（`sourceFile` 状态）。
@@ -21,7 +21,7 @@
   6. **预览**（`preview`）：通过动态成员 `preview`（绑定 `previewTarget`）按需在原位挂载当前面板；仅在查看态、非不可用且处于 `preview` 页签时挂载，切走即卸载。
 - **不可用面板诊断视图**：当属主返回 `unavailable: true` 时，原位展示警告横幅与 `unavailableSummary`（`id`、`unavailableReason`、`revision`、`objectType`），不可进入编辑态，有删除权与修订号时可通过 `deletePanel.delete` 确认删除并返回目录。
 - **整宽编辑态**（`detailMode: "edit"`）：
-  - 当 `/manifest/members` 可编辑时，上方提供候选成员选择器（`memberProjectionPicker` / `memberPanelPicker`）用于搜索已有投影或面板并写入 `/manifest/members`。
+  - 当 `/manifest/members` 可编辑时，上方提供候选成员选择器（`memberProjectionPicker` / `memberPanelPicker`）与可视化成员布局区（支持主/侧栏或网格模式、列数/侧栏宽度、间距，以及逐项上移、下移、切换分栏/列宽与移除，并可按需将可视化布局同步到 HTML，同时不覆盖任意自写 Vue 源码）。
   - 下方整宽 `ObjectForm`（成员 `form`，数据读法 `form`，保存操作 `form.save` 对应 `platform:ProductPanel.save`，底部动作条隐藏改由页头驱动），完整支持编辑名称、说明、模板标记、HTML、脚本、样式、技能文档、多语言消息、状态与成员声明、主题等全部字段。
 
 ## 公开状态与地址

@@ -155,22 +155,24 @@ it("shows a page kept within its application as it was left: its module not run 
     const summary = await shownPanel(element, tasks);
     await vi.waitFor(() => expect(shown(tasks)).toBe(false));
 
-    // Back by its bare address: the same panel is shown at once, at the state it was left at — but it reads nothing
-    // until its relation and its definitions have been checked.
+    // Return to the same instance after approval of the now-visible entrance. The definition check still gates reads.
     let release!: () => void;
     snapshotGate = new Promise(resolve => (release = resolve));
     const recordReads = () => reads(sent, "record").filter(request => (request.body as Read).inputs.task?.primaryKey === task.id).length;
     const readsBefore = recordReads();
+    const taskEntrances = () => sent.filter(request => request.path === "/api/product-panels/application-entry"
+      && new URLSearchParams(request.search).get("path") === at("tasks")).length;
+    const entrancesBefore = taskEntrances();
     await router.push(at("tasks"));
-    await nextTick();
-    expect(shown(tasks)).toBe(true);
-    expect(shown(summary)).toBe(false);
+    await vi.waitFor(() => {
+      expect(shown(tasks)).toBe(true);
+      expect(shown(summary)).toBe(false);
+    });
     await vi.waitFor(() => {
       expect(router.currentRoute.value.path).toBe(at("tasks"));
       expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({ selectedTask: task.id });
     });
-    // Its relation is asked of Java again, by the use relation it was opened for.
-    await vi.waitFor(() => expect(sent.filter(request => request.path.endsWith("/resolve-entry") && request.search.includes("useId="))).toHaveLength(1));
+    expect(taskEntrances()).toBe(entrancesBefore + 1);
     expect(recordReads()).toBe(readsBefore);
     expect(reopened()).toBe(0);
 

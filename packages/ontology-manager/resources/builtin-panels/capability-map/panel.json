@@ -550,6 +550,33 @@
         },
         "id": "builtin-product-aa68c86d-e520-4ab4-bcef-33a48a295e9b"
       },
+      "searchResults": {
+        "component": "ObjectList",
+        "name": "Readable node search matches",
+        "description": "Readable objects across all four ontology layers matching the search keyword by name or description.",
+        "type": "platform:OntologyType",
+        "data": {
+          "objects": {
+            "read": "objects",
+            "params": {
+              "type": {
+                "literal": "platform:OntologyType"
+              }
+            }
+          }
+        },
+        "state": {
+          "search": "query"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showFooter": false,
+          "pageSize": 20,
+          "emptyText": "cm.searchNoMatch"
+        },
+        "id": "builtin-product-8c6d2c1e-5a7b-4f83-9c12-3d9a6f4b2e10"
+      },
       "userPicker": {
         "component": "ObjectList",
         "name": "Starting user",
@@ -588,9 +615,13 @@
         "cm.viewLabel": "Type view",
         "cm.viewGraph": "Graph",
         "cm.viewList": "By layer",
-        "cm.searchType": "Highlight drawn type nodes",
-        "cm.searchInstance": "Highlight drawn nodes",
-        "cm.clearSearch": "Clear",
+        "cm.searchType": "Search types by name or description",
+        "cm.searchInstance": "Search readable nodes by name or description",
+        "cm.searchMatchesTitle": "Search matches ({count})",
+        "cm.searchMatchesHint": "Pick a match to collapse unrelated nodes and focus its one-hop neighbors.",
+        "cm.searchNoMatch": "No readable node matches this query.",
+        "cm.showMatches": "Matches ({count})",
+        "cm.hideMatches": "Hide",
         "cm.kindFilter": "Relation kinds",
         "cm.kindFilterActive": "Relation kinds ({count})",
         "cm.kindFilterSearch": "Filter relation kinds…",
@@ -663,9 +694,13 @@
         "cm.viewLabel": "类型视图",
         "cm.viewGraph": "图形",
         "cm.viewList": "按层分组",
-        "cm.searchType": "高亮已画出的类型节点",
-        "cm.searchInstance": "高亮已画出的节点",
-        "cm.clearSearch": "清空",
+        "cm.searchType": "按名称或说明搜索类型",
+        "cm.searchInstance": "按名称或说明搜索可读节点",
+        "cm.searchMatchesTitle": "搜索命中（{count}）",
+        "cm.searchMatchesHint": "选择命中节点以收起无关节点，聚焦该节点及其一跳邻居。",
+        "cm.searchNoMatch": "没有匹配的可读节点。",
+        "cm.showMatches": "命中结果（{count}）",
+        "cm.hideMatches": "收起",
         "cm.kindFilter": "关系种类",
         "cm.kindFilterActive": "关系种类（{count}）",
         "cm.kindFilterSearch": "筛选关系种类…",

@@ -208,6 +208,8 @@ function agentRecord(agent: MockAgent) {
     fields: {
       name: agent.name,
       description: agent.description,
+      icon: "",
+      agentTitle: [agent.name, ""],
       enabled: agent.enabled ? "Enabled" : "Disabled",
       category: categoryLabel[agent.category],
       ...(domainShared !== undefined && { domainShared }),
@@ -875,7 +877,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     }
     expect(Object.keys(catalogSource.manifest.state).sort()).toEqual(["creating", "detailPath", "search"]);
     expect(catalogSource.manifest.state.search.deepLink).toBe(true);
-    expect(catalogSource.manifest.state.creating.deepLink).toBe(false);
+    expect(catalogSource.manifest.state.creating.deepLink).toBe(true);
     expect(catalogSource.manifest.state.detailPath.external).toBe(true);
     expect(Object.keys(detailSource.manifest.state).sort()).toEqual([
       "catalogPath",
@@ -1121,10 +1123,10 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Sales Analyst");
       }, { timeout: 5000 });
 
-      // View class button is present in ontology manager entry.
+      // View class button is omitted from the editor header in both entries (AG-13).
       const viewClassBtn = [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
         .find((btn) => btn.textContent?.trim() === "View class");
-      expect(viewClassBtn).toBeTruthy();
+      expect(viewClassBtn).toBeUndefined();
 
       // Delete custom agent -> returns to /ontology/agents.
       const deleteBtn = [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]

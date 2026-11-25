@@ -24,14 +24,12 @@ import {
 } from "@ontomato/ontology-manager/clients";
 import { contextProducts, type ContextProducts } from "./context-products";
 import type { SdkEdition } from "./edition";
-import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
 import type {ProductNavigationTarget} from '@ontomato/contracts/product-page-state';
 import type {AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import {connectAppBridge,expandHostPageComposer,type PanelBridgeHost} from './bridge';
 
 /** What an app gets from the platform shell it runs in. */
 export interface AppContext {
-  subscribe(target:ProductSubscriptionTarget,effect:(event:ProductSubscriptionEvent)=>void,onError?:(error:Error)=>void):Promise<()=>void>;
   /** Mount an existing asset through the shell runtime; dispose when the container is removed. Live apps only. */
   mountProductAsset(element:HTMLElement,assetId:string):()=>void;
   readonly executionContext: AppExecutionContext;
@@ -192,14 +190,9 @@ export function createContext(host: AppHost, appearance: ContextAppearance): App
   const stopInsets = host.subscribeFrameInsets(window, ({ bottom }) =>
     document.documentElement.style.setProperty("--pane-dock-space", `${bottom}px`),
   );
-  const productSubscriptions=new Set<()=>void>();
-  let closed=false;
   // The shell outlives this frame: stop its listeners when the frame goes away, not when the page is only cached.
   window.addEventListener("pagehide", (event) => {
     if (event.persisted) return;
-    closed=true;
-    for(const dispose of productSubscriptions)dispose();
-    productSubscriptions.clear();
     stop();
     stopInsets();
   });
@@ -241,13 +234,6 @@ export function createContext(host: AppHost, appearance: ContextAppearance): App
       return result;
     }},
     products,
-    async subscribe(target,effect,onError){
-      if(closed)throw new Error('App context has been disposed');
-      const stopSubscription=await products.subscribe(target,effect,onError);
-      if(closed){stopSubscription();throw new Error('App context has been disposed');}
-      const dispose=()=>{productSubscriptions.delete(dispose);stopSubscription();};
-      productSubscriptions.add(dispose);return dispose;
-    },
     navigate: ((target:string|ProductNavigationTarget)=>{
       if(typeof target==='string')return host.navigate(target);
       if(!host.navigateProduct)throw new Error('This platform does not support typed product navigation');

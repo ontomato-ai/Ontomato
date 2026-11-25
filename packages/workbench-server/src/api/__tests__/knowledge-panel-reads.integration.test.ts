@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -325,7 +326,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("knowledge-reader");
     res.json({ ids: [...resourceIds] });
   });
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== "app-knowledge") { next(); return; }
     // Java admits the entry to the outsider too: what refuses them is the product's use Grant.
     expect(["knowledge-reader", "outsider"]).toContain(req.header("tk"));
@@ -405,7 +406,7 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
   const read = (member: string, dataName: string, inputs: object, locale = "en") =>
     request("POST", "product-panels/read", { source, memberPath: [{ member }], dataName, inputs }, locale);
 
-  // query: search (with highlights & title-hit ranking), status filter, and cursor pagination.
+  // query: search (with highlights & title-hit ranking) and status filter returning the complete matching list without cursor pagination (BK-02).
   const searched = await (await read("list", "rows", { search: "ORDERS rule" })).json();
   expect(searched).toEqual({
     status: "ready",
@@ -445,19 +446,20 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
     },
   });
 
-  const page1 = await (await read("list", "rows", { status: "approved", size: 1 })).json();
-  expect(page1).toMatchObject({
+  const approvedFull = await (await read("list", "rows", { status: "approved", size: 1 })).json();
+  expect(approvedFull).toMatchObject({
     status: "ready",
-    value: { rows: [{ primaryKey: "k-1" }], nextCursor: "1", total: 2 },
+    value: { rows: [{ primaryKey: "k-1" }, { primaryKey: "k-4" }], total: 2 },
   });
-  expect(page1.value.rows[0].highlights).toBeUndefined();
+  expect(approvedFull.value.nextCursor).toBeUndefined();
+  expect(approvedFull.value.rows[0].highlights).toBeUndefined();
 
-  const page2 = await (await read("list", "rows", { status: "approved", cursor: "1", size: 1 })).json();
-  expect(page2).toMatchObject({
+  const approvedWithCursor = await (await read("list", "rows", { status: "approved", cursor: "1", size: 1 })).json();
+  expect(approvedWithCursor).toMatchObject({
     status: "ready",
-    value: { rows: [{ primaryKey: "k-4" }], total: 2 },
+    value: { rows: [{ primaryKey: "k-1" }, { primaryKey: "k-4" }], total: 2 },
   });
-  expect(page2.value.nextCursor).toBeUndefined();
+  expect(approvedWithCursor.value.nextCursor).toBeUndefined();
 
   // Clearing the panel's search state behaves the same as omitting the parameter.
   expect(await (await read("list", "rows", { search: null })).json()).toEqual(
@@ -663,7 +665,7 @@ it("rejects a forged member path, an undeclared operation and an unauthorized ta
     inputs: {},
   });
   expect(forgedRead.status).toBe(200);
-  expect(await forgedRead.json()).toEqual({ status: "forbidden" });
+  expect(await forgedRead.json()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
 
   const unlistedOperation = await intent("approve.unlisted");
   expect(unlistedOperation.status).toBe(422);

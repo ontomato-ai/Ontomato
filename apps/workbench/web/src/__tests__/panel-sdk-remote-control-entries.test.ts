@@ -523,18 +523,22 @@ describe("Item 2.1, 2.2 & 2.6: ObjectForm save gates, no binding.invoke fallback
     const harness = mountDirectPanel({
       manifest: {
         state: {
-          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTaskA: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTaskB: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
         },
         members: {
-          formA: { target: { projectionId: "form-a" }, inputs: { task: { state: "selectedTask" } } },
-          formB: { target: { projectionId: "form-b" }, inputs: { task: { state: "selectedTask" } } },
+          formA: { target: { projectionId: "form-a" }, inputs: { task: { state: "selectedTaskA" } } },
+          formB: { target: { projectionId: "form-b" }, inputs: { task: { state: "selectedTaskB" } } },
         },
       },
       projections: {
         "form-a": taskFormProjection("form-a"),
         "form-b": taskFormProjection("form-b"),
       },
-      initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: {
+        selectedTaskA: { className: SCHEDULED_TASK, primaryKey: "t-1" },
+        selectedTaskB: { className: SCHEDULED_TASK, primaryKey: "t-2" },
+      },
       read: async (req) => {
         if (req.operations) return ready({ save: platformSaveDescriptor(SCHEDULED_TASK) });
         return ready({

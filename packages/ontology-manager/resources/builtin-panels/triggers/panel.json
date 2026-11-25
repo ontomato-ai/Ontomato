@@ -182,7 +182,7 @@
                 "labelKey": "action.delete",
                 "icon": "trash-2",
                 "iconOnly": true,
-                "danger": true
+                "tone": "danger"
               }
             ]
           }

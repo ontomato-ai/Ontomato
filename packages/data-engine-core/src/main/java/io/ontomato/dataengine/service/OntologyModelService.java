@@ -60,7 +60,10 @@ public interface OntologyModelService {
 			Boolean businessKey, Boolean primaryKey) {
 	}
 
-	record AttributeUpdate(String showName, String attrDesc, Boolean enable, Boolean businessKey) {
+	record AttributeUpdate(String showName, String attrDesc, Boolean enable, Boolean businessKey, Boolean primaryKey) {
+		public AttributeUpdate(String showName, String attrDesc, Boolean enable, Boolean businessKey) {
+			this(showName, attrDesc, enable, businessKey, null);
+		}
 	}
 
 	record RelationshipCreate(String relationship, String fromclass, String toclass, String desc, String fromField,

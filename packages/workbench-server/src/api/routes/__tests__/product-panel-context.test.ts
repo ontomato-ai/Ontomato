@@ -2,15 +2,19 @@ import express from "express";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
+import { applicationEntryResolutionSchema } from "@ontomato/contracts/product-panels";
 import { protectedSkillRef } from "../../../core/skills/providers";
 import { HttpError } from "../../../utils/errors";
 
-const mocks = vi.hoisted(() => ({ panel: vi.fn(), snapshot: vi.fn(), member: vi.fn() }));
+const mocks = vi.hoisted(() => ({ panel: vi.fn(), snapshot: vi.fn(), open: vi.fn(), personal: vi.fn(), member: vi.fn() }));
 vi.mock("../../../services/product-panels/operations", () => ({ ownPanelSettings: vi.fn() }));
 vi.mock("../../../services/product-panels/current", () => ({ readCurrentPanelRecord: mocks.panel }));
 vi.mock("../../../services/product-panels/definition-stream", () => ({ requirePanelDefinitions: mocks.snapshot }));
-vi.mock("../../../services/skills/view", () => ({ readRegisteredPanelPageSkillContext: mocks.member }));
+vi.mock("../../../services/skills/view", () => ({ openedPanelPageSkillContext: mocks.member }));
+vi.mock("../../../services/product-panels/application-use", () => ({
+  requirePanelEntry: mocks.open,
+  personalEntry: mocks.personal,
+}));
 vi.mock("../../../utils/request-identity", async original => ({
   ...await original<typeof import("../../../utils/request-identity")>(),
   requireDomainId: () => "domain",
@@ -22,8 +26,13 @@ const owner = { domainId: "domain", userId: "caller" };
 const panel = { id: "P1", name: "Definition from owner", revision: 7 };
 const snapshot = { panel: { id: panel.id, revision: panel.revision }, projections: [] };
 const source = { kind: "application-use", applicationId: "app", useId: "use-1" };
-const menu = { pageKey: "ontology-agents", permissionCode: "analysis-agent" };
-const domain = { pageKey: "agent-directory", access: "domain-member" };
+const locator = { pageKey: "ontology-agents", permissionCode: "analysis-agent" };
+const entry = {
+  applicationId: source.applicationId,
+  use: { id: source.useId, pageKey: locator.pageKey, path: "/ontology/agents", panelId: panel.id,
+    access: { permissionCode: locator.permissionCode } },
+  menu: { singleEntry: true, groups: [], panelUses: [] },
+};
 let base: string;
 let server: Server;
 beforeAll(async () => {
@@ -35,7 +44,7 @@ beforeAll(async () => {
   app.use("/api/product-panels", productPanelsRouter);
   server = app.listen(0, "127.0.0.1");
   await new Promise<void>(resolve => server.once("listening", resolve));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/product-panels/${panel.id}`;
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/product-panels`;
 });
 afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
@@ -43,61 +52,49 @@ afterAll(async () => {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.panel.mockResolvedValue(panel);
-  mocks.snapshot.mockImplementation(async (_owner, _credentials, _id, readContext) => {
-    const pageSkillContext = await readContext?.(snapshot.panel);
-    return { ...snapshot, ...(pageSkillContext && { pageSkillContext }) };
-  });
+  mocks.snapshot.mockResolvedValue(snapshot);
+  mocks.open.mockResolvedValue(entry);
+  mocks.personal.mockResolvedValue(entry);
 });
-const read = (path: string, entrance: Record<string, string>) => fetch(base + path + "?" + new URLSearchParams({
-  applicationId: source.applicationId, useId: source.useId, ...entrance,
-}));
+const open = () => fetch(base + "/application-entry?path=%2Fontology%2Fagents");
 
-it.each([
-  { path: "", loaded: panel, readOwner: mocks.panel, response: { panel }, entrance: menu },
-  { path: "/snapshot", loaded: snapshot.panel, readOwner: mocks.snapshot, response: snapshot, entrance: domain },
-])("resolves $path from the caller and the already read owner response", async ({ path, loaded, readOwner, response, entrance }) => {
+it("passes the once-admitted entry to the skill resolver under the same viewer", async () => {
   const ref = protectedSkillRef("product-panels", owner.domainId, panel.id);
-  const pageSkillContext = { mode: "member", locator: entrance, member: { source, memberPath: [], ref } };
+  const pageSkillContext = { mode: "member", locator, entry: source, member: { source, memberPath: [], ref } };
   mocks.member.mockResolvedValue(pageSkillContext);
-  const result = await read(path, entrance);
+  const result = await open();
   expect(result.status).toBe(200);
-  const body = await result.json();
-  pageSkillContextSchema.parse(body.pageSkillContext);
-  expect(body).toEqual({ ...response, pageSkillContext });
-  expect(readOwner).toHaveBeenCalledTimes(1);
+  expect(applicationEntryResolutionSchema.parse(await result.json())).toEqual({ ...entry, pageSkillContext });
+  expect(mocks.open).toHaveBeenCalledTimes(1);
+  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({ token: "caller-token" }), { path: "/ontology/agents" });
   expect(mocks.member).toHaveBeenCalledTimes(1);
   expect(mocks.member).toHaveBeenCalledWith({
-    domainId: owner.domainId, userId: owner.userId, initiatorCredentials: expect.objectContaining({ token: "caller-token" }),
-  }, entrance, source, loaded, expect.objectContaining({ id: "product-panels", findByUse: expect.any(Function) }));
-  expect(mocks.member.mock.calls[0]![3]).toBe(loaded);
+    ...owner, initiatorCredentials: expect.objectContaining({ token: "caller-token" }),
+  }, entry);
+  expect(mocks.panel).not.toHaveBeenCalled();
+  expect(mocks.snapshot).not.toHaveBeenCalled();
 });
 
-it.each(["", "/snapshot"])("keeps %s unchanged without query and refuses malformed intent before reads", async path => {
-  expect(await (await fetch(base + path)).json()).toEqual(path ? snapshot : { panel });
+it.each(["", "/snapshot"])("keeps %s independent of the entrance and refuses old skill query keys", async path => {
+  expect(await (await fetch(`${base}/P1${path}`)).json()).toEqual(path ? snapshot : { panel });
+  expect(mocks.open).not.toHaveBeenCalled();
   expect(mocks.member).not.toHaveBeenCalled();
   mocks.panel.mockClear();
   mocks.snapshot.mockClear();
-  expect((await fetch(base + path + "?applicationId=app")).status).toBe(400);
-  expect((await read(path, { ...menu, ...domain })).status).toBe(400);
+  expect((await fetch(`${base}/P1${path}?applicationId=app&useId=use-1&permissionCode=analysis-agent&pageKey=ontology-agents`)).status).toBe(400);
   expect(mocks.panel).not.toHaveBeenCalled();
   expect(mocks.snapshot).not.toHaveBeenCalled();
   expect(mocks.member).not.toHaveBeenCalled();
 });
 
-it("returns member null on the same snapshot revision when the helper finds a normal mismatch", async () => {
-  const pageSkillContext = { mode: "member", locator: menu, member: null };
-  mocks.member.mockResolvedValue(pageSkillContext);
-  expect(await (await read("/snapshot", menu)).json()).toEqual({ ...snapshot, pageSkillContext });
-  expect(mocks.snapshot).toHaveBeenCalledTimes(1);
-  expect(mocks.panel).not.toHaveBeenCalled();
-});
-
-it("propagates owner denial and source failure through the original error boundary", async () => {
-  mocks.snapshot.mockRejectedValueOnce(new HttpError(403, "Panel unavailable", "FORBIDDEN"));
-  expect((await read("/snapshot", menu)).status).toBe(403);
+it("rejects an invalid opening and does not read entrance-only content after refusal", async () => {
+  expect((await fetch(base + "/application-entry?applicationId=app")).status).toBe(400);
+  expect(mocks.open).not.toHaveBeenCalled();
+  mocks.open.mockRejectedValueOnce(new HttpError(403, "Entry unavailable", "FORBIDDEN"));
+  expect((await open()).status).toBe(403);
   expect(mocks.member).not.toHaveBeenCalled();
   mocks.member.mockRejectedValueOnce(new HttpError(503, "Source unavailable", "DEPENDENCY_UNAVAILABLE"));
-  const failure = await read("", menu);
+  const failure = await open();
   expect(failure.status).toBe(503);
   expect(await failure.json()).toMatchObject({ error: { code: "DEPENDENCY_UNAVAILABLE" } });
 });

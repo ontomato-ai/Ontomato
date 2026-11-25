@@ -35,16 +35,24 @@ export interface DetailSelection {
  */
 export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
   // Agent catalog & detail (shared across /ontology/agents and /agents/settings):
-  // legacy `/new` opens the catalog (which hosts the centered creation dialog), `:agentId` (exempting `detail` and
+  // legacy `/new` opens the catalog in create mode (`creating=true`), `:agentId` (exempting `detail` and
   // separate agent-platform subpages) and legacy catalog `?selected=` links forward straight to the non-menu detail entry.
   ...[
-    { path: platformRoutes.ontologyAgent.path, catalog: platformRoutes.ontologyAgents.path },
-    { path: platformRoutes.agentSettings.path, catalog: platformRoutes.agents.path },
-  ].flatMap(({ path, catalog }): DetailSelection[] => [
     {
-      path: `${catalog}/new`,
+      path: platformRoutes.ontologyAgent.path,
+      createPath: platformRoutes.ontologyAgentNew.path,
+      catalog: platformRoutes.ontologyAgents.path,
+    },
+    {
+      path: platformRoutes.agentSettings.path,
+      createPath: platformRoutes.agentSettingsNew.path,
+      catalog: platformRoutes.agents.path,
+    },
+  ].flatMap(({ path, createPath, catalog }): DetailSelection[] => [
+    {
+      path: createPath,
       use: catalog,
-      state: (): Record<string, PanelStateValue> => ({}),
+      state: (): Record<string, PanelStateValue> => ({ creating: true }),
     },
     {
       path,

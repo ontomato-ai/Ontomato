@@ -5,20 +5,9 @@ import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import {
-  currentSdk, installPlatform, leaveFrame, manifestP, manifestQ, memberRefOf, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
+  APPLICATION_ENTRY_PATH, applicationEntrySkill, currentSdk, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
   panelSnapshot, projections, type Sent,
 } from "./panel-frame";
-
-/*
- * Which page skill a message beside a panel application's page reaches (protected provider skills contract): the host
- * reads the shown page's panel with the use relation and entrance it is shown for, and Node answers the page skill
- * context with the panel. The route passes it on as `display-skill` for the page shown, through the platform's own
- * route and panel host.
- *
- * What this rules out: a context guessed by the host (a public mode, or a member it names itself); a null member treated
- * as a failure or turned into something else; a context from a page the reader has left reaching the shown page; and a
- * failed read hidden behind a context.
- */
 
 const app = "app-page-skill";
 const p = panelRecord("panel-page-skill-p", "Tasks", manifestP);
@@ -35,14 +24,14 @@ const summary: ApplicationPanelUse = {
 /** The panel reads as they reach Node, and a way to hold one of them or answer it differently. */
 let hold: Promise<void> | null = null;
 let snapshotHold: Promise<void> | null = null;
-let override: ((request: Sent) => Response | undefined) | null = null;
+let override: ((request: Sent) => Response | Promise<Response> | undefined) | null = null;
 
 function answer(request: Sent): Response | Promise<Response> {
   const changed = override?.(request);
   if (changed) return changed;
   if (request.path === `/api/data-query/platform/applications/${app}/panel-uses`)
     return Response.json({ data: { applicationId: app, entry: { path: `/applications/${app}`, renderer: "panels" }, panelUses: [tasks, summary] } });
-  if (request.path === `/api/product-panels/${p.id}`) return (hold ?? Promise.resolve()).then(() => panelAnswer(p, request));
+  if (request.path === `/api/product-panels/${p.id}`) return panelAnswer(p, request);
   if (request.path === `/api/product-panels/${q.id}`) return panelAnswer(q, request);
   if (request.path === `/api/product-panels/${p.id}/snapshot`) return (snapshotHold ?? Promise.resolve()).then(() => panelSnapshot(p, projections, request));
   if (request.path === `/api/product-panels/${q.id}/snapshot`) return panelSnapshot(q, projections, request);
@@ -68,13 +57,15 @@ async function openApplication(address: string) {
   return { ...page, router, sent, skills };
 }
 
-const member = (use: ApplicationPanelUse, locator: PageSkillContext["locator"]): PageSkillContext => ({
-  mode: "member", locator,
-  member: { source: { kind: "application-use", applicationId: app, useId: use.id }, memberPath: [], ref: memberRefOf(use.panelId) },
-});
+const member = (use: ApplicationPanelUse) => applicationEntrySkill(app, use);
 const panelReads = (sent: Sent[], panelId: string) => sent.filter(request => request.path === `/api/product-panels/${panelId}`);
-/** The page skill context reads, made for the page beside the panel's record. */
-const skillReads = (sent: Sent[], panelId: string) => sent.filter(request => request.path === `/api/product-panels/${panelId}/page-skill-context`);
+const openings = (sent: Sent[]) => sent.filter(request => request.path === APPLICATION_ENTRY_PATH);
+
+function entryAnswer(use: ApplicationPanelUse, pageSkillContext = member(use)) {
+  return Response.json({ applicationId: app, use, menu: { singleEntry: false, groups: [], panelUses: [] }, pageSkillContext });
+}
+const asksToOpen = (request: Sent, use: ApplicationPanelUse) =>
+  request.path === APPLICATION_ENTRY_PATH && new URLSearchParams(request.search).get("path") === use.path;
 
 afterEach(() => {
   hold = null;
@@ -84,72 +75,51 @@ afterEach(() => {
   vi.resetModules();
 });
 
-it("reads the shown page's panel, and beside it the page skill with its use relation and entrance, passing on what Node answers", async () => {
+it("obtains the page skill on opening and reads the definition and its members separately", async () => {
   const { app: page, router, sent, skills } = await openApplication(tasks.path);
   try {
-    await vi.waitFor(() => expect(skills).toEqual([member(tasks, { permissionCode: "analysis-agent", pageKey: tasks.pageKey })]));
-    // The record is the panel's alone (with bundled fixed projections); the page it is shown for asks for its skill on its own.
-    expect(Object.fromEntries(new URLSearchParams(panelReads(sent, p.id)[0]!.search))).toEqual({ includeProjections: "1" });
-    expect(Object.fromEntries(new URLSearchParams(skillReads(sent, p.id)[0]!.search))).toEqual({
-      applicationId: app, useId: tasks.id, pageKey: tasks.pageKey, permissionCode: "analysis-agent",
-    });
+    await vi.waitFor(() => expect(skills).toEqual([member(tasks)]));
+    expect(Object.fromEntries(new URLSearchParams(panelReads(sent, p.id)[0]!.search))).toEqual({ includeProjections: "1", view: "1" });
+    expect(openings(sent).map(request => new URLSearchParams(request.search).get("path"))).toEqual([tasks.path]);
 
-    // A page reached by domain membership names that entrance instead.
     await router.push(summary.path);
-    await vi.waitFor(() => expect(skills.at(-1)).toEqual(member(summary, { access: "domain-member", pageKey: summary.pageKey })));
-    expect(Object.fromEntries(new URLSearchParams(skillReads(sent, q.id)[0]!.search))).toEqual({
-      applicationId: app, useId: summary.id, pageKey: summary.pageKey, access: "domain-member",
-    });
+    await vi.waitFor(() => expect(skills.at(-1)).toEqual(member(summary)));
+    expect(openings(sent).map(request => new URLSearchParams(request.search).get("path"))).toEqual([tasks.path, summary.path]);
 
-    // Back on the kept page: its check, read for this page, confirms what it reaches again; the panel is not read again.
     await router.push(tasks.path);
     await vi.waitFor(() => expect(skills).toHaveLength(3));
     expect(skills.at(-1)).toEqual(skills[0]);
     expect(panelReads(sent, p.id)).toHaveLength(1);
     const checks = sent.filter(request => request.path === `/api/product-panels/${p.id}/snapshot`);
-    expect(Object.fromEntries(new URLSearchParams(checks.at(-1)!.search))).toEqual({
-      applicationId: app, useId: tasks.id, pageKey: tasks.pageKey, permissionCode: "analysis-agent",
-    });
+    expect(checks.at(-1)!.search).toBe("");
+    expect(openings(sent).map(request => new URLSearchParams(request.search).get("path"))).toEqual([tasks.path, summary.path, tasks.path]);
   } finally {
     page.unmount();
   }
 });
 
-it("passes on a null member as Node answers it, never a public context of its own", async () => {
-  const unavailable = { mode: "member", locator: { permissionCode: "analysis-agent", pageKey: tasks.pageKey }, member: null };
-  override = request => {
-    if (request.path === `/api/product-panels/${p.id}`) return Response.json({ panel: p, pageSkillContext: unavailable });
-    if (request.path === `/api/product-panels/${p.id}/snapshot`)
-      return Response.json({ panel: { id: p.id, revision: p.revision }, projections: [], pageSkillContext: unavailable });
-    return undefined;
-  };
+it("passes on a null member as Node answers it, without inventing a public context", async () => {
+  const unavailable = { ...member(tasks), member: null };
+  override = request => asksToOpen(request, tasks) ? entryAnswer(tasks, unavailable) : undefined;
   const { app: page, element, skills } = await openApplication(tasks.path);
   try {
-    await vi.waitFor(() => expect(skills).toEqual([{ mode: "member", locator: { permissionCode: "analysis-agent", pageKey: tasks.pageKey }, member: null }]));
-    // The page still opens: its panel runs in the platform's document.
+    await vi.waitFor(() => expect(skills).toEqual([unavailable]));
     await vi.waitFor(() => expect(element.querySelector(".panel-host-coded > *")).not.toBeNull());
   } finally {
     page.unmount();
   }
 });
 
-it("passes on, for a kept page shown again, the member its check confirms now â€” not the null it was first answered", async () => {
-  const locator = { permissionCode: "analysis-agent", pageKey: tasks.pageKey };
+it("passes on the latest member on re-entry once the kept panel has checked its definition", async () => {
+  const unavailable = { ...member(tasks), member: null };
   let granted = false;
-  override = request => {
-    if (request.path === `/api/product-panels/${p.id}`)
-      return Response.json({ panel: p, pageSkillContext: { mode: "member", locator, member: null } });
-    if (request.path === `/api/product-panels/${p.id}/snapshot` && !granted)
-      return Response.json({ panel: { id: p.id, revision: p.revision }, projections: [], pageSkillContext: { mode: "member", locator, member: null } });
-    return undefined;
-  };
+  override = request => asksToOpen(request, tasks)
+    ? entryAnswer(tasks, granted ? member(tasks) : unavailable) : undefined;
   const { app: page, router, skills } = await openApplication(tasks.path);
   try {
-    await vi.waitFor(() => expect(skills).toEqual([{ mode: "member", locator, member: null }]));
+    await vi.waitFor(() => expect(skills).toEqual([unavailable]));
     await router.push(summary.path);
     await vi.waitFor(() => expect(skills).toHaveLength(2));
-    // The Grant the member depends on is given while the page is kept, the use and the panel unchanged. Shown again,
-    // nothing is passed on while its check is out; once it is through, the member it confirmed is.
     granted = true;
     let release!: () => void;
     snapshotHold = new Promise(resolve => (release = resolve));
@@ -158,25 +128,25 @@ it("passes on, for a kept page shown again, the member its check confirms now â€
     expect(skills).toHaveLength(2);
     release();
     await vi.waitFor(() => expect(skills).toHaveLength(3));
-    expect(skills.at(-1)).toEqual(member(tasks, locator));
+    expect(skills.at(-1)).toEqual(member(tasks));
   } finally {
     page.unmount();
   }
 });
 
-it("keeps a late answer for a page the reader has left from reaching the page shown", async () => {
+it("keeps a late opening response from being forwarded to another entry", async () => {
   let release!: () => void;
   hold = new Promise(resolve => (release = resolve));
+  override = request => asksToOpen(request, tasks) ? hold!.then(() => entryAnswer(tasks)) : undefined;
   const { app: page, router, skills } = await openApplication(tasks.path);
   try {
     await router.push(summary.path);
-    await vi.waitFor(() => expect(skills).toEqual([member(summary, { access: "domain-member", pageKey: summary.pageKey })]));
+    await vi.waitFor(() => expect(skills).toEqual([member(summary)]));
     release();
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(skills).toHaveLength(1);
-    // Shown again, the tasks page reaches the member its own check confirms.
     await router.push(tasks.path);
-    await vi.waitFor(() => expect(skills.at(-1)).toEqual(member(tasks, { permissionCode: "analysis-agent", pageKey: tasks.pageKey })));
+    await vi.waitFor(() => expect(skills.at(-1)).toEqual(member(tasks)));
   } finally {
     page.unmount();
   }

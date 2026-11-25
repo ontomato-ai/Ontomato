@@ -18,11 +18,11 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import {
-  changeProductDomainGrant, changeProductGrant, grantedProductIds, productGrantAllowed, readProductGrantRecords,
-  requireProductGrant, unregisterProductResource,
+  changeProductDomainGrant, changeProductGrant, grantedProductIds, readProductGrantRecords,
+  unregisterProductResource,
   type ProductOwner,
 } from "../product-governance/grants";
-import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
+import { insertCurrentProduct, loadCurrentProduct, readPanelManagementAccess, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { panelDefinitionProblem } from "./definition-diagnostics";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
 import { findPanelUsers, panelReferenceDefinitionSchema } from "./references";
@@ -70,10 +70,10 @@ async function catalogueGrants(credentials: AssistantCredentials, panel: boolean
   return { visible: panel ? [...usable, ...editable] : usable, edited: new Set(editable) };
 }
 
-function cataloguePanel(owner: ProductOwner, row: CurrentProductRow, editable: boolean) {
+function cataloguePanel(row: CurrentProductRow, editable: boolean, authored: boolean) {
   const result = productPanelSchema.safeParse(currentProductRecord(row, editable));
   if (result.success) return { panel: result.data };
-  const removable = row.ownerId === owner.userId || editable;
+  const removable = authored || editable;
   return {
     unavailable: {
       id: row.id,
@@ -85,14 +85,14 @@ function cataloguePanel(owner: ProductOwner, row: CurrentProductRow, editable: b
 
 async function loadCataloguePanel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
   const row = await loadCurrentProduct(owner.domainId, "panel", id);
-  const editable = row.domainId !== null && (await grantedProductIds("edit", credentials)).includes(id);
-  if (row.ownerId !== owner.userId && !editable) await requireProductGrant(id, "use", credentials);
-  return { row, editable };
+  const { allowed, authored, editable } = await readPanelManagementAccess(owner, credentials, row);
+  if (!allowed) throw new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN");
+  return { row, authored, editable };
 }
 
 export async function readCataloguePanel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  const { row, editable } = await loadCataloguePanel(owner, credentials, id);
-  return cataloguePanel(owner, row, editable);
+  const { row, authored, editable } = await loadCataloguePanel(owner, credentials, id);
+  return cataloguePanel(row, editable, authored);
 }
 
 export async function listUnavailablePanels(owner: ProductOwner, credentials: AssistantCredentials) {
@@ -103,7 +103,7 @@ export async function listUnavailablePanels(owner: ProductOwner, credentials: As
     [owner.domainId, visible, owner.userId],
   );
   return rows.flatMap(row => {
-    const { unavailable } = cataloguePanel(owner, row, row.domainId !== null && edited.has(row.id));
+    const { unavailable } = cataloguePanel(row, row.domainId !== null && edited.has(row.id), row.ownerId === owner.userId);
     return unavailable ? [unavailable] : [];
   });
 }
@@ -227,17 +227,31 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   ]);
   const total = countRows[0]?.total ?? 0;
   const unavailableItems: { id: string; reason: string; revision?: number }[] = [];
-  const items = rows.slice(0, input.limit).flatMap(({ sortKey: _sortKey, definition, domainId, createdAt, updatedAt, template, ...row }) => {
-    const summary = {
+  type ListedProductItem = {
+    id: string;
+    ownerId: string | null;
+    name: string;
+    description: string;
+    visibility: ProductVisibility;
+    revision: number;
+    updatedAt: string;
+    editable: boolean;
+    componentId?: string;
+    template?: boolean;
+    objectTypes?: string[];
+    memberCount?: number;
+  };
+  const items: ListedProductItem[] = rows.slice(0, input.limit).flatMap<ListedProductItem>(({ sortKey: _sortKey, definition, domainId, createdAt, updatedAt, template, ...row }) => {
+    const summary: ListedProductItem = {
       ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
       editable: row.ownerId !== null && edited.has(row.id),
     };
     if (!panelCatalog) {
       return [{ ...summary, objectTypes: projectionBoundObjectTypes(definition) }];
     }
-    const { unavailable } = cataloguePanel(owner, { ...row, definition, domainId, createdAt, updatedAt }, summary.editable);
-    if (!unavailable) return [summary];
-    unavailableItems.push(unavailable);
+    const { panel, unavailable } = cataloguePanel({ ...row, definition, domainId, createdAt, updatedAt }, summary.editable, row.ownerId === owner.userId);
+    if (!unavailable && panel) return [{ ...summary, memberCount: Object.keys(panel.manifest.members).length }];
+    if (unavailable) unavailableItems.push(unavailable);
     return [];
   });
   const last = rows[input.limit - 1];
@@ -281,8 +295,10 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
     await lockProducts(client, owner);
     const { domainId } = owner;
     const panel = kind === "panel" ? await findCurrentProduct(domainId, kind, id, client) : undefined;
-    const authoredPanel = panel?.ownerId === owner.userId ? panel : undefined;
-    const current = authoredPanel ?? await requireCurrentProduct(owner, credentials, kind, id, "edit", client);
+    const access = panel && await readPanelManagementAccess(owner, credentials, panel);
+    if (access && !access.authored && !access.editable)
+      throw new HttpError(403, "Product edit Grant required", "PRODUCT_FORBIDDEN");
+    const current = panel ?? await requireCurrentProduct(owner, credentials, kind, id, "edit", client);
     if (revision !== undefined && current.revision !== revision)
       throw new HttpError(409, "Definition changed; reload before deleting", "PRODUCT_CONFLICT");
     if (kind === "projection") {
@@ -312,7 +328,7 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
       }
     }
     // The stored owner may remove this row. Revoking Java grants for the ID still requires a current edit Grant.
-    const unregisterGrant = !authoredPanel || await productGrantAllowed(id, "edit", credentials);
+    const unregisterGrant = access?.editable ?? true;
     await removeCurrentProduct(client, domainId, kind, id, unregisterGrant);
     await removePanelDependencies(client, domainId, owner.userId, id);
     for (const projectionId of deletedProjectionIds) await removeCurrentProduct(client, domainId, "projection", projectionId);

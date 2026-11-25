@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -79,7 +80,7 @@ function javaOwner(app: express.Express) {
     reader(req);
     ownerCalls.push(`page ${JSON.stringify(req.body)}`);
     if (req.body.classname === "secret") {
-      res.json({ success: false, code: "DATA_PERMISSION_DENIED", message: "No data permission for secret" });
+      res.json({ success: false, code: "NO_VISIBLE_FIELDS", message: "No data permission for secret" });
       return;
     }
     res.json({ success: true, total_count: 7, readable_fields: ["id", "name", "team", "tags", "note"], data: [
@@ -155,7 +156,7 @@ beforeAll(async () => {
   app.post("/product-governance/register", (req, res) => { resourceIds.add(req.body.id); res.json({ success: true }); });
   app.post("/product-governance/check", (req, res) => res.json({ allowed: resourceIds.has(req.body.id) }));
   app.post("/product-governance/resources", (_req, res) => res.json({ ids: [...resourceIds] }));
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== use.applicationId) { next(); return; }
     expect(req.header("tk")).toBe("fact-reader");
     res.json({ success: true, data: {
@@ -225,11 +226,13 @@ it("reads a customer class page and single objects with the owner's labels, tota
     ],
   } });
   expect(ownerCalls).toEqual([`page ${JSON.stringify({ classname: "person", pagenum: 1, pagecount: 2, search: "a" })}`]);
-  expect(await read("secrets", "rows")).toEqual({ status: "forbidden" });
+  expect(await read("secrets", "rows")).toEqual({
+    status: "error", code: "NO_VISIBLE_FIELDS", message: "No data permission for secret",
+  });
 
   expect(await read("detail", "record")).toMatchObject({ status: "ready", value: { primaryKey: "p1", label: "Alice / Ops" } });
   // The owner's code decides: no data permission is forbidden, a missing object keeps the owner's reason.
-  expect(await read("hidden", "record")).toEqual({ status: "forbidden" });
+  expect(await read("hidden", "record")).toEqual({ status: "forbidden", reason: "No data permission for p2" });
   expect(await read("missing", "record")).toEqual({ status: "error", message: "Object person:p9 does not exist" });
 });
 

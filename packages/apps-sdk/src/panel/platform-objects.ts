@@ -144,7 +144,7 @@ export interface PlatformObjectQueryResult {
  * the object first, say) has none.
  */
 export interface PlatformObjectRefusalDetail {
-  readonly path: string;
+  readonly path?: string;
   readonly message: string;
 }
 
@@ -159,7 +159,7 @@ export class PlatformObjectRefusal extends Error {
   ) {
     super(message, options);
     this.name = "PlatformObjectRefusal";
-    this.details = details ?? Object.entries(fields).map(([path, detail]) => ({ path, message: detail }));
+    this.details = details ?? [];
   }
 }
 

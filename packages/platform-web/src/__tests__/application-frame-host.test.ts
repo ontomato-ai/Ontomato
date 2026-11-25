@@ -5,7 +5,6 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { ApplicationEntryResolution, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { pageCounterKey, type ConversationDisplay, type SessionRunHandlers } from "@ontomato/agent-shell-ui";
 import { AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { provideApplicationFrame, providePageHeading, type DirectPanelRun } from "@ontomato/platform-shell";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -111,9 +110,8 @@ vi.mock("../panel-host", () => ({
     use: ApplicationPanelUse,
     changed: (change: PanelObjectChange) => void,
     _mode: unknown,
-    pageSkill: (skill: PageSkillContext) => void,
   ) => {
-    void nextTick(() => pageSkill({ mode: "public", locator: { access: "domain-member", pageKey: use.pageKey } }));
+
     contentChangedCallbacks.push(changed);
     return { kind: "content" as const, applicationId, use };
   },
@@ -544,10 +542,10 @@ describe("ApplicationFrameHost single persistent outer frame", () => {
     expect(placeholder.attributes("aria-busy")).toBe("true");
     expect((wrapper.get(`[data-frame-panel="${ontologyFrameId}"]`).element as HTMLElement).style.display).toBe("none");
 
-    // Once the outer frame reports surface-ready, the placeholder disappears even before resolve-entry settles.
+    // The shell can be visible while its entry still waits for the opening decision.
     frameHost!.emitSurfaceReady(true);
     await nextTick();
-    expect(wrapper.find("[data-panel-loading-placeholder]").exists()).toBe(false);
+    expect(wrapper.find("[data-panel-loading-placeholder]").exists()).toBe(true);
     expect((wrapper.get(`[data-frame-panel="${ontologyFrameId}"]`).element as HTMLElement).style.display).toBe("");
 
     pendingResolve.resolve(resolutionOf("ontology", playgroundUse, [playgroundUse, objectsUse], ontologyFrameId));

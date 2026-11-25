@@ -526,14 +526,11 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
         data: { applicationId: APP_ID, entry: { path: "/browser", renderer: "browser" }, panelUses: [dataBrowserUse] },
       });
     }
-    if (request.path === "/api/data-query/platform/applications/resolve-entry") {
+    if (request.path === "/api/product-panels/application-entry") {
       return Response.json({
-        success: true,
-        data: {
-          applicationId: APP_ID,
-          use: dataBrowserUse,
-          menu: { names: { en: "Object browser" }, groups: [], panelUses: [dataBrowserUse] },
-        },
+        applicationId: APP_ID,
+        use: dataBrowserUse,
+        menu: { singleEntry: true, names: { en: "Object browser" }, groups: [], panelUses: [dataBrowserUse] },
       });
     }
     if (request.path === `/api/product-panels/${browserPanel.id}/snapshot`) {

@@ -131,7 +131,7 @@ public class ApplicationCatalog {
         return loadApplications(false);
     }
 
-    private List<JSONObject> loadApplications(boolean includeUpdatedAt) {
+    List<JSONObject> loadApplications(boolean includeUpdatedAt) {
         return db.query("SELECT * FROM sys_application WHERE kind IS NOT NULL ORDER BY CASE rail WHEN 'top' THEN 0 WHEN 'apps' THEN 1 ELSE 2 END,sort,id",
             (row, index) -> {
                 var app = JSONObject.of("id", row.getString("id"), "domainId", row.getString("domain_id"),
@@ -245,9 +245,14 @@ public class ApplicationCatalog {
     private record CatalogueRow(JSONObject app, CatalogueKey key) {}
 
     public JSONObject catalogue(User user, String search, String scope, String cursor, int size, String sort, Locale locale) {
-        if (!"visible".equals(scope) && !"maintainable".equals(scope))
-            throw bad("Catalogue scope must be visible or maintainable");
+        return catalogue(user, search, scope, cursor, null, size, sort, locale);
+    }
+
+    public JSONObject catalogue(User user, String search, String scope, String cursor, Integer page, int size, String sort, Locale locale) {
+        if (!List.of("visible", "maintainable", "mine", "shared").contains(scope))
+            throw bad("Catalogue scope must be visible, maintainable, mine or shared");
         if (size < 1 || size > 100) throw bad("Catalogue size must be between 1 and 100");
+        if (page != null && page < 1) throw bad("Catalogue page must be at least 1");
 
         var byId = Comparator.comparing(CatalogueKey::id);
         var order = switch (sort) {
@@ -279,7 +284,11 @@ public class ApplicationCatalog {
         for (var row : ordered) {
             var app = row.app();
             boolean maintain = canMaintainCatalogue(app, user);
-            if (!maintain && ("maintainable".equals(scope) || !canEnter(app, user))) continue;
+            if (!maintain && !canEnter(app, user)) continue;
+            boolean isMine = app.getString("domainId") != null && Objects.equals(app.getString("ownerUserId"), user.getId());
+            if ("maintainable".equals(scope) && !maintain) continue;
+            if ("mine".equals(scope) && !isMine) continue;
+            if ("shared".equals(scope) && isMine) continue;
             matched.add(row);
             maintainFlags.add(maintain);
         }
@@ -290,6 +299,20 @@ public class ApplicationCatalog {
             .distinct().toList();
         var ownerNames = grants.principalNames(user.getDomainId(), ownerIds);
         CatalogueKey last = null;
+        if (page != null && after == null) {
+            int start = (page - 1) * size;
+            int end = Math.min(start + size, total);
+            for (int i = start; i < end; i++) {
+                var row = matched.get(i);
+                var app = row.app();
+                boolean maintain = maintainFlags.get(i);
+                rows.add(catalogueSummary(app, user, maintain, catalogueEntries(app, user, maintain, pageKeys).size(), ownerNames));
+                last = row.key();
+            }
+            if (end < total && last != null)
+                return JSONObject.of("rows", rows, "total", total, "nextCursor", catalogueCursor(last, sort, cursorType));
+            return JSONObject.of("rows", rows, "total", total);
+        }
         for (int i = 0; i < matched.size(); i++) {
             var row = matched.get(i);
             if (after != null && order.compare(row.key(), after) <= 0) continue;
@@ -410,6 +433,9 @@ public class ApplicationCatalog {
                 var framePanelId = settings.getString("framePanelId");
                 if (panelManaged(app) || BuiltinProductIds.isValid(framePanelId)) result.put("framePanelId", framePanelId);
             }
+            if (settings != null && settings.containsKey("theme") && settings.get("theme") != null) {
+                result.put("theme", settings.get("theme"));
+            }
         }
         return result;
     }
@@ -456,7 +482,24 @@ public class ApplicationCatalog {
         var target = request.target();
         if (target == null || request.section() == null) throw bad("A catalogue form section and target are required");
         if ("create".equals(request.section())) {
-            if (!"draft".equals(target.kind()) || user.getDomainId() == null) throw bad("A domain application draft is required");
+            if (user.getDomainId() == null) throw bad("A domain application draft is required");
+            if ("object".equals(target.kind()) && "platform:Application".equals(target.objectType())) {
+                validateId(target.primaryKey());
+                var apps = all();
+                var source = require(apps, target.primaryKey());
+                boolean maintain = canMaintainCatalogue(source, user);
+                if (!maintain && !canEnter(source, user))
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, ApplicationCatalogueForm.notFoundMessage(locale));
+                var newId = resolveCopyDraftId(request.values(), target.id());
+                validateId(newId);
+                if (!newId.startsWith("app-")) throw bad("A domain application requires an app- ID");
+                var pageKeys = new BuiltinPageKeys(apps);
+                var values = request.values() != null
+                    ? request.values()
+                    : buildCopyDraft(source, newId, user, maintain, pageKeys);
+                return form.create(newId, values, key -> pageKeys.conflict(key, user.getDomainId(), newId));
+            }
+            if (!"draft".equals(target.kind())) throw bad("A domain application draft is required");
             var id = target.id() == null ? "app-" + UUID.randomUUID() : target.id();
             validateId(id);
             if (!id.startsWith("app-")) throw bad("A domain application requires an app- ID");
@@ -488,6 +531,105 @@ public class ApplicationCatalog {
         };
     }
 
+    private static String resolveCopyDraftId(JSONObject values, String targetId) {
+        if (values != null) {
+            if (values.get("entry") instanceof Map<?, ?> entry && entry.get("path") instanceof String path
+                    && path.startsWith("/applications/app-")) {
+                var candidate = path.substring("/applications/".length());
+                if (!candidate.contains("/")) return candidate;
+            }
+            if (values.get("id") instanceof String id && id.startsWith("app-")) return id;
+        }
+        return targetId != null && !targetId.isBlank() ? targetId : "app-" + UUID.randomUUID();
+    }
+
+    private JSONObject buildCopyDraft(JSONObject source, String newId, User user, boolean maintain, BuiltinPageKeys pageKeys) {
+        var root = assignedPanelRoot(newId);
+        var sourceEntry = publicEntry(source);
+        var sourceRoot = sourceEntry != null && sourceEntry.get("path") instanceof String p ? p : "";
+        var visibleUses = catalogueEntries(source, user, maintain, pageKeys);
+        var copiedUses = new ArrayList<JSONObject>();
+        var usedPaths = new HashSet<String>();
+        var usedGroupKeys = new HashSet<String>();
+        for (var use : visibleUses) {
+            if (!use.panelEntry() || use.panelId() == null || use.panelId().isBlank()) continue;
+            var suffix = relativeCopyEntrySuffix(use.path(), sourceRoot, use.id());
+            var candidatePath = suffix.isEmpty() ? root : root + "/" + suffix;
+            if (!usedPaths.add(candidatePath)) {
+                candidatePath = root + "/" + use.id();
+                usedPaths.add(candidatePath);
+            }
+            var entry = JSONObject.of(
+                "id", use.id(),
+                "pageKey", newId + ":" + use.id(),
+                "panelId", use.panelId(),
+                "path", candidatePath,
+                "access", JSONObject.of("kind", DOMAIN_MEMBER_ENTRY));
+            if (use.names() != null && !use.names().isEmpty()) entry.put("names", new JSONObject(use.names()));
+            if (use.descriptions() != null && !use.descriptions().isEmpty()) entry.put("descriptions", new JSONObject(use.descriptions()));
+            if (use.icon() != null && !use.icon().isBlank()) entry.put("icon", use.icon());
+            if (use.groupKey() != null && !use.groupKey().isBlank()) {
+                entry.put("groupKey", use.groupKey());
+                usedGroupKeys.add(use.groupKey());
+            }
+            if (use.inputs() != null && !use.inputs().isEmpty()) entry.put("inputs", JSONObject.from(use.inputs()));
+            if (use.defaultAgent() != null) entry.put("defaultAgent", JSONObject.from(use.defaultAgent()));
+            if (use.pageComposer() != null && !use.pageComposer().isBlank()) entry.put("pageComposer", use.pageComposer());
+            copiedUses.add(entry);
+        }
+        var sourceGroups = source.getList("groups", Group.class);
+        var copiedGroups = new ArrayList<JSONObject>();
+        if (sourceGroups != null) {
+            for (var group : sourceGroups) {
+                if (maintain || usedGroupKeys.contains(group.key())) {
+                    copiedGroups.add(JSONObject.of("key", group.key(), "names", new JSONObject(group.names()), "sort", group.sort()));
+                }
+            }
+        }
+        var names = source.getJSONObject("names") != null ? new JSONObject(source.getJSONObject("names")) : new JSONObject();
+        var descriptions = source.getJSONObject("descriptions") != null ? new JSONObject(source.getJSONObject("descriptions")) : new JSONObject();
+        var icon = source.getString("icon");
+        if (icon == null || icon.isBlank()) icon = "pages";
+        var draft = JSONObject.of(
+            "declaration", JSONObject.of(
+                "names", names,
+                "descriptions", descriptions,
+                "icon", icon,
+                "groups", copiedGroups,
+                "permissions", List.of()),
+            "shared", false,
+            "allowStandalone", allowsStandalone(source),
+            "entry", JSONObject.of("path", root, "renderer", "panels"),
+            "entryAccess", List.of(DOMAIN_MEMBER_ENTRY),
+            "panelUses", copiedUses);
+        var settings = source.getJSONObject("panelSettings");
+        if (settings != null) {
+            if (settings.containsKey("framePanelId")) {
+                var framePanelId = settings.getString("framePanelId");
+                if (framePanelId != null && !framePanelId.isBlank() && (maintain || panelManaged(source) || BuiltinProductIds.isValid(framePanelId))) {
+                    draft.put("framePanelId", framePanelId);
+                }
+            }
+            if (settings.containsKey("theme") && settings.get("theme") != null) {
+                draft.put("theme", settings.get("theme"));
+            }
+        }
+        return draft;
+    }
+
+    private static String relativeCopyEntrySuffix(String path, String sourceRoot, String fallbackId) {
+        if (path == null || path.isBlank()) return fallbackId;
+        String tail = path;
+        if (sourceRoot != null && !sourceRoot.isBlank()) {
+            var normalizedRoot = sourceRoot.endsWith("/") ? sourceRoot.substring(0, sourceRoot.length() - 1) : sourceRoot;
+            if (tail.equals(normalizedRoot)) return "";
+            if (tail.startsWith(normalizedRoot + "/")) tail = tail.substring(normalizedRoot.length() + 1);
+        }
+        while (tail.startsWith("/")) tail = tail.substring(1);
+        while (tail.endsWith("/")) tail = tail.substring(0, tail.length() - 1);
+        return tail;
+    }
+
     public ApplicationController.IdentityUpdate updateIdentity(String id, ApplicationController.IdentityUpdate update, User user) {
         return transactions.execute(tx -> {
             lockCatalog();
@@ -511,7 +653,6 @@ public class ApplicationCatalog {
     public boolean canEnter(JSONObject app, User user) {
         return inDomain(app,user) && access.canEnter(app,user);
     }
-    public boolean canReconcileProducts(User user){return access.administrator(user)&&canEnter("app-builder",user);}
     public void updateIcon(String id, String icon, User user) {
         transactions.executeWithoutResult(tx -> {
             lockCatalog();
@@ -665,9 +806,13 @@ public class ApplicationCatalog {
         if (releaseId == null || !releaseId.matches("[a-zA-Z0-9_-]{1,128}")) throw bad("Invalid releaseId");
         return userApplication(id, "hosted", declaration, releaseId, user);
     }
-    public JSONObject publishProduct(String id,Declaration declaration,String releaseId,User user){
+    public JSONObject publishProduct(String id, Declaration declaration, String releaseId, User user,
+            io.ontomato.dataengine.service.ProductGrantService.OwnerFacts ownerFacts) {
         if(releaseId==null||!releaseId.matches("[a-zA-Z0-9_-]{1,128}"))throw bad("Invalid releaseId");
-        return userApplication(id,"product",declaration,releaseId,user);
+        if (ownerFacts == null || ownerFacts.ownerId() == null || ownerFacts.ownerId().isBlank()
+                || !"current".equals(ownerFacts.state()))
+            throw bad("Product publication requires current owner facts");
+        return userApplication(id, "product", declaration, releaseId, user, ownerFacts.ownerId());
     }
     public JSONObject connected(String id, Declaration declaration, String upstream, String upstreamPrefix, User user) {
         access.requireConnectedRegistration(user);
@@ -682,7 +827,12 @@ public class ApplicationCatalog {
             return result;
         });
     }
-    public JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user) {
+    private JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user) {
+        return userApplication(id, kind, declaration, releaseId, user, null);
+    }
+
+    private JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user,
+            String productAuthor) {
         validateId(id); validate(declaration);
         if (!declaration.pageSkills().isEmpty() || !declaration.panelUses().isEmpty()) throw bad("Use the panel application registration for panel relations");
         if(!List.of("hosted","connected","product").contains(kind))throw bad("Invalid user application kind");
@@ -697,6 +847,8 @@ public class ApplicationCatalog {
                 if (panelManaged(a)) throw bad("A panels application cannot use legacy publication");
                 if (!kind.equals(a.getString("kind")) || !Objects.equals(user.getDomainId(),a.getString("domainId")) ||
                     !access.canMaintain(a,user)) throw denied();
+            } else if ("product".equals(kind)) {
+                access.requireLegacyProductAuthor(user, productAuthor);
             }
             requireIconChange(old.orElse(null), declaration.icon(), user);
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
@@ -918,11 +1070,23 @@ public class ApplicationCatalog {
             var app = require(apps, applicationId);
             if (!inDomain(app, user)) throw denied();
             var pageKeys = new BuiltinPageKeys(apps);
-            if (!hasAssignedPanelPaths(app) || pageKeys.activeUses(app).stream()
-                    .noneMatch(use -> !use.nativeEntry() && useId.equals(use.id())))
-                throw entryNotFound();
+            declaredPanelEntry(app, useId, pageKeys);
             return resolveDeclaredEntry(app, useId, user, pageKeys);
         });
+    }
+
+    public JSONObject registeredEntry(String applicationId, String useId, User user) {
+        var apps = applicationsInDomain(user.getDomainId());
+        var app = apps.stream().filter(item -> applicationId.equals(item.getString("id"))).findFirst()
+            .orElseThrow(ApplicationCatalog::entryNotFound);
+        var use = declaredPanelEntry(app, useId, new BuiltinPageKeys(apps));
+        return JSONObject.of("applicationId", applicationId, "use", use, "framePanelId", entryFramePanelId(app));
+    }
+
+    private static ApplicationPanelUse declaredPanelEntry(JSONObject app, String useId, BuiltinPageKeys pageKeys) {
+        if (!hasAssignedPanelPaths(app)) throw entryNotFound();
+        return pageKeys.activeUses(app).stream().filter(use -> !use.nativeEntry() && useId.equals(use.id()))
+            .findFirst().orElseThrow(ApplicationCatalog::entryNotFound);
     }
 
     private JSONObject resolveDeclaredEntry(JSONObject app, String useId, User user, BuiltinPageKeys pageKeys) {
@@ -939,24 +1103,26 @@ public class ApplicationCatalog {
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed,
                                              BuiltinPageKeys pageKeys) {
-        boolean panels = panelManaged(app);
         var named = allowed.stream().filter(entry -> entry.names() != null).toList();
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
         var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
             .sorted(Comparator.comparingInt(Group::sort)).toList();
         var appNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
-        var result = JSONObject.of("applicationId", app.getString("id"), "use", use,
+        var result = JSONObject.of("applicationId", app.getString("id"), "use", use, "framePanelId", entryFramePanelId(app),
             "menu", new EntryMenu(appNames, groups, named, singleEntry(app, pageKeys)));
         var settings = app.getJSONObject("panelSettings");
-        String resolvedFrame = null;
+        if (panelManaged(app) && settings != null && settings.containsKey("theme"))
+            result.put("theme", settings.getJSONObject("theme"));
+        return result;
+    }
+
+    private static String entryFramePanelId(JSONObject app) {
+        var settings = app.getJSONObject("panelSettings");
         if (settings != null && settings.containsKey("framePanelId")) {
             var framePanelId = settings.getString("framePanelId");
-            if (panels || BuiltinProductIds.isValid(framePanelId)) resolvedFrame = framePanelId;
+            if (framePanelId != null && (panelManaged(app) || BuiltinProductIds.isValid(framePanelId))) return framePanelId;
         }
-        result.put("framePanelId", resolvedFrame != null ? resolvedFrame : DEFAULT_FRAME_PANEL_ID);
-        if (!panels) return result;
-        if (settings != null && settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
-        return result;
+        return DEFAULT_FRAME_PANEL_ID;
     }
 
     private static ResponseStatusException entryNotFound() {

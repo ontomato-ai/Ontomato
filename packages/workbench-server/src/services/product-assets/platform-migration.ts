@@ -27,7 +27,7 @@ export async function migratePlatformProjection(owner:ProductOwner,credentials:A
     data:{objectType:'platform:Dashboard',fields:['name','updatedAt']},
   };
   if(source.document.widget.source==='assistant'){
-    if(!profileId){const {ensurePlatformAssets}=await import('./platform-assets');await ensurePlatformAssets(owner,credentials);const profiles=(await listProducts(owner)).filter(asset=>asset.document.kind==='agent-profile');const {nativeAgentAsset}=await import('./platform-assets');for(const candidate of profiles)if(await nativeAgentAsset(owner.domainId,candidate.id)){profileId=candidate.id;break;}}
+    if(!profileId){const profiles=(await listProducts(owner)).filter(asset=>asset.document.kind==='agent-profile');const {nativeAgentAsset}=await import('./platform-assets');for(const candidate of profiles)if(await nativeAgentAsset(owner.domainId,candidate.id)){profileId=candidate.id;break;}}
     if(!profileId)throw new HttpError(409,'Select a published AgentProfile for this conversation panel','PRODUCT_PROFILE_REQUIRED');
     const profile=await getProduct(owner,profileId);
     if(profile.document.kind!=='agent-profile')throw new HttpError(400,'Choose an AgentProfile','INVALID_AGENT_PROFILE');

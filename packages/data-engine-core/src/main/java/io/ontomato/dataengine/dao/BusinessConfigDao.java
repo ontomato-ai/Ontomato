@@ -43,48 +43,41 @@ public class BusinessConfigDao {
 	/** Preserve pending legacy embedding data until the runtime acknowledges its import. */
 	public void save(BusinessConfig businessConfig, String domainId) {
 		String stored = TABLE_NAME + ".content::jsonb";
-		String content = JSON.toJSONString(businessConfig, Feature.WriteMapNullValue);
-		if (connectionSecretCodec != null) {
-			content = connectionSecretCodec.encryptJson(content).json();
-		}
 		jdbcTemplate.update(
 				"INSERT INTO " + TABLE_NAME + " (id, content) VALUES (?, ?) "
 						+ "ON CONFLICT (id) DO UPDATE SET content = CASE WHEN jsonb_typeof(" + stored + ") = 'object' "
 						+ "THEN (EXCLUDED.content::jsonb || jsonb_strip_nulls(jsonb_build_object('embeddingModelProperties', "
                         + stored + " -> 'embeddingModelProperties', 'embeddingVectorSource', " + stored + " -> 'embeddingVectorSource')))::text "
 						+ "ELSE EXCLUDED.content END",
-				domainId, content);
+				domainId, storedContent(businessConfig));
+	}
+
+	public void initialize(BusinessConfig businessConfig, String domainId) {
+		jdbcTemplate.update(
+				"INSERT INTO " + TABLE_NAME + " (id, content) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+				domainId, storedContent(businessConfig));
+	}
+
+	private String storedContent(BusinessConfig businessConfig) {
+		String content = JSON.toJSONString(businessConfig, Feature.WriteMapNullValue);
+		return connectionSecretCodec == null ? content : connectionSecretCodec.encryptJson(content).json();
 	}
 
 	public BusinessConfig query(String domainId) {
+		String content;
 		try {
-			String content = jdbcTemplate.queryForObject(
+			content = jdbcTemplate.queryForObject(
 					"SELECT content FROM " + TABLE_NAME + " WHERE id = ?",
 					String.class, domainId);
-			if (content == null) {
-				return null;
-			}
-			JSONObject stored = JSON.parseObject(content, JSONReader.Feature.DisableReferenceDetect);
-			if (stored == null) {
-				return null;
-			}
-			if (LegacyDataAdapterConnections.migrate(stored)) {
-				content = JSON.toJSONString(stored, Feature.WriteMapNullValue);
-				jdbcTemplate.update("UPDATE " + TABLE_NAME + " SET content = ? WHERE id = ?", content, domainId);
-				log.info("business_config data adapter connections migrated (domainId={})", domainId);
-			}
-			BusinessConfig businessConfig = JSON.parseObject(
-					content, BusinessConfig.class, JSONReader.Feature.DisableReferenceDetect);
-			if (connectionSecretCodec != null) {
-				connectionSecretCodec.decryptInPlace(businessConfig);
-			}
-			return businessConfig;
 		} catch (org.springframework.dao.EmptyResultDataAccessException e) {
 			return null;
-		} catch (RuntimeException e) {
-			log.error("Failed to read BusinessConfig from PostgreSQL", e);
-			throw e;
 		}
+		BusinessConfig businessConfig = JSON.parseObject(
+				content, BusinessConfig.class, JSONReader.Feature.DisableReferenceDetect);
+		if (businessConfig != null && connectionSecretCodec != null) {
+			connectionSecretCodec.decryptInPlace(businessConfig);
+		}
+		return businessConfig;
 	}
 
 	/**

@@ -1798,23 +1798,24 @@ test("list column headers come from owner fields or from panel message keys", ()
   assert.equal(panelObjectListColumnSchema.safeParse({ ...panelColumn, empty: "No notes" }).success, false);
 });
 
-test("panel records and snapshots share the content and frame query", () => {
+test("panel record and snapshot reads do not accept entry skill context", () => {
   assert.equal(productPanelSnapshotQuerySchema, productPanelReadQuerySchema);
   const use = { applicationId: "ontology", useId: "ontology-agent-settings" };
   const pageKey = "agent-settings";
   const menu = { ...use, pageKey, permissionCode: "analysis-agent" };
   const member = { ...use, pageKey, access: "domain-member" };
   const frame = { ...use, source: "frame" };
-  for (const query of [{}, menu, member, frame]) assert.deepEqual(productPanelReadQuerySchema.parse(query), query);
+  for (const query of [{}, frame]) assert.deepEqual(productPanelReadQuerySchema.parse(query), query);
   for (const query of [
-    use, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined }, { ...menu, access: member.access },
+    use, menu, member, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined }, { ...menu, access: member.access },
     { source: "frame" }, { ...frame, useId: undefined }, { ...menu, source: "frame" },
   ]) {
     assert.equal(productPanelReadQuerySchema.safeParse(query).success, false);
   }
 });
 
-test("current panel reads can carry a page skill member for the verified entrance", () => {
+test("an opening carries the admitted entry and page skill separately from the panel record", async () => {
+  const { applicationEntryResolutionSchema } = await import("./product-panels");
   const panel = {
     id: "agent-settings", domainId: "domain", ownerId: "owner", revision: 1,
     createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: false,
@@ -1842,15 +1843,19 @@ test("current panel reads can carry a page skill member for the verified entranc
     manifest: { state: {}, members: { tasks: { target: { projectionId: "task-list" } } } },
   };
   assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel }), { panel: directPanel });
-  assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel, pageSkillContext }), { panel: directPanel, pageSkillContext });
   assert.deepEqual(productPanelResponseSchema.parse({ panel }), { panel });
-  assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext }).pageSkillContext, pageSkillContext);
-  const unavailable = { ...pageSkillContext, member: null };
-  assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext: unavailable }).pageSkillContext, unavailable);
-  assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext: { ...pageSkillContext, member: {} } }).success, false);
+  assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext }).success, false);
+  const resolution = { applicationId: "ontology",
+    use: { id: "ontology-agent-settings", panelId: panel.id, pageKey: "agent-settings",
+      path: "/ontology/agents", access: { permissionCode: "analysis-agent" } },
+    menu: { singleEntry: true, panelUses: [], groups: [] } };
+  assert.deepEqual(applicationEntryResolutionSchema.parse({ ...resolution, pageSkillContext }).pageSkillContext, pageSkillContext);
+  const unavailable = { ...pageSkillContext, entry: pageSkillContext.member.source, member: null };
+  assert.deepEqual(applicationEntryResolutionSchema.parse({ ...resolution, pageSkillContext: unavailable }).pageSkillContext, unavailable);
+  assert.equal(applicationEntryResolutionSchema.safeParse({ ...resolution, pageSkillContext: { ...pageSkillContext, member: {} } }).success, false);
 });
 
-test("panel reopen snapshots can carry a rechecked page skill context", () => {
+test("panel definition snapshots do not carry entry skill context", () => {
   const snapshot = {
     panel: { id: "agent-settings", revision: 1 },
     projections: [{ id: "definition-form", revision: 2 }],
@@ -1861,8 +1866,7 @@ test("panel reopen snapshots can carry a rechecked page skill context", () => {
     member: null,
   };
   assert.deepEqual(panelDefinitionSnapshotSchema.parse(snapshot), snapshot);
-  assert.deepEqual(panelDefinitionSnapshotSchema.parse({ ...snapshot, pageSkillContext }).pageSkillContext, pageSkillContext);
-  assert.equal(panelDefinitionSnapshotSchema.safeParse({ ...snapshot, pageSkillContext: { ...pageSkillContext, locator: {} } }).success, false);
+  assert.equal(panelDefinitionSnapshotSchema.safeParse({ ...snapshot, pageSkillContext }).success, false);
 });
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
@@ -4188,4 +4192,109 @@ test("value-carried tag field values, form option tones, and ObjectList column t
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "light" }).success, true);
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "dark" }).success, false);
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", headerTooltipKey: "" }).success, false);
+});
+
+test("ObjectList rowActions align conversation fields with PanelConversationEntry and unify 5-level tone", async () => {
+  const { panelObjectListRowActionItemSchema, panelObjectListColumnSchema } = await import("./panel-projection");
+  const { panelReadOperationJsonResultSchema } = await import("./panel-operations");
+
+  // Conversation action accepts PanelConversationEntry-aligned fields and semantic tone.
+  const validConv = panelObjectListRowActionItemSchema.parse({
+    kind: "conversation",
+    id: "ask",
+    target: { kind: "id", id: "analyst-agent" },
+    prefillKey: "gallery.askPrompt",
+    submit: false,
+    newSession: true,
+    tone: "primary",
+  });
+  assert.equal(validConv.kind, "conversation");
+  assert.deepEqual(validConv.target, { kind: "id", id: "analyst-agent" });
+  assert.equal(validConv.prefillKey, "gallery.askPrompt");
+  assert.equal(validConv.submit, false);
+  assert.equal(validConv.newSession, true);
+  assert.equal(validConv.tone, "primary");
+
+  // All 5 semantic tones are accepted on row actions.
+  for (const tone of ["default", "primary", "success", "warning", "danger"] as const) {
+    const parsed = panelObjectListRowActionItemSchema.parse({
+      kind: "operation",
+      operation: "act",
+      tone,
+    });
+    assert.equal(parsed.tone, tone);
+  }
+
+  // Mutual exclusion between prefill and prefillKey.
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "conversation",
+      id: "ask",
+      prefill: "Hello",
+      prefillKey: "gallery.askPrompt",
+    }).success,
+    false,
+  );
+
+  // Legacy prompt/promptKey/agent and removed danger/primary booleans are rejected.
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "conversation",
+      id: "ask",
+      prompt: "Legacy",
+    }).success,
+    false,
+  );
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "operation",
+      operation: "remove",
+      danger: true,
+    }).success,
+    false,
+  );
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "local",
+      id: "open",
+      primary: true,
+    }).success,
+    false,
+  );
+
+  // ObjectListColumn.resultFrom accepts { operation, field? } and rejects toneField.
+  const col = panelObjectListColumnSchema.parse({
+    key: "status",
+    resultFrom: { operation: "probe", field: "status" },
+  });
+  assert.deepEqual(col.resultFrom, { operation: "probe", field: "status" });
+  assert.equal(
+    panelObjectListColumnSchema.safeParse({
+      key: "status",
+      resultFrom: { operation: "probe", field: "status", toneField: "tone" },
+    }).success,
+    false,
+  );
+
+  // Read operation JSON results accept optional top-level `message` on all 3 variants and reject `summary`.
+  assert.equal(
+    panelReadOperationJsonResultSchema.parse({ kind: "json", value: { ok: true }, message: "Connected" }).message,
+    "Connected",
+  );
+  assert.equal(
+    panelReadOperationJsonResultSchema.parse({ kind: "markdown", markdown: "# OK", message: "Loaded report" }).message,
+    "Loaded report",
+  );
+  assert.equal(
+    panelReadOperationJsonResultSchema.parse({
+      kind: "sections",
+      sections: [{ id: "s1", label: "Overview", kind: "json", value: { ok: true } }],
+      message: "Generated sections",
+    }).message,
+    "Generated sections",
+  );
+  assert.equal(
+    panelReadOperationJsonResultSchema.safeParse({ kind: "json", value: { ok: true }, summary: "Legacy" }).success,
+    false,
+  );
 });

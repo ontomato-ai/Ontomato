@@ -3,7 +3,7 @@ import {z} from 'zod';
 import {productAssetSchema,productReferences,type ProductAsset} from '@ontomato/contracts/product-assets';
 import {assertLegacyProductWrite} from './panel-boundary';
 import {getProduct,lockProducts} from './store';
-import type {ProductOwner} from '../product-governance/grants';
+import {productDefinitionOwnerHeaders,type ProductOwner} from '../product-governance/grants';
 import {validateProduct,validatePageBindings} from './validation';
 import {transaction} from '../../infrastructure/postgres-transaction';
 import {qualifiedTable as t,getPostgresPool} from '../../infrastructure/postgres';
@@ -37,9 +37,13 @@ export const releaseSnapshotSchema=z.object({schemaVersion:z.literal(1),roots:z.
 });
 export const productReleaseDiffSchema=z.object({assets:z.array(z.object({id:z.string(),change:z.enum(['added','removed','updated']),fromRevision:z.number().optional(),toRevision:z.number().optional()})),contracts:z.array(z.object({kind:z.string(),id:z.string(),change:z.enum(['added','removed','changed'])}))});
 type Snapshot=z.infer<typeof releaseSnapshotSchema>;
-async function publishApplicationIdentity(bundle:ProductAsset,releaseId:string,credentials:AssistantCredentials){
+async function publishApplicationIdentity(bundle:ProductAsset,ownerId:string,releaseId:string,credentials:AssistantCredentials){
   if(bundle.document.kind!=='application')return;
-  const response=await backendPut('product-application-publication',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(bundle.id)+'/product-publication',{releaseId,declaration:{names:{en:bundle.name},descriptions:{en:bundle.description},icon:'pages',groups:[],permissions:[]}},{...credentials,retries:1});
+  const response=await backendPut(
+    'product-application-publication', config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(bundle.id)+'/product-publication',
+    {releaseId,ownerFacts:{ownerId,state:'current'},declaration:{names:{en:bundle.name},descriptions:{en:bundle.description},icon:'pages',groups:[],permissions:[]}},
+    {headers:productDefinitionOwnerHeaders(credentials),retries:1},
+  );
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Application directory publication failed','PRODUCT_UNAVAILABLE');
 }
 export function productReleaseDiff(previous:Snapshot,next:Snapshot):z.infer<typeof productReleaseDiffSchema>{
@@ -67,10 +71,11 @@ async function synchronizeAuthorizedBundlePublication(owner:ProductOwner,id:stri
     await lockProducts(client,owner);
     const pending=await client.query(`SELECT release_id FROM ${t('product_publication_outbox')} WHERE domain_id=$1 AND bundle_id=$2`,[owner.domainId,id]);
     if(!pending.rows[0])return;
-    if(!(await getProduct(owner,id,client)).editable)throw new HttpError(403,'Bundle edit Grant required','PRODUCT_FORBIDDEN');
+    const current = await getProduct(owner,id,client);
+    if(!current.editable)throw new HttpError(403,'Bundle edit Grant required','PRODUCT_FORBIDDEN');
     const releaseId=pending.rows[0].release_id;
     const snapshot=await readProductRelease(owner,releaseId,id);
-    await publishApplicationIdentity(snapshotAsset(snapshot,id),releaseId,credentials);
+    await publishApplicationIdentity(snapshotAsset(snapshot,id),current.ownerId,releaseId,credentials);
     await client.query(`DELETE FROM ${t('product_publication_outbox')} WHERE domain_id=$1 AND bundle_id=$2 AND release_id=$3`,[owner.domainId,id,releaseId]);
   });
 }
@@ -127,7 +132,6 @@ export async function captureProductRelease(owner:ProductOwner,roots:string[],cr
   return withProductGrants(owner,()=>captureAuthorizedRelease(owner,roots,credentials,triggerIds));
 }
 async function captureAuthorizedRelease(owner:ProductOwner,roots:string[],credentials:AssistantCredentials,triggerIds:string[]):Promise<Snapshot>{
-  await synchronizeProductOntology(owner);
   const assets=await transaction(async client=>{await lockProducts(client,owner);return captureProductTree(roots,id=>getProduct(owner,id,client));});
   for(const asset of assets)if(['widget','widget-group','operation-panel','layout-template'].includes(asset.document.kind))throw new HttpError(409,'Migrate legacy presentation assets before creating a V2 release','PRODUCT_UNPINNABLE_DEPENDENCY');
   const contracts:Snapshot['contracts']=[];const seen=new Set<string>();
@@ -216,6 +220,7 @@ export async function publishProductBundle(owner:ProductOwner,id:string,revision
   if(bundle.document.kind==='application'&&!bundle.document.navigationId)throw new HttpError(400,'Declarative Applications require a Navigation root','INVALID_NAVIGATION');
   if(bundle.document.kind==='application'&&bundle.document.applicationId!==id)throw new HttpError(400,'Application bundle and governance identity must use the same ID','INVALID_PRODUCT_TARGET');
   if(bundle.document.kind==='application'&&!/^app-[a-z0-9-]{1,59}$/.test(id))throw new HttpError(400,'Application identities require an app- prefix and lowercase letters, numbers or hyphens','INVALID_PRODUCT_TARGET');
+  await synchronizeProductOntology(owner);
   const snapshot=await withProductGrants(owner,()=>captureAuthorizedRelease(owner,[id],credentials,[]));
   if(snapshotAsset(snapshot,id).revision!==revision)throw new HttpError(409,'Bundle changed during capture','PRODUCT_CONFLICT');
   const releaseId=randomUUID();

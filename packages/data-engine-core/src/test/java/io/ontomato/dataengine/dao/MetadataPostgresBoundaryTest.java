@@ -21,21 +21,19 @@ class MetadataPostgresBoundaryTest extends PostgresTestDatabase {
     }
 
     @Test
-    void aLegacyConnectionIsPersistedAndReadableAgainWithoutRewritingOtherRecords() {
+    void readingBusinessConfigDoesNotMigrateStoredLegacyConnections() {
         BusinessConfigDao dao = wire(new BusinessConfigDao());
         dao.initIndex();
         String old = "{\"models\":[],\"dataAdapter\":\"mysql\",\"mysqlDataAdapterProperties\":{\"mysqlUrl\":\"jdbc:mysql\",\"mysqlUser\":\"u\",\"mysqlPassword\":\"p\"}}";
-        String current = "{\"models\":[],\"dataAdapter\":\"postgresql\",\"dataAdapterConnections\":{}}";
+        String current = "{\"models\":[],\"dataAdapter\":\"postgresql\",\"dataAdapterConnections\":{\"postgresql\":{\"url\":\"jdbc:postgresql\"}}}";
         jdbc.update("INSERT INTO business_config VALUES (?, ?), (?, ?)", "d1", old, "d2", current);
-        var migrated = dao.query("d1").getDataAdapterConnections().get("mysql");
-        assertEquals("jdbc:mysql", migrated.get("url"));
-        assertEquals("u", migrated.get("user"));
-        assertEquals("p", migrated.get("password"));
-        var stored = jdbc.queryForObject("SELECT content FROM business_config WHERE id = 'd1'", String.class);
-        assertFalse(JSON.parseObject(stored).containsKey("mysqlDataAdapterProperties"));
-        assertEquals(migrated, wire(new BusinessConfigDao()).query("d1").getDataAdapterConnections().get("mysql"));
-        dao.query("d2");
-        assertEquals(current, jdbc.queryForObject("SELECT content FROM business_config WHERE id = 'd2'", String.class));
-        assertEquals(stored, jdbc.queryForObject("SELECT content FROM business_config WHERE id = 'd1'", String.class));
+        var before = jdbc.queryForList("SELECT id, content FROM business_config ORDER BY id");
+
+        var legacy = dao.query("d1");
+        assertEquals("mysql", legacy.getDataAdapter());
+        assertFalse(legacy.getDataAdapterConnections().containsKey("mysql"));
+        assertEquals("jdbc:postgresql", dao.query("d2").getDataAdapterConnections().get("postgresql").get("url"));
+
+        assertEquals(before, jdbc.queryForList("SELECT id, content FROM business_config ORDER BY id"));
     }
 }

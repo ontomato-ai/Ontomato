@@ -55,6 +55,18 @@
           }
         }
       },
+      "draftPathFrom": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "draftPathTo": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
       "pathFrom": {
         "type": {
           "kind": "object",
@@ -76,7 +88,7 @@
           "rows": "count"
         },
         "config": {
-          "label": "对象类型"
+          "labelKey": "ontologyGraph.objectTypes"
         },
         "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a"
       },
@@ -87,7 +99,7 @@
           "rows": "count"
         },
         "config": {
-          "label": "属性"
+          "labelKey": "ontologyGraph.attributes"
         },
         "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2b"
       },
@@ -98,7 +110,7 @@
           "rows": "count"
         },
         "config": {
-          "label": "关系类型"
+          "labelKey": "ontologyGraph.relationTypes"
         },
         "id": "builtin-product-cd13e0f3-ab1f-497f-87bd-be1733fadb2a"
       },
@@ -149,7 +161,9 @@
           "searchFields": [
             "label",
             "primaryKey",
-            "desc"
+            "desc",
+            "fromclass",
+            "toclass"
           ],
           "emptyText": ""
         },
@@ -186,8 +200,7 @@
           "labelSize": 13,
           "layout": "force",
           "highlightBanner": false,
-          "showFocusButton": false,
-          "hint": "单击节点查看详情，拖动可调整布局"
+          "showFocusButton": false
         },
         "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"
       },
@@ -198,10 +211,10 @@
           "rows": "list"
         },
         "state": {
-          "selected": "pathFrom"
+          "selected": "draftPathFrom"
         },
         "config": {
-          "placeholder": "来源对象",
+          "placeholderKey": "ontologyGraph.sourceObject",
           "size": "default",
           "clearable": true
         },
@@ -214,10 +227,10 @@
           "rows": "list"
         },
         "state": {
-          "selected": "pathTo"
+          "selected": "draftPathTo"
         },
         "config": {
-          "placeholder": "目标对象",
+          "placeholderKey": "ontologyGraph.targetObject",
           "size": "default",
           "clearable": true
         },
@@ -265,7 +278,7 @@
           "showHeader": false,
           "showFooter": false,
           "searchable": false,
-          "emptyText": "暂无属性",
+          "emptyText": "ontologyGraph.noAttributes",
           "columns": [
             {
               "key": "label",
@@ -299,11 +312,26 @@
           "selected": "relation"
         },
         "config": {
-          "layout": "list",
+          "layout": "table",
+          "showHeader": false,
           "showFooter": false,
           "searchable": false,
-          "showChevron": true,
-          "emptyText": "暂无关联关系"
+          "emptyText": "ontologyGraph.noRelations",
+          "columns": [
+            {
+              "key": "fromclassLabel",
+              "align": "left"
+            },
+            {
+              "key": "label",
+              "align": "center",
+              "shrink": true
+            },
+            {
+              "key": "toclassLabel",
+              "align": "right"
+            }
+          ]
         },
         "id": "builtin-product-47e75f93-efeb-4227-9079-b312605fbc00"
       },
@@ -326,7 +354,9 @@
         },
         "config": {
           "field": "fromObject",
-          "caption": "来源对象",
+          "appearance": "button",
+          "buttonType": "default",
+          "buttonSize": "default",
           "compact": true
         },
         "id": "builtin-product-e8bef137-dffe-47a0-a9f6-ed8645b8a2ad"
@@ -351,26 +381,134 @@
         },
         "config": {
           "field": "toObject",
-          "caption": "目标对象",
+          "appearance": "button",
+          "buttonType": "default",
+          "buttonSize": "default",
           "compact": true
         },
         "id": "builtin-product-9067cae3-cf39-4263-bbea-61f92c6af4f9"
-      },
-      "relationDesc": {
-        "component": "TypedValue",
-        "target": "relation",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "field": "desc",
-          "emptyText": ""
-        },
-        "id": "builtin-product-dfacb93c-eff8-402a-ba08-e1aa68c83cf1"
       }
     }
   },
   "content": {
-    "messages": {}
+    "messages": {
+      "zh-CN": {
+        "panel.name": "本体图谱",
+        "ontologyGraph.description": "探索本体中对象类型、属性与关系的结构",
+        "ontologyGraph.statsLabel": "本体资源统计",
+        "ontologyGraph.refresh": "刷新",
+        "ontologyGraph.searchPlaceholder": "搜索 本体模型",
+        "ontologyGraph.filterByType": "按类型筛选",
+        "ontologyGraph.filterAll": "全部",
+        "ontologyGraph.objectTypes": "对象类型",
+        "ontologyGraph.attributes": "属性",
+        "ontologyGraph.relationTypes": "关系类型",
+        "ontologyGraph.relatedRelations": "关联关系",
+        "ontologyGraph.noMatchingResources": "未找到匹配资源",
+        "ontologyGraph.noObjects": "暂无对象类型",
+        "ontologyGraph.createObjectsFirst": "请先在对象类型页面创建对象类型",
+        "ontologyGraph.graphHint": "单击节点查看详情，拖动可调整布局",
+        "ontologyGraph.pathFinder": "路径查找",
+        "ontologyGraph.pathFinderDesc": "沿着关系方向，在两个对象类型之间查找最短路径",
+        "ontologyGraph.sourceObject": "来源对象",
+        "ontologyGraph.targetObject": "目标对象",
+        "ontologyGraph.findPath": "查找路径",
+        "ontologyGraph.pathFound": "已找到 {count} 跳路径",
+        "ontologyGraph.pathNotFound": "在当前可见范围内未找到可达路径",
+        "ontologyGraph.goModeling": "去建模",
+        "ontologyGraph.noAttributes": "暂无属性",
+        "ontologyGraph.noRelations": "暂无关联关系",
+        "ontologyGraph.selectGraphElement": "选择一个图谱元素",
+        "ontologyGraph.inspectorEmptyDesc": "对象属性、业务描述和关联关系将在这里展示。",
+        "ontologyGraph.objectMissing": "对象类型不存在或已删除",
+        "ontologyGraph.relationMissing": "关系类型不存在或已删除",
+        "ontologyGraph.objectForbiddenTitle": "无权限查看该对象类型",
+        "ontologyGraph.relationForbiddenTitle": "无权限查看该关系类型",
+        "ontologyGraph.forbiddenDesc": "当前账号缺少读取该元素的权限。",
+        "ontologyGraph.objectReadFailedTitle": "读取对象类型失败",
+        "ontologyGraph.relationReadFailedTitle": "读取关系类型失败",
+        "ontologyGraph.readFailedFallback": "暂时无法读取该元素的最新内容，请重试。",
+        "ontologyGraph.retry": "重试",
+        "ontologyGraph.clearSelection": "清除选择"
+      },
+      "en": {
+        "panel.name": "Ontology graph",
+        "ontologyGraph.description": "Explore object types, attributes, and relationships in the ontology",
+        "ontologyGraph.statsLabel": "Ontology summary",
+        "ontologyGraph.refresh": "Refresh",
+        "ontologyGraph.searchPlaceholder": "Search ontology model",
+        "ontologyGraph.filterByType": "Filter by type",
+        "ontologyGraph.filterAll": "All",
+        "ontologyGraph.objectTypes": "Object types",
+        "ontologyGraph.attributes": "Attributes",
+        "ontologyGraph.relationTypes": "Relation types",
+        "ontologyGraph.relatedRelations": "Relations",
+        "ontologyGraph.noMatchingResources": "No matching resources found",
+        "ontologyGraph.noObjects": "No object types yet",
+        "ontologyGraph.createObjectsFirst": "Create object types in the Object Types page first.",
+        "ontologyGraph.graphHint": "Click a node to inspect details, drag to adjust the layout",
+        "ontologyGraph.pathFinder": "Path finder",
+        "ontologyGraph.pathFinderDesc": "Find the shortest path along relation direction between two object types",
+        "ontologyGraph.sourceObject": "Source object",
+        "ontologyGraph.targetObject": "Target object",
+        "ontologyGraph.findPath": "Find path",
+        "ontologyGraph.pathFound": "Found a {count}-hop path",
+        "ontologyGraph.pathNotFound": "No reachable path found in the current visible graph",
+        "ontologyGraph.goModeling": "Open modeling",
+        "ontologyGraph.noAttributes": "No attributes",
+        "ontologyGraph.noRelations": "No related relations",
+        "ontologyGraph.selectGraphElement": "Select a graph element",
+        "ontologyGraph.inspectorEmptyDesc": "Object attributes, business description, and relations will appear here.",
+        "ontologyGraph.objectMissing": "Object type does not exist or has been deleted",
+        "ontologyGraph.relationMissing": "Relation type does not exist or has been deleted",
+        "ontologyGraph.objectForbiddenTitle": "No permission to view this object type",
+        "ontologyGraph.relationForbiddenTitle": "No permission to view this relation type",
+        "ontologyGraph.forbiddenDesc": "Your account does not have permission to read this element.",
+        "ontologyGraph.objectReadFailedTitle": "Failed to load object type",
+        "ontologyGraph.relationReadFailedTitle": "Failed to load relation type",
+        "ontologyGraph.readFailedFallback": "Unable to read the latest details for this element. Please retry.",
+        "ontologyGraph.retry": "Retry",
+        "ontologyGraph.clearSelection": "Clear selection"
+      },
+      "en-US": {
+        "panel.name": "Ontology graph",
+        "ontologyGraph.description": "Explore object types, attributes, and relationships in the ontology",
+        "ontologyGraph.statsLabel": "Ontology summary",
+        "ontologyGraph.refresh": "Refresh",
+        "ontologyGraph.searchPlaceholder": "Search ontology model",
+        "ontologyGraph.filterByType": "Filter by type",
+        "ontologyGraph.filterAll": "All",
+        "ontologyGraph.objectTypes": "Object types",
+        "ontologyGraph.attributes": "Attributes",
+        "ontologyGraph.relationTypes": "Relation types",
+        "ontologyGraph.relatedRelations": "Relations",
+        "ontologyGraph.noMatchingResources": "No matching resources found",
+        "ontologyGraph.noObjects": "No object types yet",
+        "ontologyGraph.createObjectsFirst": "Create object types in the Object Types page first.",
+        "ontologyGraph.graphHint": "Click a node to inspect details, drag to adjust the layout",
+        "ontologyGraph.pathFinder": "Path finder",
+        "ontologyGraph.pathFinderDesc": "Find the shortest path along relation direction between two object types",
+        "ontologyGraph.sourceObject": "Source object",
+        "ontologyGraph.targetObject": "Target object",
+        "ontologyGraph.findPath": "Find path",
+        "ontologyGraph.pathFound": "Found a {count}-hop path",
+        "ontologyGraph.pathNotFound": "No reachable path found in the current visible graph",
+        "ontologyGraph.goModeling": "Open modeling",
+        "ontologyGraph.noAttributes": "No attributes",
+        "ontologyGraph.noRelations": "No related relations",
+        "ontologyGraph.selectGraphElement": "Select a graph element",
+        "ontologyGraph.inspectorEmptyDesc": "Object attributes, business description, and relations will appear here.",
+        "ontologyGraph.objectMissing": "Object type does not exist or has been deleted",
+        "ontologyGraph.relationMissing": "Relation type does not exist or has been deleted",
+        "ontologyGraph.objectForbiddenTitle": "No permission to view this object type",
+        "ontologyGraph.relationForbiddenTitle": "No permission to view this relation type",
+        "ontologyGraph.forbiddenDesc": "Your account does not have permission to read this element.",
+        "ontologyGraph.objectReadFailedTitle": "Failed to load object type",
+        "ontologyGraph.relationReadFailedTitle": "Failed to load relation type",
+        "ontologyGraph.readFailedFallback": "Unable to read the latest details for this element. Please retry.",
+        "ontologyGraph.retry": "Retry",
+        "ontologyGraph.clearSelection": "Clear selection"
+      }
+    }
   }
 }

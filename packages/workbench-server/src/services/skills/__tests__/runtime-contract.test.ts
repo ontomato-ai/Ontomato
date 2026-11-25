@@ -221,6 +221,9 @@ it("admits protected packages only through the initiator's exact entrance and ev
   await expect(prepareAssistantSkills(domain, { kind: "regular", skills: [] }, credentials, {
     ...context, member: { ...member, source: { ...source, useId: "missing" } },
   })).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
+  await expect(prepareAssistantSkills(domain, { kind: "regular", skills: [] }, credentials, {
+    mode: "member", locator: entrance, member: null, entry: { ...source, useId: "missing" },
+  })).rejects.toMatchObject({ status: 403, code: "PANEL_ENTRY_FORBIDDEN" });
   await expect(pageSkillMemberContext(view, entrance, source, { id: "old-panel" })).resolves.toEqual({
     mode: "member", locator: entrance, member: null,
   });

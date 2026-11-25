@@ -7,11 +7,11 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
 import type { EntryDependency } from "@ontomato/contracts/entry-dependencies";
 import { HttpError } from "../../../utils/errors";
-const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), grantBatch: vi.fn(), grantedIds: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), grantBatch: vi.fn(), grantedIds: vi.fn(), managementAccess: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
 vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: (action: (client: { query: typeof mocks.query }) => unknown) => action({ query: mocks.query }) }));
 vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant, productGrantsAllowedBatch: mocks.grantBatch, registerProductResource: mocks.register,
-  shareProductResource: mocks.share, grantedProductIds: mocks.grantedIds }));
+  shareProductResource: mocks.share, grantedProductIds: mocks.grantedIds, productManagementAccess: mocks.managementAccess }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: async () => undefined }));
 vi.mock("../definition-stream", () => ({ notifyProductDefinitionChanged: mocks.notify }));
 vi.mock("../entry-dependency-publication", () => ({ deliverEntryDependencyPublications: vi.fn() }));
@@ -43,6 +43,9 @@ beforeEach(() => {
   vi.resetAllMocks(); mocks.edits = []; rows = new Map();
   const dependencies = new Map<string, EntryDependency[]>();
   mocks.grantedIds.mockImplementation(async () => mocks.edits);
+  mocks.managementAccess.mockImplementation(async ({ id }: { id: string }, { ownerId }: { ownerId: string | null }) => ({
+    allowed: true, authored: ownerId === owner.userId, editable: mocks.edits.includes(id),
+  }));
   mocks.grantBatch.mockImplementation(async (ids: readonly string[]) => Object.fromEntries(ids.map(id => [id, true])));
   mocks.register.mockImplementation(async (_owner, id: string) => { mocks.edits.push(id); });
   mocks.query.mockImplementation(async (sql: string, args: unknown[] = []) => {

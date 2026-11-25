@@ -19,5 +19,6 @@ it("lists the built-in graph as a public skill in every domain", async () => {
     expect(registry.getSkillById("network-graph")?.source.kind).toBe("public");
     expect(registry.getSkillByRef({ namespace: { kind: "provider", provider: "workbench" }, name: "network-graph" })?.source.kind).toBe("public");
     expect(registry.getSkills().some(entry => entry.skill.name === "network-graph")).toBe(true);
+    await expect(fs.stat(manager.getDomainSkillsRoot(domain))).rejects.toMatchObject({ code: "ENOENT" });
   }
 });
