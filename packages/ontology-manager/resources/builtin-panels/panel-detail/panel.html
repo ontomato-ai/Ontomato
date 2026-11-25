@@ -491,6 +491,12 @@
               {{ pickedMemberId ? t('members.selectedCandidate', { name: pickedMemberLabel }) : t('members.chooseCandidate') }}
             </span>
             <div class="pd-member-picker-inputs">
+              <sdk-input
+                v-model="memberSlotName"
+                size="small"
+                :placeholder="t('members.slotPlaceholder')"
+                :aria-label="t('members.slotPlaceholder')"
+              ></sdk-input>
               <sdk-select
                 v-if="layoutConfig.mode === 'main-side'"
                 v-model="memberAddZone"
@@ -500,12 +506,6 @@
                 <sdk-option value="main" :label="t('layout.zoneMain')"></sdk-option>
                 <sdk-option value="side" :label="t('layout.zoneSide')"></sdk-option>
               </sdk-select>
-              <sdk-input
-                v-model="memberSlotName"
-                size="small"
-                :placeholder="t('members.slotPlaceholder')"
-                :aria-label="t('members.slotPlaceholder')"
-              ></sdk-input>
               <sdk-button type="primary" size="small" :disabled="!canAddPickedMember" @click="addPickedMember">
                 {{ t('members.addExisting') }}
               </sdk-button>

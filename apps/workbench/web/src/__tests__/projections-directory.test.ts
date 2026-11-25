@@ -1303,14 +1303,12 @@ describe("projections two-entry catalog & detail panels", () => {
         () => `navigated=${JSON.stringify(navigated)}`,
       );
 
-      // 2. Open More menu -> click View object type -> navigates to capability map.
+      // 2. Open More menu -> omits extra View object type item (PJ-09) while keeping Copy / Grants / Delete.
       findButton(mounted.element, "More")!.click();
-      await waitFor(() => Boolean(findMenuItem("View object type")), "More dropdown opened");
-      findMenuItem("View object type")!.click();
-      await waitFor(
-        () => navigated.some((addr) => addr.startsWith("/ontology/assets/capability-map") && addr.includes("selectedType=platform:ProductProjection")),
-        () => `navigated=${JSON.stringify(navigated)}`,
-      );
+      await waitFor(() => Boolean(findMenuItem("Copy")), "More dropdown opened");
+      expect(findMenuItem("View object type")).toBeUndefined();
+      expect(findMenuItem("Permissions & sharing")).toBeTruthy();
+      expect(findMenuItem("Delete")).toBeTruthy();
 
       // 3. Copy selects only owner-returned data.id and never falls back to draft copyId.
       await present({ copyDialog: true, copyId: "draft-id-ignored", copyName: "Copy A" });
@@ -1381,11 +1379,12 @@ describe("projections two-entry catalog & detail panels", () => {
       expect(observed.context?.state?.detailMode).toBe("view");
       expect(findButton(mounted.element, "Edit")).toBeUndefined();
 
-      // Chart projection shows chart hint and hides Copy in More menu.
+      // Chart projection shows chart hint and hides Copy and View object type in More menu.
       await present({ selected: projRef("proj-chart") });
       await waitFor(() => mounted.element.textContent?.includes("Chart projections are registered") === true, "chart hint shown");
       findButton(mounted.element, "More")!.click();
-      await waitFor(() => Boolean(findMenuItem("View object type")), "More menu opened for chart");
+      await waitFor(() => Boolean(findMenuItem("Delete")), "More menu opened for chart");
+      expect(findMenuItem("View object type")).toBeUndefined();
       expect(findMenuItem("Copy")).toBeUndefined();
 
       // Atomic remote control `{ selected: proj-a, detailMode: "edit" }` enters edit mode directly.

@@ -90,12 +90,12 @@ it("combines four sources with localized category fields and stable outputs", as
     [builderId, "system", "System"], [DIAGNOSIS_AGENT_ID, "system", "System"], [retrievalId, "system", "System"],
   ]);
   expect(rows.slice(2).every(row => row.tones?.enabled === "success")).toBe(true);
-  expect(rows.map(row => [row.primaryKey, row.fields?.icon])).toEqual([
-    [presetId, '{"key":"Sparkles","color":"#EEF7FF"}'],
-    [customId, ""],
-    [builderId, ""],
-    [DIAGNOSIS_AGENT_ID, ""],
-    [retrievalId, ""],
+  expect(rows.map(row => [row.primaryKey, row.fields?.icon, row.fields?.agentTitle])).toEqual([
+    [presetId, '{"key":"Sparkles","color":"#EEF7FF"}', ["Preset", '{"key":"Sparkles","color":"#EEF7FF"}']],
+    [customId, "", ["Custom", ""]],
+    [builderId, "", ["App builder", ""]],
+    [DIAGNOSIS_AGENT_ID, "", ["Operations diagnosis", ""]],
+    [retrievalId, "", ["Data retrieval", ""]],
   ]);
   const customRecord = await directory.record(customId);
   expect(customRecord.outputs).toMatchObject({ category: "custom", canEdit: true, canGrant: true, domainShared: true });

@@ -132,6 +132,17 @@ await mountPanel({
     });
     const createButtonDisabled = computed(() => creating.value || !canCreate.value);
 
+    function agentCellName(value, displayText) {
+      if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : "";
+      if (typeof value === "string" && value.length > 0) return value;
+      return typeof displayText === "string" ? displayText : "";
+    }
+
+    function agentCellIcon(value) {
+      if (Array.isArray(value)) return typeof value[1] === "string" ? value[1] : "";
+      return "";
+    }
+
     function avatarStyle(icon) {
       const swatch = avatarSwatch(parseAgentAvatar(icon).color);
       return { background: isDark.value ? swatch.dark : swatch.light };
@@ -183,6 +194,8 @@ await mountPanel({
       createUnavailableReason,
       creating,
       createDialog,
+      agentCellName,
+      agentCellIcon,
       avatarStyle,
       avatarAppIcon,
       avatarSvgKey,

@@ -32,8 +32,8 @@ describe("agent-settings and agent-detail builtin panels", () => {
     ]);
 
     expect(json.manifest.state.creating.deepLink).toBe(true);
-    expect(json.manifest.members.list.config.columns[0]).toMatchObject({ key: "icon", labelKey: "col.name" });
-    expect(html).toContain("#cell-icon=");
+    expect(json.manifest.members.list.config.columns[0]).toMatchObject({ key: "agentTitle", labelKey: "col.name" });
+    expect(html).toContain("#cell-agentTitle=");
     expect(html).toContain("agents-avatar");
     expect(html).toContain(":disabled=\"createButtonDisabled\"");
     expect(module).toContain("memberContext(\"createForm\")");

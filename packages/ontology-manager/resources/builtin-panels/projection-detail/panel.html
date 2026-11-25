@@ -345,62 +345,78 @@
         </div>
         <div class="proj-form-wrap">
           <projection slot="form" @saved="onSaved">
-            <template #field-data="{ value, update, readOnly }">
-              <div class="proj-binding-helper">
-                <div v-if="!readOnly" class="proj-binding-bar">
-                  <sdk-segmented v-model="dataBindKind" :options="dataBindKindOptions" size="small"></sdk-segmented>
-                  <sdk-input v-model="dataBindKey" class="proj-binding-input" size="small" :placeholder="t('binding.datumKey')"></sdk-input>
-                  <div class="proj-binding-picker">
-                    <projection v-if="dataBindKind === 'metric'" slot="bindingMetricPicker"></projection>
-                    <projection v-else slot="bindingObjectTypePicker"></projection>
+            <template #field-data="{ field, value, error, changed, disabled, set }">
+              <sdk-form-item
+                :label="field.label"
+                :required="field.required"
+                :error="error"
+                :class="{ 'sdk-form-field-changed': changed }"
+                data-field="/data"
+              >
+                <div class="proj-binding-helper">
+                  <div v-if="!disabled" class="proj-binding-bar">
+                    <sdk-segmented v-model="dataBindKind" :options="dataBindKindOptions" size="small"></sdk-segmented>
+                    <sdk-input v-model="dataBindKey" class="proj-binding-input" size="small" :placeholder="t('binding.datumKey')"></sdk-input>
+                    <div class="proj-binding-picker">
+                      <projection v-if="dataBindKind === 'metric'" slot="bindingMetricPicker"></projection>
+                      <projection v-else slot="bindingObjectTypePicker"></projection>
+                    </div>
+                    <sdk-input v-model="dataBindManualId" class="proj-binding-id" size="small" :placeholder="t('binding.manualId')"></sdk-input>
+                    <sdk-button size="small" type="primary" plain :disabled="!canApplyDataBinding" @click="applyDataBinding(value, set)">
+                      {{ t('binding.apply') }}
+                    </sdk-button>
+                    <sdk-button size="small" text @click="showDataJson = !showDataJson">
+                      {{ showDataJson ? t('binding.hideJson') : t('binding.showJson') }}
+                    </sdk-button>
                   </div>
-                  <sdk-input v-model="dataBindManualId" class="proj-binding-id" size="small" :placeholder="t('binding.manualId')"></sdk-input>
-                  <sdk-button size="small" type="primary" plain :disabled="!canApplyDataBinding" @click="applyDataBinding(value, update)">
-                    {{ t('binding.apply') }}
-                  </sdk-button>
-                  <sdk-button size="small" text @click="showDataJson = !showDataJson">
-                    {{ showDataJson ? t('binding.hideJson') : t('binding.showJson') }}
-                  </sdk-button>
+                  <template v-if="showDataJson || disabled">
+                    <sdk-input
+                      type="textarea"
+                      :rows="6"
+                      :disabled="disabled"
+                      :model-value="formatJsonField(value, 'data')"
+                      @update:model-value="onJsonFieldInput('data', $event, set)"
+                    ></sdk-input>
+                    <p v-if="jsonFieldErrors.data" class="proj-binding-error" role="alert">{{ jsonFieldErrors.data }}</p>
+                  </template>
                 </div>
-                <template v-if="showDataJson || readOnly">
-                  <sdk-input
-                    type="textarea"
-                    :rows="6"
-                    :disabled="readOnly"
-                    :model-value="formatJsonField(value, 'data')"
-                    @update:model-value="onJsonFieldInput('data', $event, update)"
-                  ></sdk-input>
-                  <p v-if="jsonFieldErrors.data" class="proj-binding-error" role="alert">{{ jsonFieldErrors.data }}</p>
-                </template>
-              </div>
+              </sdk-form-item>
             </template>
 
-            <template #field-operations="{ value, update, readOnly }">
-              <div class="proj-binding-helper">
-                <div v-if="!readOnly" class="proj-binding-bar">
-                  <sdk-input v-model="opBindKey" class="proj-binding-input" size="small" :placeholder="t('binding.opKey')"></sdk-input>
-                  <div class="proj-binding-picker">
-                    <projection slot="bindingActionPicker"></projection>
+            <template #field-operations="{ field, value, error, changed, disabled, set }">
+              <sdk-form-item
+                :label="field.label"
+                :required="field.required"
+                :error="error"
+                :class="{ 'sdk-form-field-changed': changed }"
+                data-field="/operations"
+              >
+                <div class="proj-binding-helper">
+                  <div v-if="!disabled" class="proj-binding-bar">
+                    <sdk-input v-model="opBindKey" class="proj-binding-input" size="small" :placeholder="t('binding.opKey')"></sdk-input>
+                    <div class="proj-binding-picker">
+                      <projection slot="bindingActionPicker"></projection>
+                    </div>
+                    <sdk-input v-model="opBindManualId" class="proj-binding-id" size="small" :placeholder="t('binding.manualId')"></sdk-input>
+                    <sdk-button size="small" type="primary" plain :disabled="!canApplyOperationBinding" @click="applyOperationBinding(value, set)">
+                      {{ t('binding.apply') }}
+                    </sdk-button>
+                    <sdk-button size="small" text @click="showOpsJson = !showOpsJson">
+                      {{ showOpsJson ? t('binding.hideJson') : t('binding.showJson') }}
+                    </sdk-button>
                   </div>
-                  <sdk-input v-model="opBindManualId" class="proj-binding-id" size="small" :placeholder="t('binding.manualId')"></sdk-input>
-                  <sdk-button size="small" type="primary" plain :disabled="!canApplyOperationBinding" @click="applyOperationBinding(value, update)">
-                    {{ t('binding.apply') }}
-                  </sdk-button>
-                  <sdk-button size="small" text @click="showOpsJson = !showOpsJson">
-                    {{ showOpsJson ? t('binding.hideJson') : t('binding.showJson') }}
-                  </sdk-button>
+                  <template v-if="showOpsJson || disabled">
+                    <sdk-input
+                      type="textarea"
+                      :rows="5"
+                      :disabled="disabled"
+                      :model-value="formatJsonField(value, 'operations')"
+                      @update:model-value="onJsonFieldInput('operations', $event, set)"
+                    ></sdk-input>
+                    <p v-if="jsonFieldErrors.operations" class="proj-binding-error" role="alert">{{ jsonFieldErrors.operations }}</p>
+                  </template>
                 </div>
-                <template v-if="showOpsJson || readOnly">
-                  <sdk-input
-                    type="textarea"
-                    :rows="5"
-                    :disabled="readOnly"
-                    :model-value="formatJsonField(value, 'operations')"
-                    @update:model-value="onJsonFieldInput('operations', $event, update)"
-                  ></sdk-input>
-                  <p v-if="jsonFieldErrors.operations" class="proj-binding-error" role="alert">{{ jsonFieldErrors.operations }}</p>
-                </template>
-              </div>
+              </sdk-form-item>
             </template>
           </projection>
         </div>

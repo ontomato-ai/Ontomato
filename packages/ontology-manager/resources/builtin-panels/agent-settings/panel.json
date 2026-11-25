@@ -46,7 +46,7 @@
           "noMatchText": "agents.noMatch",
           "columns": [
             {
-              "key": "icon",
+              "key": "agentTitle",
               "labelKey": "col.name",
               "minWidth": 220
             },

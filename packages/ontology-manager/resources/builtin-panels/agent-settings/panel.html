@@ -97,6 +97,7 @@
           </svg>
         </sdk-button>
         <sdk-tooltip
+          v-if="listStatus !== 'forbidden'"
           :disabled="!createUnavailableReason"
           :content="createUnavailableReason"
           placement="bottom"
@@ -117,12 +118,12 @@
     <p v-if="listStatus === 'forbidden'" class="agents-forbidden" role="alert">{{ t("agents.accessDenied") }}</p>
     <div v-show="listStatus !== 'forbidden'" class="agents-catalog">
       <projection slot="list" class="agents-list-slot" @choose="openDetail">
-        <template #cell-icon="{ ref, value }">
-          <span class="agents-name-cell" :title="ref.label">
-            <span class="agents-avatar" :style="avatarStyle(value)" aria-hidden="true">
-              <component :is="avatarAppIcon(value)" v-if="avatarAppIcon(value)" :size="17" />
+        <template #cell-agentTitle="{ value, displayText }">
+          <span class="agents-name-cell" :title="agentCellName(value, displayText)">
+            <span class="agents-avatar" :style="avatarStyle(agentCellIcon(value))" aria-hidden="true">
+              <component :is="avatarAppIcon(agentCellIcon(value))" v-if="avatarAppIcon(agentCellIcon(value))" :size="17" />
               <svg
-                v-else-if="avatarSvgKey(value) === 'TrendingUp'"
+                v-else-if="avatarSvgKey(agentCellIcon(value)) === 'TrendingUp'"
                 viewBox="0 0 24 24"
                 width="17"
                 height="17"
@@ -136,7 +137,7 @@
                 <path d="m22 7-8.5 8.5-5-5L2 17" />
               </svg>
               <svg
-                v-else-if="avatarSvgKey(value) === 'Target'"
+                v-else-if="avatarSvgKey(agentCellIcon(value)) === 'Target'"
                 viewBox="0 0 24 24"
                 width="17"
                 height="17"
@@ -171,7 +172,7 @@
                 <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
               </svg>
             </span>
-            <span class="agents-name-text">{{ ref.label }}</span>
+            <span class="agents-name-text">{{ agentCellName(value, displayText) }}</span>
           </span>
         </template>
       </projection>
