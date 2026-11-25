@@ -162,3 +162,76 @@ describe("the operations application's unified platform frame", () => {
     expect(operations(["user-feedback"], withoutFeedback).home).not.toBe("/ops/feedback");
   });
 });
+
+describe("system settings catalog-driven frame with mixed panel and native entries", () => {
+  it("uses zero hostMenu groups and picks landing home in menu group order including native-only accounts", () => {
+    const settingsApp = {
+      id: "settings",
+      kind: "native" as const,
+      names: { en: "System settings", "zh-CN": "系统设置" },
+      descriptions: { en: "Models, general settings, connections, logs and monitoring" },
+      icon: "settings",
+      rail: "bottom" as const,
+      category: "admin" as const,
+      sort: 20,
+      entry: { path: "/settings", renderer: "settings" },
+      entryAccess: ["system-config", "authorization-management", "audit-logs", "system-monitoring", "mcp-service"],
+      scheduleAdapter: null,
+      releaseId: null,
+      framePanelId: "builtin-product-platform-frame",
+      allowStandalone: false,
+      groups: [
+        { key: "models", names: { en: "Models" }, sort: 0 },
+        { key: "system-settings", names: { en: "System" }, sort: 1 },
+        { key: "records", names: { en: "Logs and monitoring" }, sort: 3 },
+      ],
+      panelUses: [
+        {
+          id: "audit-log",
+          pageKey: "audit-log",
+          panelId: "builtin-product-audit-log",
+          path: "/settings/records/audit-log",
+          icon: "clipboard-list",
+          groupKey: "records",
+          access: { permissionCode: "audit-logs" },
+          names: { en: "Audit log" },
+        },
+        {
+          id: "system-monitor",
+          pageKey: "system-monitor",
+          kind: "native" as const,
+          path: "/settings/records/system-monitor",
+          icon: "activity",
+          groupKey: "records",
+          access: { permissionCode: "system-monitoring" },
+          names: { en: "System monitoring" },
+        },
+        {
+          id: "authorization",
+          pageKey: "authorization",
+          kind: "native" as const,
+          path: "/settings/system-config/authorization",
+          icon: "key-round",
+          groupKey: "system-settings",
+          access: { permissionCode: "authorization-management" },
+          names: { en: "License" },
+        },
+      ],
+    };
+
+    const navigation = generatedNavigation();
+    const withAuthAndAudit = appDeclarations(navigation, closedAccess(["authorization-management", "audit-logs"]), catalogPartition([settingsApp], "en"), t)
+      .find((app) => app.id === "settings")!;
+    expect(withAuthAndAudit.framePanelId).toBe("builtin-product-platform-frame");
+    expect(withAuthAndAudit.groups).toEqual([]);
+    // Even though authorization is appended after audit-log, system-settings sorts ahead of records.
+    expect(withAuthAndAudit.home).toBe("/settings/system-config/authorization");
+
+    const monitorOnlyApp = { ...settingsApp, panelUses: [settingsApp.panelUses[1]!] };
+    const monitorOnly = appDeclarations(navigation, closedAccess(["system-monitoring"]), catalogPartition([monitorOnlyApp], "en"), t)
+      .find((app) => app.id === "settings")!;
+    expect(monitorOnly.framePanelId).toBe("builtin-product-platform-frame");
+    expect(monitorOnly.groups).toEqual([]);
+    expect(monitorOnly.home).toBe("/settings/records/system-monitor");
+  });
+});

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { pageSkillSchema } from "./page-skills";
 import { applicationMetadataSchema } from "./application-metadata";
-import { applicationPanelUseSchema } from "./product-panels";
+import { applicationMenuEntrySchema, applicationPanelUseSchema } from "./product-panels";
 
 const names = applicationMetadataSchema.shape.names;
 const sequence = z.string().regex(/^[0-9]+$/).refine((value) => BigInt(value) <= 9223372036854775807n);
@@ -12,11 +12,15 @@ export const applicationDeclarationSchema = applicationMetadataSchema.extend({
   panelUses: z.array(applicationPanelUseSchema).optional(),
 }).strict();
 export type ApplicationDeclaration = z.infer<typeof applicationDeclarationSchema>;
+export const builtinApplicationDeclarationSchema = applicationMetadataSchema.extend({
+  pageSkills: z.array(pageSkillSchema).optional(),
+  panelUses: z.array(applicationMenuEntrySchema).optional(),
+}).strict();
 export const builtinApplicationSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), kind: z.enum(["native", "link"]),
   rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number().int(),
   entry: z.object({ path: z.string(), renderer: z.string(), home: z.string().optional() }),
-  entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), declaration: applicationDeclarationSchema,
+  entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), declaration: builtinApplicationDeclarationSchema,
   framePanelId: z.string().min(1).optional(),
   allowStandalone: z.boolean().optional(),
 });
@@ -27,7 +31,7 @@ export const applicationCatalogSchema = z.array(z.object({
   entry: z.object({ path: z.string(), renderer: z.string().optional(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
   groups: applicationMetadataSchema.shape.groups.optional(),
-  panelUses: z.array(applicationPanelUseSchema).optional(),
+  panelUses: z.array(applicationMenuEntrySchema).optional(),
   framePanelId: z.string().min(1).optional(),
   allowStandalone: z.boolean().optional(),
 }));

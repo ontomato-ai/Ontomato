@@ -298,6 +298,32 @@ export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 /** An entry shipped by the platform must point to a panel shipped by the platform. */
 export const builtinApplicationPanelUseSchema = applicationPanelUseSchema.extend({ panelId: builtinProductIdSchema });
 
+/**
+ * A built-in native page entry inside a platform application's entry table (read-only / built-in declarations only).
+ * Domain applications cannot declare native entries; explicit `kind: "native"` prevents an omitted `panelId` from
+ * silently bypassing panel validation, and forbids panel-only fields (`panelId`, `inputs`, `defaultAgent`).
+ */
+export const builtinNativeEntrySchema = z.object({
+  id,
+  pageKey: id,
+  kind: z.literal("native"),
+  path: applicationPanelUsePathSchema,
+  access: applicationPanelUseSchema.shape.access,
+  names: applicationPanelUseSchema.shape.names,
+  descriptions: applicationPanelUseSchema.shape.descriptions,
+  icon: applicationPanelUseSchema.shape.icon,
+  groupKey: applicationPanelUseSchema.shape.groupKey,
+}).strict();
+export type BuiltinNativeEntry = z.infer<typeof builtinNativeEntrySchema>;
+
+/** Entry table item exposed by the catalog and frame menu: a panel entry or a built-in native page entry. */
+export const applicationMenuEntrySchema = z.union([applicationPanelUseSchema, builtinNativeEntrySchema]);
+export type ApplicationMenuEntry = z.infer<typeof applicationMenuEntrySchema>;
+
+export function isNativeApplicationEntry(entry: ApplicationMenuEntry): entry is BuiltinNativeEntry {
+  return "kind" in entry && entry.kind === "native";
+}
+
 export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
 export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
 
@@ -309,7 +335,7 @@ export type ApplicationEntryResolutionQuery = z.infer<typeof applicationEntryRes
 export const applicationEntryMenuSchema = z.object({
   names: applicationMetadataSchema.shape.names.optional(),
   groups: applicationMetadataSchema.shape.groups,
-  panelUses: z.array(applicationPanelUseSchema),
+  panelUses: z.array(applicationMenuEntrySchema),
 }).strict();
 export type ApplicationEntryMenu = z.infer<typeof applicationEntryMenuSchema>;
 
@@ -618,12 +644,13 @@ export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplica
 export const applicationPanelUsesResponseSchema = z.object({
   applicationId: id,
   entry: z.object({ path, renderer: id, home: path.optional() }).strict(),
-  panelUses: z.array(applicationPanelUseSchema),
+  panelUses: z.array(applicationMenuEntrySchema),
 }).strict();
 export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesResponseSchema>;
 
 /** A maintenance read is the full declaration and uses, independent of the viewer's visible menu. */
 export const applicationPanelUsesManagementSchema = applicationPanelUsesResponseSchema.extend({
+  panelUses: z.array(applicationPanelUseSchema),
   declaration: applicationMetadataSchema,
   entryAccess: z.array(id).min(1),
   allowStandalone: z.boolean().optional(),

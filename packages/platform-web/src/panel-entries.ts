@@ -1,6 +1,7 @@
 import type { NavigationGuard, RouteRecordRaw, Router } from "vue-router";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { isPanelApplication } from "@ontomato/contracts/platform-identity";
+import { isNativeApplicationEntry } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
 import { startPage } from "./shell";
@@ -20,6 +21,7 @@ export function servePanelEntries(router: Router): void {
   for (const app of catalog.applications.value) {
     if (isPanelApplication(app)) continue;
     for (const use of app.panelUses ?? []) {
+      if (isNativeApplicationEntry(use)) continue;
       const path = panelUsePath(use.path);
       if (served.has(path)) continue;
       served.add(path);
@@ -99,7 +101,7 @@ export function addressLandingGuard(router: Router): NavigationGuard {
       ];
       const first = ordered
         .flatMap((app) => app.panelUses ?? [])
-        .find((use) => "permissionCode" in use.access);
+        .find((use) => !isNativeApplicationEntry(use) && "permissionCode" in use.access);
       if (first) return panelUsePath(first.path);
       return true;
     }
