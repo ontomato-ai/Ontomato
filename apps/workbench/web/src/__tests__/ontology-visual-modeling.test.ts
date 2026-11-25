@@ -466,28 +466,34 @@ describe("ontology-visual-modeling builtin panel", () => {
         expect(element.querySelector("[data-member='attributeDelete']")).not.toBeNull();
       });
 
-      // Clicking "Browse data" navigates to /browser/data/Order.
-      const browseBtn = Array.from(element.querySelectorAll<HTMLButtonElement>(".vm-side-actions button"))
+      // VM-06: Extra "Browse data" button is removed from the node side inspector.
+      const browseBtn = Array.from(element.querySelectorAll<HTMLButtonElement>(".vm-side button"))
         .find((btn) => btn.textContent?.includes("浏览数据") || btn.textContent?.includes("Browse data"));
-      expect(browseBtn).toBeDefined();
-      browseBtn!.click();
-      await vi.waitFor(() => {
-        expect(harness.router.currentRoute.value.path).toBe("/browser/data/Order");
-      });
+      expect(browseBtn).toBeUndefined();
     } finally {
       app.unmount();
     }
   });
 
-  it("renders ObjectHeader for a deep-linked relationship edge", async () => {
+  it("keeps the side inspector closed for a deep-linked relationship edge and opens edit dialog from the toolbar", async () => {
     const harness = mountVisualModeling({
       initialState: { selectedEdge: relationRef("placedBy") },
     });
     const { app, element } = await harness.open();
     try {
       await vi.waitFor(() => {
-        expect(element.querySelector(".vm-side")?.textContent).toContain("下单客户");
-        expect(element.querySelector(".vm-side")?.textContent).toContain("订单 → 客户");
+        expect(element.querySelector(".vm-side")).toBeNull();
+        expect(element.querySelector(".vm-toolbar")?.textContent).toContain("下单客户");
+      });
+      const editBtn = Array.from(element.querySelectorAll<HTMLButtonElement>(".vm-selection-actions button"))
+        .find((btn) => btn.textContent?.includes("Edit") || btn.textContent?.includes("编辑"));
+      expect(editBtn).toBeDefined();
+      expect(editBtn!.disabled).toBe(false);
+      editBtn!.click();
+      await vi.waitFor(() => {
+        expect(document.body.querySelector("[data-member='relationForm']")).not.toBeNull();
+        expect(document.body.querySelector("[data-member='relationEditFrom']")).not.toBeNull();
+        expect(document.body.querySelector("[data-member='relationEditTo']")).not.toBeNull();
       });
     } finally {
       app.unmount();
@@ -529,7 +535,10 @@ describe("ontology-visual-modeling builtin panel", () => {
   it("keeps selectedNode and forms mounted when a refresh read fails, showing the error in place", async () => {
     let failing = false;
     const harness = mountVisualModeling({
-      initialState: { selectedNode: objectRef("Order") },
+      initialState: {
+        selectedNode: objectRef("Order"),
+        selectedAttribute: attrRef("Order", "amount"),
+      },
       onRead: (body) => {
         if (body.memberPath[0]?.member === "nodeHeader" && body.dataName === "record" && failing) {
           return Response.json({ status: "error", message: "Temporary read failure" });
@@ -542,14 +551,14 @@ describe("ontology-visual-modeling builtin panel", () => {
       await vi.waitFor(() => {
         expect(element.querySelector(".vm-side")?.textContent).toContain("订单");
         expect(element.querySelector("[data-member='classForm']")).not.toBeNull();
+        expect(element.querySelector<HTMLButtonElement>("[data-member='attributePrimaryKey'] button")).not.toBeNull();
       });
 
       failing = true;
-      const refreshBtn = element.querySelector<HTMLButtonElement>(".sdk-page-header button");
-      expect(refreshBtn).not.toBeNull();
-      refreshBtn!.click();
+      // Trigger an affected refresh on Order via an owner write operation (PageHeader refresh button removed by VM-01).
+      element.querySelector<HTMLButtonElement>("[data-member='attributePrimaryKey'] button")!.click();
       await vi.waitFor(() => {
-        expect(element.querySelector("[data-member='nodeHeader']")?.textContent).toContain("Temporary read failure");
+        expect(element.querySelector(".vm-side")?.textContent).toContain("Temporary read failure");
       });
       // Selection, side panel, and edit form remain mounted instead of being silently closed.
       expect(element.querySelector(".vm-side")).not.toBeNull();
@@ -587,11 +596,12 @@ describe("ontology-visual-modeling builtin panel", () => {
         expect(element.querySelector(".vm-side")?.textContent).toContain("订单");
       });
 
-      // Patching selectedEdge while selectedNode is active switches to the edge and clears selectedNode/selectedAttribute.
+      // Patching selectedEdge while selectedNode is active switches to the edge, closes the node side inspector,
+      // and clears selectedNode/selectedAttribute (VM-06: selecting an edge keeps full-width canvas).
       harness.controller()!.applyState({ selectedEdge: relationRef("placedBy") });
       await vi.waitFor(() => {
-        expect(element.querySelector(".vm-side")?.textContent).toContain("下单客户");
-        expect(element.querySelector("[data-member='relationForm']")).not.toBeNull();
+        expect(element.querySelector(".vm-side")).toBeNull();
+        expect(element.querySelector(".vm-toolbar")?.textContent).toContain("下单客户");
         expect(element.querySelector("[data-member='classForm']")).toBeNull();
       });
 
@@ -600,7 +610,6 @@ describe("ontology-visual-modeling builtin panel", () => {
       await vi.waitFor(() => {
         expect(element.querySelector(".vm-side")?.textContent).toContain("客户");
         expect(element.querySelector("[data-member='classForm']")).not.toBeNull();
-        expect(element.querySelector("[data-member='relationForm']")).toBeNull();
       });
 
       // Shift-connect opens relationCreate with endpoints; closing dialog via present({ dialog: null }) clears them,

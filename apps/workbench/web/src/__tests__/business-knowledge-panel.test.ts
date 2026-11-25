@@ -842,7 +842,8 @@ describe("business-knowledge builtin panel formTarget synchronization", () => {
       route.getController()!.applyState({ selected: knowledgeRef(ENTRY_B), mode: "edit" });
 
       await vi.waitFor(() => {
-        expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_B);
+        // BK-03: editing clears directory `selected` so the list reading highlight is removed.
+        expect(route.router.currentRoute.value.query.selected).toBeUndefined();
         expect(formHeading(element)).toBe("Edit Knowledge");
         expect(titleInput(element)?.value).toBe("Refund SLA");
       }, { timeout: 5000 });
@@ -902,12 +903,12 @@ describe("business-knowledge builtin panel formTarget synchronization", () => {
       ).toBe(false);
       expect(titleInput(element)?.value).toBe("Unsaved Draft On A");
 
-      // Decline leaving: selected reverts to A, form stays on A with unsaved edits intact.
+      // Decline leaving: directory `selected` stays cleared (BK-03), form stays on A with unsaved edits intact.
       resolveConfirm!(false);
       resolveConfirm = null;
 
       await vi.waitFor(() => {
-        expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_A);
+        expect(route.router.currentRoute.value.query.selected).toBeUndefined();
       }, { timeout: 5000 });
       expect(formHeading(element)).toBe("Edit Knowledge");
       expect(titleInput(element)?.value).toBe("Unsaved Draft On A");
@@ -1353,7 +1354,7 @@ describe("business-knowledge builtin panel narrow layout detailOpen behavior", (
         expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_B);
       }, { timeout: 5000 });
 
-      // Entering edit mode and clicking Back to list closes both edit mode and narrow detail.
+      // BK-07: Entering edit mode and clicking Back to list hides the narrow detail pane while preserving the edit draft.
       findButton(element, "Edit")!.click();
       await vi.waitFor(() => {
         expect(formHeading(element)).toBe("Edit Knowledge");
@@ -1362,8 +1363,8 @@ describe("business-knowledge builtin panel narrow layout detailOpen behavior", (
 
       findButton(element, "Back to list")!.click();
       await vi.waitFor(() => {
-        expect(formHeading(element)).toBeNull();
         expect(root.classList.contains("detail-open")).toBe(false);
+        expect(formHeading(element)).toBe("Edit Knowledge");
       }, { timeout: 5000 });
     } finally {
       app.unmount();
@@ -1663,11 +1664,13 @@ describe("business-knowledge builtin panel same-page unsaved navigation guard", 
 
       const controller = route.getController()!;
       const formEl = element.querySelector('[data-field="/knowledgeTitle"]');
-      const currentAddress = `${use.path}?selected=${ENTRY_A}`;
+      // BK-03: editing clears directory `selected`, so the current address has no `selected` query.
+      const currentAddress = use.path;
       const blockedCases = [
         { address: `${use.path}?selected=${ENTRY_B}` },
         { address: use.path, state: { selected: knowledgeRef(ENTRY_B) } },
-        { address: use.path },
+        { address: `${use.path}?selected=${ENTRY_A}` },
+        { address: use.path, state: { selected: knowledgeRef(ENTRY_A) } },
       ] as const;
 
       for (const next of blockedCases) {
@@ -1678,7 +1681,6 @@ describe("business-knowledge builtin panel same-page unsaved navigation guard", 
       const allowedCases = [
         { address: currentAddress },
         { address: currentAddress, state: { mode: "edit" } },
-        { address: use.path, state: { selected: knowledgeRef(ENTRY_A) } },
       ] as const;
       for (const next of allowedCases) {
         expect(controller.blocksNavigation!(next)).toBe(false);

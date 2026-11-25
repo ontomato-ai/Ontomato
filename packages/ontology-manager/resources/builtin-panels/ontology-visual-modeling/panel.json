@@ -22,6 +22,13 @@
         },
         "deepLink": true
       },
+      "back": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
       "dialog": {
         "type": {
           "kind": "scalar",
@@ -68,7 +75,8 @@
           "editable": true,
           "nodeCategory": "/className",
           "nodeSize": 62,
-          "labelSize": 13
+          "labelSize": 13,
+          "layout": "force"
         },
         "state": {
           "selectedNode": "selectedNode",
@@ -78,6 +86,38 @@
           "connectTo": "connectTo"
         },
         "id": "builtin-product-9f791898-9396-433e-bd01-dd692f4265df"
+      },
+      "objectCatalog": {
+        "component": "ObjectList",
+        "name": "Object type catalog probe",
+        "description": "Lists available object types for relation creation defaults and missing-focus checks.",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "layout": "list",
+          "selectable": false,
+          "searchable": false,
+          "showFooter": false
+        },
+        "id": "builtin-product-2dd5edb0-de56-4930-a9f6-5ddb8f3013a9"
+      },
+      "relationCatalog": {
+        "component": "ObjectList",
+        "name": "Relation catalog probe",
+        "description": "Lists available relationships for missing-focus checks.",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "layout": "list",
+          "selectable": false,
+          "searchable": false,
+          "showFooter": false
+        },
+        "id": "builtin-product-4aea8a4a-9a29-43e2-aac6-d148adaf4f84"
       },
       "nodeHeader": {
         "component": "ObjectHeader",
@@ -126,7 +166,11 @@
         "target": "selectedNode",
         "operation": "objectTypes.delete",
         "config": {
-          "type": "danger"
+          "type": "danger",
+          "text": true,
+          "icon": "trash-2",
+          "size": "small",
+          "labelKey": "visualModeling.delete"
         },
         "id": "builtin-product-f468a8a2-3343-4689-9351-13a9fe80a12e"
       },
@@ -139,6 +183,36 @@
         },
         "operation": "platform:Relationship.save",
         "id": "builtin-product-bfc58e22-3ac3-4248-a02e-20e80cc548d8"
+      },
+      "relationEditFrom": {
+        "component": "ObjectRefCard",
+        "type": "platform:Relationship",
+        "target": "selectedEdge",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "fromObject",
+          "captionKey": "visualModeling.sourceObject",
+          "compact": true,
+          "clickable": false
+        },
+        "id": "builtin-product-de75cbec-5f87-4da1-b4cd-aacd08aa4298"
+      },
+      "relationEditTo": {
+        "component": "ObjectRefCard",
+        "type": "platform:Relationship",
+        "target": "selectedEdge",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "toObject",
+          "captionKey": "visualModeling.targetObject",
+          "compact": true,
+          "clickable": false
+        },
+        "id": "builtin-product-6a51c860-d7dd-4358-b576-54da0aaa7e11"
       },
       "relationCreate": {
         "component": "ObjectForm",
@@ -165,7 +239,11 @@
         "target": "selectedEdge",
         "operation": "relationships.delete",
         "config": {
-          "type": "danger"
+          "type": "danger",
+          "text": true,
+          "icon": "trash-2",
+          "size": "small",
+          "labelKey": "visualModeling.delete"
         },
         "id": "builtin-product-cc7d0e26-7c05-4fb1-bf80-21b9d3ade8a3"
       },
@@ -257,8 +335,7 @@
         "type": "platform:Attribute",
         "target": "selectedAttribute",
         "data": {
-          "form": "form",
-          "createForm": "createForm"
+          "form": "form"
         },
         "operation": "platform:Attribute.save",
         "config": {
@@ -270,6 +347,23 @@
           }
         },
         "id": "builtin-product-b98efdcd-7768-45b5-bed2-722db3ac17f1"
+      },
+      "attributeCreate": {
+        "component": "ObjectForm",
+        "type": "platform:Attribute",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:Attribute.save",
+        "config": {
+          "fixedFields": {
+            "/className": {
+              "state": "selectedNode",
+              "path": "/primaryKey"
+            }
+          }
+        },
+        "id": "builtin-product-a30326f9-4bfb-493e-9ffc-7079b65d3ab1"
       },
       "attributeDelete": {
         "component": "OperationButton",
@@ -295,9 +389,12 @@
     "messages": {
       "zh-CN": {
         "panel.name": "可视化建模",
-        "visualModeling.refresh": "刷新",
+        "visualModeling.description": "在画布上编辑对象类型、属性与关系",
+        "visualModeling.backToGraph": "返回图谱",
         "visualModeling.addObjectType": "添加对象类型",
         "visualModeling.addRelation": "添加关系类型",
+        "visualModeling.edit": "编辑",
+        "visualModeling.delete": "删除",
         "visualModeling.hint": "拖动节点摆放位置，滚轮缩放，点节点或关系查看详情；Shift 从一个节点拖到另一个节点可直接新建关系。",
         "visualModeling.selectedType": "已选对象类型：{name}",
         "visualModeling.selectedRelation": "已选关系类型：{name}",
@@ -308,6 +405,8 @@
         "visualModeling.newAttribute": "新建属性",
         "visualModeling.editAttribute": "属性详情",
         "visualModeling.close": "关闭",
+        "visualModeling.clearSelection": "清除选择",
+        "visualModeling.retry": "重试",
         "visualModeling.attrApiName": "API 名",
         "visualModeling.attrType": "数据类型",
         "visualModeling.attrDesc": "说明",
@@ -320,14 +419,34 @@
         "visualModeling.disabled": "停用",
         "visualModeling.dash": "—",
         "visualModeling.createClassTitle": "添加对象类型",
+        "visualModeling.editClassTitle": "编辑对象类型",
         "visualModeling.createRelationTitle": "添加关系类型",
-        "visualModeling.openData": "浏览数据"
+        "visualModeling.editRelationTitle": "编辑关系类型",
+        "visualModeling.createAttributeTitle": "新建属性",
+        "visualModeling.sourceObject": "来源对象",
+        "visualModeling.targetObject": "目标对象",
+        "visualModeling.joinFieldHint": "连接字段用于匹配来源对象与目标对象的记录（例如 SQL 适配器的外键与主键属性）；当数据源需要显式关联字段时必须选择两端对应属性。",
+        "visualModeling.needAtLeastTwoClasses": "至少需要 2 个对象类型才能创建关系",
+        "visualModeling.focusObjectNotFoundTitle": "无法定位该对象类型",
+        "visualModeling.focusObjectNotFound": "对象类型「{name}」不存在或已删除。",
+        "visualModeling.focusRelationNotFoundTitle": "无法定位该关系类型",
+        "visualModeling.focusRelationNotFound": "关系类型「{name}」不存在或已删除。",
+        "visualModeling.nodeForbiddenTitle": "无权限查看该对象类型",
+        "visualModeling.nodeForbiddenText": "当前账号缺少读取对象类型「{name}」的权限。",
+        "visualModeling.edgeForbiddenTitle": "无权限查看该关系类型",
+        "visualModeling.edgeForbiddenText": "当前账号缺少读取关系类型「{name}」的权限。",
+        "visualModeling.nodeReadFailedTitle": "读取对象类型失败",
+        "visualModeling.edgeReadFailedTitle": "读取关系类型失败",
+        "visualModeling.readFailedFallback": "暂时无法读取最新内容，请重试。"
       },
       "en": {
         "panel.name": "Visual modeling",
-        "visualModeling.refresh": "Refresh",
+        "visualModeling.description": "Edit object types, attributes, and relationships on the canvas",
+        "visualModeling.backToGraph": "Back to graph",
         "visualModeling.addObjectType": "Add object type",
         "visualModeling.addRelation": "Add relation type",
+        "visualModeling.edit": "Edit",
+        "visualModeling.delete": "Delete",
         "visualModeling.hint": "Drag nodes to place them, scroll to zoom, click a node or a relation for its details; hold Shift and drag from one node to another to create a relation.",
         "visualModeling.selectedType": "Selected object type: {name}",
         "visualModeling.selectedRelation": "Selected relation type: {name}",
@@ -338,6 +457,8 @@
         "visualModeling.newAttribute": "New attribute",
         "visualModeling.editAttribute": "Attribute details",
         "visualModeling.close": "Close",
+        "visualModeling.clearSelection": "Clear selection",
+        "visualModeling.retry": "Retry",
         "visualModeling.attrApiName": "API name",
         "visualModeling.attrType": "Data type",
         "visualModeling.attrDesc": "Description",
@@ -350,8 +471,25 @@
         "visualModeling.disabled": "Disabled",
         "visualModeling.dash": "—",
         "visualModeling.createClassTitle": "Add object type",
+        "visualModeling.editClassTitle": "Edit object type",
         "visualModeling.createRelationTitle": "Add relation type",
-        "visualModeling.openData": "Browse data"
+        "visualModeling.editRelationTitle": "Edit relation type",
+        "visualModeling.createAttributeTitle": "New attribute",
+        "visualModeling.sourceObject": "Source object",
+        "visualModeling.targetObject": "Target object",
+        "visualModeling.joinFieldHint": "Join fields match records between the source and target objects (such as foreign-key and primary-key attributes for SQL adapters); select attributes on both ends when required by the adapter.",
+        "visualModeling.needAtLeastTwoClasses": "At least two object types are required to create a relation",
+        "visualModeling.focusObjectNotFoundTitle": "Unable to locate object type",
+        "visualModeling.focusObjectNotFound": "Object type \"{name}\" does not exist or has been deleted.",
+        "visualModeling.focusRelationNotFoundTitle": "Unable to locate relation type",
+        "visualModeling.focusRelationNotFound": "Relation type \"{name}\" does not exist or has been deleted.",
+        "visualModeling.nodeForbiddenTitle": "No permission to view this object type",
+        "visualModeling.nodeForbiddenText": "Your account does not have permission to read object type \"{name}\".",
+        "visualModeling.edgeForbiddenTitle": "No permission to view this relation type",
+        "visualModeling.edgeForbiddenText": "Your account does not have permission to read relation type \"{name}\".",
+        "visualModeling.nodeReadFailedTitle": "Failed to load object type",
+        "visualModeling.edgeReadFailedTitle": "Failed to load relation type",
+        "visualModeling.readFailedFallback": "Unable to load the latest details. Please retry."
       }
     }
   }

@@ -228,6 +228,11 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		checked.attrDef().put("attrDesc", checked.body().attrDesc());
 		checked.attrDef().put("enable", checked.body().enable());
 		checked.attrDef().put("bizzkey", Boolean.TRUE.equals(checked.body().businessKey()));
+		if (Boolean.TRUE.equals(checked.body().primaryKey()) && !primaryKey(checked.attrDef())) {
+			for (Map<String, Object> attr : attrs(checked.classDef())) {
+				attr.put("primaryKey", attr == checked.attrDef());
+			}
+		}
 		write(user, rule);
 		audit(user, AuditLog.OPERATION_UPD,
 				description(user, "AuditLog.class", checked.className()) + ", "
@@ -508,8 +513,8 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	private record CheckedAttributeCreate(String className, Map<String, Object> classDef, AttributeCreate body) {
 	}
 
-	private record CheckedAttributeUpdate(String className, String name, Map<String, Object> attrDef,
-			AttributeUpdate body) {
+	private record CheckedAttributeUpdate(String className, String name, Map<String, Object> classDef,
+			Map<String, Object> attrDef, AttributeUpdate body) {
 	}
 
 	private record CheckedRelationshipCreate(RelationshipCreate body) {
@@ -626,12 +631,31 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		fail(errors, lang);
 		Map<String, Object> classDef = requireClass(rule, owner, lang);
 		Map<String, Object> attrDef = requireAttribute(classDef, attrName, lang);
-		if (Boolean.FALSE.equals(raw.enable()) && booleanValue(attrDef.get("primaryKey"))) {
+		boolean currentlyPrimaryKey = primaryKey(attrDef);
+		boolean nextPrimaryKey = raw.primaryKey() != null ? raw.primaryKey() : currentlyPrimaryKey;
+		if (currentlyPrimaryKey && (Boolean.FALSE.equals(raw.enable()) || Boolean.FALSE.equals(raw.primaryKey()))) {
 			throw OntologyModelException.conflict("PRIMARY_KEY_LOCKED",
 					langService.get(lang, "Admin.attr.primaryKeyLocked"), Map.of());
 		}
-		return new CheckedAttributeUpdate(owner, attrName, attrDef,
-				new AttributeUpdate(showName, attrDesc, raw.enable(), raw.businessKey()));
+		if (nextPrimaryKey && !currentlyPrimaryKey) {
+			if (!"varchar".equals(attrDef.get("type"))) {
+				errors.add(field("primaryKey", "invalid_option", langService.get(lang, "Admin.attr.primaryKeyInvalid")));
+			}
+			if (Boolean.FALSE.equals(raw.enable())) {
+				errors.add(field("enable", "invalid_option", langService.get(lang, "Admin.attr.primaryKeyInvalid")));
+			}
+			validateName(attrName, errors, "primaryKey", lang, "Admin.attr.formatError");
+			if (errors.stream().noneMatch(error -> "primaryKey".equals(fieldName(error)))) {
+				try {
+					adapter(user, rule).validatePrimaryKeyName(attrName);
+				} catch (Exception error) {
+					errors.add(field("primaryKey", "invalid_format", error.getMessage()));
+				}
+			}
+			fail(errors, lang);
+		}
+		return new CheckedAttributeUpdate(owner, attrName, classDef, attrDef,
+				new AttributeUpdate(showName, attrDesc, raw.enable(), raw.businessKey(), nextPrimaryKey));
 	}
 
 	private CheckedRelationshipCreate checkedRelationshipCreate(Map<String, Object> rule, User user,
@@ -830,10 +854,10 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			User user, String lang) {
 		CheckedAttributeUpdate checked = checkedAttributeUpdate(rule, key[0], key[1], new AttributeUpdate(
 				formString(values, "showName"), formString(values, "attrDesc"), formBoolean(values, "enable"),
-				formBoolean(values, "businessKey")), user, lang);
+				formBoolean(values, "businessKey"), formBoolean(values, "primaryKey")), user, lang);
 		return attributeValues(checked.className(), checked.name(), text(checked.attrDef().get("type")),
 				checked.body().showName(), checked.body().attrDesc(), checked.body().enable(),
-				checked.body().businessKey(), primaryKey(checked.attrDef()));
+				checked.body().businessKey(), Boolean.TRUE.equals(checked.body().primaryKey()));
 	}
 
 	private Map<String, Object> draftRelationshipCreate(Map<String, Object> rule, Map<String, Object> values, User user,
@@ -856,28 +880,42 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private static ObjectNode selectControl(List<JsonNode> options, String placeholder) {
+		return selectControl(options, placeholder, false);
+	}
+
+	private static ObjectNode selectControl(List<JsonNode> options, String placeholder, boolean filterable) {
 		ObjectNode control = object("kind", "select", "options", options);
 		if (placeholder != null && !placeholder.isBlank()) {
 			control.put("placeholder", placeholder);
+		}
+		if (filterable) {
+			control.put("filterable", true);
 		}
 		return control;
 	}
 
 	private static ObjectNode textControl(boolean multiline) {
-		return textControl(multiline, null, null);
+		return textControl(multiline, null, null, null);
 	}
 
 	private static ObjectNode textControl(boolean multiline, Integer maxLength) {
-		return textControl(multiline, maxLength, null);
+		return textControl(multiline, maxLength, null, null);
 	}
 
 	private static ObjectNode textControl(boolean multiline, Integer maxLength, String placeholder) {
+		return textControl(multiline, maxLength, placeholder, null);
+	}
+
+	private static ObjectNode textControl(boolean multiline, Integer maxLength, String placeholder, Integer rows) {
 		ObjectNode control = multiline ? object("kind", "text", "multiline", true) : object("kind", "text");
 		if (maxLength != null) {
 			control.put("maxLength", maxLength);
 		}
 		if (placeholder != null && !placeholder.isBlank()) {
 			control.put("placeholder", placeholder);
+		}
+		if (multiline && rows != null) {
+			control.put("rows", rows);
 		}
 		return control;
 	}
@@ -1036,6 +1074,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String businessKeyLabel = label.get("businessKey");
 		String primaryKeyLabel = label.get("primaryKey");
 		boolean locked = attrDef != null && primaryKey(attrDef);
+		boolean primaryKeyEligible = attrDef != null && "varchar".equals(attrDef.get("type"));
 		List<ObjectNode> fields = new ArrayList<>();
 		if (edit) {
 			// Inline edit keeps owner/name/type hidden (already displayed on the row above) and shows editable fields.
@@ -1050,8 +1089,12 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 					locked ? langService.get(lang, "Admin.form.primaryKeyEnableLocked") : null, false));
 			fields.add(panelField("/businessKey", businessKeyLabel, false, switchControl(), booleanSchema(businessKeyLabel),
 					false, null, false));
+			boolean primaryKeyReadOnly = locked || !primaryKeyEligible;
+			String primaryKeyReadOnlyReason = locked
+					? langService.get(lang, "Admin.attr.primaryKeyLocked")
+					: (!primaryKeyEligible ? langService.get(lang, "Admin.attr.primaryKeyInvalid") : null);
 			fields.add(panelField("/primaryKey", primaryKeyLabel, false, switchControl(), booleanSchema(primaryKeyLabel),
-					true, langService.get(lang, "Admin.form.primaryKeySwitchHint"), false));
+					primaryKeyReadOnly, primaryKeyReadOnlyReason, false));
 			return fields;
 		}
 		fields.add(panelField("/className", ownerLabel, true,
@@ -1096,13 +1139,13 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			// Match the detail view's edit fields: read-only API name, description, and the two join fields (ends are shown beside the form).
 			fields.add(panelField("/relationship", nameLabel, false, textControl(false), stringSchema(nameLabel),
 					true, null, false));
-			fields.add(panelField("/desc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
+			fields.add(panelField("/desc", descLabel, false, textControl(true, 400, null, 4), stringSchema(descLabel, 400),
 					false, null, false));
 			fields.add(panelField("/fromField", fromFieldLabel, joinRequired,
-					selectControl(attributeOptions(rule, fromClass), enterFromField),
+					selectControl(attributeOptions(rule, fromClass), enterFromField, true),
 					stringSchema(fromFieldLabel), false, null, false));
 			fields.add(panelField("/toField", toFieldLabel, joinRequired,
-					selectControl(attributeOptions(rule, toClass), enterToField),
+					selectControl(attributeOptions(rule, toClass), enterToField, true),
 					stringSchema(toFieldLabel), false, null, false));
 			return fields;
 		}
@@ -1112,12 +1155,12 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		fields.add(panelField("/fromclass", fromClassLabel, true, selectControl(classOptions, selectFromClass),
 				stringSchema(fromClassLabel), false, null, true));
 		fields.add(panelField("/fromField", fromFieldLabel, joinRequired,
-				selectControl(attributeOptions(rule, fromClass), enterFromField),
+				selectControl(attributeOptions(rule, fromClass), enterFromField, true),
 				stringSchema(fromFieldLabel), fromClass.isEmpty(), null, false));
 		fields.add(panelField("/toclass", toClassLabel, true, selectControl(classOptions, selectToClass),
 				stringSchema(toClassLabel), false, null, true));
 		fields.add(panelField("/toField", toFieldLabel, joinRequired,
-				selectControl(attributeOptions(rule, toClass), enterToField),
+				selectControl(attributeOptions(rule, toClass), enterToField, true),
 				stringSchema(toFieldLabel), toClass.isEmpty(), null, false));
 		fields.add(panelField("/desc", descLabel, true, textControl(true, 400), stringSchema(descLabel, 400),
 				false, null, false));
@@ -1151,7 +1194,8 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 							stringSchema(label.get("showName")), "attrDesc",
 							stringSchema(label.get("attrDesc")), "enable",
 							booleanSchema(label.get("enable")), "businessKey",
-							booleanSchema(label.get("businessKey"))));
+							booleanSchema(label.get("businessKey")), "primaryKey",
+							booleanSchema(label.get("primaryKey"))));
 		}
 		return new FormSave("POST", "/ontology/model/attribute/create",
 				objectSchema(List.of("className", "name", "showName", "type", "enable", "businessKey"), "className",

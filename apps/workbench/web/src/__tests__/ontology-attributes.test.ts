@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { h } from "vue";
+import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
@@ -207,16 +207,10 @@ function createAttributeForm() {
 
 function editAttributeForm(item: FixtureAttribute) {
   const attrDesc = item.attrDesc ?? `${item.label} description`;
+  const primaryKeyReason = setPrimaryKeyUnavailableReason(item);
+  const primaryKeyReadOnly = Boolean(primaryKeyReason);
   return {
     fields: [
-      {
-        path: "/name",
-        label: "Attribute name",
-        control: { kind: "text" },
-        valueSchema: {},
-        required: true,
-        readOnly: true,
-      },
       {
         path: "/showName",
         label: "Display name",
@@ -233,12 +227,57 @@ function editAttributeForm(item: FixtureAttribute) {
         required: false,
         readOnly: false,
       },
+      {
+        path: "/enable",
+        label: "Enabled",
+        control: { kind: "switch" },
+        valueSchema: { type: "boolean" },
+        required: false,
+        readOnly: item.primaryKeyFlag,
+        ...(item.primaryKeyFlag ? { help: "Primary key attributes cannot be disabled." } : {}),
+      },
+      {
+        path: "/businessKey",
+        label: "Business key",
+        control: { kind: "switch" },
+        valueSchema: { type: "boolean" },
+        required: false,
+        readOnly: false,
+      },
+      {
+        path: "/primaryKey",
+        label: "Primary key",
+        control: { kind: "switch" },
+        valueSchema: { type: "boolean" },
+        required: false,
+        readOnly: primaryKeyReadOnly,
+        ...(primaryKeyReason ? { help: primaryKeyReason } : {}),
+      },
     ],
-    values: { name: item.name, showName: item.label, attrDesc },
+    values: {
+      showName: item.label,
+      attrDesc,
+      enable: item.enable,
+      businessKey: item.businessKey,
+      primaryKey: item.primaryKeyFlag,
+    },
     errors: [],
     revision: 1,
     save: { method: "PUT", path: `/ontology/model/attribute/${item.primaryKey}`, bodySchema: {} },
   };
+}
+
+async function expandAttributeRow(container: HTMLElement, label: string) {
+  const expandBtn = await vi.waitFor(() => {
+    const row = [...container.querySelectorAll<HTMLTableRowElement>(".attrs-table-host tbody tr")]
+      .find((tr) => tr.textContent?.includes(label));
+    expect(row).toBeDefined();
+    const btn = row!.querySelector<HTMLButtonElement>("button.sdk-object-list-expand-btn");
+    expect(btn).not.toBeNull();
+    return btn!;
+  });
+  expandBtn.click();
+  await nextTick();
 }
 
 async function clickDialogButton(text: string) {
@@ -272,7 +311,8 @@ function removeUnavailableReason(attr: FixtureAttribute | undefined): string | u
 function mountAttributesRoute(options: {
   initialState?: Record<string, unknown>;
   attributes: FixtureAttribute[];
-  onRecordRead?: (key: string, defaultResponse: () => Response) => Response | Promise<Response>;
+  onFormRead?: (key: string, defaultResponse: () => Response) => Response | Promise<Response>;
+  onListRead?: (filterClass: string, defaultResponse: () => Response) => Response | Promise<Response>;
   onOperation?: (operationId: string, targetKey: string, call: PanelOperationCall) => unknown;
 }) {
   let controller: DisplayPageController | null = null;
@@ -313,37 +353,31 @@ function mountAttributesRoute(options: {
     {
       creates: true,
       admitted: (member, inputs) => {
-        const targetKey = (inputs.target as { primaryKey?: string } | undefined)?.primaryKey ?? "";
-        const found = options.attributes.find((item) => item.primaryKey === targetKey);
-        if (member === "setPrimaryKey" && inputs.target) {
-          const reason = setPrimaryKeyUnavailableReason(found);
-          return {
-            setPrimaryKey: {
-              kind: "action",
-              handlerRef: "attributes.setPrimaryKey",
-              label: "Set as primary key",
-              effect: "write",
-              target: { source: "input", input: "target" },
-              inputSchema: {},
-              resultSchema: {},
-              batch: false,
-              ...(reason ? { unavailable: { reason } } : {}),
-            },
-          };
-        }
-        if (member === "remove" && inputs.target) {
-          const reason = removeUnavailableReason(found);
+        if (member === "attributes") {
           return {
             delete: {
               kind: "action",
               handlerRef: "attributes.delete",
               label: "Delete attribute",
               effect: "write",
+              target: { source: "row" },
+              inputSchema: {},
+              resultSchema: {},
+              batch: false,
+            },
+          };
+        }
+        if (member === "attributeRowForm") {
+          return {
+            save: {
+              kind: "form.save",
+              handlerRef: `${ATTRIBUTE}.save`,
+              label: "Save",
+              effect: "write",
               target: { source: "input", input: "target" },
               inputSchema: {},
               resultSchema: {},
               batch: false,
-              ...(reason ? { unavailable: { reason } } : {}),
             },
           };
         }
@@ -408,26 +442,31 @@ function mountAttributesRoute(options: {
       }
       if (member === "attributes" && body.dataName === "rows") {
         const filterClass = typeof body.inputs.className === "string" ? body.inputs.className : "";
-        const rows = options.attributes
-          .filter((item) => !filterClass || item.className === filterClass)
-          .map(toAttributeRecord);
-        return Response.json({ status: "ready", value: rows });
+        const makeResponse = () => {
+          const matched = options.attributes.filter((item) => !filterClass || item.className === filterClass);
+          const rows = matched.map(toAttributeRecord);
+          const rowOperations = Object.fromEntries(
+            matched.map((item) => {
+              const reason = removeUnavailableReason(item);
+              return [
+                `${ATTRIBUTE}:${item.primaryKey}`,
+                { delete: reason ? { available: false, unavailable: { reason } } : { available: true } },
+              ];
+            }),
+          );
+          return Response.json({ status: "ready", value: rows, rowOperations });
+        };
+        if (options.onListRead) return options.onListRead(filterClass, makeResponse);
+        return makeResponse();
       }
-      if (body.dataName === "record") {
+      if (member === "attributeRowForm" && body.dataName === "form") {
         const key = (body.inputs.target as { primaryKey?: string } | undefined)?.primaryKey ?? "";
         const makeResponse = () => {
           const found = options.attributes.find((item) => item.primaryKey === key);
-          return found ? Response.json({ status: "ready", value: toAttributeRecord(found) }) : Response.json({ status: "empty" });
+          return found ? Response.json({ status: "ready", value: editAttributeForm(found) }) : Response.json({ status: "empty" });
         };
-        if (member === "detail" && options.onRecordRead) {
-          return options.onRecordRead(key, makeResponse);
-        }
+        if (options.onFormRead) return options.onFormRead(key, makeResponse);
         return makeResponse();
-      }
-      if (member === "form" && body.dataName === "form") {
-        const key = (body.inputs.target as { primaryKey?: string } | undefined)?.primaryKey ?? "";
-        const found = options.attributes.find((item) => item.primaryKey === key);
-        return found ? Response.json({ status: "ready", value: editAttributeForm(found) }) : Response.json({ status: "empty" });
       }
       if (member === "form" && body.dataName === "createForm") {
         return Response.json({ status: "ready", value: createAttributeForm() });
@@ -476,7 +515,7 @@ afterEach(() => {
 });
 
 describe("ontology-attributes builtin panel", () => {
-  it("contains zero PanelData, usePanelData, viewport units, or Element Plus tags/tokens", () => {
+  it("contains zero PanelData, usePanelData, viewport units, or Element Plus tags/tokens and matches OA-01..OA-07 manifest contracts", () => {
     const manifestJson = JSON.stringify(source);
     expect(manifestJson).not.toContain("PanelData");
     expect(module).not.toContain("usePanelData");
@@ -494,9 +533,44 @@ describe("ontology-attributes builtin panel", () => {
     expect(module).not.toContain("setPrimaryKeyDisabled");
     expect(module).not.toContain("onSetPrimaryKeyDone");
     expect(manifestJson).not.toContain("attr.alreadyPrimaryKey");
+    expect(manifestJson).not.toContain("attr.refresh");
+
+    // OA-01/02/03/04/06/07 structural contracts: no selected/createIn state, non-URL editingAttribute,
+    // no standalone detail/ownerCard/setPrimaryKey/remove members, no enable column, no fixedFields on create form.
+    const rawState = source.manifest.state as Record<string, { type: unknown; deepLink?: boolean }>;
+    expect(rawState.selected).toBeUndefined();
+    expect(rawState.createIn).toBeUndefined();
+    expect(rawState.editingAttribute).toBeDefined();
+    expect(rawState.editingAttribute.type).toEqual({ kind: "object", objectType: ATTRIBUTE });
+    expect(rawState.editingAttribute.deepLink).not.toBe(true);
+    expect(attributesPanel.manifest.state.editingAttribute?.deepLink).toBe(false);
+
+    const rawMembers = source.manifest.members as Record<string, unknown>;
+    expect(rawMembers.detail).toBeUndefined();
+    expect(rawMembers.ownerCard).toBeUndefined();
+    expect(rawMembers.setPrimaryKey).toBeUndefined();
+    expect(rawMembers.remove).toBeUndefined();
+    expect(source.manifest.members.attributes.operations).toEqual({ delete: "attributes.delete" });
+    expect((source.manifest.members.attributes.config as { columns: Array<{ key: string }>; searchFields?: string[] })).toMatchObject({
+      searchFields: ["label", "name", "type", "classNameLabel"],
+    });
+    expect((source.manifest.members.attributes.config as { columns: Array<{ key: string }> }).columns.map((c) => c.key)).toEqual([
+      "label",
+      "ownerObject",
+      "type",
+      "businessKey",
+      "primaryKey",
+    ]);
+    expect((source.manifest.members.form.config as { fixedFields?: unknown }).fixedFields).toBeUndefined();
+    expect(source.manifest.members.attributeRowForm).toMatchObject({
+      component: "ObjectForm",
+      type: ATTRIBUTE,
+      target: "editingAttribute",
+      config: { actions: "footer" },
+    });
   });
 
-  it("lists attributes, filters by object type via ReferencePicker options/resolve, prefills createIn on new attribute, and navigates via ownerObject", async () => {
+  it("lists attributes without Refresh button or Enable column, filters by object type via ReferencePicker, keeps owner freely selectable on create, and navigates via ownerObject", async () => {
     const fixture: FixtureAttribute[] = [
       { primaryKey: "Order.orderNo", className: "Order", classNameLabel: "Sales Order", name: "orderNo", label: "Order number", type: "varchar", primaryKeyFlag: true, businessKey: true, enable: true },
       { primaryKey: "Order.amount", className: "Order", classNameLabel: "Sales Order", name: "amount", label: "Amount", type: "number", primaryKeyFlag: false, businessKey: false, enable: true },
@@ -512,6 +586,12 @@ describe("ontology-attributes builtin panel", () => {
         expect(element.textContent).toContain("Email");
         expect(element.querySelector(".attrs-count")?.textContent?.trim()).toBe("3 items");
       });
+
+      // OA-01: catalog header has no Refresh button; OA-02: no standalone Enable/Status column.
+      expect(element.querySelector('button[aria-label="Refresh"]')).toBeNull();
+      const headers = [...element.querySelectorAll<HTMLElement>(".attrs-table-host thead th")].map((th) => th.textContent?.trim());
+      expect(headers).not.toContain("Status");
+      expect(headers).not.toContain("Enabled");
 
       // Filter by object type via ReferencePicker options (display name + API name).
       const selectWrapper = await vi.waitFor(() => {
@@ -543,7 +623,7 @@ describe("ontology-attributes builtin panel", () => {
         ),
       ).toBe(true);
 
-      // Open create dialog while filtered to Order -> /className is fixed to Order via createIn.
+      // OA-06: opening create dialog while filtered to Order leaves /className freely selectable (not locked).
       const createBtn = [...element.querySelectorAll<HTMLButtonElement>("button")]
         .find((btn) => btn.textContent?.includes("New attribute"));
       expect(createBtn).toBeDefined();
@@ -552,11 +632,10 @@ describe("ontology-attributes builtin panel", () => {
       await vi.waitFor(() => {
         const classField = document.querySelector<HTMLElement>('.el-dialog [data-field="/className"]');
         expect(classField).not.toBeNull();
-        expect(classField!.textContent).toContain("Sales Order (Order)");
-        expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).not.toBeNull();
+        expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).toBeNull();
       });
 
-      // Close create dialog via Escape.
+      // Close create dialog.
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       const closeBtn = document.querySelector<HTMLButtonElement>(".el-dialog__headerbtn");
       closeBtn?.click();
@@ -605,7 +684,7 @@ describe("ontology-attributes builtin panel", () => {
     }
   });
 
-  it("unifies createIn for agent present({ creating: true }) when filtered, respects explicit createIn, allows free selection when unfiltered, and coordinates with selected", async () => {
+  it("keeps owner class freely selectable for agent present({ creating: true }) whether filtered or unfiltered, without polluting the URL", async () => {
     const fixture: FixtureAttribute[] = [
       { primaryKey: "Order.orderNo", className: "Order", classNameLabel: "Sales Order", name: "orderNo", label: "Order number", type: "varchar", primaryKeyFlag: true, businessKey: true, enable: true },
       { primaryKey: "Customer.email", className: "Customer", classNameLabel: "Customer", name: "email", label: "Email", type: "varchar", primaryKeyFlag: true, businessKey: false, enable: true },
@@ -622,52 +701,32 @@ describe("ontology-attributes builtin panel", () => {
         expect(element.textContent).toContain("Order number");
       });
 
-      // 1. Filtered to Order: agent present({ creating: true }) auto-fixes createIn to "Order".
+      // 1. Filtered to Order: agent present({ creating: true }) opens create dialog with freely selectable /className.
       route.controller()!.applyState({ creating: true });
       await vi.waitFor(() => {
         const classField = document.querySelector<HTMLElement>('.el-dialog [data-field="/className"]');
         expect(classField).not.toBeNull();
-        expect(classField!.textContent).toContain("Sales Order (Order)");
-        expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).not.toBeNull();
+        expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).toBeNull();
       });
+      expect(route.router.currentRoute.value.fullPath).not.toContain("creating");
 
-      // 2. Switching to an existing attribute while create dialog is open clears creating and createIn.
-      route.controller()!.applyState({
-        selected: { className: ATTRIBUTE, primaryKey: "Order.orderNo" },
-      });
-      await vi.waitFor(() => {
-        expect(document.querySelector('.el-dialog [data-field="/className"]')).toBeNull();
-        expect(element.querySelector(".attrs-detail")).not.toBeNull();
-      });
-
-      // 3. In detail view while filtered to Order: present({ creating: true }) without clearing selected clears selected and fixes createIn.
-      route.controller()!.applyState({ creating: true });
-      await vi.waitFor(() => {
-        expect(element.querySelector(".attrs-detail")).toBeNull();
-        const classField = document.querySelector<HTMLElement>('.el-dialog [data-field="/className"]');
-        expect(classField).not.toBeNull();
-        expect(classField!.textContent).toContain("Sales Order (Order)");
-        expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).not.toBeNull();
-      });
-
-      // 4. Closing create via present({ creating: false }) clears createIn; explicit createIn overrides className filter.
+      // 2. Closing create via present({ creating: false }) closes the dialog while staying in catalog.
       route.controller()!.applyState({ creating: false });
       await vi.waitFor(() => {
         expect(document.querySelector('.el-dialog [data-field="/className"]')).toBeNull();
       });
 
-      route.controller()!.applyState({ creating: true, createIn: "Customer" });
+      // 3. Expanding a row edits inline inside the catalog without switching to a full-page detail view.
+      await expandAttributeRow(element, "Order number");
       await vi.waitFor(() => {
-        const classField = document.querySelector<HTMLElement>('.el-dialog [data-field="/className"]');
-        expect(classField).not.toBeNull();
-        expect(classField!.textContent).toContain("Customer");
-        expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).not.toBeNull();
+        expect(element.querySelector(".attrs-row-editor")).not.toBeNull();
+        expect(element.querySelector(".attrs-detail")).toBeNull();
       });
+      expect(route.router.currentRoute.value.fullPath).not.toContain("editingAttribute");
 
-      // 5. Unfiltered: present({ creating: true }) keeps createIn null so /className stays freely editable.
-      route.controller()!.applyState({ creating: false, className: null, ownerFilter: null });
+      // 4. Unfiltered: present({ creating: true }) also keeps /className freely selectable.
+      route.controller()!.applyState({ className: null, ownerFilter: null });
       await vi.waitFor(() => {
-        expect(document.querySelector('.el-dialog [data-field="/className"]')).toBeNull();
         expect(element.textContent).toContain("Email");
       });
 
@@ -682,38 +741,43 @@ describe("ontology-attributes builtin panel", () => {
     }
   });
 
-  it("shows API name and data type in detail header, relies on owner affected refresh instead of manual refreshObjects on setPrimaryKey, and returns to list after remove", async () => {
+  it("edits rows inline via ObjectList #row-detail without leaving catalog, submits primaryKey switch via attributeRowForm, relies on affected refresh, and deletes via row action", async () => {
     const fixture: FixtureAttribute[] = [
       { primaryKey: "Order.orderNo", className: "Order", classNameLabel: "Sales Order", name: "orderNo", label: "Order number", type: "varchar", primaryKeyFlag: true, businessKey: true, enable: true },
       { primaryKey: "Order.code", className: "Order", classNameLabel: "Sales Order", name: "code", label: "Order code", type: "varchar", primaryKeyFlag: false, businessKey: false, enable: true },
       { primaryKey: "Order.note", className: "Order", classNameLabel: "Sales Order", name: "note", label: "Note", type: "varchar", primaryKeyFlag: false, businessKey: false, enable: true },
     ];
 
-    let firstDetailRead = true;
-    const detailGate = deferred<Response>();
+    let firstFormRead = true;
+    const formGate = deferred<Response>();
     const dispatched: string[] = [];
-    let detailReadCount = 0;
+    let listReadCount = 0;
 
     const route = mountAttributesRoute({
       attributes: fixture,
-      onRecordRead: (_key, defaultResponse) => {
-        detailReadCount += 1;
-        if (firstDetailRead) {
-          firstDetailRead = false;
-          return detailGate.promise;
+      onListRead: (_filterClass, defaultResponse) => {
+        listReadCount += 1;
+        return defaultResponse();
+      },
+      onFormRead: (_key, defaultResponse) => {
+        if (firstFormRead) {
+          firstFormRead = false;
+          return formGate.promise;
         }
         return defaultResponse();
       },
-      onOperation: (operationId, targetKey) => {
+      onOperation: (operationId, targetKey, call) => {
         dispatched.push(`${operationId}:${targetKey}`);
-        if (operationId === "setPrimaryKey.setPrimaryKey") {
-          for (const item of fixture) {
-            if (item.className === "Order") item.primaryKeyFlag = item.primaryKey === targetKey;
+        if (operationId === "attributeRowForm.save") {
+          const values = ((call.input as { values?: Record<string, unknown> } | undefined)?.values ?? {});
+          if (values.primaryKey === true) {
+            for (const item of fixture) {
+              if (item.className === "Order") item.primaryKeyFlag = item.primaryKey === targetKey;
+            }
           }
-          // Return owner affected objects and types (R2-1 contract); panel no longer calls refreshObjects().
           return {
             kind: "success",
-            data: {},
+            data: { primaryKey: targetKey, className: ATTRIBUTE },
             affected: {
               objects: [
                 ...fixture.filter((item) => item.className === "Order").map((item) => ({ objectType: ATTRIBUTE, primaryKey: item.primaryKey })),
@@ -723,15 +787,16 @@ describe("ontology-attributes builtin panel", () => {
             },
           };
         }
-        if (operationId === "remove.delete") {
+        if (operationId === "attributes.delete") {
           const idx = fixture.findIndex((item) => item.primaryKey === targetKey);
           if (idx >= 0) fixture.splice(idx, 1);
           return {
             kind: "success",
             data: {},
             affected: {
-              objects: [{ objectType: ATTRIBUTE, primaryKey: targetKey }],
+              objects: [],
               objectTypes: [ATTRIBUTE],
+              removed: [{ objectType: ATTRIBUTE, primaryKey: targetKey }],
             },
           };
         }
@@ -742,94 +807,88 @@ describe("ontology-attributes builtin panel", () => {
     const { app, element } = await route.open();
 
     try {
-      // Wait for list, then click the non-primary-key varchar attribute row "Order code".
-      const codeRow = await vi.waitFor(() => {
-        const rows = [...element.querySelectorAll<HTMLElement>(".attrs-table-host tbody tr")];
-        const found = rows.find((tr) => tr.textContent?.includes("Order code"));
-        expect(found).toBeDefined();
-        return found!;
-      });
-      codeRow.click();
-
-      // Detail enters loading state while record read is pending.
+      // Wait for catalog list, then expand the non-primary-key varchar attribute row "Order code".
       await vi.waitFor(() => {
-        expect(element.querySelector(".attrs-detail")).not.toBeNull();
-        expect(element.textContent).toContain("Loading attribute");
+        expect(element.textContent).toContain("Order code");
       });
+      await expandAttributeRow(element, "Order code");
 
-      // Resolve the deferred detail record -> detailStatus transitions loading -> ready.
-      detailGate.resolve(Response.json({ status: "ready", value: toAttributeRecord(fixture[1]!) }));
-
-      // Detail header displays display name, API name (subtitleField: "name"), and data type badge (statusField: "type").
+      // Inline row editor mounts inside the catalog without switching away to .attrs-detail.
       await vi.waitFor(() => {
-        const header = element.querySelector<HTMLElement>(".attrs-detail .sdk-object-header");
-        expect(header).not.toBeNull();
-        expect(header!.querySelector(".sdk-object-header-title")?.textContent?.trim()).toBe("Order code");
-        expect(header!.querySelector(".sdk-object-header-subtitle")?.textContent?.trim()).toBe("code");
-        expect(header!.querySelector(".sdk-object-header-status")?.textContent?.trim()).toBe("varchar");
+        expect(element.querySelector(".attrs-row-editor")).not.toBeNull();
+        expect(element.querySelector(".attrs-catalog")).not.toBeNull();
+        expect(element.querySelector(".attrs-detail")).toBeNull();
       });
 
-      // Regression guard: PageHeader #actions renders both setPrimaryKey and remove buttons immediately.
-      const actionsArea = await vi.waitFor(() => {
-        const actions = element.querySelector<HTMLElement>(".attrs-detail .sdk-page-header-actions");
-        expect(actions).not.toBeNull();
-        expect(actions!.textContent).toContain("Set as primary key");
-        expect(actions!.textContent).toContain("Delete");
-        return actions!;
-      });
-
-      const readsBeforeSetPk = detailReadCount;
-      const setPkBtn = [...actionsArea.querySelectorAll<HTMLButtonElement>("button")]
-        .find((btn) => btn.textContent?.includes("Set as primary key") && !btn.disabled);
-      expect(setPkBtn).toBeDefined();
-
-      // Click Set as primary key -> platform refreshes via affected (no duplicate manual refreshObjects).
-      setPkBtn!.click();
+      // Resolve deferred form read -> inline editor renders fields and switches.
+      formGate.resolve(Response.json({ status: "ready", value: editAttributeForm(fixture[1]!) }));
 
       await vi.waitFor(() => {
-        expect(dispatched).toContain("setPrimaryKey.setPrimaryKey:Order.code");
-        const disabledPkBtn = [...element.querySelectorAll<HTMLButtonElement>(".attrs-detail .sdk-page-header-actions button")]
-          .find((btn) => btn.textContent?.includes("Set as primary key") && btn.disabled);
-        expect(disabledPkBtn).toBeDefined();
-        const disabledDeleteBtn = [...element.querySelectorAll<HTMLButtonElement>(".attrs-detail .sdk-page-header-actions button")]
-          .find((btn) => btn.textContent?.includes("Delete") && btn.disabled);
-        expect(disabledDeleteBtn).toBeDefined();
+        const editor = element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(editor).not.toBeNull();
+        expect(editor!.querySelector<HTMLInputElement>('[data-field="/showName"] input')?.value).toBe("Order code");
+        expect(editor!.querySelector('.attrs-switches [data-field="/enable"]')).not.toBeNull();
+        expect(editor!.querySelector('.attrs-switches [data-field="/businessKey"]')).not.toBeNull();
+        expect(editor!.querySelector('.attrs-switches [data-field="/primaryKey"]')).not.toBeNull();
+        expect(editor!.textContent).not.toContain("Set as primary key");
+        expect(editor!.querySelector(".attrs-row-delete button")?.textContent).toContain("Delete");
       });
-      expect(detailReadCount - readsBeforeSetPk).toBe(1);
 
-      // Navigate to a non-primary attribute "Note" and click Delete -> returns to list.
-      route.controller()!.applyState({
-        selected: { className: ATTRIBUTE, primaryKey: "Order.note" },
-      });
-      const deleteBtn = await vi.waitFor(() => {
-        const btn = [...element.querySelectorAll<HTMLButtonElement>(".attrs-detail .sdk-page-header-actions button")]
-          .find((item) => item.textContent?.includes("Delete") && !item.disabled);
+      const listReadsBeforeSave = listReadCount;
+
+      // Toggle /primaryKey switch and save -> owner affected refreshes list & row editor once (no manual refreshObjects).
+      const pkSwitch = element.querySelector<HTMLElement>('.attrs-row-editor [data-field="/primaryKey"] .el-switch')!;
+      pkSwitch.click();
+      await nextTick();
+
+      const saveBtn = await vi.waitFor(() => {
+        const btn = [...element.querySelectorAll<HTMLButtonElement>(".attrs-row-editor .sdk-owner-form-actions button")]
+          .find((item) => item.textContent?.trim() === "Save" && !item.disabled);
         expect(btn).toBeDefined();
+        return btn!;
+      });
+      saveBtn.click();
+
+      await vi.waitFor(() => {
+        expect(dispatched).toContain("attributeRowForm.save:Order.code");
+        const editor = element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(editor?.querySelector('[data-field="/primaryKey"] .el-switch.is-disabled')).not.toBeNull();
+        const deleteBtn = editor?.querySelector<HTMLButtonElement>(".attrs-row-delete button");
+        expect(deleteBtn?.disabled).toBe(true);
+      });
+      expect(listReadCount - listReadsBeforeSave).toBe(1);
+
+      // Expand a non-primary attribute "Note" and click Delete -> removes the row and stays in catalog.
+      await expandAttributeRow(element, "Note");
+      const deleteBtn = await vi.waitFor(() => {
+        const editor = element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(editor?.querySelector<HTMLInputElement>('[data-field="/showName"] input')?.value).toBe("Note");
+        const btn = editor?.querySelector<HTMLButtonElement>(".attrs-row-delete button");
+        expect(btn).not.toBeNull();
+        expect(btn!.disabled).toBe(false);
         return btn!;
       });
       deleteBtn.click();
 
       await vi.waitFor(() => {
-        expect(dispatched).toContain("remove.delete:Order.note");
-        expect(element.querySelector(".attrs-detail")).toBeNull();
+        expect(dispatched).toContain("attributes.delete:Order.note");
+        expect(element.textContent).not.toContain("Note");
         expect(element.querySelector(".attrs-catalog")).not.toBeNull();
-        expect(route.router.currentRoute.value.query.selected).toBeUndefined();
       });
     } finally {
       app.unmount();
     }
   });
 
-  it("does not trigger manual refreshObjects after setPrimaryKey when owner reports empty affected", async () => {
+  it("does not trigger manual refreshObjects after attributeRowForm save when owner reports empty affected", async () => {
     const fixture: FixtureAttribute[] = [
       { primaryKey: "Order.code", className: "Order", classNameLabel: "Sales Order", name: "code", label: "Order code", type: "varchar", primaryKeyFlag: false, businessKey: false, enable: true },
     ];
-    let detailReadCount = 0;
+    let listReadCount = 0;
     const route = mountAttributesRoute({
-      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.code" } },
       attributes: fixture,
-      onRecordRead: (_key, defaultResponse) => {
-        detailReadCount += 1;
+      onListRead: (_filterClass, defaultResponse) => {
+        listReadCount += 1;
         return defaultResponse();
       },
       onOperation: () => ({
@@ -841,62 +900,60 @@ describe("ontology-attributes builtin panel", () => {
     const { app, element } = await route.open();
 
     try {
-      const setPkBtn = await vi.waitFor(() => {
-        const btn = [...element.querySelectorAll<HTMLButtonElement>(".attrs-detail .sdk-page-header-actions button")]
-          .find((item) => item.textContent?.includes("Set as primary key") && !item.disabled);
+      await vi.waitFor(() => {
+        expect(element.textContent).toContain("Order code");
+      });
+      await expandAttributeRow(element, "Order code");
+
+      const pkSwitch = await vi.waitFor(() => {
+        const sw = element.querySelector<HTMLElement>('.attrs-row-editor [data-field="/primaryKey"] .el-switch');
+        expect(sw).not.toBeNull();
+        return sw!;
+      });
+      const readsBefore = listReadCount;
+      pkSwitch.click();
+      await nextTick();
+
+      const saveBtn = await vi.waitFor(() => {
+        const btn = [...element.querySelectorAll<HTMLButtonElement>(".attrs-row-editor .sdk-owner-form-actions button")]
+          .find((item) => item.textContent?.trim() === "Save" && !item.disabled);
         expect(btn).toBeDefined();
         return btn!;
       });
-      const readsBefore = detailReadCount;
-      setPkBtn.click();
+      saveBtn.click();
 
       await vi.waitFor(() => {
         expect(route.sent.some((req) => req.path.includes("/dispatch"))).toBe(true);
       });
       await new Promise((resolve) => setTimeout(resolve, 30));
-      expect(detailReadCount).toBe(readsBefore);
+      expect(listReadCount).toBe(readsBefore);
     } finally {
       app.unmount();
     }
   });
 
-  it("shows real read failure in place instead of notFound on first load, and keeps edit form mounted with unsaved edits on reload failure", async () => {
-    // 1. First load fails with error -> shows real error text, NOT "Attribute not found or deleted".
+  it("shows real read failure in place inside inline row editor on first load, and keeps edit form mounted with unsaved edits on background refresh", async () => {
+    // 1. First load of attributeRowForm fails with error -> shows real error text inline inside the expanded row.
     const firstFailRoute = mountAttributesRoute({
-      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.amount" } },
-      attributes: [],
-      onRecordRead: () => Response.json({ status: "error", message: "Ontology service timed out" }),
+      attributes: [
+        { primaryKey: "Order.amount", className: "Order", classNameLabel: "Sales Order", name: "amount", label: "Amount", type: "number", primaryKeyFlag: false, businessKey: false, enable: true },
+      ],
+      onFormRead: () => Response.json({ status: "error", message: "Ontology service timed out" }),
     });
     const firstFailMounted = await firstFailRoute.open();
     try {
+      await expandAttributeRow(firstFailMounted.element, "Amount");
       await vi.waitFor(() => {
-        const errorBox = firstFailMounted.element.querySelector<HTMLElement>(".attrs-detail-error");
-        expect(errorBox).not.toBeNull();
-        expect(errorBox!.textContent).toContain("Ontology service timed out");
+        const editor = firstFailMounted.element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(editor).not.toBeNull();
+        expect(editor!.textContent).toContain("Ontology service timed out");
       });
-      expect(firstFailMounted.element.textContent).not.toContain("Attribute not found or deleted");
-      expect(firstFailMounted.element.querySelector(".attrs-detail-body")).toBeNull();
     } finally {
       firstFailMounted.app.unmount();
     }
 
-    // 2. First load returns empty -> shows notFound empty state.
-    const emptyRoute = mountAttributesRoute({
-      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.gone" } },
-      attributes: [],
-      onRecordRead: () => Response.json({ status: "empty" }),
-    });
-    const emptyMounted = await emptyRoute.open();
-    try {
-      await vi.waitFor(() => {
-        expect(emptyMounted.element.querySelector(".attrs-missing")?.textContent).toContain("Attribute not found or deleted");
-      });
-    } finally {
-      emptyMounted.app.unmount();
-    }
-
-    // 3. Reload failure while editing -> form stays mounted with unsaved edits intact, actions stay visible, danger banner shows real error.
-    let failNextDetailRead = false;
+    // 2. Background refresh while editing -> mounted inline form keeps unsaved edits and actions intact.
+    let failNextFormRead = false;
     const fixture: FixtureAttribute[] = [
       {
         primaryKey: "Order.code",
@@ -912,55 +969,96 @@ describe("ontology-attributes builtin panel", () => {
       },
     ];
     const reloadFailRoute = mountAttributesRoute({
-      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.code" } },
       attributes: fixture,
-      onRecordRead: (_key, defaultResponse) => {
-        if (failNextDetailRead) {
+      onFormRead: (_key, defaultResponse) => {
+        if (failNextFormRead) {
           return Response.json({ status: "error", message: "Temporary gateway 502" });
         }
         return defaultResponse();
       },
+      onOperation: (operationId) => {
+        if (operationId === "form.save") {
+          fixture.push({
+            primaryKey: "Order.region",
+            className: "Order",
+            classNameLabel: "Sales Order",
+            name: "region",
+            label: "Region",
+            type: "varchar",
+            primaryKeyFlag: false,
+            businessKey: false,
+            enable: true,
+          });
+          return {
+            kind: "success",
+            data: { primaryKey: "Order.region" },
+            affected: {
+              objects: [{ objectType: ATTRIBUTE, primaryKey: "Order.code" }],
+              objectTypes: [ATTRIBUTE],
+            },
+          };
+        }
+        return { kind: "success", data: {} };
+      },
     });
     const reloadMounted = await reloadFailRoute.open();
     try {
+      await expandAttributeRow(reloadMounted.element, "Order code");
       const showNameInput = await vi.waitFor(() => {
-        const input = reloadMounted.element.querySelector<HTMLInputElement>('.attrs-form-wrap [data-field="/showName"] input');
+        const input = reloadMounted.element.querySelector<HTMLInputElement>('.attrs-row-editor [data-field="/showName"] input');
         expect(input).not.toBeNull();
         expect(input!.value).toBe("Order code");
         return input!;
       });
 
-      // Make an unsaved edit.
+      // Make an unsaved edit inside the inline row editor.
       showNameInput.value = "Unsaved draft title";
       showNameInput.dispatchEvent(new Event("input"));
       await vi.waitFor(() => {
-        expect(reloadMounted.element.querySelector(".sdk-page-header-unsaved")?.textContent).toContain("Unsaved changes");
+        expect(reloadMounted.element.querySelector(".attrs-unsaved")?.textContent).toContain("Unsaved changes (1)");
       });
 
-      // Trigger a detail re-read failure via affected refresh on setPrimaryKey.
-      failNextDetailRead = true;
-      const setPkBtn = [...reloadMounted.element.querySelectorAll<HTMLButtonElement>(".attrs-detail .sdk-page-header-actions button")]
-        .find((btn) => btn.textContent?.includes("Set as primary key") && !btn.disabled);
-      expect(setPkBtn).toBeDefined();
-      setPkBtn!.click();
+      // Trigger an ATTRIBUTE affected refresh via create dialog while form re-reads would fail.
+      failNextFormRead = true;
+      reloadFailRoute.controller()!.applyState({ creating: true });
+      const createName = await vi.waitFor(() => {
+        const input = document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input');
+        expect(input).not.toBeNull();
+        return input!;
+      });
+      const classSelect = document.querySelector<HTMLElement>('.el-dialog [data-field="/className"] .el-select__wrapper')!;
+      classSelect.click();
+      const orderOpt = await vi.waitFor(() => {
+        const found = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+          .find((item) => item.textContent?.includes("Sales Order (Order)"));
+        expect(found).toBeDefined();
+        return found!;
+      });
+      orderOpt.click();
+      createName.value = "region";
+      createName.dispatchEvent(new Event("input"));
+      await nextTick();
+
+      const createSave = [...document.querySelectorAll<HTMLButtonElement>(".el-dialog .sdk-owner-form-actions button")]
+        .find((btn) => btn.classList.contains("el-button--primary") || btn.textContent?.includes("Save") || btn.textContent?.includes("Create"))!;
+      createSave.click();
 
       await vi.waitFor(() => {
-        const banner = reloadMounted.element.querySelector<HTMLElement>(".attrs-detail-banner");
-        expect(banner).not.toBeNull();
-        expect(banner!.textContent).toContain("Temporary gateway 502");
+        expect(document.querySelector('.el-dialog [data-field="/name"]')).toBeNull();
+        expect(reloadMounted.element.textContent).toContain("Region");
       });
 
-      // Form remained mounted with the user's unsaved edit intact and header actions still visible.
-      const inputAfterError = reloadMounted.element.querySelector<HTMLInputElement>('.attrs-form-wrap [data-field="/showName"] input');
-      expect(inputAfterError).toBe(showNameInput);
-      expect(inputAfterError!.value).toBe("Unsaved draft title");
-      expect(reloadMounted.element.querySelector(".attrs-detail .sdk-page-header-actions")?.textContent).toContain("Delete");
+      // Inline form remained mounted with the user's unsaved edit intact and action bar still visible.
+      const inputAfterRefresh = reloadMounted.element.querySelector<HTMLInputElement>('.attrs-row-editor [data-field="/showName"] input');
+      expect(inputAfterRefresh).toBe(showNameInput);
+      expect(inputAfterRefresh!.value).toBe("Unsaved draft title");
+      expect(reloadMounted.element.querySelector(".attrs-row-editor .sdk-owner-form-actions")?.textContent).toContain("Delete");
     } finally {
       reloadMounted.app.unmount();
     }
   });
 
-  it("renders page-header Save and Discard controls while editing an existing attribute, submits platform:Attribute.save, and restores on Discard", async () => {
+  it("preserves inline row-editor draft controls (disabled Save when clean, unsaved notice, Discard with confirmation, and platform:Attribute.save)", async () => {
     const fixture: FixtureAttribute[] = [
       {
         primaryKey: "Order.amount",
@@ -976,18 +1074,17 @@ describe("ontology-attributes builtin panel", () => {
       },
     ];
 
-    const formProjection = projections.get("builtin-product-296cb589-24bc-4ea4-b615-6e0e6b111092");
-    expect(formProjection?.operations?.save?.operation).toEqual({
+    const rowFormProjection = projections.get("builtin-product-83e60864-e754-4960-aaf4-c1be3208e597");
+    expect(rowFormProjection?.operations?.save?.operation).toEqual({
       kind: "PlatformOperation",
       id: `${ATTRIBUTE}.save`,
     });
 
     const saveCalls: Array<{ operationId: string; targetKey: string; values: Record<string, unknown> }> = [];
     const route = mountAttributesRoute({
-      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.amount" } },
       attributes: fixture,
       onOperation: (operationId, targetKey, call) => {
-        if (operationId === "form.save") {
+        if (operationId === "attributeRowForm.save") {
           const values = ((call.input as { values?: Record<string, unknown> } | undefined)?.values ?? {});
           saveCalls.push({ operationId, targetKey, values });
           const target = fixture.find((item) => item.primaryKey === targetKey);
@@ -1011,27 +1108,33 @@ describe("ontology-attributes builtin panel", () => {
     const { app, element } = await route.open();
 
     try {
-      const saveBtn = () => element.querySelector<HTMLButtonElement>(".attrs-detail .sdk-page-header button.primary");
-      const discardBtn = () => element.querySelector<HTMLButtonElement>(".attrs-detail .sdk-page-header button.secondary");
-      const unsavedNotice = () =>
-        element.querySelector<HTMLElement>(".attrs-detail .sdk-page-header .sdk-page-header-unsaved")?.textContent?.trim() ?? null;
-      const showNameInput = () =>
-        element.querySelector<HTMLInputElement>('.attrs-form-wrap [data-field="/showName"] input');
-      const attrDescInput = () =>
-        element.querySelector<HTMLInputElement>('.attrs-form-wrap [data-field="/attrDesc"] input');
+      await expandAttributeRow(element, "Amount");
 
-      // 1. Once detail is ready, PageHeader renders Save in a disabled clean state with no Discard button.
+      const actionsBar = () => element.querySelector<HTMLElement>(".attrs-row-editor .sdk-owner-form-actions");
+      const saveBtn = () =>
+        [...(actionsBar()?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+          .find((btn) => btn.textContent?.trim() === "Save") ?? null;
+      const discardBtn = () =>
+        [...(actionsBar()?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+          .find((btn) => btn.textContent?.trim() === "Discard") ?? null;
+      const unsavedNotice = () =>
+        element.querySelector<HTMLElement>(".attrs-row-editor .attrs-unsaved")?.textContent?.trim() ?? null;
+      const showNameInput = () =>
+        element.querySelector<HTMLInputElement>('.attrs-row-editor [data-field="/showName"] input');
+      const attrDescInput = () =>
+        element.querySelector<HTMLInputElement>('.attrs-row-editor [data-field="/attrDesc"] input');
+
+      // 1. Once expanded row form is ready, Save is disabled in clean state with no Discard button or unsaved notice.
       await vi.waitFor(() => {
         expect(showNameInput()).not.toBeNull();
         expect(showNameInput()!.value).toBe("Amount");
         expect(saveBtn()).not.toBeNull();
-        expect(saveBtn()!.textContent?.trim()).toBe("Save");
         expect(saveBtn()!.disabled).toBe(true);
         expect(discardBtn()).toBeNull();
         expect(unsavedNotice()).toBeNull();
       });
 
-      // 2. Editing an editable field makes the form dirty -> Discard appears and Save becomes enabled.
+      // 2. Editing an editable field makes the form dirty -> unsaved notice and Discard appear and Save becomes enabled.
       const input = showNameInput()!;
       input.value = "Total amount";
       input.dispatchEvent(new Event("input"));
@@ -1039,19 +1142,24 @@ describe("ontology-attributes builtin panel", () => {
       await vi.waitFor(() => {
         expect(saveBtn()!.disabled).toBe(false);
         expect(discardBtn()).not.toBeNull();
-        expect(discardBtn()!.textContent?.trim()).toBe("Discard");
-        expect(unsavedNotice()).toBe("Unsaved changes");
+        expect(unsavedNotice()).toBe("Unsaved changes (1)");
       });
 
-      // 3. Clicking header Save dispatches owner save and settles the form back to clean state.
+      // 3. Clicking Save dispatches attributeRowForm.save and settles back to clean state.
       saveBtn()!.click();
 
       await vi.waitFor(() => {
         expect(saveCalls).toHaveLength(1);
         expect(saveCalls[0]).toEqual({
-          operationId: "form.save",
+          operationId: "attributeRowForm.save",
           targetKey: "Order.amount",
-          values: { name: "amount", showName: "Total amount", attrDesc: "Order total amount" },
+          values: {
+            showName: "Total amount",
+            attrDesc: "Order total amount",
+            enable: true,
+            businessKey: false,
+            primaryKey: false,
+          },
         });
         expect(saveBtn()!.disabled).toBe(true);
         expect(discardBtn()).toBeNull();
@@ -1083,17 +1191,10 @@ describe("ontology-attributes builtin panel", () => {
     }
   });
 
-  it("delegates setPrimaryKey and remove availability to owner unavailable descriptors with exact reasons for UI and agent executeAction", async () => {
-    const agentRun = {
-      sessionId: "11111111-1111-4111-8111-111111111111",
-      runId: "22222222-2222-4222-8222-222222222222",
-      toolCallId: "call-set-pk-1",
-    };
-
-    // 1. Primary-key attribute: owner marks both setPrimaryKey and remove unavailable with exact reasons.
+  it("renders read-only primaryKey switch reasons and delegates row Delete availability to owner rowOperations descriptors", async () => {
+    // 1. Primary-key attribute: /primaryKey and /enable are read-only with owner reasons, and Delete is disabled with exact reason.
     const pkWriteCallback = vi.fn(() => ({ kind: "success", data: {} }));
     const pkRoute = mountAttributesRoute({
-      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.orderNo" } },
       attributes: [
         {
           primaryKey: "Order.orderNo",
@@ -1112,49 +1213,32 @@ describe("ontology-attributes builtin panel", () => {
 
     const pkMounted = await pkRoute.open();
     try {
-      const pkButtons = await vi.waitFor(() => {
-        const actions = pkMounted.element.querySelector<HTMLElement>(".attrs-detail .sdk-page-header-actions");
-        expect(actions).not.toBeNull();
-        const buttons = [...actions!.querySelectorAll<HTMLButtonElement>("button")]
-          .filter((btn) => btn.textContent?.includes("Set as primary key"));
-        expect(buttons).toHaveLength(1);
-        expect(buttons[0]!.disabled).toBe(true);
-        return buttons;
-      });
+      await expandAttributeRow(pkMounted.element, "Order number");
+      await vi.waitFor(() => {
+        const editor = pkMounted.element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(editor).not.toBeNull();
+        const pkField = editor!.querySelector<HTMLElement>('.attrs-switches [data-field="/primaryKey"]');
+        expect(pkField).not.toBeNull();
+        expect(pkField!.querySelector(".el-switch.is-disabled")).not.toBeNull();
+        expect(pkField!.textContent).toContain("This attribute is already a primary key.");
 
-      const memberHost = pkMounted.element.querySelector<HTMLElement>('.attrs-detail .sdk-page-header-actions [data-member="setPrimaryKey"]');
-      expect(memberHost).not.toBeNull();
-      expect(memberHost!.style.display).not.toBe("none");
-      expect(memberHost!.contains(pkButtons[0]!)).toBe(true);
-      expect(memberHost!.textContent).toContain("This attribute is already a primary key.");
+        const enableField = editor!.querySelector<HTMLElement>('.attrs-switches [data-field="/enable"]');
+        expect(enableField!.querySelector(".el-switch.is-disabled")).not.toBeNull();
 
-      const rejectedSetPk = await pkRoute.executeAction({
-        operation: "setPrimaryKey.setPrimaryKey",
-        agentRun,
+        const deleteBtn = editor!.querySelector<HTMLButtonElement>(".attrs-row-delete button");
+        expect(deleteBtn).not.toBeNull();
+        expect(deleteBtn!.disabled).toBe(true);
+        expect(deleteBtn!.title).toBe("Primary key attributes cannot be deleted.");
+        expect(editor!.querySelector(".attrs-delete-reason")?.textContent).toBe("Primary key attributes cannot be deleted.");
       });
-      expect(rejectedSetPk).toMatchObject({
-        ok: false,
-        reason: "action_unavailable",
-        message: "This attribute is already a primary key.",
-      });
-
-      const rejectedDelete = await pkRoute.executeAction({
-        operation: "remove.delete",
-        agentRun: { ...agentRun, toolCallId: "call-del-pk-1" },
-      });
-      expect(rejectedDelete).toMatchObject({
-        ok: false,
-        reason: "action_unavailable",
-        message: "Primary key attributes cannot be deleted.",
-      });
+      pkMounted.element.querySelector<HTMLButtonElement>(".attrs-row-editor .attrs-row-delete button")!.click();
       expect(pkWriteCallback).toHaveBeenCalledTimes(0);
     } finally {
       pkMounted.app.unmount();
     }
 
-    // 2. Non-varchar attribute: owner marks setPrimaryKey unavailable with exact reason (while Delete remains available).
+    // 2. Non-varchar attribute: /primaryKey is read-only with exact owner reason while Delete remains available.
     const numberRoute = mountAttributesRoute({
-      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.amount" } },
       attributes: [
         {
           primaryKey: "Order.amount",
@@ -1171,26 +1255,24 @@ describe("ontology-attributes builtin panel", () => {
     });
     const numberMounted = await numberRoute.open();
     try {
+      await expandAttributeRow(numberMounted.element, "Amount");
       await vi.waitFor(() => {
-        const host = numberMounted.element.querySelector<HTMLElement>('.attrs-detail .sdk-page-header-actions [data-member="setPrimaryKey"]');
-        expect(host).not.toBeNull();
-        expect(host!.querySelector<HTMLButtonElement>("button")?.disabled).toBe(true);
-        expect(host!.textContent).toContain("Only enabled varchar attributes can be set as the primary key.");
-      });
-      const rejectedNumeric = await numberRoute.executeAction({
-        operation: "setPrimaryKey.setPrimaryKey",
-        agentRun: { ...agentRun, toolCallId: "call-set-pk-num" },
-      });
-      expect(rejectedNumeric).toMatchObject({
-        ok: false,
-        reason: "action_unavailable",
-        message: "Only enabled varchar attributes can be set as the primary key.",
+        const editor = numberMounted.element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(editor).not.toBeNull();
+        const pkField = editor!.querySelector<HTMLElement>('.attrs-switches [data-field="/primaryKey"]');
+        expect(pkField!.querySelector(".el-switch.is-disabled")).not.toBeNull();
+        expect(pkField!.textContent).toContain("Only enabled varchar attributes can be set as the primary key.");
+
+        const deleteBtn = editor!.querySelector<HTMLButtonElement>(".attrs-row-delete button");
+        expect(deleteBtn).not.toBeNull();
+        expect(deleteBtn!.disabled).toBe(false);
+        expect(editor!.querySelector(".attrs-delete-reason")).toBeNull();
       });
     } finally {
       numberMounted.app.unmount();
     }
 
-    // 3. Enabled non-primary varchar attribute: button is enabled, executeAction dispatches, and affected refresh updates availability.
+    // 3. Enabled non-primary varchar attribute: /primaryKey switch is editable, saving updates availability via affected refresh.
     const nonPkFixture: FixtureAttribute[] = [
       {
         primaryKey: "Order.orderNo",
@@ -1215,15 +1297,18 @@ describe("ontology-attributes builtin panel", () => {
         enable: true,
       },
     ];
-    const nonPkWriteCallback = vi.fn((operationId: string, targetKey: string) => {
-      if (operationId === "setPrimaryKey.setPrimaryKey") {
-        for (const item of nonPkFixture) {
-          if (item.className === "Order") item.primaryKeyFlag = item.primaryKey === targetKey;
+    const nonPkWriteCallback = vi.fn((operationId: string, targetKey: string, call: PanelOperationCall) => {
+      if (operationId === "attributeRowForm.save") {
+        const values = ((call.input as { values?: Record<string, unknown> } | undefined)?.values ?? {});
+        if (values.primaryKey === true) {
+          for (const item of nonPkFixture) {
+            if (item.className === "Order") item.primaryKeyFlag = item.primaryKey === targetKey;
+          }
         }
       }
       return {
         kind: "success",
-        data: {},
+        data: { primaryKey: targetKey },
         affected: {
           objects: [
             ...nonPkFixture.map((item) => ({ objectType: ATTRIBUTE, primaryKey: item.primaryKey })),
@@ -1235,57 +1320,58 @@ describe("ontology-attributes builtin panel", () => {
     });
 
     const nonPkRoute = mountAttributesRoute({
-      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.code" } },
       attributes: nonPkFixture,
       onOperation: nonPkWriteCallback,
     });
 
     const nonPkMounted = await nonPkRoute.open();
     try {
-      const enabledBtn = await vi.waitFor(() => {
-        const actions = nonPkMounted.element.querySelector<HTMLElement>(".attrs-detail .sdk-page-header-actions");
-        expect(actions).not.toBeNull();
-        const buttons = [...actions!.querySelectorAll<HTMLButtonElement>("button")]
-          .filter((btn) => btn.textContent?.includes("Set as primary key"));
-        expect(buttons).toHaveLength(1);
-        expect(buttons[0]!.disabled).toBe(false);
-        return buttons[0]!;
+      await expandAttributeRow(nonPkMounted.element, "Order code");
+      const pkSwitch = await vi.waitFor(() => {
+        const editor = nonPkMounted.element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(editor).not.toBeNull();
+        const sw = editor!.querySelector<HTMLElement>('.attrs-switches [data-field="/primaryKey"] .el-switch');
+        expect(sw).not.toBeNull();
+        expect(sw!.classList.contains("is-disabled")).toBe(false);
+        expect(editor!.querySelector<HTMLButtonElement>(".attrs-row-delete button")?.disabled).toBe(false);
+        return sw!;
       });
 
-      const memberHost = nonPkMounted.element.querySelector<HTMLElement>('.attrs-detail .sdk-page-header-actions [data-member="setPrimaryKey"]');
-      expect(memberHost).not.toBeNull();
-      expect(memberHost!.contains(enabledBtn)).toBe(true);
+      pkSwitch.click();
+      await nextTick();
 
-      const executed = await nonPkRoute.executeAction({
-        operation: "setPrimaryKey.setPrimaryKey",
-        agentRun: { ...agentRun, toolCallId: "call-set-pk-2" },
+      const saveBtn = await vi.waitFor(() => {
+        const btn = [...nonPkMounted.element.querySelectorAll<HTMLButtonElement>(".attrs-row-editor .sdk-owner-form-actions button")]
+          .find((item) => item.textContent?.trim() === "Save" && !item.disabled);
+        expect(btn).toBeDefined();
+        return btn!;
       });
-      expect(executed).toMatchObject({ ok: true, kind: "executed", operation: "setPrimaryKey.setPrimaryKey" });
-      expect(nonPkWriteCallback).toHaveBeenCalledTimes(1);
-      expect(nonPkWriteCallback).toHaveBeenCalledWith(
-        "setPrimaryKey.setPrimaryKey",
-        "Order.code",
-        expect.anything(),
-      );
+      saveBtn.click();
 
-      // After affected refresh updates owner availability, the same single button becomes disabled with exact owner reason.
       await vi.waitFor(() => {
-        const buttons = [...nonPkMounted.element.querySelectorAll<HTMLButtonElement>(".attrs-detail .sdk-page-header-actions button")]
-          .filter((btn) => btn.textContent?.includes("Set as primary key"));
-        expect(buttons).toHaveLength(1);
-        expect(buttons[0]!.disabled).toBe(true);
+        expect(nonPkWriteCallback).toHaveBeenCalledTimes(1);
+        expect(nonPkWriteCallback).toHaveBeenCalledWith(
+          "attributeRowForm.save",
+          "Order.code",
+          expect.objectContaining({
+            input: expect.objectContaining({
+              values: expect.objectContaining({ primaryKey: true }),
+            }),
+          }),
+        );
       });
 
-      const blockedAfter = await nonPkRoute.executeAction({
-        operation: "setPrimaryKey.setPrimaryKey",
-        agentRun: { ...agentRun, toolCallId: "call-set-pk-3" },
+      // After affected refresh updates owner form & rowOperations, /primaryKey becomes read-only and Delete becomes disabled with exact reasons.
+      await vi.waitFor(() => {
+        const editor = nonPkMounted.element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(editor!.querySelector('.attrs-switches [data-field="/primaryKey"] .el-switch.is-disabled')).not.toBeNull();
+        expect(editor!.querySelector('.attrs-switches [data-field="/primaryKey"]')?.textContent).toContain(
+          "This attribute is already a primary key.",
+        );
+        const deleteBtn = editor!.querySelector<HTMLButtonElement>(".attrs-row-delete button");
+        expect(deleteBtn!.disabled).toBe(true);
+        expect(editor!.querySelector(".attrs-delete-reason")?.textContent).toBe("Primary key attributes cannot be deleted.");
       });
-      expect(blockedAfter).toMatchObject({
-        ok: false,
-        reason: "action_unavailable",
-        message: "This attribute is already a primary key.",
-      });
-      expect(nonPkWriteCallback).toHaveBeenCalledTimes(1);
     } finally {
       nonPkMounted.app.unmount();
     }

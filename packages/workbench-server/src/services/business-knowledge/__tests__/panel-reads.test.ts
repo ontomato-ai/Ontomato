@@ -117,7 +117,7 @@ it("queries the whole domain with the owner's labels and status names", async ()
   expect(JSON.parse(String(sent[1]?.init.body))).toEqual({ target: { kind: "draft" }, changedField: null });
 });
 
-it("searches as the page did, ranks by title hits, filters and pages by cursor", async () => {
+it("searches as the page did, ranks by title hits, filters by status, and returns the complete match without cursor paging", async () => {
   vi.stubGlobal("fetch", ownerFetch().fetchOwner);
   const reads = createBusinessKnowledgeReadAdapter(viewer);
 
@@ -152,7 +152,7 @@ it("searches as the page did, ranks by title hits, filters and pages by cursor",
     total: 2,
   });
 
-  // The status filter keeps the searched entries; the cursor pages them with the filtered total.
+  // The status filter keeps the full searched set as one continuous list; cursor/size inputs never slice or emit nextCursor.
   expect(await reads.query({ status: "all" })).toEqual({
     rows: [
       row(entries["k-1"], "Approved"),
@@ -174,12 +174,61 @@ it("searches as the page did, ranks by title hits, filters and pages by cursor",
     total: 1,
   });
   expect(await reads.query({ status: "approved", size: 1 })).toEqual({
-    rows: [row(entries["k-1"], "Approved")], nextCursor: "1", total: 2,
+    rows: [row(entries["k-1"], "Approved"), row(entries["k-4"], "Approved")],
+    total: 2,
   });
   expect(await reads.query({ status: "approved", cursor: "1", size: 1 })).toEqual({
-    rows: [row(entries["k-4"], "Approved")], total: 2,
+    rows: [row(entries["k-1"], "Approved"), row(entries["k-4"], "Approved")],
+    total: 2,
   });
   expect(await reads.query({ search: "nothing matches this" })).toEqual({ rows: [], total: 0 });
+});
+
+it("returns more than 20 matching entries in a single unpaged response and reports unfiltered domain totals", async () => {
+  const many: Record<string, OwnerEntry> = Object.fromEntries(
+    Array.from({ length: 25 }, (_, idx) => {
+      const id = `k-${idx + 1}`;
+      return [id, {
+        knowledgeID: id,
+        knowledgeTitle: `Rule ${idx + 1}`,
+        knowledgeText: `Detail for rule ${idx + 1}`,
+        knowledgeTags: ["Business"],
+        status: idx % 2 === 0 ? 1 : 0,
+      }];
+    }),
+  );
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (new URL(url).pathname.endsWith("/admin/getBussinessKnowledge"))
+      return Response.json({ success: true, data: many });
+    return Response.json({ success: true, data: draftForm });
+  }));
+  const reads = createBusinessKnowledgeReadAdapter(viewer);
+
+  // Even when a caller supplies a default page size (e.g. 20), all 25 entries return with no nextCursor.
+  const full = panelReadResultSchemas.panelRecordQuery.parse(await reads.query({ size: 20 }));
+  expect(full.rows).toHaveLength(25);
+  expect(full.total).toBe(25);
+  expect(full.nextCursor).toBeUndefined();
+
+  // Filtered-empty search still allows an unfiltered query/counts read to report the domain's real total (25).
+  const noMatch = await reads.query({ search: "nonexistent-term" });
+  expect(noMatch).toEqual({ rows: [], total: 0 });
+  const unfilteredTotal = await reads.query({});
+  expect(unfilteredTotal.total).toBe(25);
+  expect((await reads.counts({ by: "status" }))[0]?.count).toBe(25);
+
+  // When the domain itself has no entries, both unfiltered query and counts report 0.
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (new URL(url).pathname.endsWith("/admin/getBussinessKnowledge"))
+      return Response.json({ success: true, data: {} });
+    return Response.json({ success: true, data: draftForm });
+  }));
+  expect(await reads.query({})).toEqual({ rows: [], total: 0 });
+  expect(await reads.counts({ by: "status" })).toEqual([
+    { key: "all", label: "All", count: 0 },
+    { key: "pending", label: "Pending review", count: 0 },
+    { key: "approved", label: "Approved", count: 0 },
+  ]);
 });
 
 it("counts the tabs on the searched entries in order with localized labels", async () => {
@@ -215,10 +264,10 @@ it("reads one entry from the whole-domain list the owner keeps, with highlights 
   });
 });
 
-it("shows a long content from shortly before its first hit under the title, as the page did", async () => {
+it("shows raw long content without 200-char pre-truncation and shifts shortly before the first hit when index > 24", async () => {
   const long = {
     knowledgeID: "k-long", knowledgeTitle: "Cutoff", knowledgeTags: [], status: 1,
-    knowledgeText: `${"Orders placed on weekdays are packed in the morning. ".repeat(2)}The evening cutoff is 18:00. ${"x".repeat(300)}`,
+    knowledgeText: `${"Orders placed on weekdays are packed in the morning. ".repeat(2)}The evening cutoff is 18:00.\n${"x".repeat(300)}`,
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (new URL(url).pathname.endsWith("/admin/getBussinessKnowledge")) return Response.json({ success: true, data: { "k-long": long } });
@@ -228,20 +277,20 @@ it("shows a long content from shortly before its first hit under the title, as t
   const reads = createBusinessKnowledgeReadAdapter(viewer);
 
   const { rows: [plain] } = await reads.query({});
-  expect(plain!.subtitle).toBe(long.knowledgeText.slice(0, 200));
+  expect(plain!.subtitle).toBe(long.knowledgeText);
   const { rows: [hit] } = await reads.query({ search: "evening" });
   const first = long.knowledgeText.indexOf("evening");
-  expect(hit!.subtitle).toBe(`…${long.knowledgeText.slice(first - 12)}`.slice(0, 200));
+  expect(hit!.subtitle).toBe(`…${long.knowledgeText.slice(first - 12)}`);
   expect(hit!.highlights?.subtitle).toEqual([{ start: 13, end: 20 }]);
 });
 
-it("strips raw Markdown syntax from list summaries while preserving highlight offsets and full body text", async () => {
+it("preserves raw Markdown characters and newlines in list summaries with exact hit-shifted highlight offsets", async () => {
   const markdownEntry = {
     knowledgeID: "k-md",
     knowledgeTitle: "Staff scope",
     knowledgeTags: ["Business"],
     status: 1,
-    knowledgeText: "- When querying `career` staff, **never filter by** `contract` rules.",
+    knowledgeText: "- When querying `career` staff,\n**never filter by** `contract` rules.",
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     if (new URL(url).pathname.endsWith("/admin/getBussinessKnowledge"))
@@ -251,12 +300,20 @@ it("strips raw Markdown syntax from list summaries while preserving highlight of
   const reads = createBusinessKnowledgeReadAdapter(viewer);
 
   const { rows: [plain] } = await reads.query({});
-  expect(plain!.subtitle).toBe("When querying career staff, never filter by contract rules.");
+  expect(plain!.subtitle).toBe(markdownEntry.knowledgeText);
   expect(plain!.fields.knowledgeText).toBe(markdownEntry.knowledgeText);
+
+  // Hit at index <= 24 keeps the raw text starting from index 0.
+  const { rows: [earlyHit] } = await reads.query({ search: "career" });
+  expect(earlyHit!.subtitle).toBe(markdownEntry.knowledgeText);
+  const earlyStart = markdownEntry.knowledgeText.indexOf("career");
+  expect(earlyHit!.highlights?.subtitle).toEqual([{ start: earlyStart, end: earlyStart + "career".length }]);
+
+  // Hit at index > 24 shifts to 12 characters before the first match, keeping raw characters and newlines.
   const { rows: [listed] } = await reads.query({ search: "contract" });
-  expect(listed!.subtitle).toBe("…r filter by contract rules.");
-  const start = listed!.subtitle!.indexOf("contract");
-  expect(listed!.highlights?.subtitle).toEqual([{ start, end: start + "contract".length }]);
+  const rawFirst = markdownEntry.knowledgeText.indexOf("contract");
+  expect(listed!.subtitle).toBe(`…${markdownEntry.knowledgeText.slice(rawFirst - 12)}`);
+  expect(listed!.highlights?.subtitle).toEqual([{ start: 13, end: 13 + "contract".length }]);
 });
 
 it("forwards the owner's form for a draft and for one entry's target", async () => {

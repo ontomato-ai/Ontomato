@@ -1,8 +1,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { mountPanel, usePanelBack, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelBack, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:BusinessKnowledge";
 const NARROW_WIDTH = 760;
+const GOVERNANCE_CHAT_ADDRESS = panelAddress("/agents/chat", { agentKind: "knowledge-governance" });
 
 function sameRef(a, b) {
   if (!a && !b) return true;
@@ -29,14 +30,24 @@ await mountPanel({
       return value === "edit" || value === "create" ? value : "view";
     });
     const editing = computed(() => mode.value !== "view");
-    const detailOpen = ref(Boolean(selected.value) || mode.value !== "view");
+    const detailOpen = ref(Boolean(selected.value) || Boolean(formTarget.value) || mode.value !== "view");
     const narrow = ref(false);
     const root = ref(null);
-    const returnTarget = ref(selected.value);
+    const returnTarget = ref(selected.value ?? formTarget.value);
+
+    // Unfiltered domain entry count distinguishes an empty domain from a filtered-empty match.
+    const domainTotal = usePanelOutput("domainCount", "total");
 
     // ObjectSummary publishes `label` only when the selected record datum is ready.
     const detailLabel = usePanelOutput("detail", "label");
     const detailReady = computed(() => detailLabel.value !== null);
+
+    function emptyMessage(narrowed) {
+      if (typeof domainTotal.value === "number") {
+        return t(domainTotal.value > 0 ? "panel.noMatch" : "panel.empty");
+      }
+      return t(narrowed ? "panel.noMatch" : "panel.empty");
+    }
 
     const formDirty = computed(() => {
       try {
@@ -91,7 +102,7 @@ await mountPanel({
     }
 
     const editBack = usePanelBack(() => editing.value, exitEditing, { pushHistory: true });
-    const narrowBack = usePanelBack(
+    usePanelBack(
       () => narrow.value && detailOpen.value && !editing.value,
       () => {
         detailOpen.value = false;
@@ -99,10 +110,8 @@ await mountPanel({
       { pushHistory: false },
     );
 
-    let prevSelected = selected.value;
     let handlingUserSelect = false;
     let suppressAutoDetailOpen = false;
-    let closingToList = false;
 
     function onListUpdateSelected() {
       // ObjectList emits `update:selected` for automatic fallback selections (`fallbackToFirst`
@@ -117,30 +126,35 @@ await mountPanel({
 
     watch(
       selected,
-      (value, old) => {
-        if (old !== undefined) prevSelected = old ?? null;
+      (value) => {
         if (handlingUserSelect) return;
-        if (mode.value === "view" || mode.value === "edit") {
+        if (mode.value === "view") {
           if (value) returnTarget.value = value;
           if (!sameRef(formTarget.value, value)) {
             instance.state.set("formTarget", value ?? null);
           }
+          if (!value) {
+            detailOpen.value = false;
+          } else if (!suppressAutoDetailOpen) {
+            detailOpen.value = true;
+          }
+        } else if (mode.value === "edit" && value) {
+          if (suppressAutoDetailOpen) {
+            // Keep the directory list unselected during edit when ObjectList triggers fallbackToFirst.
+            instance.state.set("selected", null);
+            return;
+          }
+          // External state updates (such as agent `present({ selected: B, mode: "edit" })`)
+          // retarget the edit form to `value` and keep the list's reading highlight cleared.
+          returnTarget.value = value;
+          instance.state.setState({ formTarget: value, selected: null });
+          detailOpen.value = true;
+        } else if (mode.value === "create" && value && suppressAutoDetailOpen) {
+          instance.state.set("selected", null);
         }
       },
       { immediate: true },
     );
-    watch([selected, editing], ([sel, isEditing]) => {
-      if (isEditing) {
-        detailOpen.value = true;
-        return;
-      }
-      if (!sel) {
-        detailOpen.value = false;
-        return;
-      }
-      if (suppressAutoDetailOpen || closingToList) return;
-      detailOpen.value = true;
-    });
 
     let revertingMode = false;
     watch(
@@ -160,16 +174,23 @@ await mountPanel({
             requestDiscard();
           }
           if (selected.value) returnTarget.value = selected.value;
+          else if (formTarget.value) returnTarget.value = formTarget.value;
           if (selected.value !== null || formTarget.value !== null) {
             instance.state.setState({ selected: null, formTarget: null });
           }
           detailOpen.value = true;
         } else if (next === "edit") {
-          if (!sameRef(formTarget.value, selected.value)) {
-            instance.state.set("formTarget", selected.value);
+          const target = selected.value ?? formTarget.value ?? returnTarget.value ?? null;
+          if (target) returnTarget.value = target;
+          if (selected.value !== null || !sameRef(formTarget.value, target)) {
+            instance.state.setState({ formTarget: target, selected: null });
           }
-          if (selected.value) returnTarget.value = selected.value;
           detailOpen.value = true;
+        } else if (next === "view" && prev !== undefined && prev !== "view") {
+          const restore = selected.value ?? formTarget.value ?? returnTarget.value ?? null;
+          if (restore && !sameRef(selected.value, restore)) {
+            instance.state.setState({ selected: restore, formTarget: restore });
+          }
         }
       },
       { immediate: true },
@@ -178,21 +199,23 @@ await mountPanel({
     async function onUserSelect(nextSelection) {
       if (!nextSelection) return;
       suppressAutoDetailOpen = false;
-      detailOpen.value = true;
-      if (!editing.value) return;
+      if (!editing.value) {
+        detailOpen.value = true;
+        return;
+      }
 
       // ObjectList writes `selected` synchronously before emitting `choose`; defer
       // syncing `formTarget` until leave confirmation resolves so dirty edits stay intact.
       handlingUserSelect = true;
       try {
-        const target = formTarget.value;
         if (!(await confirmLeave())) {
-          instance.state.set("selected", mode.value === "create" ? null : (target ?? prevSelected));
+          instance.state.set("selected", null);
           return;
         }
         requestDiscard();
         returnTarget.value = nextSelection;
         instance.state.setState({ mode: "view", selected: nextSelection, formTarget: nextSelection });
+        detailOpen.value = true;
       } finally {
         handlingUserSelect = false;
       }
@@ -200,9 +223,22 @@ await mountPanel({
 
     function openEdit() {
       if (!selected.value) return;
-      returnTarget.value = selected.value;
-      instance.state.setState({ formTarget: selected.value, mode: "edit" });
+      const target = selected.value;
+      returnTarget.value = target;
+      instance.state.setState({ formTarget: target, selected: null, mode: "edit" });
       detailOpen.value = true;
+    }
+
+    function openCreate() {
+      if (mode.value === "create") {
+        detailOpen.value = true;
+        return;
+      }
+      instance.state.set("mode", "create");
+    }
+
+    function openGovernance() {
+      void ctx.navigate(GOVERNANCE_CHAT_ADDRESS).catch(() => undefined);
     }
 
     function cancelEdit() {
@@ -210,21 +246,8 @@ await mountPanel({
     }
 
     function backToList() {
-      if (editing.value) {
-        closingToList = true;
-        void editBack
-          .back()
-          .then((left) => {
-            if (left) detailOpen.value = false;
-          })
-          .finally(() => {
-            void nextTick(() => {
-              closingToList = false;
-            });
-          });
-        return;
-      }
-      void narrowBack.back();
+      // Narrow-screen Back only hides the right pane and preserves any active edit draft.
+      detailOpen.value = false;
     }
 
     function saveForm() {
@@ -249,7 +272,7 @@ await mountPanel({
       const ref =
         typeof key === "string" && key.length > 0
           ? { className: object?.className ?? TYPE, primaryKey: key }
-          : (object?.className ? object : selected.value);
+          : (object?.className ? object : (formTarget.value ?? returnTarget.value ?? selected.value));
       if (ref) returnTarget.value = ref;
       instance.state.setState({ ...(ref ? { selected: ref, formTarget: ref } : {}), mode: "view" });
       detailOpen.value = true;
@@ -279,10 +302,11 @@ await mountPanel({
       formBusy,
       formCanSubmit,
       t,
+      emptyMessage,
       onListUpdateSelected,
       onUserSelect,
-      openCreate: () => instance.state.set("mode", "create"),
-      refresh: () => instance.refreshObjects(),
+      openCreate,
+      openGovernance,
       openEdit,
       cancelEdit,
       backToList,

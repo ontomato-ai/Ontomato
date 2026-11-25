@@ -247,22 +247,47 @@ function draftPrimaryKeyClass(target: PanelOperationTarget | null, values: Recor
   }
 }
 
-const createPrimaryKeyImpact: PanelImpactInspector = {
+function editSubmitsPrimaryKey(save: z.infer<typeof saveInputSchema>) {
+  if (save.submittedFields === undefined) return save.values.primaryKey !== undefined;
+  return save.submittedFields.some(pointer => formFieldKey(pointer, "/") === "primaryKey");
+}
+
+const saveAttributePrimaryKeyImpact: PanelImpactInspector = {
   handlerRef: `${ATTRIBUTE}.save.inspect-impact`,
   async inspect(host, [call]) {
-    const { values } = saveInputSchema.parse(call!.input);
-    const className = draftPrimaryKeyClass(call!.target, values);
-    const name = typeof values.name === "string" ? values.name.trim() : "";
-    if (!className || !name) return null;
+    const save = saveInputSchema.parse(call!.input);
+    const { values } = save;
+    if (call!.target?.kind === "draft") {
+      const className = draftPrimaryKeyClass(call!.target, values);
+      const name = typeof values.name === "string" ? values.name.trim() : "";
+      if (!className || !name) return null;
+      const [classView, attributes] = await Promise.all([
+        readModelView(host, objectTypePath(className), objectTypeViewSchema),
+        readModelView(host, attributesPath(className), attributeListSchema),
+      ]);
+      const replaced = attributes.filter(view => view.primaryKey);
+      if (!replaced.length) return null;
+      const showName = typeof values.showName === "string" ? values.showName.trim() : "";
+      return primaryKeyImpact(host, classView.showName || classView.className, { className, name, showName },
+        replaced, "panels.confirmation.createPrimaryKeyImpact");
+    }
+    if (call!.target?.kind !== "object" || !editSubmitsPrimaryKey(save) || values.primaryKey !== true) {
+      return null;
+    }
+    const { className, name } = parseAttributePrimaryKey(call!.target.primaryKey);
     const [classView, attributes] = await Promise.all([
       readModelView(host, objectTypePath(className), objectTypeViewSchema),
       readModelView(host, attributesPath(className), attributeListSchema),
     ]);
-    const replaced = attributes.filter(view => view.primaryKey);
+    const current = attributes.find(view => view.name === name);
+    if (!current || current.primaryKey) return null;
+    const replaced = attributes.filter(view => view.primaryKey && view.name !== name);
     if (!replaced.length) return null;
-    const showName = typeof values.showName === "string" ? values.showName.trim() : "";
+    const showName = typeof values.showName === "string" && values.showName.trim()
+      ? values.showName.trim()
+      : current.showName;
     return primaryKeyImpact(host, classView.showName || classView.className, { className, name, showName },
-      replaced, "panels.confirmation.createPrimaryKeyImpact");
+      replaced, "panels.confirmation.setPrimaryKeyImpact");
   },
 };
 
@@ -355,7 +380,7 @@ export const ontologyModelServerOperations = [
     inputSchema: saveInputSchema,
     resultSchema: attributeViewSchema,
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    inspectImpact: createPrimaryKeyImpact,
+    inspectImpact: saveAttributePrimaryKeyImpact,
 
     create: true,
     async execute(
@@ -387,22 +412,49 @@ export const ontologyModelServerOperations = [
         };
       } else {
         const key = parseAttributePrimaryKey(target.primaryKey);
-        const edited = await editedValues(save, async () => {
+        const includePrimaryKey = editSubmitsPrimaryKey(save);
+        let cachedViews: readonly AttributeView[] | undefined;
+        const loadViews = async (): Promise<Outcome<readonly AttributeView[]>> => {
+          if (cachedViews !== undefined) return { ok: true, data: cachedViews };
           const views = await getModelView(host, attributesPath(key.className), attributeListSchema);
+          if (!views.ok) return views;
+          cachedViews = views.data;
+          return { ok: true, data: views.data };
+        };
+        const edited = await editedValues(save, async () => {
+          const views = await loadViews();
           if (!views.ok) return views;
           const view = views.data.find(attribute => attribute.name === key.name);
           if (view === undefined) {
             return { ok: false, outcome: { kind: "refusal", code: "ATTRIBUTE_NOT_FOUND", message: `Attribute ${key.name} not found` } };
           }
-          return { ok: true, data: { showName: view.showName, attrDesc: view.attrDesc, enable: view.enable, businessKey: view.businessKey } };
+          return {
+            ok: true,
+            data: {
+              showName: view.showName,
+              attrDesc: view.attrDesc,
+              enable: view.enable,
+              businessKey: view.businessKey,
+              ...(includePrimaryKey && { primaryKey: view.primaryKey }),
+            },
+          };
         });
         if (!edited.ok) return edited.outcome;
+        if (includePrimaryKey && edited.data.primaryKey === true) {
+          const views = await loadViews();
+          if (!views.ok) return views.outcome;
+          const current = views.data.find(attribute => attribute.name === key.name);
+          if (current && !current.primaryKey) {
+            replaced = views.data.filter(view => view.primaryKey && view.name !== key.name).map(attributeIdentity);
+          }
+        }
         body = {
           ...key,
           showName: edited.data.showName,
           attrDesc: edited.data.attrDesc,
           enable: edited.data.enable,
           businessKey: edited.data.businessKey,
+          ...(includePrimaryKey && { primaryKey: edited.data.primaryKey }),
         };
       }
       const result = await postModelWrite(
@@ -548,6 +600,69 @@ export const ontologyModelServerOperations = [
           relationships: relationships.map(rel => rel.relationship).join(", "),
         }) };
       }
+    },
+    async unavailableBatch(
+      host: PanelOperationHost,
+      targets: readonly { rowKey: string; target: PanelRecordTarget }[],
+    ) {
+      const reasons = new Map<string, { reason: string }>();
+      if (!targets.length) return reasons;
+      const parsed = targets.map(entry => ({
+        rowKey: entry.rowKey,
+        ...parseAttributePrimaryKey(entry.target.primaryKey),
+      }));
+      const classes = [...new Set(parsed.map(entry => entry.className))];
+      const attrPath = classes.length === 1 ? attributesPath(classes[0]!) : "/attributes";
+      const relPath = classes.length === 1
+        ? `/relationships?className=${encodeURIComponent(classes[0]!)}`
+        : "/relationships";
+      const [attrResp, relResp] = await Promise.all([
+        host.request(`${modelPath}${attrPath}`, {}),
+        host.request(`${modelPath}${relPath}`, {}),
+      ]);
+      if (!attrResp.ok && attrResp.status !== 403 && attrResp.status !== 404) {
+        throw await modelReadError(attrResp);
+      }
+      if (!relResp.ok && relResp.status !== 403 && relResp.status !== 404) {
+        throw await modelReadError(relResp);
+      }
+      const attributes = attrResp.ok ? attributeListSchema.parse(await attrResp.json()) : [];
+      const relationships = relResp.ok ? relationshipListSchema.parse(await relResp.json()) : [];
+      const attrByKey = new Map(attributes.map(view => [`${view.className}\u0000${view.name}`, view]));
+      const usedBy = new Map<string, string[]>();
+      for (const rel of relationships) {
+        if (rel.fromclass && rel.fromField) {
+          const fromKey = `${rel.fromclass}\u0000${rel.fromField}`;
+          const list = usedBy.get(fromKey) ?? [];
+          if (!list.includes(rel.relationship)) list.push(rel.relationship);
+          usedBy.set(fromKey, list);
+        }
+        if (rel.toclass && rel.toField) {
+          const toKey = `${rel.toclass}\u0000${rel.toField}`;
+          const list = usedBy.get(toKey) ?? [];
+          if (!list.includes(rel.relationship)) list.push(rel.relationship);
+          usedBy.set(toKey, list);
+        }
+      }
+      for (const { rowKey, className, name } of parsed) {
+        const key = `${className}\u0000${name}`;
+        const view = attrByKey.get(key);
+        if (!view) {
+          reasons.set(rowKey, { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeUnavailable") });
+        } else if (view.primaryKey) {
+          reasons.set(rowKey, { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.cannotDeletePrimaryKey") });
+        } else {
+          const rels = usedBy.get(key);
+          if (rels?.length) {
+            reasons.set(rowKey, {
+              reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeInUse", {
+                relationships: rels.join(", "),
+              }),
+            });
+          }
+        }
+      }
+      return reasons;
     },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const key = parseAttributePrimaryKey(target.primaryKey);
