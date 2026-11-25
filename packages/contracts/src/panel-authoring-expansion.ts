@@ -8,7 +8,8 @@ import {
   type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelStateFieldRef, type PanelStateRef,
 } from "./panel-manifest";
 import {
-  directProjectionInputAccepts, missingRequiredReadParameters, panelLocalOperationNameSchema, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
+  directProjectionInputAccepts, formatOperationTargetTypes, missingRequiredReadParameters, panelLocalOperationNameSchema,
+  panelOperationTargetPort, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
   projectionOperationTargetMatches, type DirectProjectionData, type DirectProjectionPorts, type ProjectionOperationBinding,
   type ProjectionOperationParam,
 } from "./panel-projection";
@@ -81,14 +82,10 @@ export function expandPanelAuthoringMember(
   const targetType = targetStatePort === undefined ? undefined
     : targetStatePort.kind === "object-union" ? undefined
       : objectTypeOf(targetStatePort) ?? fail("target", "Expected object state of one type, an object-union, or a list of one type");
-  if (targetStatePort?.kind === "object-union" && member.type !== undefined && !matchesObjectType(targetStatePort, member.type))
-    return fail("type", `'${member.type}' is not included in target state object-union`);
-  if (targetType !== undefined && member.type !== undefined && targetType !== member.type)
-    return fail("type", `'${member.type}' does not match target state type '${targetType}'`);
 
   const { objectTypes, operations: topLevelOperations, unavailableActions } = typeTable;
   let typeId = member.type ?? targetType;
-  if (typeId !== undefined && !Object.hasOwn(objectTypes, typeId))
+  if (typeId !== undefined && typeId !== "@any" && !Object.hasOwn(objectTypes, typeId))
     return fail("type", `Type '${typeId}' is absent from the author type table`);
 
   function lookupOwnerOperation(operationId: string, preferredType: string | undefined, fieldPath: string) {
@@ -111,7 +108,23 @@ export function expandPanelAuthoringMember(
     return matches[0]!;
   }
 
-  const ownerOperation = member.operation === undefined ? undefined : lookupOwnerOperation(member.operation, typeId, "operation");
+  const ownerOperation = member.operation === undefined
+    ? undefined
+    : lookupOwnerOperation(member.operation, typeId === "@any" ? undefined : typeId, "operation");
+  const operationAcceptsTargetState = ownerOperation?.operation.targetTypes !== undefined
+    && targetStatePort !== undefined
+    && panelOperationTargetPort(
+      targetStatePort,
+      ownerOperation.type,
+      ownerOperation.operation.batch,
+      ownerOperation.operation.targetTypes,
+    ) !== undefined;
+  if (!operationAcceptsTargetState) {
+    if (targetStatePort?.kind === "object-union" && member.type !== undefined && !matchesObjectType(targetStatePort, member.type))
+      return fail("type", `'${member.type}' is not included in target state object-union`);
+    if (targetType !== undefined && member.type !== undefined && targetType !== member.type)
+      return fail("type", `'${member.type}' does not match target state type '${targetType}'`);
+  }
   const readsDraft = ownerOperation?.operation.effect === "read" && ownerOperation.operation.target.source === "draft";
   const writesWithDraft = ownerOperation?.operation.effect === "write";
   if (!readsDraft) {
@@ -424,10 +437,12 @@ export function expandPanelAuthoringMember(
       ...(target && { target }),
       ...(opParams && { params: opParams }),
     };
-    if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType))
-      fail("target", ownerType
-        ? `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`
+    if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType)) {
+      const expectedTarget = formatOperationTargetTypes(ownerType, operation.targetTypes);
+      fail("target", expectedTarget
+        ? `Operation '${operation.id}' requires a compatible target of type '${expectedTarget}'`
         : `Operation '${operation.id}' takes no target`);
+    }
     const localName = panelLocalOperationNameSchema.safeParse(operation.id.split(".").at(-1));
     if (!localName.success) return fail("operation", `'${operation.id}' has no usable local operation name`);
     const name = localName.data;
@@ -488,10 +503,12 @@ export function expandPanelAuthoringMember(
       ...(target && { target }),
       ...(opParams && { params: opParams }),
     };
-    if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType))
-      fail(`${opPath}.target`, ownerType
-        ? `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`
+    if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType)) {
+      const expectedTarget = formatOperationTargetTypes(ownerType, operation.targetTypes);
+      fail(`${opPath}.target`, expectedTarget
+        ? `Operation '${operation.id}' requires a compatible target of type '${expectedTarget}'`
         : `Operation '${operation.id}' takes no target`);
+    }
     if (normalized.draft !== undefined) {
       if (operation.effect === "read" && operation.target.source === "draft") {
         readOperationInputs = {

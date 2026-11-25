@@ -30,13 +30,15 @@
         },
         "operations": {
           "favorite": {
-            "operation": "applications.favorite",
+            "type": "platform:Favorite",
+            "operation": "favorites.add",
             "target": {
               "row": true
             }
           },
           "unfavorite": {
-            "operation": "applications.unfavorite",
+            "type": "platform:Favorite",
+            "operation": "favorites.remove",
             "target": {
               "row": true
             }
@@ -95,13 +97,15 @@
         },
         "operations": {
           "favorite": {
-            "operation": "agents.favorite",
+            "type": "platform:Favorite",
+            "operation": "favorites.add",
             "target": {
               "row": true
             }
           },
           "unfavorite": {
-            "operation": "agents.unfavorite",
+            "type": "platform:Favorite",
+            "operation": "favorites.remove",
             "target": {
               "row": true
             }

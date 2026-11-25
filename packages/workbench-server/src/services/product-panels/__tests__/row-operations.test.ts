@@ -4,7 +4,7 @@ import {
   type CreatePanelHumanOperationIntentRequest,
   type PanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
-import { APPLICATION, BUSINESS_KNOWLEDGE, PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { AGENT_DEFINITION, APPLICATION, BUSINESS_KNOWLEDGE, PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -1001,5 +1001,95 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     });
     // Must not emit stale parent-type keys.
     expect(res.rowOperations?.[panelRowOperationKey(rows[1]!, APPLICATION)]).toBeUndefined();
+  });
+
+  it("evaluates declarative multi-target row operations across heterogeneous row classNames and skips disallowed types", async () => {
+    const rows: PanelRecord[] = [
+      { primaryKey: "app-1", className: APPLICATION, label: "Dashboards", fields: { name: "Dashboards" } },
+      { primaryKey: "agent-1", className: AGENT_DEFINITION, label: "Analyst", fields: { name: "Analyst" } },
+      { primaryKey: "panel-1", className: PRODUCT_PANEL, label: "Custom Panel", fields: { name: "Custom Panel" } },
+    ];
+    mocks.usedPanels.mockResolvedValueOnce(rows);
+
+    const observedTargets: Array<{ objectType: string; primaryKey: string }> = [];
+    const multiTargetOp: serverOperations.PanelWriteServerOperation = {
+      handlerRef: "favorites.add",
+      binding: { kind: "PlatformOperation", id: "favorites.add" },
+      kind: "action",
+      effect: "write",
+      targetInput: "target",
+      targetTypes: { platformTypes: [APPLICATION, AGENT_DEFINITION] },
+      targetSchema: z.object({ kind: z.literal("object"), objectType: z.string(), primaryKey: z.string() }),
+      inputSchema: z.object({}).strict(),
+      resultSchema: z.object({ pinned: z.boolean() }).strict(),
+      batch: false,
+      targetLabel: async (_host, target) => target.primaryKey,
+      unavailableBatch: async (_host, targets) => {
+        const out = new Map<string, { reason: string } | undefined>();
+        for (const item of targets) {
+          observedTargets.push({ objectType: item.target.objectType, primaryKey: item.target.primaryKey });
+          out.set(item.rowKey, item.target.primaryKey === "agent-1" ? { reason: "Already pinned" } : undefined);
+        }
+        return out;
+      },
+      execute: async () => ({ kind: "success", data: { pinned: true } }),
+    };
+
+    registerMockOp({ "favorites.add": multiTargetOp });
+
+    setProduct(makeProjection("hetero-proj", {
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { app: { kind: "object", objectType: APPLICATION } },
+      data: {
+        rows: {
+          source: { object: { input: "app" } },
+          read: "usedPanels",
+          params: {},
+        },
+      },
+      operations: {
+        pin: {
+          operation: { kind: "PlatformOperation", id: "favorites.add" },
+          target: { row: true },
+        },
+      },
+    }));
+
+    setProduct(makePanel("P", {
+      state: {
+        app: { type: { kind: "object", objectType: APPLICATION }, default: null, personal: false, deepLink: false, external: true },
+      },
+      members: {
+        items: {
+          target: { projectionId: "hetero-proj" },
+          inputs: { app: { state: "app" } },
+        },
+      },
+    }));
+
+    const res = await readProductPanelData(owner, credentials, {
+      source: { kind: "registered", applicationId: "A", useId: "tasks" },
+      memberPath: [{ member: "items" }],
+      dataName: "rows",
+      inputs: { app: { className: APPLICATION, primaryKey: "app-1" } },
+    });
+
+    expect(res.status).toBe("ready");
+    if (res.status !== "ready") throw new Error("expected ready");
+
+    // Only rows whose className matches `targetTypes` are sent to `unavailableBatch`.
+    expect(observedTargets).toEqual([
+      { objectType: APPLICATION, primaryKey: "app-1" },
+      { objectType: AGENT_DEFINITION, primaryKey: "agent-1" },
+    ]);
+
+    const kApp = panelRowOperationKey(rows[0]!, PRODUCT_PANEL);
+    const kAgent = panelRowOperationKey(rows[1]!, PRODUCT_PANEL);
+    const kPanel = panelRowOperationKey(rows[2]!, PRODUCT_PANEL);
+    expect(res.rowOperations).toEqual({
+      [kApp]: { pin: { available: true } },
+      [kAgent]: { pin: { available: false, unavailable: { reason: "Already pinned" } } },
+      [kPanel]: { pin: { available: false } },
+    });
   });
 });

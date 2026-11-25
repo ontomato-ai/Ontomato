@@ -8,8 +8,11 @@ import { ensureWorkspacesSchema } from "./20261109-workspaces/schema";
 import { ensurePlatformHomeSchema } from "./20261111-platform-home/schema";
 import {
   PLATFORM_HOME_FAVORITES_NAME,
+  PLATFORM_HOME_FAVORITES_V2_NAME,
+  PLATFORM_HOME_FAVORITES_V2_VERSION,
   PLATFORM_HOME_FAVORITES_VERSION,
   migratePlatformHomeFavorites,
+  migratePlatformHomeWorkspaceFavoritesV2,
 } from "./20261125-platform-home-favorites/migration";
 import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
@@ -135,6 +138,23 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
           return migrated;
         });
         logger.info("Platform home favorites migrated", { version: migration.version, migrated: result.migrated });
+      },
+    },
+  },
+  {
+    directory: "20261125-platform-home-favorites",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: PLATFORM_HOME_FAVORITES_V2_VERSION,
+      name: PLATFORM_HOME_FAVORITES_V2_NAME,
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        const result = await inMigrationTransaction(client, async () => {
+          const migrated = await migratePlatformHomeWorkspaceFavoritesV2(client);
+          await recordMigration(client, migration.version, migration.name);
+          return migrated;
+        });
+        logger.info("Platform home workspace favorites V2 migrated", { version: migration.version, migrated: result.migrated });
       },
     },
   },

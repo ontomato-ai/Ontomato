@@ -1051,3 +1051,90 @@ test("top-level targetless Actions expand cleanly on both ObjectForm and Operati
     "create-order": { operation: { kind: "Action", id: "create-order" } },
   });
 });
+
+test("declarative targetTypes allows cross-owner OperationButton and ObjectList row bindings while rejecting disallowed types", async () => {
+  const { platformTypeTableResponseSchema } = await import("./platform-type-table");
+  const { productProjectionInputSchema } = await import("./product-panels");
+  const { operationAcceptsTargetType } = await import("./panel-projection");
+
+  const targetTypes = {
+    platformTypes: ["platform:Application", "platform:Dashboard"],
+    customerObjects: true,
+  };
+  const addFavorite = panelOperationDeclarationSchema.parse({
+    id: "favorites.add",
+    kind: "action",
+    effect: "write",
+    batch: false,
+    target: { source: "input", input: "target" },
+    targetTypes,
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  });
+
+  assert.equal(operationAcceptsTargetType("platform:Application", undefined, targetTypes), true);
+  assert.equal(operationAcceptsTargetType("Student", undefined, targetTypes), true);
+  assert.equal(operationAcceptsTargetType("platform:Role", undefined, targetTypes), false);
+
+  const favoriteTable = platformTypeTableResponseSchema.parse({
+    objectTypes: {
+      "platform:Favorite": {
+        reads: { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
+        operations: [addFavorite],
+      },
+      "platform:Application": {
+        reads: { available: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
+      },
+      "platform:Role": {
+        reads: { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
+      },
+    },
+    resultSchemas: { panelRecordList: {} },
+  });
+
+  const multiState = panelManifestSchema.parse({
+    state: {
+      selectedApp: { type: { kind: "object", objectType: "platform:Application" } },
+      selectedAnyCustomer: { type: { kind: "object", objectType: "@any" } },
+      selectedRole: { type: { kind: "object", objectType: "platform:Role" } },
+    },
+    members: {},
+  }).state;
+
+  const appBtnMember = panelAuthoringMemberSchema.parse({
+    component: "OperationButton",
+    type: "platform:Favorite",
+    operation: "favorites.add",
+    target: "selectedApp",
+  });
+  assert("component" in appBtnMember);
+  const appBtn = expandPanelAuthoringMember("favApp", appBtnMember, {
+    state: multiState, components, typeTable: favoriteTable,
+  });
+  assert.equal(appBtn.projection.inputs.target?.kind, "object");
+  assert.doesNotThrow(() => productProjectionInputSchema.parse({
+    ...appBtn.projection, name: "Favorite app", description: "", visibility: "domain",
+  }));
+
+  const anyBtnMember = panelAuthoringMemberSchema.parse({
+    component: "OperationButton",
+    type: "platform:Favorite",
+    operation: "favorites.add",
+    target: "selectedAnyCustomer",
+  });
+  assert("component" in anyBtnMember);
+  const anyBtn = expandPanelAuthoringMember("favCustomer", anyBtnMember, {
+    state: multiState, components, typeTable: favoriteTable,
+  });
+  assert.deepEqual(anyBtn.projection.inputs.target, { kind: "object", objectType: "@any" });
+
+  const disallowedMember = panelAuthoringMemberSchema.parse({
+    component: "OperationButton",
+    type: "platform:Favorite",
+    operation: "favorites.add",
+    target: "selectedRole",
+  });
+  assert("component" in disallowedMember);
+  assert.throws(() => expandPanelAuthoringMember("favRole", disallowedMember, {
+    state: multiState, components, typeTable: favoriteTable,
+  }), /does not match target state type|compatible target/);
+});

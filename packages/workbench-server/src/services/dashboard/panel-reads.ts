@@ -19,6 +19,7 @@ import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+import { favoriteTargetKey, readFavoriteKeySet } from "../platform-home/service";
 import { getOwnedDashboard } from "./access";
 import { DashboardMetricClient } from "./metric-client";
 import { metricCardParameterForm } from "./metric-data";
@@ -85,10 +86,13 @@ function dashboardCardRecord(
   card: MetricReferenceEntry,
   order: number,
   locale?: string,
+  favorited = false,
 ): PanelRecord {
   const isChart = "chartFile" in card;
   const colSpan = card.layout?.colSpan ?? (isChart ? 6 : 3);
   const rowSpan = card.layout?.rowSpan ?? (isChart ? 2 : 1);
+  const primaryKey = dashboardCardPrimaryKey({ dashboardId: detail.id, cardId: card.id });
+  const openPath = `/dashboards?dashboardId=${encodeURIComponent(detail.id)}&cardId=${encodeURIComponent(card.id)}`;
   const fields: Record<string, PanelRecordFieldValue> = {
     cardId: card.id,
     dashboardId: detail.id,
@@ -102,6 +106,7 @@ function dashboardCardRecord(
     rowSpan,
     metricId: card.query.metricId,
     hasParameters: Object.keys(card.query.parameters).length > 0,
+    favorite: favorited,
   };
   if (isChart) {
     const firstSeries = card.chartFile.content.series[0] as { type?: unknown } | undefined;
@@ -115,7 +120,7 @@ function dashboardCardRecord(
     if (card.sort !== undefined) fields.sort = { kind: "json", value: card.sort };
   }
   return {
-    primaryKey: dashboardCardPrimaryKey({ dashboardId: detail.id, cardId: card.id }),
+    primaryKey,
     className: DASHBOARD_CARD,
     label: card.name,
     fields,
@@ -130,6 +135,8 @@ function dashboardCardRecord(
       name: card.name,
       kind: isChart ? "chart" : "metric",
       metricId: card.query.metricId,
+      openPath,
+      favorited,
     },
   };
 }
@@ -140,29 +147,46 @@ export function createDashboardReadAdapter(owner: ProductOwner, viewer: Assistan
 
   return {
     async list(): Promise<PanelRecord[]> {
-      const items = await listDashboards(userId, domainId);
+      const [items, favoriteKeys] = await Promise.all([
+        listDashboards(userId, domainId),
+        readFavoriteKeySet(owner),
+      ]);
       const fieldLabels = {
         name: tForLocale(locale, "panels.dashboard.fields.name"),
         createdAt: tForLocale(locale, "panels.dashboard.fields.createdAt"),
         updatedAt: tForLocale(locale, "panels.dashboard.fields.updatedAt"),
       };
-      return items.map(item => ({
-        primaryKey: item.id,
-        className: DASHBOARD,
-        label: item.name,
-        fields: {
-          name: item.name,
-          createdAt: new Date(item.createdAt).toISOString(),
-          updatedAt: new Date(item.updatedAt).toISOString(),
-        },
-        fieldLabels,
-      }));
+      return items.map(item => {
+        const favorited = favoriteKeys.has(favoriteTargetKey(DASHBOARD, item.id));
+        const openPath = `/dashboards?dashboardId=${encodeURIComponent(item.id)}`;
+        return {
+          primaryKey: item.id,
+          className: DASHBOARD,
+          label: item.name,
+          fields: {
+            name: item.name,
+            createdAt: new Date(item.createdAt).toISOString(),
+            updatedAt: new Date(item.updatedAt).toISOString(),
+            favorite: favorited,
+          },
+          fieldLabels,
+          outputs: {
+            openPath,
+            favorited,
+          },
+        };
+      });
     },
 
     async record(dashboardId: string): Promise<PanelRecord> {
-      const detail = await getOwnedDashboard(userId, domainId, dashboardId);
+      const [detail, favoriteKeys] = await Promise.all([
+        getOwnedDashboard(userId, domainId, dashboardId),
+        readFavoriteKeySet(owner),
+      ]);
       const groupCount = detail.groups.length;
       const cardCount = detail.groups.reduce((count, group) => count + group.charts.length + group.metrics.length, 0);
+      const favorited = favoriteKeys.has(favoriteTargetKey(DASHBOARD, detail.id));
+      const openPath = `/dashboards?dashboardId=${encodeURIComponent(detail.id)}`;
       return {
         primaryKey: detail.id,
         className: DASHBOARD,
@@ -173,6 +197,7 @@ export function createDashboardReadAdapter(owner: ProductOwner, viewer: Assistan
           updatedAt: new Date(detail.updatedAt).toISOString(),
           groupCount,
           cardCount,
+          favorite: favorited,
           groups: {
             kind: "json",
             value: detail.groups.map((group, order) => ({
@@ -195,19 +220,26 @@ export function createDashboardReadAdapter(owner: ProductOwner, viewer: Assistan
           name: detail.name,
           groupCount,
           cardCount,
+          openPath,
+          favorited,
         },
       };
     },
 
     async cards(dashboardId: string): Promise<PanelRecord[]> {
-      const detail = await getOwnedDashboard(userId, domainId, dashboardId);
+      const [detail, favoriteKeys] = await Promise.all([
+        getOwnedDashboard(userId, domainId, dashboardId),
+        readFavoriteKeySet(owner),
+      ]);
       const rows: PanelRecord[] = [];
       detail.groups.forEach((group, groupIndex) => {
         group.metrics.forEach((card, order) => {
-          rows.push(dashboardCardRecord(detail, group, groupIndex, card, order, locale));
+          const favorited = favoriteKeys.has(favoriteTargetKey(DASHBOARD_CARD, dashboardCardPrimaryKey({ dashboardId: detail.id, cardId: card.id })));
+          rows.push(dashboardCardRecord(detail, group, groupIndex, card, order, locale, favorited));
         });
         group.charts.forEach((card, order) => {
-          rows.push(dashboardCardRecord(detail, group, groupIndex, card, order, locale));
+          const favorited = favoriteKeys.has(favoriteTargetKey(DASHBOARD_CARD, dashboardCardPrimaryKey({ dashboardId: detail.id, cardId: card.id })));
+          rows.push(dashboardCardRecord(detail, group, groupIndex, card, order, locale, favorited));
         });
       });
       return rows;
@@ -222,13 +254,17 @@ export function createDashboardCardOwnerReadAdapter(owner: ProductOwner, viewer:
   return {
     async record(primaryKey: string): Promise<PanelRecord> {
       const { dashboardId, cardId } = parseDashboardCardPrimaryKey(primaryKey);
-      const detail = await getOwnedDashboard(userId, domainId, dashboardId);
+      const [detail, favoriteKeys] = await Promise.all([
+        getOwnedDashboard(userId, domainId, dashboardId),
+        readFavoriteKeySet(owner),
+      ]);
       const found = findCardWithGroup(detail, cardId);
       if (!found) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");
       const order = found.kind === "metric"
         ? found.group.metrics.findIndex(item => item.id === cardId)
         : found.group.charts.findIndex(item => item.id === cardId);
-      return dashboardCardRecord(detail, found.group, found.groupIndex, found.card, Math.max(0, order), locale);
+      const favorited = favoriteKeys.has(favoriteTargetKey(DASHBOARD_CARD, dashboardCardPrimaryKey({ dashboardId, cardId })));
+      return dashboardCardRecord(detail, found.group, found.groupIndex, found.card, Math.max(0, order), locale, favorited);
     },
 
     async form(primaryKey: string, params: FormReadParams): Promise<PanelFormDescription> {

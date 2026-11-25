@@ -152,6 +152,101 @@ export const assistantStore = {
       updatedAt: row.updatedAt.toISOString(),
     }));
   },
+  /** Lists user-origin sessions for the current user in the current domain, newest first. */
+  async listUserSessions(
+    owner: AssistantOwner,
+    options: { search?: string; limit?: number } = {},
+  ): Promise<Array<{ sessionId: string; agentId: string; agentName: string; title: string; updatedAt: string }>> {
+    const limit = Math.max(1, Math.min(50, options.limit ?? 20));
+    const search = options.search?.trim();
+    const params: unknown[] = [owner.domainId, owner.userId];
+    const where = [
+      "s.domain_id=$1",
+      "s.owner_id=$2",
+      "s.latest_run_id IS NOT NULL",
+      "s.origin='user'",
+    ];
+    if (search) {
+      params.push(`%${search.replace(/[\\%_]/g, "\\$&")}%`);
+      where.push(`(s.title ILIKE $${params.length} ESCAPE '\\' OR COALESCE(a.name, '') ILIKE $${params.length} ESCAPE '\\')`);
+    }
+    params.push(limit);
+    const result = await db().query<{
+      sessionId: string;
+      agentId: string;
+      agentName: string | null;
+      title: string;
+      updatedAt: Date;
+    }>(
+      `SELECT s.id AS "sessionId", s.agent_id AS "agentId", a.name AS "agentName", s.title, s.updated_at AS "updatedAt"
+       FROM ${table("assistant_sessions")} s
+       LEFT JOIN ${table("assistant_agents")} a ON a.id = s.agent_id AND a.domain_id = s.domain_id
+       WHERE ${where.join(" AND ")}
+       ORDER BY s.updated_at DESC, s.id DESC
+       LIMIT $${params.length}`,
+      params,
+    );
+    return result.rows.map(row => ({
+      sessionId: row.sessionId,
+      agentId: row.agentId,
+      agentName: row.agentName ?? "",
+      title: row.title,
+      updatedAt: row.updatedAt.toISOString(),
+    }));
+  },
+  /** Batch reads session metadata owned by the current user in the current domain. */
+  async ownedSessionsByIds(
+    owner: AssistantOwner,
+    ids: readonly string[],
+  ): Promise<Map<string, { sessionId: string; agentId: string; agentName: string; title: string; updatedAt: string }>> {
+    if (!ids.length) return new Map();
+    const result = await db().query<{
+      sessionId: string;
+      agentId: string;
+      agentName: string | null;
+      title: string;
+      updatedAt: Date;
+    }>(
+      `SELECT s.id AS "sessionId", s.agent_id AS "agentId", a.name AS "agentName", s.title, s.updated_at AS "updatedAt"
+       FROM ${table("assistant_sessions")} s
+       LEFT JOIN ${table("assistant_agents")} a ON a.id = s.agent_id AND a.domain_id = s.domain_id
+       WHERE s.id = ANY($1::uuid[]) AND s.domain_id=$2 AND s.owner_id=$3`,
+      [ids, owner.domainId, owner.userId],
+    );
+    return new Map(result.rows.map(row => [row.sessionId, {
+      sessionId: row.sessionId,
+      agentId: row.agentId,
+      agentName: row.agentName ?? "",
+      title: row.title,
+      updatedAt: row.updatedAt.toISOString(),
+    }]));
+  },
+  /** Updates the title of a session owned by the current user. */
+  async renameSession(
+    owner: AssistantOwner,
+    sessionId: string,
+    title: string,
+  ): Promise<{ sessionId: string; agentId: string; title: string; updatedAt: string }> {
+    const trimmed = title.trim();
+    if (!trimmed || trimmed.length > 200)
+      throw new HttpError(400, "Session title must be between 1 and 200 characters", "INVALID_REQUEST");
+    const result = await db().query<{ sessionId: string; agentId: string; title: string; updatedAt: Date }>(
+      `UPDATE ${table("assistant_sessions")}
+       SET title=$4
+       WHERE id=$1 AND domain_id=$2 AND owner_id=$3
+       RETURNING id AS "sessionId", agent_id AS "agentId", title, updated_at AS "updatedAt"`,
+      [sessionId, owner.domainId, owner.userId, trimmed],
+    );
+    if (!result.rowCount)
+      throw new HttpError(404, "Conversation not found", "NOT_FOUND");
+    const row = result.rows[0]!;
+    return {
+      sessionId: row.sessionId,
+      agentId: row.agentId,
+      title: row.title,
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  },
   async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string, fromChannel = false) {
     return transaction(async (tx) => {
     await lockSessionClaim(tx, id);

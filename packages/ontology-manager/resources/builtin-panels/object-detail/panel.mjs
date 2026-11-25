@@ -51,18 +51,13 @@ await mountPanel({
 
     const addFavoriteOp = usePanelOperation("addFavorite", "add", {
       available: () => Boolean(hasSelected.value && !favorited.value),
-      prepareInput: () => ({
-        className: selected.value?.className ?? "",
-        primaryKey: selected.value?.primaryKey ?? "",
-        title: String(headerLabel.value || selected.value?.primaryKey || "").trim() || (selected.value?.primaryKey ?? ""),
-      }),
+      prepareInput: () => {
+        const title = String(headerLabel.value || "").trim();
+        return title ? { title } : {};
+      },
     });
     const removeFavoriteOp = usePanelOperation("removeFavorite", "remove", {
       available: () => Boolean(hasSelected.value && favorited.value),
-      prepareInput: () => ({
-        className: selected.value?.className ?? "",
-        primaryKey: selected.value?.primaryKey ?? "",
-      }),
     });
     const favoriteBusy = computed(() => addFavoriteOp.running.value || removeFavoriteOp.running.value);
 

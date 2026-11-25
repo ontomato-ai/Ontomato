@@ -1295,7 +1295,9 @@ export default {
       "modelConnection": "Model connection",
       "modelEntry": "Configured model",
       "modelUsage": "Model usage",
-      "favorite": "Favorite object"
+      "favorite": "Favorite",
+      "recentVisit": "Recent visit",
+      "agentSession": "Session"
     },
     "relations": {
       "object-type": {

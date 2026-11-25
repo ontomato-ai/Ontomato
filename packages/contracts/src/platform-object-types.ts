@@ -3,6 +3,8 @@ import { z } from "zod";
 export const DASHBOARD = "platform:Dashboard";
 export const DASHBOARD_CARD = "platform:DashboardCard";
 export const FAVORITE = "platform:Favorite";
+export const RECENT_VISIT = "platform:RecentVisit";
+export const AGENT_SESSION = "platform:AgentSession";
 export const EXECUTE_OBJECT_ACTION = "actions.execute";
 export const SCHEDULED_TASK = "platform:ScheduledTask";
 export const CREATE_SCHEDULED_TASK = `${SCHEDULED_TASK}.create`;
@@ -107,12 +109,12 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
 
 export const RUN_NOW = "schedules.runNow";
 export const DELETE_AGENT = "agents.delete";
-export const FAVORITE_AGENT = "agents.favorite";
-export const UNFAVORITE_AGENT = "agents.unfavorite";
-export const FAVORITE_APPLICATION = "applications.favorite";
-export const UNFAVORITE_APPLICATION = "applications.unfavorite";
 export const ADD_FAVORITE = "favorites.add";
 export const REMOVE_FAVORITE = "favorites.remove";
+export const MOVE_FAVORITE = "favorites.move";
+export const RENAME_AGENT_SESSION = "agentSessions.rename";
+export const SET_HOME_PANEL = "productPanels.setAsHome";
+export const RESET_HOME_PANEL = "productPanels.resetHome";
 export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
 export const SET_TRIGGER_STATUS = "triggers.setStatus";
@@ -224,7 +226,21 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [SCHEDULED_TASK]: {
     ...describeType("scheduledTask", "capability"),
     reads: {
-      list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      list: {
+        source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList",
+        outputs: {
+          revision: { kind: "scalar", type: "number" },
+          enabled: { kind: "scalar", type: "boolean" },
+          paused: { kind: "scalar", type: "boolean" },
+          pauseCode: { kind: "scalar", type: "string" },
+          latestResultPath: { kind: "scalar", type: "string" },
+          isRunning: { kind: "scalar", type: "boolean" },
+          needsIntervention: { kind: "scalar", type: "boolean" },
+          attentionGroup: { kind: "scalar", type: "string" },
+          latestRunId: { kind: "scalar", type: "string" },
+          openPath: { kind: "scalar", type: "string" },
+        },
+      },
       counts: { source: "type", parameterMode: "fixed", params: { by: "keyword" }, result: "panelGroupCounts" },
       record: {
         source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
@@ -235,6 +251,10 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           pauseCode: { kind: "scalar", type: "string" },
           latestResultPath: { kind: "scalar", type: "string" },
           isRunning: { kind: "scalar", type: "boolean" },
+          needsIntervention: { kind: "scalar", type: "boolean" },
+          attentionGroup: { kind: "scalar", type: "string" },
+          latestRunId: { kind: "scalar", type: "string" },
+          openPath: { kind: "scalar", type: "string" },
         },
       },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
@@ -379,16 +399,33 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("dashboard"),
     childCollections: ["cards"],
     reads: {
-      list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      list: {
+        source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList",
+        outputs: {
+          openPath: { kind: "scalar", type: "string" },
+          favorited: { kind: "scalar", type: "boolean" },
+        },
+      },
       record: {
         source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
         outputs: {
           name: { kind: "scalar", type: "string" },
           groupCount: { kind: "scalar", type: "number" },
           cardCount: { kind: "scalar", type: "number" },
+          openPath: { kind: "scalar", type: "string" },
+          favorited: { kind: "scalar", type: "boolean" },
         },
       },
-      cards: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: DASHBOARD_CARD },
+      cards: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: DASHBOARD_CARD,
+        outputs: {
+          name: { kind: "scalar", type: "string" },
+          kind: { kind: "scalar", type: "string" },
+          metricId: { kind: "scalar", type: "string" },
+          openPath: { kind: "scalar", type: "string" },
+          favorited: { kind: "scalar", type: "boolean" },
+        },
+      },
     },
     operations: [
       CREATE_DASHBOARD,
@@ -671,8 +708,16 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         source: "object", parameterMode: "fixed", params: { path: "skillFilePath" },
         requiredParams: ["path"], result: "panelRecord",
       },
+      homePanel: {
+        source: "type", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          isCustomHome: { kind: "scalar", type: "boolean" },
+          panelId: { kind: "scalar", type: "string" },
+          unavailable: { kind: "scalar", type: "boolean" },
+        },
+      },
     },
-    operations: productCatalogueOperations(PRODUCT_PANEL, "productPanels"),
+    operations: [...productCatalogueOperations(PRODUCT_PANEL, "productPanels"), SET_HOME_PANEL, RESET_HOME_PANEL],
   },
   [APPLICATION]: {
     ...describeType("application", "product"),
@@ -716,7 +761,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
       "applications.deleteEntry", "applications.grant", "applications.share",
-      FAVORITE_APPLICATION, UNFAVORITE_APPLICATION, RENEW_SCHEDULED_TASK_CREDENTIAL,
+      RENEW_SCHEDULED_TASK_CREDENTIAL,
     ],
   },
   [APPLICATION_PANEL_USE]: {
@@ -749,7 +794,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
     },
-    operations: [`${AGENT_DEFINITION}.save`, DELETE_AGENT, FAVORITE_AGENT, UNFAVORITE_AGENT, "agents.grant", "agents.revoke", "agents.share"],
+    operations: [`${AGENT_DEFINITION}.save`, DELETE_AGENT, "agents.grant", "agents.revoke", "agents.share"],
   },
   [ONTOLOGY_TYPE]: {
     ...describeType("ontologyType"),
@@ -956,12 +1001,23 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [FAVORITE]: {
     ...describeType("favorite"),
     reads: {
-      list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      record: {
+      list: {
         source: "type",
         parameterMode: "fixed",
-        params: { object: "graphNode" },
-        requiredParams: ["object"],
+        params: { targetGroup: "favoriteTargetGroup" },
+        result: "panelRecordList",
+        outputs: {
+          openPath: { kind: "scalar", type: "string" },
+          favorited: { kind: "scalar", type: "boolean" },
+          canMoveUp: { kind: "scalar", type: "boolean" },
+          canMoveDown: { kind: "scalar", type: "boolean" },
+          unavailable: { kind: "scalar", type: "boolean" },
+        },
+      },
+      status: {
+        source: "type",
+        parameterMode: "fixed",
+        params: { object: "graphNode", objectType: "keyword", primaryKey: "keyword" },
         result: "panelRecord",
         outputs: {
           favorited: { kind: "scalar", type: "boolean" },
@@ -971,7 +1027,47 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
     },
-    operations: [ADD_FAVORITE, REMOVE_FAVORITE],
+    operations: [ADD_FAVORITE, REMOVE_FAVORITE, MOVE_FAVORITE],
+  },
+  [RECENT_VISIT]: {
+    ...describeType("recentVisit"),
+    reads: {
+      list: {
+        source: "type",
+        parameterMode: "fixed",
+        params: { limit: "size" },
+        result: "panelRecordList",
+        outputs: {
+          openPath: { kind: "scalar", type: "string" },
+        },
+      },
+    },
+  },
+  [AGENT_SESSION]: {
+    ...describeType("agentSession"),
+    reads: {
+      list: {
+        source: "type",
+        parameterMode: "fixed",
+        params: { search: "keyword", limit: "size" },
+        result: "panelRecordList",
+        outputs: {
+          openPath: { kind: "scalar", type: "string" },
+          favorited: { kind: "scalar", type: "boolean" },
+        },
+      },
+      record: {
+        source: "object",
+        parameterMode: "fixed",
+        params: {},
+        result: "panelRecord",
+        outputs: {
+          openPath: { kind: "scalar", type: "string" },
+          favorited: { kind: "scalar", type: "boolean" },
+        },
+      },
+    },
+    operations: [RENAME_AGENT_SESSION],
   },
 };
 

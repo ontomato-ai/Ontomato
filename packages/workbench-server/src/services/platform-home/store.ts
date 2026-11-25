@@ -1,8 +1,11 @@
 import {
+  homeDashboardCardsSchema,
   homeDashboardsSchema,
   homeFavoritesSchema,
   homePanelPreferenceSchema,
   homePinnedObjectsSchema,
+  homePinnedSessionsSchema,
+  type HomeDashboardCards,
   type HomePinnedObject,
   type HomeState,
 } from "@ontomato/contracts/platform-home";
@@ -104,6 +107,80 @@ export const platformHomeStore = {
        ON CONFLICT (domain_id, user_id) DO UPDATE SET pinned_objects=EXCLUDED.pinned_objects`,
       [owner.domainId, owner.userId, JSON.stringify(validated)],
     );
+  },
+  async dashboardCards(
+    owner: PlatformHomeOwner,
+  ): Promise<HomeDashboardCards> {
+    const result = await db().query<{ dashboard_cards: unknown }>(
+      `SELECT dashboard_cards FROM ${table("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`,
+      [owner.domainId, owner.userId],
+    );
+    if (!result.rowCount) return {};
+    return homeDashboardCardsSchema.parse(result.rows[0].dashboard_cards ?? {});
+  },
+  async saveDashboardCards(
+    owner: PlatformHomeOwner,
+    dashboardCards: HomeDashboardCards,
+  ): Promise<void> {
+    const validated = homeDashboardCardsSchema.parse(dashboardCards);
+    await db().query(
+      `INSERT INTO ${table("platform_home_preferences")} (domain_id, user_id, dashboard_cards)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (domain_id, user_id) DO UPDATE SET dashboard_cards=EXCLUDED.dashboard_cards`,
+      [owner.domainId, owner.userId, JSON.stringify(validated)],
+    );
+  },
+  async pinnedSessions(
+    owner: PlatformHomeOwner,
+  ): Promise<string[]> {
+    const result = await db().query<{ pinned_sessions: unknown }>(
+      `SELECT pinned_sessions FROM ${table("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`,
+      [owner.domainId, owner.userId],
+    );
+    if (!result.rowCount) return [];
+    return homePinnedSessionsSchema.parse(result.rows[0].pinned_sessions ?? []);
+  },
+  async savePinnedSessions(
+    owner: PlatformHomeOwner,
+    pinnedSessions: string[],
+  ): Promise<void> {
+    const validated = homePinnedSessionsSchema.parse(pinnedSessions);
+    await db().query(
+      `INSERT INTO ${table("platform_home_preferences")} (domain_id, user_id, pinned_sessions)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (domain_id, user_id) DO UPDATE SET pinned_sessions=EXCLUDED.pinned_sessions`,
+      [owner.domainId, owner.userId, JSON.stringify(validated)],
+    );
+  },
+  async allFavoriteState(owner: PlatformHomeOwner): Promise<{
+    favorites: HomeState["favorites"];
+    dashboardIds: string[];
+    dashboardCards: HomeDashboardCards;
+    pinnedSessions: string[];
+    pinnedObjects: HomePinnedObject[];
+  }> {
+    const result = await db().query<{
+      favorites: unknown;
+      dashboard_ids: unknown;
+      dashboard_cards: unknown;
+      pinned_sessions: unknown;
+      pinned_objects: unknown;
+    }>(
+      `SELECT favorites, dashboard_ids, dashboard_cards, pinned_sessions, pinned_objects
+       FROM ${table("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`,
+      [owner.domainId, owner.userId],
+    );
+    if (!result.rowCount) {
+      return { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
+    }
+    const row = result.rows[0]!;
+    return {
+      favorites: homeFavoritesSchema.shape.items.parse(row.favorites ?? []),
+      dashboardIds: homeDashboardsSchema.shape.ids.parse(row.dashboard_ids ?? []),
+      dashboardCards: homeDashboardCardsSchema.parse(row.dashboard_cards ?? {}),
+      pinnedSessions: homePinnedSessionsSchema.parse(row.pinned_sessions ?? []),
+      pinnedObjects: homePinnedObjectsSchema.shape.items.parse(row.pinned_objects ?? []),
+    };
   },
   async recentApplications(
     owner: PlatformHomeOwner,

@@ -4,8 +4,9 @@ import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { PanelFormTarget, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import {
   describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOperationDeclaration,
-  type PanelOwnerOperationDescriptor, type PanelReadOperationResult, type panelBatchInvocationSchema,
-  type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelReadOperationJsonResultSchema, type panelSingleInvocationSchema,
+  type PanelOperationTargetTypes, type PanelOwnerOperationDescriptor, type PanelReadOperationResult,
+  type panelBatchInvocationSchema, type panelOperationImpactSchema, type panelReadOperationCallSchema,
+  type panelReadOperationJsonResultSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { isPlatformFormSaveOperation } from "@ontomato/contracts/platform-object-types";
@@ -26,6 +27,7 @@ import { agentDefinitionOperations } from "./agent-definition-operations";
 import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
 import { objectDetailOperations } from "./object-detail-operations";
+import { agentSessionServerOperations } from "./agent-session-panel";
 import { favoriteServerOperations } from "./favorite-panel";
 import { ontologyModelServerOperations } from "../ontology-model/model-operations";
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
@@ -87,11 +89,13 @@ interface ServerOperation extends OperationInputDescription {
   projectResult?(data: Record<string, RuntimeJsonValue>, view: AssistantSkillView): Record<string, RuntimeJsonValue>;
 }
 /** The input was checked against `inputSchema`. */
-interface TargetedExecution {
-  targetType: string;
+type TargetTypeConstraint =
+  | { targetType: string; targetTypes?: undefined }
+  | { targetType?: undefined; targetTypes: PanelOperationTargetTypes };
+type TargetedExecution = TargetTypeConstraint & {
   targetSchema: z.ZodType<PanelOperationTarget>;
   execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
-}
+};
 /** A declared upload input holds the staged `PanelUploadedFile`, which is discarded once the call succeeds. */
 interface UntargetedExecution {
   targetType?: string;
@@ -173,6 +177,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...ontologyModelServerOperations,
   ...objectDetailOperations,
   ...favoriteServerOperations,
+  ...agentSessionServerOperations,
   ...productCatalogServerOperations,
   ...governanceServerOperations,
   ...opsDiagnosisServerOperations,
@@ -220,6 +225,7 @@ export function operationDeclaration(handler: PanelServerOperation): PanelOperat
       : handler.kind === "action" && handler.effect === "write"
         ? handler.targetInput === undefined ? { source: "none" } : { source: "input", input: handler.targetInput }
       : { source: "draft" },
+    ...("targetTypes" in handler && handler.targetTypes && { targetTypes: handler.targetTypes }),
     inputSchema: jsonSchema(handler.inputSchema),
     ...(handler.secretFields && { secretFields: handler.secretFields }),
     ...(panelOperationUpload(handler) && { upload: panelOperationUpload(handler) }),
