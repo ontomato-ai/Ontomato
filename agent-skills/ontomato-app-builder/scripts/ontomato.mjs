@@ -352,7 +352,8 @@ async function componentCommand(api, [command, ...args]) {
   if (command !== "register" || args.length !== 1) die("component list | read <id> | register <directory> [--revision <number>]");
   const directory = args[0];
   const file = path.join(directory, "component.json");
-  const { publicationAccess, visibility: _legacyVisibility, ...definition } = JSON.parse(fs.readFileSync(file, "utf8"));
+  const { publicationAccess, ...definition } = JSON.parse(fs.readFileSync(file, "utf8"));
+  delete definition.visibility;
   const template = fs.readFileSync(path.join(directory, "component.html"), "utf8");
   const moduleFile = path.join(directory, "component.mjs");
   const module = fs.existsSync(moduleFile) ? fs.readFileSync(moduleFile, "utf8") : undefined;

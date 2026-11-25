@@ -149,8 +149,13 @@ beforeAll(async () => {
     grants.delete(req.body.id);
     res.json({ success: true });
   });
+  const callerDomains = new Map([
+    ["host-reader", "pilot"], ["host-no-entry", "pilot"], ["domain-component-reader", "pilot"],
+    ["another-domain-reader", "another-domain"],
+  ]);
+  const hasBuiltinEntry = (token?: string) => token === "host-reader" || token === "another-domain-reader";
   const allowed = (id: string, verb: string, token?: string) => isBuiltinProductId(id)
-    ? (token === "host-reader" || token === "host-no-entry") && verb === "use"
+    ? (hasBuiltinEntry(token) || token === "host-no-entry") && verb === "use"
     : (token === "host-reader" && grants.has(id)) ||
       (token === "domain-component-reader" && id === "domain-component-projection" && verb === "use");
   app.post("/authorization/objects/decide-batch", (req, res) => {
@@ -159,8 +164,10 @@ beforeAll(async () => {
     const decisions = req.body.requests.map((request: ObjectDecisionRequest) => {
       if ("create" in request) return decision(tk === "host-reader");
       const { target, ownerFacts, verb } = request;
-      if (target.domainId !== "pilot") return decision(false);
+      if (!tk || target.domainId !== callerDomains.get(tk)) return decision(false);
       expect(ownerFacts.state).toBe("PUBLISHED");
+      if ((target.kind === "PANEL" || target.kind === "PROJECTION") && isBuiltinProductId(target.id))
+        return decision(verb === "USE");
       if (target.kind === "COMPONENT" && tk === "domain-component-reader")
         return decision(domainComponentReaderCanUse && verb === "USE");
       const isOwner = tk === "host-reader" && ownerFacts.ownerId === "reader";
@@ -238,13 +245,13 @@ beforeAll(async () => {
     res.json({ success: true, data: builtinUses });
   });
   app.get("/platform/page-skills", (req, res) => {
-    const entrances = req.header("tk") === "host-reader" ? builtinUses.map(use => use.entrance) : [];
+    const entrances = hasBuiltinEntry(req.header("tk")) ? builtinUses.map(use => use.entrance) : [];
     res.json({ success: true, data: { pageSkills: entrances, admittedEntrances: entrances, registeredSkills: [] } });
   });
   mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId === "app-builtin-fixture") {
       if (req.header("tk") === "host-no-entry" && req.path.endsWith("/resolve-entry")) { res.sendStatus(403); return; }
-      expect(["host-reader", "host-no-entry"]).toContain(req.header("tk"));
+      expect(["host-reader", "host-no-entry", "another-domain-reader"]).toContain(req.header("tk"));
       res.json({ success: true, data: {
         applicationId: "app-builtin-fixture", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: "catalogue", pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
@@ -369,7 +376,8 @@ it("reconciles the released built-in authoring sources and exposes the same read
   });
   const packages = [];
   for (const domainId of ["pilot", "another-domain"]) {
-    const headers = { "X-Test-Domain": domainId };
+    const token = domainId === "pilot" ? "host-reader" : "another-domain-reader";
+    const headers = { "X-Test-Domain": domainId, "X-Test-Token": token };
     const read = (resource: string) => fetch(`${state.base}/api/${resource}`, { headers });
     const panelResponse = await read("product-panels/" + builtinPanelId);
     expect(panelResponse.status).toBe(200);
@@ -396,7 +404,7 @@ it("reconciles the released built-in authoring sources and exposes the same read
     const context = await read(`product-panels/application-entry?${useQuery}`);
     expect(context.status).toBe(200);
     expect(await context.json()).toMatchObject({ pageSkillContext: { mode: "member", member: { ref: skill } } });
-    const view = await readSkillView(domainId, { token: "host-reader" });
+    const view = await readSkillView(domainId, { token });
     const entry = view.requireSkillById(skill.name);
     expect(entry.skill).toEqual(skill);
     expect(entry.source.kind).toBe("provider");
