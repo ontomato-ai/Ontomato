@@ -10,9 +10,8 @@ export class SkillScanner {
   async scan(): Promise<SkillMeta[]> {
     const skills: SkillMeta[] = [];
     const walk = (directory: string) => {
-      if (!fs.existsSync(directory)) return;
       const file = path.join(directory, "SKILL.md");
-      if (fs.existsSync(file)) {
+      if (fs.statSync(file, { throwIfNoEntry: false })) {
         const parsed = readSkillMarkdown(file);
         if (!parsed) return;
         if (path.basename(directory) !== parsed.manifest.name)
@@ -27,7 +26,7 @@ export class SkillScanner {
         if (entry.isDirectory()) walk(path.join(directory, entry.name));
       }
     };
-    walk(this.root);
+    if (fs.statSync(this.root, { throwIfNoEntry: false })) walk(this.root);
     if (new Set(skills.map((skill) => skill.id)).size !== skills.length)
       throw new InvalidSkillPackageError("Duplicate skill names in the catalogue");
     return skills;

@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
-import { productAssetSchema, productAssetInputSchema, productDefaultTexts, productReferences, productTypes, type ProductAsset, type ProductAssetInput, type ProductQuery } from "@ontomato/contracts/product-assets";
-import { defaultPersonalWorkspace, personalWorkspaceSchema, type PersonalWorkspace } from "@ontomato/contracts/personal-workspace";
+import { productAssetSchema, productAssetInputSchema, productReferences, productTypes, type ProductAsset, type ProductAssetInput, type ProductQuery } from "@ontomato/contracts/product-assets";
+import { personalWorkspaceSchema, type PersonalWorkspace } from "@ontomato/contracts/personal-workspace";
 import { getPostgresPool as db, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
@@ -132,7 +131,7 @@ async function writeProduct(client: PoolClient, owner: ProductOwner, id: string,
     revision=${t("product_assets")}.revision+1,updated_at=now()`,
   [owner.domainId, id, owner.userId, input.name, input.description, input.visibility, JSON.stringify(document)]);
   if(!row){
-    await registerProductResource(owner,id,input.visibility==='domain');
+    await registerProductResource(owner,id,input.visibility==='domain',{createOnly:true});
     const [use,edit]=await Promise.all([productGrantIdsForOwner(owner,'use'),productGrantIdsForOwner(owner,'edit')]);
     if(!edit.includes(id))throw new HttpError(403,'Product edit Grant required','PRODUCT_FORBIDDEN');
     const access=currentProductGrants(owner);if(use.includes(id))access.use.add(id);access.edit.add(id);
@@ -228,88 +227,6 @@ async function deleteAuthorizedProduct(owner:ProductOwner,id:string,revision:num
     await client.query(`DELETE FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
     if(ontologyRegistration(target))await client.query(`INSERT INTO ${t('product_ontology_outbox')} (domain_id,asset_id,revision,registration) VALUES($1,$2,$3,NULL) ON CONFLICT(domain_id,asset_id) DO UPDATE SET revision=EXCLUDED.revision,registration=NULL`,[owner.domainId,id,target.revision+1]);
   });
-}
-
-/** Migrate once under the same lock used for editing; legacy rows are retained solely for rollback. */
-export async function personalHome(owner: ProductOwner,credentials:AssistantCredentials={}) {
-  return withProductGrants(owner,async()=>{let home=await authorizedPersonalHome(owner,credentials);const legacy=await db().query(`SELECT id,revision FROM ${t('product_assets')} WHERE domain_id=$1 AND owner_id=$2 AND document->>'kind'='widget' AND document->'widget'->>'kind'='platform' AND id=ANY($3::text[])`,[owner.domainId,owner.userId,home.document.kind==='page'?home.document.children.map(child=>child.assetId):[]]);for(const row of legacy.rows){const {migratePlatformProjection}=await import('./platform-migration');await migratePlatformProjection(owner,credentials,row.id,row.revision);}home=await getProduct(owner,home.id);await synchronizeProductOntology(owner);return home;});
-}
-async function authorizedPersonalHome(owner:ProductOwner,credentials:AssistantCredentials){
-  return transaction(async client => {
-    await lockProducts(client, owner);
-    const home = await client.query(`SELECT asset_id FROM ${t("product_home")} WHERE domain_id=$1 AND user_id=$2`, [owner.domainId, owner.userId]);
-    if (home.rows[0]) {
-      const existing=await getProduct(owner,home.rows[0].asset_id,client);
-      if(existing.document.kind!=='page')throw new Error('Home must be a page');
-      if(existing.document.compositionVersion===2)return existing;
-       return materializeProductHome(client,owner,existing);
-    }
-    const legacy = await client.query(`SELECT value FROM ${t("user_preferences")} WHERE user_id=$1 AND key=$2`, [owner.userId, `personal-workspace:${owner.domainId}`]);
-    const previousHome = await client.query(`SELECT dashboard_ids,favorites FROM ${t("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`, [owner.domainId, owner.userId]);
-    const workspace = legacy.rows[0] ? personalWorkspaceSchema.parse(legacy.rows[0].value) : defaultPersonalWorkspace();
-    const previous = previousHome.rows[0];
-    workspace.dashboardIds = [...new Set([...workspace.dashboardIds, ...(previous?.dashboard_ids ?? [])])].slice(0,100);
-    workspace.applicationIds = [...new Set([...workspace.applicationIds, ...(previous?.favorites ?? []).filter((ref: {kind:string}) => ref.kind === "application").map((ref: {id:string}) => ref.id)])].filter(id=>id!=="home"&&id!=="personal-workspace").slice(0,100);
-    workspace.agentIds = [...new Set([...workspace.agentIds, ...(previous?.favorites ?? []).filter((ref: {kind:string}) => ref.kind === "agent").map((ref: {id:string}) => ref.id)])].slice(0,100);
-    const input=productAssetInputSchema.parse({name:productDefaultTexts.initialHomeName, document:{kind:"page",workspace,children:[]}});
-    await validateProduct(owner,input,credentials);
-    const result = await writeProduct(client, owner, randomUUID(), input, 0);
-    await client.query(`INSERT INTO ${t("product_home")} (domain_id,user_id,asset_id) VALUES($1,$2,$3)`, [owner.domainId, owner.userId, result.id]);
-    return materializeProductHome(client,owner,result);
-  });
-}
-
-/** New homes compose ontology projections; compatibility blocks are only read from migrated old homes. */
-async function materializeProductHome(client:PoolClient,owner:ProductOwner,home:ProductAsset){
-  if(home.document.kind!=='page')throw new Error('Home must be a Page');
-  const sections={main:['apps','conversations','objects'],sidebar:['tasks','recent']};
-  const targets:Record<string,{type:string;fields:string[];name:string}>={
-    apps:{type:'platform:FavoriteApplication',fields:['name','description','path'],name:productDefaultTexts.apps},
-    data:{type:'platform:Dashboard',fields:['name','updatedAt'],name:productDefaultTexts.data},
-    tasks:{type:'platform:Task',fields:['title','enabled','pause','pauseMessage','resultSummary','resultPath'],name:productDefaultTexts.tasks},
-    conversations:{type:'platform:Conversation',fields:['title','updatedAt','agentId','pinned'],name:productDefaultTexts.conversations},
-    objects:{type:'platform:Favorite',fields:['title','className','primaryKey'],name:productDefaultTexts.objects},
-    recent:{type:'platform:RecentVisit',fields:['title','visitedAt','path'],name:productDefaultTexts.recent},
-  };
-  const children=[...home.document.children];
-  for(const [column,names] of [['main',sections.main],['sidebar',sections.sidebar]] as const)for(const name of names){
-    const target=targets[name];if(!target)continue;
-    const definitionId='platform-members:'+target.type,id='home-projection-'+home.id+'-'+name;
-    const definition={id:definitionId,name:target.type,objectType:target.type,revision:1,status:'PUBLISHED',parameters:[]};
-    const existing=await client.query(`SELECT definition FROM ${t('business_definitions')} WHERE domain_id=$1 AND id=$2`,[owner.domainId,definitionId]);
-    if(existing.rows[0]&&(existing.rows[0].definition.objectType!==target.type||existing.rows[0].definition.status!=='PUBLISHED'||existing.rows[0].definition.predicate||existing.rows[0].definition.parameters?.length))throw new HttpError(409,'Platform Definition identity is already in use','INVALID_DEFINITION');
-    await client.query(`INSERT INTO ${t('business_definitions')} (domain_id,id,status,definition) VALUES($1,$2,'PUBLISHED',$3::jsonb) ON CONFLICT DO NOTHING`,[owner.domainId,definitionId,JSON.stringify(definition)]);
-    await writeProduct(client,owner,id,productAssetInputSchema.parse({name:target.name,document:{kind:'collection-view',renders:{kind:'Definition',id:definitionId},renderer:'list',parameters:{},fields:target.fields,pageSize:4,isDefault:true}}),0);
-    children.push({assetId:id,column});
-  }
-  return writeProduct(client,owner,home.id,{name:productDefaultTexts.homeName,description:productDefaultTexts.homeDescription,visibility:home.visibility,document:{...home.document,layout:{mode:'columns',mainWidth:8,gap:'comfortable'},children,compositionVersion:2}},home.revision);
-}
-
-/** Persist legacy built-ins once; rendering thereafter follows only the page composition. */
-async function materializeWorkspaceBlocks(client:PoolClient,owner:ProductOwner,home:ProductAsset){
-  if(home.document.kind!=='page')return home;
-  const preferences=await client.query(`SELECT preferences FROM ${t('product_user_overlays')} WHERE domain_id=$1 AND principal_id=$2 AND page_id=$3`,[owner.domainId,owner.userId,home.id]);
-  const workspace=personalWorkspaceSchema.parse(preferences.rows[0]?.preferences??home.document.workspace??defaultPersonalWorkspace());
-  const sections=workspace.sections??{main:['apps','data'],sidebar:['tasks','conversations','objects','recent'],hidden:[]};
-  const children=[...home.document.children];
-  const blocks=[{section:'assistant',column:'main'},...sections.main.map(section=>({section,column:'main'})),...sections.sidebar.map(section=>({section,column:'sidebar'}))] as const;
-  for(const block of blocks){
-    const blockId=`workspace-block-${home.id}-${block.section}`;
-    const section=block.section as 'assistant'|'apps'|'data'|'tasks'|'conversations'|'objects'|'recent';
-    const name={assistant:productDefaultTexts.legacyAssistant,apps:productDefaultTexts.apps,data:productDefaultTexts.data,tasks:productDefaultTexts.tasks,conversations:productDefaultTexts.legacyConversations,objects:productDefaultTexts.legacyObjects,recent:productDefaultTexts.recent}[section];
-    await writeProduct(client,owner,blockId,productAssetInputSchema.parse({name,description:section==='assistant'?productDefaultTexts.legacyAssistantDescription:'',document:{kind:'widget',widget:{kind:'platform',source:section,placeholder:section==='assistant'?productDefaultTexts.legacyAssistantPlaceholder:'',limit:4,workspace}}}),0);
-    if(section==='assistant')children.unshift({assetId:blockId,column:'main'});
-    else children.push({assetId:blockId,column:block.column as 'main'|'sidebar'});
-  }
-  return writeProduct(client,owner,home.id,{name:home.name,description:home.description,visibility:home.visibility,document:{...home.document,children,compositionVersion:2}},home.revision);
-}
-export async function saveHomeWorkspace(owner: ProductOwner, workspace: PersonalWorkspace, revision: number,credentials:AssistantCredentials) {
-  const home = await personalHome(owner,credentials);
-  if (home.document.kind !== "page") throw new Error("Home must be a page");
-  if(home.revision!==revision)throw new HttpError(409,'Home composition changed','PRODUCT_CONFLICT');
-  const overlay=await readProductOverlay(owner,home.id);
-  await saveProductOverlay(owner,home.id,workspace,overlay.revision);
-  return home;
 }
 
 export async function readProductOverlay(owner:ProductOwner,pageId:string){

@@ -75,7 +75,6 @@ beforeEach(() => {
     return { text: JSON.stringify({ success: true, data: {
       applicationId: source.applicationId, framePanelId: root,
       use: { id: useId, pageKey: "list", panelId: "panel-content", path: "/ontology/list", access: { kind: "domain-member" } },
-      menu: { singleEntry: true, names: { en: "Ontology" }, groups: [], panelUses: [] },
     } }) };
   });
   mocks.post.mockImplementation(async (_endpoint, url: string, body) => {
@@ -118,13 +117,14 @@ it("reads a 19-member frame with one entry lookup, two grant calls and isolated 
   expect(response).toEqual({ status: 200, body: { results: [
     { status: "ready", value: [record] },
     { status: "empty" },
-    { status: "forbidden" },
+    { status: "forbidden", reason: expect.stringMatching(/\S/u) },
     { status: "error", message: "Could not read relationships" },
     ...Array.from({ length: projectionIds.length - 4 }, () => ({ status: "ready", value: [record] })),
   ] } });
   expect(mocks.get).toHaveBeenCalledTimes(1);
   expect(mocks.get).toHaveBeenCalledWith(
-    "resolve-panel-entry", expect.stringContaining("/platform/applications/resolve-entry?"), expect.anything(),
+    "registered-panel-entry", expect.stringContaining("/platform/applications/registered-entry?"),
+    expect.objectContaining({ headers: expect.objectContaining({ tk: "reader-token", [BUILD_TEST_HEADER]: expect.any(String) }) }),
   );
   expect(mocks.post.mock.calls.map(([, url, body]) => [new URL(url, "http://data-engine.test").pathname, body])).toEqual([
     ["/product-governance/check", { id: root, verb: "use" }],
@@ -141,12 +141,12 @@ it("reads a 19-member frame with one entry lookup, two grant calls and isolated 
 it("does not carry cached entries or grants across batches or inspect a denied root's members", async () => {
   const sample = [reads[0], { ...reads[0], source: { ...source, useId: "denied-entry" } }];
   expect((await postBatch({ reads: sample })).body).toEqual({
-    results: [{ status: "ready", value: [record] }, { status: "forbidden" }],
+    results: [{ status: "ready", value: [record] }, { status: "forbidden", reason: expect.stringMatching(/\S/u) }],
   });
   const loaded = mocks.query.mock.calls.length;
   mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: false }) });
   expect((await postBatch({ reads: sample })).body).toEqual({
-    results: [{ status: "forbidden" }, { status: "forbidden" }],
+    results: [{ status: "forbidden", reason: expect.stringMatching(/\S/u) }, { status: "forbidden", reason: expect.stringMatching(/\S/u) }],
   });
   expect(mocks.get).toHaveBeenCalledTimes(4);
   expect(mocks.post).toHaveBeenLastCalledWith(

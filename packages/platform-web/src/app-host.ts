@@ -425,9 +425,9 @@ export function installAppHost(options: {
         const publication=await response.json();if(!response.ok)throw new Error(publication.error?.message??'Application dependencies unavailable');
         const assets=publication.assets.map((asset:unknown)=>productAssetSchema.parse(asset));
         if(service===''){
-          const readOnly=method==='GET',subscription=/^\/product-assets\/subscriptions(?:\/[^/?]+)?$/.test(path),collection=/^\/product-assets\/definitions\/[^/]+\/query$/.test(path),profileSession=/^\/product-assets\/[^/]+\/sessions$/.test(path);
+          const readOnly=method==='GET',collection=/^\/product-assets\/definitions\/[^/]+\/query$/.test(path),profileSession=/^\/product-assets\/[^/]+\/sessions$/.test(path);
           const conversation=/^\/assistant\/sessions(?:\/[^/?]+(?:\/(?:runs|events|messages|artifacts|tasks)(?:\/[^?]*)?)?)?(?:\?[^#]*)?$/.test(path);
-          if(!readOnly&&!subscription&&!collection&&!profileSession&&!conversation)throw new Error('Published source applications cannot edit product or capability definitions');
+          if(!readOnly&&!collection&&!profileSession&&!conversation)throw new Error('Published source applications cannot edit product or capability definitions');
           if(path.startsWith('/assistant/')&&!conversation&&path!=='/assistant/agents')throw new Error('Use the declared conversation interface');
           if(profileSession&&!assets.some((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.id===decodeURIComponent(path.split('/')[2])&&asset.document.kind==='agent-profile'&&!publication.issues?.some((issue:{assetId:string})=>issue.assetId===asset.id)))throw new Error('AgentProfile is outside published dependencies');
         }
@@ -437,18 +437,16 @@ export function installAppHost(options: {
           const contract=publication.contracts?.some((contract:{kind:string;id:string})=>contract.kind===targetKind&&contract.id===body.id);
           if(!contract||publication.issues?.some((issue:{assetId:string})=>{const asset=assets.find((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.id===issue.assetId);return asset&&productReferences(asset.document).some(reference=>reference.kind===targetKind&&reference.id===body.id);} ))throw new Error('Capability is outside the published application dependency declaration or its contract changed');
         }
-        if(service===''&&method==='POST'&&/^\/product-assets\/(?:definitions\/[^/]+\/query|subscriptions)$/.test(path)){
+        if(service===''&&method==='POST'&&/^\/product-assets\/definitions\/[^/]+\/query$/.test(path)){
           const body=typeof init.body==='string'?JSON.parse(init.body):{};
-          const trigger=body.kind==='trigger'?publication.triggers?.find((trigger:{id:string})=>trigger.id===body.id):undefined;
-          if(body.kind==='trigger'&&(!trigger||!publication.contracts?.some((contract:{kind:string;id:string})=>contract.kind==='trigger'&&contract.id===body.id)))throw new Error('Trigger is outside published dependencies');
-          const definitionId=path.includes('/definitions/')?decodeURIComponent(path.split('/')[3]):body.kind==='definition'?body.id:trigger?.definitionId;
+          const definitionId=decodeURIComponent(path.split('/')[3]);
           const projections=assets.filter((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.document.kind==='collection-view'&&asset.document.renders.id===definitionId&&!publication.issues?.some((issue:{assetId:string})=>issue.assetId===asset.id));
-          if(!definitionId||!projections.length)throw new Error('Subscription or collection is outside published dependencies or its contract changed');
-          if(!trigger&&(!Array.isArray(body.fields)||!projections.some((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.document.kind==='collection-view'&&body.fields.every((field:unknown)=>typeof field==='string'&&asset.document.kind==='collection-view'&&asset.document.fields.includes(field)))))throw new Error('Collection fields are outside the published projection');
+          if(!projections.length)throw new Error('Collection is outside published dependencies or its contract changed');
+          if(!Array.isArray(body.fields)||!projections.some((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.document.kind==='collection-view'&&body.fields.every((field:unknown)=>typeof field==='string'&&asset.document.kind==='collection-view'&&asset.document.fields.includes(field))))throw new Error('Collection fields are outside the published projection');
         }
       }
       const assetRead=service===''&&method==='GET'?/^\/product-assets\/([^/?]+)$/.exec(path):null;
-      const target=applicationId&&assetRead&&!['counts','types','query','home','projections','graph'].includes(assetRead[1])?`/product-assets/published/${encodeURIComponent(applicationId)}/${assetRead[1]}`:path;
+      const target=applicationId&&assetRead&&!['counts','types','query','projections','graph'].includes(assetRead[1])?`/product-assets/published/${encodeURIComponent(applicationId)}/${assetRead[1]}`:path;
       const headers=new Headers(init.headers);
       headers.delete(BUILD_TEST_HEADER);headers.delete('tk');headers.delete('authorization');headers.delete('x-api-key');
       // A multipart body's Content-Type carries its boundary: only the browser that writes the body may state it.

@@ -14,9 +14,9 @@ import { validatePersonalPlacement } from "./references";
 
 async function personalFields(
   owner: ProductOwner, viewer: AssistantCredentials, request: PanelPersonalStateReadRequest | PanelPersonalStateWriteRequest,
-  names: string[], client?: PoolClient,
+  names: string[], { client, admitEntry }: { client?: PoolClient; admitEntry?: boolean } = {},
 ) {
-  const { panel: root, entry } = await requireRegisteredPanelRoot(owner, viewer, request.source, { client });
+  const { panel: root, entry } = await requireRegisteredPanelRoot(owner, viewer, request.source, { client, admitEntry });
   const scope = await resolvePanelMemberPath(owner, viewer, root, request.memberPath, entry, client);
   if (scope.kind !== "panel")
     throw new HttpError(400, "Personal state belongs to a panel instance", "PANEL_PERSONAL_FIELD_INVALID");
@@ -58,7 +58,7 @@ export async function writePanelPersonalState(
 ) {
   return transaction(async client => {
     await lockProducts(client, owner);
-    const { panel, ancestors, fields } = await personalFields(owner, viewer, request, Object.keys(request.values), client);
+    const { panel, ancestors, fields } = await personalFields(owner, viewer, request, Object.keys(request.values), { client, admitEntry: true });
     const values = fields.map(({ name, field }) => ({ name, field, value: requireStateValue(name, field, request.values[name]) }));
     for (const { name, field, value } of values) {
       if (field.type.kind === "placement" && value !== null)

@@ -560,10 +560,14 @@ describe("Functions two-entry panels (catalog -> detail)", () => {
 
       // Navigating back to catalog and clicking "New function" opens detail in create mode.
       await app.router.push(CATALOG_PATH);
-      await vi.waitFor(() => expect(app.element.querySelector(".sdk-object-list-table")).not.toBeNull(), { timeout: 3000 });
-      const newBtn = [...app.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
-        .find((button) => button.textContent?.includes("New function"))!;
-      expect(newBtn).toBeDefined();
+      const newBtn = await vi.waitFor(() => {
+        const button = [...app.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
+          .find((candidate) => candidate.textContent?.includes("New function")
+            && candidate.closest<HTMLElement>(".panel-host")?.style.display !== "none");
+        expect(button).toBeDefined();
+        expect(button?.disabled).toBe(false);
+        return button!;
+      }, { timeout: 3000 });
       newBtn.click();
       await vi.waitFor(() => {
         expect(app.router.currentRoute.value.path).toBe(DETAIL_PATH);

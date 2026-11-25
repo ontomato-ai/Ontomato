@@ -171,15 +171,8 @@ export async function startPanelSkillEntryServer(options: {
     expect(req.header("tk")).toBe("editor");
     res.status(403).json({ success: false, message: "System config denied" });
   });
-  app.get("/platform/applications/resolve-entry", (req, res) => {
+  app.get(["/platform/applications/resolve-entry", "/platform/applications/registered-entry"], (req, res) => {
     expect(req.header("tk")).toBe("editor");
-    const entry = entries.find(use => req.query.applicationId === use.applicationId && req.query.useId === use.useId)!;
-    const singleEntry = entries.filter(use => use.applicationId === entry.applicationId).length <= 1;
-    res.json({ success: true, data: { applicationId: entry.applicationId, menu: { singleEntry, groups: [], panelUses: [] }, use: javaUse(entry) } });
-  });
-  // The browser's resolve-entry (the panel route opens an entry by its address, and checks a kept page by its use):
-  // Java's answer from the same entries, with the application's menu of them.
-  app.get("/api/data-query/platform/applications/resolve-entry", (req, res) => {
     const found = entries.find(use => typeof req.query.path === "string"
       ? panelUsePath(javaUse(use).path) === req.query.path
       : req.query.applicationId === use.applicationId && req.query.useId === use.useId);
@@ -187,8 +180,14 @@ export async function startPanelSkillEntryServer(options: {
       res.status(404).json({ success: false, error: { message: "No entry the reader may open there" } });
       return;
     }
+    const data = { applicationId: found.applicationId, use: javaUse(found) };
+    if (req.path.endsWith("/registered-entry")) {
+      expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");
+      res.json({ success: true, data });
+      return;
+    }
     const menu = entries.filter(use => use.applicationId === found.applicationId).map(javaUse);
-    res.json({ success: true, data: { applicationId: found.applicationId, use: javaUse(found), menu: { singleEntry: menu.length <= 1, groups: [], panelUses: menu } } });
+    res.json({ success: true, data: { ...data, menu: { singleEntry: menu.length <= 1, groups: [], panelUses: menu } } });
   });
   app.get("/api/data-query/platform/applications/:id/panel-uses", (req, res) => {
     res.json({ success: true, data: { applicationId: req.params.id, entry: { path: `/applications/${req.params.id}`, renderer: "panels" },

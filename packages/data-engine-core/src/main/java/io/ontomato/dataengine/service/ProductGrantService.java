@@ -26,7 +26,7 @@ public class ProductGrantService implements InitializingBean {
     private final ProductPrincipalLookup principals;
     public ProductGrantService(JdbcTemplate db,IdentityService identity,ProductPrincipalLookup principals){this.db=db;this.identity=identity;this.principals=principals;}
     @Override public void afterPropertiesSet(){db.execute("""
-        CREATE TABLE IF NOT EXISTS product_resource(domain_id text NOT NULL,id text NOT NULL,owner_id text NOT NULL,PRIMARY KEY(domain_id,id));
+        CREATE TABLE IF NOT EXISTS product_resource(domain_id text NOT NULL,id text NOT NULL,PRIMARY KEY(domain_id,id));
         CREATE TABLE IF NOT EXISTS product_grant(domain_id text NOT NULL,resource_id text NOT NULL,principal_kind text NOT NULL,principal_id text NOT NULL,verb text NOT NULL,PRIMARY KEY(domain_id,resource_id,principal_kind,principal_id,verb));
         CREATE INDEX IF NOT EXISTS product_grant_principal ON product_grant(domain_id,principal_kind,principal_id,verb);
         """);}
@@ -38,8 +38,35 @@ public class ProductGrantService implements InitializingBean {
         if(domainId==null||userId==null)return false;
         if (BuiltinProductIds.isReserved(id)) return BuiltinProductIds.isValid(id) && "use".equals(verb);
         userId=principals.productPrincipalId(userId);
-        var grants=db.query("SELECT principal_kind,principal_id,verb FROM product_grant WHERE domain_id=? AND resource_id=?",(row,index)->new ProductGrants.Grant(row.getString(1),row.getString(2),row.getString(3)),domainId,id);
-        return ProductGrants.allows(grants,userId,principals.effectiveRoles(userId,domainId),verb);
+        return ProductGrants.allows(resourceGrants(domainId,id),userId,principals.effectiveRoles(userId,domainId),verb);
+    }
+
+    private List<ProductGrants.Grant> resourceGrants(String domainId, String id) {
+        return db.query("SELECT principal_kind,principal_id,verb FROM product_grant WHERE domain_id=? AND resource_id=?",
+            (row, index) -> new ProductGrants.Grant(row.getString(1), row.getString(2), row.getString(3)), domainId, id);
+    }
+
+    public record ObjectTarget(String domainId, String kind, String id) {}
+    public record OwnerFacts(String ownerId, String state) {}
+    public record ManagementAccess(boolean allowed, boolean authored, boolean editable) {}
+
+    /** The definition owner supplies facts. The authenticated request still determines the acting user. */
+    public ManagementAccess managementAccess(ObjectTarget target, OwnerFacts facts) {
+        var user = identity.getCurrentUser();
+        if (user == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        if (!target.domainId().equals(user.getDomainId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if (!List.of("panel", "component").contains(target.kind()) || !"current".equals(facts.state()))
+            throw new IllegalArgumentException("Unsupported product management target or definition state");
+        boolean panel = "panel".equals(target.kind());
+        if (BuiltinProductIds.isReserved(target.id()))
+            return new ManagementAccess(panel && BuiltinProductIds.isValid(target.id()), false, false);
+        boolean authored = user.getId().equals(facts.ownerId());
+        String principalId = principals.productPrincipalId(user.getId());
+        var grants = resourceGrants(target.domainId(), target.id());
+        var roles = principals.effectiveRoles(user.getId(), target.domainId());
+        boolean editable = ProductGrants.allows(grants, principalId, roles, "edit");
+        boolean allowed = authored || editable || (panel && ProductGrants.allows(grants, principalId, roles, "use"));
+        return new ManagementAccess(allowed, authored, editable);
     }
     public Map<String, Boolean> allowedBatch(Collection<String> ids, String verb) {
         var user = identity.getCurrentUser();
@@ -95,17 +122,17 @@ public class ProductGrantService implements InitializingBean {
             .map(row -> (String) row.get("resource_id")).distinct().sorted().toList();
     }
     /** The owning product service imports author and sharing facts; request bodies cannot select the acting user. */
-    @Transactional public void register(String domainId,String id,String ownerId,boolean shared){
-        register(domainId, id, ownerId, shared, List.of("use", "edit"), false);
+    @Transactional public boolean register(String domainId,String id,String ownerId,boolean shared){
+        return register(domainId, id, ownerId, shared, List.of("use", "edit"), false);
     }
 
     @Transactional
-    public void register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs, boolean grantAdmin) {
-        register(domainId, id, ownerId, shared, verbs, grantAdmin, null);
+    public boolean register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs, boolean grantAdmin) {
+        return register(domainId, id, ownerId, shared, verbs, grantAdmin, null);
     }
 
     @Transactional
-    public void register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs,
+    public boolean register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs,
         boolean grantAdmin, String legacyMenuPermission) {
         boolean hasOwner = ownerId != null && !ownerId.isBlank();
         boolean hasLegacyMenu = legacyMenuPermission != null && !legacyMenuPermission.isBlank();
@@ -115,13 +142,8 @@ public class ProductGrantService implements InitializingBean {
         var permissions = verbs == null || verbs.isEmpty() ? List.of("use", "edit") : verbs;
         requireValidVerbs(permissions);
         lockResource(domainId,id);
-        var owners=db.queryForList("SELECT owner_id FROM product_resource WHERE domain_id=? AND id=?",String.class,domainId,id);
-        if (!owners.isEmpty()) {
-            if (hasOwner && !owners.getFirst().equals(ownerId))
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Product owner changed");
-            return;
-        }
-        db.update("INSERT INTO product_resource(domain_id,id,owner_id) VALUES(?,?,?)", domainId, id, hasOwner ? ownerId : "");
+        if (db.update("INSERT INTO product_resource(domain_id,id) VALUES(?,?) ON CONFLICT DO NOTHING", domainId, id) == 0)
+            return false;
         if (hasOwner)
             for (String verb : permissions) insert(domainId, id, new ProductGrants.Grant("principal", ownerId, verb));
         if (grantAdmin)
@@ -129,6 +151,7 @@ public class ProductGrantService implements InitializingBean {
         if (hasLegacyMenu)
             for (var grant : principals.legacyMenuGrants(domainId, legacyMenuPermission, permissions)) insert(domainId, id, grant);
         if (shared) insert(domainId, id, new ProductGrants.Grant("domain", "*", "use"));
+        return true;
     }
     @Transactional public void unregister(String domainId, String id) {
         requireDomainGrantResource(id);

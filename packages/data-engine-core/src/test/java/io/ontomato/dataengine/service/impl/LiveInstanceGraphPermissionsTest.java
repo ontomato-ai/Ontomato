@@ -92,7 +92,7 @@ class LiveInstanceGraphPermissionsTest {
     }
 
     @Test
-    void customerReadCodesDistinguishARestrictedRowFromAMissingObject() throws Exception {
+    void customerReadCodesDistinguishRestrictedRowsMissingObjectsAndInvisibleFields() throws Exception {
         var fixture = new Fixture(List.of("Person"));
         fixture.rows.get("Person").add(row("p1", "bob", "", "Restricted"));
         var service = new DataServiceImpl();
@@ -108,10 +108,10 @@ class LiveInstanceGraphPermissionsTest {
         var missing = service.queryInfoByNode(JSONObject.of("class", "Person", "id", "Person:p9"), "en", reader, "test");
         assertFalse(missing.getBooleanValue("success"));
         assertEquals("OBJECT_NOT_FOUND", missing.getString("code"));
-        var deniedPage = service.getWholeClassDataByPage(JSONObject.of("classname", "Person", "pagenum", 1, "pagecount", 10),
+        var noVisibleFields = service.getWholeClassDataByPage(JSONObject.of("classname", "Person", "pagenum", 1, "pagecount", 10),
                 "en", new UserDataPermission(), "test");
-        assertFalse(deniedPage.getBooleanValue("success"));
-        assertEquals("DATA_PERMISSION_DENIED", deniedPage.getString("code"));
+        assertFalse(noVisibleFields.getBooleanValue("success"));
+        assertEquals("NO_VISIBLE_FIELDS", noVisibleFields.getString("code"));
     }
 
     @Test

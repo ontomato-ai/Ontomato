@@ -190,14 +190,11 @@ async function openBuiltPanel(
         }],
       });
     }
-    if (path === "/api/data-query/platform/applications/resolve-entry") {
+    if (path === "/api/product-panels/application-entry") {
       return Response.json({
-        data: {
-          applicationId: appId,
-          entry: { path: "/settings", renderer: "settings" },
-          use,
-          menu: { singleEntry: false, groups: [], panelUses: [publishedUse, externalUse] },
-        },
+        applicationId: appId,
+        use,
+        menu: { singleEntry: false, groups: [], panelUses: [publishedUse, externalUse] },
       });
     }
     if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {

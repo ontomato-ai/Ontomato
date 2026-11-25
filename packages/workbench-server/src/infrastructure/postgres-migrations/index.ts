@@ -120,6 +120,21 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261122-panel-operation-uploads", ensureSchema: ensurePanelOperationUploadsSchema },
   { directory: "20261112-product-assets", ensureSchema: ensureProductAssetsSchema },
   {
+    directory: "20261125-retired-product-subscriptions",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: "20261125_retired_product_subscriptions_v1",
+      name: "retire the legacy product subscription poller",
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        await inMigrationTransaction(client, async () => {
+          await client.query(`DROP TABLE IF EXISTS ${qualifiedTable("product_subscriptions")}`);
+          await recordMigration(client, migration.version, migration.name);
+        });
+      },
+    },
+  },
+  {
     directory: "20261125-product-asset-grants",
     ensureSchema: () => Promise.resolve(),
     migration: {

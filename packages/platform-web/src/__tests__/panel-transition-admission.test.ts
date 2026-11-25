@@ -55,7 +55,6 @@ const resolveApplicationEntryMock = vi.fn<[{ path?: string; useId?: string }], P
 const catalogRefreshMock = vi.fn<[], Promise<unknown[]>>().mockResolvedValue([]);
 const refreshApplicationMock = vi.fn<[string], Promise<unknown>>().mockResolvedValue(null);
 const catalogApplications = ref<unknown[]>([]);
-const readDeniedListeners = new Set<() => void>();
 const visibilityListeners = new Set<(visible: boolean) => void>();
 let isDocVisible = true;
 
@@ -107,10 +106,6 @@ vi.mock("../panel-host", () => ({
     applicationId,
     use,
   }),
-  onPanelReadDenied: (listener: () => void) => {
-    readDeniedListeners.add(listener);
-    return () => { readDeniedListeners.delete(listener); };
-  },
 }));
 
 vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
@@ -222,7 +217,6 @@ beforeEach(() => {
   mountedHosts.length = 0;
   manualSurfaceReady = false;
   isDocVisible = true;
-  readDeniedListeners.clear();
   visibilityListeners.clear();
   resolveApplicationEntryMock.mockReset();
   catalogRefreshMock.mockReset().mockResolvedValue([]);
@@ -236,12 +230,14 @@ afterEach(() => {
 });
 
 describe("entry-table admission, refresh, and transition experience", () => {
-  it("admits same-application entry-table navigation immediately without re-querying resolve-entry and updates frameContext.currentEntry", async () => {
+  it("admits a same-application navigation once before exposing its new content or frame context", async () => {
     const menuUses = [tasksUse, summaryUse];
     catalogApplications.value = [
       { id: appA, framePanelId: "frame-a", panelUses: menuUses },
     ];
-    resolveApplicationEntryMock.mockResolvedValueOnce(resolutionOf(appA, tasksUse, menuUses, "frame-a"));
+    const openingSummary = deferred<ApplicationEntryResolution>();
+    resolveApplicationEntryMock.mockResolvedValueOnce(resolutionOf(appA, tasksUse, menuUses, "frame-a"))
+      .mockReturnValueOnce(openingSummary.promise);
 
     const { router, wrapper } = await mountRoute(tasksUse.path);
     await flushPromises();
@@ -254,8 +250,12 @@ describe("entry-table admission, refresh, and transition experience", () => {
     await router.push(summaryUse.path);
     await nextTick();
 
-    // No extra resolve-entry call; content mounts and frame currentEntry updates immediately.
-    expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(1);
+    expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(2);
+    expect(resolveApplicationEntryMock).toHaveBeenLastCalledWith({ path: summaryUse.path });
+    expect(wrapper.find('[data-content-use="use-summary"]').exists()).toBe(false);
+    openingSummary.resolve(resolutionOf(appA, summaryUse, menuUses, "frame-a"));
+    await flushPromises();
+    expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(2);
     expect(wrapper.find('[data-content-use="use-summary"]').exists()).toBe(true);
     expect(wrapper.get('[data-frame-panel="frame-a"]').attributes("data-current-entry-id")).toBe(summaryUse.id);
     expect(wrapper.get('[data-frame-panel="frame-a"]').attributes("data-current-entry-path")).toBe(summaryUse.path);
@@ -294,7 +294,8 @@ describe("entry-table admission, refresh, and transition experience", () => {
     manualSurfaceReady = true;
     const menuUses = [tasksUse, summaryUse, reportsUse];
     catalogApplications.value = [{ id: appA, panelUses: menuUses }];
-    resolveApplicationEntryMock.mockResolvedValue(resolutionOf(appA, tasksUse, menuUses));
+    resolveApplicationEntryMock.mockImplementation(async ({ path }) =>
+      resolutionOf(appA, menuUses.find(use => use.path === path)!, menuUses));
 
     // Cold open: no previous screen, so loading placeholder is shown immediately.
     const { router, wrapper } = await mountRoute(tasksUse.path);
@@ -310,7 +311,7 @@ describe("entry-table admission, refresh, and transition experience", () => {
 
     // Switch to summary: surface not ready yet -> tasks stays visible for < 150ms, no placeholder flash.
     await router.push(summaryUse.path);
-    await nextTick();
+    await flushPromises();
     expect((wrapper.get('[data-content-use="use-tasks"]').element as HTMLElement).style.display).toBe("");
     expect((wrapper.get('[data-content-use="use-summary"]').element as HTMLElement).style.display).toBe("none");
     expect(wrapper.find("[data-panel-loading-placeholder]").exists()).toBe(false);
@@ -329,7 +330,7 @@ describe("entry-table admission, refresh, and transition experience", () => {
 
     // Switch to reports: slow mount exceeds 150ms -> switches from retained summary to loading placeholder.
     await router.push(reportsUse.path);
-    await nextTick();
+    await flushPromises();
     expect((wrapper.get('[data-content-use="use-summary"]').element as HTMLElement).style.display).toBe("");
     expect(wrapper.find("[data-panel-loading-placeholder]").exists()).toBe(false);
 
@@ -392,11 +393,10 @@ describe("entry-table admission, refresh, and transition experience", () => {
     wrapper.unmount();
   });
 
-  it("refreshes the entry table on visibility return, 5-minute interval, and 403 read denial, revoking the page when access is withdrawn", async () => {
+  it("refreshes the entry once on visibility return and withdraws it if that opening is refused", async () => {
     vi.useFakeTimers();
     catalogApplications.value = [{ id: appA, panelUses: [tasksUse, summaryUse] }];
     resolveApplicationEntryMock
-      .mockResolvedValueOnce(resolutionOf(appA, tasksUse, [tasksUse, summaryUse]))
       .mockResolvedValueOnce(resolutionOf(appA, tasksUse, [tasksUse, summaryUse]))
       .mockResolvedValueOnce(resolutionOf(appA, tasksUse, [tasksUse, summaryUse]))
       .mockRejectedValueOnce(new Error("Forbidden"));
@@ -406,15 +406,14 @@ describe("entry-table admission, refresh, and transition experience", () => {
     expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(1);
     expect(wrapper.find('[data-content-use="use-tasks"]').exists()).toBe(true);
 
-    // 1. Visibility return refreshes the current application's entry table without fetching the full catalog.
+    // Visibility return refreshes the current entry without fetching the catalog.
     for (const listener of visibilityListeners) listener(true);
     await flushPromises();
-    expect(refreshApplicationMock).toHaveBeenCalledTimes(1);
-    expect(refreshApplicationMock).toHaveBeenLastCalledWith(appA);
+    expect(refreshApplicationMock).not.toHaveBeenCalled();
     expect(catalogRefreshMock).not.toHaveBeenCalled();
     expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(2);
 
-    // 2. Periodic 5-minute timer refreshes when visible, and skips when hidden.
+    // Ordinary reads and elapsed time do not trigger an additional entrance decision.
     isDocVisible = false;
     vi.advanceTimersByTime(5 * 60 * 1000);
     await flushPromises();
@@ -423,18 +422,12 @@ describe("entry-table admission, refresh, and transition experience", () => {
     isDocVisible = true;
     vi.advanceTimersByTime(5 * 60 * 1000);
     await flushPromises();
-    expect(refreshApplicationMock).toHaveBeenCalledTimes(2);
-    expect(refreshApplicationMock).toHaveBeenLastCalledWith(appA);
-    expect(catalogRefreshMock).not.toHaveBeenCalled();
-    expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(3);
-
-    // 3. HTTP 403 read denial triggers immediate refresh and revokes the page when access was removed.
-    for (const listener of readDeniedListeners) listener();
     await flushPromises();
-    expect(refreshApplicationMock).toHaveBeenCalledTimes(3);
-    expect(refreshApplicationMock).toHaveBeenLastCalledWith(appA);
-    expect(catalogRefreshMock).not.toHaveBeenCalled();
-    expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(4);
+    expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(2);
+
+    for (const listener of visibilityListeners) listener(true);
+    await flushPromises();
+    expect(resolveApplicationEntryMock).toHaveBeenCalledTimes(3);
     expect(wrapper.find('[data-content-use="use-tasks"]').exists()).toBe(false);
     expect(wrapper.get("[role=alert]").text()).toBe(`${tasksUse.path} is not a panel of this application`);
     wrapper.unmount();

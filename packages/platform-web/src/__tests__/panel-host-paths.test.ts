@@ -19,7 +19,7 @@ import {
   setCachedPanel,
   setCachedProjection,
 } from "../panel-definition-cache";
-import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, onPanelReadDenied, panelHostPaths, platformPanelHost, readApplicationFrameManifest, readPanelData, resolveApplicationEntry } from "../panel-host";
+import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readApplicationFrameManifest, readPanelData, resolveApplicationEntry } from "../panel-host";
 
 /*
  * The panel host's addresses (design 10.3): each request goes to the owner it belongs to, and the two owners differ.
@@ -84,7 +84,7 @@ beforeEach(() => {
         : url.includes("/panel-uses")
           ? { data: { applicationId: "app-a", entry: { path: "/tasks", renderer: "panels" }, panelUses: [] } }
           : new URL(url, "http://localhost").pathname.endsWith("/snapshot")
-            ? { panel: { id: "panel-a", revision: 1 }, projections: [], pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: "tasks" }, member: null } }
+            ? { panel: { id: "panel-a", revision: 1 }, projections: [] }
             : { panel: null };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   });
@@ -206,23 +206,15 @@ describe("panel data read batching", () => {
     ]);
   });
 
-  it("rejects every waiter on HTTP 403 or a mismatched result count and notifies denial once", async () => {
-    const denied = vi.fn();
-    const unsubscribe = onPanelReadDenied(denied);
+  it("rejects every waiter on HTTP 403 or a mismatched result count", async () => {
     const batch = () => Promise.allSettled([readPanelData(read("first")), readPanelData(read("second"))]);
-    try {
-      vi.stubGlobal("fetch", async () => Response.json({ error: { message: "Denied" } }, { status: 403 }));
-      const rejected = { status: "rejected", reason: expect.objectContaining({ status: 403 }) };
-      await expect(batch()).resolves.toEqual([rejected, rejected]);
-      expect(denied).toHaveBeenCalledTimes(1);
+    vi.stubGlobal("fetch", async () => Response.json({ error: { message: "Denied" } }, { status: 403 }));
+    const rejected = { status: "rejected", reason: expect.objectContaining({ status: 403 }) };
+    await expect(batch()).resolves.toEqual([rejected, rejected]);
 
-      vi.stubGlobal("fetch", async () => Response.json({ results: [{ status: "empty" }] }));
-      const mismatch = { status: "rejected", reason: expect.objectContaining({ message: expect.stringContaining("count") }) };
-      await expect(batch()).resolves.toEqual([mismatch, mismatch]);
-      expect(denied).toHaveBeenCalledTimes(1);
-    } finally {
-      unsubscribe();
-    }
+    vi.stubGlobal("fetch", async () => Response.json({ results: [{ status: "empty" }] }));
+    const mismatch = { status: "rejected", reason: expect.objectContaining({ message: expect.stringContaining("count") }) };
+    await expect(batch()).resolves.toEqual([mismatch, mismatch]);
   });
 });
 
@@ -257,12 +249,11 @@ describe("the panel host's addresses", () => {
       await candidatePanelHost({ id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", ref: "working", pageKey: "tasks" }).source().catch(() => {});
       await vi.waitFor(() => expect(requested.length).toBe(7));
       expect(requested.map((one) => `${one.method} ${one.url}`)).toEqual([
-        "GET /api/data-query/platform/applications/resolve-entry?path=%2Fapplications%2Fapp-a%2Ftasks",
-        "GET /api/product-panels/panel-a?includeProjections=1",
+        "GET /api/product-panels/application-entry?path=%2Fapplications%2Fapp-a%2Ftasks",
+        "GET /api/product-panels/panel-a?includeProjections=1&view=1",
         "GET /api/apps-sdk/current",
         "GET /apps-sdk/current/sdk.json",
-        // A page's snapshot is read for that page: Node confirms which page skill member it reaches with it.
-        "GET /api/product-panels/panel-a/snapshot?applicationId=app-a&useId=use-a&pageKey=tasks&access=domain-member",
+        "GET /api/product-panels/panel-a/snapshot",
         "POST /api/product-panels/definition-stream",
         "GET /api/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/panel-candidate?ref=working",
       ]);
@@ -528,12 +519,7 @@ describe("controlled personal state fields", () => {
         return Response.json({
           panel: { id: options.use.panelId, revision: options.panels[options.use.panelId]!.revision },
           projections: [],
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: options.use.pageKey }, member: null },
-        });
-      }
-      if (url.pathname.endsWith("/page-skill-context")) {
-        return Response.json({
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: options.use.pageKey }, member: null },
+
         });
       }
       for (const [id, rec] of Object.entries(options.panels)) {
@@ -1102,11 +1088,6 @@ describe("dynamic and nested member projection access verification", () => {
       if (url.pathname === panelHostPaths.panel(use.panelId)) {
         return Response.json({ panel: catalogPanel, projections: {} });
       }
-      if (url.pathname.endsWith("/page-skill-context")) {
-        return Response.json({
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
-        });
-      }
       if (url.pathname === `/api/product-projections/${projP.id}`) {
         projectionRequests.push(url.pathname);
         return Response.json({ error: { code: "FORBIDDEN", message: "Product use Grant required" } }, { status: 403 });
@@ -1167,11 +1148,6 @@ describe("dynamic and nested member projection access verification", () => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname === panelHostPaths.panel(use.panelId)) {
         return Response.json({ panel: catalogPanel, projections: {} });
-      }
-      if (url.pathname.endsWith("/page-skill-context")) {
-        return Response.json({
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
-        });
       }
       if (url.pathname === `/api/product-projections/${proj1.id}`) {
         projectionRequests.push(proj1.id);
@@ -1263,11 +1239,6 @@ describe("dynamic and nested member projection access verification", () => {
       if (url.pathname === panelHostPaths.panel(use.panelId)) {
         return Response.json({ panel: outerPanel, projections: {} });
       }
-      if (url.pathname.endsWith("/page-skill-context")) {
-        return Response.json({
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
-        });
-      }
       if (url.pathname === `/api${PANEL_NESTED_READ_PATH}`) {
         return Response.json({
           panel: { id: innerPanel.id, revision: innerPanel.revision, content: innerPanel.content, manifest: innerPanel.manifest },
@@ -1340,12 +1311,7 @@ describe("dynamic and nested member projection access verification", () => {
           panel: { id: fixedPanel.id, revision: fixedPanel.revision },
           projections: [{ id: projFixed.id, revision: projFixed.revision }],
           members: [{ status: "ready", memberPath: [{ member: "fixedMember" }], target: { kind: "projection", id: projFixed.id }, revision: projFixed.revision }],
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
-        });
-      }
-      if (url.pathname.endsWith("/page-skill-context")) {
-        return Response.json({
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+
         });
       }
       if (url.pathname === "/api/product-panels/read") {
@@ -1452,14 +1418,6 @@ describe("dynamic and nested member projection access verification", () => {
             panel: { id: panelDef.id, revision: panelDef.revision },
             projections: [{ id: proj.id, revision: proj.revision }],
             members: [{ status: "ready", memberPath: [{ member: "fixedMember" }], target: { kind: "projection", id: proj.id }, revision: proj.revision }],
-            ...(hostCase.name === "platformPanelHost"
-              ? { pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null } }
-              : {}),
-          });
-        }
-        if (url.pathname.endsWith("/page-skill-context")) {
-          return Response.json({
-            pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
           });
         }
         if (url.pathname === "/api/product-panels/read") {
@@ -1514,60 +1472,20 @@ describe("dynamic and nested member projection access verification", () => {
     }
   });
 
-  it("notifies onPanelReadDenied listeners when panel record or data reads return HTTP 403, and ignores 404 and resolve-entry 403", async () => {
-    const denied = vi.fn();
-    const unsubscribe = onPanelReadDenied(denied);
-    let nextStatus = 403;
-    vi.stubGlobal("fetch", async () => Response.json({ error: { message: "Denied" } }, { status: nextStatus }));
-    try {
-      await expect(readPanelData({
-        source: { kind: "registered", applicationId: "app-a", useId: "use-1" },
-        memberPath: [{ member: "list" }],
-        dataName: "rows",
-        inputs: {},
-      })).rejects.toThrow();
-      expect(denied).toHaveBeenCalledTimes(1);
-
-      // Panel record read returning 403 also notifies listeners.
-      clearPanelDefinitionCache();
-      const deniedUse: ApplicationPanelUse = {
-        id: "use-denied",
-        pageKey: "denied-page",
-        panelId: "panel-denied",
-        path: "/applications/app-a/denied",
-        access: { kind: "domain-member" },
-      };
-      const port = platformPanelHost("app-a", deniedUse, () => {});
-      await expect(port.source()).rejects.toThrow();
-      expect(denied).toHaveBeenCalledTimes(2);
-
-      // resolveApplicationEntry 403 does not trigger panel-read-denied loop.
-      await expect(resolveApplicationEntry({ path: "/applications/app-a/tasks" })).rejects.toThrow();
-      expect(denied).toHaveBeenCalledTimes(2);
-
-      // 404 does not trigger 403 read-denied notification.
-      nextStatus = 404;
-      await expect(readPanelData({
-        source: { kind: "registered", applicationId: "app-a", useId: "use-1" },
-        memberPath: [{ member: "list" }],
-        dataName: "rows",
-        inputs: {},
-      })).rejects.toThrow();
-      expect(denied).toHaveBeenCalledTimes(2);
-
-      // Unsubscribing stops further notifications.
-      unsubscribe();
-      nextStatus = 403;
-      await expect(readPanelData({
-        source: { kind: "registered", applicationId: "app-a", useId: "use-1" },
-        memberPath: [{ member: "list" }],
-        dataName: "rows",
-        inputs: {},
-      })).rejects.toThrow();
-      expect(denied).toHaveBeenCalledTimes(2);
-    } finally {
-      unsubscribe();
-    }
+  it.each([403, 404])("keeps the HTTP %s on a refused panel read and a refused opening", async status => {
+    vi.stubGlobal("fetch", async () => Response.json({ error: { message: "Refused" } }, { status }));
+    await expect(readPanelData({
+      source: { kind: "registered", applicationId: "app-a", useId: "use-1" },
+      memberPath: [{ member: "list" }], dataName: "rows", inputs: {},
+    })).rejects.toMatchObject({ status });
+    clearPanelDefinitionCache();
+    const deniedUse: ApplicationPanelUse = {
+      id: "use-denied", pageKey: "denied-page", panelId: "panel-denied",
+      path: "/applications/app-a/denied", access: { kind: "domain-member" },
+    };
+    const port = platformPanelHost("app-a", deniedUse, () => {});
+    await expect(port.source()).rejects.toMatchObject({ status });
+    await expect(resolveApplicationEntry({ path: "/applications/app-a/denied" })).rejects.toMatchObject({ status });
   });
 
   it("strips @ontomato/sdk: prefix via memberComponentId before preloading bundled projection components", async () => {
@@ -1620,7 +1538,7 @@ describe("dynamic and nested member projection access verification", () => {
     });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-      if (url.includes("/page-skill-context")) return Response.json({ pageSkillContext: null });
+
       return Response.json({
         panel,
         projections: {

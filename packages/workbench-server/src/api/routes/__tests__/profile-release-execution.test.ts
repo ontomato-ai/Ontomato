@@ -72,7 +72,6 @@ beforeEach(()=>{
         inputs: {}, outputs: {}, config: {}, data: {},
       },
     }] };
-    if(sql.includes("product_subscriptions"))return {rows:[]};
     throw new Error(`Unexpected SQL: ${sql}`);
   });
   state.post.mockImplementation(async(name:string,_url:string,body:{userId?:string;verb?:string;executionUserId?:string},options:{headers:Record<string,string>})=>{
@@ -195,10 +194,10 @@ it("delivers live projection-only author notices while its snapshot is still rea
   }
 });
 
-it("retires the single-panel subscription request", async () => {
+it("retires the legacy product subscription API", async () => {
   const response = await fetch(new URL("../subscriptions", `${base}/`), {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
+    body: JSON.stringify({ kind: "product-definition", target: { kind: "projection", id: panelId } }),
   });
-  expect(response.status).toBe(400);
+  expect(response.status).toBe(404);
 });

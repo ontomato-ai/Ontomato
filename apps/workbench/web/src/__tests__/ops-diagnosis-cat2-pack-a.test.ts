@@ -193,14 +193,11 @@ async function openBuiltPanel(
         }],
       });
     }
-    if (path === "/api/data-query/platform/applications/resolve-entry") {
+    if (path === "/api/product-panels/application-entry") {
       return Response.json({
-        data: {
-          applicationId: appId,
-          entry: { path: "/ops/knowledge", renderer: "operations" },
-          use,
-          menu: { singleEntry: false, groups: [], panelUses: [knowledgeUse, turnUse, resultsUse] },
-        },
+        applicationId: appId,
+        use,
+        menu: { singleEntry: false, groups: [], panelUses: [knowledgeUse, turnUse, resultsUse] },
       });
     }
     if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {

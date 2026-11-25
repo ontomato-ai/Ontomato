@@ -12,7 +12,7 @@ import { SkillSourceRecordError, type SkillPackageContext } from "../../core/ski
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
-import { isStoredProtectedSkillRef, readSkillView, resolveCurrentPageSkillMember, type AuthorizedPageSkillMember } from "../skills/view";
+import { isStoredProtectedSkillRef, readSkillView, resolveCurrentPageSkillMember, validateApplicationPageSkillEntry, type AuthorizedPageSkillMember } from "../skills/view";
 import {
   publishOntologyAssistantSkill, publishSkill, publishSkillPackage, workbenchBuiltinSkillRoot,
 } from "../agent-runtime/skills";
@@ -208,6 +208,7 @@ function publicationFailure(error: unknown): PageSkillFailure {
 export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] },
   initiatorCredentials: AssistantCredentials, pageSkillContext?: PageSkillContext, userId?: string,
 ) {
+  await validateApplicationPageSkillEntry({ domainId, initiatorCredentials, userId }, pageSkillContext);
   const view = await readAssistantSkillView(domainId, initiatorCredentials, userId);
   for (const ref of agent.skills) {
     view.requireCertainStoredSkill(ref);
@@ -270,6 +271,7 @@ export async function prepareCurrentPageSkill(
   pageSkillContext: PageSkillContext,
   userId?: string,
 ): Promise<{ skill: RuntimeSkillVersion; currentPage: Omit<AuthorizedPageSkillMember, "packageContext"> | null } | null> {
+  await validateApplicationPageSkillEntry({ domainId, initiatorCredentials, userId }, pageSkillContext);
   const view = await readAssistantSkillView(domainId, initiatorCredentials, userId);
   let currentPage: Omit<AuthorizedPageSkillMember, "packageContext"> | null = null;
   let packageContext: SkillPackageContext | undefined;

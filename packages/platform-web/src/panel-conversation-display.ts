@@ -1,7 +1,7 @@
 import { watch, watchEffect } from "vue";
 import { isNavigationFailure, NavigationFailureType, type Router } from "vue-router";
 import { useConversationDisplay, type DisplayObjectChange, type DisplayPageController } from "@ontomato/agent-shell-ui";
-import { useLeaveConfirmation } from "@ontomato/platform-shell";
+import { useLeaveConfirmation, usePageAdmission } from "@ontomato/platform-shell";
 import type { DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
@@ -24,6 +24,7 @@ export function usePanelConversationDisplay(options: {
 }) {
   const { router } = options;
   const leave = useLeaveConfirmation();
+  const admitPage = usePageAdmission();
   function resolve(address: string) {
     if (!address.startsWith("/") || address.startsWith("//")) return null;
     const { path, fullPath } = router.resolve(address);
@@ -34,11 +35,22 @@ export function usePanelConversationDisplay(options: {
     features: () => [],
     embedded: true,
     resolve,
-    admit: async (address) => resolve(address) ? { ok: true } : { ok: false, reason: "outside_embedded_host" },
+    admit: async (address) => {
+      if (!resolve(address)) return { ok: false, reason: "outside_embedded_host" };
+      return admitPage ? admitPage(address) : { ok: true };
+    },
     async serialize(page, _view, history) {
       if (!page) return false;
-      const failure = await (history === "push" ? router.push(page.address) : router.replace(page.address));
-      return !failure || isNavigationFailure(failure, NavigationFailureType.duplicated);
+      const openedEntry = page.takeOpenedEntry?.();
+      const stop = openedEntry && router.beforeResolve(to => {
+        if (to.fullPath === page.address) to.meta.openedPanelEntry = openedEntry;
+      });
+      try {
+        const failure = await (history === "push" ? router.push(page.address) : router.replace(page.address));
+        return !failure || isNavigationFailure(failure, NavigationFailureType.duplicated);
+      } finally {
+        stop?.();
+      }
     },
     context: (page, reported) => ({ label: page.address, selection: [], ...reported, url: page.address }),
     leave: { leaves: (address) => leave.leaves(address?.split(/[?#]/, 1)[0] ?? ""), confirm: () => leave.confirm() },

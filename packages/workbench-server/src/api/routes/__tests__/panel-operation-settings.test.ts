@@ -145,7 +145,7 @@ it("returns the server descriptor only for a current use of the authenticated re
    target: { source: "input", input: "task" },
    inputSchema: { type: "object" }, resultSchema: { type: "object" },
  });
- expect((await fetch(url + "&useId=missing", { headers: { tk: "owner" } })).status).toBe(403);
+ expect((await fetch(url + "&useId=missing", { headers: { tk: "owner" } })).status).toBe(404);
  expect((await fetch(url + "&useId=tasks&effect=read", { headers: { tk: "owner" } })).status).toBe(400);
  expect(state.query).not.toHaveBeenCalled();
 });

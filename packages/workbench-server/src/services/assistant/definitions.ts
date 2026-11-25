@@ -38,6 +38,7 @@ import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import {transaction} from '../../infrastructure/postgres-transaction';
 import {lockProducts} from '../product-assets/store';
 import {synchronizeNativeProfile} from '../product-assets/platform-assets';
+import { synchronizeProductOntology } from "../product-assets/ontology";
 import { validateExecutionSetting, prepareExecutionSetting } from "./execution-setting";
 const view = (a: AgentRow, locale?: string) =>
   assistantAgentDefinitionSchema.parse({
@@ -167,12 +168,12 @@ export async function saveAgentDefinitionSnapshot(
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
-    const definition = await transaction(async client => {
+    const result = await transaction(async client => {
       await lockProducts(client, owner);
       const agent = await readAgentDefinitionRow(id, owner, client);
       const current = view(agent, locale);
       const partial = "submittedFields" in update ? update : undefined;
-      if (partial?.submittedFields.length === 0) return current;
+      if (partial?.submittedFields.length === 0) return { definition: current, ontologyChanged: false };
       const changed = (field: keyof AssistantAgentUpdateInput) =>
         partial === undefined || partial.submittedFields.some(path => path === `/${field}` || path.startsWith(`/${field}/`));
 
@@ -210,17 +211,18 @@ export async function saveAgentDefinitionSnapshot(
       set("sortOrder", "sort_order", input.sortOrder);
       set("executionUserId", "execution_user_id", executionUserId);
       set("skills", "skills", skills === undefined ? undefined : JSON.stringify(skills));
-      if (!assignments.length) return current;
+      if (!assignments.length) return { definition: current, ontologyChanged: false };
 
       const { rows: [saved] } = await client.query<AgentRow>(
         `UPDATE ${t("assistant_agents")} SET ${assignments.join(",")} WHERE id=$1 AND domain_id=$2 RETURNING *`,
         parameters,
       );
       if (!saved) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
-      await synchronizeNativeProfile(client, owner, saved, locale);
-      return view(saved, locale);
+      const ontologyChanged = await synchronizeNativeProfile(client, owner, saved, locale);
+      return { definition: view(saved, locale), ontologyChanged };
     });
-    return { definition, skillView: access.view };
+    if (result.ontologyChanged) await synchronizeProductOntology(owner);
+    return { definition: result.definition, skillView: access.view };
   });
 }
 export async function createAgentDefinition(
@@ -241,56 +243,45 @@ export async function createAgentDefinitionSnapshot(
   return withDomainSkills(owner.domainId, async () => {
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
     const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, [], access);
-    const pool = getPostgresPool();
-    const existing = (
-      await pool.query(
-        `SELECT domain_id FROM ${t("assistant_agents")} WHERE id=$1`,
-        [id],
-      )
-    ).rows[0];
-    // An id is owned by its domain: reusing it elsewhere is a conflict, not a missing agent.
-    if (existing && existing.domain_id !== owner.domainId)
-      throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
-    if (input.executionUserId != null)
-      await prepareExecutionSetting(owner, null, input.executionUserId, credentials);
-    const inserted = await pool.query(
-      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_selection,skills,icon,class_names,enabled_mcp_service_ids,sort_order,execution_user_id,engine) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING`,
-      [
-        id,
-        owner.domainId,
-        input.name,
-        input.description,
-        input.enabled,
-        input.systemPrompt,
-        JSON.stringify(input.modelSelection),
-        JSON.stringify(skills),
-        input.icon,
-        JSON.stringify(input.classNames),
-        JSON.stringify(input.enabledMcpServiceIds),
-        assistantAgentDefinitionSchema.shape.sortOrder.parse(input.sortOrder),
-        executionUserId,
-        input.engine,
-      ],
-    );
-    const actual = await readStoredAgentDefinition(id, owner);
-    // The insert won: this call created the definition, so there is nothing to replay. A write that
-    // changed nothing means the same id was replayed, which is only valid with the same definition.
-    if (!inserted.rowCount) {
-      const expected = assistantAgentDefinitionSchema
-        .omit({ id: true })
-        .parse({ ...input, executionUserId, skills, modelSelection: input.modelSelection });
-      const same = (Object.keys(expected) as (keyof typeof expected)[]).every(
-        (key) => JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
+    const definition = await transaction(async client => {
+      await lockProducts(client, owner);
+      const { rows: [existing] } = await client.query<AgentRow & { owner_id: string | null }>(
+        `SELECT * FROM ${t("assistant_agents")} WHERE id=$1`, [id],
       );
-      if (!same)
-        throw new HttpError(
-          409,
-          "Idempotency key reused",
-          "IDEMPOTENCY_CONFLICT",
+      if (existing) {
+        if (existing.domain_id !== owner.domainId || existing.owner_id !== owner.userId || !isReadableDefinition(existing.kind))
+          throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+        const actual = view(existing);
+        const expected = assistantAgentDefinitionSchema
+          .omit({ id: true })
+          .parse({ ...input, executionUserId, skills });
+        const same = (Object.keys(expected) as (keyof typeof expected)[]).every(
+          (key) => JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
         );
-    }
-    await registerProductResource(owner, id, false, { ownerId: owner.userId, verbs: ["use", "view", "edit"], grantAdmin: true });
-    return { definition: actual, skillView: access.view };
+        if (!same) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+        return actual;
+      }
+      if (input.executionUserId != null)
+        await prepareExecutionSetting(owner, null, input.executionUserId, credentials);
+      const { rows: [inserted] } = await client.query<AgentRow>(
+        `INSERT INTO ${t("assistant_agents")}
+           (id,domain_id,kind,name,description,enabled,system_prompt,model_selection,skills,icon,
+            class_names,enabled_mcp_service_ids,sort_order,execution_user_id,engine,owner_id)
+         VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         ON CONFLICT DO NOTHING RETURNING *`,
+        [
+          id, owner.domainId, input.name, input.description, input.enabled, input.systemPrompt,
+          JSON.stringify(input.modelSelection), JSON.stringify(skills), input.icon,
+          JSON.stringify(input.classNames), JSON.stringify(input.enabledMcpServiceIds),
+          assistantAgentDefinitionSchema.shape.sortOrder.parse(input.sortOrder), executionUserId, input.engine,
+          owner.userId,
+        ],
+      );
+      if (!inserted) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+      await registerProductResource(owner, id, false, { createOnly: true, verbs: ["use", "view", "edit"], grantAdmin: true });
+      return view(inserted);
+    });
+    return { definition, skillView: access.view };
   });
 }
 

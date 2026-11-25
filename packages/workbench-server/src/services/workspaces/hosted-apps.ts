@@ -3,6 +3,7 @@ import { sourceProductManifest,deriveSourceProductReview } from './product-admis
 import {captureProductRelease,saveProductRelease,readProductRelease,validateReleaseContracts,productReleaseIssues} from '../product-assets/releases';
 import { getProduct, saveProduct, validateChildren } from "../product-assets/store";
 import {validateProduct} from '../product-assets/validation';
+import {synchronizeProductOntology} from '../product-assets/ontology';
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile, rename, readdir, readFile } from "node:fs/promises";
@@ -133,6 +134,7 @@ export async function publishWorkspace(
     await validateProduct(owner,product,credentials);
     await validateChildren(owner,product,credentials);
   }
+  await synchronizeProductOntology(owner);
   const productSnapshot=await captureProductRelease(owner,productIds,credentials,triggerIds);
   const release = await transaction(async c => {
     const targetAppId = options?.appId ?? `app-${randomUUID()}`;

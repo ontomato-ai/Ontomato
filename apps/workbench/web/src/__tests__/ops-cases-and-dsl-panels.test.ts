@@ -257,14 +257,11 @@ async function openBuiltPanel(
         }],
       });
     }
-    if (path === "/api/data-query/platform/applications/resolve-entry") {
+    if (path === "/api/product-panels/application-entry") {
       return Response.json({
-        data: {
-          applicationId: appId,
-          entry: { path: "/ops", renderer: "ops" },
-          use,
-          menu: { singleEntry: false, groups: [], panelUses: [casesUse, dslUse] },
-        },
+        applicationId: appId,
+        use,
+        menu: { singleEntry: false, groups: [], panelUses: [casesUse, dslUse] },
       });
     }
     if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {

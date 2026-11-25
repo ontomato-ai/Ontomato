@@ -20,7 +20,7 @@ it("explains how to correct an unregistered application and use pair", async () 
     Response.json({ error: { code: "NOT_FOUND", message: "Panel entry not found" } }, { status: 404 })));
   const message = expect.stringMatching(/No registered panel entrance matches the supplied applicationId and useId.*Available entrances/u);
   await expect(requirePanelEntry(credentials, ref)).rejects.toMatchObject({ status: 404, message });
-  await expect(requirePanelUseEntry(credentials, ref)).rejects.toMatchObject({ status: 403, code: "FORBIDDEN", message });
+  await expect(requirePanelUseEntry(credentials, ref)).rejects.toMatchObject({ status: 404, code: "NOT_FOUND", message });
 });
 
 it("identifies a denied entrance as an access refusal for the initiating user", async () => {

@@ -10,19 +10,8 @@ vi.mock('../ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOnto
 vi.mock('../../product-governance/grants',()=>({registerProductResource:async()=>{}}));
 vi.mock('../../assistant/store',()=>({assistantStore:{agents:mocks.agents}}));
 vi.mock('../../app-builder/access',()=>({assertAppBuilderAccess:mocks.access}));
-import {ensurePlatformAssets,synchronizePlatformAssets} from '../platform-assets';
+import {synchronizePlatformAssets} from '../platform-assets';
 beforeEach(()=>{vi.resetAllMocks();mocks.query.mockResolvedValue({rows:[]});mocks.agents.mockResolvedValue([]);});
-it('does not let an ordinary viewer register shared platform resources',async()=>{
- mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{allowed:false}})});
- await ensurePlatformAssets({domainId:'ordinary',userId:'viewer'},{});
- expect(mocks.post).not.toHaveBeenCalled();expect(mocks.agents).not.toHaveBeenCalled();
-});
-it('coalesces concurrent authorized reconciliation and does not repeat completed work on every read',async()=>{
- mocks.get.mockImplementation(async(endpoint:string)=>({text:JSON.stringify(endpoint==='platform-sync-permission'?{success:true,data:{allowed:true}}:{data:[]})}));
- const owner={domainId:'concurrent',userId:'admin'};
- await Promise.all([ensurePlatformAssets(owner,{}),ensurePlatformAssets(owner,{})]);await ensurePlatformAssets(owner,{});
- expect(mocks.agents).toHaveBeenCalledTimes(1);
-});
 it('registers a native application without an empty placeholder page',async()=>{
  const documents:{id:string;document:{kind:string;children:unknown[]}}[]=[];
  mocks.get.mockResolvedValue({text:JSON.stringify({data:[{id:'home',names:{en:'Home'},entry:{renderer:'native'}}]})});
@@ -33,13 +22,13 @@ it('registers a native application without an empty placeholder page',async()=>{
   }
   return {rows:[]};
  });
- await synchronizePlatformAssets({domainId:'native-home',userId:'admin'},{},false);
+ await synchronizePlatformAssets({domainId:'native-home',userId:'admin'},{});
  expect(documents.some(asset=>asset.document.kind==='page')).toBe(false);
  expect(documents.find(asset=>asset.document.kind==='application')?.document.children).toEqual([]);
 });
 it('skips panels applications before creating any legacy asset, binding, revision or registration',async()=>{
  mocks.get.mockResolvedValue({text:JSON.stringify({data:[{id:'app-panel-a',entry:{renderer:'panels'}},{id:'app-panel-b',entry:{renderer:'panels'}}]})});
- await synchronizePlatformAssets({domainId:'panels-only',userId:'admin'},{},false);
+ await synchronizePlatformAssets({domainId:'panels-only',userId:'admin'},{});
  expect(mocks.query.mock.calls.some(([sql])=>/INSERT|UPDATE/.test(sql))).toBe(false);
  expect(mocks.post).not.toHaveBeenCalled();
 });

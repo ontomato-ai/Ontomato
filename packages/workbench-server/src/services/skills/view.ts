@@ -5,7 +5,7 @@ import {
   type PageSkillLocator, type PageSkillMember, type PageSkillSource,
 } from "@ontomato/contracts/page-skills";
 import { config } from "../../config/application";
-import { isApplicationPanelUse, type PanelUseRef } from "@ontomato/contracts/product-panels";
+import { isApplicationPanelUse, type ApplicationEntryResolution } from "@ontomato/contracts/product-panels";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
 import {
@@ -264,48 +264,40 @@ export async function readPageCandidateSkill(caller: PageSkillViewCaller, entran
   return candidatePageSkill(entrance, skill, pages.groups);
 }
 
-/** Resolve the skill of this registered entry without loading the domain's skill catalogue. */
-export async function readRegisteredPanelPageSkillContext(
-  caller: PageSkillViewCaller,
-  entrance: PageSkillEntrance,
-  source: ApplicationUseSkillSource,
-  loadedPanel: { id: string },
-  provider: { id: string; findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials, userId?: string):
-    Promise<ProtectedSkillOffering | SkillSourceFailure | null> },
-): Promise<PageSkillContext> {
-  const absent = { mode: "member" as const, locator: entrance, member: null };
-  const actual = await currentApplicationPanel(caller, entrance, source);
-  if (!actual || actual.use.panelId !== loadedPanel.id) return absent;
-  const use = { applicationId: actual.applicationId, useId: actual.use.id };
-  const sourceFact = await provider.findByUse(caller.domainId, use, caller.initiatorCredentials, caller.userId);
-  if (!sourceFact || sourceFact.sourceKey !== loadedPanel.id) return absent;
-
-  const ref = protectedSourceSkillRef(provider.id, caller.domainId, sourceFact);
-  const listed = { ...sourceFact, providerId: provider.id, skill: ref };
-  const [java, grants] = await Promise.all([
-    javaPageSkillProjection(caller.initiatorCredentials, actual.entrance),
-    grantedSkillResources([listed], caller.initiatorCredentials),
-  ]);
-  const pages = pageAuthorization(java, [listed], grants, []);
-  if (!pages.byEntrance.get(entranceKey(actual.entrance))?.has(runtimeSkillKey(ref))) return absent;
-  // Only admitted offerings and unresolved sources with an eligible entrance reach this point.
-  if ("knownRequiredResourceIds" in sourceFact) throw anonymousFailure();
-  try {
-    await sourceFact.readManifest(ref);
-  } catch (error) {
-    if (!(error instanceof SkillSourceRecordError)) throw error;
-    const { resourceId, field, reason } = error.detail;
-    // The direct host checks each member against the current release and can still render the other members.
-    if (reason === "component_missing") return absent;
-    const resource = resourceId === loadedPanel.id ? "panel" : "projection";
-    const location = `${resource} '${resourceId}'${field ? `, field '${field}'` : ""}`;
-    throw new HttpError(502, `Panel '${loadedPanel.id}' skill is unavailable: ${location}: ${reason.replaceAll("_", " ")}`,
-      "SKILL_SOURCE_UNAVAILABLE");
-  }
+/** Resolve the current page skill from the admission already obtained by this opening request. */
+export async function openedPanelPageSkillContext(
+  caller: PageSkillViewCaller, admitted: ApplicationEntryResolution,
+): Promise<PageSkillContext | undefined> {
+  const { applicationId, use } = admitted;
+  if (!isApplicationPanelUse(use)) return;
+  const source = { kind: "application-use", applicationId, useId: use.id } as const;
+  const locator: PageSkillEntrance = "permissionCode" in use.access
+    ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
+    : { access: "domain-member", pageKey: use.pageKey };
+  const absent = { mode: "member", locator, entry: source, member: null } as const;
+  const { panelSkillSources } = await import("../product-panels/skill-package");
+  const [fact] = await panelSkillSources(caller.domainId, [{
+    ...source, panelId: use.panelId, path: use.path, entrance: locator,
+  }], caller.initiatorCredentials);
+  if (!("kind" in fact)) return absent;
+  const ref = protectedSourceSkillRef(PANEL_SKILL_PROVIDER_ID, caller.domainId, fact);
+  const grants = await grantedSkillResources([{ ...fact, providerId: PANEL_SKILL_PROVIDER_ID, skill: ref }], caller.initiatorCredentials);
+  if (!fact.resourceIds.every(id => grants.has(id))) return absent;
   return {
-    mode: "member", locator: actual.entrance,
-    member: { source: { kind: "application-use", ...use }, memberPath: [], ref },
+    mode: "member", locator, entry: source,
+    member: { source, memberPath: [], ref },
   };
+}
+
+/** A run can be opened at a registered entry even when its panel supplies no skill. */
+export async function validateApplicationPageSkillEntry(caller: PageSkillViewCaller, context: PageSkillContext | undefined) {
+  if (context?.mode !== "member" || !context.entry) return;
+  if (context.member) {
+    const source = context.member.source;
+    if (source.kind === "application-use" && source.applicationId === context.entry.applicationId &&
+      source.useId === context.entry.useId) return;
+  } else if (await currentApplicationPanel(caller, context.locator, context.entry)) return;
+  throw new HttpError(403, "The initiating user does not have access to this panel entrance", "PANEL_ENTRY_FORBIDDEN");
 }
 
 /** Resolve one current view. All supply closures and existence facts refer to this source enumeration. */

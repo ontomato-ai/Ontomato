@@ -19,6 +19,7 @@ import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { presentationAppliesAddress } from "@ontomato/contracts/panel-host";
 import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
+import type { ApplicationEntryResolution } from "@ontomato/contracts/product-panels";
 import { fileName } from "./artifacts";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
 
@@ -46,6 +47,8 @@ export interface DisplayPage {
    * the panel it was. Leaving an instance is what asks about unsaved changes.
    */
   instance: string;
+  /** Consumes the permission result belonging to this particular opening. */
+  takeOpenedEntry?: () => ApplicationEntryResolution | undefined;
 }
 
 export type DisplayTarget = { kind: "artifact"; open: OpenArtifact } | ({ kind: "page" } & DisplayPage);
@@ -55,7 +58,7 @@ export type DisplayHistory = "push" | "replace";
 
 /** Result of checking whether the initiating reader is admitted to open a target page address. */
 export type DisplayPageAdmissionResult =
-  | { ok: true }
+  | { ok: true; openedEntry?: ApplicationEntryResolution }
   | { ok: false; reason: "forbidden" | "not_found" | "unsupported_target" | "outside_embedded_host"; error?: { code: string; message: string } };
 
 /** Live state patch handed to a newly opened panel instance (covering all declared public state fields). */
@@ -1045,6 +1048,15 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           const admission = await host.admit(rawAddress);
           if (!admission.ok) return notOpened(admission.reason, admission.error);
           if (resolved === null) resolved = host.resolve?.(rawAddress) ?? null;
+          let openedEntry = admission.openedEntry;
+          if (resolved && openedEntry) resolved = {
+            ...resolved,
+            takeOpenedEntry: () => {
+              const entry = openedEntry;
+              openedEntry = undefined;
+              return entry;
+            },
+          };
         }
         if (!resolved) return notOpened("unsupported_target");
 

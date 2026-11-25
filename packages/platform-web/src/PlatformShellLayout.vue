@@ -35,8 +35,6 @@ import { openApplicationKey, platformApplicationsKey, platformBrandKey, type Pla
 import { useApplicationOpening } from "./application-opening";
 import { installPanelApplicationOpener } from "./panel-navigate";
 import { agentBuilderShortcut } from "./application-shortcuts";
-import { workspaceObjectHostKey } from "@ontomato/contracts/workspace-objects";
-import { createWorkspaceObjectHost } from "./workspace-objects";
 
 /**
  * The platform's one shell around the router: the rail, the current application's column and the page area, with the
@@ -57,7 +55,6 @@ const host = usePlatformHost();
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
-provide(workspaceObjectHostKey, createWorkspaceObjectHost());
 
 const catalog = useApplicationCatalog();
 const pinnedAppIds=ref<string[]>([]);
@@ -301,7 +298,7 @@ provide(pageAdmissionKey, async (address: string) => {
     try {
       const resolved = await resolveApplicationEntry({ path });
       if (!panelEntryApplication(path)) await catalog.ensureApplication(resolved.applicationId).catch(() => undefined);
-      return { ok: true };
+      return { ok: true, openedEntry: resolved };
     } catch (error) {
       if (error instanceof ApiRequestError && error.status === 403) {
         return { ok: false, reason: "forbidden", error: { code: "FORBIDDEN", message: error.message } };

@@ -17,7 +17,6 @@ export function contextProducts(transport: ManagerRequest): ContextProducts {
     graph: method(products => products.graph),
     defaultProjectionWarnings: method(products => products.defaultProjectionWarnings),
     projections: method(products => products.projections),
-    subscribe: method(products => products.subscribe),
     agentContext: method(products => products.agentContext),
     sourceTypes: method(products => products.sourceTypes),
     object: method(products => products.object),
@@ -39,14 +38,12 @@ export function contextProducts(transport: ManagerRequest): ContextProducts {
     counts: method(products => products.counts),
     get: method(products => products.get),
     dependencies: method(products => products.dependencies),
-    home: method(products => products.home),
     overlay: method(products => products.overlay),
     saveOverlay: method(products => products.saveOverlay),
     save: method(products => products.save),
     copy: method(products => products.copy),
     createPage: method(products => products.createPage),
     createDashboard: method(products => products.createDashboard),
-    useHome: method(products => products.useHome),
     delete: method(products => products.delete),
   };
 }

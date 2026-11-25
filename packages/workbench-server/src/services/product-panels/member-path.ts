@@ -17,7 +17,7 @@ import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-
 import type { ProductPanelNestedReadRequest, ProductPanelNestedReadResponse } from "@ontomato/contracts/panel-host";
 import { HttpError } from "../../utils/errors";
 import { productGrantAllowed, productGrantsAllowedBatch, requireProductGrant, type ProductOwner } from "../product-governance/grants";
-import { requirePanelEntry } from "./application-use";
+import { readRegisteredPanelEntry, requirePanelEntry } from "./application-use";
 import { parseStoredDefinition } from "./definition-diagnostics";
 import { panelDefinition } from "./render-definitions";
 import { readPanelDomainComponents } from "./component-catalogue";
@@ -31,7 +31,7 @@ type PanelPathRoot = Pick<ProductPanel, "manifest"> & { id?: string };
 type ReadPathSegment = ProductPanelNestedReadRequest["memberPath"][number];
 type AnyPathSegment = ReadPathSegment | PanelMemberPath[number];
 type RegisteredSource = PanelUseRef & { kind?: "registered" | "frame" };
-type PanelEntry = Awaited<ReturnType<typeof requirePanelEntry>>;
+type PanelEntry = Awaited<ReturnType<typeof readRegisteredPanelEntry>>;
 
 function memoize<K, V>(cache: Map<K, Promise<V>>, key: K, load: () => Promise<V>): Promise<V> {
   const cached = cache.get(key);
@@ -57,7 +57,7 @@ export class PanelReadBatchCache {
   }
 
   entry(source: PanelUseRef) {
-    return memoize(this.entries, `${source.applicationId}\0${source.useId}`, () => requirePanelEntry(this.viewer, source, this.owner));
+    return memoize(this.entries, `${source.applicationId}\0${source.useId}`, () => readRegisteredPanelEntry(this.viewer, source, this.owner));
   }
 
   allowed(id: string) {
@@ -138,9 +138,12 @@ async function requireTarget(
 
 export async function requireRegisteredPanelRoot(
   owner: ProductOwner, viewer: AssistantCredentials, source: RegisteredSource,
-  { client, expectedPanelId, batchCache }: { client?: QueryClient; expectedPanelId?: string; batchCache?: PanelReadBatchCache } = {},
+  { client, expectedPanelId, batchCache, admitEntry }: {
+    client?: QueryClient; expectedPanelId?: string; batchCache?: PanelReadBatchCache; admitEntry?: boolean;
+  } = {},
 ) {
-  const entry = await (batchCache ? batchCache.entry(source) : requirePanelEntry(viewer, source, owner));
+  const entry = await (admitEntry ? requirePanelEntry(viewer, source, owner)
+    : batchCache ? batchCache.entry(source) : readRegisteredPanelEntry(viewer, source, owner));
   const id = registeredPanelRootId(source, entry);
   if (id === undefined || (expectedPanelId !== undefined && expectedPanelId !== id))
     throw new HttpError(404, "This entry does not use the requested application frame", "PANEL_FRAME_UNAVAILABLE");

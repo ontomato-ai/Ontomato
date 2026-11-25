@@ -15,19 +15,6 @@ import {lockProducts} from './store';
 import type {ProductOwner} from '../product-governance/grants';
 import {migratePlatformProjection} from './platform-migration';
 import type {PoolClient} from 'pg';
-const synchronized=new Map<string,{at:number;pending?:Promise<unknown>}>();
-export async function ensurePlatformAssets(owner:ProductOwner,credentials:AssistantCredentials){
- const key=owner.domainId+':'+owner.userId,previous=synchronized.get(key);
- if(previous?.pending){await previous.pending;return;}
- if(previous&&Date.now()-previous.at<60_000)return;
- const pending=(async()=>{
-  const response=await backendGet('platform-sync-permission',config.dataQuery.baseUrl+'/platform/applications/platform-assets-access',{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1,timeoutMs:15_000});
-  const permissions=JSON.parse(response.text);if(permissions.data?.allowed!==true)return;
-  await synchronizePlatformAssets(owner,credentials,false);
- })();
- synchronized.set(key,{at:0,pending});try{await pending;synchronized.set(key,{at:Date.now()});}catch(error){synchronized.delete(key);throw error;}
-}
-
 export async function nativeAgentAsset(domain:string,assetId:string){
  const result=await getPostgresPool().query(`SELECT agent_id FROM ${t('product_native_agent_bindings')} WHERE domain_id=$1 AND asset_id=$2`,[domain,assetId]);
  return result.rows[0]?.agent_id as string|undefined;
@@ -41,7 +28,7 @@ export async function nativeApplicationAsset(domain:string,assetId:string){
  return result.rows[0]?.application_id as string|undefined;
 }
 /** Reconcile catalog identities without replacing their execution engines or assigning execution roles. */
-export async function synchronizePlatformAssets(owner:ProductOwner,credentials:AssistantCredentials,migrateLegacy=true){
+export async function synchronizePlatformAssets(owner:ProductOwner,credentials:AssistantCredentials){
  const agents=(await assistantStore.agents(owner.domainId)).filter(agent=>['regular','analysis'].includes(agent.kind));
  const response=await backendGet('platform-product-catalog',config.dataQuery.baseUrl+'/platform/applications?purpose=navigation',{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1,timeoutMs:15_000});
  const catalog=JSON.parse(response.text);if(!Array.isArray(catalog.data))throw new Error('Application catalog unavailable');
@@ -51,7 +38,7 @@ export async function synchronizePlatformAssets(owner:ProductOwner,credentials:A
   async function insert(id:string,name:string,description:string,document:unknown){
    const exists=await client.query(`SELECT 1 FROM ${t('product_assets')} WHERE domain_id=$1 AND id=$2`,[owner.domainId,id]);if(exists.rows.length)return;
    const input=productAssetInputSchema.parse({name,description:description.slice(0,2000),document});
-   await registerProductResource(owner,id,true);
+   await registerProductResource(owner,id,true,{createOnly:true});
    const saved=await client.query(`INSERT INTO ${t('product_assets')}(domain_id,id,owner_id,name,description,visibility,document) VALUES($1,$2,$3,$4,$5,'private',$6::jsonb) RETURNING revision,created_at,updated_at`,[owner.domainId,id,owner.userId,input.name,input.description,JSON.stringify(input.document)]);
    const row=saved.rows[0];const asset=productAssetSchema.parse({...input,id,ownerId:owner.userId,revision:row.revision,createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString(),editable:true});
    await client.query(`INSERT INTO ${t('product_asset_revisions')}(domain_id,asset_id,revision,asset) VALUES($1,$2,$3,$4::jsonb)`,[owner.domainId,id,row.revision,JSON.stringify(asset)]);
@@ -75,7 +62,6 @@ export async function synchronizePlatformAssets(owner:ProductOwner,credentials:A
   }
  });
   await synchronizeProductOntology(owner);
-  if(!migrateLegacy)return {created:inserted};
  const legacy=await getPostgresPool().query(`SELECT id,revision,document FROM ${t('product_assets')} WHERE domain_id=$1 AND owner_id=$2 AND document->>'kind'='widget' AND document->'widget'->>'kind'='platform'`,[owner.domainId,owner.userId]);
  for(const row of legacy.rows){
   if(row.document.widget.source==='assistant'){
@@ -95,10 +81,11 @@ export async function updateNativeAgent(asset:ProductAsset,owner:ProductOwner,cl
 
 export async function synchronizeNativeProfile(client:PoolClient,owner:ProductOwner,agent:import('../assistant/store').AgentRow,locale?:string){
  const binding=await client.query(`SELECT asset_id FROM ${t('product_native_agent_bindings')} WHERE domain_id=$1 AND agent_id=$2`,[owner.domainId,agent.id]);
- const id=binding.rows[0]?.asset_id;if(!id)return;
+ const id=binding.rows[0]?.asset_id;if(!id)return false;
  const result=await client.query(`UPDATE ${t('product_assets')} SET name=$3,description=$4,document=jsonb_set(document,'{instructions}',to_jsonb($5::text)),revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 RETURNING *`,[owner.domainId,id,assistantName(agent,locale),assistantDescription(agent,locale),effectiveSystemPrompt(agent,locale)]);
- const row=result.rows[0];if(!row)return;
+ const row=result.rows[0];if(!row)return false;
  const asset=productAssetSchema.parse({id:row.id,name:row.name,description:row.description,visibility:row.visibility,document:row.document,revision:row.revision,ownerId:row.owner_id,createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString(),editable:true});
  await client.query(`INSERT INTO ${t('product_asset_revisions')}(domain_id,asset_id,revision,asset) VALUES($1,$2,$3,$4::jsonb)`,[owner.domainId,id,row.revision,JSON.stringify(asset)]);
  const registration=ontologyRegistration(asset);if(registration)await client.query(`INSERT INTO ${t('product_ontology_outbox')}(domain_id,asset_id,revision,registration) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(domain_id,asset_id) DO UPDATE SET revision=EXCLUDED.revision,registration=EXCLUDED.registration`,[owner.domainId,id,row.revision,JSON.stringify(registration)]);
+ return Boolean(registration);
 }

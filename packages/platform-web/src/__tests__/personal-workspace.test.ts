@@ -27,7 +27,7 @@ vi.mock("@ontomato/workbench-ui/features/dashboard", () => ({ DashboardCardPicke
 const application = { id: "app-orders", kind: "hosted", category: "business", names: { en: "Orders" }, descriptions: {}, icon: "pages", rail: "apps", sort: 0, entry: { path: "/orders" }, entryAccess: ["orders"], scheduleAdapter: null, releaseId: "release" };
 const workspace=()=>({...defaultPersonalWorkspace(),dashboardIds:['board-a'],applicationIds:['app-orders']});
 const blocks=()=>['assistant','apps','data','tasks','recent','conversations'].map(source=>productAssetSchema.parse({id:source,name:source,ownerId:'alice',visibility:'private',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),editable:true,document:{kind:'widget',widget:{kind:'platform',source}}}));
-const home=()=>productAssetSchema.parse({id:'home',name:'Home',ownerId:'alice',visibility:'private',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),editable:true,document:{kind:'page',compositionVersion:2,workspace:workspace(),children:blocks().map(block=>({assetId:block.id,column:'main'}))}});
+const home=()=>productAssetSchema.parse({id:'workspace-page',name:'Workspace',ownerId:'alice',visibility:'private',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),editable:true,document:{kind:'page',compositionVersion:2,workspace:workspace(),children:blocks().map(block=>({assetId:block.id,column:'main'}))}});
 beforeEach(() => {
   api.failTasks = false;
   api.failSave = false;
@@ -40,12 +40,12 @@ beforeEach(() => {
       if(init?.method==='PUT'){if(api.failSave)throw new Error('Save failed');const input=JSON.parse(String(init.body));api.saved=input.workspace;return Response.json({revision:1,workspace:input.workspace});}
       return Response.json({revision:0,workspace:null});
     }
-    if(path==='/api/product-assets/home'&&init?.method==='PUT'){
+    if(path==='/api/product-assets/workspace-page'&&init?.method==='PUT'){
       if(api.failSave)throw new Error('Save failed');
       const input=JSON.parse(String(init.body));
       return Response.json({asset:{...home(),...input,revision:2}});
     }
-    if(path==='/api/product-assets/home')return Response.json({asset:home()});
+    if(path==='/api/product-assets/workspace-page')return Response.json({asset:home()});
     if(path==='/api/product-assets')return Response.json({assets:blocks()});
     if (path.includes("scheduled-tasks")) {
       if (api.failTasks) throw new Error("Task service unavailable");
@@ -71,7 +71,7 @@ async function page(stubs: Record<string, boolean> = {}, platformRoutes = false)
   ] });
   await router.push(platformRoutes ? "/home" : "/workspace");
   const open = vi.fn();
-  const wrapper = mount(Workspace, { global: {
+  const wrapper = mount(Workspace, { props: { productAssetId: 'workspace-page' }, global: {
     stubs,
     plugins: [router, ElementPlus, createI18n({ legacy: false, locale: "en", messages: { en: { ontology: englishMessages.ontology } } })],
     provide: { [openApplicationKey as symbol]: open },
@@ -117,7 +117,7 @@ describe("personal workspace", () => {
     const previous = api.request.getMockImplementation()!;
     api.request.mockImplementation((path: string, init?: RequestInit) => {
       if (path.includes("platform/applications")) return Promise.resolve(Response.json({ success: true, data: [panelApp] }));
-      if (path === "/api/product-assets/home") {
+      if (path === "/api/product-assets/workspace-page") {
         const asset = home();
         return Promise.resolve(Response.json({ asset: { ...asset, document: {
           ...asset.document, workspace: { ...workspace(), applicationIds: [panelApp.id] },
@@ -152,27 +152,26 @@ describe("personal workspace", () => {
     const wrapper=mount(Workspace,{props:{platformWidgetAsset:asset,preview:true},global:{plugins:[router,ElementPlus,createI18n({legacy:false,locale:'en',messages:{en:{}}})],provide:{[openApplicationKey as symbol]:vi.fn()}}});
     await flushPromises();
     expect(wrapper.find('a.application-card').text()).toContain('Orders');
-    expect(api.request.mock.calls.some(([path])=>path==='/api/product-assets/home')).toBe(false);
+    expect(api.request.mock.calls.some(([path])=>path==='/api/product-assets/workspace-page')).toBe(false);
     expect(wrapper.find('.platform-page-header').exists()).toBe(false);
     wrapper.unmount();
   });
   it('does not synthesize workspace sections when the page composition is empty',async()=>{
     const previous=api.request.getMockImplementation()!;
-    api.request.mockImplementation((path:string,init?:RequestInit)=>path==='/api/product-assets/home'&&!init?.method?Promise.resolve(Response.json({asset:{...home(),document:{...home().document,children:[]}}})):previous(path,init));
+    api.request.mockImplementation((path:string,init?:RequestInit)=>path==='/api/product-assets/workspace-page'&&!init?.method?Promise.resolve(Response.json({asset:{...home(),document:{...home().document,children:[]}}})):previous(path,init));
     const {wrapper}=await page();
     expect(wrapper.findComponent({name:'ShellComposer'}).exists()).toBe(false);
     expect(wrapper.find('[data-section]').exists()).toBe(false);
     wrapper.unmount();
   });
-  it('offers one question entry for a populated home without an assistant block',async()=>{
+  it('does not inject a question entry into an asset with no assistant block',async()=>{
     const previous=api.request.getMockImplementation()!;
     const asset = home();
     if (asset.document.kind !== 'page') throw new Error('Expected a home page');
     const document = { ...asset.document, children: asset.document.children.filter(child => child.assetId !== 'assistant') };
-    api.request.mockImplementation((path:string,init?:RequestInit)=>path==='/api/product-assets/home'&&!init?.method?Promise.resolve(Response.json({asset:{...asset,document}})):previous(path,init));
+    api.request.mockImplementation((path:string,init?:RequestInit)=>path==='/api/product-assets/workspace-page'&&!init?.method?Promise.resolve(Response.json({asset:{...asset,document}})):previous(path,init));
     const {wrapper}=await page();
-    expect(wrapper.find('.home-composer').exists()).toBe(true);
-    expect(wrapper.findAllComponents({name:'ShellComposer'})).toHaveLength(1);
+    expect(wrapper.findAllComponents({name:'ShellComposer'})).toHaveLength(0);
     wrapper.unmount();
   });
   it('allows configuration while unrelated task loading is still pending',async()=>{
@@ -323,7 +322,7 @@ describe("personal workspace", () => {
     const previous = api.request.getMockImplementation()!;
     const pinnedObject = { className: "Order", primaryKey: "ord-1", title: "Order #1" };
     api.request.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === "/api/product-assets/home") {
+      if (path === "/api/product-assets/workspace-page") {
         const asset = home();
         return Promise.resolve(Response.json({
           asset: {
@@ -352,11 +351,6 @@ describe("personal workspace", () => {
           ],
         }));
       }
-      if (path === "/api/personal-workspace") {
-        return Promise.resolve(Response.json({
-          data: { ...workspace(), objectOpening: "drawer", pinnedObjects: [pinnedObject] },
-        }));
-      }
       return previous(path, init);
     });
 
@@ -369,6 +363,7 @@ describe("personal workspace", () => {
     });
     await router.push("/workspace");
     const wrapper = mount(Workspace, {
+      props: { productAssetId: 'workspace-page' },
       global: {
         plugins: [
           router,

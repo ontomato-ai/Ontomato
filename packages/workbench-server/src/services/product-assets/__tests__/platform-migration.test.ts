@@ -2,7 +2,7 @@ import {beforeEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({get:vi.fn(),list:vi.fn(),save:vi.fn(),query:vi.fn(),active:vi.fn()}));
 vi.mock('../store',()=>({getProduct:mocks.get,listProducts:mocks.list,saveProduct:mocks.save,lockProducts:async()=>{}}));
 vi.mock('../releases',()=>({activeProductBundle:mocks.active}));
-vi.mock('../platform-assets',()=>({nativeAgentAsset:async()=>undefined,ensurePlatformAssets:async()=>{}}));
+vi.mock('../platform-assets',()=>({nativeAgentAsset:async()=>undefined}));
 vi.mock('../platform-objects',()=>({platformObjectProvider:()=>({})}));
 vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(action:(client:{query:typeof mocks.query})=>unknown)=>action({query:mocks.query})}));

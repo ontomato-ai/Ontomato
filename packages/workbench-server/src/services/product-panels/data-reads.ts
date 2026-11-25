@@ -19,6 +19,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
+import { tApp } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
@@ -930,9 +931,16 @@ export async function readProductPanelData(
       ...(rowOperations && { rowOperations }),
     };
   } catch (error) {
-    if (error instanceof HttpError && (error.status === 401 || error.status === 403)) return { status: "forbidden" };
-    if (error instanceof HttpError && error.code === "GRAPH_VERSION_CHANGED")
+    if (error instanceof HttpError && error.status === 403) {
+      return { status: "forbidden", reason: error.message || tApp("foundation.error.unauthorized") };
+    }
+    if (error instanceof HttpError && error.status === 401) {
+      return { status: "error", message: tApp("foundation.error.unauthorized"), code: "UNAUTHENTICATED" };
+    }
+    if (error instanceof HttpError && (error.code === "GRAPH_VERSION_CHANGED"
+      || error.code === "NO_VISIBLE_FIELDS" || error.code === "NO_READABLE_OBJECT_KEY")) {
       return { status: "error", message: error.message, code: error.code };
+    }
     if (error instanceof HttpError || error instanceof BackendUnavailableError || error instanceof z.ZodError || error instanceof SyntaxError)
       return { status: "error", message: error.message };
     if (batchCache) {

@@ -174,9 +174,9 @@ it("reads an authored candidate member using the workspace's actual build-test c
 });
 
 it("refuses a missing member, an off-workspace caller and a projection without use", async () => {
-  expect(await readCandidate("invented")).toEqual({ status: "forbidden" });
+  expect(await readCandidate("invented")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(await readCandidate("result", "bob")).toMatchObject({ status: "error", message: "Workspace not found" });
   canUseProjection = false;
-  expect(await readCandidate()).toEqual({ status: "forbidden" });
+  expect(await readCandidate()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(ownerContexts).toEqual([]);
 });

@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -121,7 +122,7 @@ beforeAll(async () => {
     expect(req.body).toEqual({ status: "PUBLISHED" });
     res.json({ success: true, data: [stored()] });
   });
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== use.applicationId) { next(); return; }
     if (req.header("tk") !== "alice") { res.sendStatus(403); return; }
     res.json({ success: true, data: {

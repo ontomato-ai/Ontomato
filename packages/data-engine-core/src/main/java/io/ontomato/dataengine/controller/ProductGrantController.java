@@ -7,7 +7,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 public class ProductGrantController {
@@ -17,7 +19,19 @@ public class ProductGrantController {
     private final ProductGrantService grants;
     private final WorkbenchServiceAuthentication authentication;
     public ProductGrantController(ProductGrantService grants,WorkbenchServiceAuthentication authentication){this.grants=grants;this.authentication=authentication;}
-    @PostMapping("/product-governance/check") public Object check(@RequestBody Map<String,Object> body){return Map.of("allowed",grants.allowed(text(body,"id"),text(body,"verb")));}
+    @PostMapping("/product-governance/check")
+    public Object check(HttpServletRequest request, @RequestBody Map<String, Object> body) {
+        if (body.containsKey("target") || body.containsKey("ownerFacts")) {
+            authentication.authenticate(request);
+            if (!(body.get("target") instanceof Map<?, ?> target)
+                    || !(body.get("ownerFacts") instanceof Map<?, ?> facts) || !facts.containsKey("ownerId"))
+                throw new IllegalArgumentException("Expected product target and owner facts");
+            return grants.managementAccess(
+                new ProductGrantService.ObjectTarget(text(target, "domainId"), text(target, "kind"), text(target, "id")),
+                new ProductGrantService.OwnerFacts(optionalText(facts, "ownerId"), text(facts, "state")));
+        }
+        return Map.of("allowed", grants.allowed(text(body, "id"), text(body, "verb")));
+    }
     @PostMapping("/product-governance/check-batch")
     public Object checkBatch(@RequestBody Map<String, Object> body) {
         if (!(body.get("ids") instanceof List<?> values) || values.isEmpty() || values.size() > 200)
@@ -45,8 +59,12 @@ public class ProductGrantController {
         if(!(body.get("shared") instanceof Boolean shared))throw new IllegalArgumentException("Expected sharing intent");
         Object admin = body.getOrDefault("grantAdmin", false);
         if (!(admin instanceof Boolean grantAdmin)) throw new IllegalArgumentException("Expected grantAdmin");
-        grants.register(text(body, "domainId"), text(body, "id"), optionalText(body, "ownerId"), shared,
+        if (!(body.getOrDefault("createOnly", false) instanceof Boolean createOnly))
+            throw new IllegalArgumentException("Expected createOnly");
+        boolean created = grants.register(text(body, "domainId"), text(body, "id"), optionalText(body, "ownerId"), shared,
             body.get("verbs") == null ? List.of() : verbs(body), grantAdmin, optionalText(body, "legacyMenuPermission"));
+        if (createOnly && !created)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Product identity is already registered");
         return Map.of("success", true);
     }
     @PostMapping(UNREGISTER_PATH)
@@ -82,12 +100,12 @@ public class ProductGrantController {
         return verbs;
     }
 
-    private static String optionalText(Map<String, Object> body, String key) {
+    private static String optionalText(Map<?, ?> body, String key) {
         Object value = body.get(key);
         if (value == null) return null;
         if (value instanceof String text) return text;
         throw new IllegalArgumentException("Expected " + key);
     }
 
-    private static String text(Map<String,Object> body,String key){if(!(body.get(key) instanceof String value)||value.isBlank())throw new IllegalArgumentException("Expected "+key);return value;}
+    private static String text(Map<?, ?> body,String key){if(!(body.get(key) instanceof String value)||value.isBlank())throw new IllegalArgumentException("Expected "+key);return value;}
 }

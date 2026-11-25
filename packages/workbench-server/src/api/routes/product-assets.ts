@@ -6,7 +6,7 @@ import { z } from "zod";
 import { productAuthoringSchema, productTypes,productQuerySchema } from "@ontomato/contracts/product-assets";
 import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
 import { context, wrap } from "../utils/agent-host";
-import { listProducts, getProduct, saveProduct, deleteProduct, personalHome,queryProducts,dependencyProducts,countProductTypes,readProductOverlay,saveProductOverlay } from "../../services/product-assets/store";
+import { listProducts, getProduct, saveProduct, deleteProduct, queryProducts,dependencyProducts,countProductTypes,readProductOverlay,saveProductOverlay } from "../../services/product-assets/store";
 import {personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 import { HttpError } from "../../utils/errors";
 import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
@@ -14,8 +14,6 @@ import {expandedProductDependencies} from '../../services/product-assets/depende
 import {readProductRelease,productReleaseIssues,snapshotAsset,publishProductBundle,rollbackProductBundle,listProductBundleReleases,synchronizeBundlePublication} from '../../services/product-assets/releases';
 import {assembleAgentProfile,renderAgentObjectContext,executeProfileTool} from '../../services/product-assets/agent-profile';
 import {validatePageState} from '@ontomato/contracts/product-page-state';
-import {productSubscriptionTargetSchema} from '@ontomato/contracts/product-subscriptions';
-import {subscribeProduct,resumeProductSubscription,deleteProductSubscription} from '../../services/product-assets/subscriptions';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
 import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant} from '../../services/product-governance/grants';
 import {requireProductUse} from '../../services/product-assets/grants';
@@ -29,7 +27,7 @@ import {registeredProductGraph} from '../../services/product-assets/ontology';
 import {publishedApplication,publishedApplicationRelease} from '../../services/product-assets/published';
 import {migratePlatformProjection} from '../../services/product-assets/platform-migration';
 import {migrateDashboardPage} from '../../services/product-assets/dashboard-migration';
-import {synchronizePlatformAssets,ensurePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
+import {synchronizePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
 import {assertAppBuilderAccess} from '../../services/app-builder/access';
 import {requirePermission} from '../../identity/installed';
 import {assertLegacyProductWrite} from '../../services/product-assets/panel-boundary';
@@ -44,20 +42,13 @@ router.post('/:id/create-page',wrap(async(req,res)=>{
   res.json({asset:await saveProduct(owner,randomUUID(),{name,description:source.description,visibility:'private',document:{...source.document,kind:'page',isTemplate:false}},0,credentials)});
 }));
 router.get("/types", wrap(async (_req,res) => { res.json({types:productTypes,schema:cachedZodToJsonSchema(productAuthoringSchema,{target:"jsonSchema7"})}); }));
-router.get('/query',wrap(async(req,res)=>{const c=context(req);await ensurePlatformAssets(c.owner,c.credentials);res.json(await queryProducts(c.owner,productQuerySchema.parse(req.query)));}));
+router.get('/query',wrap(async(req,res)=>{const c=context(req);res.json(await queryProducts(c.owner,productQuerySchema.parse(req.query)));}));
 router.get('/counts',wrap(async(req,res)=>{res.json({counts:await countProductTypes(context(req).owner)});}));
 router.get('/graph',wrap(async(req,res)=>{const {owner,credentials}=context(req);res.json({graph:await registeredProductGraph(owner,await listProducts(owner),credentials)});}));
 router.get('/validation/default-projections',wrap(async(req,res)=>{const c=context(req);res.json(await validateDefaultProjections(c.owner,c.credentials));}));
 router.get('/platform-object-types',wrap(async(_req,res)=>{res.json({objectTypes:platformObjectTypes()});}));
 router.get('/projections',wrap(async(req,res)=>{const input=z.object({kind:z.enum(['ObjectType','Definition','MetricView','Action']),id:z.string().min(1).max(200)}).parse(req.query);res.json(await discoverProjections(context(req).owner,input.kind,input.id));}));
-router.post('/subscriptions',wrap(async(req,res)=>{
-  const {owner,credentials}=context(req);
-  res.json(await subscribeProduct(owner,credentials,productSubscriptionTargetSchema.parse(req.body)));
-}));
-router.get('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);res.json(await resumeProductSubscription(c.owner,String(req.params.subscriptionId),c.credentials));}));
-router.delete('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);await deleteProductSubscription(c.owner,String(req.params.subscriptionId));res.json({success:true});}));
-router.get("/home", wrap(async (req,res) => { const c=context(req);res.json({asset:await personalHome(c.owner,c.credentials)}); }));
-router.get("/", wrap(async (req,res) => {const c=context(req);await ensurePlatformAssets(c.owner,c.credentials);res.json({assets:await listProducts(c.owner)}); }));
+router.get("/", wrap(async (req,res) => {const c=context(req);res.json({assets:await listProducts(c.owner)}); }));
 router.get('/published/:applicationId',wrap(async(req,res)=>{const c=context(req);const snapshot=await publishedApplication(c.owner,c.credentials,String(req.params.applicationId));res.json({roots:snapshot.roots,assets:snapshot.assets,contracts:snapshot.contracts,triggers:snapshot.triggers??[],issues:await productReleaseIssues(c.owner,snapshot,c.credentials)});}));
 router.get('/published/:applicationId/:id',wrap(async(req,res)=>{
   const {owner,credentials}=context(req),snapshot=await publishedApplication(owner,credentials,String(req.params.applicationId));
@@ -136,15 +127,6 @@ router.post("/:id/copy", wrap(async (req,res) => {
   const {name} = z.object({name:z.string().trim().min(1).max(200)}).strict().parse(req.body);
   const input = {name,description:source.description,visibility:"private" as const,document:source.document};
   res.json({asset:await saveProduct(owner,randomUUID(),input,0,credentials)});
-}));
-router.post("/:id/use-home", wrap(async (req,res) => {
-  const {owner,credentials} = context(req);
-  const {revision} = z.object({revision:z.number().int().positive()}).strict().parse(req.body);
-  const source = await getProduct(owner,String(req.params.id));
-  if (source.document.kind !== "layout-template" && source.document.kind !== "page") throw new HttpError(400,"Choose a page or layout template","INVALID_HOME_TEMPLATE");
-  const home = await personalHome(owner,credentials);
-  const input = {name:home.name,description:home.description,visibility:"private" as const,document:{...source.document,kind:"page" as const,isTemplate:false}};
-  res.json({asset:await saveProduct(owner,home.id,input,revision,credentials)});
 }));
 router.delete("/:id", wrap(async (req,res) => {
   const {revision} = z.object({revision:z.number().int().positive()}).strict().parse(req.body);

@@ -313,15 +313,12 @@ describe("Route A standalone opening and rail-driven fetching", () => {
     vi.stubGlobal("fetch", async (input: string | URL) => {
       const url = new URL(String(input), "http://localhost");
       requests.push(url.pathname + url.search);
-      if (url.pathname === "/api/data-query/platform/applications/resolve-entry") {
+      if (url.pathname === "/api/product-panels/application-entry") {
         return Response.json({
-          success: true,
-          data: {
-            applicationId: "ontology",
-            use: objectsUse,
-            framePanelId: ontology.framePanelId,
-            menu: { singleEntry: false, names: ontology.names, groups: ontology.groups, panelUses: ontology.panelUses },
-          },
+          applicationId: "ontology",
+          use: objectsUse,
+          framePanelId: ontology.framePanelId,
+          menu: { singleEntry: false, names: ontology.names, groups: ontology.groups, panelUses: ontology.panelUses },
         });
       }
       if (url.pathname === "/api/data-query/platform/applications/ontology") {
@@ -344,7 +341,7 @@ describe("Route A standalone opening and rail-driven fetching", () => {
     expect(router.currentRoute.value.query.standalone).toBe("1");
     expect(requests.some((url) => url.includes("purpose=navigation"))).toBe(false);
     expect(requests).toEqual([
-      "/api/data-query/platform/applications/resolve-entry?path=%2Fontology%2Fobjects",
+      "/api/product-panels/application-entry?path=%2Fontology%2Fobjects",
       "/api/data-query/platform/applications/ontology",
     ]);
   });

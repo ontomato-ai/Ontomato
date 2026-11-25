@@ -13,6 +13,7 @@ public interface ApplicationAccess {
     void requireConnectedRegistration(User user);
     boolean canMaintain(JSONObject application, User user);
     boolean canEnter(JSONObject application, User user);
+    default void requireLegacyProductAuthor(User publisher, String authorId) {}
     default Set<String> enterableApplicationIds(List<JSONObject> apps, User user) {
         return apps.stream().filter(app -> canEnter(app, user))
             .map(app -> app.getString("id")).collect(Collectors.toSet());

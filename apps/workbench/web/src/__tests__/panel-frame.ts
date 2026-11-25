@@ -21,7 +21,7 @@ import {
   type PlatformTask,
   type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
-import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import { isApplicationPanelUse, type ApplicationEntryResolution, type ApplicationPanelUse, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -318,24 +318,9 @@ export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Se
   };
 }
 
-/** Node's answer for a panel read: the panel, and the page skill context when the read names the page it is shown for. */
-export function panelAnswer(panel: ProductPanel, request: Sent) {
-  const pageSkillContext = pageSkillContextFor(panel, request);
-  return Response.json({ panel, ...(pageSkillContext ? { pageSkillContext } : {}) });
-}
-
-const PAGE_SKILL_CONTEXT_SUFFIX = "/page-skill-context";
-/**
- * Node's page skill context for a panel, read on its own: what a test answers for the panel's record read with the same
- * page — its use relation and entrance — carries it, so each test states the context once, beside its record.
- */
-async function pageSkillContextFrom(answer: (request: Sent) => Response | Promise<Response>, request: Sent) {
-  const record = await answer({ ...request, path: request.path.slice(0, -PAGE_SKILL_CONTEXT_SUFFIX.length) });
-  if (!record.ok) return record;
-  const { pageSkillContext } = await record.json() as { pageSkillContext?: unknown };
-  return pageSkillContext === undefined
-    ? Response.json({ error: { code: "NOT_FOUND", message: `No page skill context at ${request.path}` } }, { status: 404 })
-    : Response.json({ pageSkillContext });
+/** Node's ordinary panel read only supplies the definition. */
+export function panelAnswer(panel: ProductPanel, _request?: Sent) {
+  return Response.json({ panel });
 }
 
 /** One request that reached the network, as the platform sent it for the frame. */
@@ -409,8 +394,10 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
     };
     sent.push(request);
     if (request.path === SDK_MANIFEST_PATH) return Response.json(sdkManifest);
-    if (request.path === RESOLVE_ENTRY_PATH) return resolveEntryFrom(answer, request);
-    if (request.path.endsWith(PAGE_SKILL_CONTEXT_SUFFIX)) return pageSkillContextFrom(answer, request);
+    if (request.path === APPLICATION_ENTRY_PATH) {
+      const response = await answer(request);
+      return response.status === 404 ? resolveEntryFrom(answer, request) : response;
+    }
     if (request.method === "POST" && request.path === panelReadBatchPath) {
       const response = await answer(request);
       if (response.status !== 404) return response;
@@ -422,7 +409,15 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
   return sent;
 }
 
-const RESOLVE_ENTRY_PATH = "/api/data-query/platform/applications/resolve-entry";
+export const APPLICATION_ENTRY_PATH = "/api/product-panels/application-entry";
+
+export function applicationEntrySkill(applicationId: string, use: ApplicationPanelUse): NonNullable<ApplicationEntryResolution["pageSkillContext"]> {
+  const locator = "permissionCode" in use.access
+    ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
+    : { access: "domain-member" as const, pageKey: use.pageKey };
+  const entry = { kind: "application-use" as const, applicationId, useId: use.id };
+  return { mode: "member", locator, entry, member: { source: entry, memberPath: [], ref: memberRefOf(use.panelId) } };
+}
 
 /**
  * Java's \`resolve-entry\`, answered from the use relations a test declares for the application (its \`/panel-uses\`
@@ -458,11 +453,12 @@ async function resolveEntryFrom(answer: (request: Sent) => Response | Promise<Re
     singleEntry?: boolean;
   };
   const namedUses = uses.filter((one) => one.names);
-  return Response.json({ success: true, data: {
+  return Response.json({
     applicationId, use,
     menu: { singleEntry: singleEntry ?? namedUses.length <= 1, ...(names ? { names } : {}), groups: groups ?? [], panelUses: namedUses },
     ...(framePanelId ? { framePanelId } : {}), ...(theme ? { theme } : {}),
-  } });
+    ...(isApplicationPanelUse(use) && { pageSkillContext: applicationEntrySkill(applicationId, use) }),
+  });
 }
 
 /** The answer a test gives for anything it did not expect. */
@@ -613,8 +609,8 @@ export function leaveFrame() {
   document.body.innerHTML = "";
 }
 
-/** Node's snapshot of a panel's revisions, with the page skill context when the read names the page it is shown for. */
-export function panelSnapshot(panel: ProductPanel, current: Record<string, { revision: number }> = projections, request?: Sent) {
+/** Node's snapshot of a panel's revisions. */
+export function panelSnapshot(panel: ProductPanel, current: Record<string, { revision: number }> = projections, _request?: Sent) {
   const revisions = new Map<string, number>();
   const members: PanelMemberSnapshot[] = [];
   for (const [member, { target }] of Object.entries(panel.manifest.members)) {
@@ -625,12 +621,10 @@ export function panelSnapshot(panel: ProductPanel, current: Record<string, { rev
       members.push({ status: "ready", memberPath: [{ member }], target: { kind: "projection", id }, revision });
     }
   }
-  const pageSkillContext = request && pageSkillContextFor(panel, request);
   return Response.json({
     panel: { id: panel.id, revision: panel.revision },
     projections: [...revisions].map(([id, revision]) => ({ id, revision })),
     members,
-    ...(pageSkillContext ? { pageSkillContext } : {}),
   });
 }
 

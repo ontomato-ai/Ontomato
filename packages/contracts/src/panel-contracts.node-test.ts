@@ -1798,23 +1798,24 @@ test("list column headers come from owner fields or from panel message keys", ()
   assert.equal(panelObjectListColumnSchema.safeParse({ ...panelColumn, empty: "No notes" }).success, false);
 });
 
-test("panel records and snapshots share the content and frame query", () => {
+test("panel record and snapshot reads do not accept entry skill context", () => {
   assert.equal(productPanelSnapshotQuerySchema, productPanelReadQuerySchema);
   const use = { applicationId: "ontology", useId: "ontology-agent-settings" };
   const pageKey = "agent-settings";
   const menu = { ...use, pageKey, permissionCode: "analysis-agent" };
   const member = { ...use, pageKey, access: "domain-member" };
   const frame = { ...use, source: "frame" };
-  for (const query of [{}, menu, member, frame]) assert.deepEqual(productPanelReadQuerySchema.parse(query), query);
+  for (const query of [{}, frame]) assert.deepEqual(productPanelReadQuerySchema.parse(query), query);
   for (const query of [
-    use, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined }, { ...menu, access: member.access },
+    use, menu, member, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined }, { ...menu, access: member.access },
     { source: "frame" }, { ...frame, useId: undefined }, { ...menu, source: "frame" },
   ]) {
     assert.equal(productPanelReadQuerySchema.safeParse(query).success, false);
   }
 });
 
-test("current panel reads can carry a page skill member for the verified entrance", () => {
+test("an opening carries the admitted entry and page skill separately from the panel record", async () => {
+  const { applicationEntryResolutionSchema } = await import("./product-panels");
   const panel = {
     id: "agent-settings", domainId: "domain", ownerId: "owner", revision: 1,
     createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: false,
@@ -1842,15 +1843,19 @@ test("current panel reads can carry a page skill member for the verified entranc
     manifest: { state: {}, members: { tasks: { target: { projectionId: "task-list" } } } },
   };
   assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel }), { panel: directPanel });
-  assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel, pageSkillContext }), { panel: directPanel, pageSkillContext });
   assert.deepEqual(productPanelResponseSchema.parse({ panel }), { panel });
-  assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext }).pageSkillContext, pageSkillContext);
-  const unavailable = { ...pageSkillContext, member: null };
-  assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext: unavailable }).pageSkillContext, unavailable);
-  assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext: { ...pageSkillContext, member: {} } }).success, false);
+  assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext }).success, false);
+  const resolution = { applicationId: "ontology",
+    use: { id: "ontology-agent-settings", panelId: panel.id, pageKey: "agent-settings",
+      path: "/ontology/agents", access: { permissionCode: "analysis-agent" } },
+    menu: { singleEntry: true, panelUses: [], groups: [] } };
+  assert.deepEqual(applicationEntryResolutionSchema.parse({ ...resolution, pageSkillContext }).pageSkillContext, pageSkillContext);
+  const unavailable = { ...pageSkillContext, entry: pageSkillContext.member.source, member: null };
+  assert.deepEqual(applicationEntryResolutionSchema.parse({ ...resolution, pageSkillContext: unavailable }).pageSkillContext, unavailable);
+  assert.equal(applicationEntryResolutionSchema.safeParse({ ...resolution, pageSkillContext: { ...pageSkillContext, member: {} } }).success, false);
 });
 
-test("panel reopen snapshots can carry a rechecked page skill context", () => {
+test("panel definition snapshots do not carry entry skill context", () => {
   const snapshot = {
     panel: { id: "agent-settings", revision: 1 },
     projections: [{ id: "definition-form", revision: 2 }],
@@ -1861,8 +1866,7 @@ test("panel reopen snapshots can carry a rechecked page skill context", () => {
     member: null,
   };
   assert.deepEqual(panelDefinitionSnapshotSchema.parse(snapshot), snapshot);
-  assert.deepEqual(panelDefinitionSnapshotSchema.parse({ ...snapshot, pageSkillContext }).pageSkillContext, pageSkillContext);
-  assert.equal(panelDefinitionSnapshotSchema.safeParse({ ...snapshot, pageSkillContext: { ...pageSkillContext, locator: {} } }).success, false);
+  assert.equal(panelDefinitionSnapshotSchema.safeParse({ ...snapshot, pageSkillContext }).success, false);
 });
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
