@@ -17,7 +17,7 @@ export function runtimeEnvironment(
   ensureRuntimeCredentials(root, env);
   env.AGENT_RUNTIME_PORT ||= "3001";
   env.AGENT_RUNTIME_URL ||= `http://127.0.0.1:${env.AGENT_RUNTIME_PORT}`;
-  env.AGENT_RUNTIME_CALLBACK_URL ||= `http://127.0.0.1:${env.PORT || "3000"}`;
+  env.AGENT_RUNTIME_CALLBACK_URL ||= `http://host.docker.internal:${env.PORT || "3000"}`;
   env.AGENT_CHANNEL_PROVIDERS ||= JSON.stringify([
     {id:"workbench",hostId:"workbench",url:env.AGENT_RUNTIME_CALLBACK_URL.replace(/\/$/,"")+"/internal/agent-channel",token:env.ONTOMATO_QUERY_SERVICE_TOKEN},
     {id:"observe",hostId:"workbench",url:env.AGENT_RUNTIME_CALLBACK_URL.replace(/\/$/,"")+"/internal/agent-channel",token:env.ONTOMATO_QUERY_SERVICE_TOKEN},
@@ -43,13 +43,12 @@ export function runtimeEnvironment(
   env.AGENT_RUNTIME_DATABASE ||= runtimeDatabase;
   env.POSTGRES_HOST ||= "127.0.0.1";
   env.POSTGRES_PORT ||= "5432";
-  env.ONTOMATO_QUERY_CALLBACK_URL ||= env.DATA_QUERY_BASE_URL;
   env.AGENT_RUNTIME_ROOT ||= join(root, "data/agent-runtime");
   env.AGENT_RUNTIME_HOST = "127.0.0.1";
   return env;
 }
 
-function dockerHostUrl(value) {
+export function dockerHostUrl(value) {
   const url = new URL(value);
   if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) url.hostname = "host.docker.internal";
   return url.href;

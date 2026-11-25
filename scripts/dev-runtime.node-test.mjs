@@ -22,6 +22,9 @@ test("dev shares a persistent credential and keeps data in the calling checkout"
   assert.equal(JSON.parse(first.AGENT_RUNTIME_HOSTS)[0].token, first.AGENT_RUNTIME_SERVICE_TOKEN);
   assert.equal(first.AGENT_RUNTIME_DATABASE, "fixture_database");
   assert.equal(first.AGENT_RUNTIME_URL, "http://127.0.0.1:3131");
+  assert.equal(new URL(first.AGENT_RUNTIME_CALLBACK_URL).origin, "http://host.docker.internal:3000");
+  assert.equal(new URL(JSON.parse(first.AGENT_CHANNEL_PROVIDERS).find(provider => provider.id === "ontology").url).origin,
+    "http://127.0.0.1:18087");
   assert.equal(relative(root, first.AGENT_RUNTIME_ROOT).startsWith(".."), false);
   assert.equal(statSync(join(root, ".secrets/agent-runtime.env")).mode & 0o777, 0o600);
   assert.doesNotMatch(readFileSync(join(root, ".env"), "utf8"), /AGENT_RUNTIME_SERVICE_TOKEN/);

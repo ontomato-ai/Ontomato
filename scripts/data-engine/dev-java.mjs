@@ -12,6 +12,7 @@ import {
 import { join, relative } from "node:path";
 import { parseEnv } from "node:util";
 import { holdForeground } from "../dev-command.mjs";
+import { dockerHostUrl } from "../dev-runtime.mjs";
 import { stageResources } from "./build-images.mjs";
 
 // The official Maven wrapper pair shipped by the reactor root.
@@ -126,7 +127,7 @@ export function startDevJava(
   );
   env.AGENT_RUNTIME_URL ||= "http://127.0.0.1:3001";
   env.ONTOMATO_QUERY_CALLBACK_URL ||=
-    env.DATA_QUERY_BASE_URL || "http://127.0.0.1:18087";
+    dockerHostUrl(env.DATA_QUERY_BASE_URL || "http://127.0.0.1:18087");
   env.ONTOMATO_CONF_DEFAULTS = join(staging, "payload/conf-defaults");
   // Certain VPNs (such as aTrustAgent) set up system SOCKS/HTTP proxies; when the JVM reads them, it hijacks local localhost connections,
   // leading to failure connecting to local PostgreSQL. Explicitly disable the JVM proxy here (placed last to ensure it overrides system-detected proxies).
