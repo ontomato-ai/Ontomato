@@ -273,6 +273,10 @@ export const applicationPanelInputsSchema = z.record(id, z.union([
 ]));
 export type ApplicationPanelInputs = z.infer<typeof applicationPanelInputsSchema>;
 
+/** Whether an application panel entry renders the platform's bottom page composer. Defaults to `"bottom"`. */
+export const applicationPanelPageComposerSchema = z.enum(["bottom", "none"]);
+export type ApplicationPanelPageComposer = z.infer<typeof applicationPanelPageComposerSchema>;
+
 /** Owned by Java ApplicationCatalog; shared panels contain none of these entry facts. */
 export const applicationPanelUseSchema = z.object({
   id,
@@ -292,6 +296,8 @@ export const applicationPanelUseSchema = z.object({
   icon: z.string().refine(text => text.trim().length > 0, "Expected a nonblank icon").optional(),
   inputs: applicationPanelInputsSchema.optional(),
   groupKey: applicationMetadataSchema.shape.groups.element.shape.key.optional(),
+  /** Suppresses the host's bottom floating PageComposer when set to `"none"` (e.g. page renders an inline composer). */
+  pageComposer: applicationPanelPageComposerSchema.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 

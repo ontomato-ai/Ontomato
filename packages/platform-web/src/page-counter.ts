@@ -24,7 +24,10 @@ export function providePlatformPageCounter(router: Router) {
     pageAgents: (page) => createAssistantClient().listPageAgents(page),
     preferredAgentId: ref(readRememberedAgent()),
     ask(agentId, text, page) {
-      void router.push({ path: platformRoutes.chat.path, query: { agentId, prompt: text, page } });
+      void router.push({
+        path: platformRoutes.chat.path,
+        query: page ? { agentId, prompt: text, page } : { agentId, prompt: text },
+      });
     },
   } satisfies PageCounter);
 }

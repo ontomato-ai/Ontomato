@@ -533,4 +533,27 @@ class PanelApplicationsTest {
         assertEquals("records", monitor.groupKey());
         assertEquals("activity", monitor.icon());
     }
+
+    @Test void preservesPageComposerAndRejectsInvalidOrNativePageComposer() {
+        var noneUse = new ApplicationPanelUse("home", "home", "panel-p", "/applications/app-panel-a/home",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Home"),
+            null, null, null, null, null, ApplicationPanelUse.PAGE_COMPOSER_NONE);
+        assertEquals("none", ApplicationPanelUse.canonical(List.of(noneUse)).getFirst().pageComposer());
+
+        var bottomUse = new ApplicationPanelUse("home-bottom", "home-bottom", "panel-p", "/applications/app-panel-a/bottom",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Bottom"),
+            null, null, null, null, null, ApplicationPanelUse.PAGE_COMPOSER_BOTTOM);
+        assertEquals("bottom", ApplicationPanelUse.canonical(List.of(bottomUse)).getFirst().pageComposer());
+
+        var invalidUse = new ApplicationPanelUse("home-bad", "home-bad", "panel-p", "/applications/app-panel-a/bad",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Bad"),
+            null, null, null, null, null, "inline");
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(invalidUse)));
+
+        var nativeWithComposer = new ApplicationPanelUse("bad-native-composer", "bad-native-composer", null,
+            "/settings/records/bad-composer", new ApplicationPanelUse.Access("system-monitoring", null), null,
+            Map.of("en", "Bad"), null, null, "records", "activity", ApplicationPanelUse.NATIVE_KIND,
+            ApplicationPanelUse.PAGE_COMPOSER_NONE);
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(nativeWithComposer), true));
+    }
 }

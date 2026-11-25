@@ -6,6 +6,7 @@ import {
   applicationPanelUseSchema,
   registerApplicationPanelUsesRequestSchema,
   builtinApplicationPanelUseSchema,
+  builtinNativeEntrySchema,
   builtinProductIdSchema,
   builtinProductPanelInputSchema,
   builtinProductProjectionInputSchema,
@@ -551,4 +552,25 @@ test("built-in native entries validate in catalog and menu schemas while domain 
     panelUses: [panelEntry, nativeEntry],
   }]);
   assert.equal(catalog[0]?.panelUses?.filter(isNativeApplicationEntry).length, 1);
+});
+
+test("applicationPanelUseSchema accepts pageComposer bottom/none and rejects invalid values or native pageComposer", () => {
+  const base = {
+    id: "home",
+    pageKey: "home",
+    panelId: "builtin-product-personal-workspace",
+    path: "/home",
+    access: { kind: "domain-member" as const },
+  };
+  assert.equal(applicationPanelUseSchema.parse({ ...base, pageComposer: "none" }).pageComposer, "none");
+  assert.equal(applicationPanelUseSchema.parse({ ...base, pageComposer: "bottom" }).pageComposer, "bottom");
+  assert.equal(applicationPanelUseSchema.safeParse({ ...base, pageComposer: "inline" }).success, false);
+  assert.equal(builtinNativeEntrySchema.safeParse({
+    id: "native-entry",
+    pageKey: "native-entry",
+    kind: "native",
+    path: "/settings/native",
+    access: { kind: "domain-member" },
+    pageComposer: "none",
+  }).success, false);
 });
