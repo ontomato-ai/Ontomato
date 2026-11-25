@@ -1290,6 +1290,7 @@ export default {
       "feedbackRecord": "Feedback",
       "opsKnowledge": "Operations knowledge",
       "turnEvidence": "Turn evidence",
+      "autotestCaseSet": "Test case set",
       "autotestRun": "Autotest run",
       "autotestCaseArtifact": "Test case artifact",
       "modelConnection": "Model connection",

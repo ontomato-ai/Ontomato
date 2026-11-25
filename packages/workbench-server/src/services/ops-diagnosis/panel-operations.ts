@@ -54,6 +54,7 @@ import type {
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import { parseAutotestCaseArtifactKey, requireObserveAccessDomain } from "./panel-reads";
+import { autotestCaseSetServerOperations } from "./case-sets-panel";
 
 const emptyInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
@@ -670,4 +671,5 @@ export const opsDiagnosisReadOperations = [
 export const opsDiagnosisServerOperations: readonly PanelServerOperation[] = [
   ...opsDiagnosisWriteOperations,
   ...opsDiagnosisReadOperations,
+  ...autotestCaseSetServerOperations,
 ];

@@ -278,6 +278,27 @@ export const workbenchApplications: BuiltinApplication[] = [
           "zh-CN": "查看已采集的 Turn 取证工作区、产物文件、保留状态与导出下载"
         }
       }, {
+        "id": "ops-autotest-cases",
+        "pageKey": "ops-autotest-cases",
+        "panelId": "builtin-product-ops-autotest-cases",
+        "path": "/ops/cases",
+        "access": { "permissionCode": "observer" },
+        "icon": "clipboard-list",
+        "names": {
+          "en": "Test cases",
+          "zh-CN": "测试用例",
+          "zh-TW": "測試用例",
+          "ja": "テストケース",
+          "de": "Testfälle",
+          "fr": "Cas de test",
+          "it": "Casi di test",
+          "ar": "حالات الاختبار"
+        },
+        "descriptions": {
+          "en": "Create, import, edit, and delete autotest case sets in form or JSON mode",
+          "zh-CN": "新建、导入、表单/JSON 双视图编辑与删除自动测试用例集"
+        }
+      }, {
         "id": "ops-autotest-results",
         "pageKey": "ops-autotest-results",
         "panelId": "builtin-product-ops-autotest-results",

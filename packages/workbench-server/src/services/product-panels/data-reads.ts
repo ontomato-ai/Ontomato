@@ -10,7 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
+  AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
   MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, TURN_EVIDENCE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
@@ -49,6 +49,7 @@ import {
   createOpsKnowledgeReadAdapter,
   createTurnEvidenceReadAdapter,
 } from "../ops-diagnosis/panel-reads";
+import { createAutotestCaseSetReadAdapter } from "../ops-diagnosis/case-sets-panel";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { createGovernanceReadAdapters } from "../governance/panel-reads";
@@ -192,6 +193,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const modelUsage = createModelUsageReads({ owner, credentials: viewer });
   const opsKnowledge = createOpsKnowledgeReadAdapter(owner, viewer);
   const turnEvidence = createTurnEvidenceReadAdapter(owner, viewer);
+  const autotestCaseSet = createAutotestCaseSetReadAdapter(owner, viewer);
   const autotestRun = createAutotestRunReadAdapter(owner, viewer);
   const autotestCaseArtifact = createAutotestCaseArtifactReadAdapter(owner, viewer);
   const externalMcp = createExternalMcpReads(owner, viewer);
@@ -256,6 +258,16 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         selection.primaryKey!,
         panelReadParameterSchemas.opsFilePath.parse(params.path),
       ),
+    },
+    [AUTOTEST_CASE_SET]: {
+      list: (_selection, params) => autotestCaseSet.list({
+        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+      }),
+      record: selection => autotestCaseSet.record(selection.primaryKey!),
+      form: (selection, params) => autotestCaseSet.form(selection.primaryKey!, {
+        ...formParams(params),
+        editMode: panelReadParameterSchemas.autotestCaseEditMode.optional().parse(params.editMode),
+      }),
     },
     [AUTOTEST_RUN]: {
       list: () => autotestRun.list(),

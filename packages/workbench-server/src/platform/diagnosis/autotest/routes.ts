@@ -34,7 +34,7 @@ import {
   importCaseSet,
   isEmptyCasePayload,
   listCaseSets,
-  saveCaseSet,
+  updateCaseSet,
 } from "./cases/repository";
 import {
   getActiveRun,
@@ -230,37 +230,36 @@ router.delete("/case-sets/:id", (req: Request, res: Response<HttpAcknowledgement
  */
 router.put("/case-sets/:id", (req: Request, res: Response<HttpResponse<CaseSet>>) => {
   try {
-    const cs = getCaseSet(req.params.id, requireDomainId(req as AuthenticatedRequest));
-    if (!cs) {
-      res.status(404).json({ success: false, error: "Case set not found" });
-      return;
-    }
-
     const { name, cases } = req.body as {
       name?: string;
       cases?: TestCase[];
     };
 
-    if (name !== undefined) cs.name = name.trim() || cs.name;
-    if (Array.isArray(cases)) {
-      cs.cases = ensureUniqueCaseIds(
-        cases
-          .filter((c) => c.question?.trim())
-          .map((c, index) => ({
-            caseId: c.caseId || `case-${index + 1}`,
-            question: c.question.trim(),
-            expectedAnswer: c.expectedAnswer,
-            expectedLogic: c.expectedLogic,
-            judgment: c.judgment,
-          }))
-      );
+    const normalizedCases = Array.isArray(cases)
+      ? ensureUniqueCaseIds(
+          cases
+            .filter((c) => c.question?.trim())
+            .map((c, index) => ({
+              caseId: c.caseId || `case-${index + 1}`,
+              question: c.question.trim(),
+              expectedAnswer: c.expectedAnswer,
+              expectedLogic: c.expectedLogic,
+              judgment: c.judgment,
+            })),
+        )
+      : undefined;
+
+    const updated = updateCaseSet(req.params.id, requireDomainId(req as AuthenticatedRequest), {
+      ...(name !== undefined ? { name } : {}),
+      ...(normalizedCases !== undefined ? { cases: normalizedCases } : {}),
+    });
+    if (!updated) {
+      res.status(404).json({ success: false, error: "Case set not found" });
+      return;
     }
 
-    cs.updatedAt = new Date().toISOString();
-    saveCaseSet(cs);
-
-    logger.info("Case set updated", { id: cs.id, name: cs.name, caseCount: cs.cases.length });
-    res.json({ success: true, data: cs });
+    logger.info("Case set updated", { id: updated.id, name: updated.name, caseCount: updated.cases.length });
+    res.json({ success: true, data: updated });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     res.status(500).json({ success: false, error: msg });

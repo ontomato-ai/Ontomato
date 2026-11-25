@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ops-autotest-cases",
+      "input": {
+        "name": "Test cases",
+        "description": "Create, import, edit, and delete autotest case sets in form or JSON mode."
+      }
+    }
+  ]
+}

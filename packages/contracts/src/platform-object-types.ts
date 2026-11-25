@@ -34,6 +34,7 @@ export const BUSINESS_KNOWLEDGE = "platform:BusinessKnowledge";
 export const FEEDBACK_RECORD = "platform:FeedbackRecord";
 export const OPS_KNOWLEDGE = "platform:OpsKnowledge";
 export const TURN_EVIDENCE = "platform:TurnEvidence";
+export const AUTOTEST_CASE_SET = "platform:AutotestCaseSet";
 export const AUTOTEST_RUN = "platform:AutotestRun";
 export const AUTOTEST_CASE_ARTIFACT = "platform:AutotestCaseArtifact";
 
@@ -137,6 +138,9 @@ export const KEEP_TURN_EVIDENCE = "turnEvidence.keep";
 export const UNKEEP_TURN_EVIDENCE = "turnEvidence.unkeep";
 export const DELETE_TURN_EVIDENCE = "turnEvidence.delete";
 export const DOWNLOAD_TURN_EVIDENCE = "turnEvidence.download";
+export const CREATE_AUTOTEST_CASE_SET = "autotestCaseSet.create";
+export const IMPORT_AUTOTEST_CASE_SET = "autotestCaseSet.import";
+export const DELETE_AUTOTEST_CASE_SET = "autotestCaseSet.delete";
 export const KEEP_AUTOTEST_RUN = "autotestRun.keep";
 export const UNKEEP_AUTOTEST_RUN = "autotestRun.unkeep";
 export const DOWNLOAD_AUTOTEST_RUN = "autotestRun.download";
@@ -888,6 +892,29 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       UNKEEP_TURN_EVIDENCE,
       DELETE_TURN_EVIDENCE,
       DOWNLOAD_TURN_EVIDENCE,
+    ],
+  },
+  [AUTOTEST_CASE_SET]: {
+    ...describeType("autotestCaseSet"),
+    reads: {
+      list: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          caseCount: { kind: "scalar", type: "number" },
+        },
+      },
+      form: {
+        source: "object", parameterMode: "fixed",
+        params: { ...definitionFormParams, editMode: "autotestCaseEditMode" },
+        result: "panelFormDescription",
+      },
+    },
+    operations: [
+      CREATE_AUTOTEST_CASE_SET,
+      IMPORT_AUTOTEST_CASE_SET,
+      `${AUTOTEST_CASE_SET}.save`,
+      DELETE_AUTOTEST_CASE_SET,
     ],
   },
   [AUTOTEST_RUN]: {
