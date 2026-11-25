@@ -282,8 +282,7 @@ class AuthorizationPolicyGovernanceControllerTest {
 
     private static JSONObject application(String id, String domain, String panel, String frame, String agentId) {
         var agent = agentId == null ? null : new DefaultAgentTarget("id", agentId, null);
-        var use = new ApplicationPanelUse("main", "dashboard", panel, "/dashboard",
-                new ApplicationPanelUse.Access(null, "domain-member"), agent, Map.of("en", "Dashboard"));
+        var use = new ApplicationPanelUse("main", "dashboard", panel, "/dashboard", agent, Map.of("en", "Dashboard"));
         return JSONObject.of("id", id, "domainId", domain, "kind", "panel-app", "entry", JSONObject.of("renderer", "panels"),
                 "panelSettings", JSONObject.of("framePanelId", frame), "panelUses", List.of(use));
     }

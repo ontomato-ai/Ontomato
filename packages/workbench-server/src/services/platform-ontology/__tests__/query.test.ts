@@ -81,6 +81,10 @@ vi.mock("../../product-governance/authorization", async original => ({
   ...await original<typeof import("../../product-governance/authorization")>(),
   decideObjects: (requests: ObjectDecisionRequest[]) => decideProductObjects(requests),
 }));
+vi.mock("../../product-governance/grants", async original => ({
+  ...await original<typeof import("../../product-governance/grants")>(),
+  productDefinitionOwnerHeaders: vi.fn(() => ({})),
+}));
 vi.mock("../../product-panels/component-catalogue", () => ({
   readPanelComponentCatalogue: vi.fn(),
 }));
