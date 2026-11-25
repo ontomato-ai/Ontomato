@@ -80,7 +80,7 @@ const DECLARED_DATA = {
   ConversationEntry: {},
   AgentChat: {},
   AppPreview: {},
-  ObjectTree: { files: ["panelRecordList"] },
+  ObjectTree: { files: ["panelRecordList"], rows: ["panelRecordList"] },
   ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
   AnnotatedCode: { content: ["annotatedCode"] },
 };

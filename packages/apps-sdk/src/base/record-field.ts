@@ -5,6 +5,7 @@ import {
   type PanelRecordFieldScalar,
   type PanelRecordFieldValue,
   type PanelRecordReferenceFieldValue,
+  type PanelRecordTagFieldValue,
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformChildFieldReference, PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
 
@@ -20,6 +21,13 @@ export function isRecordChildReference(
   value: PanelRecordFieldValue | PanelRecordFieldArrayItem | undefined,
 ): value is PanelRecordChildReferenceFieldValue {
   return typeof value === "object" && value !== null && !Array.isArray(value) && value.kind === "child-reference";
+}
+
+/** Type guard for a value-carried tagged display value stored in `PlatformObjectRecord.fields` or its arrays. */
+export function isRecordTag(
+  value: PanelRecordFieldValue | PanelRecordFieldArrayItem | undefined,
+): value is PanelRecordTagFieldValue {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && value.kind === "tag";
 }
 
 /** Extract the navigation payload carried by a reference field value. */
@@ -72,6 +80,7 @@ export function scalarFieldText(value: PanelRecordFieldScalar, translate: (key: 
  * - booleans localize via `platform.booleanTrue` / `platform.booleanFalse`;
  * - localized maps resolve by the reader's active locale via `panelRecordFieldText`;
  * - references and child references return `label || primaryKey`;
+ * - tagged values return `label`;
  * - arrays join formatted element texts with `listSeparator` (default `", "`);
  * - json payloads summarize via `panelRecordFieldText`.
  */
@@ -84,6 +93,7 @@ export function displayFieldText(
   if (value === undefined) return "";
   if (typeof value === "boolean") return scalarFieldText(value, translate);
   if (isRecordChildReference(value)) return childReferenceDisplayLabel(value);
+  if (isRecordTag(value)) return value.label;
   if (Array.isArray(value)) {
     return value
       .map((item) =>
@@ -91,7 +101,9 @@ export function displayFieldText(
           ? referenceDisplayLabel(item)
           : isRecordChildReference(item)
             ? childReferenceDisplayLabel(item)
-            : scalarFieldText(item, translate),
+            : isRecordTag(item)
+              ? item.label
+              : scalarFieldText(item, translate),
       )
       .filter((part) => part.length > 0)
       .join(listSeparator);

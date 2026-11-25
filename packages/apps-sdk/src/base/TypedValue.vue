@@ -3,7 +3,7 @@ import { computed, inject } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
-import type { PanelFieldTone, PanelRecordFieldArrayItem, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
+import type { PanelFieldTone, PanelRecordFieldArrayItem, PanelRecordFieldValue, PanelRecordTagFieldValue } from "@ontomato/contracts/panel-projection";
 import { appIcon } from "@ontomato/platform-shell";
 import { panelContextKey, projectionKey } from "../panel/context";
 import { panelMemberKey } from "../panel/member";
@@ -28,6 +28,7 @@ import {
   displayFieldText,
   isRecordChildReference,
   isRecordReference,
+  isRecordTag,
   rawRecordField,
   recordFieldArrayItems,
   referenceDisplayLabel,
@@ -206,16 +207,23 @@ const mappedEntry = computed(() =>
   }),
 );
 
+const tagValue = computed<PanelRecordTagFieldValue | null>(() => {
+  const raw = resolved.value.raw;
+  return isRecordTag(raw as PanelRecordFieldValue | undefined) ? (raw as PanelRecordTagFieldValue) : null;
+});
+
 const effectiveTone = computed<PanelFieldTone | undefined>(() => {
   if (props.tone) return props.tone;
+  if (tagValue.value) return tagValue.value.tone ?? "info";
   if (mappedEntry.value?.tone) return mappedEntry.value.tone;
+  if (Array.isArray(resolved.value.raw) || props.kind === "tags") return undefined;
   const rec = resolved.value.record;
   const key = resolved.value.fieldKey;
   if (rec && key && rec.tones?.[key]) return asTone(rec.tones[key]);
   return undefined;
 });
 
-const mappedIcon = computed<string | undefined>(() => mappedEntry.value?.icon);
+const mappedIcon = computed<string | undefined>(() => mappedEntry.value?.icon ?? tagValue.value?.icon);
 
 const isTagsField = computed(() => {
   const rec = resolved.value.record;
@@ -285,6 +293,8 @@ interface NormalizedListItem {
   readonly text: string;
   readonly reference: PlatformFieldReference | null;
   readonly childReference: PlatformChildFieldReference | null;
+  readonly tone?: PanelFieldTone;
+  readonly icon?: string;
 }
 
 const listItems = computed<readonly NormalizedListItem[]>(() => {
@@ -316,8 +326,30 @@ const listItems = computed<readonly NormalizedListItem[]>(() => {
           childReference: null,
         };
       }
+      if (isRecordTag(item as PanelRecordFieldArrayItem)) {
+        const tagObj = item as PanelRecordTagFieldValue;
+        return {
+          text: tagObj.label,
+          reference: null,
+          childReference: null,
+          tone: tagObj.tone ?? "info",
+          icon: tagObj.icon,
+        };
+      }
       if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
-        return { text: scalarFieldText(item, translate), reference: null, childReference: null };
+        const mapped = resolveValueMapEntry(item, props.valueMap, {
+          locale: locale.value,
+          panelText: panel?.t,
+          t: translate,
+          te: hasTranslation,
+        });
+        return {
+          text: mapped?.label ?? scalarFieldText(item, translate),
+          reference: null,
+          childReference: null,
+          tone: mapped?.tone,
+          icon: mapped?.icon,
+        };
       }
       return {
         text: displayFieldText(item as PanelRecordFieldValue, locale.value, translate, props.separator),
@@ -469,7 +501,18 @@ function navigateToChild(reference: PlatformChildFieldReference) {
           :data-tone="effectiveTone ?? 'info'"
           @click.stop="navigateTo(item.reference)"
         >{{ item.text }}</button>
-        <span v-else class="sdk-typed-value-tag" :data-tone="effectiveTone ?? 'default'">{{ item.text }}</span>
+        <span v-else class="sdk-typed-value-tag" :data-tone="item.tone ?? effectiveTone ?? 'default'">
+          <component
+            :is="appIcon(item.icon)"
+            v-if="item.icon"
+            :size="13"
+            :stroke-width="2"
+            class="sdk-typed-value-icon"
+            :data-icon="item.icon"
+            aria-hidden="true"
+          />
+          <span>{{ item.text }}</span>
+        </span>
       </template>
     </span>
 

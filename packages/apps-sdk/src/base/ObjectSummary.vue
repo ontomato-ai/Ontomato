@@ -2,8 +2,9 @@
 import { projectionElement } from "../panel/projection-element";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
+import { panelRecordObjectRef, type PanelRecordTagFieldValue } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { appIcon } from "@ontomato/platform-shell/icons";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMemberData, useMemberOutput } from "../panel/member";
 import type { PlatformChildFieldReference, PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
@@ -12,6 +13,7 @@ import {
   displayFieldText,
   isRecordChildReference,
   isRecordReference,
+  isRecordTag,
   recordFieldArrayItems,
   referenceDisplayLabel,
   scalarFieldText,
@@ -188,6 +190,11 @@ function fieldText(current: PlatformObjectRecord, name: string): string {
   return displayFieldText(current.fields[name], locale.value, t);
 }
 
+function recordTagField(current: PlatformObjectRecord, name: string): PanelRecordTagFieldValue | null {
+  const raw = current.fields[name];
+  return isRecordTag(raw) ? raw : null;
+}
+
 function isKeyValueField(name: string): boolean {
   return Boolean(props.keyValueFields?.includes(name));
 }
@@ -312,8 +319,19 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
             <span
               v-if="statusField && fieldText(current, statusField) !== ''"
               class="sdk-object-summary-tag sdk-object-summary-status-badge"
-              :data-tone="current.tones?.[statusField] ?? 'default'"
-            >{{ fieldText(current, statusField) }}</span>
+              :data-tone="recordTagField(current, statusField) ? (recordTagField(current, statusField)!.tone ?? 'info') : (current.tones?.[statusField] ?? 'default')"
+            >
+              <component
+                :is="appIcon(recordTagField(current, statusField)!.icon!)"
+                v-if="recordTagField(current, statusField)?.icon"
+                :size="13"
+                :stroke-width="2"
+                class="sdk-object-summary-tag-icon"
+                :data-icon="recordTagField(current, statusField)!.icon"
+                aria-hidden="true"
+              />
+              <span>{{ fieldText(current, statusField) }}</span>
+            </span>
           </div>
           <div v-if="tagsField && recordFieldArrayItems(current, tagsField).length" class="sdk-object-summary-article-tags">
             <template v-for="(item, itemIndex) in recordFieldArrayItems(current, tagsField)" :key="itemIndex">
@@ -333,6 +351,18 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
               >
                 {{ referenceDisplayLabel(item) }}
               </button>
+              <span v-else-if="isRecordTag(item)" class="sdk-object-summary-tag" :data-tone="item.tone ?? 'info'">
+                <component
+                  :is="appIcon(item.icon)"
+                  v-if="item.icon"
+                  :size="13"
+                  :stroke-width="2"
+                  class="sdk-object-summary-tag-icon"
+                  :data-icon="item.icon"
+                  aria-hidden="true"
+                />
+                <span>{{ item.label }}</span>
+              </span>
               <span v-else class="sdk-object-summary-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
             </template>
           </div>
@@ -435,7 +465,37 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
                     >
                       {{ referenceDisplayLabel(item) }}
                     </button>
+                    <span v-else-if="isRecordTag(item)" class="sdk-object-summary-tag" :data-tone="item.tone ?? 'info'">
+                      <component
+                        :is="appIcon(item.icon)"
+                        v-if="item.icon"
+                        :size="13"
+                        :stroke-width="2"
+                        class="sdk-object-summary-tag-icon"
+                        :data-icon="item.icon"
+                        aria-hidden="true"
+                      />
+                      <span>{{ item.label }}</span>
+                    </span>
                     <span v-else class="sdk-object-summary-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                  </template>
+                </span>
+                <span
+                  v-else-if="recordTagField(current, name) && recordTagField(current, name)!.label !== ''"
+                  class="sdk-object-summary-tag"
+                  :data-tone="recordTagField(current, name)!.tone ?? 'info'"
+                >
+                  <component
+                    :is="appIcon(recordTagField(current, name)!.icon!)"
+                    v-if="recordTagField(current, name)?.icon"
+                    :size="13"
+                    :stroke-width="2"
+                    class="sdk-object-summary-tag-icon"
+                    :data-icon="recordTagField(current, name)!.icon"
+                    aria-hidden="true"
+                  />
+                  <template v-for="(part, index) in textHighlightSegments(recordTagField(current, name)!.label, current.highlights?.[name])" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                   </template>
                 </span>
                 <span
@@ -726,13 +786,18 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
 }
 /* Tags are light fills: neutral, or a status's soft fill with its readable text colour. */
 .sdk-object-summary-tag {
+  align-items: center;
   background: var(--ui-fill-tertiary);
   border-radius: var(--radius-xs);
   color: var(--el-text-color-regular);
-  display: inline-block;
+  display: inline-flex;
   font-size: var(--text-xs);
+  gap: 4px;
   line-height: var(--leading-xs);
   padding: 0 var(--spacing-xs);
+}
+.sdk-object-summary-tag-icon {
+  flex: none;
 }
 .sdk-object-summary-tag[data-tone="info"] {
   background: var(--el-color-info-light-9);

@@ -1,23 +1,34 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import PathTreeNodeItem from "./PathTreeNode.vue";
-import { buildPathTree, filterPathTree, type PathTreeFile, type PathTreeItem, type PathTreeNode } from "./types";
+import {
+  buildParentTree,
+  buildPathTree,
+  filterPathTree,
+  type ParentTreeItem,
+  type PathTreeFile,
+  type PathTreeItem,
+  type PathTreeNode,
+} from "./types";
 
 /**
- * Folder/file tree built from a flat list of slash-separated paths: folders appear before files, siblings sort by name,
- * and folders are expanded by default. Clicking a folder collapses or expands it; when `directoryIndexFile` is set,
- * clicking a folder with a matching direct child file selects that index file and keeps the folder expanded, whereas
- * clicking a folder without one toggles it and clears the selection.
+ * Folder/file tree (`mode="path"`) or parent-linked object hierarchy (`mode="hierarchy"`).
+ * In path mode, folders appear before files, siblings sort by name, and folders are expanded by default; when
+ * `selectableFolders` is enabled, record-backed folders can be selected independently of their disclosure chevron.
+ * In hierarchy mode, sibling input order is preserved, every node (parent or leaf) is selectable, and the chevron
+ * expands/collapses children without changing selection.
  */
 const props = withDefaults(
   defineProps<{
-    /** Flat path strings or `{ key, path, label? }` items to arrange into a folder/file tree. */
-    items: readonly PathTreeItem[];
-    /** Key of the currently selected file row (highlighted whenever it matches a file node). */
+    /** Flat path items (`mode="path"`) or parent-linked items (`mode="hierarchy"`). */
+    items: readonly (PathTreeItem | ParentTreeItem)[];
+    /** Tree mode: `"path"` for slash-separated paths, `"hierarchy"` for parent-linked object trees. */
+    mode?: "path" | "hierarchy";
+    /** Key of the currently selected node (highlighted whenever it matches a selectable node). */
     selectedKey?: string | null;
     /** Accessible name of the tree (`aria-label`). */
     label?: string;
-    /** Whether folders start expanded (default `true`). */
+    /** Whether branches/folders start expanded (default `true`). */
     defaultExpandAll?: boolean;
     /** Optional empty-state text when `items` is empty. */
     emptyText?: string;
@@ -29,10 +40,13 @@ const props = withDefaults(
     searchPlaceholder?: string;
     /** Optional empty-state text when search matches no items. */
     noMatchText?: string;
-    /** Optional direct child filename (e.g. `"index.md"`) opened automatically when clicking a folder node. */
+    /** Optional direct child filename (e.g. `"index.md"`) opened automatically when clicking a folder node in path mode. */
     directoryIndexFile?: string;
+    /** In path mode, allow selecting record-backed folder nodes while keeping the disclosure chevron dedicated to folding. */
+    selectableFolders?: boolean;
   }>(),
   {
+    mode: "path",
     selectedKey: null,
     label: undefined,
     defaultExpandAll: true,
@@ -42,19 +56,25 @@ const props = withDefaults(
     searchPlaceholder: undefined,
     noMatchText: undefined,
     directoryIndexFile: undefined,
+    selectableFolders: false,
   },
 );
 
 const emit = defineEmits<{
-  /** Emitted when a reader clicks a file node or opens a folder's directory index file. */
+  /** Emitted when a reader selects a file or hierarchy node. */
   select: [file: PathTreeFile];
-  /** Emitted with the selected file's key (or `null` when cleared by clicking a folder without an index file). */
+  /** Emitted with the selected node's key (or `null` when cleared by clicking a folder without an index file). */
   "update:selectedKey": [key: string | null];
   /** Emitted when the reader updates the search keyword. */
   "update:search": [value: string];
 }>();
 
-const tree = computed(() => buildPathTree(props.items));
+const isHierarchy = computed(() => props.mode === "hierarchy");
+const tree = computed(() =>
+  isHierarchy.value
+    ? buildParentTree(props.items as readonly ParentTreeItem[])
+    : buildPathTree(props.items as readonly PathTreeItem[], { mergeFolderItems: props.selectableFolders }),
+);
 const activeSearch = computed(() => (props.search ?? "").trim());
 const visibleTree = computed(() => (activeSearch.value ? filterPathTree(tree.value, activeSearch.value) : tree.value));
 const collapsed = ref<ReadonlySet<string>>(new Set());
@@ -108,24 +128,26 @@ function findDirectoryIndexFile(folderPath: string): PathTreeFile | null {
 }
 
 function toggleFolder(path: string) {
-  const indexFileName = props.directoryIndexFile?.trim();
-  if (indexFileName) {
-    const indexFile = findDirectoryIndexFile(path);
-    if (indexFile) {
-      if (collapsed.value.has(path)) {
-        const next = new Set(collapsed.value);
-        next.delete(path);
-        collapsed.value = next;
+  if (!isHierarchy.value && !props.selectableFolders) {
+    const indexFileName = props.directoryIndexFile?.trim();
+    if (indexFileName) {
+      const indexFile = findDirectoryIndexFile(path);
+      if (indexFile) {
+        if (collapsed.value.has(path)) {
+          const next = new Set(collapsed.value);
+          next.delete(path);
+          collapsed.value = next;
+        }
+        pickFile(indexFile);
+        return;
       }
-      pickFile(indexFile);
+      const next = new Set(collapsed.value);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      collapsed.value = next;
+      emit("update:selectedKey", null);
       return;
     }
-    const next = new Set(collapsed.value);
-    if (next.has(path)) next.delete(path);
-    else next.add(path);
-    collapsed.value = next;
-    emit("update:selectedKey", null);
-    return;
   }
   const next = new Set(collapsed.value);
   if (next.has(path)) next.delete(path);
@@ -148,7 +170,7 @@ function clearSearch() {
 </script>
 
 <template>
-  <div class="fui-path-tree">
+  <div class="fui-path-tree" :class="{ 'fui-path-tree--hierarchy': isHierarchy }">
     <div v-if="searchable" class="fui-path-tree-search">
       <input
         type="search"
@@ -178,6 +200,8 @@ function clearSearch() {
         :depth="0"
         :selected-key="selectedKey"
         :collapsed="effectiveCollapsed"
+        :mode="mode"
+        :selectable-folders="selectableFolders"
         @toggle="toggleFolder"
         @select="pickFile"
       />

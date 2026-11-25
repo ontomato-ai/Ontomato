@@ -123,8 +123,14 @@ export type {
 } from "../base/effective-permissions-types";
 export {
   PathTree,
+  buildParentTree,
   buildPathTree,
+  filterHierarchyTree,
+  filterPathTree,
   firstTreeFile,
+  firstTreeNode,
+  type BuildPathTreeOptions,
+  type ParentTreeItem,
   type PathTreeFile,
   type PathTreeItem,
   type PathTreeNode,

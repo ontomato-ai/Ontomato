@@ -45,12 +45,13 @@ import {
   panelOperationSchema, panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
-import { findPanelFormOption, panelFormObjectSelectError } from "./form-fields";
+import { findPanelFormOption, panelFormObjectSelectError, panelFormOptionSchema } from "./form-fields";
 import {
   panelFormDescriptionSchema, panelFormFieldSchema, panelFormFrequencyValueSchema,
   panelFormObjectActiveFields, panelFormObjectActiveVariant, panelFormObjectAllFields,
   panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
-  panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperation,
+  panelObjectListColumnSchema, panelRecordFieldArrayItemSchema, panelRecordFieldText,
+  panelRecordFieldValueSchema, panelRecordTagFieldValueSchema, panelStateOperation, projectionBindingKeys, projectionOperation,
   projectionOperationTargetMatches, projectionPorts, pruneInactivePanelFormVariants,
   type PanelFormField, type PanelFormObjectControl, type PanelFormValues,
 } from "./panel-projection";
@@ -4128,4 +4129,63 @@ test("group E pack 1 contracts validate secret autoDownload and extended form co
       ],
     },
   }).success, true);
+});
+
+test("value-carried tag field values, form option tones, and ObjectList column tooltip/tagEffect contracts", () => {
+  const activeTag = panelRecordTagFieldValueSchema.parse({
+    kind: "tag",
+    label: "Active",
+    tone: "success",
+    icon: "check-circle",
+  });
+  assert.deepEqual(activeTag, { kind: "tag", label: "Active", tone: "success", icon: "check-circle" });
+
+  // Standalone and array-embedded tag values validate and extract plain text via label.
+  const draftTag = { kind: "tag", label: "Draft", tone: "warning" } as const;
+  assert.equal(panelRecordFieldValueSchema.safeParse(activeTag).success, true);
+  assert.equal(panelRecordFieldArrayItemSchema.safeParse(draftTag).success, true);
+  assert.equal(panelRecordFieldValueSchema.safeParse([activeTag, draftTag, "Plain"]).success, true);
+  assert.equal(panelRecordFieldText(activeTag), "Active");
+  assert.equal(panelRecordFieldText([activeTag, draftTag, "Plain"]), "Active, Draft, Plain");
+
+  // Strict schema rejects unknown keys, invalid tone, and empty icon.
+  assert.equal(panelRecordTagFieldValueSchema.safeParse({ kind: "tag", label: "Bad", extra: true }).success, false);
+  assert.equal(panelRecordTagFieldValueSchema.safeParse({ kind: "tag", label: "Bad", tone: "purple" }).success, false);
+  assert.equal(panelRecordTagFieldValueSchema.safeParse({ kind: "tag", label: "Bad", icon: "" }).success, false);
+
+  // panelFormOptionSchema supports the 5-level semantic tone taxonomy.
+  for (const tone of ["default", "info", "success", "warning", "danger"] as const) {
+    assert.equal(panelFormOptionSchema.safeParse({
+      value: tone,
+      label: tone,
+      description: null,
+      disabled: false,
+      disabledReason: null,
+      tone,
+    }).success, true);
+  }
+  assert.equal(panelFormOptionSchema.safeParse({
+    value: "bad",
+    label: "Bad",
+    description: null,
+    disabled: false,
+    disabledReason: null,
+    tone: "muted",
+  }).success, false);
+
+  // ObjectList column supports headerTooltipKey and tagEffect ("light" | "plain").
+  assert.deepEqual(panelObjectListColumnSchema.parse({
+    key: "status",
+    kind: "tags",
+    headerTooltipKey: "status.tooltip",
+    tagEffect: "plain",
+  }), {
+    key: "status",
+    kind: "tags",
+    headerTooltipKey: "status.tooltip",
+    tagEffect: "plain",
+  });
+  assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "light" }).success, true);
+  assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "dark" }).success, false);
+  assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", headerTooltipKey: "" }).success, false);
 });
