@@ -26,13 +26,11 @@ History search returns records and nextOffset. Time bounds are ISO timestamps, f
 
 In a platform run without page tools, call
 `node <this-skill>/scripts/governance.mjs import-pending @work/arguments.json`
-after registering the sources. The script uses the active window or opens it at
-`$ONTOMATO_GOVERNANCE_WINDOW_URL` with `tk: $ONTOMATO_GOVERNANCE_CALLBACK` and
-`X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. It sends `POST
+after registering the sources. The script resolves the active window at
+`$ONTOMATO_GOVERNANCE_WINDOW_URL` and uses its record and run IDs in `POST
 $ONTOMATO_ONTOLOGY_URL/ontology/ai/knowledge-governance/<recordId>/runs/<runId>/actions/import_knowledge`
-with the window's token as `tk` and the window's run and session IDs in
-`X-Ontomato-Run-Id` and `X-Ontomato-Session-Id`. When the ontology base is the run callback
-address ending in `/ontology`, it also sends `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK`.
+Both requests use `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK`.
+The session bridge supplies the active run and session headers.
 The Java import receipt for both `import-pending` and external `import-knowledge` lists newly
 written IDs in `imported` and existing IDs with the same title and text in `skipped`.
 `status: "pending"` is present only when `imported` has entries and applies only to those IDs.

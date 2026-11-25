@@ -906,7 +906,6 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
 });
 
 test("App Builder Action generation tests and adopts the actual definition before an explicit save", async () => {
-  const runId = "11111111-1111-4111-8111-111111111111";
   const sample = { objDatas: [], relDatas: [] };
   const definition = { name: "Action", function: { code: "print('ok')", parameters: [{ name: "value", type: "TYPE_STRING", value: "sample" }] } };
   const explained = { ...definition, explanationRef: "22222222-2222-4222-8222-222222222222" };
@@ -917,6 +916,7 @@ test("App Builder Action generation tests and adopts the actual definition befor
     for await (const chunk of request) text += chunk;
     const body = JSON.parse(text);
     requests.push({ path: request.url, body, callback: request.headers["x-ontomato-callback-credential"], key: request.headers["x-api-key"] });
+    assert.equal(request.headers["x-ontomato-run-id"], undefined);
     response.setHeader("content-type", "application/json");
     const operation = request.url.split("/").at(-1);
     const replies = {
@@ -933,7 +933,7 @@ test("App Builder Action generation tests and adopts the actual definition befor
       "agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "action", "generate", "--save", "--sample",
       JSON.stringify(sample), JSON.stringify(definition),
     ], {
-      env: { ...process.env, ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_RUN_ID: runId,
+      env: { ...process.env, ONTOMATO_SKILL_SCENARIO: "platform",
         ONTOMATO_AUTHORING_URL: base + "/authoring", ONTOMATO_WORKBENCH_URL: base,
         ONTOMATO_ONTOLOGY_URL: base + "/ontology", ONTOMATO_EXECUTION_CALLBACK: "run-callback", ONTOMATO_API_KEY: "save-key" },
     });

@@ -134,21 +134,19 @@ async function vectorDelete(api, argv) {
 }
 
 function isPlatformAuthoring() {
-  return process.env.ONTOMATO_SKILL_SCENARIO === "platform" ||
-    Boolean(process.env.ONTOMATO_RUN_ID || process.env.ONTOMATO_AUTHORING_URL || process.env.ONTOMATO_EXECUTION_CALLBACK);
+  return Boolean(process.env.ONTOMATO_EXECUTION_CALLBACK);
 }
 
 async function withAuthoring(api, kind, workspaceId, work) {
   if (isPlatformAuthoring()) {
-    const { ONTOMATO_AUTHORING_URL: base, ONTOMATO_EXECUTION_CALLBACK: callback, ONTOMATO_RUN_ID: runId } = process.env;
-    if (!base || !callback || !runId) throw new Error("The current platform run must supply its authoring callback");
+    const { ONTOMATO_AUTHORING_URL: base, ONTOMATO_EXECUTION_CALLBACK: callback } = process.env;
+    if (!base) throw new Error("The current platform run must supply its authoring callback URL");
     return work(async (operation, input) => readJson(await fetch(`${base.replace(/\/$/, "")}/${kind}/${operation}`, {
       method: input === undefined ? "GET" : "POST",
       headers: {
         "Accept-Language": api.lang,
         "Content-Type": "application/json",
         "X-Ontomato-Callback-Credential": callback,
-        "X-Ontomato-Run-Id": runId,
       },
       body: input === undefined ? undefined : JSON.stringify(input),
       redirect: "error",

@@ -26,9 +26,10 @@ ask via pending questions (`agent` tool with `op: "send"`, `session: "parent"`, 
 options with descriptions and one `isDefault: true`, and `defaultAssumption`). If there are too many
 questions to ask at once, split them by priority across turns; readers may also reply directly in conversation.
 
-In platform runs, the host supplies `ONTOMATO_SKILL_SCENARIO=platform`, a window callback
-and the real run identity. The first command that uses the governance record requests a write window
-from Node. The host closes writes when the run ends or stops.
+In platform runs, the host supplies `ONTOMATO_SKILL_SCENARIO=platform`, the window callback URL,
+and a session credential. Each command that uses the governance record resolves the active write
+window through that callback. The workspace keeps the record ID between runs, and the host closes
+writes when the run ends or stops.
 Do not call close or switch to external begin in a platform run.
 
 Outside the platform, set `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_TK` or `ONTOMATO_API_KEY`,

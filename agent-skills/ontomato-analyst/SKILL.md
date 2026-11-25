@@ -40,8 +40,10 @@ Use ONTOMATO_ONTOLOGY_URL (including any ontology gateway prefix),
 ONTOMATO_TK (sent as tk), and optionally ONTOMATO_URL as the common deployment base.
 The YAML fallback keys are ontologyUrl, tk and envUrl. An explicit service URL is sufficient without envUrl.
 ONTOMATO_LANGUAGE and ONTOMATO_CORRELATION_ID propagate to requests.
-ONTOMATO_RUN_ID supplies the run header when a host provided it. All commands
-use ONTOMATO_TK. Java chooses and verifies the current user's task scope; callers
+In a hosted session, commands send the session credential from ONTOMATO_EXECUTION_CALLBACK
+and the session bridge supplies the active run header. Outside a hosted session, commands use
+ONTOMATO_TK and send an explicit run header when the caller supplies ONTOMATO_RUN_ID.
+Java chooses and verifies the current user's task scope; callers
 never pass user/domain identity or select an elevated execution credential.
 
 The product loads these same files read-only and invokes the commands below using

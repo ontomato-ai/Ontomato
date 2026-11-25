@@ -41,20 +41,19 @@ for (const [name, scriptDir] of [
   const client = await import(`../agent-skills/${name}/${scriptDir === "." ? "" : `${scriptDir}/`}client.mjs`);
 
   test(`${name}: platform CLI routes agent commands to the current run channel without login or workspace`, async () => {
-    const taskId = randomUUID(), runId = randomUUID(), sessionId = randomUUID();
+    const taskId = randomUUID(), sessionId = randomUUID();
     await withChannelServer((request, res) => {
       res.writeHead(200, { "content-type": "application/json" });
       if (request.body.op === "list") res.end(JSON.stringify({ agents: [{ ref: { providerId: "ontology", agentId: "retriever" }, name: "Retriever", description: "" }] }));
       else if (request.body.op === "read") res.end(JSON.stringify({ taskId, sessionRef: { providerId: "ontology", sessionId }, status: "completed", downloaded: [{ id: taskId, path: `outputs/agents/${taskId}/out.json` }] }));
       else res.end(JSON.stringify({ taskId, status: "cancelled" }));
     }, async ({ requests, base, emptyCwd }) => {
-      const commandUrl = `${base}/v1/channel/hosts/workbench/domains/domain-a/runs/${runId}/commands`;
+      const commandPath = `/v1/channel/hosts/workbench/domains/domain-a/sessions/${sessionId}/commands`;
       const env = {
         PATH: process.env.PATH,
         ONTOMATO_SKILL_SCENARIO: "platform",
-        ONTOMATO_AGENT_COMMAND_URL: commandUrl,
-        ONTOMATO_AGENT_CALLBACK: "run-secret",
-        ONTOMATO_RUN_ID: runId,
+        ONTOMATO_AGENT_COMMAND_URL: base + commandPath,
+        ONTOMATO_AGENT_CALLBACK: "session-secret",
         ONTOMATO_EXECUTION_CALLBACK: "should-not-be-sent",
         ONTOMATO_TK: "should-not-be-sent",
       };
@@ -69,9 +68,9 @@ for (const [name, scriptDir] of [
 
       assert.equal(requests.length, 3);
       for (const req of requests) {
-        assert.equal(req.url, `/v1/channel/hosts/workbench/domains/domain-a/runs/${runId}/commands`);
-        assert.equal(req.headers["x-ontomato-callback-credential"], "run-secret");
-        assert.equal(req.headers["x-ontomato-run-id"], runId);
+        assert.equal(req.url, commandPath);
+        assert.equal(req.headers["x-ontomato-callback-credential"], "session-secret");
+        assert.equal(req.headers["x-ontomato-run-id"], undefined);
         assert.equal(req.headers.tk, undefined);
         assert.equal(req.headers["x-api-key"], undefined);
       }
@@ -86,7 +85,7 @@ for (const [name, scriptDir] of [
       await assert.rejects(
         exec(process.execPath, [cli, "agent", "list"], {
           cwd: emptyCwd,
-          env: { PATH: process.env.PATH, ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_RUN_ID: runId },
+          env: { PATH: process.env.PATH, ONTOMATO_SKILL_SCENARIO: "platform" },
         }),
         (error) => /ONTOMATO_AGENT_COMMAND_URL/.test(error.stderr),
       );

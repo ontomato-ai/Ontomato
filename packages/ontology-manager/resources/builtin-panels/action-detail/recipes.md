@@ -30,8 +30,8 @@ deletion. The single-row page header carries the back link to `/ontology/assets/
 
 The owner adopts a save that changes the code or the parameters only when the run that prepared it executed the
 same code and parameters in the owner's sandbox and the owner accepted it. This run reaches the owner's authoring
-endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and
-`X-Ontomato-Run-Id: $ONTOMATO_RUN_ID` with each call, and JSON bodies.
+endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK`
+with each call and use JSON bodies. The session bridge supplies the active run header.
 
 1. `GET $ONTOMATO_AUTHORING_URL/action/context`: the Python protocol and helpers the owner runs. Write the code by it.
 2. `POST $ONTOMATO_AUTHORING_URL/action/prepare` with the sample the run executes against:
