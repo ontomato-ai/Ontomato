@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { config } from "../../config/application";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
@@ -103,11 +104,14 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   app.post("/java/product-governance/check", (req, res) => {
-    const { id, verb } = req.body;
-    const owner = req.header("tk") === "alice";
-    const canUse = owner ? aliceUse : id !== bobDeniedUse;
-    res.json({ allowed: registrations.some(resource => resource.id === id) &&
-      (verb === "use" ? canUse : owner || bobEdit) });
+    const caller = req.header("tk");
+    if (req.body.target) expect(req.header("X-Ontomato-Query-Service-Token")).toBe("governance");
+    res.json(productGrantCheck(req.body, caller, (id, verb) => {
+      const owner = caller === "alice";
+      const canUse = owner ? aliceUse : id !== bobDeniedUse;
+      return registrations.some(resource => resource.id === id) &&
+        (verb === "use" ? canUse : owner || bobEdit);
+    }));
   });
   app.post("/java/product-governance/resources", (_req, res) => {
     res.json({ ids: registrations.map(resource => resource.id) });

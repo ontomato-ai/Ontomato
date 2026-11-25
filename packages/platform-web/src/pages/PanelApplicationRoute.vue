@@ -273,17 +273,11 @@ const catalogApp = computed(() => catalog.applicationById(props.applicationId));
 const currentResolution = computed(() =>
   resolution.value?.applicationId === props.applicationId ? resolution.value : null,
 );
-/** Known panel entry table for this application: authoritative resolution menu once received, else navigation catalog. */
 type EntryUse = ApplicationEntryResolution["use"];
-const entryTable = computed<readonly EntryUse[]>(() =>
-  (currentResolution.value?.menu.panelUses ?? catalogApp.value?.panelUses ?? []).filter(
-    (entry): entry is EntryUse => !isNativeApplicationEntry(entry),
-  ),
-);
-/** The entry an address opens: its own path, or the application's first listed entry at the application's own address. */
+/** The catalogue supplies the root route's candidate; the opening result admits it even if it has no menu label. */
 const entryPath = computed(() => {
   if (openedPath.value !== applicationRootPath(props.applicationId)) return openedPath.value;
-  const first = entryTable.value[0];
+  const first = catalogApp.value?.panelUses?.find(entry => !isNativeApplicationEntry(entry));
   return first ? panelUsePath(first.path) : null;
 });
 

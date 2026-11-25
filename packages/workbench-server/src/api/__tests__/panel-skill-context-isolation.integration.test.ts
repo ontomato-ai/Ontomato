@@ -569,17 +569,23 @@ it("includes the authorized member in an opening without reading a sibling skill
     member: { source, memberPath: [], ref: skillRef(good) } });
 });
 
-it.each(["", "/snapshot"])("keeps ordinary GET %s separate from opening and manifest validation", async route => {
-  deniedEntrance = broken.useId;
-  const response = await read(broken, route);
+it.each(["", "/snapshot"])("keeps ordinary GET %s separate from opening", async route => {
+  deniedEntrance = good.useId;
+  const response = await read(good, route);
   const body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(200);
-  expect(body.panel.id).toBe(broken.panelId);
+  expect(body.panel.id).toBe(good.panelId);
   expect(body).not.toHaveProperty("pageSkillContext");
-  expect((await open(broken)).status).toBe(403);
+  expect((await open(good)).status).toBe(403);
 });
 
 it("defers package validation while keeping an invalid definition private to the admitted skill view", async () => {
+  const record = await read(broken, "");
+  expect(record.status).toBe(200);
+  expect(await record.json()).not.toHaveProperty("pageSkillContext");
+  const snapshot = await read(broken, "/snapshot");
+  expect(snapshot.status).toBe(422);
+  expect(await snapshot.json()).toMatchObject({ error: { code: "PRODUCT_DEFINITION_INVALID" } });
   const response = await open(broken);
   const body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(200);

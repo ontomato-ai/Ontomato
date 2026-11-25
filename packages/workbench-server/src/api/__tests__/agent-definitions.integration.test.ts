@@ -80,7 +80,8 @@ describe("agent definitions on PostgreSQL", () => {
     await state.pool.query(`CREATE TABLE "${state.schema}".assistant_agents (
       id uuid PRIMARY KEY, domain_id text, kind text, name text, description text, enabled boolean,
       system_prompt text, engine text NOT NULL DEFAULT 'pi', model_selection jsonb, skills jsonb, icon text, class_names jsonb,
-      enabled_mcp_service_ids jsonb, sort_order integer, execution_user_id text, model_reference_migrated boolean)`);
+      enabled_mcp_service_ids jsonb, sort_order integer, execution_user_id text, model_reference_migrated boolean,
+      owner_id text)`);
     await state.pool.query(`CREATE TABLE "${state.schema}".product_native_agent_bindings (domain_id text, agent_id text, asset_id text)`);
     await state.pool.query(`CREATE TABLE "${state.schema}".ops_diagnosis_settings (domain_id text PRIMARY KEY, model_selection jsonb NOT NULL, model_reference_migrated boolean)`);
     await state.pool.query(`CREATE TABLE "${state.schema}".skill_writes (agent_id uuid);

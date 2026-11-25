@@ -463,8 +463,7 @@ it("lets the panel's registered owner clean it up after retiring a same-ID trial
   const rows = await request("GET", `product-panels?scope=mine&q=${id}`, "author");
   expect(await rows.json()).toMatchObject({ items: [{ id, revision: 1 }] });
   expect((await request("GET", resource, "unrelated-reader")).status).toBe(403);
-  const entry = new URLSearchParams({ applicationId: id, useId: "trial", access: "domain-member", pageKey: "trial" });
-  expect((await request("GET", `${resource}?${entry}`, "author")).status).toBe(403);
+  expect((await request("GET", `${resource}?view=1`, "author")).status).toBe(403);
   expect((await request("DELETE", `${resource}?revision=1`, "unrelated-reader")).status).toBe(403);
 
   const deleted = await request("DELETE", `${resource}?revision=1`, "author");
@@ -512,8 +511,7 @@ it("exposes a panel to an editor without a use Grant for management", async () =
   expect(record.status).toBe(200);
   expect(productPanelResponseSchema.parse(await record.json()).panel).toMatchObject({ id, ownerId: "author", editable: true });
   expect(await (await request("GET", `product-panels?q=${id}`, "editor")).json()).toMatchObject({ items: [{ id, editable: true }] });
-  const entry = new URLSearchParams({ applicationId: "editor-fixture", useId: "edit", access: "domain-member", pageKey: "edit" });
-  expect((await request("GET", `${resource}?${entry}`, "editor")).status).toBe(403);
+  expect((await request("GET", `${resource}?view=1`, "editor")).status).toBe(403);
   expect((await request("DELETE", `${resource}?revision=1`, "editor")).status).toBe(200);
 });
 
