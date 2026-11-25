@@ -105,8 +105,21 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentChatPanel",
     role: "control",
     meaning:
-      "Holds one conversation with one of the platform's agents and reports its session; the agent's own skills decide what it can do.",
-    effects: "Sends the reader's messages to the agent service as the signed-in user and shows the run as it streams.",
+      "Holds a live conversation with one declared platform agent inside a panel member (declaring `agent: 'page-default' | { kind: 'id', id } | { kind: 'preset', agentKind }`) or in a standalone page. Sessions and history stay on the agent platform (never duplicated per panel), access follows the signed-in reader's agent grants and business gates, optional `sessionId` state syncs the active session, and any application entry hosting it must declare `pageComposer: 'none'` so the page does not show two places to ask.",
+    effects: "Sends the reader's messages to the agent platform as the signed-in user, shares its session history, and writes only the panel's optional `sessionId` state.",
+    bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
+    data: {},
+    inputs: {
+      sessionId: { kind: "scalar", type: "string" },
+    },
+    outputs: {
+      sessionId: { kind: "scalar", type: "string" },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      sessionId: { kind: "scalar", type: "string" },
+      busy: { kind: "scalar", type: "boolean" },
+    },
   }),
   defineComponentMeta({
     componentId: "AgentShell",
@@ -114,7 +127,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentShell",
     role: "control",
     meaning:
-      "The whole conversation surface of one agent: its column, the conversation and the page beside it. A panel that talks to an agent composes it rather than drawing a conversation of its own.",
+      "Platform-owned full conversation shell (sidebar, conversation stream, and side page dock) for the platform host itself — not a panel projection member. Inside a panel, place `AgentChatPanel` for an embedded conversation or `ConversationEntry` to open/hand off to the platform shell.",
     effects: "Sends the reader's messages to the agent service as the signed-in user.",
   }),
   defineComponentMeta({

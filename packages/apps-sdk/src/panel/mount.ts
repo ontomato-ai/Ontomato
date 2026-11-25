@@ -21,6 +21,8 @@ import { applyPanelRequest, createPanelInstance } from "./instance";
 import PanelProjection from "./Projection.vue";
 import { runPanel } from "./lifecycle";
 import { readProjectionRecord, readPanelData } from "./platform-requests";
+import { panelChatHostKey, type AgentHostClient } from "@ontomato/agent-shell-ui";
+import { createAssistantClient } from "../chat";
 import { baseComponents } from "../base-components";
 import { prepareTemplateComponents } from "./template-components";
 import { platformResourceLoader } from "./platform-objects";
@@ -142,6 +144,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // The panel's own words, as its HTML reads them: `{{ t("settings.title") }}`. The platform's words stay `$t`.
   app.config.globalProperties.t = context.t;
   app.config.errorHandler = failed;
+  let chatClient: AgentHostClient | null = null;
+  app.provide(panelChatHostKey, {
+    client: () => (chatClient ??= createAssistantClient(appContext)),
+  });
   // Element Plus's components and the SDK's base components a panel's HTML composes; neither carries business.
   installTemplateComponents(app);
   app.use(appContext).mount(element);

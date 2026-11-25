@@ -24,7 +24,7 @@ export {
 } from "./sdk-ui-map";
 export { missingEntryMessageKeys } from "./panel-conversation-entry";
 export {
-  chartProjectionLookupResponseSchema, panelDefinitionContentSchema, productProjectionInputSchema,
+  AGENT_CHAT_PANEL_COMPONENT, chartProjectionLookupResponseSchema, panelDefinitionContentSchema, productProjectionInputSchema,
   productProjectionResponseSchema, registerChartProjectionResponseSchema,
   productProjectionUsedBySchema, PROJECTION_REUSE_PANEL_HEADER,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,

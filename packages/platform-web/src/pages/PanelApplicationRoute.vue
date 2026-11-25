@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, markRaw, onBeforeUnmount, ref, shallowRef, toRaw, watch, type Ref } from "vue";
+import { computed, inject, markRaw, onBeforeUnmount, reactive, ref, shallowRef, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElSkeleton } from "element-plus";
@@ -214,6 +214,8 @@ interface KeptPage {
  */
 // Typed as the pages themselves: unwrapping each page's port and contexts as reactive state is too deep to type.
 const kept = ref([]) as Ref<KeptPage[]>;
+/** Number of mounted embedded AgentChatPanel projections per entry use ID (suppresses bottom PageComposer). */
+const embeddedChatCounts = reactive<Record<string, number>>({});
 let showings = 0;
 const failure = ref("");
 const besideFrameManifest = shallowRef<{ framePanelId: string; manifest: Pick<PanelManifest, "state"> } | null>(null);
@@ -730,6 +732,17 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
     props.navigate,
     pageCounter,
+    () => {
+      embeddedChatCounts[use.id] = (embeddedChatCounts[use.id] ?? 0) + 1;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        const next = (embeddedChatCounts[use.id] ?? 0) - 1;
+        if (next <= 0) delete embeddedChatCounts[use.id];
+        else embeddedChatCounts[use.id] = next;
+      };
+    },
   ));
   return page;
 }
@@ -830,7 +843,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         </div>
       </div>
       <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
-      <template v-if="!props.navigate && shownPage?.use.pageComposer !== 'none' && ((shownPage && shownSkill) || composerProblem)" #foot>
+      <template v-if="!props.navigate && shownPage?.use.pageComposer !== 'none' && !(shownPage && embeddedChatCounts[shownPage.use.id]) && ((shownPage && shownSkill) || composerProblem)" #foot>
         <PageComposer
           v-if="shownPage && shownSkill"
           :page="shownPage.reported"

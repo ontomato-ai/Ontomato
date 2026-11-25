@@ -21,7 +21,7 @@ const LAZY: Record<string, () => Promise<Component>> = {
   MarkdownView: () => import("@ontomato/foundation-ui/markdown").then((module) => module.MarkdownView),
   TablePreview: () => import("@ontomato/foundation-ui/preview").then((module) => module.TablePreview),
   HtmlPreview: () => import("@ontomato/foundation-ui/preview").then((module) => module.HtmlPreview),
-  AgentChatPanel: () => import("@ontomato/agent-shell-ui").then((module) => module.AgentChatPanel),
+  AgentChatPanel: () => import("./chat/AgentChatPanel.vue").then((module) => module.default),
   AgentShell: () => import("@ontomato/agent-shell-ui").then((module) => module.AgentShell),
   ShellColumn: () => import("@ontomato/agent-shell-ui").then((module) => module.ShellColumn),
   ShellNavBody: () => import("@ontomato/agent-shell-ui").then((module) => module.ShellNavBody),

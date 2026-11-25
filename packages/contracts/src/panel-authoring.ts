@@ -92,7 +92,7 @@ const inlineMemberSchema = z.object({
   state: z.record(stateKey, stateKey).optional().describe("Map typed component port names or owner read parameter names to panel state fields."),
   inputs: z.record(stateKey, authoringInputBindingSchema).optional().describe("Explicit projection input bindings: {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, {output: {member, name, path?}}, or {fromSlot: true} when supplied by an enclosing Vue slot."),
   config: runtimeJsonObjectSchema.optional().describe("Component configuration from the released SDK catalogue."),
-  agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
+  agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry and AgentChatPanel. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
   prefill: panelConversationEntryFields.shape.prefill.describe("ConversationEntry text placed in the page composer without sending it."),
   prefillKey: panelConversationEntryFields.shape.prefillKey.describe("ConversationEntry opening sentence as a key in this panel's content.messages, read in the reader's language. Use it instead of prefill in a panel shipped to several languages."),
   sourceCard: dashboardCardRequestSchema.optional().describe("Optional for MetricChart. Use {dashboardId, cardId} to bind an existing dashboard card through the chart owner, or omit it and bind MetricChart data directly."),
@@ -118,8 +118,15 @@ const inlineMemberSchema = z.object({
     }
     return;
   }
+  if (isOfficialComponent(member.component, "AgentChatPanel")) {
+    if (member.agent === undefined) issue(["agent"], "AgentChatPanel needs an agent target");
+    for (const field of ["type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "prefill", "prefillKey"] as const) {
+      if (member[field] !== undefined) issue([field], "AgentChatPanel uses only its declared agent, optional session state/inputs, and config");
+    }
+    return;
+  }
   for (const field of ["agent", "prefill", "prefillKey"] as const) {
-    if (member[field] !== undefined) issue([field], "This field is only for ConversationEntry");
+    if (member[field] !== undefined) issue([field], field === "agent" ? "This field is only for ConversationEntry or AgentChatPanel" : "This field is only for ConversationEntry");
   }
 
   const data = Object.entries(member.data ?? {});

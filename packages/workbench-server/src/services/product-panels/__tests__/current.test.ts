@@ -119,6 +119,46 @@ it("does not accept a legacy asset ID as a current panel reference", async () =>
   await expect(validateApplicationPanelReferences(request("p"))).resolves.toBeUndefined();
 });
 
+it("requires pageComposer: 'none' on any application entry mounting an AgentChatPanel projection (direct or nested)", async () => {
+  await saveCurrentProjection(owner, credentials, "chat-proj", {
+    name: "Chat", description: "", visibility: "domain",
+    componentId: "@ontomato/sdk:AgentChatPanel",
+    inputs: {}, outputs: {}, data: {}, config: {},
+    conversationEntry: { target: { kind: "preset", agentKind: "regular" } },
+    revision: 0,
+  });
+  const basePanel = panel();
+  const { revision, ...input } = basePanel;
+  await saveCurrentPanel(owner, credentials, "chat-panel", {
+    ...input,
+    manifest: { state: {}, members: { chat: { target: { projectionId: "chat-proj" } } } },
+  }, revision);
+  await saveCurrentPanel(owner, credentials, "outer-panel", {
+    ...input,
+    manifest: { state: {}, members: { child: { target: { panelId: "chat-panel" } } } },
+  }, revision);
+
+  for (const panelId of ["chat-panel", "outer-panel"]) {
+    await expect(validateApplicationPanelReferences({
+      domainId: owner.domainId,
+      uses: [{ id: "chat-use", panelId }],
+      delivery: { panels: [], projections: [] },
+    })).rejects.toMatchObject({ status: 400, code: "INVALID_PANEL_ENTRY_PAGE_COMPOSER" });
+
+    await expect(validateApplicationPanelReferences({
+      domainId: owner.domainId,
+      uses: [{ id: "chat-use", panelId, pageComposer: "bottom" }],
+      delivery: { panels: [], projections: [] },
+    })).rejects.toMatchObject({ status: 400, code: "INVALID_PANEL_ENTRY_PAGE_COMPOSER" });
+
+    await expect(validateApplicationPanelReferences({
+      domainId: owner.domainId,
+      uses: [{ id: "chat-use", panelId, pageComposer: "none" }],
+      delivery: { panels: [], projections: [] },
+    })).resolves.toBeUndefined();
+  }
+});
+
 it("rejects a frame state input without a frame and preserves typed literal wiring", async () => {
   const { revision, ...input } = panel();
   const type = { kind: "scalar", type: "string" } as const;

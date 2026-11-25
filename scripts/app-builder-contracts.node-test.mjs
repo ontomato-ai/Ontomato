@@ -191,6 +191,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     { componentId: "OperationButton", data: {} },
     { componentId: "PanelData", data: { "*": datum("panelRecordList") } },
     { componentId: "MetricChart", data: {} },
+    { componentId: "AgentChatPanel", data: {}, inputs: { sessionId: { kind: "scalar", type: "string" } }, outputs: { sessionId: { kind: "scalar", type: "string" } } },
   ] };
   const checkModule = `
     const ok = data => ({ success: true, data });
@@ -244,6 +245,20 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     }
     export function expandPanelAuthoringMember(key, member, { state, components, typeTable }) {
       if (!components.some(component => component.componentId === member.component)) throw new Error("member " + key + ": component unavailable");
+      if (member.component === "AgentChatPanel") {
+        const projection = {
+          componentId: "@ontomato/sdk:AgentChatPanel",
+          data: {},
+          inputs: member.state?.sessionId ? { sessionId: { kind: "scalar", type: "string" } } : {},
+          outputs: member.state?.sessionId ? { sessionId: { kind: "scalar", type: "string" } } : {},
+          config: member.config ?? {},
+          conversationEntry: { target: member.agent === "page-default" ? { kind: "page-default" } : member.agent },
+        };
+        const placement = member.state?.sessionId
+          ? { inputs: { sessionId: { state: member.state.sessionId } }, outputs: { sessionId: { state: member.state.sessionId } } }
+          : {};
+        return { projection, placement };
+      }
       const target = state[member.target]?.type;
       const type = member.type ?? target?.objectType ?? target?.items?.objectType;
       const owner = typeTable.objectTypes[type];
@@ -671,6 +686,50 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       }],
     }));
     assert.equal(JSON.parse((await run("panel", "check", detailDir)).stdout).status, "valid");
+
+    // A panel mounting AgentChatPanel must declare pageComposer: "none" on its application entry.
+    const chatDir = join(directory, "chat-app");
+    await mkdir(chatDir, { recursive: true });
+    await writeFile(join(chatDir, "panel.html"), '<div id="app"><projection slot="chat"></projection></div>\n');
+    await writeFile(join(chatDir, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel"; mountPanel({});\n');
+    await writeFile(join(chatDir, "panel.json"), JSON.stringify({
+      manifest: {
+        state: { sessionId: { type: { kind: "scalar", type: "string" }, deepLink: true } },
+        members: {
+          chat: {
+            component: "AgentChatPanel",
+            agent: { kind: "preset", agentKind: "regular" },
+            state: { sessionId: "sessionId" },
+          },
+        },
+      },
+    }));
+    const chatRegistration = {
+      panels: [{ id: "chat-panel", mode: "create", input: { name: "Chat", description: "", visibility: "domain" } }],
+      applications: [{
+        id: "app-chat-only",
+        mode: "create",
+        input: {
+          declaration: { names: { en: "Chat" }, descriptions: { en: "Chat" }, groups: [], permissions: [] },
+          entryAccess: ["domain-member"],
+          entry: { path: "/applications/app-chat-only", renderer: "panels" },
+          panelUses: [{
+            id: "chat-use",
+            pageKey: "chat-home",
+            panelId: "chat-panel",
+            path: "/applications/app-chat-only/home",
+            access: { kind: "domain-member" },
+            names: { en: "Home" },
+          }],
+        },
+      }],
+    };
+    await writeFile(join(chatDir, "registration.json"), JSON.stringify(chatRegistration));
+    await assert.rejects(run("panel", "check", chatDir), error =>
+      error.stderr.includes('mounts AgentChatPanel and must set "pageComposer": "none"'));
+    chatRegistration.applications[0].input.panelUses[0].pageComposer = "none";
+    await writeFile(join(chatDir, "registration.json"), JSON.stringify(chatRegistration));
+    assert.equal(JSON.parse((await run("panel", "check", chatDir)).stdout).status, "valid");
 
     const detailPanelFile = join(detailDir, "panel.json");
     const detailPanel = JSON.parse(await readFile(detailPanelFile, "utf8"));

@@ -62,8 +62,11 @@ export function expandPanelAuthoringMember(
   const componentId = qualifiedId(component);
   const isObjectRelations = componentId === "@ontomato/sdk:ObjectRelations";
   const isOntologyGraph = componentId === "@ontomato/sdk:OntologyGraph";
-  if (member.agent !== undefined && componentId !== "@ontomato/sdk:ConversationEntry")
-    return fail("agent", "The agent target belongs to the official ConversationEntry component");
+  const allowsAgentTarget = componentId === "@ontomato/sdk:ConversationEntry" || componentId === "@ontomato/sdk:AgentChatPanel";
+  if (member.agent !== undefined && !allowsAgentTarget)
+    return fail("agent", "The agent target belongs to the official ConversationEntry or AgentChatPanel component");
+  if ((member.prefill !== undefined || member.prefillKey !== undefined) && componentId !== "@ontomato/sdk:ConversationEntry")
+    return fail(member.prefill !== undefined ? "prefill" : "prefillKey", "The opening sentence belongs to the official ConversationEntry component");
   const conversationEntry = member.agent === undefined ? undefined : panelConversationEntrySchema.parse({
     target: member.agent === "page-default" ? { kind: "page-default" } : member.agent,
     ...(member.prefill !== undefined && { prefill: member.prefill }),

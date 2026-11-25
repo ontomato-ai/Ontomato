@@ -184,6 +184,7 @@ defineExpose({
   reset: () => conversation.open(null),
   cancel: conversation.cancel,
   send,
+  busy: conversation.busy,
 });
 </script>
 
