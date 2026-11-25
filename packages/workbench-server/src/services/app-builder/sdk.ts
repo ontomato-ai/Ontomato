@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { appsSdkBuildSchema, appsSdkReleaseManifestSchema, type AppsSdkCurrent } from "@ontomato/contracts/apps-sdk";
 import { bundledAppsSdkDir } from "../../content/layout";
@@ -18,11 +18,24 @@ export async function readCurrentAppSdkRelease() {
   return { build, directory, manifest, publicBasePath, sdkBasePath: `${publicBasePath}${APPS_SDK_CURRENT_PATH}` };
 }
 
+let componentCatalogue: { identity: string; pending: Promise<unknown> } | undefined;
+
 /** Reads the catalogue and identity of the same shipped release. Its consumer owns the catalogue schema. */
 export async function readCurrentAppSdkComponents() {
   const { build, directory, manifest } = await readCurrentAppSdkRelease();
-  const catalogue: unknown = JSON.parse(await readFile(path.join(directory, manifest.components), "utf8"));
-  return { ...build, catalogue };
+  const file = path.join(directory, manifest.components);
+  const { dev, ino, size, mtimeNs, ctimeNs } = await stat(file, { bigint: true });
+  const identity = `${file}:${build.digest}:${dev}:${ino}:${size}:${mtimeNs}:${ctimeNs}`;
+  if (componentCatalogue?.identity === identity) return { ...build, catalogue: await componentCatalogue.pending };
+  const pending = readFile(file, "utf8").then((text): unknown => JSON.parse(text));
+  const load = { identity, pending };
+  componentCatalogue = load;
+  try {
+    return { ...build, catalogue: await pending };
+  } catch (error) {
+    if (componentCatalogue === load) componentCatalogue = undefined;
+    throw error;
+  }
 }
 
 export async function currentAppSdk(): Promise<AppsSdkCurrent> {

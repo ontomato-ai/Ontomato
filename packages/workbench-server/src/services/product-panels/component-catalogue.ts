@@ -16,7 +16,6 @@ import { directReadDeclaration, type PanelRecord } from "@ontomato/contracts/pan
 import { panelReadResultIdSchema } from "@ontomato/contracts/panel-operations";
 import { SDK_COMPONENT } from "@ontomato/contracts/platform-object-types";
 import type { BuiltinProductProjectionInput, ProductProjectionInput } from "@ontomato/contracts/product-panels";
-import { runtimeRoot } from "../../content/layout";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
@@ -49,15 +48,23 @@ function sdkComponentGroupRank(group: AppsSdkComponentGroup | undefined): number
   return group ? (SDK_COMPONENT_GROUP_ORDER.get(group) ?? APPS_SDK_COMPONENT_GROUPS.length) : APPS_SDK_COMPONENT_GROUPS.length;
 }
 
-export async function readPanelComponentCatalogue() {
+type PanelComponentCatalogue = { version: string; digest: string; components: Map<string, AppsSdkComponentCatalogEntry> };
+let loadedCatalogue: { raw: unknown; catalogue: PanelComponentCatalogue } | undefined;
+
+export async function readPanelComponentCatalogue(): Promise<PanelComponentCatalogue> {
   const { version, digest, catalogue: raw } = await readCurrentAppSdkComponents();
+  if (loadedCatalogue && loadedCatalogue.raw === raw &&
+      loadedCatalogue.catalogue.version === version && loadedCatalogue.catalogue.digest === digest)
+    return loadedCatalogue.catalogue;
   const catalogue = appsSdkComponentCatalogSchema.parse(raw);
   if (catalogue.version !== version) throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   const components = new Map(catalogue.components.map(component => {
     const packageName = component.module.split("/", component.module.startsWith("@") ? 2 : 1).join("/");
     return [`${packageName}:${component.componentId}`, component];
   }));
-  return { version, digest, components };
+  const parsed = { version, digest, components };
+  loadedCatalogue = { raw, catalogue: parsed };
+  return parsed;
 }
 
 export async function readAuthorComponentCatalogue(owner: ProductOwner) {
@@ -471,23 +478,8 @@ export async function readPanelDomainComponents(
   return Object.keys(resolved).length ? resolved : undefined;
 }
 
-let renderCatalogue: { root: string; pending: ReturnType<typeof readPanelComponentCatalogue> } | undefined;
-
-async function shippedRenderCatalogue() {
-  const root = runtimeRoot();
-  if (renderCatalogue?.root === root) return renderCatalogue.pending;
-  // The SDK bundled with this process is immutable for the life of the deployed release.
-  const load = { root, pending: readPanelComponentCatalogue() };
-  renderCatalogue = load;
-  try {
-    return await load.pending;
-  } catch (error) {
-    if (renderCatalogue === load) renderCatalogue = undefined;
-    throw error;
-  }
-}
-
-const renderValidation = new WeakMap<object, { dependency: string; runtime: DomainComponentRuntime | undefined }>();
+type RenderDependency = string | ComponentDeclaration;
+const renderValidation = new WeakMap<object, { dependency: RenderDependency; runtime: DomainComponentRuntime | undefined }>();
 
 export async function validateProjectionComponent(
   id: string, projection: ProductProjectionInput | BuiltinProductProjectionInput, readCatalogue = readPanelComponentCatalogue,
@@ -497,7 +489,7 @@ export async function validateProjectionComponent(
     scope?.client === undefined && readCatalogue === readPanelComponentCatalogue;
   let runtime: DomainComponentRuntime | undefined;
   let component;
-  let dependency: string | undefined;
+  let dependency: RenderDependency | undefined;
   const { componentId } = projection;
   if (isDomainComponentId(componentId)) {
     const row = await domainComponentForProjection(scope?.domainId ?? null, componentId, scope?.client);
@@ -512,9 +504,9 @@ export async function validateProjectionComponent(
       }
     }
   } else {
-    const catalogue = await (rendering ? shippedRenderCatalogue() : readCatalogue());
+    const catalogue = await readCatalogue();
     component = catalogue.components.get(componentId);
-    if (component) dependency = catalogue.digest;
+    if (component) dependency = component;
     else {
       const packaged = await readPackagedProjectionComponent(componentId);
       dependency = packaged?.digest;

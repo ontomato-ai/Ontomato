@@ -6,7 +6,7 @@ import { currentProductRecord, type CurrentProductRow } from "../../infrastructu
 import { parseStoredDefinition } from "./definition-diagnostics";
 
 type Definition = ProductPanel | ProductProjection;
-type Version<T> = { revision: number; createdAt: number; updatedAt: number; record: T; editable?: T };
+type Version<T> = { revision: number; createdAt: number; updatedAt: number; storageVersion: string | undefined; record: T; editable?: T };
 
 const panels = new Map<string, Version<ProductPanel>>();
 const projections = new Map<string, Version<ProductProjection>>();
@@ -20,12 +20,14 @@ function readDefinition<T extends Definition>(
   cache: Map<string, Version<T>>, row: CurrentProductRow, editable: boolean, parse: () => T,
 ): T {
   const key = JSON.stringify([row.domainId, row.id]);
-  const { revision } = row;
+  const { revision, storageVersion } = row;
   const createdAt = row.createdAt.getTime();
   const updatedAt = row.updatedAt.getTime();
   let version = cache.get(key);
-  if (!version || version.revision !== revision || version.createdAt !== createdAt || version.updatedAt !== updatedAt) {
-    version = { revision, createdAt, updatedAt, record: parse() };
+  // The tuple's writer also distinguishes a stored replacement that did not increment the authoring revision.
+  if (!version || version.revision !== revision || version.createdAt !== createdAt ||
+      version.updatedAt !== updatedAt || version.storageVersion !== storageVersion) {
+    version = { revision, createdAt, updatedAt, storageVersion, record: parse() };
   }
   // Keep the most recently used definitions. Built-ins also follow the deployed
   // row revision when another instance registers a new release in the same database.
