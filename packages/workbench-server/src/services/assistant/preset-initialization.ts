@@ -8,15 +8,19 @@ import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/p
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { findCurrentProduct } from "../../infrastructure/product-current";
 import { backendGet } from "../../utils/backend-client";
-import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { APP_BUILDER, APP_BUILDER_KIND } from "../app-builder/definition";
+import { OPS_DIAGNOSIS, OPS_DIAGNOSIS_KIND } from "../ops-diagnosis/definition";
 import { panelSkillRef } from "../product-panels/skill-identity";
 import { readPanelSkillSources } from "../product-panels/skill-provider";
 import { GOVERNANCE_KIND, GOVERNANCE_PANEL_ID, GOVERNANCE_PRESET_VERSION } from "./governance-definition";
 import { registerProductResource } from "../product-governance/grants";
 import { presetAgentDefinitions } from "./preset-definitions";
 
-const domainPresets = [...Object.values(presetAgentDefinitions), { ...APP_BUILDER, sortOrder: 2 }];
+const domainPresets = [
+  ...Object.values(presetAgentDefinitions),
+  { ...APP_BUILDER, sortOrder: 2 },
+  { ...OPS_DIAGNOSIS, sortOrder: 3 },
+];
 
 const legacyGrantsKind = "legacy-agent-grants";
 const legacyGrantsVersion = 1;
@@ -41,7 +45,7 @@ async function markLegacyGrants(client: Pick<PoolClient, "query">, domainId: str
 
 export async function initializeDomainPresetAgents(domainId: string): Promise<void> {
   const upgradeGovernance = await shouldUpgradeGovernancePreset(domainId);
-  const { rows, migrateLegacy, builderId } = await transaction(async client => {
+  const { rows, migrateLegacy, builderId, diagnosisId } = await transaction(async client => {
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`assistant-presets:${domainId}`]);
     const { rows: [{ count: existingCount }] } = await client.query<{ count: number }>(
       `SELECT COUNT(*)::int AS count FROM ${table("assistant_agents")} WHERE domain_id=$1`,
@@ -51,11 +55,19 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
       `SELECT 1 FROM ${table("assistant_preset_upgrades")} WHERE domain_id=$1 AND kind=$2 AND version=$3`,
       [domainId, legacyGrantsKind, legacyGrantsVersion],
     );
-    for (const { kind, name, description, skills, sortOrder } of domainPresets) {
+    const legacyDiagnosisModel = (await client.query<{ model_selection: unknown }>(
+      `SELECT model_selection FROM ${table("ops_diagnosis_settings")} WHERE domain_id=$1`,
+      [domainId],
+    )).rows[0]?.model_selection ?? null;
+    for (const preset of domainPresets) {
+      const icon = "icon" in preset ? preset.icon : null;
+      const modelSelection = preset.kind === OPS_DIAGNOSIS_KIND && legacyDiagnosisModel
+        ? JSON.stringify(legacyDiagnosisModel)
+        : '{"modelId":null}';
       await client.query(
-        `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,system_prompt,skills,sort_order)
-         VALUES($1,$2,$3,$4,$5,NULL,$6,$7) ON CONFLICT(domain_id,kind) DO NOTHING`,
-        [randomUUID(), domainId, kind, name, description, JSON.stringify(skills), sortOrder],
+        `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,icon,system_prompt,model_selection,skills,sort_order)
+         VALUES($1,$2,$3,$4,$5,$6,NULL,$7::jsonb,$8,$9) ON CONFLICT(domain_id,kind) DO NOTHING`,
+        [randomUUID(), domainId, preset.kind, preset.name, preset.description, icon, modelSelection, JSON.stringify(preset.skills), preset.sortOrder],
       );
     }
     if (existingCount === 0) await markLegacyGrants(client, domainId);
@@ -63,7 +75,7 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
     const migrateLegacy = existingCount > 0 && !marker.rowCount;
     const { rows } = await client.query<{ id: string }>(
       `SELECT id FROM ${table("assistant_agents")}
-       WHERE domain_id=$1 AND kind <> 'app-builder' AND kind NOT LIKE 'app-builder:%'
+       WHERE domain_id=$1 AND kind NOT IN ('app-builder','ops-diagnosis') AND kind NOT LIKE 'app-builder:%'
        ${migrateLegacy ? "" : "AND kind=ANY($2::text[])"}`,
       migrateLegacy ? [domainId] : [domainId, Object.keys(presetAgentDefinitions)],
     );
@@ -71,7 +83,11 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
       `SELECT id FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`,
       [domainId, APP_BUILDER_KIND],
     );
-    const registration = { rows, migrateLegacy, builderId };
+    const { rows: [{ id: diagnosisId }] } = await client.query<{ id: string }>(
+      `SELECT id FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`,
+      [domainId, OPS_DIAGNOSIS_KIND],
+    );
+    const registration = { rows, migrateLegacy, builderId, diagnosisId };
     if (!upgradeGovernance) return registration;
 
     const recorded = await client.query(
@@ -102,7 +118,7 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
     });
   }
   if (migrateLegacy) await markLegacyGrants(getPostgresPool(), domainId);
-  for (const id of [builderId, DIAGNOSIS_AGENT_ID])
+  for (const id of [builderId, diagnosisId])
     await registerProductResource({ domainId }, id, true, { ownerId: null, verbs: ["use", "view", "edit"], grantAdmin: true });
 }
 

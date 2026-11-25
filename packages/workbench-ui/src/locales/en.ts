@@ -598,6 +598,7 @@ export default {
     "noConversations": "No Conversations",
     "historyConversations": "History Conversations",
     "diagnoseTurn": "Diagnose this Turn",
+    "diagnoseTurnPrefill": "Diagnose this Turn (sessionId: {sessionId}, runId: {runId}).",
     "partialResult": "Partial result: a processing or output limit of {rowLimit} was reached, so these results (even if empty) may not cover all matches."
   },
   "appearance": {
@@ -1300,7 +1301,7 @@ export default {
       "autotestRun": "Autotest run",
       "autotestCaseArtifact": "Test case artifact",
       "dslQuery": "DSL query",
-      "modelConnection": "Model connection",
+      "modelConnection": "Model provider",
       "modelEntry": "Configured model",
       "modelUsage": "Model usage",
       "favorite": "Favorite",

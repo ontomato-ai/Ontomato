@@ -6,8 +6,12 @@ import { platformScheduleExecutionStateSchema, platformScheduleFormSchema, type 
 const mocks = vi.hoisted(() => ({
   active: vi.fn(), busy: vi.fn(), start: vi.fn(), meta: vi.fn(), source: vi.fn(), cases: vi.fn(),
   access: vi.fn(), actor: vi.fn(), create: vi.fn(), run: vi.fn(), status: vi.fn(), grantAllowed: vi.fn(),
+  opsDiagnosis: vi.fn(),
 }));
-vi.mock("../service", () => ({ diagnosisService: { create: mocks.create, send: mocks.run } }));
+const diagnosisId = "64348621-8f48-4734-b498-a265598c19f0";
+vi.mock("../../assistant/service", () => ({ assistantService: { create: mocks.create, send: mocks.run } }));
+vi.mock("../../assistant/store", () => ({ assistantStore: { opsDiagnosis: mocks.opsDiagnosis } }));
+vi.mock("../service", () => ({ diagnosisService: { create: vi.fn(), send: vi.fn() } }));
 vi.mock("../../product-governance/grants", () => ({ productGrantAllowed: mocks.grantAllowed }));
 vi.mock("../../scheduling/conversation", () => ({ scheduledConversationStatus: mocks.status }));
 vi.mock("../../../platform/diagnosis/autotest/runner/run-controller", () => ({ getActiveRun: mocks.active, isRunActive: mocks.busy, startRun: mocks.start }));
@@ -21,6 +25,7 @@ function input():PlatformScheduleExecutionRequest {
 beforeEach(() => {
   mocks.meta.mockReturnValue(null); mocks.source.mockReturnValue(null); mocks.busy.mockReturnValue(false); mocks.active.mockReturnValue(null);
   mocks.actor.mockResolvedValue(owner); mocks.access.mockResolvedValue(undefined); mocks.grantAllowed.mockResolvedValue(true);
+  mocks.opsDiagnosis.mockResolvedValue({ id: diagnosisId, kind: "ops-diagnosis", enabled: true });
   mocks.cases.mockReturnValue([{id:"set",name:"Regression",caseCount:2}]); mocks.create.mockResolvedValue({}); mocks.run.mockResolvedValue({});
 });
 afterEach(() => {vi.resetAllMocks();});
@@ -51,11 +56,15 @@ it("returns missing status after a lost busy response without starting another b
   await expect(application.status({taskId:request.taskId,runId:request.runId,owner,handle:null})).rejects.toThrow();
   expect(mocks.start).not.toHaveBeenCalled();
 });
-it("starts an inspection in the diagnosis host and applies the same observer authorization", async () => {
+it("starts an inspection in the unified assistant host and applies the same observer authorization", async () => {
   await application.authorize(context);const request={...input(),content:{operation:"inspection",instruction:"Check failures"},formRevision:"inspection-v1"};
   const result=await application.start(request,context);
-  expect(result.resultLink?.path).toContain("/ops/diagnosis?sessionId=");
-  expect(mocks.create.mock.calls[0][1]).toEqual(owner);expect(mocks.run.mock.calls[0]).toEqual(expect.arrayContaining([request.runId,{message:"Check failures"},owner,context.credentials]));
+  expect(result.resultLink).toEqual({
+    appId: "agents",
+    path: expect.stringContaining(`/agents/chat?agentId=${diagnosisId}&sessionId=`),
+  });
+  expect(mocks.create.mock.calls[0]).toEqual([expect.any(String), owner, { agentId: diagnosisId }, context.credentials, "scheduled"]);
+  expect(mocks.run.mock.calls[0]).toEqual(expect.arrayContaining([request.runId,{message:"Check failures"},owner,context.credentials,"background"]));
   expect(mocks.access).toHaveBeenCalledWith({domainId:"sales",apiKey:"internal",token:undefined});
 });
 it("blocks scheduled inspection when diagnosis use grant is missing", async () => {

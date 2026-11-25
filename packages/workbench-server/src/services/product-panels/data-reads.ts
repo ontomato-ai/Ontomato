@@ -238,7 +238,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       createForm: (_selection, params) => modelConnections.createForm(formParams(params)),
       createModelForm: (selection, params) => modelConnections.createModelForm(selection.primaryKey!, formParams(params)),
       models: selection => modelConnections.models(selection.primaryKey!),
-      usages: selection => modelConnections.usages(selection.primaryKey!),
     },
     [MODEL_ENTRY]: {
       record: selection => modelEntries.record(selection.primaryKey!),

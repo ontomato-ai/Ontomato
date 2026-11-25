@@ -253,7 +253,7 @@ describe("model settings owner reads & forms", () => {
     const refreshed = await reads.form("openai-main", { values: { provider: "deepseek" } });
     expect(refreshed.values.apiKey).toBe("");
     expect(refreshed.errors).toEqual([{
-      field: "/provider", code: "invalid_option", message: "This provider does not support embedding models.",
+      field: "/provider", code: "invalid_option", message: "This provider type does not support embedding models.",
     }]);
     expect(JSON.stringify([await reads.list(), await reads.record("openai-main"), editForm, refreshed]))
       .not.toContain(storedSettings.connections["openai-main"]!.apiKey);
@@ -582,6 +582,7 @@ describe("built-in model panels validation", () => {
     const connOps = typeMap.get(MODEL_CONNECTION)?.operations?.map((operation) => operation.id) ?? [];
     expect(connOps).toContain(DISCOVER_MODEL_CONNECTION);
     expect(connOps).toContain(TEST_MODEL_CONNECTION);
+    expect(typeMap.get(MODEL_CONNECTION)?.reads).not.toHaveProperty("usages");
 
     const typeTable = {
       objectTypes: z.record(platformTypeTableEntrySchema).parse(Object.fromEntries(typeMap)),
@@ -603,6 +604,11 @@ describe("built-in model panels validation", () => {
       const reg = JSON.parse(readFileSync(resolve(dir, "registration.json"), "utf8"));
       const desc = JSON.parse(readFileSync(resolve(dir, "panel.json"), "utf8"));
       const html = readFileSync(resolve(dir, "panel.html"), "utf8");
+      if (dirName === "model-connections") {
+        expect(desc.manifest.members).not.toHaveProperty("usagesList");
+        expect(html).not.toContain("usagesList");
+        expect(html).not.toContain("openUsage");
+      }
       const { state, members, ...decl } = desc.manifest;
       const placements = Object.fromEntries(Object.entries(members).map(([member, def]) => {
         if (!("component" in (def as Record<string, unknown>))) return [member, def];

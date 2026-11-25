@@ -14,6 +14,9 @@ import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
 import { visibilityReader } from "../agent-host/presentation";
 import {isAppBuilderKind} from '../app-builder/definition';
+import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
+import { prepareOpsDiagnosisRun } from "../ops-diagnosis/prepare";
+import { workbenchIdentity } from "../../identity/installed";
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -133,7 +136,7 @@ export const assistantService = {
     const rows = (
       await db().query(
         `SELECT s.* FROM ${table("assistant_sessions")} s WHERE s.domain_id=$1 AND s.owner_id=$2 AND ($3::uuid IS NULL OR s.agent_id=$3) AND ($7::uuid IS NULL OR s.workspace_id=$7) AND ($4::timestamptz IS NULL OR (s.updated_at,s.id)<($4,$5::uuid))
-         AND (NOT $8::boolean OR (s.workspace_id IS NULL AND EXISTS (SELECT 1 FROM ${table("assistant_agents")} a WHERE a.id=s.agent_id AND a.domain_id=s.domain_id AND a.kind NOT IN ('regular','knowledge-governance','app-builder'))))
+         AND (NOT $8::boolean OR (s.workspace_id IS NULL AND EXISTS (SELECT 1 FROM ${table("assistant_agents")} a WHERE a.id=s.agent_id AND a.domain_id=s.domain_id AND a.kind NOT IN ('regular','knowledge-governance','app-builder','ops-diagnosis'))))
          ORDER BY s.updated_at DESC,s.id DESC LIMIT $6`,
         [
           owner.domainId,
@@ -287,7 +290,7 @@ export const assistantService = {
     const { agent: a } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
     // When a logged-in user is present (direct chat or delegated sub-agent under a user chat),
     // both reads and writes inherit that user's permissions. `execution_user_id` is only for unattended automation.
-    const executionUserId = isAppBuilderKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
+    const executionUserId = isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
     const executionCredentials = await agentExecutionCredentials(a.id, executionUserId, owner, credentials);
     const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid(), variables: z.record(z.unknown()).optional() }).strict().safeParse(body.context) : null;
     if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
@@ -297,7 +300,11 @@ export const assistantService = {
     const message = input.content;
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
     const request = await withDomainSkills(owner.domainId,async () => {
-      const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
+      const prepare = isAppBuilderKind(a.kind)
+        ? prepareAppBuilderRun
+        : isOpsDiagnosisKind(a.kind)
+          ? prepareOpsDiagnosisRun
+          : prepareAnalystRun;
       const variables = z.record(z.unknown()).safeParse(
         body.context && typeof body.context === "object" ? body.context.variables : undefined,
       );
@@ -318,6 +325,13 @@ export const assistantService = {
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
     if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
+    if (isOpsDiagnosisKind(a.kind)) {
+      await workbenchIdentity().assertObserveAccess({
+        domainId: owner.domainId,
+        token: credentials.token,
+        apiKey: credentials.apiKey,
+      });
+    }
     await requireProductGrant(a.id, "use", credentials);
     return { agent: a };
   },

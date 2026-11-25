@@ -10,12 +10,15 @@ import { tmpdir } from "node:os";
 import { installContentLayout } from "../../../content/layout";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(), agent: vi.fn(), session: vi.fn(), builderAccess: vi.fn() }));
+const mocks = vi.hoisted(() => ({ post: vi.fn(), agent: vi.fn(), session: vi.fn(), builderAccess: vi.fn(), observeAccess: vi.fn() }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://query" } } }));
 vi.mock("../../../utils/backend-client", () => ({ backendPost: mocks.post, buildBackendHeaders: () => ({}) }));
 vi.mock("../store", () => ({ assistantStore: { agent: mocks.agent, findAgent: mocks.agent, session: mocks.session } }));
 
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: mocks.builderAccess }));
+vi.mock("../../../identity/installed", () => ({
+  workbenchIdentity: () => ({ assertObserveAccess: mocks.observeAccess }),
+}));
 
 installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), runtimeResources: [] });
 const { assistantService } = await import("../service");
@@ -38,6 +41,7 @@ const reply = (data: unknown) => ({ text: JSON.stringify(data) });
 configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
 beforeEach(() => {
   mocks.builderAccess.mockReset().mockResolvedValue(undefined);
+  mocks.observeAccess.mockReset().mockResolvedValue(undefined);
   mocks.session.mockReset().mockResolvedValue({ agent_id: id });
   mocks.agent.mockReset().mockResolvedValue({
     id, kind: id, name: "Agent", description: "", icon: null, enabled: true,
@@ -122,4 +126,22 @@ it("refuses app builder admission, creation, continuation and preparation after 
   await expect(assistantService.send(id, id, { message: "Continue" }, owner, credentials, "human")).rejects.toMatchObject(forbidden);
   await expect(assistantService.prepare(run, owner, credentials)).rejects.toMatchObject(forbidden);
   expect(mocks.post).toHaveBeenCalledWith("product-grant-check", expect.any(String), { id, verb: "use" }, expect.anything());
+});
+
+it("requires both observe access and use grant to admit ops-diagnosis", async () => {
+  mocks.agent.mockResolvedValue({ id, kind: "ops-diagnosis", enabled: true });
+  await expect(assistantService.admitAgent(id, owner, credentials)).resolves.toMatchObject({ agent: { id } });
+  expect(mocks.observeAccess).toHaveBeenCalledWith({ domainId: owner.domainId, token: credentials.token, apiKey: undefined });
+
+  mocks.observeAccess.mockRejectedValue(new HttpError(403, "Observe permission required", "FORBIDDEN"));
+  await expect(assistantService.admitAgent(id, owner, credentials)).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+
+  mocks.observeAccess.mockResolvedValue(undefined);
+  mocks.post.mockResolvedValue(reply({ allowed: false }));
+  const run = { agent: { agentId: id } } as AgentPrepareRequest;
+  const forbidden = { status: 403, code: "PRODUCT_FORBIDDEN" };
+  await expect(assistantService.admitAgent(id, owner, credentials)).rejects.toMatchObject(forbidden);
+  await expect(assistantService.create(id, owner, { agentId: id }, credentials)).rejects.toMatchObject(forbidden);
+  await expect(assistantService.send(id, id, { message: "Diagnose" }, owner, credentials, "human")).rejects.toMatchObject(forbidden);
+  await expect(assistantService.prepare(run, owner, credentials)).rejects.toMatchObject(forbidden);
 });

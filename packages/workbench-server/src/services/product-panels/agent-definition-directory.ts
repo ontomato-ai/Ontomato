@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   ontologyAgentModelSchema, ontologyAgentModelWriteSchema, type ModelSelection,
 } from "@ontomato/contracts/model-settings";
-import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { RETRIEVAL_AGENT_ID, productGrantVerbSchema, type ProductGrantRecord } from "@ontomato/contracts/product-governance";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
@@ -12,6 +11,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { isAppBuilderKind } from "../app-builder/definition";
 import { createAppBuilderDefinition } from "../app-builder/panel-model";
+import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import { agentDefinitionRecord } from "../assistant/definition-record";
 import { formJsonSchema, modelPanelField, modelSelectionWrite } from "../assistant/model-panel-form";
 import { describeAgentDefinitionForm } from "../assistant/definition-form";
@@ -36,7 +36,7 @@ type SystemOwner = {
 
 export function createSystemAgentOwners(owner: AssistantOwner, viewer: AssistantCredentials) {
   const builder = createAppBuilderDefinition(owner, viewer);
-  const diagnosis = createOpsDiagnosisDefinition(owner.domainId, viewer);
+  const diagnosis = createOpsDiagnosisDefinition(owner, viewer);
   const host = operationHost({ owner, credentials: viewer });
   async function callRetrieval<T>(path: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, init: NonNullable<Parameters<typeof fetch>[1]>) {
     const response = await host.request(path, init);
@@ -70,14 +70,14 @@ export function createSystemAgentOwners(owner: AssistantOwner, viewer: Assistant
   };
   return {
     builder,
+    diagnosis,
     fixed: [
-      { id: DIAGNOSIS_AGENT_ID, source: diagnosis },
       { id: RETRIEVAL_AGENT_ID, source: retrieval },
     ],
     async forTarget(primaryKey: string) {
-      if (primaryKey === DIAGNOSIS_AGENT_ID) return diagnosis;
       if (primaryKey === RETRIEVAL_AGENT_ID) return retrieval;
       if (await builder.matches(primaryKey)) return builder;
+      if (await diagnosis.matches(primaryKey)) return diagnosis;
     },
   };
 }
@@ -145,7 +145,7 @@ export async function readVisibleAgentMcpUsages(
   const byServiceId = new Map<string, string[]>();
   let visibleCount = 0;
   for (const agent of agents) {
-    if (!visible.has(agent.id) || isAppBuilderKind(agent.kind)) continue;
+    if (!visible.has(agent.id) || isAppBuilderKind(agent.kind) || isOpsDiagnosisKind(agent.kind)) continue;
     visibleCount += 1;
     const label = assistantName(agent, viewer.locale);
     for (const serviceId of agent.enabled_mcp_service_ids ?? []) {
@@ -183,6 +183,7 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
     for (const agent of agents) {
       if (!visible.has(agent.id)) continue;
       if (isAppBuilderKind(agent.kind)) builtIn.push({ id: agent.id, source: systems.builder });
+      else if (isOpsDiagnosisKind(agent.kind)) builtIn.push({ id: agent.id, source: systems.diagnosis });
       else stored.push(agent);
     }
     builtIn.push(...systems.fixed.filter(agent => visible.has(agent.id)));

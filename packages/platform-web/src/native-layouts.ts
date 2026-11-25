@@ -24,8 +24,8 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
           managerPaths.objects,
           managerPaths.attributes,
           managerPaths.relations,
-          managerPaths.visualModeling,
           managerPaths.knowledge,
+          managerPaths.visualModeling,
         ],
       },
       {
@@ -72,7 +72,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
       {
         key: "operations:pages",
         paths: [
-          platformRoutes.diagnosis.path,
           platformRoutes.turn.path,
           platformRoutes.test.path,
           platformRoutes.results.path,

@@ -1,4 +1,3 @@
-import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -127,7 +126,8 @@ async function expectReadOnlyAgentLists(domainId: string) {
     `SELECT * FROM "${state.schema}".assistant_agents WHERE domain_id=$1 ORDER BY id`, [domainId],
   );
   const { rows } = await readAgents();
-  const definitionIds = rows.filter(row => row.kind !== "app-builder").map(row => row.id).sort();
+  const definitionIds = rows.filter(row => row.kind !== "app-builder" && row.kind !== "ops-diagnosis").map(row => row.id).sort();
+  const chatAgentIds = rows.filter(row => row.kind !== "app-builder").map(row => row.id).sort();
   const upgrades = await upgradeRecordCount(domainId);
 
   expect((await assistantStore.agents(domainId)).map(agent => agent.id).sort()).toEqual(definitionIds);
@@ -136,11 +136,14 @@ async function expectReadOnlyAgentLists(domainId: string) {
   const { listAgentDefinitions } = await import("../../services/assistant/definitions");
   const definitions = await listAgentDefinitions(owner, { token: domainId, locale: "en" });
   expect(definitions.agents.map(agent => agent.id).sort()).toEqual(definitionIds);
-  for (const route of ["assistant/agents", "assistant/agent-definitions"]) {
+  for (const [route, expectedIds] of [
+    ["assistant/agents", chatAgentIds],
+    ["assistant/agent-definitions", definitionIds],
+  ] as const) {
     const response = await api(domainId, "GET", route);
     expect(response.status, await response.clone().text()).toBe(200);
     const result = await response.json() as { agents: { id: string }[] };
-    expect(result.agents.map(agent => agent.id).sort()).toEqual(definitionIds);
+    expect(result.agents.map(agent => agent.id).sort()).toEqual(expectedIds);
   }
 
   expect((await readAgents()).rows).toEqual(rows);
@@ -186,6 +189,7 @@ beforeAll(async () => {
     requireDomainId: () => "unused",
     requirePermission,
     assertPermission: async () => undefined,
+    assertObserveAccess: async () => undefined,
   } as unknown as WorkbenchIdentity);
 
   const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");
@@ -280,7 +284,8 @@ it("migrates legacy roles once and keeps new domains and later custom agents out
   await initializeDomainPresetAgents(legacyDomain);
   const legacyRows = registrations.filter(row => row.domainId === legacyDomain);
   const legacyBuilder = await assistantStore.appBuilder(legacyDomain);
-  const systemIds = new Set([legacyBuilder.id, DIAGNOSIS_AGENT_ID]);
+  const legacyDiagnosis = (await assistantStore.opsDiagnosis(legacyDomain))!;
+  const systemIds = new Set([legacyBuilder.id, legacyDiagnosis.id]);
   const migratedIds = (await assistantStore.agents(legacyDomain)).filter(agent => agent.id !== builderCopy).map(agent => agent.id);
   expect(legacyRows.map(row => row.id).sort()).toEqual([...migratedIds, ...systemIds].sort());
   for (const row of legacyRows) {
@@ -302,7 +307,8 @@ it("migrates legacy roles once and keeps new domains and later custom agents out
   await initializeDomainPresetAgents(newDomain);
   const newRows = registrations.filter(row => row.domainId === newDomain);
   const newBuilder = await assistantStore.appBuilder(newDomain);
-  expect(newRows.map(row => row.id)).toEqual(expect.arrayContaining([newBuilder.id, DIAGNOSIS_AGENT_ID]));
+  const newDiagnosis = (await assistantStore.opsDiagnosis(newDomain))!;
+  expect(newRows.map(row => row.id)).toEqual(expect.arrayContaining([newBuilder.id, newDiagnosis.id]));
   expect(newRows.some(row => row.legacyMenuPermission)).toBe(false);
 });
 
@@ -348,7 +354,7 @@ it("only creates agents through the service-token initialization endpoint and ne
   const initialize = () => initializeViaService(domainId, "fixture-service");
   expect((await initialize()).status).toBe(204);
   const presets = await assistantStore.channelAgents(domainId);
-  expect(presets.map(agent => agent.kind).sort()).toEqual([...presetKinds, "app-builder"].sort());
+  expect(presets.map(agent => agent.kind).sort()).toEqual([...presetKinds, "app-builder", "ops-diagnosis"].sort());
   const stored = (await storedGovernanceRow(domainId))!;
   expect(stored.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
   expect(await governanceEffectiveSkills(domainId, stored.id)).toContainEqual(panelRef);

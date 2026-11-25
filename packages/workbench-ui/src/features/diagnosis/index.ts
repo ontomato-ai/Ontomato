@@ -1,5 +1,5 @@
 export { default as AutotestPage } from "./components/test-run/AutotestPage.vue";
-export { default as ObserveLayout } from "./components/layout/ObserveLayout.vue";
 export { default as LiveLogsPage } from "./components/live-logs/LiveLogsPage.vue";
 export { default as TestPage } from "./components/test-run/TestPage.vue";
 export { default as TurnDiagnoseButton } from "./components/TurnDiagnoseButton.vue";
+export { turnDiagnosisPrefill } from "./prefill";

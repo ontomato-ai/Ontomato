@@ -22,6 +22,9 @@ vi.mock("../../../infrastructure/postgres", () => ({
   qualifiedTable: (name: string) => name,
 }));
 vi.mock("../model-settings", () => ({ readDiagnosisModel: mocks.readModel }));
+vi.mock("../../assistant/store", () => ({
+  assistantStore: { opsDiagnosis: vi.fn(async () => undefined) },
+}));
 vi.mock("../../../core/skills/registry/manager", () => ({
   skillRegistryManager: { publicSkills: mocks.publicSkills },
 }));

@@ -19,11 +19,16 @@ import type { AgentRow } from "../store";
 
 const mocks = vi.hoisted(() => ({
   agents: vi.fn<[], Promise<AgentRow[]>>(),
+  opsDiagnosis: vi.fn<[], Promise<AgentRow | undefined>>(),
   native: vi.fn<[string, string], Promise<string | undefined>>(),
   profile: vi.fn<[unknown, string], Promise<string | null>>(),
+  observeAccess: vi.fn<[], Promise<void>>(),
 }));
 
-vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents } }));
+vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents, opsDiagnosis: mocks.opsDiagnosis } }));
+vi.mock("../../../identity/installed", () => ({
+  workbenchIdentity: () => ({ assertObserveAccess: mocks.observeAccess }),
+}));
 vi.mock("../../product-assets/platform-assets", () => ({ nativeProfileId: mocks.native }));
 vi.mock("../../product-assets/agent-profile", () => ({ profileIdForAgent: mocks.profile }));
 vi.mock("../../product-assets/grants", () => ({
@@ -222,6 +227,8 @@ beforeEach(() => {
 
   mocks.native.mockResolvedValue(undefined);
   mocks.profile.mockImplementation(async (_owner, id) => (id === agentIds.productProfile ? "profile-1" : null));
+  mocks.opsDiagnosis.mockResolvedValue(undefined);
+  mocks.observeAccess.mockResolvedValue(undefined);
   mocks.agents.mockResolvedValue([
     agentRow(agentIds.regular, "regular", [], { sortOrder: 0 }),
     agentRow(agentIds.publicOnly, "custom-public", [publicDataBrowserSkill], { sortOrder: 1 }),
@@ -234,7 +241,7 @@ beforeEach(() => {
 
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: string | URL) => {
+    vi.fn(async (input: string | URL, init?: Parameters<typeof fetch>[1]) => {
       const url = String(input);
       if (url.endsWith("/platform/page-skills")) {
         pageSkillsFetches += 1;
@@ -242,6 +249,10 @@ beforeEach(() => {
       }
       if (url.endsWith("/product-governance/resources")) {
         return Response.json({ ids: [...grantedIds, ...Object.values(agentIds)] });
+      }
+      if (url.endsWith("/product-governance/check")) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { id?: string };
+        return Response.json({ allowed: Boolean(body.id && grantedIds.includes(body.id)) });
       }
       if (url.includes("/resolve-entry?")) {
         const response = panelUsesHandler(url);
@@ -527,4 +538,104 @@ it("propagates source resolution errors instead of treating them as null", async
       }),
     ),
   ).rejects.toThrow("source owner unavailable");
+});
+
+it("gates ops-diagnosis by observe access and use grant in both unfiltered and observer page directories", async () => {
+  const { HttpError } = await import("../../../utils/errors");
+  const opsId = "88888888-8888-4888-8888-888888888888";
+  const builderId = "99999999-9999-4999-8999-999999999999";
+  const opsTurnRef = protectedSkillRef("product-panels", domain, "builtin-product-ops-turn-evidence");
+  const observerEntrance: PageSkillEntrance = { permissionCode: "observer", pageKey: "ops-turn-evidence" };
+
+  mocks.opsDiagnosis.mockResolvedValue(agentRow(opsId, "ops-diagnosis", [], { sortOrder: 3 }));
+  mocks.agents.mockResolvedValue([
+    agentRow(agentIds.regular, "regular", [], { sortOrder: 0 }),
+    agentRow(builderId, "app-builder", [], { sortOrder: 2 }),
+  ]);
+  offerings = [
+    ...offerings,
+    protectedOffering("builtin-product-ops-turn-evidence", {
+      entrances: [observerEntrance],
+      resourceIds: ["builtin-product-ops-turn-evidence"],
+    }),
+  ];
+  projection = {
+    pageSkills: [
+      ...projection.pageSkills,
+      {
+        permissionCode: "observer",
+        defaults: [{ pageKey: "ops-turn-evidence", defaultAgent: { kind: "preset", agentKind: "ops-diagnosis" } }],
+      },
+    ],
+    registeredSkills: [publicDataBrowserSkill],
+    admittedEntrances: [menuEntrance, observerEntrance],
+  };
+  panelUsesHandler = () =>
+    Response.json({
+      success: true,
+      data: {
+        applicationId: "operations",
+        entry: { path: "/ops", renderer: "operations" },
+        panelUses: [
+          {
+            id: "ops-turn-evidence",
+            pageKey: "ops-turn-evidence",
+            panelId: "builtin-product-ops-turn-evidence",
+            path: "/ops/turn",
+            access: { permissionCode: "observer" },
+            defaultAgent: { kind: "preset", agentKind: "ops-diagnosis" },
+          },
+        ],
+      },
+    });
+  grantedIds = [...grantedIds, "builtin-product-ops-turn-evidence", opsId, builderId];
+
+  // Both gates granted: ops-diagnosis appears in unfiltered chat directory, app-builder never does.
+  const unfiltered = await listAssistantAgents(owner, credentials);
+  expect(unfiltered.agents.map((a) => a.id)).toEqual([agentIds.regular, opsId]);
+  expect(unfiltered.agents.find((a) => a.id === opsId)).toMatchObject({ kind: "ops-diagnosis" });
+
+  // Observer page: ops-diagnosis is selected as defaultAgentId and exposed in presetAgentIds["ops-diagnosis"].
+  const opsSource: PageSkillSource = { kind: "application-use", applicationId: "operations", useId: "ops-turn-evidence" };
+  const opsPage = await listAssistantAgents(
+    owner,
+    credentials,
+    queryFromSearch({
+      pageKey: "ops-turn-evidence",
+      permissionCode: "observer",
+      member: JSON.stringify({ source: opsSource, memberPath: [], ref: opsTurnRef }),
+    }),
+  );
+  expect(opsPage.agents.map((a) => a.id)).toEqual([agentIds.regular, opsId]);
+  expect(opsPage.defaultAgentId).toBe(opsId);
+  expect(opsPage.presetAgentIds).toEqual({ regular: agentIds.regular, "ops-diagnosis": opsId });
+
+  // Non-observer page: ops-diagnosis is NOT offered as a candidate.
+  const nonOpsPage = await listAssistantAgents(
+    owner,
+    credentials,
+    queryFromSearch({ pageKey: "data-browser", access: "domain-member" }),
+  );
+  expect(nonOpsPage.agents.map((a) => a.id)).toEqual([agentIds.regular]);
+  expect(nonOpsPage.presetAgentIds).toEqual({ regular: agentIds.regular });
+
+  // Missing observe access: ops-diagnosis is hidden from both unfiltered and page-filtered directories.
+  mocks.observeAccess.mockRejectedValue(new HttpError(403, "Observe permission required", "FORBIDDEN"));
+  expect((await listAssistantAgents(owner, credentials)).agents.map((a) => a.id)).toEqual([agentIds.regular]);
+  const deniedObserverPage = await listAssistantAgents(
+    owner,
+    credentials,
+    queryFromSearch({
+      pageKey: "ops-turn-evidence",
+      permissionCode: "observer",
+      member: JSON.stringify({ source: opsSource, memberPath: [], ref: opsTurnRef }),
+    }),
+  );
+  expect(deniedObserverPage.agents.map((a) => a.id)).toEqual([agentIds.regular]);
+  expect(deniedObserverPage.presetAgentIds).toEqual({ regular: agentIds.regular });
+
+  // Observe access granted, but product_grant(opsId, "use") revoked: ops-diagnosis is hidden.
+  mocks.observeAccess.mockResolvedValue(undefined);
+  grantedIds = grantedIds.filter((id) => id !== opsId);
+  expect((await listAssistantAgents(owner, credentials)).agents.map((a) => a.id)).toEqual([agentIds.regular]);
 });
