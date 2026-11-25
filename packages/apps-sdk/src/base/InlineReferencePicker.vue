@@ -42,7 +42,6 @@ const props = withDefaults(
     size?: "small" | "default" | "large";
     groupBy?: string;
     metaField?: string;
-    optionMeta?: Readonly<Record<string, string | number>>;
   }>(),
   {
     placeholder: undefined,
@@ -53,7 +52,6 @@ const props = withDefaults(
     size: "small",
     groupBy: undefined,
     metaField: undefined,
-    optionMeta: undefined,
   },
 );
 
@@ -345,23 +343,12 @@ const isLoading = computed(() =>
 const isDisabled = computed(() => props.disabled || unavailableNotice.value !== undefined);
 
 const mergedOptions = computed<readonly InlineOption[]>(() => {
-  let list: readonly InlineOption[];
   if (dataMode === "rows" && !isPagedRows && !selectedDatum) {
-    list = allRowOptions.value;
-  } else {
-    const source = dataMode === "rows" ? allRowOptions.value : offeredOptions.value;
-    const held = effectiveHeldOptions.value[0];
-    list = held && !source.some((option) => option.primaryKey === held.primaryKey) ? [held, ...source] : source;
+    return allRowOptions.value;
   }
-  const externalMeta = props.optionMeta;
-  if (!externalMeta) return list;
-  return list.map((option) => {
-    const resolved = Object.prototype.hasOwnProperty.call(externalMeta, option.primaryKey)
-      ? formatOptionMeta(externalMeta[option.primaryKey])
-      : undefined;
-    if (resolved === undefined || resolved === option.meta) return option;
-    return { ...option, meta: resolved };
-  });
+  const source = dataMode === "rows" ? allRowOptions.value : offeredOptions.value;
+  const held = effectiveHeldOptions.value[0];
+  return held && !source.some((option) => option.primaryKey === held.primaryKey) ? [held, ...source] : source;
 });
 
 const shownOptions = computed<readonly InlineOption[]>(() => {
