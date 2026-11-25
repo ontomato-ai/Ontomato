@@ -42,7 +42,7 @@
     min-width: 0;
     min-height: 0;
     overflow-y: auto;
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     box-sizing: border-box;
   }
   .ab-ws-summary-card {
@@ -215,7 +215,7 @@
   }
   @container ab-ws-page (max-width: 34rem) {
     .ab-ws-scroll {
-      padding: var(--spacing-sm) var(--spacing-md) calc(var(--page-content-gap) + 56px);
+      padding: var(--spacing-sm) var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
     .ab-ws-summary-card,
     .ab-ws-releases-bar {

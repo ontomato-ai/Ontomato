@@ -15,7 +15,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap);
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
   .relations-toolbar {
     display: flex;
