@@ -97,7 +97,7 @@ await mountPanel({
       executionError.value = "";
       executionResult.value = result;
       const rawPayload = extractRawPayload(result);
-      if (isBusinessErrorPayload(rawPayload)) {
+      if (result?.defaultSectionId === "raw" || isBusinessErrorPayload(rawPayload)) {
         notify({ kind: "error", text: t("panel.executeFailed") });
       } else {
         notify({ kind: "success", text: t("panel.executeSuccess") });

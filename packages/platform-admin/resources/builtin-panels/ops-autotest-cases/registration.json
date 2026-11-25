@@ -4,7 +4,7 @@
       "id": "builtin-product-ops-autotest-cases",
       "input": {
         "name": "Test cases",
-        "description": "Create, import, edit, and delete autotest case sets in form or JSON mode."
+        "description": "Create, import, edit in a three-pane workbench with live JSON sync, and delete autotest case sets."
       }
     }
   ]

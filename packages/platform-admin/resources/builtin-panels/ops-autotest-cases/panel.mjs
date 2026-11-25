@@ -1,14 +1,14 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   mountPanel,
   usePanelContext,
-  usePanelFormDraft,
   usePanelOperation,
 } from "@ontomato/sdk/panel";
 
 /*
  * Built-in autotest case sets panel: list-detail manager for creating, importing (JSON / CSV file or pasted text),
- * editing in form or JSON mode on the single `/cases` field, and deleting `platform:AutotestCaseSet` objects.
+ * editing in the three-pane TestcaseWorkbench (with live JSON sync, persisted drafts, and save-discard-cancel switch
+ * guard), and deleting `platform:AutotestCaseSet` objects.
  */
 
 const CASE_SET_TYPE = "platform:AutotestCaseSet";
@@ -22,46 +22,6 @@ await mountPanel({
 
     const selected = computed(() => values.value.selected ?? null);
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
-    const editMode = computed(() => (values.value.editMode === "json" ? "json" : "form"));
-
-    const editModeOptions = computed(() => [
-      { value: "form", label: t("detail.modeForm") },
-      { value: "json", label: t("detail.modeJson") },
-    ]);
-
-    const caseSetDraft = usePanelFormDraft("caseSetForm", {
-      when: () => Boolean(selectedKey.value),
-    });
-    const draftDirty = computed(() => Boolean(caseSetDraft.value?.dirty));
-    const draftSaving = computed(() => Boolean(caseSetDraft.value?.saving));
-    const draftCanSave = computed(() => {
-      const draft = caseSetDraft.value;
-      if (!draft || draft.saving) return false;
-      return draft.canSave !== undefined ? draft.canSave : Boolean(draft.dirty);
-    });
-
-    function saveDraft() {
-      if (!draftCanSave.value || draftSaving.value) return;
-      caseSetDraft.value?.save();
-    }
-
-    function revertDraft() {
-      if (!draftDirty.value || draftSaving.value) return;
-      caseSetDraft.value?.discard();
-    }
-
-    // Re-describe the form when switching between form and JSON mode while preserving unsaved edits.
-    watch(
-      editMode,
-      () => {
-        if (!selectedKey.value) return;
-        const handle = instance.forms.handle("caseSetForm");
-        if (handle) {
-          void handle.refreshDraft();
-        }
-      },
-      { flush: "post" },
-    );
 
     // ---- Import dialog state ----
     const importOpen = ref(false);
@@ -201,6 +161,10 @@ await mountPanel({
 
     function onDeleteDone(outcome) {
       if (outcome?.kind !== "success") return;
+      const handle = instance.forms.handle("caseSetForm");
+      if (handle?.dirty?.value) {
+        void handle.reset({ confirm: false });
+      }
       instance.state.setState({ selected: null });
       instance.refreshObjects();
       notify({ kind: "success", text: t("detail.deleted") });
@@ -227,9 +191,12 @@ await mountPanel({
       if (!mod || event.altKey || event.shiftKey) return;
       const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
       if (key === "s") {
+        if (event.defaultPrevented) return;
         event.preventDefault();
-        if (!importOpen.value && draftCanSave.value && !draftSaving.value) {
-          saveDraft();
+        if (importOpen.value || !selectedKey.value) return;
+        const handle = instance.forms.handle("caseSetForm");
+        if (handle?.canSubmit?.value && !handle.submitting?.value) {
+          void handle.submit().catch(() => {});
         }
       } else if (key === "p") {
         event.preventDefault();
@@ -254,13 +221,6 @@ await mountPanel({
       panelRootRef,
       caseSetListRef,
       selectedKey,
-      editModeOptions,
-      caseSetDraft,
-      draftDirty,
-      draftSaving,
-      draftCanSave,
-      saveDraft,
-      revertDraft,
       importOpen,
       importName,
       importFormat,
