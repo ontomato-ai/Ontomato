@@ -171,7 +171,7 @@ it.each([200, 404])("cancels only admitted executions when the child host return
   runtime.cancel = vi.fn();
 
   const hostCancellations: string[] = [];
-  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+  vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new URL(url).pathname).toBe("/channel/cancel");
     const { execution } = JSON.parse(String(init.body));
     hostCancellations.push(execution.runId);
