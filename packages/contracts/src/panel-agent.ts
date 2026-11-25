@@ -154,6 +154,8 @@ export const panelSecretDownloadSchema = z.object({
   contentType: z.string().min(1),
   content: z.string(),
   encoding: z.enum(["utf8", "base64"]).optional(),
+  /** Trigger a one-time browser download automatically when the dialog opens. */
+  autoDownload: z.boolean().optional(),
 }).strict();
 export const panelSecretDeliverySchema = z.object({
   title: z.string().min(1).optional(),

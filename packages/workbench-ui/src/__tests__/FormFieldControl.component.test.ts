@@ -166,4 +166,128 @@ describe("owner form text variables", () => {
     await wrapper.setProps({ disabled: true });
     expect(insert.element.disabled).toBe(true);
   });
+
+  it("supports collapsible toggle (collapsed by default) and three-column row layout", async () => {
+    const token = "${user.loginCode}";
+    const { wrapper, values } = draw({
+      kind: "text",
+      multiline: true,
+      variablesCollapsible: true,
+      variablesPresentation: "rows",
+      variables: [
+        { label: "Account fields", items: [{ label: "Login code", value: token, badge: "string" }] },
+      ],
+    }, "dept = ");
+    const toggle = wrapper.get<HTMLButtonElement>(".sdk-form-variables-toggle");
+    expect(toggle.attributes("aria-expanded")).toBe("false");
+    expect(wrapper.find(".sdk-form-variable-row").exists()).toBe(false);
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+    const row = wrapper.get<HTMLButtonElement>(".sdk-form-variable-row");
+    expect(row.text()).toContain("Login code");
+    expect(row.text()).toContain("string");
+    expect(row.get("code").text()).toBe(token);
+    await row.trigger("click");
+    expect(values.value.field).toBe(`dept = ${token}`);
+  });
+});
+
+describe("group E pack 1 form control enhancements", () => {
+  it("renders checkbox presentation for lightweight multi-select and passes filterable/clearable/collapseTags on dropdown", async () => {
+    const { wrapper, values } = draw({
+      kind: "select",
+      multiple: true,
+      presentation: "checkbox",
+      options: [open, audit, locked],
+    }, [2]);
+    expect(wrapper.find(".sdk-form-select-checkbox-group").exists()).toBe(true);
+    expect(wrapper.find(".sdk-form-select-checkbox-help").exists()).toBe(true);
+    const checkboxes = wrapper.findAll('input[type="checkbox"]');
+    await checkboxes[0]!.setValue(true);
+    expect(values.value.field).toEqual([2, 1]);
+
+    const dropdown = draw({
+      kind: "select",
+      multiple: true,
+      filterable: true,
+      clearable: true,
+      collapseTags: true,
+      options: [open, audit],
+    }, [1, "audit-trail"]);
+    const selectCmp = dropdown.wrapper.findComponent({ name: "ElSelect" });
+    expect(selectCmp.props("filterable")).toBe(true);
+    expect(selectCmp.props("clearable")).toBe(true);
+    expect(selectCmp.props("collapseTags")).toBe(true);
+    expect(selectCmp.props("collapseTagsTooltip")).toBe(true);
+  });
+
+  it("distinguishes select-all from select-filtered and renders method pills and tree code tags", async () => {
+    const { wrapper, values } = draw({
+      kind: "select",
+      multiple: true,
+      presentation: "checklist",
+      options: [open, audit],
+    }, []);
+    expect(wrapper.find(".sdk-form-select-tree.is-root-box").exists()).toBe(true);
+    expect(wrapper.get(".sdk-form-option-method-pill").text()).toBe("GET");
+    await button(wrapper, t("platform.formSelectAll")).trigger("click");
+    expect(values.value.field).toEqual([1, "audit-trail"]);
+    await button(wrapper, t("platform.formClearAll")).trigger("click");
+    expect(values.value.field).toEqual([]);
+
+    const tree = draw({
+      kind: "select",
+      multiple: true,
+      presentation: "tree",
+      options: [{ ...audit, groupPath: ["System"] }],
+    }, []);
+    expect(tree.wrapper.get(".sdk-form-option-code-tag").text()).toBe("GET");
+  });
+
+  it("renders choice-matrix table presentation with radio buttons and indented child rows", async () => {
+    const { wrapper, values } = draw({
+      kind: "choice-matrix",
+      presentation: "table",
+      rowHeader: "Column",
+      choiceHeader: "Access",
+      options: [open, audit],
+      rows: [
+        { key: "sales", label: "Sales", disabled: false, disabledReason: null },
+        { key: "sales.sum", label: "Metric · Sum", indent: true, disabled: false, disabledReason: null },
+      ],
+    }, { sales: 1 });
+    expect(wrapper.find(".sdk-form-matrix-table").exists()).toBe(true);
+    expect(wrapper.findAll("thead th").map(th => th.text())).toEqual(["Column", "Access"]);
+    expect(wrapper.get('tr[data-row-key="sales.sum"]').classes()).toContain("is-indented");
+    const radioButtons = wrapper.get('tr[data-row-key="sales.sum"]').findAll('input[type="radio"]');
+    await radioButtons[1]!.setValue(true);
+    expect(values.value.field).toEqual({ sales: 1, "sales.sum": "audit-trail" });
+  });
+
+  it("renders numbered multi-column object-array cards and shaded multi-column object panels", () => {
+    const { wrapper } = draw({
+      kind: "object-array",
+      columns: 4,
+      numbered: true,
+      reorderable: false,
+      itemFields: [
+        { path: "/name", label: "Name", required: false, readOnly: false, valueSchema: {}, control: { kind: "text" } },
+        {
+          path: "/policy", label: "Policy", required: false, readOnly: false, valueSchema: {}, fullWidth: true,
+          control: {
+            kind: "object",
+            columns: 3,
+            presentation: "panel",
+            fields: [
+              { path: "/mode", label: "Mode", required: false, readOnly: false, valueSchema: {}, control: { kind: "text" } },
+            ],
+          },
+        },
+      ],
+    }, [{ name: "Step A", policy: { mode: "manual" } }]);
+    expect(wrapper.get(".sdk-form-row-index").text()).toBe("#1");
+    expect(wrapper.get(".sdk-form-row-fields").classes()).toContain("is-multi-col");
+    expect(wrapper.get(".sdk-form-object").classes()).toContain("is-panel");
+    expect(wrapper.get(".sdk-form-object").classes()).toContain("is-multi-col");
+  });
 });

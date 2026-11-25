@@ -38,3 +38,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Long-path options in dropdowns (e.g. organization/position paths) wrap instead of clipping. */
+.sdk-form-select-option-wrap {
+  height: auto;
+  min-height: var(--control-height);
+  padding-block: 6px;
+  line-height: 1.4;
+  white-space: normal;
+}
+.sdk-form-select-option-label {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

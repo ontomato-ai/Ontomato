@@ -48,4 +48,5 @@ export const baseComponents = {
   DashboardMetricPreview: () => import("./base/DashboardMetricPreview.vue").then(module => module.default),
   ScheduledTaskSummaryList: () => import("./base/ScheduledTaskSummaryList.vue").then(module => module.default),
   ScheduledTaskRunDetail: () => import("./base/ScheduledTaskRunDetail.vue").then(module => module.default),
+  EffectivePermissionsView: () => import("./base/EffectivePermissionsView.vue").then(module => module.default),
 };

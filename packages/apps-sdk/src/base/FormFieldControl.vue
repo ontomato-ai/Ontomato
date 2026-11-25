@@ -195,6 +195,8 @@ function setFrequency(next: FrequencyDraft) {
         v-if="control.kind === 'text' && control.variables?.length"
         :groups="control.variables"
         :disabled="off"
+        :collapsible="control.variablesCollapsible"
+        :presentation="control.variablesPresentation"
         @insert="insertVariable"
       ></form-text-variables>
       <!-- Markdown says how long it is as the reader writes it, as the agent settings page did for its prompt. -->
@@ -276,7 +278,16 @@ function setFrequency(next: FrequencyDraft) {
       </div>
       <el-button v-if="!off" class="sdk-form-add" @click="addRow">{{ t("platform.formAdd") }}</el-button>
     </div>
-    <div v-else-if="control.kind === 'object'" class="sdk-form-object" :class="{ 'is-two-col': control.columns === 2 }">
+    <div
+      v-else-if="control.kind === 'object'"
+      class="sdk-form-object"
+      :class="{
+        'is-two-col': control.columns === 2,
+        'is-multi-col': (control.columns ?? 1) > 1,
+        'is-panel': control.presentation === 'panel',
+      }"
+      :style="(control.columns ?? 1) > 1 ? { '--sdk-form-cols': String(control.columns) } : undefined"
+    >
       <template v-if="object">
         <form-field-control
           v-for="child in drawn(objectFields, false)"
@@ -288,7 +299,11 @@ function setFrequency(next: FrequencyDraft) {
         <form-advanced-section
           v-if="drawn(objectFields, true).length"
           class="sdk-form-object sdk-form-object-advanced"
-          :class="{ 'is-two-col': control.columns === 2 }"
+          :class="{
+            'is-two-col': control.columns === 2,
+            'is-multi-col': (control.columns ?? 1) > 1,
+          }"
+          :style="(control.columns ?? 1) > 1 ? { '--sdk-form-cols': String(control.columns) } : undefined"
           :paths="drawn(objectFields, true).map((child) => path + child.path)"
         >
           <form-field-control
@@ -382,8 +397,31 @@ function setFrequency(next: FrequencyDraft) {
     </div>
     <div v-else-if="control.kind === 'object-array'" class="sdk-form-rows">
       <p v-if="!rows.length && control.emptyText" class="sdk-form-array-empty">{{ control.emptyText }}</p>
-      <div v-for="(row, index) in rows" :key="rowKey(row, index)" class="sdk-form-row" :data-row="path + '/' + index">
-        <div class="sdk-form-row-fields" :class="{ 'is-two-col': control.columns === 2 }">
+      <div
+        v-for="(row, index) in rows"
+        :key="rowKey(row, index)"
+        class="sdk-form-row"
+        :class="{ 'is-numbered': control.numbered }"
+        :data-row="path + '/' + index"
+      >
+        <div v-if="control.numbered" class="sdk-form-row-header">
+          <span class="sdk-form-row-index">#{{ index + 1 }}</span>
+          <div v-if="!off && !arrayFixedRows" class="sdk-form-row-tools">
+            <template v-if="arrayReorderable">
+              <el-button text size="small" :disabled="index === 0" @click="move(index, index - 1)">{{ t("platform.formMoveUp") }}</el-button>
+              <el-button text size="small" :disabled="index === rows.length - 1" @click="move(index, index + 1)">{{ t("platform.formMoveDown") }}</el-button>
+            </template>
+            <el-button text size="small" type="danger" @click="remove(index)">{{ t("platform.formRemove") }}</el-button>
+          </div>
+        </div>
+        <div
+          class="sdk-form-row-fields"
+          :class="{
+            'is-two-col': control.columns === 2,
+            'is-multi-col': (control.columns ?? 1) > 1,
+          }"
+          :style="(control.columns ?? 1) > 1 ? { '--sdk-form-cols': String(control.columns) } : undefined"
+        >
           <form-row-field
             v-for="child in drawn(control.itemFields, false)"
             :key="child.path"
@@ -395,7 +433,11 @@ function setFrequency(next: FrequencyDraft) {
           <form-advanced-section
             v-if="drawn(control.itemFields, true).length"
             class="sdk-form-row-fields sdk-form-row-advanced"
-            :class="{ 'is-two-col': control.columns === 2 }"
+            :class="{
+              'is-two-col': control.columns === 2,
+              'is-multi-col': (control.columns ?? 1) > 1,
+            }"
+            :style="(control.columns ?? 1) > 1 ? { '--sdk-form-cols': String(control.columns) } : undefined"
             :paths="drawn(control.itemFields, true).map((child) => path + '/' + index + child.path)"
           >
             <form-row-field
@@ -408,7 +450,7 @@ function setFrequency(next: FrequencyDraft) {
             ></form-row-field>
           </form-advanced-section>
         </div>
-        <div v-if="!off && !arrayFixedRows" class="sdk-form-row-tools">
+        <div v-if="!control.numbered && !off && !arrayFixedRows" class="sdk-form-row-tools">
           <template v-if="arrayReorderable">
             <el-button text :disabled="index === 0" @click="move(index, index - 1)">{{ t("platform.formMoveUp") }}</el-button>
             <el-button text :disabled="index === rows.length - 1" @click="move(index, index + 1)">{{ t("platform.formMoveDown") }}</el-button>
@@ -524,14 +566,20 @@ function setFrequency(next: FrequencyDraft) {
   gap: var(--spacing-sm);
   width: 100%;
 }
-.sdk-form-object.is-two-col {
+.sdk-form-object.is-multi-col {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--sdk-form-cols, 2), minmax(0, 1fr));
   gap: 0 var(--spacing-md);
 }
+.sdk-form-object.is-panel {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-lighter);
+}
 .sdk-form-object-advanced,
-.sdk-form-object.is-two-col > .sdk-form-object-remove,
-.sdk-form-object.is-two-col > .sdk-form-add {
+.sdk-form-object.is-multi-col > .sdk-form-object-remove,
+.sdk-form-object.is-multi-col > .sdk-form-add {
   grid-column: 1 / -1;
 }
 .sdk-form-string-row {
@@ -543,17 +591,40 @@ function setFrequency(next: FrequencyDraft) {
   border-radius: var(--radius-md);
   padding: var(--spacing-sm) var(--spacing-md);
 }
+.sdk-form-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.sdk-form-row-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding-inline: 6px;
+  border-radius: var(--radius-xs);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+}
 .sdk-form-row-fields {
   display: flex;
   flex-wrap: wrap;
   gap: 0 var(--spacing-md);
 }
-.sdk-form-row-fields.is-two-col {
+.sdk-form-row-fields.is-multi-col {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--sdk-form-cols, 2), minmax(0, 1fr));
   gap: 0 var(--spacing-md);
 }
-.sdk-form-row-fields.is-two-col :deep(.sdk-form-field) {
+.sdk-form-row-fields.is-multi-col :deep(.sdk-form-field) {
   min-width: 0;
 }
 .sdk-form-row-advanced {
@@ -664,8 +735,8 @@ function setFrequency(next: FrequencyDraft) {
   align-self: flex-start;
 }
 @container sdk-owner-form (max-width: 640px) {
-  .sdk-form-object.is-two-col,
-  .sdk-form-row-fields.is-two-col {
+  .sdk-form-object.is-multi-col,
+  .sdk-form-row-fields.is-multi-col {
     grid-template-columns: minmax(0, 1fr);
   }
 }
