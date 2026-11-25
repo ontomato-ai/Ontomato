@@ -170,7 +170,7 @@ async function openDataAdaptersPanel(handlers: {
     }
     if (path === "/api/data-query/platform/applications/resolve-entry") {
       return Response.json({
-        data: { applicationId: appId, entry: { path: "/settings", renderer: "settings" }, use: adaptersUse, menu: { groups: [], panelUses: [adaptersUse] } },
+        data: { applicationId: appId, entry: { path: "/settings", renderer: "settings" }, use: adaptersUse, menu: { singleEntry: false, groups: [], panelUses: [adaptersUse] } },
       });
     }
     if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {

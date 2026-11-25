@@ -204,7 +204,7 @@ async function openBuiltPanel(
           applicationId: appId,
           entry: { path: "/settings", renderer: "settings" },
           use,
-          menu: { groups: [], panelUses: [generalUse, auditUse] },
+          menu: { singleEntry: false, groups: [], panelUses: [generalUse, auditUse] },
         },
       });
     }

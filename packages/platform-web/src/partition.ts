@@ -101,6 +101,11 @@ export function appDeclarations(
       && (!app.homePermission || access.can(app.homePermission))
       ? app.home
       : undefined;
+    const declaredPageCount = app.sections.reduce(
+      (total, section) => total + ("pages" in section ? section.pages.length : section.paths.length),
+      0,
+    ) + (app.foot ? 1 : 0);
+    const singleEntry = app.singleEntry ?? (declaredPageCount > 0 ? declaredPageCount <= 1 : undefined);
     return {
       id: app.id,
       label: app.label ?? t(app.labelKey!),
@@ -111,6 +116,7 @@ export function appDeclarations(
       category: app.category,
       prefix: app.prefix,
       framePanelId: app.framePanelId,
+      ...(singleEntry !== undefined ? { singleEntry } : {}),
       href: app.href,
       open: app.open,
       allowStandalone: app.allowStandalone,

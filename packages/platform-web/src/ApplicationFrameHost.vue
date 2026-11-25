@@ -50,6 +50,7 @@ export interface ApplicationFrameSpec {
   title: string;
   groups: readonly AppMenuGroup[] | null;
   activePageId: string;
+  singleEntry?: boolean;
 }
 
 /**
@@ -124,6 +125,7 @@ interface EffectiveFrame {
   title: string;
   hostGroups: readonly AppMenuGroup[] | null;
   activePageId: string;
+  singleEntry?: boolean;
 }
 
 const effectiveFrame = computed<EffectiveFrame | null>(() => {
@@ -141,6 +143,7 @@ const effectiveFrame = computed<EffectiveFrame | null>(() => {
       title: hostFrame.title,
       hostGroups: hostFrame.groups,
       activePageId: hostFrame.activePageId,
+      ...(hostFrame.singleEntry !== undefined ? { singleEntry: hostFrame.singleEntry } : {}),
     };
   }
 
@@ -155,6 +158,7 @@ const effectiveFrame = computed<EffectiveFrame | null>(() => {
       title,
       hostGroups: null,
       activePageId: route.path,
+      ...(app?.singleEntry !== undefined ? { singleEntry: app.singleEntry } : {}),
     };
   }
 
@@ -359,10 +363,16 @@ const entryMenu = computed<ApplicationEntryMenu>(() => {
   if (matchingPanelEntry.value?.menu) return matchingPanelEntry.value.menu;
   const app = catalogApp.value;
   const frame = effectiveFrame.value;
+  const panelUses = app?.panelUses ?? [];
+  const totalNamed = frame?.hostGroups && frame.hostGroups.length > 0
+    ? frame.hostGroups.reduce((total, group) => total + group.items.length, 0)
+    : panelUses.filter((use) => Boolean(use.names)).length;
+  const singleEntry = app?.singleEntry ?? frame?.singleEntry ?? (totalNamed <= 1);
   return {
     names: app?.names ?? (frame ? { en: frame.title } : undefined),
+    singleEntry,
     groups: app?.groups ?? [],
-    panelUses: app?.panelUses ?? [],
+    panelUses,
   };
 });
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
+import type { PanelCurrentUser } from "@ontomato/contracts/panel-host";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
-import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
+import { platformCurrentUserKey, usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { confirmDanger } from "./confirm-danger";
 import { createPanelBackController } from "./panel-back";
 import { useOptionalLeaveConfirmation } from "./unsaved-changes";
@@ -62,6 +63,8 @@ const props = withDefaults(defineProps<{
   historyBack?: boolean;
   /** Optional override for confirming unsaved-change leave outside an enclosing platform shell. */
   confirmLeave?: () => Promise<boolean>;
+  /** Optional current user display info override outside an enclosing platform shell. */
+  currentUser?: PanelCurrentUser | null;
 }>(), {
   shown: true,
   wired: () => [],
@@ -69,6 +72,7 @@ const props = withDefaults(defineProps<{
   frameState: undefined,
   historyBack: true,
   confirmLeave: undefined,
+  currentUser: undefined,
   liveState: null,
 });
 const emit = defineEmits<{
@@ -129,6 +133,14 @@ const backController = createPanelBackController({
 });
 onBeforeUnmount(() => backController.dispose());
 
+const injectedCurrentUser = inject(platformCurrentUserKey, null);
+const hasCurrentUserSource = props.currentUser !== undefined || injectedCurrentUser !== null;
+const readCurrentUser = () => {
+  const raw = props.currentUser !== undefined ? props.currentUser : injectedCurrentUser?.value ?? null;
+  const name = raw?.displayName?.trim();
+  return name ? { displayName: name } : null;
+};
+
 const view = usePanelInstance(props.port, {
   labels: props.labels,
   label: (source) => {
@@ -148,6 +160,7 @@ const view = usePanelInstance(props.port, {
   frameState: () => props.frameState as Readonly<Record<string, import("@ontomato/contracts/agent-runtime-values").RuntimeJsonValue>> | undefined,
   registerBackHandler: backController.register,
   confirmLeaveUnsaved,
+  ...(hasCurrentUserSource ? { currentUser: readCurrentUser } : {}),
 });
 watch(() => [props.address, props.initial, view.address.value], () => backController.syncHistorySnapshot(), { flush: "post" });
 const frame = ref<HTMLIFrameElement | null>(null);

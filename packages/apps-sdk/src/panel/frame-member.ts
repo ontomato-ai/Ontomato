@@ -1,4 +1,5 @@
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
+import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
@@ -58,10 +59,16 @@ function formOf(data: DirectProjectionData, object: PanelObjectValue | null, par
   });
 }
 
-export function frameMemberData(projection: DirectProjection, slot: string, instance: PanelInstance, inputs: () => MemberInputs,
-  read: PanelReadPort): MemberData {
+export function frameMemberData(
+  projection: DirectProjection,
+  slot: string,
+  instance: PanelInstance,
+  inputs: () => MemberInputs,
+  read: PanelReadPort,
+  ownParams?: () => MemberInputs,
+): MemberData {
   /** What the member's component set itself; a frame's resource module takes it with the author's parameters. */
-  const own = () => instance.ownParams(slot);
+  const own = ownParams ?? (() => instance.ownParams(slot));
   const placement = instance.manifest.members[slot]!;
   async function answer(name: string, values: MemberInputs, ownRun: MemberInputs = own()): Promise<MemberDataState> {
     const data = projection.data[name];
@@ -168,7 +175,28 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         return JSON.stringify([object, requiredParams.map((param) => values[param] ?? null)]);
       };
       let lastTargetKey: string | null = null;
+      let rereadTimer: ReturnType<typeof setTimeout> | null = null;
+      let pendingRereadAfterMs: number | undefined;
+      let datumDisposed = false;
+      const isDocumentVisible = () => (typeof document === "undefined" ? true : documentVisible());
+      const clearRereadTimer = () => {
+        if (rereadTimer !== null) {
+          clearTimeout(rereadTimer);
+          rereadTimer = null;
+        }
+      };
+      const scheduleReread = (delayMs: number) => {
+        clearRereadTimer();
+        if (datumDisposed || !isDocumentVisible()) return;
+        rereadTimer = setTimeout(() => {
+          rereadTimer = null;
+          if (datumDisposed || !isDocumentVisible()) return;
+          void reread();
+        }, delayMs);
+      };
       const reread = (): Promise<void> => {
+        clearRereadTimer();
+        if (datumDisposed) return Promise.resolve();
         const reading = ++sequence;
         const nextTargetKey = datumTargetKeyOf();
         const targetChanged = hasTarget && nextTargetKey !== lastTargetKey;
@@ -188,12 +216,21 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         }
         return answer(name, inputs()).then(
           (result) => {
-            if (reading !== sequence) return;
+            if (datumDisposed || reading !== sequence) return;
             loadedTargetKey.value = nextTargetKey;
             state.value = result;
+            if (result.status === "ready" && result.rereadAfterMs !== undefined) {
+              pendingRereadAfterMs = result.rereadAfterMs;
+              scheduleReread(result.rereadAfterMs);
+            } else {
+              pendingRereadAfterMs = undefined;
+              clearRereadTimer();
+            }
           },
           (reason: unknown) => {
-            if (reading !== sequence) return;
+            if (datumDisposed || reading !== sequence) return;
+            pendingRereadAfterMs = undefined;
+            clearRereadTimer();
             loadedTargetKey.value = nextTargetKey;
             const code = reason && typeof reason === "object" && typeof (reason as { code?: unknown }).code === "string"
               ? (reason as { code: string }).code
@@ -206,13 +243,26 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
           },
         );
       };
+      const stopVisibility = typeof document !== "undefined"
+        ? onDocumentVisibility((visible) => {
+            if (!visible) clearRereadTimer();
+            else if (pendingRereadAfterMs !== undefined && !datumDisposed) reread();
+          })
+        : undefined;
       // An object an operation changed is read again where it is shown: its own datum, or a list of its type.
       watch(() => memberReadKey(projection, data, placement, inputs(), own()), reread, { immediate: true });
-      onScopeDispose(instance.onObjectChanged((changed) => {
+      const stopObjectChanged = instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)
           || ("type" in data.source && data.source.type.id === changed.objectType)) return reread();
-      }));
+      });
+      onScopeDispose(() => {
+        datumDisposed = true;
+        pendingRereadAfterMs = undefined;
+        clearRereadTimer();
+        stopVisibility?.();
+        stopObjectChanged();
+      });
       return computed<MemberDataState>(() => {
         if (hasTarget && state.value.status === "ready" && datumTargetKeyOf() !== loadedTargetKey.value) {
           return awaitsInputs(projection, data, placement, inputs(), own())

@@ -9,7 +9,7 @@ import {
   type PageActionRequestInput,
 } from "@ontomato/contracts/agent-presentation";
 import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
-import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
+import { inject, onScopeDispose, shallowRef, watch, type ComputedRef, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { ApplicationEntryMenu, CurrentApplicationEntry } from "@ontomato/contracts/product-panels";
@@ -21,6 +21,7 @@ import {
   panelMessageOf,
   presentationAppliesAddress,
   restoredPanelAddressState,
+  type PanelCurrentUser,
   type PanelDefinitionMode,
   type PanelHostFrameMessage,
   type PanelHostSource,
@@ -174,7 +175,13 @@ export interface DirectPanelRun {
   registerBackHandler?: (registration: PanelBackHandlerRegistration) => () => void;
   /** Unified host confirmation for leaving unsaved edits (danger confirm button, Cancel focused by default). */
   confirmLeaveUnsaved?: () => Promise<boolean>;
+  /** Current signed-in user's public display info; null in editions without sign-in. */
+  currentUser?: () => PanelCurrentUser | null;
 }
+
+/** Platform-provided reactive current user display info injected by `PanelHost` when running inside the platform shell. */
+export const platformCurrentUserKey: InjectionKey<ComputedRef<PanelCurrentUser | null>> =
+  Symbol("platform-current-user");
 
 /** A started panel instance, as its host drives it. */
 export interface DirectPanelMount {
@@ -390,6 +397,8 @@ export interface PanelInstanceOptions {
   registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
   confirmLeaveUnsaved?: DirectPanelRun["confirmLeaveUnsaved"];
+  /** Current signed-in user's public display info. */
+  currentUser?: DirectPanelRun["currentUser"];
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -507,11 +516,14 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const { content, manifest } = next.panel;
     // Only the renderable definition crosses into the frame; the record's identity and a candidate's preview context stay
     // with the host.
+    const currentUserRaw = options.currentUser?.() ?? null;
+    const currentUserName = currentUserRaw?.displayName?.trim();
     const message: PanelHostMessage = {
       kind: "panel-host-message",
       panel: { content, manifest },
       pageKey: port.pageKey,
       use: port.use,
+      ...(options.currentUser ? { currentUser: currentUserName ? { displayName: currentUserName } : null } : {}),
       url: requestedAddress,
       // What a message calls the page: the panel's own registered name, which its author wrote, with the application's
       // when the page passes one.
@@ -670,6 +682,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       ...(options.frameState ? { frameState: options.frameState } : {}),
       ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
       ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
+      ...(options.currentUser ? { currentUser: options.currentUser } : {}),
     };
   }
 

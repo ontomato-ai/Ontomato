@@ -170,7 +170,7 @@ function resolutionOf(
     applicationId,
     use,
     ...(framePanelId ? { framePanelId } : {}),
-    menu: { groups: [], panelUses },
+    menu: { singleEntry: panelUses.filter((entry) => Boolean(entry.names)).length <= 1, groups: [], panelUses },
   };
 }
 

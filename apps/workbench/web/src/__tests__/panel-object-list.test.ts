@@ -996,7 +996,7 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); }, currentEntry: computed(() => null), entryMenu: computed(() => null),
+        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); }, currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       });
       return () => h(Projection, { slot: "picker" });
     },

@@ -459,7 +459,7 @@ async function openDashboardsPanel(options: {
     }
     if (path === "/api/data-query/platform/applications/resolve-entry") {
       return Response.json({
-        data: { applicationId: appId, entry: { path: "/dashboards", renderer: "dashboards" }, use: dashboardsUse, menu: { groups: [], panelUses: [dashboardsUse] } },
+        data: { applicationId: appId, entry: { path: "/dashboards", renderer: "dashboards" }, use: dashboardsUse, menu: { singleEntry: true, groups: [], panelUses: [dashboardsUse] } },
       });
     }
     if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {

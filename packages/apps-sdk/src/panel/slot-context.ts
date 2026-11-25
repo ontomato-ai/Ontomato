@@ -41,6 +41,7 @@ export interface ListRowSlotOperation {
   readonly unavailable?: { readonly reason: string };
   readonly danger: boolean;
   readonly effect: PanelOwnerOperationDescriptor["effect"];
+  readonly running?: boolean;
 }
 
 /**

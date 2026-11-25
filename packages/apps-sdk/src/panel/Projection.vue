@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, effectScope, inject, onBeforeUnmount, onErrorCaptured, provide, ref, shallowRef, useAttrs, watch, type Component, type EffectScope, type StyleValue } from "vue";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
@@ -9,6 +10,7 @@ import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
 import { admittedOperations, watchMemberOperations } from "./member-operations";
 import { slotInputValues } from "./ports";
+import { useListRowSlot } from "./slot-context";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { componentFor } from "../catalogue-components";
 
@@ -35,6 +37,8 @@ const props = defineProps<{
 
 const panel = inject(panelContextKey, null);
 if (!panel) throw new Error("<Projection> runs inside a panel, which provides its context");
+const listRowSlot = useListRowSlot();
+const isScoped = computed(() => props.inputs !== undefined || listRowSlot !== null);
 
 const attrs = useAttrs();
 const placementClass = computed(() => attrs.class);
@@ -74,26 +78,65 @@ function start(revision = 0) {
     const [component] = await Promise.all([componentFor(memberComponentId(projection)), panel!.resources(projection)]);
     if (generation !== readGeneration) return;
     // The ports are the record's and its catalogue entry's, registered before the component draws, so a form finds its
-    // own save among them and the header and an agent can list them.
+    // own save among them and the header and an agent can list them. Row-scoped projections keep an isolated scope and
+    // never overwrite the panel's top-level slot registration.
     registered?.();
+    registered = undefined;
     operationsScope?.stop();
     operationsScope = effectScope();
-    const { state: operations } = operationsScope.run(() =>
-      watchMemberOperations(panel!.readPanelData, projection, () => [{ member: props.slot }], () => memberInputs.value))!;
-    registered = panel!.instance.register({
-      slot: props.slot,
-      projectionId: projection.id,
-      ports: portsOf(projection),
-      get operations() { return admittedOperations(operations.value); },
-      ...(projection.operations ? { operationBindings: projection.operations } : {}),
-    });
+    const scoped = isScoped.value;
+    const rowItemKey = listRowSlot?.itemKey.value;
+    const memberContext = operationsScope.run(() => {
+      const ownParamsRef = scoped ? shallowRef<Record<string, RuntimeJsonValue>>({}) : null;
+      const { state: operations } = watchMemberOperations(
+        panel!.readPanelData,
+        projection,
+        () => [{ member: props.slot }],
+        () => memberInputs.value,
+      );
+      const data = frameMemberData(
+        projection,
+        props.slot,
+        panel!.instance,
+        () => memberInputs.value,
+        panel!.readPanelData,
+        ownParamsRef ? () => ownParamsRef.value : undefined,
+      );
+      if (!scoped) {
+        registered = panel!.instance.register({
+          slot: props.slot,
+          projectionId: projection.id,
+          ports: portsOf(projection),
+          get operations() { return admittedOperations(operations.value); },
+          ...(projection.operations ? { operationBindings: projection.operations } : {}),
+        });
+      }
+      const param = ownParamsRef
+        ? (name: string) => ({
+            value: computed(() => ownParamsRef.value[name] ?? null),
+            set(value: RuntimeJsonValue | null) {
+              const next = { ...ownParamsRef.value };
+              if (value === null) delete next[name];
+              else next[name] = value;
+              ownParamsRef.value = next;
+            },
+          })
+        : undefined;
+      return {
+        key: props.slot,
+        projection,
+        inputs: memberInputs,
+        operations,
+        data,
+        ...(param ? { param } : {}),
+        ...(scoped ? { scoped: true } : {}),
+        ...(rowItemKey !== undefined ? { rowItemKey } : {}),
+      } satisfies PanelMemberContext;
+    })!;
     requestedRevision = 0;
     loaded.value = {
       projection, component,
-      member: {
-        key: props.slot, projection, inputs: memberInputs, operations,
-        data: frameMemberData(projection, props.slot, panel!.instance, () => memberInputs.value, panel!.readPanelData),
-      },
+      member: memberContext,
     };
     loading.value = false;
   })().catch((reason: unknown) => {

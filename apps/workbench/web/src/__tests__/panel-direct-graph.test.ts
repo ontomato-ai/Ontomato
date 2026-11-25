@@ -410,7 +410,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         },
         navigate: async () => { throw new Error("This test opens no address"); },
         // A frame panel's own frame is not an application's frame: no current entry, no menu.
-        currentEntry: computed(() => null), entryMenu: computed(() => null),
+        currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       });
       return () => h("div", [h(Projection, { slot: "definition" }, { "field-classNames": () => h(Projection, { slot: "scope" }) })]);
     },
@@ -525,7 +525,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
         expandPageComposer: async () => {},
         notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
         // A frame panel's own frame is not an application's frame: no current entry, no menu.
-        currentEntry: computed(() => null), entryMenu: computed(() => null),
+        currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       });
       provide(projectionKey, {
         slot: "scope",
@@ -1157,7 +1157,7 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
         expandPageComposer: async () => {},
         notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
         // A frame panel's own frame is not an application's frame: no current entry, no menu.
-        currentEntry: computed(() => null), entryMenu: computed(() => null),
+        currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       });
       return () => h("div", [h(Projection, { slot: "graph" }), h(Projection, { slot: "relations" })]);
     },

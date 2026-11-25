@@ -126,6 +126,11 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     // A frame is never an application's frame: the platform runs that panel in its own page.
     currentEntry: computed(() => null),
     entryMenu: computed(() => null),
+    currentUser: computed(() => {
+      const name = message.currentUser?.displayName?.trim();
+      return name ? { displayName: name } : null;
+    }),
+    hasLocalDraft: () => false,
   };
   const app = createApp({
     setup: () => {

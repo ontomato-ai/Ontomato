@@ -297,12 +297,13 @@ function resolutionOf(
   use: ApplicationEntryResolution["use"],
   panelUses: ApplicationEntryResolution["use"][],
   framePanelId?: string,
+  singleEntry?: boolean,
 ): ApplicationEntryResolution {
   return {
     applicationId,
     use,
     ...(framePanelId ? { framePanelId } : {}),
-    menu: { groups: [], panelUses },
+    menu: { singleEntry: singleEntry ?? panelUses.filter((entry) => Boolean(entry.names)).length <= 1, groups: [], panelUses },
   };
 }
 

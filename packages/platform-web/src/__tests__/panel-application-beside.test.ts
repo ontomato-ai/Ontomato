@@ -41,7 +41,7 @@ vi.mock("../panel-host", () => ({
   resolveApplicationEntry: async ({ path }: { path: string }) => {
     const use = uses.find((candidate) => candidate.path.replace(/^#/, "") === path || candidate.path === path);
     if (!use) throw new Error(`No entry at ${path}`);
-    return { applicationId: path.split("/")[2], use, menu: { groups: [], panelUses: uses } };
+    return { applicationId: path.split("/")[2], use, menu: { singleEntry: uses.length <= 1, groups: [], panelUses: uses } };
   },
   platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
   onPanelReadDenied: () => () => {},
