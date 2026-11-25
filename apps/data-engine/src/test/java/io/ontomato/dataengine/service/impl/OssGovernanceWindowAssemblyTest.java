@@ -11,6 +11,8 @@ import io.ontomato.dataengine.controller.KnowledgeGovernanceController;
 import io.ontomato.dataengine.controller.OntologyAgentErrors;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.agent.*;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -55,8 +57,12 @@ class OssGovernanceWindowAssemblyTest {
     beans.registerSingleton("langService",mock(LangService.class));
     beans.registerSingleton("agentExecutionAccess",mock(AgentExecutionAccess.class));
     beans.registerSingleton("queryAccessService",mock(QueryAccessService.class));
+    beans.registerSingleton("productGrantService",mock(ProductGrantService.class));
+    beans.registerSingleton("capabilityGrantLookup",mock(CapabilityGrantLookup.class));
+    beans.registerSingleton("dataPermissionLookup",mock(DataPermissionLookup.class));
     context.register(AnonymousIdentityService.class,AnonymousScheduleIdentity.class,KnowledgeGovernanceService.class,
-      OntologyAgentAccess.class,KnowledgeGovernanceController.class);
+      OntologyAgentAccess.class,KnowledgeGovernanceController.class,AnonymousAuthorization.class,
+      AuthorizationService.class,ManagementOperations.class,KnowledgeGovernanceService.Operations.class);
     context.refresh();
     http=MockMvcBuilders.standaloneSetup(context.getBean(KnowledgeGovernanceController.class))
       .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();

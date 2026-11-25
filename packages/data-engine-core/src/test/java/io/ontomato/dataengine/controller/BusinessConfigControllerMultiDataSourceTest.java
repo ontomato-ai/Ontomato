@@ -34,6 +34,7 @@ import io.ontomato.dataengine.dataAdapter.MultiDataSourceAdapterProvider;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 
 /** Saving a multi-source definition: checked on its own and against the domain's ontomap before anything is saved. */
@@ -55,6 +56,9 @@ class BusinessConfigControllerMultiDataSourceTest {
 		context.registerBean(IdentityService.class, () -> identityService);
 		context.refresh();
 		new SpringBeanUtil().setApplicationContext(context);
+		var management = mock(ManagementRequestAccess.class);
+		when(management.require(org.mockito.ArgumentMatchers.anyString())).thenReturn(user);
+		ReflectionTestUtils.setField(controller, "management", management);
 
 		singleSource.put("url", "jdbc:postgresql://single/db");
 		businessConfig.setDataAdapter("postgresql");

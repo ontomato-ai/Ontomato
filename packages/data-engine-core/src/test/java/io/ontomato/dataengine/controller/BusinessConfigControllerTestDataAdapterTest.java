@@ -37,6 +37,7 @@ import io.ontomato.dataengine.dataAdapter.DataAdapterProvider;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 
 class BusinessConfigControllerTestDataAdapterTest {
@@ -60,6 +61,9 @@ class BusinessConfigControllerTestDataAdapterTest {
 		context.registerBean(IdentityService.class, () -> identityService);
 		context.refresh();
 		new SpringBeanUtil().setApplicationContext(context);
+		var management = mock(ManagementRequestAccess.class);
+		when(management.require(org.mockito.ArgumentMatchers.anyString())).thenReturn(user);
+		ReflectionTestUtils.setField(controller, "management", management);
 
 		businessConfig.setDataAdapter("postgresql");
 		businessConfig.getDataAdapterConnections().clear();

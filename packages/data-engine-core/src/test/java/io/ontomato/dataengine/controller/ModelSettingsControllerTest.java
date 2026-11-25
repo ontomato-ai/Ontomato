@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
+import io.ontomato.dataengine.service.sys.bean.UserDetail;
 import io.ontomato.dataengine.service.agent.*;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,9 +24,14 @@ class ModelSettingsControllerTest {
   private final OntologyAgentAccess access = mock(OntologyAgentAccess.class);
   private final OntologyAgentModelSettings agents = mock(OntologyAgentModelSettings.class);
   private final ProductGrantService productGrants = mock(ProductGrantService.class);
-  private final ModelSettingsController controller = new ModelSettingsController(runtime, access, agents, productGrants);
+  private final ManagementRequestAccess management = mock(ManagementRequestAccess.class);
+  private final ModelSettingsController controller = new ModelSettingsController(runtime, access, agents, productGrants, management);
 
   private void identity() {
+    var user = new UserDetail();
+    user.setId("user");
+    user.setDomainId("verified-domain");
+    when(management.require(anyString())).thenReturn(user);
     when(access.authenticated(any())).thenReturn(new OntologyAgentAccess.Context(
         new OntologyAgentStore.Owner("user", "verified-domain"), null, null, null, "en", null, null));
   }
@@ -126,7 +133,7 @@ class ModelSettingsControllerTest {
     when(productGrants.allowedFor(eq("verified-domain"), eq("user"), anyString(), eq("edit"))).thenReturn(true);
     // Exercise MVC deserialization and the real selection service, mocking only its dependencies.
     var service = new OntologyAgentModelSettings(jdbc, runtime);
-    return MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, service, productGrants)).build();
+    return MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, service, productGrants, management)).build();
   }
 
   @Test void mvcSavesAnExistingModelUsingTheVerifiedDomain() throws Exception {
@@ -179,7 +186,7 @@ class ModelSettingsControllerTest {
         .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(response));
     var client = new AgentRuntimeClient("http://runtime.invalid", "fixture-host-token", "http://ontology.invalid");
     ReflectionTestUtils.setField(client, "http", transport);
-    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(client, access, agents, productGrants)).build();
+    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(client, access, agents, productGrants, management)).build();
     var result = mvc.perform(post("/model-settings/test").contentType(MediaType.APPLICATION_JSON)
         .content("{\"model\":{\"type\":\"chat\",\"timeoutSeconds\":25,\"maxRetries\":0}}"))
         .andExpect(request().asyncStarted()).andReturn();

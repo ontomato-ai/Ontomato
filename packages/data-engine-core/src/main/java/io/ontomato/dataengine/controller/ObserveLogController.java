@@ -1,11 +1,17 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.dao.SessionRegistryDao;
 import io.ontomato.dataengine.dao.SessionRegistryEntry;
-import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.logging.ServiceLogStore;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.authorization.ManagementOperations.Operation;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import io.ontomato.dataengine.util.SystemUtils;
 import org.apache.logging.log4j.ThreadContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.util.MultiValueMap;
@@ -14,12 +20,27 @@ import java.util.*;
 @RestController
 @RequestMapping("/observe/logs")
 public class ObserveLogController {
+
+  private static final String READ = "records.monitoring.logs.read";
+
+  @Component
+  public static final class Operations implements ManagementOperations.Contributor {
+      @Override
+      public List<Operation> managementOperations() {
+          return List.of(new Operation(READ, ManagementOperations.Access.READ));
+      }
+  }
+
+  @Autowired
+  private ManagementRequestAccess management;
+
   private final ServiceLogStore logs;
   private final SessionRegistryDao sessions;
   public ObserveLogController(ServiceLogStore logs, SessionRegistryDao sessions) { this.logs = logs; this.sessions = sessions; }
   @GetMapping
+  @Owned
   public ResponseEntity<?> logs(@RequestParam MultiValueMap<String, String> query) {
-    if (SystemUtils.getCurUser() == null) return error(401, "UNAUTHENTICATED", "Login required");
+    management.requireSystemOrDomain(READ);
     try {
       if (query.values().stream().anyMatch(values -> values.size() != 1)) return error(400, "INVALID_LOG_QUERY", "Invalid log query");
       return ResponseEntity.ok(logs.query(query.toSingleValueMap()));

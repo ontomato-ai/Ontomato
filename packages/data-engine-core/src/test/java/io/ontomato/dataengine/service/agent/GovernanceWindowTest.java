@@ -10,6 +10,9 @@ import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.controller.KnowledgeGovernanceController;
 import io.ontomato.dataengine.controller.OntologyAgentErrors;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Decision;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -38,6 +41,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
   private MockMvc http;
   private String token;
   private IdentityService identity;
+  private AuthorizationService authorization;
   private LangService language;
   private AgentExecutionAccess executions;
   private QueryGrantService grants;
@@ -73,13 +77,17 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     when(language.get(any(),anyString())).thenAnswer(call->call.getArgument(1));
     executions=mock(AgentExecutionAccess.class);
     identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class,CALLS_REAL_METHODS);
-    when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()));
-    when(identity.hasKnowledgeGovernanceAccess()).thenReturn(true);
-    when(identity.hasKnowledgeGovernanceAccess(owner.userId(),owner.domainId())).thenReturn(true);
+    var user = new QueryAccessService.GrantUser(owner.userId(),owner.domainId());
+    when(identity.getCurrentUser()).thenReturn(user);
+    when(identities.creator(owner.domainId(),owner.userId())).thenReturn(user);
     when(identity.getCurrentCredentialExpiresAt()).thenReturn(System.currentTimeMillis()+1_200_000);
+    authorization = mock(AuthorizationService.class);
+    when(authorization.resolveSubject(any())).thenAnswer(call ->
+        new AuthorizationService.SubjectContext(call.getArgument(0, VerifiedIdentity.class),
+            null, java.util.Map.of(), Set.of(), Set.of()));
+    when(authorization.decide(any(), any())).thenReturn(new Decision(true, null, null));
     governance=new KnowledgeGovernanceService(store,new AgentRuntimeClient(url,"ontology","http://ontology"),
-      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),executions,identities,language);
-    ReflectionTestUtils.setField(governance,"identityService",identity);
+      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),executions,identities,language,authorization);
     governance.initialize();
     var access=new OntologyAgentAccess(mock(QueryAccessService.class),identity,grants,store);
     var filter=new io.ontomato.dataengine.controller.QueryGrantFilter(grants);
@@ -187,7 +195,6 @@ class GovernanceWindowTest extends PostgresTestDatabase {
 
   private void selectedWindow() throws Exception {
     when(executions.require("domain","executor")).thenReturn(new QueryAccessService.GrantUser("executor","domain"));
-    when(identity.hasKnowledgeGovernanceAccess("executor","domain")).thenReturn(true);
     var input=binding(run);input.put("executionActor",JSONObject.of("userId","executor","domainId","domain"));open(input);
   }
   @Test void selectedGrantKeepsOwnerAndUsesTheExecutionUserWithoutBorrowingItsIdentityForRecords() throws Exception {
@@ -213,7 +220,9 @@ class GovernanceWindowTest extends PostgresTestDatabase {
       .header("X-Ontomato-Query-Service-Token","service").header("X-Domain-Id","domain")).andExpect(status().isNoContent());
   }
   @Test void businessActionsRequireTheExecutionUsersCurrentGovernancePermission() throws Exception {
-    selectedWindow();when(identity.hasKnowledgeGovernanceAccess("executor","domain")).thenReturn(false);
+    selectedWindow();
+    when(authorization.decide(argThat(subject -> "executor".equals(subject.identity().userId())), any()))
+        .thenReturn(new Decision(false, "MANAGEMENT_FORBIDDEN", "Denied"));
     http.perform(post("/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_ontology")
       .header("tk",token).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
     assertTrue(governance.work(record,owner).getJSONObject("work").getJSONArray("sources").isEmpty());

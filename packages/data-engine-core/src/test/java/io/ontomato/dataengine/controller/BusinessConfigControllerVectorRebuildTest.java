@@ -27,6 +27,7 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.VectorRebuildState;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
@@ -58,6 +59,9 @@ class BusinessConfigControllerVectorRebuildTest {
         context.registerBean(IdentityService.class, () -> identityService);
         context.refresh();
         new SpringBeanUtil().setApplicationContext(context);
+        var management = mock(ManagementRequestAccess.class);
+        when(management.require(org.mockito.ArgumentMatchers.anyString())).thenReturn(user);
+        ReflectionTestUtils.setField(controller, "management", management);
 
         stored = new BusinessConfig();
 
