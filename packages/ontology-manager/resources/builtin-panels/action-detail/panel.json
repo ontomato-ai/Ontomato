@@ -54,6 +54,44 @@
         },
         "id": "builtin-product-53f9c124-edcb-4775-a907-a0340090a764"
       },
+      "trial": {
+        "component": "OperationButton",
+        "type": "platform:Action",
+        "target": "selected",
+        "operation": "actions.trial",
+        "config": {
+          "type": "default"
+        },
+        "id": "builtin-product-08e8b2a3-6240-4083-8bac-f14502bc063f"
+      },
+      "publish": {
+        "component": "OperationButton",
+        "type": "platform:Action",
+        "target": "selected",
+        "operation": "actions.setStatus",
+        "config": {
+          "type": "primary",
+          "labelKey": "publish"
+        },
+        "id": "builtin-product-f7e570c5-cbe8-4b64-b429-15e9a7abf111"
+      },
+      "trialSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:Action",
+        "target": "selected",
+        "data": {
+          "record": "trialSummary"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "trialStatus",
+            "lastTrialAt",
+            "trialDetail"
+          ]
+        },
+        "id": "builtin-product-9f469cf8-2ab5-4043-bd7d-2494786413a1"
+      },
       "remove": {
         "component": "OperationButton",
         "type": "platform:Action",
@@ -305,7 +343,17 @@
         "loading": "Loading action…",
         "forbidden": "Your account does not have permission to read this action.",
         "missing": "This action does not exist or has been deleted.",
-        "retry": "Retry"
+        "retry": "Retry",
+        "trial": "Sandbox trial",
+        "publish": "Publish",
+        "trialPassed": "Sandbox trial passed.",
+        "trialFailed": "Sandbox trial failed.",
+        "trialSaveFirst": "Save your changes before running a trial.",
+        "publishBlockedNotRun": "Run a sandbox trial before publishing.",
+        "publishBlockedFailed": "The latest sandbox trial failed. Run a successful trial before publishing.",
+        "publishBlockedExplanation": "Wait for the current code explanation before publishing.",
+        "publishBlockedDirty": "Save your changes before publishing.",
+        "publishedSuccess": "Action published."
       },
       "zh-CN": {
         "pageTitle": "动作",
@@ -334,7 +382,17 @@
         "loading": "正在读取这条动作…",
         "forbidden": "当前账号无权读取这条动作。",
         "missing": "动作不存在或已删除。",
-        "retry": "重试"
+        "retry": "重试",
+        "trial": "沙箱试跑",
+        "publish": "发布",
+        "trialPassed": "沙箱试跑通过。",
+        "trialFailed": "沙箱试跑失败。",
+        "trialSaveFirst": "请先保存改动，再试跑。",
+        "publishBlockedNotRun": "尚未试跑，试跑通过后才能发布。",
+        "publishBlockedFailed": "最近一次试跑失败，试跑通过后才能发布。",
+        "publishBlockedExplanation": "当前代码的解读尚未生成。",
+        "publishBlockedDirty": "有未保存的改动，请先保存再发布。",
+        "publishedSuccess": "动作已发布。"
       }
     }
   }

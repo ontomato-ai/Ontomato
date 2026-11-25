@@ -20,6 +20,8 @@ export interface FormControls {
   readonly busy: Readonly<Ref<boolean>>;
   /** How top-level fields of the form are arranged (`stacked` or `rows`). */
   readonly layout: Readonly<Ref<"stacked" | "rows">>;
+  /** Where field labels sit relative to controls in `stacked` layout (`top`, `left`, or `right`). */
+  readonly labelPosition?: Readonly<Ref<"top" | "left" | "right">>;
   /** Whether required fields render the red required asterisk marker. */
   readonly showRequiredMark?: Readonly<Ref<boolean>>;
   /** Whether any visible top-level field declares `defaultValue`, reserving the reset column in `rows` layout. */
@@ -52,6 +54,17 @@ export interface FormControls {
     disabled?: boolean,
     arrayPath?: string,
     index?: number,
+  ): { slot: Slot; props: Record<string, unknown> } | undefined;
+  /**
+   * Look up a custom trailing Vue slot rendered beneath a field's default control (`#field-after-<dotPath>`,
+   * `#field-after-<path>`, or `#field-after-<arrayDotPath>.*.<itemDotPath>`). Returns `undefined` when absent or empty.
+   */
+  resolveFieldAfterSlot?(
+    field: PanelFormField,
+    absolutePath: string,
+    arrayPath?: string,
+    index?: number,
+    disabled?: boolean,
   ): { slot: Slot; props: Record<string, unknown> } | undefined;
   /**
    * Look up a custom item-level footer slot for an `object-array` card (`#array-item-footer-<arrayPath>` or

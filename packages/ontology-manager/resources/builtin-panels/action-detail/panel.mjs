@@ -3,8 +3,8 @@ import { mountPanel, usePanelContext, usePanelFormDraft, usePanelOutput } from "
 
 /*
  * Built-in action detail panel: single-row <page-header> (back to actions catalog, ObjectHeader identity, danger
- * OperationButton delete, and Save/Discard draft controls wired via usePanelFormDraft) above the Definition form,
- * Derived definition tables, and AnnotatedCode explanation tabs.
+ * OperationButtons for trial, publish and delete, and Save/Discard draft controls wired via usePanelFormDraft)
+ * above the trial summary and the Definition, Derived definition, and Code explanation tabs.
  *
  * The panel coordinates only declared state, tab navigation, and bidirectional parameter <-> code-segment highlighting;
  * form draft code flows straight to AnnotatedCode via member output binding without any extra state field, and the
@@ -13,6 +13,12 @@ import { mountPanel, usePanelContext, usePanelFormDraft, usePanelOutput } from "
 
 const CATALOG_PATH = "/ontology/assets/actions";
 const ACTION_TYPE = "platform:Action";
+const publishParameters = { status: "PUBLISHED" };
+const publishBlockedMessages = {
+  ACTION_TRIAL_REQUIRED: "publishBlockedNotRun",
+  ACTION_TRIAL_FAILED: "publishBlockedFailed",
+  ACTION_EXPLANATION_REQUIRED: "publishBlockedExplanation",
+};
 
 const TABS = [
   { key: "definition", label: "definition" },
@@ -22,7 +28,7 @@ const TABS = [
 
 const ActionDetail = {
   setup() {
-    const { instance, navigate, t } = usePanelContext();
+    const { instance, navigate, notify, t } = usePanelContext();
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
@@ -44,6 +50,20 @@ const ActionDetail = {
     });
 
     const detailDraft = usePanelFormDraft("form", { when: formMounted });
+    const draftDirty = computed(() => detailDraft.value?.dirty === true);
+    const actionStatus = usePanelOutput("trialSummary", "actionStatus");
+    const trialStatus = usePanelOutput("trialSummary", "trialStatus");
+    const publishBlockedCode = usePanelOutput("trialSummary", "publishBlockedCode");
+    const publishBlockedReason = usePanelOutput("trialSummary", "publishBlockedReason");
+    const trialSummaryReady = computed(() => trialStatus.value != null);
+    const showPublish = computed(() => detailReady.value && trialSummaryReady.value && actionStatus.value !== "PUBLISHED");
+    const publishDisabled = computed(() => !trialSummaryReady.value || draftDirty.value || Boolean(publishBlockedCode.value));
+    const publishDisabledReason = computed(() => {
+      if (!showPublish.value) return "";
+      if (draftDirty.value) return t("publishBlockedDirty");
+      const messageKey = publishBlockedMessages[publishBlockedCode.value];
+      return publishBlockedReason.value || (messageKey ? t(messageKey) : "");
+    });
 
     // Entering create mode switches straight to the definition form tab.
     watch(
@@ -67,6 +87,19 @@ const ActionDetail = {
     // Route back to the catalog entry so the platform's unified unsaved-changes leave guard intercepts dirty edits.
     function goBack() {
       void navigate(CATALOG_PATH).catch(() => undefined);
+    }
+
+    function onTrialDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      instance.refreshObjects();
+      if (outcome.data?.passed === true) notify({ kind: "success", text: t("trialPassed") });
+      if (outcome.data?.passed === false) notify({ kind: "warning", text: outcome.data.error || t("trialFailed") });
+    }
+
+    function onPublishDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("publishedSuccess") });
     }
 
     async function onRemoveDone(outcome) {
@@ -143,8 +176,16 @@ const ActionDetail = {
       detailReady,
       errorText,
       detailDraft,
+      draftDirty,
+      trialStatus,
+      showPublish,
+      publishParameters,
+      publishDisabled,
+      publishDisabledReason,
       goBack,
       retry: () => instance.refreshObjects(),
+      onTrialDone,
+      onPublishDone,
       onRemoveDone,
       onFormSaved,
       onFormCancel,

@@ -298,7 +298,10 @@ public class DataSandboxService {
   }
 
   private JSONObject active(String id, String domain) {
-    var record = row(id);
+    return active(row(id), domain);
+  }
+
+  private JSONObject active(JSONObject record, String domain) {
     if (!domain.equals(record.getString("domain_id"))) throw error(HttpStatus.FORBIDDEN, "BUILD_TEST_FORBIDDEN");
     if (record.getLongValue("expires_at") <= System.currentTimeMillis())
       throw error(HttpStatus.GONE, "BUILD_TEST_CONTEXT_EXPIRED");
@@ -362,6 +365,20 @@ public class DataSandboxService {
   }
   public ExecutionTarget require(String id,String user,String domain) {
     var r=row(id);buildOwner(r,user,domain);
+    return requireReady(id, domain, r);
+  }
+
+  public ExecutionTarget requireActionTrial(String id, String user, String domain) {
+    var record = row(id);
+    owner(record, user, domain);
+    if (!"action-trial".equals(record.getString("purpose")))
+      throw error(HttpStatus.NOT_FOUND, "BUILD_TEST_CONTEXT_NOT_FOUND");
+    var active = active(record, domain);
+    return ExecutionTarget.actionTrial(id, active.getJSONObject("data").getList("classNames", String.class),
+        active.getLongValue("expires_at"));
+  }
+
+  private ExecutionTarget requireReady(String id, String domain, JSONObject r) {
     // An ended test stays ended after its deadline passes: the reader is told what they did, as the status reports it.
     if("CLOSED".equals(r.getString("state"))) throw error(HttpStatus.GONE,"BUILD_TEST_CONTEXT_CLOSED");
     if(r.getLongValue("expires_at")<=System.currentTimeMillis()) throw error(HttpStatus.GONE,"BUILD_TEST_CONTEXT_EXPIRED");

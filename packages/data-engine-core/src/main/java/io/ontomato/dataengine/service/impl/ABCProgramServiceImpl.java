@@ -48,7 +48,8 @@ public class ABCProgramServiceImpl implements ABCProgramService {
     // to parameters plus the declared write targets. Using only returnDef here made a program fail
     // with 403 once it wrote to a class that its parameters already declared.
     List<String> writeScope = read ? List.of() : writeClassScope(function);
-    if ((target.testing() || !target.classNames().isEmpty()) && !read)
+    if ((target.testing() || !target.classNames().isEmpty()) && !read
+        && (!target.actionTrial() || !writeScope.isEmpty()))
       target.requireClasses(writeScope);
     if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
     FunctionDao.requireSupported(function, lang);
@@ -57,8 +58,11 @@ public class ABCProgramServiceImpl implements ABCProgramService {
     var graph = read ? sourceAnalysis(function.getReturnDef().getSourceAnalysis(), function.getReturnDef().getOutKeyRefs()) : null;
     if (read && function.getQueryPackage() != null)
       return executePackage(id, function.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain, target);
+    // Action trials grant exactly the provisioned sandbox sample classes (so actions that read extra sample
+    // classes or leave returnDef.classNames empty can run in sandbox, while empty samples stay denied for data calls).
+    List<String> grantClasses = target.actionTrial() ? target.classNames() : writeScope;
     var authority = read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
-        .withClasses(writeScope);
+        .withClasses(grantClasses);
     authority = authority.withTarget(target);
     if (context.executionId() != null) authority = authority.forExecution(context.executionId().toString());
     if (context.identity() != null) authority = authority.withIdentity(context.identity());

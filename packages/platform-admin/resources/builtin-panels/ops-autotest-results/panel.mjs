@@ -11,8 +11,8 @@ const VALID_VERDICTS = new Set(["all", "correct", "wrong", "abnormal"]);
 
 /*
  * Built-in automatic test results panel: frameless 280px run list with inline retention/delete
- * row actions, compact single-row run summary header, verdict filter, and 6-column clickable
- * case results table navigating directly to AutotestCaseArtifact details.
+ * row actions, compact single-row run summary header, verdict filter, platform-scheduled auto-reread
+ * settlement sync, and 6-column verdict-highlighted case results table navigating to case artifacts.
  */
 await mountPanel({
   setup() {
@@ -65,6 +65,17 @@ await mountPanel({
         }
       },
       { flush: "sync" },
+    );
+
+    // When the currently inspected run settles (active: true -> false) via owner-scheduled reread,
+    // immediately synchronize the left run list and final case results without panel timers.
+    watch(
+      [selectedKey, runActive],
+      ([nextKey, nextActive], [previousKey, previousActive]) => {
+        if (nextKey && nextKey === previousKey && previousActive === true && nextActive === false) {
+          instance.refreshObjects();
+        }
+      },
     );
 
     function refresh() {

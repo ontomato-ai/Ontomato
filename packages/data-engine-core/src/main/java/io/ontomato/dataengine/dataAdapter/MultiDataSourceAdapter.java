@@ -157,7 +157,7 @@ public class MultiDataSourceAdapter extends SandboxDataAdapter {
 
 	private DataAdapter delegate(String sourceId) {
 		var adapter = factory.create(definition.source(sourceId), viewFor(sourceId));
-		return sandboxTarget == null || !adapter.supportsSandbox() ? adapter : adapter.forSandbox(sandboxTarget);
+		return sandboxTarget == null ? adapter : adapter.forSandbox(sandboxTarget);
 	}
 
 	private DataAdapter delegateOfClass(String className) {

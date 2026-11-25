@@ -28,7 +28,12 @@ import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.bean.action.Action;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
-import io.ontomato.dataengine.service.agent.GenerationOperations;
+import io.ontomato.dataengine.service.ActionTrialService;
+import io.ontomato.dataengine.service.ActionTrialStore;
+import io.ontomato.dataengine.service.ActionTrialStore.PublishBlock;
+import io.ontomato.dataengine.service.ActionTrialStore.TrialSummary;
+import java.time.Instant;
+import java.util.Map;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 import java.util.List;
@@ -43,6 +48,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /** An Action save refused at a field keeps its field errors, and a draft's errors are a successful form read. */
 class ActionPanelEndpointTest {
+  private final ActionTrialService actionTrials = mock(ActionTrialService.class);
+  private final ActionTrialStore actionTrialStore = mock(ActionTrialStore.class);
   private final ActionService actionService = mock(ActionService.class);
   private final LangService langService = mock(LangService.class);
   private final CaseExecutionGuard caseExecutionGuard = mock(CaseExecutionGuard.class);
@@ -81,7 +88,9 @@ class ActionPanelEndpointTest {
     SubjectDirectory subjects = mock(SubjectDirectory.class);
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjects);
     ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
-    ReflectionTestUtils.setField(controller, "generationOperations", mock(GenerationOperations.class));
+    ReflectionTestUtils.setField(controller, "actionTrials", actionTrials);
+    ReflectionTestUtils.setField(controller, "actionTrialStore", actionTrialStore);
+    when(actionTrialStore.statusCode(isNull())).thenReturn("notRun");
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
   }
 
@@ -268,6 +277,76 @@ class ActionPanelEndpointTest {
     assertFalse(body.getBooleanValue("success"));
     assertEquals("ACTION_NOT_GRANTED", body.getString("code"));
     assertEquals("No role grants this action", body.getString("message"));
+  }
+
+  @Test
+  void trialEndpointReturnsTheReceiptAndPreservesOwnerRefusals() throws Exception {
+    var receipt = JSONObject.of("trialId", "t1", "actionId", "a1", "digest", "digest",
+        "status", "FAILED", "passed", false, "result", null, "error", "invalid order", "spendTime", 32,
+        "testedAt", Instant.EPOCH.toString(), "trialStatus", "failed", "trialStatusLabel", "Trial failed");
+    when(actionTrials.trialSavedAction(eq("a1"), eq(JSONObject.of("objDatas", List.of(), "relDatas", List.of())),
+        eq(JSONObject.of("orderId", "123")), eq("en"), any(), any(), eq(1)))
+        .thenReturn(receipt).thenThrow(new OwnerRefusal("ACTION_TRIAL_FORBIDDEN", "Action execution permission is required"));
+    String request = """
+        {"id":"a1","sample":{"objDatas":[],"relDatas":[]},"parameters":{"orderId":"123"}}""";
+
+    var response = perform("/action/trial", request);
+    assertTrue(response.getBooleanValue("success"));
+    assertEquals(receipt, response.getJSONObject("data"));
+    var refused = perform("/action/trial", request);
+    assertFalse(refused.getBooleanValue("success"));
+    assertEquals("ACTION_TRIAL_FORBIDDEN", refused.getString("code"));
+  }
+
+  @Test
+  void trialEndpointRejectsMalformedRequestFieldsBeforeExecution() throws Exception {
+    for (String body : List.of("{\"id\":7}", "{\"id\":\" \"}", "{\"id\":\"a1\",\"sample\":[]}",
+        "{\"id\":\"a1\",\"parameters\":\"{}\"}")) {
+      assertEquals("ACTION_TRIAL_INVALID", perform("/action/trial", body).getString("code"));
+    }
+    verifyNoInteractions(actionTrials);
+  }
+
+  @Test
+  void actionDetailAndListIncludeTrialAndPublicationFields() throws Exception {
+    Action failed = new Action();
+    failed.setId("a1");
+    failed.setDomainId("domain");
+    Action untested = new Action();
+    untested.setId("a2");
+    untested.setDomainId("domain");
+    var trial = new TrialSummary("t1", "FAILED", null, "invalid order", 32L, Instant.EPOCH);
+    when(actionService.queryById("a1")).thenReturn(failed);
+    when(actionService.queryList(null, null, null, "domain")).thenReturn(List.of(failed, untested));
+    when(actionTrialStore.latest(failed)).thenReturn(trial);
+    when(actionTrialStore.latestByActions("domain", List.of(failed, untested))).thenReturn(Map.of("a1", trial));
+    when(actionTrialStore.statusCode(trial)).thenReturn("failed");
+    when(actionTrialStore.publishBlock(failed, trial, "en")).thenReturn(new PublishBlock("ACTION_TRIAL_FAILED", "Try again"));
+
+    var detail = perform("/action/queryById", """
+        {"id":"a1","purpose":"publication-review"}""").getJSONObject("data");
+    assertTrialDisplay(detail);
+    assertEquals(detail.getString("trialStatusLabel"), detail.getString("sandboxTrialLabel"));
+    assertEquals("Action.explanationMissing", detail.getString("explanationMissingLabel"));
+
+    var list = perform("/action/queryList", "{}").getJSONArray("data");
+    assertTrialDisplay(list.getJSONObject(0));
+    var noTrial = list.getJSONObject(1);
+    assertEquals("notRun", noTrial.getString("trialStatus"));
+    assertNull(noTrial.getString("lastTrialAt"));
+    assertNull(noTrial.getString("lastTrialError"));
+    verify(actionTrialStore).latest(failed);
+    verify(actionTrialStore, never()).latest(untested);
+    verify(actionTrialStore).latestByActions("domain", List.of(failed, untested));
+  }
+
+  private void assertTrialDisplay(JSONObject item) {
+    assertEquals("failed", item.getString("trialStatus"));
+    assertEquals("Action.sandboxTrial.failed", item.getString("trialStatusLabel"));
+    assertEquals(Instant.EPOCH.toString(), item.getString("lastTrialAt"));
+    assertEquals("invalid order", item.getString("lastTrialError"));
+    assertEquals("ACTION_TRIAL_FAILED", item.getString("publishBlockedCode"));
+    assertEquals("Try again", item.getString("publishBlockedReason"));
   }
 
   private JSONObject performExecute(String id, String param) throws Exception {

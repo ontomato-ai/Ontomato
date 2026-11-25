@@ -32,7 +32,7 @@ const customSlot = computed(() => controls.resolveFieldSlot(props.field, absolut
     <p v-if="field.control.kind === 'reference'" role="alert" class="sdk-form-field-unavailable">
       {{ field.label }}: {{ t("platform.formControlUnavailable") }}
     </p>
-    <form-field-control v-else :field="props.field" :path="absolutePath" :disabled="disabled"></form-field-control>
+    <form-field-control v-else :field="props.field" :path="absolutePath" :disabled="disabled" :array-path="path" :row-index="index"></form-field-control>
   </form-field-slot-host>
   <p
     v-else-if="field.control.kind === 'reference'"
@@ -42,7 +42,7 @@ const customSlot = computed(() => controls.resolveFieldSlot(props.field, absolut
   >
     {{ field.label }}: {{ t("platform.formControlUnavailable") }}
   </p>
-  <form-field-control v-else :field="props.field" :path="absolutePath" :disabled="disabled"></form-field-control>
+  <form-field-control v-else :field="props.field" :path="absolutePath" :disabled="disabled" :array-path="path" :row-index="index"></form-field-control>
 </template>
 
 <style scoped>

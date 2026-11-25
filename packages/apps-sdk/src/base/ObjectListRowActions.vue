@@ -35,12 +35,14 @@ const props = withDefaults(
     busy?: boolean;
     locked?: boolean;
     rowLabel?: string;
+    iconVariant?: "ghost" | "bordered";
   }>(),
   {
     maxVisible: 2,
     busy: false,
     locked: false,
     rowLabel: "",
+    iconVariant: "ghost",
   },
 );
 
@@ -86,6 +88,7 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
         'is-danger': item.danger,
         'is-primary': item.primary,
         'is-icon-only': item.iconOnly,
+        'is-bordered': item.iconOnly && iconVariant === 'bordered',
         'is-active': item.active,
         'is-busy': item.busy,
         'is-locked': locked,
@@ -164,7 +167,16 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
             :title="item.reason"
           >
             <span class="sdk-object-list-more-item-body">
-              <span class="sdk-object-list-more-label">{{ item.label }}</span>
+              <span class="sdk-object-list-more-row">
+                <component
+                  :is="curatedIcon(item.icon)"
+                  v-if="item.icon"
+                  class="sdk-object-list-more-icon"
+                  :size="14"
+                  aria-hidden="true"
+                />
+                <span class="sdk-object-list-more-label">{{ item.label }}</span>
+              </span>
               <span v-if="item.reason" class="sdk-object-list-more-reason">{{ item.reason }}</span>
             </span>
           </el-dropdown-item>
@@ -211,6 +223,26 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
   color: var(--el-color-danger);
 }
 .sdk-object-list-action-btn.is-icon-only.is-danger:hover:not(:disabled) {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+.sdk-object-list-action-btn.is-icon-only.is-bordered {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  background: var(--el-bg-color);
+}
+.sdk-object-list-action-btn.is-icon-only.is-bordered:hover:not(:disabled) {
+  border-color: var(--el-color-primary-light-5, var(--el-color-primary));
+  background: var(--el-color-primary-light-9, var(--el-fill-color-light));
+  color: var(--el-color-primary);
+}
+.sdk-object-list-action-btn.is-icon-only.is-bordered.is-danger {
+  border-color: var(--el-color-danger-light-5, var(--el-color-danger));
+}
+.sdk-object-list-action-btn.is-icon-only.is-bordered.is-danger:hover:not(:disabled) {
+  border-color: var(--el-color-danger);
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger);
 }
@@ -299,6 +331,14 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.sdk-object-list-more-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sdk-object-list-more-icon {
+  flex: 0 0 auto;
 }
 .sdk-object-list-more-reason {
   color: var(--el-text-color-secondary);

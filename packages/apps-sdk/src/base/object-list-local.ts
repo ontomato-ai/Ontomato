@@ -5,6 +5,7 @@ import {
   displayFieldText,
   isRecordChildReference,
   isRecordReference,
+  isRecordTag,
   rawRecordField,
   referenceDisplayLabel,
   scalarFieldText,
@@ -67,6 +68,8 @@ function collectFieldSearchTexts(
       if (isRecordReference(item) || isRecordChildReference(item)) {
         if (item.label) out.push(item.label);
         if (item.primaryKey) out.push(item.primaryKey);
+      } else if (isRecordTag(item)) {
+        if (item.label.trim() !== "") out.push(item.label);
       } else if (typeof item === "object" && item !== null) {
         collectJsonSearchTexts(item, out);
       } else {
@@ -82,6 +85,10 @@ function collectFieldSearchTexts(
   if (isRecordReference(value) || isRecordChildReference(value)) {
     if (value.label) out.push(value.label);
     if (value.primaryKey) out.push(value.primaryKey);
+    return;
+  }
+  if (isRecordTag(value)) {
+    if (value.label.trim() !== "") out.push(value.label);
     return;
   }
   if (typeof value === "object" && "kind" in value) {
@@ -246,6 +253,9 @@ function matchesSingleFilterValue(
     if (isRecordReference(candidate as PanelRecordFieldValue) || isRecordChildReference(candidate as PanelRecordFieldValue)) {
       const refVal = candidate as { primaryKey: string; label: string };
       return refVal.primaryKey === expectedText || refVal.label === expectedText;
+    }
+    if (isRecordTag(candidate as PanelRecordFieldValue)) {
+      return (candidate as { label: string }).label === expectedText;
     }
     if (typeof candidate === "object" && "kind" in (candidate as Record<string, unknown>)) {
       const typed = candidate as PanelRecordFieldValue;

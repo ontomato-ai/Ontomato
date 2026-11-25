@@ -1,28 +1,40 @@
 <script setup lang="ts">
 import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { firstTreeFile, buildPathTree, PathTree, type PathTreeItem } from "@ontomato/foundation-ui/tree";
+import {
+  buildParentTree,
+  buildPathTree,
+  firstTreeFile,
+  firstTreeNode,
+  PathTree,
+  type ParentTreeItem,
+  type PathTreeItem,
+} from "@ontomato/foundation-ui/tree";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { panelRecordFieldText } from "@ontomato/contracts/panel-projection";
+import { panelRecordFieldText, type PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
+import { stateObject, type PanelFieldValue } from "../panel/state";
 import { useDataStateLabels } from "./data-state-labels";
 import { readConfigString } from "./localized-text";
 
 /**
- * The files of one object — a skill package's, say — as a folder/file tree, read through its owner's `files` read (the
- * platform's one read entry): each owner record is one file, at the path its `pathField` gives (its own key by
- * default). Clicking a file selects it: `selected` is that file's key, which the placement can bind to the panel's
- * state for another member to read the file by. Folders open and close; they are not selected.
+ * Renders either a slash-separated folder/file tree (`files` + `pathField`) or a parent-linked object hierarchy
+ * (`rows` or `files` + `parentField`). Clicking a selectable node writes its primary key string — or its object
+ * reference `{ className, primaryKey }` when `selected` binds object state — to the panel's `selected` state.
  */
 const props = withDefaults(
   defineProps<{
     /** The field of each owner record that holds its slash-separated path; absent or empty, the record's own key. */
     pathField?: string;
-    /** Preferred file key to auto-select when nothing is selected and the file exists in `files`. */
+    /** Optional field holding each record's parent key (string scalar or reference); enables parent-linked hierarchy mode. */
+    parentField?: string;
+    /** In path mode, allow selecting record-backed folder nodes while keeping the disclosure chevron dedicated to folding. */
+    selectableFolders?: boolean;
+    /** Preferred record key to auto-select when nothing is selected and the record exists in the loaded data. */
     defaultKey?: string;
-    /** With nothing selected, select the first file in tree order when `defaultKey` is unset or absent. */
+    /** With nothing selected, select the first node in tree order when `defaultKey` is unset or absent. */
     fallbackToFirst?: boolean;
     /** The panel's message key for what an empty tree says. */
     emptyText?: string;
@@ -32,13 +44,15 @@ const props = withDefaults(
     searchable?: boolean;
     /** Optional panel message key for the search box placeholder. */
     searchPlaceholder?: string;
-    /** Optional panel message key shown when the search matches no files. */
+    /** Optional panel message key shown when the search matches no items. */
     noMatchText?: string;
-    /** Optional direct child filename (e.g. `"index.md"`) selected when clicking a directory node. */
+    /** Optional direct child filename (e.g. `"index.md"`) selected when clicking a directory node in path mode. */
     directoryIndexFile?: string;
   }>(),
   {
     pathField: "path",
+    parentField: undefined,
+    selectableFolders: undefined,
     defaultKey: undefined,
     fallbackToFirst: false,
     emptyText: undefined,
@@ -53,8 +67,19 @@ const props = withDefaults(
 const { locale, t } = useI18n();
 const panel = usePanelContext();
 const member = useMember();
-const files = useMemberData("files");
-/** The selected file's key: the panel state the placement binds, else the tree's own. */
+const declaredData = member.projection.data ?? {};
+const hasRowsDatum = Object.hasOwn(declaredData, "rows");
+const hasFilesDatum = Object.hasOwn(declaredData, "files");
+const rowsData = hasRowsDatum ? useMemberData("rows") : null;
+const filesData = hasFilesDatum || !hasRowsDatum ? useMemberData("files") : null;
+const sourceData = computed(() => {
+  if (rowsData && (!filesData || rowsData.value.status === "ready" || filesData.value.status !== "ready")) {
+    return rowsData.value;
+  }
+  return filesData!.value;
+});
+
+/** The selected record's key or object reference: the panel state the placement binds, else the tree's own. */
 const selected = useMemberParam("selected");
 /** The search keyword: bound to panel public state when wired so readers and agents share it. */
 const search = useMemberParam("search");
@@ -63,40 +88,144 @@ const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => 
   const cfg = member.projection.config;
   return cfg && typeof cfg === "object" && !Array.isArray(cfg) ? (cfg as Record<string, unknown>) : undefined;
 });
+
+function readConfigBoolean(
+  config: Readonly<Record<string, unknown>> | undefined,
+  ...keys: readonly string[]
+): boolean | undefined {
+  if (!config) return undefined;
+  for (const key of keys) {
+    if (typeof config[key] === "boolean") return config[key];
+  }
+  return undefined;
+}
+
+const effectiveParentField = computed<string | undefined>(() => {
+  const value = props.parentField ?? readConfigString(rawConfig.value, "parentField", "parent-field");
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+});
+const effectiveSelectableFolders = computed<boolean>(() =>
+  props.selectableFolders ?? readConfigBoolean(rawConfig.value, "selectableFolders", "selectable-folders") ?? false,
+);
 const effectiveDirectoryIndexFile = computed<string | undefined>(() => {
   const value = props.directoryIndexFile ?? readConfigString(rawConfig.value, "directoryIndexFile", "directory-index-file");
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 });
+const isHierarchyMode = computed(() => effectiveParentField.value !== undefined);
 
-const records = computed(() => (files.value.status === "ready" ? (files.value.value as unknown as PlatformObjectRecord[]) : []));
-const items = computed<readonly PathTreeItem[]>(() =>
+function extractParentKey(value: PanelRecordFieldValue | undefined): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if ((value.kind === "reference" || value.kind === "child-reference") && typeof value.primaryKey === "string") {
+      const trimmed = value.primaryKey.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+  return null;
+}
+
+const records = computed(() =>
+  sourceData.value.status === "ready" ? (sourceData.value.value as unknown as PlatformObjectRecord[]) : [],
+);
+const recordsByKey = computed(() => {
+  const map = new Map<string, PlatformObjectRecord>();
+  for (const record of records.value) {
+    if (!map.has(record.primaryKey)) map.set(record.primaryKey, record);
+  }
+  return map;
+});
+
+const pathItems = computed<readonly PathTreeItem[]>(() =>
   records.value.map((record) => ({
     key: record.primaryKey,
     path: panelRecordFieldText(record.fields[props.pathField], locale.value) || record.primaryKey,
     label: record.label,
-  })));
-const selectedKey = computed(() => (typeof selected.value.value === "string" ? selected.value.value : null));
+  })),
+);
+const hierarchyItems = computed<readonly ParentTreeItem[]>(() => {
+  const fieldName = effectiveParentField.value;
+  if (!fieldName) return [];
+  return records.value.map((record) => ({
+    key: record.primaryKey,
+    parentKey: extractParentKey(record.fields[fieldName]),
+    label: record.label,
+    ...(record.subtitle ? { subtitle: record.subtitle } : {}),
+  }));
+});
+const treeItems = computed<readonly (PathTreeItem | ParentTreeItem)[]>(() =>
+  isHierarchyMode.value ? hierarchyItems.value : pathItems.value,
+);
+
+const selectedOutputPort = computed(() => member.projection.outputs?.selected);
+const selectedBindingType = computed<string | undefined>(() => {
+  const port = selectedOutputPort.value;
+  if (port?.kind === "object") return port.objectType;
+  const current = stateObject(selected.value.value as PanelFieldValue | undefined);
+  return current?.className;
+});
+const isObjectSelection = computed<boolean>(() => {
+  if (selectedOutputPort.value?.kind === "object") return true;
+  return stateObject(selected.value.value as PanelFieldValue | undefined) !== null;
+});
+
+const selectedKey = computed<string | null>(() => {
+  const current = selected.value.value;
+  if (typeof current === "string") return current;
+  return stateObject(current as PanelFieldValue | undefined)?.primaryKey ?? null;
+});
 const searchText = computed(() => (typeof search.value.value === "string" ? search.value.value : ""));
 
+function writeSelection(key: string | null) {
+  if (key === null) {
+    selected.set(null);
+    return;
+  }
+  const record = recordsByKey.value.get(key);
+  if (isObjectSelection.value) {
+    const className = record?.className || selectedBindingType.value;
+    if (className) {
+      selected.set({ className, primaryKey: record?.primaryKey ?? key });
+      return;
+    }
+  }
+  selected.set(record?.primaryKey ?? key);
+}
+
 /**
- * Each time the owner answers with the files and nothing is selected (`selectedKey === null`), auto-select `defaultKey`
- * if present in `files`, otherwise the first file in tree order when `fallbackToFirst` is enabled. Once a selection is
- * present (from a deep link, user click, or `present({ selected, filePath })`), never overwrite or clear it even when
- * absent from `files`, so a paired reader can report the missing file in place.
+ * Each time the owner answers and nothing is selected (`selectedKey === null`), auto-select `defaultKey` if present,
+ * otherwise the first node in depth-first tree order when `fallbackToFirst` is enabled. Once a selection is present
+ * (from a deep link, user click, or `present(...)`), never overwrite or clear it even when absent from the loaded data,
+ * so a paired reader or detail panel can report the missing target in place.
  */
-const answered = computed(() => files.value.status === "ready" || files.value.status === "empty");
-watch([items, answered], ([next, isAnswered]) => {
+const answered = computed(() => sourceData.value.status === "ready" || sourceData.value.status === "empty");
+watch([treeItems, answered], ([next, isAnswered]) => {
   if (!isAnswered || selectedKey.value !== null) return;
-  const preferred = props.defaultKey && records.value.some((record) => record.primaryKey === props.defaultKey)
+  const preferred = props.defaultKey && recordsByKey.value.has(props.defaultKey)
     ? props.defaultKey
     : null;
-  const fallback = preferred ?? (props.fallbackToFirst && next.length ? firstTreeFile(buildPathTree(next))?.key ?? null : null);
-  if (fallback !== null) selected.set(fallback);
+  let fallback = preferred;
+  if (fallback === null && props.fallbackToFirst && next.length) {
+    if (isHierarchyMode.value) {
+      fallback = firstTreeNode(buildParentTree(hierarchyItems.value))?.key ?? null;
+    } else if (effectiveSelectableFolders.value) {
+      fallback = firstTreeNode(buildPathTree(pathItems.value, { mergeFolderItems: true }))?.key ?? null;
+    } else {
+      fallback = firstTreeFile(buildPathTree(pathItems.value))?.key ?? null;
+    }
+  }
+  if (fallback !== null) writeSelection(fallback);
 }, { immediate: true });
 
 function onSelect(key: string | null) {
-  selected.set(key);
+  writeSelection(key);
 }
 
 function onSearch(value: string) {
@@ -108,16 +237,18 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
 
 <template>
   <div class="sdk-object-tree">
-    <data-state :result="files as DataStateResult" :labels="labels">
+    <data-state :result="sourceData as DataStateResult" :labels="labels">
       <PathTree
-        :items="items"
+        :items="treeItems"
+        :mode="isHierarchyMode ? 'hierarchy' : 'path'"
         :selected-key="selectedKey"
         :label="label ? panel.t(label) : undefined"
         :searchable="searchable"
         :search="searchText"
         :search-placeholder="searchPlaceholder ? panel.t(searchPlaceholder) : t('common.search')"
         :no-match-text="noMatchText ? panel.t(noMatchText) : undefined"
-        :directory-index-file="effectiveDirectoryIndexFile"
+        :directory-index-file="isHierarchyMode ? undefined : effectiveDirectoryIndexFile"
+        :selectable-folders="effectiveSelectableFolders"
         @update:selected-key="onSelect"
         @update:search="onSearch"
       />
