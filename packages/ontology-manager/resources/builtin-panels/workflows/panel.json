@@ -13,23 +13,20 @@
         "type": {
           "kind": "object",
           "objectType": "platform:Workflow"
-        },
-        "deepLink": false
+        }
       },
       "creating": {
         "type": {
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false,
-        "deepLink": false
+        "default": false
       },
       "inspectingGrants": {
         "type": {
           "kind": "object",
           "objectType": "platform:Workflow"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
@@ -165,7 +162,6 @@
       },
       "viewForm": {
         "component": "ObjectForm",
-        "type": "platform:Workflow",
         "target": "viewing",
         "data": {
           "form": "form"
@@ -194,7 +190,6 @@
       },
       "grantsInForceTitle": {
         "component": "RecordTemplate",
-        "type": "platform:Workflow",
         "target": "inspectingGrants",
         "data": {
           "record": "record"
@@ -210,7 +205,6 @@
       },
       "grantCaseScopedSteps": {
         "component": "ObjectList",
-        "type": "platform:Workflow",
         "target": "inspectingGrants",
         "data": {
           "rows": "grantCaseScopedSteps"
@@ -244,7 +238,6 @@
       },
       "grantInForce": {
         "component": "ObjectList",
-        "type": "platform:Workflow",
         "target": "inspectingGrants",
         "data": {
           "rows": "grantInForce"
@@ -275,7 +268,6 @@
       },
       "grantSuperseded": {
         "component": "ObjectList",
-        "type": "platform:Workflow",
         "target": "inspectingGrants",
         "data": {
           "rows": "grantSuperseded"
@@ -306,7 +298,6 @@
       },
       "grantDirect": {
         "component": "ObjectList",
-        "type": "platform:Workflow",
         "target": "inspectingGrants",
         "data": {
           "rows": "grantDirect"

@@ -116,7 +116,6 @@
       },
       "detail": {
         "component": "ObjectSummary",
-        "type": "platform:BusinessKnowledge",
         "target": "selected",
         "data": {
           "record": {
@@ -140,7 +139,6 @@
       },
       "form": {
         "component": "ObjectForm",
-        "type": "platform:BusinessKnowledge",
         "target": "formTarget",
         "data": {
           "form": "form",
@@ -154,7 +152,6 @@
       },
       "approve": {
         "component": "OperationButton",
-        "type": "platform:BusinessKnowledge",
         "operation": "knowledge.approve",
         "target": "selected",
         "config": {
@@ -166,7 +163,6 @@
       },
       "remove": {
         "component": "OperationButton",
-        "type": "platform:BusinessKnowledge",
         "operation": "knowledge.delete",
         "target": "selected",
         "config": {
@@ -178,7 +174,6 @@
       },
       "approveAll": {
         "component": "OperationButton",
-        "type": "platform:BusinessKnowledge",
         "operation": "knowledge.approve",
         "target": "checked",
         "config": {
@@ -192,7 +187,6 @@
       },
       "deleteAll": {
         "component": "OperationButton",
-        "type": "platform:BusinessKnowledge",
         "operation": "knowledge.delete",
         "target": "checked",
         "config": {

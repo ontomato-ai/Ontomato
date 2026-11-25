@@ -29,7 +29,6 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
         "external": true,
         "default": "/ops/autotest/case"
       }
@@ -126,7 +125,6 @@
       },
       "runStatus": {
         "component": "TypedValue",
-        "type": "platform:AutotestRun",
         "target": "selected",
         "data": {
           "record": "record"
@@ -142,7 +140,6 @@
       },
       "runSummary": {
         "component": "RecordTemplate",
-        "type": "platform:AutotestRun",
         "target": "selected",
         "data": {
           "record": "record"
@@ -158,7 +155,6 @@
       },
       "keepRun": {
         "component": "OperationButton",
-        "type": "platform:AutotestRun",
         "target": "selected",
         "operation": "autotestRun.keep",
         "config": {
@@ -172,7 +168,6 @@
       },
       "unkeepRun": {
         "component": "OperationButton",
-        "type": "platform:AutotestRun",
         "target": "selected",
         "operation": "autotestRun.unkeep",
         "config": {
@@ -186,7 +181,6 @@
       },
       "downloadRun": {
         "component": "OperationButton",
-        "type": "platform:AutotestRun",
         "target": "selected",
         "operation": "autotestRun.download",
         "config": {
@@ -199,7 +193,6 @@
       },
       "deleteRun": {
         "component": "OperationButton",
-        "type": "platform:AutotestRun",
         "target": "selected",
         "operation": "autotestRun.delete",
         "config": {
@@ -214,7 +207,6 @@
       },
       "results": {
         "component": "ObjectList",
-        "type": "platform:AutotestRun",
         "target": "selected",
         "data": {
           "rows": {

@@ -22,7 +22,6 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
         "default": "view"
       },
       "sourceFile": {
@@ -127,7 +126,6 @@
     "members": {
       "headerTitle": {
         "component": "ObjectHeader",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "record": "record"
@@ -139,7 +137,6 @@
       },
       "overviewSummary": {
         "component": "ObjectSummary",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "record": "record"
@@ -167,7 +164,6 @@
       },
       "sourceTree": {
         "component": "ObjectTree",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "files": "sourceFiles"
@@ -184,7 +180,6 @@
       },
       "sourceViewer": {
         "component": "ObjectTextReader",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "record": {
@@ -204,7 +199,6 @@
       },
       "membersList": {
         "component": "ObjectList",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "rows": "memberRows"
@@ -254,7 +248,6 @@
       },
       "referenceGraph": {
         "component": "ProductAssetGraph",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "graph": "referenceGraph"
@@ -263,7 +256,6 @@
       },
       "usedByList": {
         "component": "ObjectList",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "rows": "usedByRows"
@@ -314,7 +306,6 @@
       },
       "grantsList": {
         "component": "ObjectList",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "rows": "grantRows"
@@ -377,7 +368,6 @@
       },
       "shareStatusDesc": {
         "component": "TypedValue",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "record": "record"
@@ -398,7 +388,6 @@
       },
       "shareEnable": {
         "component": "OperationButton",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "operation": "productPanels.share",
         "operationParams": {
@@ -414,7 +403,6 @@
       },
       "shareDisable": {
         "component": "OperationButton",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "operation": "productPanels.share",
         "operationParams": {
@@ -446,7 +434,6 @@
       },
       "grantSubmit": {
         "component": "OperationButton",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "operation": "productPanels.grant",
         "operationParams": {
@@ -465,7 +452,6 @@
       },
       "copySubmit": {
         "component": "OperationButton",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "operation": "productPanels.copy",
         "operationParams": {
@@ -487,7 +473,6 @@
       },
       "deletePanel": {
         "component": "PanelData",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "operation": "productPanels.delete",
         "operationParams": {
@@ -499,7 +484,6 @@
       },
       "setAsHome": {
         "component": "PanelData",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "operation": "productPanels.setAsHome",
         "name": "面板详情 · 设为个人首页",
@@ -508,7 +492,6 @@
       },
       "unavailableSummary": {
         "component": "ObjectSummary",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "record": "record"
@@ -529,7 +512,6 @@
       },
       "memberProjectionHeader": {
         "component": "ObjectHeader",
-        "type": "platform:ProductProjection",
         "target": "memberProjection",
         "data": {
           "record": "record"
@@ -541,7 +523,6 @@
       },
       "memberProjectionSummary": {
         "component": "ObjectSummary",
-        "type": "platform:ProductProjection",
         "target": "memberProjection",
         "data": {
           "record": "record"
@@ -626,7 +607,6 @@
       },
       "form": {
         "component": "ObjectForm",
-        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "form": "form"

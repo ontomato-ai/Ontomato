@@ -882,7 +882,6 @@ describe("ontology-objects cleaned builtin panel", () => {
     expect((source.manifest.members as Record<string, unknown>).deleteAttribute).toBeUndefined();
     expect(source.manifest.members.attributeRowForm).toMatchObject({
       component: "ObjectForm",
-      type: ATTRIBUTE,
       target: "editingAttribute",
       config: { actions: "footer" },
     });

@@ -19,7 +19,6 @@
     "members": {
       "headerTitle": {
         "component": "ObjectHeader",
-        "type": "platform:Skill",
         "target": "selected",
         "data": {
           "record": "record"
@@ -32,7 +31,6 @@
       },
       "summary": {
         "component": "TypedValue",
-        "type": "platform:Skill",
         "target": "selected",
         "data": {
           "record": "record"
@@ -45,7 +43,6 @@
       },
       "exportSkill": {
         "component": "OperationButton",
-        "type": "platform:Skill",
         "target": "selected",
         "operation": "skills.export",
         "config": {
@@ -56,7 +53,6 @@
       },
       "remove": {
         "component": "OperationButton",
-        "type": "platform:Skill",
         "target": "selected",
         "operation": "skills.delete",
         "config": {
@@ -68,7 +64,6 @@
       },
       "tree": {
         "component": "ObjectTree",
-        "type": "platform:Skill",
         "target": "selected",
         "data": {
           "files": "files"
@@ -86,7 +81,6 @@
       },
       "content": {
         "component": "ObjectTextReader",
-        "type": "platform:Skill",
         "target": "selected",
         "data": {
           "record": {

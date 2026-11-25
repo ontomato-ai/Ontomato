@@ -458,7 +458,6 @@ describe("AutotestCaseSet panel reads and operations", () => {
     });
     expect(desc.manifest.members.caseSetForm).toMatchObject({
       component: "TestcaseWorkbench",
-      type: AUTOTEST_CASE_SET,
       target: "selected",
       data: { form: "form" },
       operation: `${AUTOTEST_CASE_SET}.save`,

@@ -55,51 +55,44 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false,
-        "deepLink": false
+        "default": false
       },
       "createMode": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "default": "standard",
-        "deepLink": false
+        "default": "standard"
       },
       "bindingObjectType": {
         "type": {
           "kind": "object",
           "objectType": "platform:ObjectType"
-        },
-        "deepLink": false
+        }
       },
       "bindingMetric": {
         "type": {
           "kind": "object",
           "objectType": "platform:MetricView"
-        },
-        "deepLink": false
+        }
       },
       "bindingAction": {
         "type": {
           "kind": "object",
           "objectType": "platform:Action"
-        },
-        "deepLink": false
+        }
       },
       "selectedDashboard": {
         "type": {
           "kind": "object",
           "objectType": "platform:Dashboard"
-        },
-        "deepLink": false
+        }
       },
       "selectedChartCard": {
         "type": {
           "kind": "object",
           "objectType": "platform:DashboardCard"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
@@ -315,7 +308,6 @@
       },
       "dashboardCardsList": {
         "component": "ObjectList",
-        "type": "platform:Dashboard",
         "target": "selectedDashboard",
         "data": {
           "rows": "cards"
@@ -338,7 +330,6 @@
       },
       "chartCardPreview": {
         "component": "MetricChart",
-        "type": "platform:DashboardCard",
         "target": "selectedChartCard",
         "data": {
           "template": "chartTemplate",

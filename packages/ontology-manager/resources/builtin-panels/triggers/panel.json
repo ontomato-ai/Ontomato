@@ -14,15 +14,13 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false,
-        "deepLink": false
+        "default": false
       },
       "editing": {
         "type": {
           "kind": "object",
           "objectType": "platform:Trigger"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
@@ -207,7 +205,6 @@
       },
       "editForm": {
         "component": "ObjectForm",
-        "type": "platform:Trigger",
         "target": "editing",
         "data": {
           "form": "form"

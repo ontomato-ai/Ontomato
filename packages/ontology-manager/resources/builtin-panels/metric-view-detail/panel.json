@@ -20,31 +20,27 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false,
-        "deepLink": false
+        "default": false
       },
       "testSource": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "default": "explicit",
-        "deepLink": false
+        "default": "explicit"
       },
       "testTab": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "default": "markdown",
-        "deepLink": false
+        "default": "markdown"
       },
       "testParameters": {
         "type": {
           "kind": "json"
         },
-        "default": {},
-        "deepLink": false
+        "default": {}
       }
     },
     "members": {

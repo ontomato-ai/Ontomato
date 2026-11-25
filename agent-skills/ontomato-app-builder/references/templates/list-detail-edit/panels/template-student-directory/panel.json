@@ -9,18 +9,14 @@
           "kind": "object",
           "objectType": "Student"
         },
-        "personal": false,
-        "deepLink": true,
-        "external": false
+        "deepLink": true
       },
       "search": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "personal": false,
         "deepLink": true,
-        "external": false,
         "default": ""
       },
       "mode": {
@@ -28,9 +24,6 @@
           "kind": "scalar",
           "type": "string"
         },
-        "personal": false,
-        "deepLink": false,
-        "external": false,
         "default": "view"
       }
     },

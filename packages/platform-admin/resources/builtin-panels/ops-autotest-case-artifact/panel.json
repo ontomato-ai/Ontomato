@@ -12,15 +12,13 @@
         "type": {
           "kind": "object",
           "objectType": "platform:AutotestRun"
-        },
-        "deepLink": false
+        }
       },
       "runSearch": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
         "default": ""
       },
       "filePath": {
@@ -130,7 +128,6 @@
       },
       "header": {
         "component": "ObjectHeader",
-        "type": "platform:AutotestCaseArtifact",
         "target": "selected",
         "data": {
           "record": "record"
@@ -151,7 +148,6 @@
         "newSession": true,
         "config": {
           "type": "primary",
-          "size": "small",
           "labelKey": "panel.diagnose"
         },
         "name": "Diagnose this case",
@@ -160,7 +156,6 @@
       },
       "download": {
         "component": "OperationButton",
-        "type": "platform:AutotestCaseArtifact",
         "target": "selected",
         "operation": "autotestCaseArtifact.download",
         "config": {
@@ -173,7 +168,6 @@
       },
       "evidenceNotice": {
         "component": "InfoBanner",
-        "type": "platform:AutotestCaseArtifact",
         "target": "selected",
         "data": {
           "record": "record"
@@ -190,7 +184,6 @@
       },
       "evidenceGaps": {
         "component": "ObjectList",
-        "type": "platform:AutotestCaseArtifact",
         "target": "selected",
         "data": {
           "rows": "evidenceGaps"
@@ -209,7 +202,6 @@
       },
       "evidenceRuns": {
         "component": "ObjectList",
-        "type": "platform:AutotestCaseArtifact",
         "target": "selected",
         "data": {
           "rows": "evidenceRuns"
@@ -248,7 +240,6 @@
       },
       "evidenceJson": {
         "component": "TypedValue",
-        "type": "platform:AutotestCaseArtifact",
         "target": "selected",
         "data": {
           "record": "record"
@@ -264,7 +255,6 @@
       },
       "fileTree": {
         "component": "ObjectTree",
-        "type": "platform:AutotestCaseArtifact",
         "target": "selected",
         "data": {
           "files": "files"
@@ -286,7 +276,6 @@
       },
       "fileReader": {
         "component": "ObjectTextReader",
-        "type": "platform:AutotestCaseArtifact",
         "target": "selected",
         "data": {
           "record": {

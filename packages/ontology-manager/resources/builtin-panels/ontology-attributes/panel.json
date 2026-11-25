@@ -147,7 +147,6 @@
       "attributeRowForm": {
         "component": "ObjectForm",
         "target": "editingAttribute",
-        "type": "platform:Attribute",
         "data": {
           "form": "form"
         },

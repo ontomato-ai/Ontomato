@@ -6,25 +6,20 @@
           "kind": "object",
           "objectType": "platform:Dashboard"
         },
-        "deepLink": true,
-        "personal": false,
-        "external": false
+        "deepLink": true
       },
       "cardId": {
         "type": {
           "kind": "object",
           "objectType": "platform:DashboardCard"
         },
-        "deepLink": true,
-        "personal": false,
-        "external": false
+        "deepLink": true
       },
       "cardDialog": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
@@ -86,7 +81,6 @@
       },
       "boardGrid": {
         "component": "GroupedGrid",
-        "type": "platform:Dashboard",
         "target": "dashboardId",
         "data": {
           "record": "record",
@@ -133,17 +127,11 @@
             "chart": "both"
           },
           "gap": 14,
-          "groupsField": "groups",
-          "groupKeyField": "groupId",
-          "groupTitleField": "groupTitle",
           "sectionField": "kind",
           "sectionOrder": [
             "metric",
             "chart"
           ],
-          "colSpanField": "colSpan",
-          "rowSpanField": "rowSpan",
-          "orderField": "order",
           "editable": true,
           "collapsible": false,
           "groupSurface": "card",
@@ -235,7 +223,6 @@
       },
       "cardParamForm": {
         "component": "ObjectForm",
-        "type": "platform:DashboardCard",
         "target": "cardId",
         "data": {
           "form": "form"
@@ -250,7 +237,6 @@
       },
       "cardMetricSource": {
         "component": "ObjectSummary",
-        "type": "platform:DashboardCard",
         "target": "cardId",
         "data": {
           "record": "metricSource"
@@ -258,7 +244,6 @@
         "config": {
           "showTitle": false,
           "bordered": true,
-          "columns": 1,
           "keyValueFields": [
             "parameters"
           ],
@@ -274,7 +259,6 @@
       },
       "cardMetricOpen": {
         "component": "ObjectRefCard",
-        "type": "platform:DashboardCard",
         "target": "cardId",
         "data": {
           "record": "metricSource"

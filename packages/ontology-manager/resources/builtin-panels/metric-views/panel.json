@@ -87,7 +87,6 @@
       },
       "publishStatus": {
         "component": "OperationButton",
-        "type": "platform:MetricView",
         "target": "checked",
         "operation": "metricViews.setStatus",
         "operationParams": {

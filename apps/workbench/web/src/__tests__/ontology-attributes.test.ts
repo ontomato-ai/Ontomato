@@ -575,7 +575,6 @@ describe("ontology-attributes builtin panel", () => {
     expect((source.manifest.members.form.config as { fixedFields?: unknown }).fixedFields).toBeUndefined();
     expect(source.manifest.members.attributeRowForm).toMatchObject({
       component: "ObjectForm",
-      type: ATTRIBUTE,
       target: "editingAttribute",
       config: { actions: "footer" },
     });

@@ -22,7 +22,6 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
         "external": true,
         "default": "/ontology/agents/detail"
       }

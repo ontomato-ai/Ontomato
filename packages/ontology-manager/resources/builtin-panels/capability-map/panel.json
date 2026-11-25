@@ -58,15 +58,13 @@
         "type": {
           "kind": "object",
           "objectType": "platform:OntologyType"
-        },
-        "deepLink": false
+        }
       },
       "query": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       },
       "relationKinds": {
         "type": {
@@ -75,8 +73,7 @@
             "kind": "object",
             "objectType": "platform:OntologyRelationKind"
           }
-        },
-        "deepLink": false
+        }
       },
       "visibleLayers": {
         "type": {
@@ -85,8 +82,7 @@
             "kind": "scalar",
             "type": "string"
           }
-        },
-        "deepLink": false
+        }
       },
       "expandedNodes": {
         "type": {
@@ -103,15 +99,13 @@
               "platform:OntologyType"
             ]
           }
-        },
-        "deepLink": false
+        }
       },
       "pickingStart": {
         "type": {
           "kind": "scalar",
           "type": "boolean"
         },
-        "deepLink": false,
         "default": false
       },
       "showUserPicker": {
@@ -119,29 +113,25 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "deepLink": false,
         "default": false
       },
       "typeObjectsSearch": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       },
       "userPickerSearch": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       },
       "relationKindsSearch": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
@@ -236,7 +226,6 @@
         "component": "ObjectHeader",
         "name": "Selected ontology type header",
         "description": "Header for the selected platform ontology type showing its display name, type identifier, readable count status, and instance directory outputs.",
-        "type": "platform:OntologyType",
         "target": "selectedTypeRef",
         "data": {
           "record": "record"
@@ -251,7 +240,6 @@
         "component": "ObjectSummary",
         "name": "Selected ontology type summary",
         "description": "Read-only summary of the selected platform ontology type including its layer, readable count status, definition, and creation/use rules.",
-        "type": "platform:OntologyType",
         "target": "selectedTypeRef",
         "data": {
           "record": "record"

@@ -12,15 +12,13 @@
         "type": {
           "kind": "scalar",
           "type": "boolean"
-        },
-        "deepLink": false
+        }
       },
       "editingService": {
         "type": {
           "kind": "object",
           "objectType": "platform:ExternalMcpService"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
@@ -128,7 +126,6 @@
       },
       "editForm": {
         "component": "ObjectForm",
-        "type": "platform:ExternalMcpService",
         "target": "editingService",
         "data": {
           "form": "form"

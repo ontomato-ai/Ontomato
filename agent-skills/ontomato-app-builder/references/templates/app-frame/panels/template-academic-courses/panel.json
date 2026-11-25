@@ -9,8 +9,6 @@
           "kind": "scalar",
           "type": "string"
         },
-        "personal": false,
-        "deepLink": false,
         "external": true,
         "default": "2026-fall"
       }

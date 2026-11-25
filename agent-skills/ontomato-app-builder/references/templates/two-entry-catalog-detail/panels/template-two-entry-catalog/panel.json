@@ -9,9 +9,6 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "personal": false,
-        "deepLink": false,
-        "external": false,
         "default": false
       }
     },

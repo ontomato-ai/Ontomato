@@ -9,9 +9,7 @@
           "kind": "object",
           "objectType": "platform:AgentDefinition"
         },
-        "personal": false,
-        "deepLink": true,
-        "external": false
+        "deepLink": true
       }
     },
     "members": {

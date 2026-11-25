@@ -21,7 +21,6 @@
         "type": "platform:Skill",
         "operation": "skills.import",
         "config": {
-          "type": "primary",
           "label": "panel.importChoose",
           "overwriteOn": "SKILL_EXISTS"
         },
