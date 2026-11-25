@@ -237,17 +237,178 @@ describe("platform rail", () => {
     root.querySelector<HTMLButtonElement>(".rail-toggle")?.click();
     expect(onCollapse).toHaveBeenCalledWith(true);
   });
+
+  it("folds registered builder applications beyond 5, always displays the active one, and remembers expand state per user", async () => {
+    const builtApps: PlatformApp[] = Array.from({ length: 7 }, (_, i) => ({
+      id: `built-${i + 1}`,
+      label: `App ${i + 1}`,
+      icon: "pages",
+      rail: "builders",
+      built: true,
+    }));
+    const railApps: PlatformApp[] = [
+      { id: "agent-builder", label: "Agent Builder", icon: "agent-builder", rail: "builders" },
+      { id: "app-builder", label: "App Builder", icon: "builder", rail: "builders" },
+      ...builtApps,
+    ];
+
+    // Default folded: shows both builders + first 5 registered apps + More toggle with hidden count 2.
+    const root = await mount(PlatformRail, {
+      apps: railApps,
+      activeAppId: "built-1",
+      account,
+      preferences: preferences(),
+      labels: { ...labels, collapse: "Collapse" },
+      collapsed: false,
+    });
+    const labelsText = () => [...root.querySelectorAll('.rail-section[data-section="builders"] .rail-label')].map((el) => el.textContent?.trim());
+    expect(labelsText()).toEqual(["Agent Builder", "App Builder", "App 1", "App 2", "App 3", "App 4", "App 5", "More"]);
+    expect(root.querySelector(".rail-more-count")?.textContent?.trim()).toBe("2");
+
+    // Clicking More expands all 7 registered apps and persists per user.
+    root.querySelector<HTMLButtonElement>(".rail-more-toggle")?.click();
+    await nextTick();
+    expect(labelsText()).toEqual(["Agent Builder", "App Builder", "App 1", "App 2", "App 3", "App 4", "App 5", "App 6", "App 7", "Collapse"]);
+    expect(localStorage.getItem("ontomato.platform.railBuildersExpanded:Ada")).toBe("true");
+    app?.unmount();
+
+    // Another user starts folded; the currently active folded app (App 6) is always visible while App 7 stays folded.
+    const bobRoot = await mount(PlatformRail, {
+      apps: railApps,
+      activeAppId: "built-6",
+      account: { userName: "Bob", signOut: vi.fn() },
+      preferences: preferences(),
+      labels: { ...labels, collapse: "Collapse" },
+      collapsed: false,
+    });
+    const bobLabels = [...bobRoot.querySelectorAll('.rail-section[data-section="builders"] .rail-label')].map((el) => el.textContent?.trim());
+    expect(bobLabels).toEqual(["Agent Builder", "App Builder", "App 1", "App 2", "App 3", "App 4", "App 5", "App 6", "More"]);
+    expect(bobRoot.querySelector(".rail-more-count")?.textContent?.trim()).toBe("1");
+    expect(bobRoot.querySelector(".rail-row.active")?.textContent).toContain("App 6");
+    app?.unmount();
+
+    // When Ada mounts again, her expanded preference is restored.
+    const adaAgain = await mount(PlatformRail, {
+      apps: railApps,
+      activeAppId: "built-1",
+      account,
+      preferences: preferences(),
+      labels: { ...labels, collapse: "Collapse" },
+      collapsed: false,
+    });
+    expect([...adaAgain.querySelectorAll('.rail-section[data-section="builders"] .rail-label')].map((el) => el.textContent?.trim())).toEqual([
+      "Agent Builder",
+      "App Builder",
+      "App 1",
+      "App 2",
+      "App 3",
+      "App 4",
+      "App 5",
+      "App 6",
+      "App 7",
+      "Collapse",
+    ]);
+  });
+
+  it("omits the More toggle when there are 5 or fewer registered builder apps, or when the 6th is active while folded", async () => {
+    const fiveBuilt: PlatformApp[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `built-${i + 1}`,
+      label: `App ${i + 1}`,
+      icon: "pages",
+      rail: "builders",
+      built: true,
+    }));
+    const rootFive = await mount(PlatformRail, {
+      apps: [{ id: "app-builder", label: "App Builder", icon: "builder", rail: "builders" }, ...fiveBuilt],
+      activeAppId: "built-1",
+      account,
+      preferences: preferences(),
+      labels,
+      collapsed: false,
+    });
+    expect(rootFive.querySelector(".rail-more-toggle")).toBeNull();
+    app?.unmount();
+
+    const sixBuilt: PlatformApp[] = [...fiveBuilt, { id: "built-6", label: "App 6", icon: "pages", rail: "builders", built: true }];
+    const rootSixActive = await mount(PlatformRail, {
+      apps: [{ id: "app-builder", label: "App Builder", icon: "builder", rail: "builders" }, ...sixBuilt],
+      activeAppId: "built-6",
+      account,
+      preferences: preferences(),
+      labels,
+      collapsed: false,
+    });
+    expect(rootSixActive.querySelector(".rail-more-toggle")).toBeNull();
+    expect(rootSixActive.querySelector(".rail-row.active")?.textContent).toContain("App 6");
+  });
+
+  it("expands as a floating overlay on hover when unpinned, stays open while account menu is open, and collapses on leave", async () => {
+    const root = await mount(PlatformRail, {
+      apps,
+      activeAppId: "agents",
+      account,
+      preferences: preferences({ locales: ["en", "zh-CN"], locale: "en" }),
+      labels,
+      collapsed: true,
+    });
+    const nav = root.querySelector<HTMLElement>(".platform-rail")!;
+    expect(nav.classList.contains("collapsed")).toBe(true);
+    expect(nav.classList.contains("floating")).toBe(false);
+
+    // Hover expands the rail as a floating overlay without changing pinned state.
+    nav.dispatchEvent(new MouseEvent("mouseenter"));
+    await nextTick();
+    expect(nav.classList.contains("collapsed")).toBe(false);
+    expect(nav.classList.contains("floating")).toBe(true);
+    expect(root.querySelectorAll(".rail-label")).toHaveLength(apps.length);
+    expect(root.querySelector(".rail-toggle")?.getAttribute("aria-label")).toBe(labels.expandRail);
+    expect(root.querySelector(".rail-toggle")?.getAttribute("aria-pressed")).toBe("false");
+
+    // Opening the account menu keeps the rail expanded even if the pointer leaves the rail box (e.g. into submenu).
+    root.querySelector<HTMLButtonElement>(".account-trigger")?.click();
+    await nextTick();
+    expect(root.querySelector(".platform-account-menu")).not.toBeNull();
+    nav.dispatchEvent(new MouseEvent("mouseleave"));
+    await nextTick();
+    expect(nav.classList.contains("collapsed")).toBe(false);
+    expect(nav.classList.contains("floating")).toBe(true);
+
+    // Clicking outside closes the account menu and collapses the unpinned rail.
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await nextTick();
+    expect(root.querySelector(".platform-account-menu")).toBeNull();
+    expect(nav.classList.contains("collapsed")).toBe(true);
+    expect(nav.classList.contains("floating")).toBe(false);
+  });
 });
 
 describe("account menu", () => {
-  it("offers each language when the edition has several", async () => {
+  it("shows only language, theme and sign out at top level and opens locales in a submenu with check mark", async () => {
     const locales = ["en", "zh-CN"];
-    const root = await mount(PlatformAccountMenu, { account, preferences: preferences({ locales, locale: "en" }), labels });
-    expect(root.querySelectorAll('[role="menuitemradio"]')).toHaveLength(locales.length);
+    const root = await mount(PlatformAccountMenu, {
+      account,
+      preferences: preferences({ locales, locale: "en" }),
+      labels,
+      localeNames: { en: "English", "zh-CN": "简体中文" },
+    });
+    const topItems = [...root.querySelectorAll<HTMLButtonElement>('.platform-account-menu > [role="menuitem"], .menu-submenu-trigger')];
+    expect(topItems).toHaveLength(3);
+    expect(root.querySelectorAll('[role="menuitemradio"]')).toHaveLength(0);
+
+    // Opening the language item reveals the submenu listing all languages with the active one checked.
+    root.querySelector<HTMLButtonElement>(".menu-submenu-trigger")?.click();
+    await nextTick();
+    const localeItems = [...root.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+    expect(localeItems).toHaveLength(locales.length);
+    expect(localeItems[0]?.getAttribute("aria-checked")).toBe("true");
+    expect(localeItems[0]?.querySelector(".menu-check")).not.toBeNull();
+    expect(localeItems[1]?.getAttribute("aria-checked")).toBe("false");
+    expect(localeItems[1]?.querySelector(".menu-check")).toBeNull();
   });
 
-  it("hides the language rows when the edition has a single language", async () => {
+  it("hides the language submenu trigger when the edition has a single language", async () => {
     const root = await mount(PlatformAccountMenu, { account, preferences: preferences(), labels });
+    expect(root.querySelector(".menu-submenu-trigger")).toBeNull();
     expect(root.querySelector('[role="menuitemradio"]')).toBeNull();
   });
 
@@ -266,12 +427,18 @@ describe("account menu", () => {
     const rows = [...root.querySelectorAll<HTMLButtonElement>(".menu-row")];
     rows.find((row) => row.textContent?.includes("Light"))?.click();
     expect(setTheme).toHaveBeenCalledWith("light");
-    rows[0].click();
-    expect(setLocale).toHaveBeenCalledWith("en");
+
+    // Open language submenu and select a locale.
+    root.querySelector<HTMLButtonElement>(".menu-submenu-trigger")?.click();
+    await nextTick();
+    root.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')[1]?.click();
+    expect(setLocale).toHaveBeenCalledWith("zh-CN");
+    expect(onClose).toHaveBeenCalledTimes(1);
+
     rows.at(-1)?.click();
     // Exactly one sign-out: the account owns it, the menu does not also report one of its own.
     expect(signOut).toHaveBeenCalledTimes(1);
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -476,19 +643,63 @@ describe("platform shell", () => {
     expect(app?.querySelector(".workspace-slot")).not.toBeNull();
   });
 
-  it("starts collapsed unless the reader expanded it", async () => {
+  it("starts collapsed unless the reader pinned it open, isolated per user", async () => {
     const fresh = await mount(PlatformShell, { apps, activeAppId: "agents", account, preferences: preferences(), labels }, { default: () => h("div") });
     // The rail is collapsed on a fresh load, whatever the screen width: the applications open full page.
     expect(fresh.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(true);
+    expect(fresh.querySelector(".platform-rail-slot")?.classList.contains("collapsed")).toBe(true);
     app?.unmount();
 
-    localStorage.setItem("ontomato.platform.railCollapsed", "false");
+    localStorage.setItem("ontomato.platform.railCollapsed:Ada", "false");
     const remembered = await mount(PlatformShell, { apps, activeAppId: "agents", account, preferences: preferences(), labels }, { default: () => h("div") });
     expect(remembered.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(false);
+    expect(remembered.querySelector(".platform-rail-slot")?.classList.contains("collapsed")).toBe(false);
+    app?.unmount();
+
+    // Another user does not inherit Ada's pinned state.
+    const otherUser = await mount(
+      PlatformShell,
+      { apps, activeAppId: "agents", account: { userName: "Bob", signOut: vi.fn() }, preferences: preferences(), labels },
+      { default: () => h("div") },
+    );
+    expect(otherUser.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(true);
+    app?.unmount();
+
+    // Without a signed-in account (open-source edition), the unscoped key is used.
+    localStorage.setItem("ontomato.platform.railCollapsed", "false");
+    const anonymous = await mount(
+      PlatformShell,
+      { apps, activeAppId: "agents", account: null, preferences: preferences(), labels },
+      { default: () => h("div") },
+    );
+    expect(anonymous.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(false);
+  });
+
+  it("keeps the rail slot collapsed while floating on hover so page content is not narrowed", async () => {
+    const root = await mount(PlatformShell, { apps, activeAppId: "agents", account, preferences: preferences(), labels }, { default: () => h("div") });
+    const slot = root.querySelector(".platform-rail-slot")!;
+    const nav = root.querySelector<HTMLElement>(".platform-rail")!;
+    expect(slot.classList.contains("collapsed")).toBe(true);
+    expect(nav.classList.contains("floating")).toBe(false);
+
+    nav.dispatchEvent(new MouseEvent("mouseenter"));
+    await nextTick();
+    expect(slot.classList.contains("collapsed")).toBe(true);
+    expect(nav.classList.contains("floating")).toBe(true);
+    expect(nav.classList.contains("collapsed")).toBe(false);
+
+    // Pinning from the floating state expands the layout slot and keeps the rail open after mouseleave.
+    root.querySelector<HTMLButtonElement>(".rail-toggle")?.click();
+    await nextTick();
+    expect(slot.classList.contains("collapsed")).toBe(false);
+    expect(nav.classList.contains("floating")).toBe(false);
+    nav.dispatchEvent(new MouseEvent("mouseleave"));
+    await nextTick();
+    expect(nav.classList.contains("collapsed")).toBe(false);
   });
 
   it("lets a controlled value win over the stored one", async () => {
-    localStorage.setItem("ontomato.platform.railCollapsed", "true");
+    localStorage.setItem("ontomato.platform.railCollapsed:Ada", "true");
     const root = await mount(
       PlatformShell,
       { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false },
@@ -497,7 +708,7 @@ describe("platform shell", () => {
     expect(root.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(false);
   });
 
-  it("writes the reader's choice back and reports it to the host", async () => {
+  it("writes the reader's pin choice back per user and reports it to the host", async () => {
     const onUpdate = vi.fn();
     const root = await mount(
       PlatformShell,
@@ -515,15 +726,15 @@ describe("platform shell", () => {
     const startedCollapsed = shell?.classList.contains("rail-collapsed") === true;
     root.querySelector<HTMLButtonElement>(".rail-toggle")?.click();
     await nextTick();
-    // The toggle flips whichever state the shell started in, and that choice is what gets remembered.
+    // The toggle flips whichever state the shell started in, and that choice is what gets remembered per user.
     expect(onUpdate).toHaveBeenLastCalledWith(!startedCollapsed);
-    expect(localStorage.getItem("ontomato.platform.railCollapsed")).toBe(String(!startedCollapsed));
+    expect(localStorage.getItem("ontomato.platform.railCollapsed:Ada")).toBe(String(!startedCollapsed));
     expect(shell?.classList.contains("rail-collapsed")).toBe(!startedCollapsed);
 
     root.querySelector<HTMLButtonElement>(".rail-toggle")?.click();
     await nextTick();
     expect(onUpdate).toHaveBeenLastCalledWith(startedCollapsed);
-    expect(localStorage.getItem("ontomato.platform.railCollapsed")).toBe(String(startedCollapsed));
+    expect(localStorage.getItem("ontomato.platform.railCollapsed:Ada")).toBe(String(startedCollapsed));
     expect(shell?.classList.contains("rail-collapsed")).toBe(startedCollapsed);
   });
 });
