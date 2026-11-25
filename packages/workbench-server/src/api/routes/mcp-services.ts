@@ -1,4 +1,5 @@
-import { guardMcpServiceManagement } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { requireManagement } from "../../identity/management";
 import { Router, type Request, type Response } from "express";
 import { validateBody } from "../middleware/validate";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
@@ -35,9 +36,19 @@ router.get("/names", async (req, res) => {
   }
 });
 
-router.use(guardMcpServiceManagement);
+function mcpAdmission(operation: { id: string }) {
+  return requireManagement(operation, (res, error) => {
+    const status = error instanceof HttpError ? error.status : 502;
+    res.status(status).json({
+      success: false,
+      error: status === 403 ? "MCP management permission required"
+        : status === 401 ? "MCP management credentials rejected"
+        : "Unable to verify MCP management permission",
+    });
+  });
+}
 
-router.get("/", async (req, res) => {
+router.get("/", mcpAdmission(workbenchManagement.mcpServicesRead), async (req, res) => {
   try {
     res.json(await client(req).mcpServices());
   } catch (error) {
@@ -45,7 +56,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", validateBody(mcpServiceWriteSchema), async (req, res) => {
+router.post("/", mcpAdmission(workbenchManagement.mcpServicesCreate), validateBody(mcpServiceWriteSchema), async (req, res) => {
   try {
     await client(req).saveMcpService(req.body);
     res.status(201).json({ success: true });
@@ -54,7 +65,7 @@ router.post("/", validateBody(mcpServiceWriteSchema), async (req, res) => {
   }
 });
 
-router.put("/:id", validateBody(mcpServiceWriteSchema), async (req, res) => {
+router.put("/:id", mcpAdmission(workbenchManagement.mcpServicesChange), validateBody(mcpServiceWriteSchema), async (req, res) => {
   try {
     await client(req).saveMcpService(req.body, req.params.id);
     res.json({ success: true });
@@ -63,7 +74,7 @@ router.put("/:id", validateBody(mcpServiceWriteSchema), async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", mcpAdmission(workbenchManagement.mcpServicesDelete), async (req, res) => {
   try {
     await client(req).deleteMcpService(req.params.id);
     res.json({ success: true });
@@ -72,7 +83,7 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-router.get("/:id/tools", async (req, res) => {
+router.get("/:id/tools", mcpAdmission(workbenchManagement.mcpServicesRead), async (req, res) => {
   const controller = new AbortController();
   res.on("close", () => controller.abort());
   try {

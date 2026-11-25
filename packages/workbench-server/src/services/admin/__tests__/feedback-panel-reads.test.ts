@@ -1,13 +1,14 @@
 import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { HttpError } from "../../../utils/errors";
 
-const { query, runMessages, assertPermission } = vi.hoisted(() => ({
+const { query, runMessages, assertManagement } = vi.hoisted(() => ({
   query: vi.fn(),
   runMessages: vi.fn(),
-  assertPermission: vi.fn(),
+  assertManagement: vi.fn(),
 }));
 
 vi.mock("../../../infrastructure/postgres", () => ({
@@ -23,8 +24,8 @@ vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   },
 }));
 
-vi.mock("../../../identity/installed", () => ({
-  assertPermission,
+vi.mock("../../../identity/management", () => ({
+  assertManagement,
 }));
 
 import { createFeedbackReadAdapter } from "../feedback-panel-reads";
@@ -80,8 +81,8 @@ beforeAll(() => {
 beforeEach(() => {
   query.mockReset();
   runMessages.mockReset();
-  assertPermission.mockReset();
-  assertPermission.mockResolvedValue(undefined);
+  assertManagement.mockReset();
+  assertManagement.mockResolvedValue(undefined);
   runMessages.mockReturnValue([
     { id: "msg-user", message: { role: "user", content: "Total sales?" } },
     { id: target1, message: { role: "assistant", content: "Total sales are 100." } },
@@ -100,7 +101,7 @@ it("queries feedback with search, treats 'all' as unfiltered, pages by cursor/si
     size: 1,
   }));
 
-  expect(assertPermission).toHaveBeenCalledWith(viewer, ["user-feedback"]);
+  expect(assertManagement).toHaveBeenCalledWith(workbenchManagement.feedbackRead, owner, viewer);
   const [, params] = query.mock.calls[0] as [string, unknown[]];
   expect(params).toEqual([
     "domain-1",
@@ -199,7 +200,7 @@ it("counts by sourceType or rating in fixed order while applying search and only
   expect(ratingParams[5]).toBe("analysis_task");
 });
 
-it("reads one feedback record by UUID and enforces the user-feedback permission", async () => {
+it("reads one feedback record by UUID and enforces the feedback read operation", async () => {
   const reads = createFeedbackReadAdapter(owner, viewer);
   await expect(reads.record("not-a-uuid")).rejects.toMatchObject({
     status: 400,
@@ -216,6 +217,6 @@ it("reads one feedback record by UUID and enforces the user-feedback permission"
   const single = panelReadResultSchemas.panelRecord.parse(await reads.record(id1));
   expect(single.primaryKey).toBe(id1);
 
-  assertPermission.mockRejectedValueOnce(new HttpError(403, "Forbidden", "PERMISSION_DENIED"));
+  assertManagement.mockRejectedValueOnce(new HttpError(403, "Forbidden", "PERMISSION_DENIED"));
   await expect(reads.query({})).rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
 });

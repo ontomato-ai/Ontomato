@@ -59,8 +59,6 @@ export const ossIdentity: WorkbenchIdentity = {
 
   requireDeploymentMaintenance: platformService,
 
-  guardMcpServiceManagement: pass,
-
   observeAccess: pass,
 
   async assertObserveAccess() {},

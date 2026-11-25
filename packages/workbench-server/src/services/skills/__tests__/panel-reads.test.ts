@@ -17,6 +17,8 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
  * generalized label and reason, never the skill's own name.
  */
 
+vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn(async () => undefined) }));
+
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
   packs: { en: { ...enLocaleMeta, messages: en } },

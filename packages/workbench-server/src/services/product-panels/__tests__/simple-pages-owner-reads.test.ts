@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java" }, apiBase: "/api" } }));
+vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn(async () => undefined) }));
 vi.mock("../../../identity/installed", () => ({ assertPermission: vi.fn(async () => undefined) }));
 vi.mock("../../../product/installed", () => ({
   workbenchProduct: () => ({ analysisMcpServerName: "analysis-agents", opsMcpServerName: "ops-agent" }),
@@ -53,14 +54,15 @@ afterEach(() => {
 describe("simple pages owner reads", () => {
   it("returns localized titles for PublishedMcpService and supports single record lookup", async () => {
     const viewer = { token: "t", locale: "zh-CN" } as never;
-    const rows = await readPublishedMcpServices(viewer);
+    const owner = { domainId: "domain-a", userId: "user-a" };
+    const rows = await readPublishedMcpServices(owner, viewer);
     expect(rows.map(row => ({ key: row.primaryKey, label: row.label }))).toEqual([
       { key: "analysis-agents", label: "智能体服务" },
       { key: "ops-agent", label: "运维智能体服务" },
     ]);
-    const single = await readPublishedMcpService(viewer, "ops-agent");
+    const single = await readPublishedMcpService(owner, viewer, "ops-agent");
     expect(single.label).toBe("运维智能体服务");
-    await expect(readPublishedMcpService(viewer, "missing")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
+    await expect(readPublishedMcpService(owner, viewer, "missing")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
   });
 
   it("localizes AuditLog business and operation fields with tones and uses page-number pagination", async () => {

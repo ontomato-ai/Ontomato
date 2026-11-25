@@ -55,6 +55,7 @@ configureI18n({
 });
 
 const mocks = vi.hoisted(() => ({
+  assertManagement: vi.fn(),
   assertObserveAccess: vi.fn<Parameters<WorkbenchIdentity["assertObserveAccess"]>, ReturnType<WorkbenchIdentity["assertObserveAccess"]>>(async () => {}),
   knowledgeDir: "",
   workspacesDir: "",
@@ -73,6 +74,7 @@ const globalWrite = (ref: string) =>
 const objectRead = (ref: string) =>
   panelServerOperation(ref) as PanelReadServerOperation;
 
+vi.mock("../../../identity/management", () => ({ assertManagement: mocks.assertManagement }));
 vi.mock("../../../content/layout", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../content/layout")>();
   return {
@@ -195,6 +197,7 @@ beforeEach(() => {
   mocks.autotestDataDir = path.join(tempRoot, "autotest");
   mocks.keptArtifacts.clear();
   mocks.activeRun = null;
+  mocks.assertManagement.mockReset().mockResolvedValue(undefined);
   mocks.assertObserveAccess.mockReset().mockResolvedValue(undefined);
   mocks.verifyDomain.mockReset().mockResolvedValue(undefined);
   mocks.resolveEvidence.mockReset();
@@ -212,7 +215,6 @@ beforeEach(() => {
     requirePermission: () => (_req, _res, next) => next(),
     assertPermission: async () => {},
     requireDeploymentMaintenance: (_req, _res, next) => next(),
-    guardMcpServiceManagement: (_req, _res, next) => next(),
     observeAccess: (_req, _res, next) => next(),
     assertObserveAccess: mocks.assertObserveAccess,
     requireDomainId: ({ domainId }) => {
@@ -243,7 +245,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     expect(doc.fields.path).toBe("guides/logs.md");
     expect(doc.fields.content).toContain("Check logs.");
 
-    mocks.assertObserveAccess.mockRejectedValueOnce(new HttpError(403, "Missing observer permission"));
+    mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Operation forbidden"));
     await expect(adapter.files()).rejects.toMatchObject({ status: 403 });
   });
 

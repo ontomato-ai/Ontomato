@@ -8,6 +8,8 @@ import {
   type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import type { SkillCatalogDiagnostics, SkillInfo, SkillWriteRestriction } from "@ontomato/contracts/skills";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { assistantSkillCatalog } from "../assistant/skills";
@@ -49,6 +51,7 @@ export function createSkillReadAdapter(
   owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string,
 ): SkillReads {
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(viewer.locale, key, params);
+  const requireLibraryRead = () => assertManagement(workbenchManagement.skillsRead, owner, viewer);
 
   function diagnosticText(diagnostics?: SkillCatalogDiagnostics): string[] | undefined {
     if (!diagnostics) return;
@@ -128,6 +131,7 @@ export function createSkillReadAdapter(
     },
     async query(params: Record<string, unknown>) {
       const { search, cursor, size } = queryInputSchema.parse(params);
+      await requireLibraryRead();
       const needle = search?.trim() ?? "";
       const { skills, diagnostics } = needle
         ? await skillManager.searchSkills(owner.domainId, needle, viewer)
@@ -143,9 +147,11 @@ export function createSkillReadAdapter(
       };
     },
     async record(primaryKey: string) {
+      await requireLibraryRead();
       return skillRow(await skillManager.getSkillInfo(owner.domainId, primaryKey, viewer), skillFieldLabels());
     },
     async files(primaryKey: string) {
+      await requireLibraryRead();
       const files = await skillManager.listSkillFiles(owner.domainId, primaryKey, viewer);
       const fieldLabels = { size: t("panels.skill.fields.size") };
       return files.map(entry => ({
@@ -157,6 +163,7 @@ export function createSkillReadAdapter(
     },
     async file(primaryKey: string, params: Record<string, unknown>) {
       const { path } = fileInputSchema.parse(params);
+      await requireLibraryRead();
       const content = await skillManager.readSkillFile(owner.domainId, primaryKey, path, viewer);
       return {
         primaryKey: path,

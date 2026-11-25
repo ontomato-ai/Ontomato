@@ -1,3 +1,5 @@
+import { workbenchManagement, type WorkbenchManagementOperation } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import { z } from "zod";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { CaseSet, TestCase } from "@ontomato/contracts/autotest";
@@ -41,7 +43,6 @@ import type {
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import { applySubmittedFields } from "../product-panels/submitted-form-values";
-import { requireObserveAccessDomain } from "./panel-reads";
 
 export type AutotestCaseEditMode = "form" | "json";
 type CaseSetFormInputs = Partial<Pick<PanelFormRequest, "values" | "changedField">> & {
@@ -352,11 +353,13 @@ function buildCaseSetFormDescription(
 }
 
 async function requireOwnedCaseSet(
-  owner: Pick<ProductOwner, "domainId">,
-  viewer: Pick<AssistantCredentials, "token" | "apiKey" | "locale">,
+  operation: WorkbenchManagementOperation,
+  owner: ProductOwner,
+  viewer: AssistantCredentials,
   id: string,
 ): Promise<{ domainId: string; caseSet: CaseSet }> {
-  const domainId = await requireObserveAccessDomain(owner, viewer);
+  await assertManagement(operation, owner, viewer);
+  const { domainId } = owner;
   if (!isValidCaseId(id)) {
     throw new HttpError(400, "Invalid case set id");
   }
@@ -402,7 +405,8 @@ export function createAutotestCaseSetReadAdapter(owner: ProductOwner, viewer: As
 
   return {
     async list(params: { search?: string } = {}): Promise<PanelRecord[]> {
-      const domainId = await requireObserveAccessDomain(owner, viewer);
+      await assertManagement(workbenchManagement.opsCaseSetsRead, owner, viewer);
+      const { domainId } = owner;
       const query = params.search?.trim().toLowerCase() ?? "";
       return listCaseSets(domainId)
         .filter((item) => !query || item.name.toLowerCase().includes(query) || item.id.toLowerCase().includes(query))
@@ -410,7 +414,7 @@ export function createAutotestCaseSetReadAdapter(owner: ProductOwner, viewer: As
     },
 
     async record(id: string): Promise<PanelRecord> {
-      const { caseSet } = await requireOwnedCaseSet(owner, viewer, id);
+      const { caseSet } = await requireOwnedCaseSet(workbenchManagement.opsCaseSetsRead, owner, viewer, id);
       return caseSetRecord(
         {
           id: caseSet.id,
@@ -424,7 +428,7 @@ export function createAutotestCaseSetReadAdapter(owner: ProductOwner, viewer: As
     },
 
     async form(id: string, inputs: CaseSetFormInputs = {}): Promise<PanelFormDescription> {
-      const { caseSet } = await requireOwnedCaseSet(owner, viewer, id);
+      const { caseSet } = await requireOwnedCaseSet(workbenchManagement.opsCaseSetsRead, owner, viewer, id);
       return buildCaseSetFormDescription(caseSet, inputs, locale);
     },
   };
@@ -457,6 +461,7 @@ const deleteCaseSetImpact: PanelImpactInspector = {
   async inspect(host, calls) {
     const target = calls[0]!.target as PanelRecordTarget;
     const { caseSet } = await requireOwnedCaseSet(
+      workbenchManagement.opsCaseSetsDelete,
       host.initiator.owner,
       host.initiator.credentials,
       target.primaryKey,
@@ -509,7 +514,9 @@ export const autotestCaseSetServerOperations = [
         };
       }
       try {
-        const domainId = await requireObserveAccessDomain(host.executor.owner, host.executor.credentials);
+        const { owner, credentials } = host.executor;
+        await assertManagement(workbenchManagement.opsCaseSetsCreate, owner, credentials);
+        const { domainId } = owner;
         const caseSet = createEmptyCaseSet(parsed.data.name, domainId);
         return {
           kind: "success",
@@ -576,7 +583,9 @@ export const autotestCaseSetServerOperations = [
         };
       }
       try {
-        const domainId = await requireObserveAccessDomain(host.executor.owner, host.executor.credentials);
+        const { owner, credentials } = host.executor;
+        await assertManagement(workbenchManagement.opsCaseSetsImport, owner, credentials);
+        const { domainId } = owner;
         const payload = parseCaseSetImportPayload(parsed.data.content, parsed.data.format ?? "auto");
         const { caseSet, warnings } = importCaseSet(parsed.data.name, payload, domainId);
         const message = warnings.length > 0
@@ -640,6 +649,7 @@ export const autotestCaseSetServerOperations = [
       const { values, submittedFields } = saveCaseSetInputSchema.parse(input);
       try {
         const { domainId, caseSet } = await requireOwnedCaseSet(
+          workbenchManagement.opsCaseSetsChange,
           host.executor.owner,
           host.executor.credentials,
           target.primaryKey,
@@ -710,6 +720,7 @@ export const autotestCaseSetServerOperations = [
       }
       try {
         const { domainId, caseSet } = await requireOwnedCaseSet(
+          workbenchManagement.opsCaseSetsDelete,
           host.executor.owner,
           host.executor.credentials,
           target.primaryKey,

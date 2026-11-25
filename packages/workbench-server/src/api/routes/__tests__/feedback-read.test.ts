@@ -2,15 +2,17 @@ import express from "express";
 import type { Server } from "node:http";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+
 const { records, permission } = vi.hoisted(() => ({
   records: vi.fn(),
   permission: vi.fn(),
 }));
 vi.mock("../../../services/admin/feedback-store", () => ({ listFeedback: records }));
-vi.mock("../../../identity/installed", () => ({
-  requirePermission: (keys: string[]) => {
+vi.mock("../../../identity/management", () => ({
+  requireManagement: (operation: { id: string }) => {
     return (_req: unknown, _res: unknown, next: () => void) => {
-      permission(keys);
+      permission(operation);
       next();
     };
   },
@@ -64,7 +66,7 @@ it("reads one record with its turn key and labels under the list's admission", a
   const response = await fetch(`${base}/${feedbackId}`);
 
   expect(response.status).toBe(200);
-  expect(permission).toHaveBeenCalledWith(["user-feedback"]);
+  expect(permission).toHaveBeenCalledWith(workbenchManagement.feedbackRead);
   expect(records).toHaveBeenCalledWith({
     domainId: "domain-1",
     feedbackId,

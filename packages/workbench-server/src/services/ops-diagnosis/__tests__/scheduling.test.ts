@@ -2,10 +2,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { operationsScheduleApplication as application } from "../scheduling";
 import { platformScheduleExecutionStateSchema, platformScheduleFormSchema, type PlatformScheduleExecutionRequest } from "@ontomato/contracts/platform-schedules";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { HttpError } from "../../../utils/errors";
 
 const mocks = vi.hoisted(() => ({
   active: vi.fn(), busy: vi.fn(), start: vi.fn(), meta: vi.fn(), source: vi.fn(), cases: vi.fn(),
-  access: vi.fn(), actor: vi.fn(), create: vi.fn(), run: vi.fn(), status: vi.fn(), grantAllowed: vi.fn(),
+  access: vi.fn(), management: vi.fn(), actor: vi.fn(), create: vi.fn(), run: vi.fn(), status: vi.fn(), grantAllowed: vi.fn(),
   opsDiagnosis: vi.fn(),
 }));
 const diagnosisId = "64348621-8f48-4734-b498-a265598c19f0";
@@ -18,13 +20,14 @@ vi.mock("../../../platform/diagnosis/autotest/runner/run-controller", () => ({ g
 vi.mock("../../../platform/diagnosis/autotest/results/store", () => ({ loadRunMeta: mocks.meta, scheduledRunSource: mocks.source }));
 vi.mock("../../../platform/diagnosis/autotest/cases/repository", () => ({ listCaseSets: mocks.cases }));
 vi.mock("../../../identity/installed", () => ({ workbenchIdentity: () => ({ assertObserveAccess: mocks.access, resolveAutotestActor: mocks.actor }) }));
+vi.mock("../../../identity/management", () => ({ assertManagement: mocks.management }));
 const owner={ userId:"alice", domainId:"sales" }, context={owner,credentials:{apiKey:"internal",locale:"zh-CN"}};
 function input():PlatformScheduleExecutionRequest {
   return {taskId:randomUUID(),runId:randomUUID(),appId:"operations",title:"Regression",content:{operation:"autotest",caseSetId:"set"},formRevision:"autotest-v1",timeZone:"Asia/Shanghai",locale:"zh-CN",trigger:"schedule",scheduledAt:"2026-11-06T02:00:00Z",admittedAt:"2026-11-06T02:00:01Z"};
 }
 beforeEach(() => {
   mocks.meta.mockReturnValue(null); mocks.source.mockReturnValue(null); mocks.busy.mockReturnValue(false); mocks.active.mockReturnValue(null);
-  mocks.actor.mockResolvedValue(owner); mocks.access.mockResolvedValue(undefined); mocks.grantAllowed.mockResolvedValue(true);
+  mocks.actor.mockResolvedValue(owner); mocks.access.mockResolvedValue(undefined); mocks.management.mockResolvedValue(undefined); mocks.grantAllowed.mockResolvedValue(true);
   mocks.opsDiagnosis.mockResolvedValue({ id: diagnosisId, kind: "ops-diagnosis", enabled: true });
   mocks.cases.mockReturnValue([{id:"set",name:"Regression",caseCount:2}]); mocks.create.mockResolvedValue({}); mocks.run.mockResolvedValue({});
 });
@@ -32,6 +35,21 @@ afterEach(() => {vi.resetAllMocks();});
 it("returns a replacement form when switching operations, keeping no hidden branch values", async () => {
   const form=await application.form({values:{operation:"inspection",caseSetId:"set"},changedField:"operation",taskId:null,timeZone:"Asia/Shanghai"},context);
   platformScheduleFormSchema.parse(form); expect(form.values).toEqual({operation:"inspection",instruction:""});
+});
+it("opens the inspection form for an inspector without access to case sets", async () => {
+  mocks.management.mockRejectedValue(new HttpError(403, "Case sets are restricted"));
+  const form = await application.form({ values: {}, changedField: null, taskId: null, timeZone: "Asia/Shanghai" }, context);
+  expect(form.values).toEqual({ operation: "inspection", instruction: "" });
+  expect(mocks.cases).not.toHaveBeenCalled();
+});
+it("requires the run-start operation before admitting a scheduled batch", async () => {
+  mocks.management.mockImplementation(async (operation) => {
+    if (operation.id === workbenchManagement.opsRunsStart.id) throw new HttpError(403, "Run start denied");
+  });
+  const request = input();
+  await expect(application.validate(request, context)).rejects.toMatchObject({ status: 403 });
+  await expect(application.start(request, context)).rejects.toMatchObject({ status: 403 });
+  expect(mocks.start).not.toHaveBeenCalled();
 });
 it("records a busy test runner as skipped without queueing or pausing", async () => {
   mocks.busy.mockReturnValue(true); const result=await application.start(input(),context);
@@ -66,6 +84,7 @@ it("starts an inspection in the unified assistant host and applies the same obse
   expect(mocks.create.mock.calls[0]).toEqual([expect.any(String), owner, { agentId: diagnosisId }, context.credentials, "scheduled"]);
   expect(mocks.run.mock.calls[0]).toEqual(expect.arrayContaining([request.runId,{message:"Check failures"},owner,context.credentials,"background"]));
   expect(mocks.access).toHaveBeenCalledWith({domainId:"sales",apiKey:"internal",token:undefined});
+  expect(mocks.management).not.toHaveBeenCalled();
 });
 it("blocks scheduled inspection when diagnosis use grant is missing", async () => {
   mocks.grantAllowed.mockResolvedValue(false);

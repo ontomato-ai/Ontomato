@@ -1,5 +1,6 @@
 import type { HttpResponse } from "@ontomato/contracts/http";
 import type { ArtifactRetention, ArtifactType } from "@ontomato/contracts/observe";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { Request, Response, Router } from "express";
 import { createLogger } from "../../logging/logger";
 import { loadRunMeta } from "./autotest/results/store";
@@ -7,21 +8,28 @@ import { loadManifest } from "./observe/workspaces/store";
 import { setArtifactKept } from "./observe/artifact-retention/store";
 import { isArtifactType } from "./observe/artifact-retention/types";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
+import { HttpError } from "../../utils/errors";
+import { requireManagement } from "../../identity/management";
 
 const router: ReturnType<typeof Router> = Router();
 const logger = createLogger("artifact-retention:routes");
+const retentionOperations = {
+  "turn-workspace": workbenchManagement.opsTurnEvidenceRetention,
+  "autotest-run": workbenchManagement.opsRunsRetention,
+} satisfies Record<ArtifactType, unknown>;
 
 router.put(
   "/:artifactType/:artifactId",
+  requireManagement(req => {
+    const { artifactType } = req.params;
+    if (!isArtifactType(artifactType)) throw new HttpError(400, "Invalid artifact type");
+    return retentionOperations[artifactType];
+  }),
   async (req: Request, res: Response<HttpResponse<ArtifactRetention>>) => {
-    const artifactType = req.params.artifactType;
+    const artifactType = req.params.artifactType as ArtifactType;
     const artifactId = req.params.artifactId;
     const kept = (req.body as { kept?: unknown })?.kept;
 
-    if (!isArtifactType(artifactType)) {
-      res.status(400).json({ success: false, error: "Invalid artifact type" });
-      return;
-    }
     if (!isValidArtifactId(artifactId)) {
       res.status(400).json({ success: false, error: "Invalid artifact ID" });
       return;

@@ -2,7 +2,6 @@ export {
   installWorkbenchIdentity,
   workbenchIdentity,
   requirePermission,
-  guardMcpServiceManagement,
 } from "./identity/installed";
 export { installWorkbenchProduct, workbenchProduct } from "./product/installed";
 export { installContentLayout, type ContentLayout, type ResourceCopy } from "./content/layout";

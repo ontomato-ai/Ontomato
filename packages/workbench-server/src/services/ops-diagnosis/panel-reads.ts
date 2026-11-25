@@ -1,3 +1,5 @@
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import path from "node:path";
 import type { KnowledgeTreeNode } from "@ontomato/contracts/diagnosis";
 import type { ArtifactFileTreeNode, WorkspaceManifest } from "@ontomato/contracts/observe";
@@ -65,16 +67,16 @@ export function parseAutotestCaseArtifactKey(primaryKey: string): { runId: strin
   return { runId, caseId };
 }
 
-export async function requireObserveAccessDomain(
+export async function requireDslQueryAccess(
   owner: Pick<ProductOwner, "domainId">,
   viewer: Pick<AssistantCredentials, "token" | "apiKey">,
-): Promise<string> {
+): Promise<void> {
   await workbenchIdentity().assertObserveAccess({
     domainId: owner.domainId,
     token: viewer.token,
     apiKey: viewer.apiKey,
   });
-  return workbenchIdentity().requireDomainId({ domainId: owner.domainId });
+  workbenchIdentity().requireDomainId({ domainId: owner.domainId });
 }
 
 function flattenKnowledgeFiles(node: KnowledgeTreeNode, out: KnowledgeTreeNode[] = []): KnowledgeTreeNode[] {
@@ -281,7 +283,7 @@ export function createOpsKnowledgeReadAdapter(owner: ProductOwner, viewer: Assis
   const locale = viewer.locale;
   return {
     async files(): Promise<PanelRecord[]> {
-      await requireObserveAccessDomain(owner, viewer);
+      await assertManagement(workbenchManagement.opsKnowledgeRead, owner, viewer);
       const root = listKnowledgeTree();
       return flattenKnowledgeFiles(root).map((node) => ({
         className: OPS_KNOWLEDGE,
@@ -298,7 +300,7 @@ export function createOpsKnowledgeReadAdapter(owner: ProductOwner, viewer: Assis
       }));
     },
     async record(filePath: string): Promise<PanelRecord> {
-      await requireObserveAccessDomain(owner, viewer);
+      await assertManagement(workbenchManagement.opsKnowledgeRead, owner, viewer);
       try {
         const file = readKnowledgeMarkdown(filePath);
         return {
@@ -331,7 +333,8 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
   const locale = viewer.locale;
 
   async function requireTurnManifest(turnKey: string, includeCollecting = false): Promise<WorkspaceManifest> {
-    const domainId = await requireObserveAccessDomain(owner, viewer);
+    await assertManagement(workbenchManagement.opsTurnEvidenceRead, owner, viewer);
+    const domainId = owner.domainId;
     if (!parseTurnKey(turnKey)) throw new HttpError(400, "Invalid turnKey");
     const collecting = includeCollecting ? getCollectingTurnWorkspace(turnKey) : undefined;
     const manifest = collecting ?? loadManifest(turnKey);
@@ -343,7 +346,8 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
 
   return {
     async list(params: { search?: string } = {}): Promise<PanelRecord[]> {
-      const domainId = await requireObserveAccessDomain(owner, viewer);
+      await assertManagement(workbenchManagement.opsTurnEvidenceRead, owner, viewer);
+      const domainId = owner.domainId;
       const keptKeys = await getArtifactRetentionSnapshot();
       const keyword = (params.search ?? "").trim().toLowerCase();
       const workspaces = [...listWorkspaces(), ...listCollectingTurnWorkspaces()]
@@ -500,7 +504,8 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
   const locale = viewer.locale;
 
   async function requireRun(runId: string): Promise<{ domainId: string; meta: RunMeta; active: boolean }> {
-    const domainId = await requireObserveAccessDomain(owner, viewer);
+    await assertManagement(workbenchManagement.opsRunsRead, owner, viewer);
+    const domainId = owner.domainId;
     let meta: RunMeta | null;
     try {
       meta = loadRunMeta(runId);
@@ -521,7 +526,8 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
 
   return {
     async list() {
-      const domainId = await requireObserveAccessDomain(owner, viewer);
+      await assertManagement(workbenchManagement.opsRunsRead, owner, viewer);
+      const domainId = owner.domainId;
       const activeRun = getActiveRun();
       const keptKeys = await getArtifactRetentionSnapshot();
       const runs = listRuns({ activeRunId: activeRun?.runId, domainId })
@@ -668,7 +674,8 @@ export function createAutotestCaseArtifactReadAdapter(owner: ProductOwner, viewe
     artifactDir: string;
     manifest: WorkspaceManifest;
   }> {
-    const domainId = await requireObserveAccessDomain(owner, viewer);
+    await assertManagement(workbenchManagement.opsRunsRead, owner, viewer);
+    const domainId = owner.domainId;
     const { runId, caseId } = parseAutotestCaseArtifactKey(primaryKey);
     let meta: RunMeta | null;
     try {
@@ -784,7 +791,7 @@ export function createDslQueryReadAdapter(owner: ProductOwner, viewer: Assistant
   const locale = viewer.locale;
   return {
     async form(params?: { values?: PanelFormValues; changedField?: string | null }): Promise<PanelFormDescription> {
-      await requireObserveAccessDomain(owner, viewer);
+      await requireDslQueryAccess(owner, viewer);
       const dslText = typeof params?.values?.dsl === "string" ? params.values.dsl : DEFAULT_DSL_QUERY_TEXT;
       return {
         values: { dsl: dslText },

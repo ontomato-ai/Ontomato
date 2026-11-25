@@ -63,6 +63,7 @@ import autotestRouter from "../platform/diagnosis/autotest/routes";
 import observeRouter from "../platform/diagnosis/observe/routes";
 import artifactRetentionRouter from "../platform/diagnosis/artifact-retention-routes";
 import opsDiagnosisRouter from "../api/routes/ops-diagnosis";
+import opsKnowledgeRouter from "../platform/diagnosis/observe/agent/knowledge-routes";
 import { syncRuntimeDefaultResources } from "../platform/runtime-defaults";
 import workbenchAppearanceRouter from "../api/routes/workbench-appearance";
 import { syncDefaultPrompts } from "../core/prompts/loader";
@@ -249,24 +250,9 @@ export function createWorkbenchApp(): Express {
   app.use("/api/skills", skillsRouter);
   app.use("/api/mcp", mcpRouter);
   app.use("/api/query-history", queryHistoryRouter);
+  app.use("/api/observe/agent/knowledge", opsKnowledgeRouter);
   app.use(
-    [
-      "/api/observe/agent",
-      "/api/observe/diagnoses",
-      "/api/observe/evidence",
-      "/api/observe/retention",
-      "/api/observe/autotest/runs",
-      "/api/observe/autotest/case-sets",
-      "/api/observe/turns",
-      "/api/observe/log-sources",
-      "/api/observe/log-source-config",
-      "/api/observe/logs",
-      "/api/observe/runtime-logs",
-      "/api/observe/backend-logs",
-      "/api/observe/errors",
-      "/api/observe/live-logs",
-      "/api/observe/parse",
-    ],
+    ["/api/observe/agent", "/api/observe/diagnoses", "/api/observe/evidence"],
     identity.observeAccess,
   );
   app.use("/api/observe/retention", artifactRetentionRouter);

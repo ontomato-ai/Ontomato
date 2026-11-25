@@ -6,8 +6,8 @@ import router from "../skills";
 
 vi.mock("../../../i18n", () => ({ t: (key: string) => key, tApp: (key: string) => key }));
 
-vi.mock("../../../identity/installed", () => ({
-  requirePermission: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+vi.mock("../../../identity/management", () => ({
+  requireManagement: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 vi.mock("../../../services/assistant/definitions", () => ({ filterReadableAgentDefinitions: vi.fn() }));
 vi.mock("../../../services/skills/skill-manager", () => ({

@@ -4,13 +4,13 @@ import { skillManager } from "../../services/skills/skill-manager";
 import { filterReadableAgentDefinitions } from "../../services/assistant/definitions";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { t, tApp } from "../../i18n";
-import { requirePermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { requireManagement, assertManagement } from "../../identity/management";
 import { credentialsFromRequest, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler, sendError } from "../utils/http";
 import { HttpError } from "../../utils/errors";
 const router: ReturnType<typeof Router> = Router();
 const upload = multer({ storage: multer.memoryStorage() });
-const requireSkillAdmin = requirePermission(["skill-management"]);
 
 function requireDomain(req: Request, res: Response, next: NextFunction): void {
   if (!(req as AuthenticatedRequest).domainId) {
@@ -83,12 +83,15 @@ router.get(
 router.get(
   "/:id/export",
   asyncHandler(async (req: Request, res: Response) => {
-    const domainId = (req as AuthenticatedRequest).domainId;
+    const actor = req as AuthenticatedRequest;
+    const domainId = actor.domainId;
     if (!domainId) {
       res.status(204).end();
       return;
     }
-    const zipBuffer = await skillManager.exportSkill(domainId, req.params.id, credentialsFromRequest(req as AuthenticatedRequest));
+    const credentials = credentialsFromRequest(actor);
+    await assertManagement(workbenchManagement.skillsExport, actor, credentials);
+    const zipBuffer = await skillManager.exportSkill(domainId, req.params.id, credentials);
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${req.params.id}.zip"`);
     res.send(zipBuffer);
@@ -99,7 +102,7 @@ router.get(
 router.delete(
   "/:id",
   requireDomain,
-  requireSkillAdmin,
+  requireManagement(workbenchManagement.skillsDelete),
   asyncHandler(async (req: Request, res: Response) => {
     const request = req as AuthenticatedRequest;
     const domainId = request.domainId!;
@@ -115,7 +118,7 @@ router.delete(
 router.post(
   "/import",
   requireDomain,
-  requireSkillAdmin,
+  requireManagement(workbenchManagement.skillsImport),
   upload.single("file"),
   asyncHandler(async (req: Request, res: Response) => {
     try {

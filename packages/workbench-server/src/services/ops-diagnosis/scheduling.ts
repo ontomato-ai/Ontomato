@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { PlatformScheduleExecutionState, PlatformScheduleExecutionRequest, PlatformScheduleExecutionStatusRequest } from "@ontomato/contracts/platform-schedules";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { assistantService } from "../assistant/service";
 import { assistantStore } from "../assistant/store";
 import { diagnosisService } from "./service";
@@ -10,6 +11,7 @@ import { listCaseSets } from "../../platform/diagnosis/autotest/cases/repository
 import { getActiveRun, isRunActive, startRun } from "../../platform/diagnosis/autotest/runner/run-controller";
 import { loadRunMeta, scheduledRunSource } from "../../platform/diagnosis/autotest/results/store";
 import { workbenchIdentity } from "../../identity/installed";
+import { assertManagement } from "../../identity/management";
 import { productGrantAllowed } from "../product-governance/grants";
 import { HttpError } from "../../utils/errors";
 
@@ -64,21 +66,46 @@ async function startBatch(input: PlatformScheduleExecutionRequest, context: Sche
   return batchState({ taskId: input.taskId, runId: input.runId, owner: context.owner, handle: { batchId } });
 }
 
+function requireInspectionAccess({ owner, credentials }: ScheduleContext) {
+  return workbenchIdentity().assertObserveAccess({ domainId: owner.domainId, token: credentials.token, apiKey: credentials.apiKey });
+}
+
+function requireAutotestFormAccess({ owner, credentials }: ScheduleContext) {
+  return assertManagement(workbenchManagement.opsCaseSetsRead, owner, credentials);
+}
+
+async function refused(check: Promise<void>): Promise<HttpError | undefined> {
+  try {
+    await check;
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.status !== 403) throw error;
+    return error;
+  }
+}
+
 export const operationsScheduleApplication: ScheduleApplication = {
   id: "operations",
   description(locale) { return locale?.startsWith("zh") ? "跑自动测试，或按指令巡检" : "Run automated tests or inspect as instructed"; },
-  async authorize({ owner, credentials }) {
-    await workbenchIdentity().assertObserveAccess({ domainId: owner.domainId, token: credentials.token, apiKey: credentials.apiKey });
+  async authorize(context) {
+    if (await refused(requireInspectionAccess(context))) await requireAutotestFormAccess(context);
   },
-  async form(input, { owner, credentials }) {
+  async form(input, context) {
+    const { owner, credentials } = context;
     const zh = credentials.locale?.startsWith("zh");
-    const operation = input.values.operation || "autotest";
+    const selected = input.values.operation;
+    if (selected !== undefined && selected !== "inspection" && selected !== "autotest")
+      throw new HttpError(400, "Unknown operations schedule type", "INVALID_REQUEST");
+    const autotestRefusal = selected === "inspection" ? undefined : await refused(requireAutotestFormAccess(context));
+    const defaultOperation = autotestRefusal ? "inspection" : "autotest";
+    const operation = selected ?? defaultOperation;
+    if (operation === "autotest" && autotestRefusal) throw autotestRefusal;
+    if (operation === "inspection") await requireInspectionAccess(context);
     const diagnosis = await assistantStore.opsDiagnosis(owner.domainId);
     const canInspect = Boolean(diagnosis?.enabled && await productGrantAllowed(diagnosis.id, "use", credentials));
     const fields = [select("operation", zh ? "做什么" : "Operation", [
-      option("autotest", zh ? "跑自动测试" : "Run automated tests"),
+      option("autotest", zh ? "跑自动测试" : "Run automated tests", autotestRefusal?.message ?? null),
       option("inspection", zh ? "巡检" : "Inspection", canInspect ? null : zh ? "无权使用运维诊断智能体" : "Operations diagnosis use permission required"),
-    ], true, "autotest")];
+    ], true, defaultOperation)];
     if (operation === "inspection") fields.push(instruction(zh ? "指令" : "Instruction"));
     else {
       const cases = listCaseSets(owner.domainId);
@@ -91,6 +118,8 @@ export const operationsScheduleApplication: ScheduleApplication = {
     return completeForm("operations", operation === "inspection" ? "inspection-v1" : "autotest-v1", fields, values);
   },
   async validate(input, context) {
+    if (input.content.operation === "autotest")
+      await assertManagement(workbenchManagement.opsRunsStart, context.owner, context.credentials);
     return checkedForm(input, await this.form({ values: input.content, changedField: null, taskId: null, timeZone: input.timeZone }, context));
   },
   async start(input, context) {

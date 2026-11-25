@@ -13,6 +13,7 @@ import {
   AGENT_DEFINITION, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL, FEEDBACK_RECORD, IMPORT_SKILL, SKILL,
 } from "@ontomato/contracts/panel-client-requests";
 import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato/contracts/product-panels";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
@@ -29,8 +30,17 @@ const state = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined,
   schema: "",
   base: "",
-  permissions: new Set<string>(["user-feedback", "skill-management", "analysis-agent"]),
+  permissions: new Set<string>(["analysis-agent"]),
 }));
+
+const managementOperations = new Set([
+  workbenchManagement.feedbackRead.id,
+  workbenchManagement.feedbackExport.id,
+  workbenchManagement.skillsRead.id,
+  workbenchManagement.skillsExport.id,
+  workbenchManagement.skillsDelete.id,
+  workbenchManagement.skillsImport.id,
+]);
 
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
@@ -338,6 +348,15 @@ beforeAll(async () => {
 
   const app = express();
   app.use(express.json());
+  app.post("/internal/workbench-management/require", (req, res) => {
+    if (req.header("X-Ontomato-Query-Service-Token") !== "fixture-service" ||
+        req.header("tk") !== "m7-reader" || req.body.domainId !== domainId ||
+        !managementOperations.has(req.body.operationId)) {
+      res.status(403).json({ message: "Management operation forbidden" });
+      return;
+    }
+    res.status(204).end();
+  });
   mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === domainId
     ? [{ entryId: "app-m7/owners", roots: { panelIds: [panelId], agentIds: [] } }] : [] });
   app.post("/product-governance/register", (req, res) => {
@@ -534,9 +553,9 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
     record: { className: FEEDBACK_RECORD, primaryKey: "not-a-uuid" },
   })).toEqual({ status: "error", message: "Invalid feedback ID" });
 
-  state.permissions.delete("user-feedback");
+  managementOperations.delete(workbenchManagement.feedbackRead.id);
   expect(await read("feedbackList", "rows", {})).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
-  state.permissions.add("user-feedback");
+  managementOperations.add(workbenchManagement.feedbackRead.id);
 
   const csvCall = {
     applicationId: source.applicationId, useId: source.useId, operationId: "feedbackList.export",
@@ -553,14 +572,14 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   expect(csvBytes.toString()).not.toContain("Slow chart");
   expect(csvBytes.toString()).not.toContain("Good summary");
 
-  state.permissions.delete("user-feedback");
+  managementOperations.delete(workbenchManagement.feedbackExport.id);
   try {
     const denied = await request("POST", "panel-operations/read", csvCall);
     expect(denied.status).toBe(403);
     expect(denied.headers.get("content-disposition")).toBeNull();
     expect(await denied.json()).toMatchObject({ error: { code: "PERMISSION_DENIED" } });
   } finally {
-    state.permissions.add("user-feedback");
+    managementOperations.add(workbenchManagement.feedbackExport.id);
   }
 
   // 2. Skill library reads (available without analysis-agent permission) and skills.delete operation.
@@ -663,7 +682,7 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   expect(intents.rows).toEqual([]);
 
   // Refusals: missing permission, public package, provider package.
-  state.permissions.delete("skill-management");
+  managementOperations.delete(workbenchManagement.skillsDelete.id);
   const noPermIntent = await (await request("POST", "panel-operations/intents", {
     applicationId: "app-m7",
     useId: "owners",
@@ -682,7 +701,7 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
     kind: "dispatched",
     outcome: { kind: "refusal", code: "PERMISSION_DENIED" },
   });
-  state.permissions.add("skill-management");
+  managementOperations.add(workbenchManagement.skillsDelete.id);
 
   const publicIntent = await (await request("POST", "panel-operations/intents", {
     applicationId: "app-m7",

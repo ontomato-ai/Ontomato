@@ -2,9 +2,10 @@ import { z } from "zod";
 import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
 import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { panelFileInputSchema, type PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { tForLocale } from "../../i18n";
-import { assertPermission } from "../../identity/installed";
+import { assertManagement } from "../../identity/management";
 import { HttpError } from "../../utils/errors";
 import type {
   PanelImpactInspector,
@@ -21,13 +22,11 @@ import type { PanelUploadedFile } from "../product-panels/upload-store";
 /*
  * The skill owner as panel server operations. `skills.import` takes the skill ZIP the reader staged and installs it
  * through `skillManager.importSkill`; a package whose name exists is refused with its `skillId`, and the same staged file
- * may then be sent again with `overwrite`, which the reader confirms against the named skill. Both are guarded by
- * `skill-management`. `skills.delete` inspects readable agent references before confirmation and delegates deletion to
+ * may then be sent again with `overwrite`, which the reader confirms against the named skill.
+ * `skills.delete` inspects readable agent references before confirmation and delegates deletion to
  * `skillManager.deleteSkill`. Read-only provider and built-in packages, as well as permission denials, surface as owner
  * refusals.
  */
-
-const skillManagementPermissions = ["skill-management"] as const;
 
 const skillObjectTarget = z.object({
   kind: z.literal("object"),
@@ -129,7 +128,7 @@ export const skillServerOperations = [
       const { owner, credentials } = host.executor;
       const { locale } = credentials;
       try {
-        await assertPermission(credentials, skillManagementPermissions);
+        await assertManagement(workbenchManagement.skillsImport, owner, credentials);
         const skill = await (await loadSkillManager()).importSkill(owner.domainId, file.bytes, credentials, overwrite === true);
         return {
           kind: "success",
@@ -180,7 +179,7 @@ export const skillServerOperations = [
       if (target.kind !== "object") throw new Error("Delete acts on a selected skill");
       const { owner, credentials } = host.executor;
       try {
-        await assertPermission(credentials, skillManagementPermissions);
+        await assertManagement(workbenchManagement.skillsDelete, owner, credentials);
         const skillManager = await loadSkillManager();
         const result = await skillManager.deleteSkill(owner.domainId, target.primaryKey, await referenceAccess(host.executor));
         return {
@@ -221,6 +220,7 @@ export const skillExportOperation = {
   resultSchema: panelDownloadReceiptSchema,
   async execute({ executor: { owner, credentials } }, call) {
     const { primaryKey } = skillObjectTarget.parse(call.target);
+    await assertManagement(workbenchManagement.skillsExport, owner, credentials);
     const skillManager = await loadSkillManager();
     const bytes = await skillManager.exportSkill(owner.domainId, primaryKey, credentials);
     return { kind: "file", bytes: new Uint8Array(bytes), suggestedName: `${primaryKey}.zip`, mime: "application/zip" };

@@ -1,6 +1,8 @@
 import type { McpToolDesc } from "@ontomato/contracts/mcp";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
-import { assertPermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
+import type { ProductOwner } from "../product-governance/grants";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { workbenchProduct } from "../../product/installed";
@@ -30,8 +32,8 @@ export function mcpToolToPanelRecord(tool: McpToolDesc, locale?: string): PanelR
   };
 }
 
-export async function readPublishedMcpServices(viewer: AssistantCredentials, location?: McpRequestLocation): Promise<PanelRecord[]> {
-  await assertPermission(viewer, ["mcp-service"]);
+export async function readPublishedMcpServices(owner: ProductOwner, viewer: AssistantCredentials, location?: McpRequestLocation): Promise<PanelRecord[]> {
+  await assertManagement(workbenchManagement.publishedMcpRead, owner, viewer);
   const text = (key: string) => tForLocale(viewer.locale, `panels.simplePages.${key}`);
   const { services } = await publishedMcpCatalogue(location, viewer.locale);
   const product = workbenchProduct();
@@ -63,17 +65,17 @@ export async function readPublishedMcpServices(viewer: AssistantCredentials, loc
 }
 
 export async function readPublishedMcpService(
-  viewer: AssistantCredentials, primaryKey: string, location?: McpRequestLocation,
+  owner: ProductOwner, viewer: AssistantCredentials, primaryKey: string, location?: McpRequestLocation,
 ): Promise<PanelRecord> {
-  const service = (await readPublishedMcpServices(viewer, location)).find(row => row.primaryKey === primaryKey);
+  const service = (await readPublishedMcpServices(owner, viewer, location)).find(row => row.primaryKey === primaryKey);
   if (!service) throw new HttpError(404, "Published MCP service not found", "NOT_FOUND");
   return service;
 }
 
 export async function readPublishedMcpServiceTools(
-  viewer: AssistantCredentials, primaryKey: string, location?: McpRequestLocation,
+  owner: ProductOwner, viewer: AssistantCredentials, primaryKey: string, location?: McpRequestLocation,
 ): Promise<PanelRecord[]> {
-  await assertPermission(viewer, ["mcp-service"]);
+  await assertManagement(workbenchManagement.publishedMcpRead, owner, viewer);
   const { services } = await publishedMcpCatalogue(location, viewer.locale);
   const service = services.find(item => item.name === primaryKey);
   if (!service) throw new HttpError(404, "Published MCP service not found", "NOT_FOUND");

@@ -1,3 +1,4 @@
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,15 +13,15 @@ import { HttpError } from "../../../utils/errors";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 
 const mocks = vi.hoisted(() => ({
-  assertPermission: vi.fn(),
+  assertManagement: vi.fn(),
   filterReadableAgentDefinitions: vi.fn(),
   listAnalysisAgentSkillReferences: vi.fn(),
   removeAnalysisAgentSkillReferences: vi.fn(),
   restoreAnalysisAgentSkillReferences: vi.fn(),
 }));
 
-vi.mock("../../../identity/installed", () => ({
-  assertPermission: mocks.assertPermission,
+vi.mock("../../../identity/management", () => ({
+  assertManagement: mocks.assertManagement,
 }));
 vi.mock("../../assistant/definitions", () => ({
   filterReadableAgentDefinitions: mocks.filterReadableAgentDefinitions,
@@ -104,7 +105,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  mocks.assertPermission.mockReset().mockResolvedValue(undefined);
+  mocks.assertManagement.mockReset().mockResolvedValue(undefined);
   mocks.filterReadableAgentDefinitions.mockReset();
   mocks.listAnalysisAgentSkillReferences.mockReset().mockResolvedValue([]);
   mocks.removeAnalysisAgentSkillReferences.mockReset().mockResolvedValue(0);
@@ -167,7 +168,7 @@ describe("skill panel server operations", () => {
       { kind: "object", objectType: SKILL, primaryKey: "removable-skill" },
     );
 
-    expect(mocks.assertPermission).toHaveBeenCalledWith(actor.credentials, ["skill-management"]);
+    expect(mocks.assertManagement).toHaveBeenCalledWith(workbenchManagement.skillsDelete, actor.owner, actor.credentials);
     expect(mocks.removeAnalysisAgentSkillReferences).toHaveBeenCalledWith(domain, "removable-skill");
     expect(outcome).toEqual({
       kind: "success",
@@ -184,20 +185,20 @@ describe("skill panel server operations", () => {
     await expect(fs.stat(dir)).rejects.toThrow();
   });
 
-  it("refuses deletion without skill-management permission or for read-only public/provider packages", async () => {
+  it("refuses deletion without skill management operation or for read-only public/provider packages", async () => {
     await installDomainSkill("protected-check");
     const pubDir = path.join(publicSkillsRoot, "builtin-skill");
     await fs.mkdir(pubDir, { recursive: true });
     await fs.writeFile(path.join(pubDir, "SKILL.md"), "---\nname: builtin-skill\ndescription: Builtin\n---\n");
 
-    mocks.assertPermission.mockRejectedValueOnce(new HttpError(403, "Missing skill-management permission", "PERMISSION_DENIED"));
+    mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Missing skill management operation", "PERMISSION_DENIED"));
     expect(await deleteOp.execute(
       host,
       { kind: "object", objectType: SKILL, primaryKey: "protected-check" },
     )).toEqual({
       kind: "refusal",
       code: "PERMISSION_DENIED",
-      message: "Missing skill-management permission",
+      message: "Missing skill management operation",
     });
 
     const zhHost: PanelOperationHost = {
@@ -270,7 +271,7 @@ describe("skill panel server operations", () => {
         kind: "success", message: "Imported skill imported-skill.", data: { id: "imported-skill", title: "imported-skill" },
         affected: { objects: [{ objectType: SKILL, primaryKey: "imported-skill" }], objectTypes: [SKILL] },
       });
-      expect(mocks.assertPermission).toHaveBeenCalledWith(actor.credentials, ["skill-management"]);
+      expect(mocks.assertManagement).toHaveBeenCalledWith(workbenchManagement.skillsImport, actor.owner, actor.credentials);
 
       const second = zip("imported-skill", "Revised");
       expect(await importOp.execute(host, null, call(second))).toEqual({
@@ -293,9 +294,9 @@ describe("skill panel server operations", () => {
       expect(await importOp.execute(host, null, { file: broken })).toEqual({
         kind: "refusal", code: "INVALID_SKILL_PACKAGE", message: "This file is not a valid skill package: Cannot read skill ZIP",
       });
-      mocks.assertPermission.mockRejectedValueOnce(new HttpError(403, "Missing skill-management permission", "PERMISSION_DENIED"));
+      mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Missing skill management operation", "PERMISSION_DENIED"));
       expect(await importOp.execute(host, null, call(zip("denied-skill")))).toEqual({
-        kind: "refusal", code: "PERMISSION_DENIED", message: "Missing skill-management permission",
+        kind: "refusal", code: "PERMISSION_DENIED", message: "Missing skill management operation",
       });
     });
   });

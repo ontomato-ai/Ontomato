@@ -210,9 +210,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const externalMcp = createExternalMcpReads(owner, viewer);
   return {
     [PUBLISHED_MCP_SERVICE]: {
-      list: () => readPublishedMcpServices(viewer, location),
-      record: selection => readPublishedMcpService(viewer, selection.primaryKey!, location),
-      tools: selection => readPublishedMcpServiceTools(viewer, selection.primaryKey!, location),
+      list: () => readPublishedMcpServices(owner, viewer, location),
+      record: selection => readPublishedMcpService(owner, viewer, selection.primaryKey!, location),
+      tools: selection => readPublishedMcpServiceTools(owner, viewer, selection.primaryKey!, location),
     },
     [EXTERNAL_MCP_SERVICE]: {
       options: () => externalMcp.options(),
