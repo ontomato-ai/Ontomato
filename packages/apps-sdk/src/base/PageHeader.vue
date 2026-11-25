@@ -18,9 +18,7 @@ const props = withDefaults(
     description?: string | null;
     /** Explicit label for the back button (for example "Back to relation types"); omitted hides the back button. */
     backLabel?: string;
-    /** Dense single-row layout with bottom hairline (default `true`); set `false` for an expanded hero header. */
-    compact?: boolean;
-    /** Explicit header density: `"bar"` (48px single-entry application bar), `"compact"` (dense row), or `"expanded"` (hero header). Overrides `compact` when set. */
+    /** Header density: `"bar"` (48px single-entry application bar), `"compact"` (dense single-row layout with bottom hairline, default), or `"expanded"` (hero header). */
     density?: "bar" | "compact" | "expanded";
     /** Optional draft controls (unsaved notice, Discard and Save) shown at the right edge of the actions area. */
     draft?: PageHeaderDraft | null;
@@ -31,8 +29,7 @@ const props = withDefaults(
     title: "",
     description: null,
     backLabel: undefined,
-    compact: true,
-    density: undefined,
+    density: "compact",
     draft: null,
     labels: undefined,
   },
@@ -81,9 +78,7 @@ const resolvedLabels = computed<PageHeaderLabels>(() => ({
 
 const resolvedTitle = computed(() => props.title ?? "");
 
-const effectiveDensity = computed<"bar" | "compact" | "expanded">(() =>
-  props.density ?? (props.compact ? "compact" : "expanded"),
-);
+const effectiveDensity = computed<"bar" | "compact" | "expanded">(() => props.density);
 
 const draftSaving = computed(() => Boolean(props.draft?.saving));
 const draftDirty = computed(() => Boolean(props.draft?.dirty));

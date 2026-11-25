@@ -595,7 +595,11 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
     const components = componentMetadata({
       tsconfig: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/tsconfig.json"),
       source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
-    }).map(({ metadata }) => ({ ...metadata, ports: { props: [], events: [], slots: [] } }));
+    }).map(({ metadata }) => {
+      const rest = { ...metadata };
+      delete rest.configProps;
+      return { ...rest, ports: { props: [], events: [], slots: [] } };
+    });
     const catalogue = { version: "1.0.0", components };
     import { customerOntologyReads } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/platform-object-types.ts")).href)};
     const objectAction = (id) => ({
@@ -684,7 +688,11 @@ test("panel check accepts top-level targetless customer Actions on ObjectForm an
       const components = componentMetadata({
         tsconfig: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/tsconfig.json"),
         source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
-      }).map(({ metadata }) => ({ ...metadata, ports: { props: [], events: [], slots: [] } }));
+      }).map(({ metadata }) => {
+        const rest = { ...metadata };
+        delete rest.configProps;
+        return { ...rest, ports: { props: [], events: [], slots: [] } };
+      });
       const typeTable = {
         resultSchemas: { panelFormDescription: { type: "object" } },
         objectTypes: {

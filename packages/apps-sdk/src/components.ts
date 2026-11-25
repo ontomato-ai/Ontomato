@@ -57,6 +57,13 @@ export interface ComponentMetadata {
    * when any of that kind applies.
    */
   readonly bindsElement?: readonly string[];
+  /**
+   * Author-facing configuration prop names (camelCase, matching Vue `defineProps` and `panel.json` `config` keys).
+   * The SDK build resolves each declared name against the component's Vue prop metadata and emits ONLY this list as
+   * `config` in `components.json` and `docs/components/<ComponentId>.md`; host-only inputs, platform-fixed styles, and
+   * single-page presentation knobs stay out of author-facing documentation unless explicitly declared here.
+   */
+  readonly configProps?: readonly string[];
   /** The parameters it takes, by name; a projection's `inputs` are these. */
   readonly inputs?: Readonly<Record<string, DirectPanelPortType>>;
   /**
@@ -73,12 +80,15 @@ export interface ComponentMetadata {
 }
 
 /**
- * Declares one component's metadata. The value is returned unchanged and read by the SDK's build, which generates the
- * catalogue and its document from every component this SDK version exports; a component without a declaration fails the
- * build rather than shipping undescribed.
+ * Declares one component's metadata. The SDK build reads the full declaration (including the build-time `configProps`
+ * allowlist) statically from source to generate `components.json` and component docs; at runtime `configProps` is
+ * omitted so catalogue entries match the strict runtime schema directly.
  */
-export function defineComponentMeta<const Meta extends ComponentMetadata>(meta: Meta): Meta {
-  return meta;
+export function defineComponentMeta<const Meta extends ComponentMetadata>(meta: Meta): Omit<Meta, "configProps"> {
+  if (!("configProps" in meta)) return meta;
+  return Object.fromEntries(
+    Object.entries(meta).filter(([key]) => key !== "configProps"),
+  ) as Omit<Meta, "configProps">;
 }
 
 /** One port of a component as its source declares it: a prop, an event or a slot, with its type and its comment. */
@@ -101,7 +111,10 @@ export interface ComponentPorts {
 /** The catalogue a build writes as `components.json`: every declared component of one SDK version, with its ports. */
 export interface ComponentCatalogue {
   readonly version: string;
-  readonly components: readonly (ComponentMetadata & { readonly ports: ComponentPorts })[];
+  readonly components: readonly (Omit<ComponentMetadata, "configProps"> & {
+    readonly config?: ComponentPorts["props"];
+    readonly ports: ComponentPorts;
+  })[];
 }
 
 /** A component the catalogue describes, resolved back to the export a page imports. */
