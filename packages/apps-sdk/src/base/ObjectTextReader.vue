@@ -9,6 +9,7 @@ import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { useDataStateLabels } from "./data-state-labels";
+import { parseDiffPatch } from "./diff-patch";
 
 type CodeLanguage = "javascript" | "json" | "markdown" | "html" | "python" | "text";
 
@@ -95,8 +96,8 @@ const props = withDefaults(
   defineProps<{
     /** The field of the `record` datum that holds the text (`content` by default). */
     textField?: string;
-    /** How whole-record text is rendered: `"auto"` infers Markdown, CSV/TSV table preview, or read-only code from the file path, `"plain"` renders preformatted text, `"markdown"` renders Markdown (with YAML frontmatter separated when present), `"table"` renders a delimited table preview, and `"code"` renders a read-only code viewer. */
-    format?: "auto" | "plain" | "markdown" | "code" | "table";
+    /** How whole-record text is rendered: `"auto"` infers Markdown, CSV/TSV table preview, or read-only code from the file path, `"plain"` renders preformatted text, `"markdown"` renders Markdown (with YAML frontmatter separated when present), `"table"` renders a delimited table preview, `"code"` renders a read-only code viewer, and `"diff"` parses and renders a standard unified diff. */
+    format?: "auto" | "plain" | "markdown" | "code" | "table" | "diff";
     /** Optional field of the `record` datum holding the path or filename used to infer language; falls back to `record.label`, then `record.primaryKey`. */
     pathField?: string;
     /** This reader's key on the page; with a shared `activeAnchor`, only the reader it names is open. */
@@ -231,8 +232,14 @@ const recordPath = computed<string | null>(() => {
   return label ?? primaryKey;
 });
 const extension = computed(() => fileExtension(recordPath.value));
-const renderMode = computed<"plain" | "markdown" | "code" | "table">(() => {
-  if (props.format === "plain" || props.format === "markdown" || props.format === "code" || props.format === "table") {
+const renderMode = computed<"plain" | "markdown" | "code" | "table" | "diff">(() => {
+  if (
+    props.format === "plain"
+    || props.format === "markdown"
+    || props.format === "code"
+    || props.format === "table"
+    || props.format === "diff"
+  ) {
     return props.format;
   }
   const ext = extension.value;
@@ -249,6 +256,15 @@ const tablePreview = computed(() => {
   if (renderMode.value !== "table" || wholeText.value === null) return null;
   return parseCsv(wholeText.value, extension.value === "tsv" ? "\t" : ",");
 });
+const diffPatch = computed(() => {
+  if (renderMode.value !== "diff" || wholeText.value === null) return null;
+  return parseDiffPatch(wholeText.value);
+});
+const DIFF_CHANGE_KEYS = {
+  added: "platform.readerDiffFileAdded",
+  modified: "platform.readerDiffFileModified",
+  deleted: "platform.readerDiffFileDeleted",
+} as const;
 const markdownSections = computed(() => {
   const value = wholeText.value;
   if (value === null) return null;
@@ -282,6 +298,64 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
         </div>
         <div v-else-if="renderMode === 'table' && tablePreview" class="sdk-object-text-reader-table">
           <TablePreview :table="tablePreview" :page-size="50" />
+        </div>
+        <div v-else-if="renderMode === 'diff' && diffPatch" class="sdk-object-text-reader-diff">
+          <div v-if="diffPatch.files.length === 0" class="sdk-object-text-reader-diff-empty">
+            {{ emptyText ? panel.t(emptyText) : t("platform.readerDiffEmpty") }}
+          </div>
+          <template v-else>
+            <p class="sdk-object-text-reader-diff-summary">
+              {{ t("platform.readerDiffFilesChanged", { n: diffPatch.fileCount }, diffPatch.fileCount) }} ·
+              <span class="sdk-object-text-reader-diff-add">+{{ diffPatch.added }}</span>{{ " " }}<span class="sdk-object-text-reader-diff-remove">−{{ diffPatch.removed }}</span>
+            </p>
+            <section
+              v-for="(file, fileIndex) in diffPatch.files"
+              :key="`${file.path}:${fileIndex}`"
+              class="sdk-object-text-reader-diff-file"
+            >
+              <header class="sdk-object-text-reader-diff-head">
+                <span class="sdk-object-text-reader-diff-path">{{ file.path }}</span>
+                <span class="sdk-object-text-reader-diff-kind" :data-change="file.change">
+                  {{ t(DIFF_CHANGE_KEYS[file.change]) }}
+                </span>
+                <span class="sdk-object-text-reader-diff-stat">
+                  <span class="sdk-object-text-reader-diff-add">+{{ file.added }}</span>{{ " " }}<span class="sdk-object-text-reader-diff-remove">−{{ file.removed }}</span>
+                </span>
+              </header>
+              <p v-if="file.binary" class="sdk-object-text-reader-diff-binary">
+                {{ t("platform.readerDiffBinaryChanged") }}
+              </p>
+              <!-- Long lines wrap inside the panel; a wrapped line keeps its old and new numbers on its first row. -->
+              <table v-else class="sdk-object-text-reader-diff-table">
+                <colgroup>
+                  <col class="sdk-object-text-reader-diff-col-number" />
+                  <col class="sdk-object-text-reader-diff-col-number" />
+                  <col class="sdk-object-text-reader-diff-col-sign" />
+                  <col />
+                </colgroup>
+                <tbody>
+                  <tr
+                    v-for="(line, index) in file.lines"
+                    :key="index"
+                    :class="`sdk-object-text-reader-diff-line-${line.kind}`"
+                  >
+                    <template v-if="line.kind === 'hunk' || line.kind === 'note'">
+                      <td class="sdk-object-text-reader-diff-number" colspan="3" />
+                      <td class="sdk-object-text-reader-diff-text">{{ line.text }}</td>
+                    </template>
+                    <template v-else>
+                      <td class="sdk-object-text-reader-diff-number">{{ line.before }}</td>
+                      <td class="sdk-object-text-reader-diff-number">{{ line.after }}</td>
+                      <td class="sdk-object-text-reader-diff-sign">
+                        {{ line.kind === "add" ? "+" : line.kind === "remove" ? "−" : "" }}
+                      </td>
+                      <td class="sdk-object-text-reader-diff-text">{{ line.text }}</td>
+                    </template>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+          </template>
         </div>
         <div v-else-if="renderMode === 'code'" class="sdk-object-text-reader-code">
           <CodeEditor
@@ -360,5 +434,147 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
   flex: 1 1 auto;
   height: 100%;
   min-height: 0;
+}
+.sdk-object-text-reader-diff {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  min-width: 0;
+}
+.sdk-object-text-reader-diff-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  color: var(--sdk-text-color-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  text-align: center;
+}
+.sdk-object-text-reader-diff-summary {
+  margin: 0;
+  color: var(--sdk-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.sdk-object-text-reader-diff-file {
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--sdk-border-color-light);
+  border-radius: var(--radius-md);
+  background: var(--sdk-bg-color);
+}
+.sdk-object-text-reader-diff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 36px;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--sdk-border-color-light);
+  background: var(--sdk-fill-color-lighter);
+  font-size: var(--text-xs);
+}
+.sdk-object-text-reader-diff-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--sdk-text-color-primary);
+}
+.sdk-object-text-reader-diff-kind {
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--sdk-fill-color);
+  color: var(--sdk-text-color-secondary);
+  line-height: 18px;
+}
+.sdk-object-text-reader-diff-stat {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.sdk-object-text-reader-diff-add {
+  color: var(--sdk-color-success-text, var(--sdk-color-success));
+}
+.sdk-object-text-reader-diff-remove {
+  color: var(--sdk-color-danger-text, var(--sdk-color-danger));
+}
+.sdk-object-text-reader-diff-binary {
+  margin: 0;
+  padding: var(--spacing-md);
+  color: var(--sdk-text-color-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.sdk-object-text-reader-diff-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 20px;
+}
+.sdk-object-text-reader-diff-col-number {
+  width: 48px;
+}
+.sdk-object-text-reader-diff-col-sign {
+  width: 18px;
+}
+.sdk-object-text-reader-diff-table td {
+  padding: 0;
+  vertical-align: top;
+}
+.sdk-object-text-reader-diff-number {
+  padding: 0 8px !important;
+  overflow: hidden;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--sdk-text-color-placeholder);
+  user-select: none;
+}
+.sdk-object-text-reader-diff-sign {
+  text-align: center;
+  color: var(--sdk-text-color-secondary);
+  user-select: none;
+}
+.sdk-object-text-reader-diff-text {
+  padding-right: var(--spacing-md) !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--sdk-text-color-primary);
+}
+tr.sdk-object-text-reader-diff-line-add {
+  background: color-mix(in srgb, var(--sdk-color-success) 12%, var(--sdk-bg-color));
+}
+tr.sdk-object-text-reader-diff-line-add .sdk-object-text-reader-diff-sign {
+  color: var(--sdk-color-success-text, var(--sdk-color-success));
+}
+tr.sdk-object-text-reader-diff-line-remove {
+  background: color-mix(in srgb, var(--sdk-color-danger) 10%, var(--sdk-bg-color));
+}
+tr.sdk-object-text-reader-diff-line-remove .sdk-object-text-reader-diff-sign {
+  color: var(--sdk-color-danger-text, var(--sdk-color-danger));
+}
+tr.sdk-object-text-reader-diff-line-hunk td,
+tr.sdk-object-text-reader-diff-line-note td {
+  background: var(--sdk-fill-color-lighter);
+  color: var(--sdk-text-color-secondary);
+}
+@container (max-width: 480px) {
+  .sdk-object-text-reader-diff-col-number {
+    width: 34px;
+  }
+  .sdk-object-text-reader-diff-number {
+    padding: 0 4px !important;
+  }
+  .sdk-object-text-reader-diff-head {
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+  .sdk-object-text-reader-diff-text {
+    padding-right: var(--spacing-sm) !important;
+  }
 }
 </style>
