@@ -18,7 +18,7 @@ import {
 import { config } from "../../config/application";
 import { assertPermission } from "../../identity/installed";
 import { getPostgresPool } from "../../infrastructure/postgres";
-import { currentProductRows } from "../../infrastructure/product-current";
+import { currentProductRows, type CurrentProductRow } from "../../infrastructure/product-current";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -27,7 +27,8 @@ import { HttpError } from "../../utils/errors";
 import { listAgentDefinitions } from "../assistant/definitions";
 import { assistantSkillCatalog } from "../assistant/skills";
 import { listPublishedDefinitions } from "../business-definitions/definitions";
-import { grantedProductIds, type ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
+import { currentDefinitionAccess } from "../product-panels/access";
 import { readPanelComponentCatalogue } from "../product-panels/component-catalogue";
 import { listObjectDetailPanelMappings } from "../product-panels/object-detail";
 
@@ -791,9 +792,17 @@ export class PlatformOntologyOwnerReaders {
   }
 
   grantedUseIds(): Promise<OwnerReadResult<ReadonlySet<string>>> {
-    return this.memo("java:/product-governance/resources:use", async () => {
-      const ids = await grantedProductIds("use", this.credentials);
-      return new Set(ids);
+    return this.memo("node:product-definition-use", async () => {
+      const domainId = this.owner.domainId;
+      const usable = await Promise.all((["panel", "projection"] as const).map(async kind => {
+        const { rows } = await getPostgresPool().query<Pick<CurrentProductRow, "id" | "domainId" | "ownerId">>(
+          `SELECT id,domain_id AS "domainId",owner_id AS "ownerId" FROM ${currentProductRows(kind)} AS definitions
+           WHERE domain_id IS NULL OR domain_id=$1`, [domainId],
+        );
+        const { decisions } = await currentDefinitionAccess(kind, rows, domainId, this.credentials, false);
+        return rows.filter((_, index) => decisions[index].allowed).map(({ id }) => id);
+      }));
+      return new Set(usable.flat());
     });
   }
 
@@ -804,7 +813,7 @@ export class PlatformOntologyOwnerReaders {
       const ids = [...grantRes.data];
       const { rows } = await getPostgresPool().query<{ id: string; definition: unknown }>(
         `SELECT id, definition FROM ${currentProductRows("projection")} AS definitions
-         WHERE domain_id IS NULL OR (domain_id = $1 AND id = ANY($2::text[])) ORDER BY id`,
+         WHERE (domain_id IS NULL OR domain_id=$1) AND id=ANY($2::text[]) ORDER BY id`,
         [this.owner.domainId, ids],
       );
       const projections: RawProductProjection[] = [];
@@ -838,7 +847,7 @@ export class PlatformOntologyOwnerReaders {
       const ids = [...grantRes.data];
       const { rows } = await getPostgresPool().query<{ id: string; definition: unknown }>(
         `SELECT id, definition FROM ${currentProductRows("panel")} AS definitions
-         WHERE domain_id IS NULL OR (domain_id = $1 AND id = ANY($2::text[])) ORDER BY id`,
+         WHERE (domain_id IS NULL OR domain_id=$1) AND id=ANY($2::text[]) ORDER BY id`,
         [this.owner.domainId, ids],
       );
       const panels: RawProductPanel[] = [];

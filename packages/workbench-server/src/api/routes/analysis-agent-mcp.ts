@@ -1,4 +1,4 @@
-import { grantedProductIds } from "../../services/product-governance/grants";
+import { allowedAgents } from "../../services/assistant/authorization";
 import { assistantStore } from "../../services/assistant/store";
 import { createLogger } from "../../logging/logger";
 import { Request } from "express";
@@ -46,19 +46,10 @@ function createAnalysisAgentMcpServer(req: Request) {
     },
     async () =>
       withAnalysisIdentity(req, async (identity) => {
-        const usableIds = new Set(await grantedProductIds("use", identity));
-        const agents = await assistantStore.agents(identity.domainId);
+        const enabled = (await assistantStore.agents(identity.domainId)).filter(agent => agent.enabled);
+        const agents = await allowedAgents(enabled, "USE", identity);
         return textJson({
-          agents: agents
-            .filter((a) => a.enabled && usableIds.has(a.id))
-            .map((a) => ({
-              id: a.id,
-              name: a.name,
-              description: a.description,
-              icon: a.icon,
-              enabledSkillIds: a.skills.map((s) => s.name),
-              enabledVisualizationSkillIds: [],
-            })),
+          agents: agents.map(({ id, name, description, icon }) => ({ id, name, description, icon })),
         });
       }),
   );
