@@ -4,6 +4,5 @@ Read-only settings panel for inspecting MCP endpoints published by the platform.
 
 ## Common flows
 
-- **Inspect a specific published service**: call `present` on `/settings/mcp-services` with `state.selected` set to `{ className: "platform:PublishedMcpService", primaryKey: "<service-name>" }`.
-- **Copy endpoint URL**: the `serviceSummary` projection renders `mcpUrl` with a one-click copy button (`copyableFields: ["mcpUrl"]`).
-- **Browse available tools**: `serviceTools` reads the `tools` collection of the selected service and renders each tool's name, description, and collapsible JSON input schema.
+- **Inspect published services**: all published services are listed in a single-column vertical card stack. Each card mounts `serviceSummary` (with a one-click copy button on `mcpUrl` and authentication guidance).
+- **Browse available tools**: each service card includes a collapsed-by-default **Available tools** disclosure; expanding it mounts `serviceTools` for that service to render each tool's name, description, and collapsible JSON input schema.

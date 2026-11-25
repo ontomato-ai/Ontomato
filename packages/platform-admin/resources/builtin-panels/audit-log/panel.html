@@ -21,86 +21,154 @@
     min-width: 0;
     width: 100%;
   }
-  .al-filter-select {
-    width: 180px;
-    max-width: 100%;
+  .al-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--spacing-md);
+    min-width: 0;
   }
-  .al-drawer-body {
+  .al-filter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    width: 200px;
+    max-width: 100%;
+    color: var(--sdk-text-color-regular, var(--sdk-text-color-primary));
+    font-size: var(--text-sm);
+  }
+  .al-filter-select {
+    width: 100%;
+  }
+  .al-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .al-detail-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .al-detail-preview {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .al-detail-link {
+    flex: none;
+    min-height: 24px;
+  }
+  .al-detail-empty {
+    color: var(--sdk-text-color-secondary);
+  }
+  .al-dialog-body {
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
   }
-  .al-drawer-body dd {
+  .al-dialog-body dd {
     min-width: 0;
     overflow-wrap: anywhere;
   }
-  .al-drawer-footer {
+  .al-dialog-footer {
     display: flex;
     justify-content: flex-end;
     gap: var(--spacing-sm);
   }
   @container al-page (max-width: 640px) {
-    .al-filter-select {
+    .al-toolbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .al-filter {
       width: 100%;
     }
   }
 </style>
 
 <div id="app" v-cloak>
-  <section ref="root" class="al-page">
-    <page-header :title="t('panel.name')" :description="t('panel.description')">
-      <template #actions>
-        <sdk-button @click="refresh">{{ t('action.refresh') }}</sdk-button>
-      </template>
-    </page-header>
+  <section class="al-page">
+    <page-header :title="t('panel.name')" :description="t('panel.description')"></page-header>
 
     <div class="al-body">
-      <projection slot="logList" class="al-list-slot" @row-action="onRowAction">
+      <projection slot="logList" class="al-list-slot">
         <template #filters>
-          <sdk-select
-            v-model="businessFilter"
-            clearable
-            class="al-filter-select"
-            :placeholder="t('filter.business')"
-            :aria-label="t('filter.business')"
-          >
-            <sdk-option value="BKNOWLEDGE" :label="t('business.knowledge')"></sdk-option>
-            <sdk-option value="BTERM" :label="t('business.glossary')"></sdk-option>
-            <sdk-option value="BEXAMPLE" :label="t('business.example')"></sdk-option>
-            <sdk-option value="SCHEMA" :label="t('business.schema')"></sdk-option>
-            <sdk-option value="ANALYSIS" :label="t('business.analysis')"></sdk-option>
-          </sdk-select>
-          <sdk-select
-            v-model="operationFilter"
-            clearable
-            class="al-filter-select"
-            :placeholder="t('filter.operation')"
-            :aria-label="t('filter.operation')"
-          >
-            <sdk-option value="ADD" :label="t('operation.add')"></sdk-option>
-            <sdk-option value="UPD" :label="t('operation.modify')"></sdk-option>
-            <sdk-option value="DEL" :label="t('operation.delete')"></sdk-option>
-          </sdk-select>
+          <div class="al-toolbar">
+            <label class="al-filter">
+              <span>{{ t('filter.business') }}</span>
+              <sdk-select
+                v-model="draftBusiness"
+                clearable
+                class="al-filter-select"
+                :placeholder="t('filter.business')"
+                :aria-label="t('filter.business')"
+              >
+                <sdk-option value="BKNOWLEDGE" :label="t('business.knowledge')"></sdk-option>
+                <sdk-option value="BTERM" :label="t('business.glossary')"></sdk-option>
+                <sdk-option value="BEXAMPLE" :label="t('business.example')"></sdk-option>
+                <sdk-option value="SCHEMA" :label="t('business.schema')"></sdk-option>
+                <sdk-option value="ANALYSIS" :label="t('business.analysis')"></sdk-option>
+              </sdk-select>
+            </label>
+            <label class="al-filter">
+              <span>{{ t('filter.operation') }}</span>
+              <sdk-select
+                v-model="draftOperation"
+                clearable
+                class="al-filter-select"
+                :placeholder="t('filter.operation')"
+                :aria-label="t('filter.operation')"
+              >
+                <sdk-option value="ADD" :label="t('operation.add')"></sdk-option>
+                <sdk-option value="UPD" :label="t('operation.modify')"></sdk-option>
+                <sdk-option value="DEL" :label="t('operation.delete')"></sdk-option>
+              </sdk-select>
+            </label>
+            <div class="al-toolbar-actions">
+              <sdk-button type="primary" @click="applyFilters">{{ t('action.query') }}</sdk-button>
+              <sdk-button @click="refresh">{{ t('action.refresh') }}</sdk-button>
+            </div>
+          </div>
+        </template>
+
+        <template #cell-description="{ displayText, ref: rowRef }">
+          <div v-if="displayText" class="al-detail-cell">
+            <span class="al-detail-preview" :title="displayText">{{ displayText }}</span>
+            <sdk-button
+              link
+              type="primary"
+              class="al-detail-link"
+              aria-haspopup="dialog"
+              @click.stop="openDetail(rowRef)"
+            >
+              {{ t('action.detail') }}
+            </sdk-button>
+          </div>
+          <span v-else class="al-detail-empty">—</span>
         </template>
       </projection>
     </div>
 
-    <sdk-drawer
+    <sdk-dialog
       v-model="detailOpen"
       :title="t('detail.title')"
-      :size="drawerSize"
+      width="min(640px, calc(100% - 2rem))"
       append-to-body
       destroy-on-close
     >
-      <div class="al-drawer-body">
+      <div class="al-dialog-body">
         <projection v-if="detailOpen" slot="logDetail"></projection>
       </div>
       <template #footer>
-        <div class="al-drawer-footer">
+        <div class="al-dialog-footer">
           <sdk-button @click="closeDetail">{{ t('action.close') }}</sdk-button>
         </div>
       </template>
-    </sdk-drawer>
+    </sdk-dialog>
   </section>
 </div>

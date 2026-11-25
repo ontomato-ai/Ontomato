@@ -12,20 +12,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-lg);
-    max-width: 960px;
-    width: 100%;
+    width: min(100%, 800px);
+    margin-inline: auto;
     padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
     box-sizing: border-box;
-    min-width: 0;
-  }
-  .gs-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
-    padding: var(--page-section-padding, var(--spacing-lg));
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
     min-width: 0;
   }
   .gs-form-wrap {
@@ -39,11 +29,6 @@
   .gs-form-wrap .sdk-owner-form-body {
     overflow: visible;
   }
-  @container gs-page (max-width: 680px) {
-    .gs-card {
-      padding: var(--spacing-md);
-    }
-  }
 </style>
 
 <div id="app" v-cloak>
@@ -55,11 +40,9 @@
     ></page-header>
 
     <div class="gs-body">
-      <section class="gs-card">
-        <div class="gs-form-wrap">
-          <projection slot="generalForm" @saved="onSettingsSaved"></projection>
-        </div>
-      </section>
+      <div class="gs-form-wrap">
+        <projection slot="generalForm" @saved="onSettingsSaved"></projection>
+      </div>
     </div>
   </section>
 </div>

@@ -18,24 +18,24 @@
     box-sizing: border-box;
     min-width: 0;
   }
-  .da-card {
+  .da-section {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
-    padding: var(--page-section-padding, var(--spacing-lg));
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
     min-width: 0;
   }
-  .da-card-head {
+  .da-test-section {
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--sdk-border-color, var(--ui-border));
+  }
+  .da-section-head {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--spacing-md);
   }
-  .da-card-title-group {
+  .da-section-title-group {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-xs);
@@ -93,15 +93,15 @@
     ></page-header>
 
     <div class="da-body">
-      <section class="da-card">
+      <section class="da-section">
         <div class="da-form-wrap">
           <projection slot="adapterForm" @saved="onSaved"></projection>
         </div>
       </section>
 
-      <section class="da-card">
-        <div class="da-card-head">
-          <div class="da-card-title-group">
+      <section class="da-section da-test-section">
+        <div class="da-section-head">
+          <div class="da-section-title-group">
             <h2 class="da-section-title">{{ t('test.title') }}</h2>
             <p class="da-section-hint">
               {{ isMultiMode ? t('test.multiDescription') : t('test.description') }}

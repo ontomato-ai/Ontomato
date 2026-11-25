@@ -31,7 +31,6 @@
           "rows": "query"
         },
         "state": {
-          "selected": "selectedLog",
           "business": "business",
           "operation": "operation"
         },
@@ -40,7 +39,6 @@
           "searchable": false,
           "fallbackToFirst": false,
           "pageSize": 20,
-          "pageSizes": [10, 20, 50],
           "emptyText": "list.empty",
           "noMatchText": "list.empty",
           "columns": [
@@ -54,38 +52,26 @@
             {
               "key": "userName",
               "labelKey": "col.user",
-              "width": 140
+              "width": 120
             },
             {
               "key": "business",
               "labelKey": "col.business",
               "kind": "tag",
-              "width": 140
+              "width": 120
             },
             {
               "key": "operation",
               "labelKey": "col.operation",
               "kind": "tag",
-              "width": 110
+              "width": 100
             },
             {
               "key": "description",
               "labelKey": "col.detail",
               "minWidth": 240
             }
-          ],
-          "rowActions": {
-            "maxVisible": 1,
-            "width": 96,
-            "items": [
-              {
-                "kind": "local",
-                "id": "detail",
-                "labelKey": "action.detail",
-                "primary": true
-              }
-            ]
-          }
+          ]
         },
         "name": "Audit log entries",
         "description": "Server-paged audit log table filtered by business type and operation type",
@@ -122,6 +108,7 @@
       "en": {
         "panel.name": "Audit log",
         "panel.description": "Sign-ins and changes recorded across the platform",
+        "action.query": "Query",
         "action.refresh": "Refresh",
         "action.detail": "Detail",
         "action.close": "Close",
@@ -146,6 +133,7 @@
       "zh-CN": {
         "panel.name": "审计日志",
         "panel.description": "平台内的登录与变更记录",
+        "action.query": "查询",
         "action.refresh": "刷新",
         "action.detail": "详情",
         "action.close": "关闭",
@@ -170,6 +158,7 @@
       "zh-TW": {
         "panel.name": "稽核日誌",
         "panel.description": "平台內的登入與變更紀錄",
+        "action.query": "查詢",
         "action.refresh": "重新整理",
         "action.detail": "詳細",
         "action.close": "關閉",
@@ -194,6 +183,7 @@
       "ja": {
         "panel.name": "監査ログ",
         "panel.description": "プラットフォーム全体のサインインと変更の記録",
+        "action.query": "検索",
         "action.refresh": "更新",
         "action.detail": "詳細",
         "action.close": "閉じる",
@@ -218,6 +208,7 @@
       "de": {
         "panel.name": "Audit-Protokolle",
         "panel.description": "Anmeldungen und Änderungen auf der Plattform",
+        "action.query": "Abfragen",
         "action.refresh": "Aktualisieren",
         "action.detail": "Detail",
         "action.close": "Schließen",
@@ -242,6 +233,7 @@
       "fr": {
         "panel.name": "Journaux d'audit",
         "panel.description": "Connexions et modifications enregistrées sur la plateforme",
+        "action.query": "Rechercher",
         "action.refresh": "Actualiser",
         "action.detail": "Détail",
         "action.close": "Fermer",
@@ -266,6 +258,7 @@
       "it": {
         "panel.name": "Log audit",
         "panel.description": "Accessi e modifiche registrati sulla piattaforma",
+        "action.query": "Cerca",
         "action.refresh": "Aggiorna",
         "action.detail": "Dettaglio",
         "action.close": "Chiudi",
@@ -290,6 +283,7 @@
       "ar": {
         "panel.name": "سجلات التدقيق",
         "panel.description": "سجلات تسجيل الدخول والتغييرات في المنصة",
+        "action.query": "استعلام",
         "action.refresh": "تحديث",
         "action.detail": "تفاصيل",
         "action.close": "إغلاق",

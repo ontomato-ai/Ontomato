@@ -339,14 +339,25 @@ describe("built-in MCP settings panels", () => {
     await vi.waitFor(() => {
       expect(root.textContent).toContain("Agent service");
       expect(root.textContent).toContain("http://example/mcp/analysis-agents");
+      expect(root.querySelector(".sdk-object-summary-copy-btn")).not.toBeNull();
+    });
+
+    // Tools stay collapsed by default until the service card's tools disclosure is opened.
+    expect(reads).toContain("services");
+    expect(reads).toContain("serviceSummary");
+    expect(reads).not.toContain("serviceTools");
+
+    const toolsDetails = root.querySelector("details.pm-tools-details") as HTMLDetailsElement | null;
+    expect(toolsDetails).not.toBeNull();
+    toolsDetails!.open = true;
+    toolsDetails!.dispatchEvent(new Event("toggle"));
+
+    await vi.waitFor(() => {
       expect(root.textContent).toContain("List Agents");
       expect(root.textContent).toContain("Lists enabled agents");
-      expect(root.querySelector(".sdk-object-summary-copy-btn")).not.toBeNull();
       expect(root.querySelector("details.pm-schema-details pre")?.textContent).toContain('"type": "object"');
     });
 
-    expect(reads).toContain("services");
-    expect(reads).toContain("serviceSummary");
     expect(reads).toContain("serviceTools");
   });
 
