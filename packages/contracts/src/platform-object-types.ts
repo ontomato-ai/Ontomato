@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+export const APP_WORKSPACE = "platform:AppWorkspace";
+export const APP_WORKSPACE_CREATE = "appWorkspaces.create";
+export const APP_WORKSPACE_SAVE = "appWorkspaces.save";
+export const APP_WORKSPACE_DELETE = "appWorkspaces.delete";
+export const APP_WORKSPACE_RESTORE_COMMIT = "appWorkspaces.restoreCommit";
+export const APP_WORKSPACE_RESTART_BUILD_TEST = "appWorkspaces.restartBuildTest";
+export const APP_WORKSPACE_PUBLISH = "appWorkspaces.publish";
+export const APP_WORKSPACE_ROLLBACK_RELEASE = "appWorkspaces.rollbackRelease";
+export const APP_WORKSPACE_UPDATE_PUBLISHED_ICON = "appWorkspaces.updatePublishedIcon";
+
 export const DASHBOARD = "platform:Dashboard";
 export const DASHBOARD_CARD = "platform:DashboardCard";
 export const FAVORITE = "platform:Favorite";
@@ -396,6 +406,54 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
     },
     operations: [`${METRIC_VIEW}.save`, SET_METRIC_VIEW_STATUS, DELETE_METRIC_VIEW, TEST_METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW],
+  },
+  [APP_WORKSPACE]: {
+    ...describeType("appWorkspace", "product"),
+    reads: {
+      list: { source: "type", parameterMode: "fixed", params: { search: "keyword", offset: "offset", limit: "limit" }, result: "panelRecordQuery" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          name: { kind: "scalar", type: "string" },
+          busy: { kind: "scalar", type: "boolean" },
+          headCommit: { kind: "scalar", type: "string" },
+          shortHeadCommit: { kind: "scalar", type: "string" },
+          hasPanelCandidate: { kind: "scalar", type: "boolean" },
+          candidatePreviewPath: { kind: "scalar", type: "string" },
+          hasHostedIndex: { kind: "scalar", type: "boolean" },
+          hostedPreviewPath: { kind: "scalar", type: "string" },
+          published: { kind: "scalar", type: "boolean" },
+          publishedAppId: { kind: "scalar", type: "string" },
+          publishedAppName: { kind: "scalar", type: "string" },
+          publishedAppPath: { kind: "scalar", type: "string" },
+          buildTestStatus: { kind: "scalar", type: "string" },
+          buildTestCanRestart: { kind: "scalar", type: "boolean" },
+          canManagePermissions: { kind: "scalar", type: "boolean" },
+          permissionsPath: { kind: "scalar", type: "string" },
+          privateWorkspaces: { kind: "scalar", type: "boolean" },
+        },
+      },
+      form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      files: { source: "object", parameterMode: "fixed", params: { commit: "workspaceCommit" }, result: "panelRecordList" },
+      file: { source: "object", parameterMode: "fixed", params: { path: "workspacePath", commit: "workspaceCommit" }, result: "panelRecord", requiredParams: ["path"] },
+      commits: { source: "object", parameterMode: "fixed", params: { offset: "offset", limit: "limit" }, result: "panelRecordQuery" },
+      diff: { source: "object", parameterMode: "fixed", params: { target: "workspaceDiffTarget" }, result: "panelRecord" },
+      sessions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList",
+        rowType: AGENT_SESSION, outputs: { openPath: { kind: "scalar", type: "string" } },
+      },
+      releases: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      publishForm: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+    },
+    operations: [
+      APP_WORKSPACE_CREATE,
+      APP_WORKSPACE_SAVE,
+      APP_WORKSPACE_DELETE,
+      APP_WORKSPACE_RESTORE_COMMIT,
+      APP_WORKSPACE_RESTART_BUILD_TEST,
+      APP_WORKSPACE_PUBLISH,
+      APP_WORKSPACE_ROLLBACK_RELEASE,
+      APP_WORKSPACE_UPDATE_PUBLISHED_ICON,
+    ],
   },
   [DASHBOARD]: {
     ...describeType("dashboard"),
@@ -1081,6 +1139,9 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
 
 /** Form save IDs other than the default `${typeId}.save`. */
 const platformNamedFormSaves: ReadonlySet<string> = new Set([
+  APP_WORKSPACE_CREATE,
+  APP_WORKSPACE_SAVE,
+  APP_WORKSPACE_PUBLISH,
   CREATE_SCHEDULED_TASK,
   ADD_MODEL_ENTRY,
   CREATE_EXTERNAL_MCP_SERVICE,

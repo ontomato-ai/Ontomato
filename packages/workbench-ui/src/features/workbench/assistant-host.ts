@@ -36,7 +36,7 @@ const workbenchRequest: AgentHostClientOptions["request"] = (path, init) =>
  */
 export function createAssistantClient(
   request: AgentHostClientOptions["request"] = workbenchRequest,
-  { excludeGovernance = false } = {},
+  { excludeGovernance = false, workspaceIdForAgent }: Pick<AgentHostClientOptions, "workspaceIdForAgent"> & { excludeGovernance?: boolean } = {},
 ) {
   return createAgentHostClient({
     request: (path, init) => {
@@ -48,6 +48,7 @@ export function createAssistantClient(
       }
       return request(`${PREFIX}${path}`, init);
     },
+    workspaceIdForAgent,
     tasks: true,
   });
 }

@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
   observeAccess: vi.fn<[], Promise<void>>(),
 }));
 
-vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents, opsDiagnosis: mocks.opsDiagnosis } }));
+vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents, opsDiagnosis: mocks.opsDiagnosis, appBuilder: async () => undefined } }));
 vi.mock("../../../identity/installed", () => ({
   workbenchIdentity: () => ({ assertObserveAccess: mocks.observeAccess }),
 }));

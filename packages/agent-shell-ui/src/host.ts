@@ -156,6 +156,8 @@ export interface AgentHostClientOptions {
   onEvent?(sessionId: string, envelope: RuntimeEventEnvelope): void;
   /** Binds every conversation of this client to one workspace. */
   workspace?: AgentHostWorkspaceScope;
+  /** The host may select a workspace for the next conversation without scoping its history list. */
+  workspaceIdForAgent?(agentId: string): string | undefined;
   /** The host serves the task routes under each conversation (`/sessions/:id/tasks...`). */
   tasks?: boolean;
 }
@@ -298,7 +300,8 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return json<AgentHostSessionPage>(`/sessions?${query({ agentId, ...(cursor ? { cursor } : {}) })}`);
     },
     async createSession(agentId) {
-      const body = options.workspace ? { agentId, workspaceId: options.workspace.id } : { agentId };
+      const workspaceId = options.workspace?.id ?? options.workspaceIdForAgent?.(agentId);
+      const body = workspaceId ? { agentId, workspaceId } : { agentId };
       return (await json<AgentHostCreateSessionResponse>("/sessions", send("POST", body, true))).session;
     },
     async readHistory(sessionId, input = {}) {

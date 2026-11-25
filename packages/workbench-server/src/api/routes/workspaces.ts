@@ -73,8 +73,9 @@ workspaceRouter.get("/:id/panel-candidate", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store").json(source);
 }));
 workspaceRouter.post("/:id/preview-token", wrap(async (req, res) => {
-  const owner = context(req).owner, workspaceId = id(req, "id");
-  const tests=new WorkspaceBuildTests(owner,context(req).credentials,workspaceId);
+  const { owner, credentials } = context(req), workspaceId = id(req, "id");
+  await assertAppBuilderAccess(credentials);
+  const tests = new WorkspaceBuildTests(owner, credentials, workspaceId);
   await tests.requirePreviewSdk();
   const token = randomBytes(32).toString("base64url"), expiresAt = Date.now() + 10 * 60_000;
   previews.set(token, { workspaceId, owner, expiresAt });
