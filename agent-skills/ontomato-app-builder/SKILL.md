@@ -66,7 +66,7 @@ Start here: pick the row for your task and read only that recipe or component pa
 | Find reusable projections by component or bound object type | `panel projections [--component <componentId>] [--object-type <typeId>] [--q <text>]` (filters full visible catalogue before paging) |
 | Pick a starter page layout (catalog + detail, split editor, modal edit, app frame) | [Page templates](references/templates/README.md) · [Panel authoring guide](references/panel-authoring/SKILL.md) |
 | Move an existing page into the product layer | [Migrate an existing page](references/migrate-existing-page.md) · [App decomposition](references/app-standard/SKILL.md) |
-| Lay out a page, `<page-header>`, button roles, and container responsiveness | [Layout & page header](references/panel-authoring/recipes/layout-and-page-header.md) · `sdk read docs/components/PageHeader.md` |
+| Lay out a page, `<page-header>`, split panes, button roles, and container responsiveness | [Layout & page header](references/panel-authoring/recipes/layout-and-page-header.md) · `sdk read docs/components/PageHeader.md` · `TwoPaneLayout.md` |
 | Use `<sdk-*>` dialogs, drawers, notifications, and scoped CSS rules | [Controls & guardrails](references/panel-authoring/recipes/controls-and-guardrails.md) · `sdk read docs/components/ui-primitives.md` |
 | Navigate between entries with flat named URL parameters (`deepLink`, `panelAddress`) | [Flat URL parameters](references/panel-authoring/recipes/url-parameters.md) |
 | Decide between official defaults, `config`, Vue slots, or a custom component | [Component vs. panel responsibility](references/panel-authoring/recipes/component-vs-panel-responsibility.md) |

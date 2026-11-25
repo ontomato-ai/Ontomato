@@ -156,7 +156,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       }, resultSchemas: { panelRecordList: { type: "array" } } });
       const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author, "--type-table", "types.json"]);
-      assert.deepEqual(JSON.parse(checked), { status: "valid", version, unchecked: [] });
+      assert.deepEqual(JSON.parse(checked), { status: "valid", version, typeTableChecked: true, unchecked: [] });
     });
 
     await t.test("the offline checker requires an explicit form for a draft read before writing any IDs", () => {
@@ -517,6 +517,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     }
     // Verify Group F public general capabilities are reflected in catalogue metadata and config.
     assert.match(declared.get("ObjectForm").meaning, /\bsubmitOn\b/u, "ObjectForm meaning documents submitOn");
+    assert.doesNotMatch(
+      declared.get("ObjectForm").meaning,
+      /config\.actions` to `header`/u,
+      "ObjectForm meaning must not document removed actions: 'header'",
+    );
+    assert.ok(
+      declared.get("OperationButton").bindsElement.includes("Action:*"),
+      "OperationButton bindsElement must include customer Action:*",
+    );
     assert.equal(
       declared.get("AnnotatedCode").inputs?.language?.kind,
       "scalar",

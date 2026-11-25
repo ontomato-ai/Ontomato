@@ -14,7 +14,7 @@
         <span v-else>{{ t('detail.choose') }}</span>
       </template>
       <template #actions>
-        <!-- Add actions here. Keep completion handlers mounted with v-show="ready" for delete operations. -->
+        <!-- Add actions here. Unmount mode-invalid actions with v-if; use v-show="selectedKey && ready" only to keep an active delete mounted until @done navigates. -->
       </template>
     </page-header>
     <div v-if="selectedKey && ready" class="detail-body">
