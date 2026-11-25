@@ -343,6 +343,7 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
 
     const { wrapper } = mountObjectForm({
       initialForm,
+      props: { refusalPresentation: "alert" },
       onSave: async () => ({
         decision: "confirm",
         named: [],

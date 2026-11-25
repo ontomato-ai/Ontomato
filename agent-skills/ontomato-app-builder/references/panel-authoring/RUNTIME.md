@@ -16,7 +16,7 @@ To show an application by its icon key, draw `<component :is="appIcon(key)" :siz
 The panel context a panel module runs under.
 
 ```ts
-function usePanelContext(): PanelContext
+function usePanelContext(): ResolvedPanelContext
 ```
 
 ### PanelContext
@@ -26,9 +26,9 @@ interface PanelContext {
   /** This instance: its state, page context, projections and operations. */
   readonly instance: PanelInstance;
   /** True while one or more refreshes triggered by `refreshObjects()` are in flight. */
-  readonly refreshing: ComputedRef<boolean>;
+  readonly refreshing?: ComputedRef<boolean>;
   /** Re-reads all mounted projections and data in this panel instance; resolves once they settle. */
-  refreshObjects(): Promise<void>;
+  refreshObjects?: () => Promise<void>;
   /**
    * In an application's frame: the entry the reader opened (it follows the reader to another entry of the application),
    * and the menu the same resolution gave, to draw the frame's menu with and mark the entry. Null in any other panel.
@@ -79,7 +79,7 @@ interface PanelInstance {
   refreshObjects(): Promise<void>;
   /** True while one or more refreshes triggered by `refreshObjects()` are in flight. */
   readonly refreshing: ComputedRef<boolean>;
-  onObjectChanged(listener: (object: PanelObjectIdentity | null) => void | Promise<unknown>): () => void;
+  onObjectChanged(listener: (object: PanelObjectIdentity | null) => unknown): () => void;
   /** Reactive map of read-only outputs published by projection members (`outputs[member][name]`), separate from writable `state`. */
   readonly outputs: Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue | null>>>>;
 }

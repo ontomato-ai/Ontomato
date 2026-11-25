@@ -154,6 +154,8 @@ const props = withDefaults(defineProps<{
   showToc?: boolean;
   /** Grid column count for fields rendered inside the form (`1` default or `2`). */
   columns?: 1 | 2;
+  /** How save refusals render at the foot of the form: compact `"summary"` (default) or an aggregated `"alert"` with a problems list. */
+  refusalPresentation?: "summary" | "alert";
 }>(), {
   fixedFields: () => ({}),
   layout: "stacked",
@@ -167,6 +169,7 @@ const props = withDefaults(defineProps<{
   showRequiredMark: true,
   showToc: true,
   columns: 1,
+  refusalPresentation: "summary",
 });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created (primaryKey is null when not reported). */
@@ -1794,11 +1797,8 @@ const refusalFoot = computed(() => {
     if (field === null) said.push(message);
     else onFields.add(field);
   }
-  // Surface an aggregated structured problem alert when the owner reports multiple refusal details or unfielded
-  // path-located issues (for example multi-source validation problems).
-  const hasMultipleDetails = details.length > 1;
-  const hasUnshownDetail = details.some(({ path }) => fieldShowing(fields.value, values.value, path) === null);
-  if (hasMultipleDetails || (details.length > 0 && hasUnshownDetail)) {
+  // Surface an aggregated structured problem alert when requested (`refusalPresentation: "alert"`).
+  if (props.refusalPresentation === "alert" && details.length > 0) {
     for (const detail of details) {
       problems.push({ path: detail.path, message: detail.message });
     }
