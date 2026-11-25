@@ -285,6 +285,7 @@ export const panelReadParameterSchemas = {
   feedbackRating: z.enum(["all", "like", "dislike"]),
   skillFilePath: z.string().min(1),
   opsFilePath: z.string().min(1),
+  autotestCaseEditMode: z.enum(["form", "json"]),
   autotestVerdict: z.enum(["all", "correct", "wrong", "abnormal"]),
   functionOperation: z.enum(["OPERATION_READ", "OPERATION_WRITE", "OPERATION_PRODUCT"]),
   metricViewStatus: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]),
@@ -315,6 +316,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "feedbackRating":
     case "skillFilePath":
     case "opsFilePath":
+    case "autotestCaseEditMode":
     case "autotestVerdict":
     case "functionOperation":
     case "metricViewStatus":

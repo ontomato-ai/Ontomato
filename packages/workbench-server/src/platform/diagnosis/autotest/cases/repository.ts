@@ -26,9 +26,15 @@ function ensureDir(dir: string): void {
   }
 }
 
+/** Whether a case or case-set identifier is non-empty and path-safe. */
+export function isValidCaseId(id: string): boolean {
+  const trimmed = id.trim();
+  return Boolean(trimmed) && !/[/\\:*?"<>|]/.test(trimmed) && !trimmed.includes("..");
+}
+
 /** Validate id to prevent path traversal attacks. */
 function validateId(id: string): void {
-  if (!id || /[/\\:*?"<>|]/.test(id) || id.includes("..")) {
+  if (!isValidCaseId(id)) {
     throw new Error(`Invalid id: ${id}`);
   }
 }
@@ -89,6 +95,29 @@ export function saveCaseSet(cs: CaseSet): void {
   ensureDir(caseSetsDir());
   fs.writeFileSync(caseSetPath(cs.id), JSON.stringify(cs, null, 2), "utf-8");
   logger.info("Case set saved", { id: cs.id, name: cs.name, caseCount: cs.cases.length });
+}
+
+/**
+ * Update an existing case set belonging to `domainId` and persist it.
+ * Returns `null` when the case set does not exist or belongs to another domain.
+ */
+export function updateCaseSet(
+  id: string,
+  domainId: string,
+  patch: { name?: string; cases?: TestCase[] },
+): CaseSet | null {
+  const cs = getCaseSet(id, domainId);
+  if (!cs) return null;
+  if (patch.name !== undefined) {
+    const trimmed = patch.name.trim();
+    if (trimmed) cs.name = trimmed;
+  }
+  if (patch.cases !== undefined) {
+    cs.cases = patch.cases;
+  }
+  cs.updatedAt = new Date().toISOString();
+  saveCaseSet(cs);
+  return cs;
 }
 
 export function deleteCaseSet(id: string, domainId: string): boolean {
@@ -182,6 +211,127 @@ export function isEmptyCasePayload(data: unknown): boolean {
 /* ------------------------------------------------------------------ */
 /*  Import                                                             */
 /* ------------------------------------------------------------------ */
+
+const CSV_HEADER_MAP: Readonly<Record<string, keyof TestCase>> = {
+  caseid: "caseId",
+  id: "caseId",
+  question: "question",
+  query: "question",
+  expectedanswer: "expectedAnswer",
+  answer: "expectedAnswer",
+  expectedlogic: "expectedLogic",
+  logic: "expectedLogic",
+  judgment: "judgment",
+  judgement: "judgment",
+};
+
+/** Parse RFC 4180 CSV text into rows of string cells (handles BOM, CRLF/LF, and quoted fields). */
+export function parseCsvRows(content: string): string[][] {
+  const source = content.replace(/^\uFEFF/, "");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]!;
+    if (inQuotes) {
+      if (ch === "\"") {
+        if (source[i + 1] === "\"") {
+          field += "\"";
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+
+    if (ch === "\"" && field.length === 0) {
+      inQuotes = true;
+    } else if (ch === ",") {
+      row.push(field);
+      field = "";
+    } else if (ch === "\r" || ch === "\n") {
+      if (ch === "\r" && source[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += ch;
+    }
+  }
+
+  if (inQuotes) {
+    throw new Error("Invalid CSV: unterminated quoted field");
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((cells) => cells.some((cell) => cell.trim().length > 0));
+}
+
+/** Parse CSV text with a header row into raw case objects consumable by {@link importCaseSet}. */
+export function parseCaseSetCsv(content: string): Record<string, string>[] {
+  const rows = parseCsvRows(content);
+  if (rows.length < 2) {
+    throw new Error("CSV must include a header row and at least one case row");
+  }
+  const headerKeys = rows[0]!.map((cell) => {
+    const normalized = cell.trim().toLowerCase().replace(/[\s_-]+/g, "");
+    return CSV_HEADER_MAP[normalized] ?? null;
+  });
+  if (!headerKeys.includes("question")) {
+    throw new Error("CSV header must include a 'question' column");
+  }
+
+  const parsed: Record<string, string>[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const cells = rows[i]!;
+    const item: Record<string, string> = {};
+    for (let col = 0; col < headerKeys.length; col++) {
+      const key = headerKeys[col];
+      if (!key) continue;
+      const value = cells[col];
+      if (value !== undefined && value.length > 0) {
+        item[key] = value;
+      }
+    }
+    parsed.push(item);
+  }
+  return parsed;
+}
+
+/**
+ * Parse raw import text in JSON or CSV format into a payload accepted by {@link importCaseSet}.
+ * In `"auto"` mode, text starting with `[` or `{` is parsed as JSON; otherwise it is parsed as CSV.
+ */
+export function parseCaseSetImportPayload(
+  content: string,
+  format: "auto" | "json" | "csv" = "auto",
+): unknown {
+  const cleaned = content.replace(/^\uFEFF/, "").trim();
+  if (!cleaned) {
+    throw new Error("Import content is empty");
+  }
+  const effectiveFormat = format === "auto"
+    ? (cleaned.startsWith("[") || cleaned.startsWith("{") ? "json" : "csv")
+    : format;
+
+  if (effectiveFormat === "json") {
+    try {
+      return JSON.parse(cleaned);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid JSON: ${detail}`, { cause: error });
+    }
+  }
+  return parseCaseSetCsv(cleaned);
+}
 
 /**
  * Create a CaseSet from a raw JSON payload.

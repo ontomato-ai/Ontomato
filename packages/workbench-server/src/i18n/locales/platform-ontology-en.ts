@@ -41,6 +41,7 @@ export const platformOntologyEn = {
   "platformOntology.types.feedbackRecord": "Feedback",
   "platformOntology.types.opsKnowledge": "Operations knowledge",
   "platformOntology.types.turnEvidence": "Turn evidence",
+  "platformOntology.types.autotestCaseSet": "Test case set",
   "platformOntology.types.autotestRun": "Autotest run",
   "platformOntology.types.autotestCaseArtifact": "Test case artifact",
   "platformOntology.types.dslQuery": "DSL query",

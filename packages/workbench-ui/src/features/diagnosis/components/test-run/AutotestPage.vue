@@ -1,22 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
 import { diagnosisApi } from "../../api";
 import type { AutotestRunMeta } from "../layout/types";
-import TestcasesPage from "../testcases/TestcasesPage.vue";
 import TestPage from "./TestPage.vue";
 
 /**
- * Remaining native autotest pages awaiting Batch 2 panel migration (`/ops/test` and `/ops/cases`).
- * Test results (`/ops/results`) and case artifacts (`/ops/autotest/case`) are served by built-in panels inside the
- * shared platform application frame.
+ * Remaining native autotest run page awaiting Batch 2 panel migration (`/ops/test`).
+ * Test cases (`/ops/cases`), test results (`/ops/results`), and case artifacts (`/ops/autotest/case`) are served by
+ * built-in panels inside the shared platform application frame.
  */
-const route = useRoute();
 const runs = ref<AutotestRunMeta[]>([]);
 const activeRunId = computed(
   () => runs.value.find((run) => run.status === "running" || run.status === "stopping")?.runId ?? null,
 );
-const showCases = computed(() => route.path === "/ops/cases");
 
 async function loadRuns() {
   try {
@@ -28,15 +24,14 @@ async function loadRuns() {
 }
 
 onMounted(() => {
-  if (!showCases.value) void loadRuns();
+  void loadRuns();
 });
 </script>
 
 <template>
   <div class="autotest-page">
     <div class="autotest-body">
-      <TestcasesPage v-if="showCases" />
-      <TestPage v-else :initial-run-id="activeRunId" @run-created="loadRuns()" @run-settled="loadRuns()" />
+      <TestPage :initial-run-id="activeRunId" @run-created="loadRuns()" @run-settled="loadRuns()" />
     </div>
   </div>
 </template>

@@ -17,8 +17,8 @@ const liveLogsPage: PageComponent = () =>
 
 /**
  * Native operations diagnosis routes still awaiting Batch 2 panel migration, plus legacy deep-link redirects to the
- * unified agent platform (`/ops/diagnosis` -> `/agents/chat`) and migrated built-in panels (`/ops/turn`, `/ops/results`,
- * `/ops/autotest/case`, `/ops/dsl`, `/ops/knowledge`, `/ops/feedback`).
+ * unified agent platform (`/ops/diagnosis` -> `/agents/chat`) and migrated built-in panels (`/ops/turn`, `/ops/cases`,
+ * `/ops/results`, `/ops/autotest/case`, `/ops/dsl`, `/ops/knowledge`, `/ops/feedback`).
  * Every route renders inside the shared platform application frame (`builtin-product-platform-frame`).
  */
 export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecordRaw[] {
@@ -53,11 +53,6 @@ export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecor
       ...routes.test,
       component: autotestPage,
       meta: { ...baseMeta, page: routes.test.path },
-    },
-    {
-      ...routes.cases,
-      component: autotestPage,
-      meta: { ...baseMeta, page: routes.cases.path },
     },
     {
       ...routes.caseDetail,
