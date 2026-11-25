@@ -20,8 +20,8 @@ description: Build and register an Ontomato panel from declared read functions, 
    - **Hierarchy**: platform sidebar → application menu / frame (use the platform's default application menu unless
      authoring an explicit frame panel) → current entry panel → nested panels, projections, and data-free SDK UI primitives.
    - **Display belongs to universal components**: follow the
-     [four-step component lookup](CODE.md#choose-an-official-component-before-writing-one) — check official component
-     defaults first (`sdk read docs/components.md`), then `config` (columns, `valueMap`, `rowActions`, `ObjectForm`
+     [four-step component lookup](recipes/component-vs-panel-responsibility.md#choose-an-official-component-before-writing-one) — check official component
+     defaults first (`sdk read docs/components.md` → `sdk read docs/components/<Name>.md`), then `config` (columns, `valueMap`, `rowActions`, `ObjectForm`
      `presentation`/`groups`), then standard Vue slots (`#cell-<key>`, `#actions`, `#row-detail`, `#field-<dotPath>`)
      with a slot-only domain component in `manifest.components` or nested `<projection :inputs="{ target: ref }">`, and
      author a dedicated component only as a last resort.
@@ -50,14 +50,14 @@ description: Build and register an Ontomato panel from declared read functions, 
 4. **Check, register, and verify.** Run `panel check` and `panel register`, then open the registered entry in both
    full-page and beside-conversation widths. After updating via `panel register` or `component register`, hard-reload open
    browser tabs. Use the page's input box for the [assistant check](#check-the-assistant-from-the-page), and check
-   [troubleshooting](CODE.md#when-a-panel-looks-wrong) if anything looks off.
+   [troubleshooting](recipes/troubleshooting.md) if anything looks off.
 
 ```sh
 node "$SKILL/scripts/ontomato.mjs" panel check "$WORKSPACE"
 node "$SKILL/scripts/ontomato.mjs" panel register "$WORKSPACE"
 ```
 
-For offline checking and the installed component docs, see [the offline entry points](CODE.md#offline-check-and-component-reference).
+For offline checking and the installed component docs, see [the offline entry points](recipes/offline-check-and-sdk-docs.md).
 
 ## Registration files (`panel.json` vs. `registration.json`)
 
@@ -131,6 +131,7 @@ Open the registered entry beside the conversation, select a test record, pick an
    confirmation by default (invalidated if the human edits the form while waiting) and automatic list/metric refresh
    after success.
 
-For read-only pages, verify observation, navigation, and state switching. See [CODE.md](CODE.md) for Vue authoring,
+For read-only pages, verify observation, navigation, and state switching. See the
+[task-indexed recipes](../../SKILL.md#what-you-want-to-do--where-to-look) (`recipes/`) for Vue authoring,
 customer `ObjectType` forms & targetless Actions, flat URL encoding, component outputs, and troubleshooting, and
 [FIELDS.md](FIELDS.md) / [RUNTIME.md](RUNTIME.md) for generated contracts.

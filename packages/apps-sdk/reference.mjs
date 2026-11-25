@@ -297,82 +297,215 @@ export function exportedTypeDefinitions({ root, tsconfig, entries }) {
   return definitions;
 }
 
-/** The catalogue's document section: each component's meaning, applicable object types, and what it takes and hands over. */
-export function catalogueMarkdown(version, catalogueOrComponents, typeDefinitions = new Map()) {
-  const isFull = !Array.isArray(catalogueOrComponents);
-  const components = isFull ? catalogueOrComponents.components : catalogueOrComponents;
-  const uiPrimitives = isFull ? catalogueOrComponents.uiPrimitives ?? [] : [];
-  const uiDirectives = isFull ? catalogueOrComponents.uiDirectives ?? [] : [];
-  const themeTokens = isFull ? catalogueOrComponents.themeTokens ?? [] : [];
-  const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can use. Each one names the module a page imports it from, what it means, its applicable object types (bind through a projection's declared reads or operations), the data it reads, the configuration a projection sets on it, the values it hands the panel and the events the page can listen to. A projection chooses one component, the data it reads and its configuration, and names the owners' operations it offers; a panel places members of projections.`, ""];
-  for (const component of components) {
-    lines.push(`## ${component.componentId}`, "", `${component.role === "control" ? "Control" : "Presentation"}: \`${component.exportName}\` from \`${component.module}\`.`, "", component.meaning, "");
-    if (component.effects) lines.push(`Effects: ${component.effects}`, "");
-    if (component.bindsElement?.length) lines.push(`Applicable object types (bind through a projection's declared reads or operations): ${component.bindsElement.map((element) => `\`${element}\``).join(", ")}`, "");
-    if (component.data && Object.keys(component.data).length) {
-      lines.push("Data it reads (the projection's `data.<name>`, each an owner's read; its parameters are the read's signature):", "");
-      for (const [name, datum] of Object.entries(component.data)) {
-        const given = datum.runtimeParams?.length ? `; the component gives \`${datum.runtimeParams.join("`, `")}\` itself unless the placement binds them` : "";
-        lines.push(`- ${name === "*" ? "any name you choose" : `\`${name}\``}: ${datum.results.join(" or ")}${datum.required ? ", required" : ""}${given}`);
-      }
-      lines.push("");
+const COMPONENT_GROUPS = [
+  ["list", "Lists & Grids"],
+  ["detail", "Detail & Values"],
+  ["form", "Forms & Pickers"],
+  ["action", "Actions & Uploads"],
+  ["chart", "Charts & Metrics"],
+  ["graph", "Graphs & Relations"],
+  ["content", "Files, Text & Previews"],
+  ["conversation", "Conversation"],
+  ["layout", "Layout & Page Structure"],
+];
+
+/** Extracts the opening sentence of a component's meaning while ignoring periods inside backticks. */
+function firstSentence(text) {
+  const normalized = plain(text);
+  let inCode = false;
+  for (let index = 0; index < normalized.length; index++) {
+    const ch = normalized[index];
+    if (ch === "`") {
+      inCode = !inCode;
+      continue;
     }
-    const componentPortTypeText = (name, type) => component.componentId === "ObjectRelations" && name === "visibleRelationKinds"
-      ? "a list of relation kind IDs or object references"
-      : portTypeText(type);
-    if (component.inputs && Object.keys(component.inputs).length)
-      lines.push("Inputs:", "", ...Object.entries(component.inputs).map(([name, type]) => `- \`${name}\`: ${componentPortTypeText(name, type)}`), "");
-    if (component.config?.length) {
-      lines.push("Configuration (the projection's `config`):", "");
-      const referencedTypes = new Set();
-      // A projection's config names each property as the component's source does, in camelCase.
-      for (const prop of component.config) {
-        const name = prop.name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
-        const fallback = prop.default !== undefined && prop.default !== "undefined" ? `, default ${prop.default}` : "";
-        const printedType = prop.type.replace(/ \| undefined$/, "");
-        lines.push(`- \`${name}\` (${printedType}${prop.required ? ", required" : ""}${fallback}): ${prop.description || "—"}`);
-        for (const match of printedType.matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/gu)) {
-          if (typeDefinitions.has(match[1])) referencedTypes.add(match[1]);
+    if (!inCode && ch === ".") {
+      const next = normalized[index + 1];
+      const prefix = normalized.slice(Math.max(0, index - 4), index + 1).toLowerCase();
+      if (prefix.endsWith("e.g.") || prefix.endsWith("i.e.") || prefix.endsWith("etc.")) continue;
+      if (next === undefined || next === " ") return normalized.slice(0, index + 1);
+    }
+  }
+  return normalized;
+}
+
+/**
+ * Component IDs registered as panel template/base components in `src/base-components.ts`.
+ * Combined with declared projection `data`, this lets the SDK build derive `panelUsable` from runtime facts
+ * instead of hand-maintaining a second list.
+ */
+export function baseComponentIds(source) {
+  const parsed = ts.createSourceFile(source, readFileSync(source, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const ids = new Set();
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "baseComponents" &&
+      node.initializer && ts.isObjectLiteralExpression(node.initializer)) {
+      for (const prop of node.initializer.properties) {
+        if (ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop) || ts.isMethodDeclaration(prop)) {
+          ids.add(prop.name.getText(parsed).replace(/^["']|["']$/g, ""));
         }
       }
-      lines.push("");
-      if (referencedTypes.size) {
-        lines.push("Configuration types:", "", "```ts", ...[...referencedTypes].map((name) => typeDefinitions.get(name)), "```", "");
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsed);
+  return ids;
+}
+
+/** Single component detail page (`docs/components/<ComponentId>.md`), keeping all data, config, slots and events. */
+export function componentPageMarkdown(version, component, typeDefinitions = new Map()) {
+  const placement = component.panelUsable === false
+    ? "Platform/host component (not placed directly in registered panels)."
+    : component.data !== undefined
+      ? "Panel placement: `<projection>` member in `manifest.members`."
+      : `Panel placement: template tag \`<${kebab(component.componentId)}>\` in \`panel.html\` (not a \`manifest.members\` projection).`;
+  const lines = [
+    `# ${component.componentId}`,
+    "",
+    `Component of \`@ontomato/sdk\` \`${version}\`. [Component overview](../components.md)`,
+    "",
+    `${component.role === "control" ? "Control" : "Presentation"}: \`${component.exportName}\` from \`${component.module}\`. ${placement}`,
+    "",
+    component.meaning,
+    "",
+  ];
+  if (component.effects) lines.push(`Effects: ${component.effects}`, "");
+  if (component.bindsElement?.length) lines.push(`Applicable object types (bind through a projection's declared reads or operations): ${component.bindsElement.map((element) => `\`${element}\``).join(", ")}`, "");
+  if (component.data && Object.keys(component.data).length) {
+    lines.push("Data it reads (the projection's `data.<name>`, each an owner's read; its parameters are the read's signature):", "");
+    for (const [name, datum] of Object.entries(component.data)) {
+      const given = datum.runtimeParams?.length ? `; the component gives \`${datum.runtimeParams.join("`, `")}\` itself unless the placement binds them` : "";
+      lines.push(`- ${name === "*" ? "any name you choose" : `\`${name}\``}: ${datum.results.join(" or ")}${datum.required ? ", required" : ""}${given}`);
+    }
+    lines.push("");
+  }
+  const componentPortTypeText = (name, type) => component.componentId === "ObjectRelations" && name === "visibleRelationKinds"
+    ? "a list of relation kind IDs or object references"
+    : portTypeText(type);
+  if (component.inputs && Object.keys(component.inputs).length)
+    lines.push("Inputs:", "", ...Object.entries(component.inputs).map(([name, type]) => `- \`${name}\`: ${componentPortTypeText(name, type)}`), "");
+  if (component.config?.length) {
+    lines.push("Configuration (the projection's `config`):", "");
+    const referencedTypes = new Set();
+    // A projection's config names each property as the component's source does, in camelCase.
+    for (const prop of component.config) {
+      const name = prop.name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+      const fallback = prop.default !== undefined && prop.default !== "undefined" ? `, default ${prop.default}` : "";
+      const printedType = prop.type.replace(/ \| undefined$/, "");
+      lines.push(`- \`${name}\` (${printedType}${prop.required ? ", required" : ""}${fallback}): ${prop.description || "—"}`);
+      for (const match of printedType.matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/gu)) {
+        if (typeDefinitions.has(match[1])) referencedTypes.add(match[1]);
       }
     }
-    if (component.outputs && Object.keys(component.outputs).length)
-      lines.push("Hands over (bindable to the panel's state):", "", ...Object.entries(component.outputs).map(([name, type]) => `- \`${name}\`: ${componentPortTypeText(name, type)}`), "");
-    if (component.readOnlyOutputs && Object.keys(component.readOnlyOutputs).length)
-      lines.push("Read-only outputs (read via `usePanelOutput` / `outputs[member][name]`, separate from writable panel state):", "", ...Object.entries(component.readOnlyOutputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
-    const slots = component.ports?.slots ?? [];
-    if (slots.length)
-      lines.push("Vue slots on `<projection>`:", "", ...slots.map((slot) => `- \`#${slot.name}\`${slot.type && slot.type !== "{}" ? ` (\`${cell(slot.type)}\`)` : ""}: ${slot.description || "—"}`), "");
-    const events = component.ports?.events?.filter(({ name }) => !name.startsWith("update:")) ?? [];
-    if (events.length)
-      lines.push("Events the page can listen to on `<projection>`:", "", ...events.map(({ name, description }) => `- \`${name}\`: ${description || "—"}`), "");
+    lines.push("");
+    if (referencedTypes.size) {
+      lines.push("Configuration types:", "", "```ts", ...[...referencedTypes].map((name) => typeDefinitions.get(name)), "```", "");
+    }
   }
+  if (component.outputs && Object.keys(component.outputs).length)
+    lines.push("Hands over (bindable to the panel's state):", "", ...Object.entries(component.outputs).map(([name, type]) => `- \`${name}\`: ${componentPortTypeText(name, type)}`), "");
+  if (component.readOnlyOutputs && Object.keys(component.readOnlyOutputs).length)
+    lines.push("Read-only outputs (read via `usePanelOutput` / `outputs[member][name]`, separate from writable panel state):", "", ...Object.entries(component.readOnlyOutputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
+  const slots = component.ports?.slots ?? [];
+  if (slots.length)
+    lines.push("Vue slots on `<projection>`:", "", ...slots.map((slot) => `- \`#${slot.name}\`${slot.type && slot.type !== "{}" ? ` (\`${cell(slot.type)}\`)` : ""}: ${slot.description || "—"}`), "");
+  const events = component.ports?.events?.filter(({ name }) => !name.startsWith("update:")) ?? [];
+  if (events.length)
+    lines.push("Events the page can listen to on `<projection>`:", "", ...events.map(({ name, description }) => `- \`${name}\`: ${description || "—"}`), "");
+  return lines.join("\n");
+}
+
+/** UI primitives and directives page (`docs/components/ui-primitives.md`). */
+export function uiPrimitivesMarkdown(version, catalogue) {
+  const uiPrimitives = catalogue.uiPrimitives ?? [];
+  const uiDirectives = catalogue.uiDirectives ?? [];
+  const lines = [
+    `# UI primitives and directives (\`@ontomato/sdk/ui\`)`,
+    "",
+    `SDK \`${version}\`. [Component overview](../components.md)`,
+    "",
+    "Data-free interface controls published by this SDK. Use `<sdk-*>` tags directly in panel templates (`panel.html`) or import `Sdk*` from `@ontomato/sdk/ui` in custom components. Full prop, event and slot schemas are in `components.json` (`uiPrimitives`).",
+    "",
+  ];
   if (uiPrimitives.length) {
-    lines.push(
-      "## UI primitives (`@ontomato/sdk/ui`)",
-      "",
-      "Data-free interface controls published by this SDK. Use `<sdk-*>` tags directly in panel templates (`panel.html`) or import `Sdk*` from `@ontomato/sdk/ui` in custom components. Full prop, event and slot schemas are in `components.json` (`uiPrimitives`).",
-      "",
-    );
+    lines.push("## UI primitives", "");
     table(lines, ["Template tag", "Export (`@ontomato/sdk/ui`)", "Description"], uiPrimitives.map((item) => [
       `\`<${item.tag}>\``, `\`${item.exportName}\``, cell(item.description || "—"),
     ]));
   }
   if (uiDirectives.length) {
-    lines.push("## UI directives (`@ontomato/sdk/ui`)", "");
+    lines.push("## UI directives", "");
     table(lines, ["Template directive", "Export (`@ontomato/sdk/ui`)", "Description"], uiDirectives.map((item) => [
       `\`${item.name}\``, `\`${item.exportName}\``, cell(item.description),
     ]));
   }
+  return lines.join("\n");
+}
+
+/** Theme tokens page (`docs/components/theme-tokens.md`). */
+export function themeTokensMarkdown(version, catalogue) {
+  const themeTokens = catalogue.themeTokens ?? [];
+  const lines = [
+    "# Theme tokens",
+    "",
+    `SDK \`${version}\`. [Component overview](../components.md)`,
+    "",
+    "CSS custom properties published for panel and component styling. Overridable tokens may be set in `panel.json` `theme.light` / `theme.dark`.",
+    "",
+  ];
   if (themeTokens.length) {
-    lines.push("## Theme tokens", "", "CSS custom properties published for panel and component styling. Overridable tokens may be set in `panel.json` `theme.light` / `theme.dark`.", "");
     table(lines, ["Token", "Kind", "Overridable"], themeTokens.map((item) => [
       `\`${item.name}\``, `\`${item.kind}\``, item.overridable ? "yes" : "no",
     ]));
   }
+  return lines.join("\n");
+}
+
+/**
+ * Layer-1 component overview (`docs/components.md`): lists only panel-usable components, grouped by purpose, one line
+ * each (component name, placement mode, and the opening sentence of its declared `meaning`), pointing to per-component
+ * single pages under `docs/components/<ComponentId>.md`.
+ */
+export function catalogueMarkdown(version, catalogueOrComponents) {
+  const isFull = !Array.isArray(catalogueOrComponents);
+  const components = (isFull ? catalogueOrComponents.components : catalogueOrComponents)
+    .filter((component) => component.panelUsable !== false);
+  const grouped = new Map();
+  for (const component of components) {
+    const key = component.group ?? "other";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(component);
+  }
+  const lines = [
+    "# Panel components overview",
+    "",
+    `Components in \`@ontomato/sdk\` \`${version}\` that can be placed in a registered panel. Read a single component's full data ports, config, slots, and events with \`sdk read docs/components/<Name>.md\`.`,
+    "",
+    "- `projection`: declare in `manifest.members` and mount with `<projection slot=\"…\">`.",
+    "- `<tag>`: use directly as a template tag in `panel.html` (do not put in `manifest.members`).",
+    "",
+  ];
+  const orderedGroups = [
+    ...COMPONENT_GROUPS,
+    ...[...grouped.keys()].filter((key) => !COMPONENT_GROUPS.some(([known]) => known === key)).map((key) => [key, key]),
+  ];
+  for (const [groupKey, label] of orderedGroups) {
+    const entries = grouped.get(groupKey);
+    if (!entries?.length) continue;
+    lines.push(`## ${label}`, "");
+    for (const component of entries) {
+      const placement = component.data !== undefined ? "projection" : `\`<${kebab(component.componentId)}>\``;
+      lines.push(`- [**${component.componentId}**](components/${component.componentId}.md) (${placement}): ${firstSentence(component.meaning)}`);
+    }
+    lines.push("");
+  }
+  lines.push(
+    "## Also in this SDK release",
+    "",
+    "- [UI primitives & directives (`<sdk-*>`, `v-sdk-*`)](components/ui-primitives.md) — `sdk read docs/components/ui-primitives.md`",
+    "- [Theme tokens (`--sdk-*`)](components/theme-tokens.md) — `sdk read docs/components/theme-tokens.md`",
+    "- [Full API reference](reference.md) — `sdk read docs/reference.md` (look up only when needed; do not read upfront)",
+    "",
+  );
   return lines.join("\n");
 }

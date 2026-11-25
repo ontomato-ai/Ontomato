@@ -5,70 +5,106 @@ description: "Compose, check and register panel applications with the Ontomato S
 
 # Ontomato app builder
 
-**Application IDs start with `app-`. Put application and entry paths under `/applications/<app-id>/`.**
+## How Ontomato fits together
 
-Run these through `node "$SKILL/scripts/ontomato.mjs"`.
+Ontomato is an ontology-driven platform. Applications are built as product-layer Vue panels (`panel.html`, `panel.mjs`,
+`panel.json`, optional `recipes.md`) whose projections bind official SDK components to owner-declared reads,
+MetricViews, and Actions. Business data, calculations, and permission checks always stay with their owners; the same
+registered panel works full-page, beside a conversation, and under page-assistant control.
+
+Build an application in three stages:
+
+1. **Model the ontology and load data** — classes, properties, relations, and business records.
+2. **Define capabilities, workflows, agents, and permissions** — MetricViews for calculated reads, Actions/Workflows
+   for writes, roles/grants, and Agents where needed.
+3. **Assemble, check, and register panels (this skill)** — inspect available reads and operations (`panel type`), pick
+   components from the two-layer SDK catalogue (`sdk read docs/components.md` → `sdk read docs/components/<Name>.md`),
+   author panels, run `panel check`, and register with `panel register`.
+
+**What other skills handle:**
+
+| Area | Skill |
+| --- | --- |
+| Build ontology, mappings, and import business/test data | `ontomato-ontomap-builder` |
+| Generate Actions or MetricViews | `ontology-generation`, `metricview-generation` (or this skill's [GUIDE.md](GUIDE.md) via the authoring API) |
+| Build and publish multi-step business workflows & triggers | `ontomato-workflow-maker`, `ontomato-process-admin` |
+| Set up organizations, roles, and API/menu/data permissions | `ontomato-process-admin` |
+| Data retrieval, Q&A, and agent analysis | `ontomato-analyst`, `ontomato-analyst-assistant` (configure agents in platform agent settings / `platform:AgentDefinition`) |
+
+## Essential commands
+
+Run through `node "$SKILL/scripts/ontomato.mjs"` (run `panel check` before registering — it validates manifest
+structure, allowed imports, CSS/UI guardrails, and bindings automatically):
 
 ```text
-sdk current
-sdk read docs/components.md
-panel type <id> [--read <name>]
-panel check <dir>
-panel register <dir>
+sdk current                              # current SDK release info
+sdk read docs/components.md              # grouped overview of panel-usable components (a few KB)
+sdk read docs/components/<Name>.md       # one component's full data, config, slots, and events
+panel type <id> [--read <name>]          # object type reads, parameters, resultSchema, and operations
+panel scaffold <type> <new-dir>          # scaffold catalog/ and detail/ panels
+panel check <dir>                        # validate sources, declarations, and bindings
+panel register <dir>                     # register projections, panel, and application
 ```
 
-Use `sdk current` for release information and `panel type` for object types. There is no `sdk list` or top-level `read ObjectType`.
+There is no `sdk list` or top-level `read ObjectType`. For `<sdk-*>` UI primitives and `--sdk-*` theme tokens, read
+`sdk read docs/components/ui-primitives.md` and `sdk read docs/components/theme-tokens.md`. `sdk read docs/reference.md`
+is the full API reference — look up on demand, do not read upfront.
 
-Run `panel scaffold <type> <new directory>` to draft separate `catalog/` and `detail/` panels. Check both
-directories, then register the catalog first and the detail second to create the application.
+## What you want to do → where to look
 
-## Rules for authoring pages
+Start here: pick the row for your task and read only that recipe or component page.
 
-**Rules the author must follow (not machine-checked, or not yet checked)**
+| What you want to do | Where to look |
+| --- | --- |
+| Browse available panel components by purpose | `sdk read docs/components.md` (then `sdk read docs/components/<Name>.md`) |
+| Pick a starter page layout (catalog + detail, split editor, modal edit, app frame) | [Page templates](references/templates/README.md) · [Panel authoring guide](references/panel-authoring/SKILL.md) |
+| Move an existing page into the product layer | [Migrate an existing page](references/migrate-existing-page.md) · [App decomposition](references/app-standard/SKILL.md) |
+| Lay out a page, `<page-header>`, button roles, and container responsiveness | [Layout & page header](references/panel-authoring/recipes/layout-and-page-header.md) · `sdk read docs/components/PageHeader.md` |
+| Use `<sdk-*>` dialogs, drawers, notifications, and scoped CSS rules | [Controls & guardrails](references/panel-authoring/recipes/controls-and-guardrails.md) · `sdk read docs/components/ui-primitives.md` |
+| Navigate between entries with flat named URL parameters (`deepLink`, `panelAddress`) | [Flat URL parameters](references/panel-authoring/recipes/url-parameters.md) |
+| Decide between official defaults, `config`, Vue slots, or a custom component | [Component vs. panel responsibility](references/panel-authoring/recipes/component-vs-panel-responsibility.md) |
+| Read projection outputs (`usePanelOutput`) or wire one member's output to another | [Projection outputs](references/panel-authoring/recipes/projection-outputs.md) |
+| Show a list, table, card grid, tabs, or grouped grid | `sdk read docs/components/ObjectList.md` · `sdk read docs/components/GroupedGrid.md` |
+| Filter or sort a list by field/status, or bind read parameters & component events | [Bind read parameters & events](references/panel-authoring/recipes/bind-read-parameters-and-events.md) · `sdk read docs/components/ObjectList.md` |
+| Customize table columns, row detail expansion, or per-row operations | [List slots & row operations](references/panel-authoring/recipes/list-slots-and-row-operations.md) · `sdk read docs/components/ObjectList.md` |
+| Display an object header, summary fields, typed value, banner, or reference card | `sdk read docs/components/ObjectHeader.md` · `ObjectSummary.md` · `TypedValue.md` · `RecordTemplate.md` · `InfoBanner.md` · `ObjectRefCard.md` |
+| Build a create or edit form with Save/Discard (`ObjectForm`, `usePanelFormDraft`) | [Save a form](references/panel-authoring/recipes/save-a-form.md) · `sdk read docs/components/ObjectForm.md` |
+| Wire a customer `ObjectType` form to edit/create `Action`s (including targetless Actions) | [Customer ObjectType forms & Actions](references/panel-authoring/recipes/customer-object-forms-and-actions.md) · `sdk read docs/components/ObjectForm.md` |
+| Trigger a business operation button, batch action, or file upload | [Invoke owner operations](references/panel-authoring/recipes/invoke-owner-operations.md) · `sdk read docs/components/OperationButton.md` · `FileUploadControl.md` |
+| Embed dashboard charts, KPI cards, counts, or single-member refresh | [Offline check & charts/SDK docs](references/panel-authoring/recipes/offline-check-and-sdk-docs.md) · `sdk read docs/components/MetricChart.md` · `MetricCard.md` · `ObjectCount.md` |
+| Display an ontology graph and link it to one-hop relations | [Graph & relations](references/panel-authoring/recipes/graph-and-relations.md) · `sdk read docs/components/OntologyGraph.md` · `ObjectRelations.md` |
+| Select a child record or browse files, text, and annotated code | [Child records](references/panel-authoring/recipes/child-records.md) · `sdk read docs/components/ObjectTree.md` · `ObjectTextReader.md` · `AnnotatedCode.md` |
+| Put a conversation entry or embedded agent chat pointing to an agent on a page | [Conversation entries](references/panel-authoring/recipes/conversation-entries.md) · `sdk read docs/components/ConversationEntry.md` · `sdk read docs/components/AgentChat.md` |
+| Handle narrow containers, availability gating, and compact slot projections | [Availability & narrow containers](references/panel-authoring/recipes/availability-and-narrow-containers.md) |
+| Run `panel check` offline against an installed SDK release | [Offline check & SDK docs](references/panel-authoring/recipes/offline-check-and-sdk-docs.md) |
+| Register projections, panels, and application entries (`panel.json` / `registration.json`) | [Register & open](references/panel-authoring/recipes/register-and-open.md) · [Member fields](references/panel-authoring/FIELDS.md) |
+| Debug a blank panel, empty list, or form that will not fill or save | [Troubleshooting](references/panel-authoring/recipes/troubleshooting.md) |
+| Understand what the page assistant receives and verify assistant control | [Assistant context](references/panel-authoring/recipes/assistant-context.md) · [Runtime hooks](references/panel-authoring/RUNTIME.md) |
+| Author customer Actions / MetricViews, CLI contract, or business tests | [Technical guide](GUIDE.md) · [Management page recipes](references/management-pages.md) · [Full standard](references/app-standard/references/standard.md) |
 
-Authoring panels:
+## Rules the author must follow
 
-1. **Container-driven layout.** Lay out by container width and height (`@container` / flex / grid), never by browser window width or hardcoded viewport subtractions. The same code must work full-page, embedded in another panel, and beside a conversation. When the container has no definite height, grow naturally with content; when it has a definite height, either grow and let the outer area scroll or fill the container and scroll the needed sub-region.
-2. **Reads through projections, writes through declared operations.** Never call business APIs directly. Every button that performs a business write must invoke a named operation bound on a projection member of this panel; buttons for local UI interaction only (open dialog, go back, navigate, discard unsaved draft) are written directly in the panel as `<sdk-button>` or component buttons.
-   - Whether rendered in `<page-header>`, a table slot, or a form, the button calls the same declared binding so target and parameter sources are traceable.
-   - Every inline `ObjectForm`, including a read-only form with `config.actions: "none"`, needs an operation or a sibling operation that references its draft.
-   - A save bound on a form projection submits that form's live draft; a write operation on another member that submits a form's draft must explicitly name that form member (`draft: "<formMember>"`).
-   - Post-action UI updates or navigation must rely on the operation's success outcome; any new object ID needed afterward (for example navigating to a newly created record) must be declared and returned by the operation owner. Never infer success or guess a new ID from list changes.
-3. **Never render ontology data in the panel.** Business data is rendered by base components according to projection declarations so every displayed result, field, or object is traceable.
-   - Exception 1: Unsaved draft input in a form/canvas/wizard is not ontology data and may be read via the component's declared draft output for live preview.
-   - Exception 2: Declared read-only projection outputs may be placed into text-only slots such as titles and tab labels (see Rule 5).
-   - Static non-business content and pure local view toggles are written directly in the panel or with data-free SDK UI primitives without registering projections.
-4. **No business calculations or business judgments in panels or components.** Computed results and business judgments come from capability-layer MetricViews (reads) or Actions (writes), or platform built-in reads for platform objects. Base components may format already-provided values in three ways only: fill values into a fixed sentence template (`RecordTemplate`), map raw values to label/tone/icon via exact-match `valueMap` (`TypedValue`, `InfoBanner`, `ObjectList` columns), or perform pure text filtering on a complete unpaged list and expose `filteredCount`. Never compute new business values, infer thresholds/statuses, or pass off loaded row counts as a paged total — use the owner-returned `total`.
-5. **Read-only projection outputs only.** The only business values a panel script/template may read are declared read-only outputs (`usePanelOutput` / `usePanelOutputs`, e.g., selected object/label, owner `total`, `loadedCount`, `filteredCount`, `dirty`, owner-declared scalar outputs). Use them only to feed other members, control visibility/selection/navigation (checking presence, equality, or zero is not business calculation), or fill text-only slots with optional fixed prefixes/suffixes. Never read raw record fields or compute on them.
-6. **No automatic writes on display.** Never trigger business writes on load, URL restoration, selection, or re-render. Writes occur only on explicit user action or an explicit agent call to a registered operation.
-7. **Component lookup order.** Advance only when the previous step cannot satisfy the need: (1) official component defaults; (2) component `config`; (3) placing another component in an official Vue slot (`#cell-<key>`, `#actions`, `#row-detail`, `#field-<dotPath>`); (4) authoring a dedicated component as a last resort. Slot components that only display values passed by the official component are listed in `manifest.components` (not registered as projections); slot blocks that read additional ontology data remain projections receiving `:inputs="{ target: ref }"`. Per-row business operations are declared on the `ObjectList` projection and invoked by slot buttons.
-8. **Page headers belong to the panel.** The platform does not draw page headers. Place `<page-header>` at the top of `panel.html` when needed (omit for headerless pages), supply title, description, back action, `:draft="usePanelFormDraft(...)"`, and buttons obeying Rule 2.
-9. **Public state, `deepLink`, and recipes.** Declare all members (`manifest.members`), slot-only domain components (`manifest.components`), and public states (`manifest.state`). Data-free official UI primitives (`<page-header>`, `<sdk-*>`) are not listed as members.
-   - Always declare as public state: (a) state deciding which business content the reader sees (tabs, filters, selections, view modes); (b) state opening or switching an editable business form (including blank create dialogs such as `creating`). Leave pure transient UI state (hover, help tooltips, scroll position) in Vue.
-   - Mark `deepLink: true` **only** on state needed for another reader to return to the same view (selected object, tab, view mode, list search/filter/sort). **Never** mark dialog toggles (`creating`, `grantDialog`, `dialog`, `compose`) or active-edit trackers (`editingEntryId`) with `deepLink: true`.
-   - Use `present` to open the page or editor, `fill_form` to enter unsaved values in the live form, and `page_action` to request the declared save when asked. The same form, operation and permissions apply to humans and assistants. Write typical flows in `recipes.md`.
-   - Only the person chooses files from their device and submits uploads or imports. Assistants can open the entry. Secret fields and one-time secrets stay with the operator. Assistants neither read nor fill them (standard §2.4.2).
-10. **Reuse first, escalate missing capabilities.** Search for existing base components, projections, and panels first. Missing business reads, forms, or Actions are added by the capability owner; missing generic UI primitives belong in the official SDK. When migrating an existing page, verify every visible item and user action against the original page.
+`panel check` catches structural, import, CSS, and binding errors automatically. Follow these judgment rules that
+machine checks cannot enforce:
 
-Give each `ObjectList` table column an explicit `labelKey` in `content.messages` so headers stay localized when empty or filtered to no matches.
+1. **Container-driven layout.** Size by container width and height (`@container`, flex, grid), never by window width or
+   hardcoded viewport subtractions; the same panel must work full-page, embedded, and beside a conversation.
+2. **Reads through projections, writes through declared operations.** Never render raw ontology records in panel HTML
+   or call business APIs. Use `<sdk-button>` for local UI actions only; every business write invokes a declared member
+   operation, and post-action updates/navigation rely on the operation outcome (never inferred from list changes).
+3. **No business calculations or judgments in panels or components.** Calculations and thresholds belong in MetricViews,
+   Actions, or owner reads. Use `usePanelOutput` only for wiring, visibility/equality/zero checks, or text-only slots;
+   never present loaded row counts as a paged `total`.
+4. **No automatic writes on display.** Writes happen only on explicit user action or an explicit agent `page_action`.
+5. **Reuse first, follow lookup order.** Check existing components/panels first, advancing only when needed: official
+   defaults → `config` → official Vue slots → custom domain component as last resort. Escalate missing business reads
+   or Actions to the owner. Give each `ObjectList` column an explicit `labelKey` in `content.messages`.
+6. **Public state, `deepLink`, and secrets.** Declare business view state and form/dialog switches in `manifest.state`.
+   Set `deepLink: true` **only** on state needed to restore the same view (`selected`, `tab`, `search`, `filter`,
+   `sort`) — **never** on dialog toggles or active-edit trackers. Only the human picks local files and enters/receives
+   secrets (standard §2.4.2).
+7. **Authoring custom components.** Never call business APIs directly; declare clear `meaning` stating what the
+   component draws, can do, and when to use it.
 
-Authoring components:
-
-11. **Declared meaning, no direct business APIs.** Base components never call business APIs directly; data comes through the projection declaration. Write clear `meaning`, data ports, config, inputs, outputs, and operations so both humans and agents understand what the component renders and can do.
-
-**Machine-checked rules (`panel check` catches these automatically)**
-
-- `panel.html` styles are native browser CSS scoped by the host. Use descendant selectors and omit Vue SFC pseudo-selectors `:deep` and `::v-deep`. Panel code uses Vue templates, and scripts importing only `vue` and `@ontomato/sdk/panel`. Direct network calls (`fetch`, `XMLHttpRequest`, `EventSource`, `WebSocket`) are rejected.
-- Data-free UI primitives use `<page-header>`, `<sdk-*>`, `v-sdk-*`, and `--sdk-*` tokens. Third-party library names (`el-*`, `v-loading`, `--el-*`, `element-plus`) are rejected.
-- Manifest structure, typed public states, member bindings, and component declarations (including `bindsElement` meaning applicable ontology types; actual bindings always go through reads or operations) are validated against the SDK catalogue and type table.
-
-## Getting started
-
-- **New panel or application:** read the [Vue panel skill](references/panel-authoring/SKILL.md) and pick a [page template](references/templates/README.md).
-- **Moving an already-built page into the product layer:** read [Migrating an existing page into the product layer](references/migrate-existing-page.md) and the [application decomposition skill](references/app-standard/SKILL.md).
-- **CLI, registration, customer Actions & MetricViews:** read the [technical guide](GUIDE.md) (`scripts/ontomato.mjs`) and the [full standard](references/app-standard/references/standard.md). When the platform supplies `application-design`, read it before designing or polishing a panel.
-
-Use the attached workspace and current identity. Run `panel check`, then register and open the application entry. For
-new Actions and MetricViews, read the owner context, write a definition, and have the Java authoring API test and accept
-it through the CLI. For delegated retrieval, use the product's analyst skill and follow
-[agent delegation](GUIDE.md#agent-delegation).
+When the platform supplies `application-design`, read it before designing or polishing a panel. For delegated retrieval,
+use the product's analyst skill and follow [agent delegation](GUIDE.md#agent-delegation).

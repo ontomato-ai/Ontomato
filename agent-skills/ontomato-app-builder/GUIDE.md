@@ -7,6 +7,7 @@ Run these through `node "$SKILL/scripts/ontomato.mjs"`.
 ```text
 sdk current
 sdk read docs/components.md
+sdk read docs/components/<Name>.md
 panel type <id> [--read <name>]
 panel check <dir>
 panel register <dir>
@@ -18,7 +19,7 @@ Follow the [Product Layer and Application Composition Standard](references/app-s
 
 Start with the [Vue panel skill](references/panel-authoring/SKILL.md) and choose a matching [page template](references/templates/README.md). When moving an already-built page into the product layer, read [Migrating an existing page into the product layer](references/migrate-existing-page.md) alongside the [application decomposition skill](references/app-standard/SKILL.md).
 
-Use the [component recipes](references/panel-authoring/CODE.md) for lists, headers, file uploads and dialog forms,
+Use the [panel authoring recipes](SKILL.md#what-you-want-to-do--where-to-look) (`references/panel-authoring/recipes/`) for lists, headers, file uploads and dialog forms,
 [member fields](references/panel-authoring/FIELDS.md) for bindings and controls, and
 [panel runtime](references/panel-authoring/RUNTIME.md) for hooks, overlays and assistant interaction.
 
@@ -38,7 +39,7 @@ For a management page, pick a [page template](references/templates/README.md) (p
 full-width detail), read the [management page wiring recipes](references/management-pages.md), or run `panel scaffold`.
 
 1. **Discover read functions and operations.** Run `panel type <type-id>` and compare result shapes with official
-   component data ports in `sdk read docs/components.md`.
+   component data ports in `sdk read docs/components.md` (overview) and `sdk read docs/components/<Name>.md` (single page).
    - For customer ontology classes (e.g. `Student`, `Order`), projections only bind read and write functions —
      `bindsElement` indicates applicable ontology element types, while every actual binding must go through a
      projection's declared read or operation (binding a class alone is rejected). Bind the platform's generic read
@@ -71,7 +72,9 @@ registered `target.projectionId`.
 
 | Command | Result |
 | --- | --- |
-| `sdk read docs/components.md` | Current SDK component guide with data, configuration (including `ObjectListColumn`, `ObjectSummary`, `ObjectForm`, `OperationButton`, `PageHeader`), outputs, events, `<sdk-*>` UI primitives, `v-sdk-*` directives and `--sdk-*` theme tokens |
+| `sdk read docs/components.md` | Compact grouped overview of panel-usable components (one line each, linking to per-component single pages) |
+| `sdk read docs/components/<Name>.md` | Full single-page reference for one component (data ports, configuration, expanded types, outputs, slots, events) |
+| `sdk read docs/components/ui-primitives.md`, `docs/components/theme-tokens.md` | `<sdk-*>` UI primitives, `v-sdk-*` directives, and `--sdk-*` theme tokens |
 | `sdk read components.json` | The same current SDK's machine-readable component, UI primitive (`uiPrimitives`, `uiDirectives`) and theme token (`themeTokens`) catalogue |
 | `sdk icons` | Icon choices for applications from the current SDK |
 | `component list` | List visible domain-registered components in the current domain |
@@ -93,14 +96,14 @@ Use official SDK components and `config` first. When a dedicated custom componen
 domain component with `node "$SKILL/scripts/ontomato.mjs" component register <directory>` (which assigns
 `domain-component:<uuid>` into `component.json`, inspectable via `component list` / `component read <id>`). Declare it
 under `manifest.components` in `panel.json` and place it directly inside an official component's Vue slot (see the
-[end-to-end Vue slots, built-in row actions, and domain component example](references/panel-authoring/CODE.md#custom-list-columns-row-detail-and-per-row-operations)).
+[end-to-end Vue slots, built-in row actions, and domain component example](references/panel-authoring/recipes/list-slots-and-row-operations.md)).
 Third-party component package installation is not currently available to authors (`sdk package <name>` is read-only
 inspection only; there is no author package upload endpoint).
 
 ### Write projections inside the panel
 
 In `panel.json`, define each new projection directly in `manifest.members`. For the chosen official component,
-open its section in `sdk read docs/components.md`. Use `panel type <type-id>` and `--read <name>` for the
+read its single page via `sdk read docs/components/<Name>.md` (find candidates in `sdk read docs/components.md`). Use `panel type <type-id>` and `--read <name>` for the
 owner's read signatures, result shapes and operations. A member uses the parts that apply to its component.
 
 | What to fill | What registration derives and what to change |
