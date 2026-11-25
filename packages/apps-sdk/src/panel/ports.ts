@@ -77,7 +77,10 @@ function operationTarget(
 type InputContext = Pick<PanelInstance, "manifest" | "state" | "outputs">;
 
 export function memberInputValue(
-  { state, outputs }: Pick<InputContext, "state" | "outputs">,
+  { state, outputs }: {
+    state: { readonly values: { readonly value: Readonly<Record<string, PanelFieldValue>> } };
+    outputs: InputContext["outputs"];
+  },
   source: PanelMemberInput,
 ): RuntimeJsonValue | undefined {
   if ("state" in source) {

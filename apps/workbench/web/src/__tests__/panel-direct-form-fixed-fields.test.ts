@@ -151,12 +151,13 @@ it("keeps a dirty create form on its original parent and lets the panel resync d
     await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value.className).toBe("Device"));
     const form = instance.forms.handle("form")!;
     form.set("/name", "draft");
-    instance.state.set("objectType", objectType("Site"));
-    await vi.waitFor(() => expect(instance.state.values.value.className).toBe("Site"));
-    expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+    const pending = instance.state.set("objectType", objectType("Site"));
+    await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
+    expect(instance.state.values.value).toMatchObject({ objectType: objectType("Device"), className: "Device" });
     expect(form.values.value).toMatchObject({ className: "Device", name: "draft" });
     decision.resolve(false);
-    await vi.waitFor(() => expect(instance.state.values.value).toMatchObject({ objectType: objectType("Device"), className: "Device" }));
+    await expect(pending).resolves.toBe(false);
+    expect(instance.state.values.value).toMatchObject({ objectType: objectType("Device"), className: "Device" });
     expect(form.values.value).toMatchObject({ className: "Device", name: "draft" });
     expect(form.dirty.value).toBe(true);
     expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
@@ -204,20 +205,21 @@ it.each(["same patch", "following microtask"])("asks once for edit-target and fi
   expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
 });
 
-it("preflights direct agent changes and rolls back derived fixed-input changes during a probe", async () => {
+it("preflights direct and derived agent changes without mutating state or prompting the user", async () => {
   const confirmLeaveUnsaved = vi.fn(async () => true);
   const { instance } = open({ objectType: objectType("Device"), className: "Device" }, { confirmLeaveUnsaved });
   await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value.className).toBe("Device"));
   const form = instance.forms.handle("form")!;
   form.set("/name", "draft");
-  expect(instance.blocksFormInputChange(new Set(["objectType"]))).toBe(true);
-  expect(instance.blocksFormInputChange(new Set(["className"]))).toBe(false);
+  expect(instance.findBlockedForms({ objectType: objectType("Site") }).length).toBeGreaterThan(0);
+  expect(instance.findBlockedForms({ className: "Site" })).toEqual([]);
+  instance.forms.bindInputState("form", "className");
   const stop = watch(instance.state.field("className"), async (value) => {
     await Promise.resolve();
     instance.state.set("objectType", objectType(value as string));
   });
   try {
-    expect(await instance.applyStatePreservingDrafts({ className: "Site" })).toBe(false);
+    expect(await instance.checkAgentStateChange({ className: "Site" })).toMatchObject({ ok: false });
     expect(instance.state.values.value).toMatchObject({ objectType: objectType("Device"), className: "Device" });
     expect(form.values.value).toMatchObject({ className: "Device", name: "draft" });
     expect(form.dirty.value).toBe(true);

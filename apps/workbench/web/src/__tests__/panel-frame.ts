@@ -656,6 +656,7 @@ import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 await mountPanel({
   setup() {
     const { instance } = usePanelContext();
+    instance.forms.bindInputState("form", "mode");
     const Projection = resolveComponent("Projection");
     return () => {
       const { mode, tab, search, status, checked, grantDialog } = instance.state.values.value;

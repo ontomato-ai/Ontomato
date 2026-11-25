@@ -2,6 +2,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import {
   displayLoadSchema,
   PANEL_LOAD_ERROR_CODES,
+  type BlockedUnsavedForm,
   type DisplayLoad,
   type FormFillOutcome,
   type FormFillRequestInput,
@@ -189,8 +190,20 @@ export interface DirectPanelMount {
   address(url: string): void;
   /** Reads the instance's live public state, including fields that are absent from the address. */
   publicState(): Readonly<Record<string, RuntimeJsonValue>>;
-  blocksFormInputChange(fields: ReadonlySet<string>): boolean;
-  applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean>;
+  /** Synchronously returns dirty forms (mounted or stashed, local or nested) affected by a proposed state patch. */
+  findBlockedForms?(patch: Readonly<Record<string, RuntimeJsonValue>>): readonly BlockedUnsavedForm[];
+  /** Checks whether an agent state patch would affect any dirty form (waiting for in-flight auto-saves first). */
+  checkAgentStateChange?(
+    patch: Readonly<Record<string, RuntimeJsonValue>>,
+  ): Promise<{ readonly ok: true } | { readonly ok: false; readonly blockedForms: readonly BlockedUnsavedForm[] }>;
+  /** Guards and commits a panel state change before mutating state. */
+  requestStateChange?(
+    patch: Readonly<Record<string, RuntimeJsonValue>>,
+    options?: { readonly source?: "human" | "agent" | "auto" },
+  ): Promise<
+    | { readonly ok: true; readonly changed: boolean }
+    | { readonly ok: false; readonly reason: "cancelled" | "blocked_unsaved" | "skipped_auto"; readonly blockedForms: readonly BlockedUnsavedForm[] }
+  >;
   /** Updates any declared public state fields in place (including non-deepLink fields), without reload or writes. */
   setState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Objects it may show changed: it reads again what it shows of them. */
@@ -266,10 +279,16 @@ export interface PanelInstanceView {
   validateState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Applies a live patch to any declared public state fields in place (no reload, no business writes). */
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+  /** Returns the dirty forms whose bound inputs would be changed by the proposed address and/or state patch. */
+  blockedForms(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): readonly BlockedUnsavedForm[];
   /** Whether the proposed address and patch change a dirty form's bound inputs. */
   blocksNavigation(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
-  /** Tries a same-page state change with dirty forms. Undefined leaves the change to normal navigation. */
-  probePresentation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): Promise<boolean | undefined>;
+  /** Guards a human same-page address/state navigation before the URL moves, settling affected dirty forms on confirm. */
+  guardNavigation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): Promise<boolean>;
+  /** Checks whether an agent same-page presentation would affect any dirty form (after in-flight auto-saves settle). */
+  guardAgentPresentation(
+    next: Parameters<PanelInstanceView["blocksNavigation"]>[0],
+  ): Promise<{ readonly ok: true } | { readonly ok: false; readonly blockedForms: readonly BlockedUnsavedForm[] }>;
   /** Applies deep-link overrides before the address reaches a panel with unsaved edits. */
   presentationAddress(address: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string;
   /** Fills explicit fields on a mounted live form through the form's own editing entry. */
@@ -656,8 +675,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
-  let presentationProbe: { state?: [PanelHostState, string]; context?: PageContext } | undefined;
-
   /** What an instance in this document reports to its host, as a frame would in its messages. */
   function directRun(next: HostedPanelSource, requested: PanelHostState, overlayRoot: HTMLElement): DirectPanelRun {
     return {
@@ -667,14 +684,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       url: () => address.value,
       label: () => options.label(next),
       initial: requested,
-      state(state, fromAddress) {
-        if (presentationProbe) presentationProbe.state = [state, fromAddress];
-        else stateReported(state, fromAddress);
-      },
-      context(context) {
-        if (presentationProbe) presentationProbe.context = context;
-        else pageContext.value = context;
-      },
+      state: stateReported,
+      context: (context) => { pageContext.value = context; },
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
@@ -1059,29 +1070,44 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       && JSON.stringify(current[name]) !== JSON.stringify(value)));
   }
 
-  function blocksNavigation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): boolean {
-    if (!dirty.value || !source.value || !direct.value) return false;
+  function blockedForms(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): readonly BlockedUnsavedForm[] {
+    if (!dirty.value || !source.value || !direct.value) return [];
     const { mount } = direct.value;
+    if (!mount.findBlockedForms) return [];
     const patch = presentationPatch(next, source.value.panel.manifest, mount.publicState());
-    return mount.blocksFormInputChange(new Set(Object.keys(patch)));
+    if (!Object.keys(patch).length) return [];
+    return mount.findBlockedForms(patch);
   }
 
-  async function probePresentation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): Promise<boolean | undefined> {
-    if (!dirty.value || !source.value || !direct.value) return;
+  function blocksNavigation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): boolean {
+    return blockedForms(next).length > 0;
+  }
+
+  async function guardNavigation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): Promise<boolean> {
+    if (!dirty.value || !source.value || !direct.value) return true;
     const { mount } = direct.value;
     const patch = presentationPatch(next, source.value.panel.manifest, mount.publicState());
-    if (!Object.keys(patch).length) return;
-    // Publish only the settled context and keep the host address untouched until the change is accepted.
-    const probe: NonNullable<typeof presentationProbe> = {};
-    presentationProbe = probe;
-    try {
-      const kept = await mount.applyStatePreservingDrafts(patch);
-      if (kept && probe.state) stateReported(...probe.state);
-      if (probe.context) pageContext.value = probe.context;
-      return kept;
-    } finally {
-      presentationProbe = undefined;
+    if (!Object.keys(patch).length) return true;
+    if (mount.requestStateChange) {
+      const result = await mount.requestStateChange(patch, { source: "human" });
+      return result.ok;
     }
+    if (blockedForms(next).length === 0) return true;
+    return options.confirmLeaveUnsaved ? options.confirmLeaveUnsaved() : true;
+  }
+
+  async function guardAgentPresentation(
+    next: Parameters<PanelInstanceView["blocksNavigation"]>[0],
+  ): Promise<{ readonly ok: true } | { readonly ok: false; readonly blockedForms: readonly BlockedUnsavedForm[] }> {
+    if (!dirty.value || !source.value || !direct.value) return { ok: true };
+    const { mount } = direct.value;
+    const patch = presentationPatch(next, source.value.panel.manifest, mount.publicState());
+    if (!Object.keys(patch).length) return { ok: true };
+    if (mount.checkAgentStateChange) {
+      return mount.checkAgentStateChange(patch);
+    }
+    const blocked = blockedForms(next);
+    return blocked.length > 0 ? { ok: false, blockedForms: blocked } : { ok: true };
   }
 
   function presentationAddress(next: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string {
@@ -1163,8 +1189,10 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     notice,
     validateState,
     applyState,
+    blockedForms,
     blocksNavigation,
-    probePresentation,
+    guardNavigation,
+    guardAgentPresentation,
     presentationAddress,
     fillForm(request) {
       if (!direct.value?.mount.fillForm) {

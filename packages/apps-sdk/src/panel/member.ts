@@ -3,6 +3,7 @@ import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import type { PanelStateChangeSource, PanelStateWriteResult } from "./state";
 import type { MemberData, MemberInputs } from "./direct";
 import { withMemberReadRetry, type MemberDataState, type MemberReadyData } from "./member-data-state";
 import { panelContextKey, usePanelContext } from "./context";
@@ -71,7 +72,12 @@ export function useMemberOperations(): ComputedRef<MemberOperationsState> {
  */
 export interface MemberParam {
   readonly value: ComputedRef<RuntimeJsonValue | null>;
-  set(value: RuntimeJsonValue | null): void;
+  /**
+   * Updates this parameter. When bound to panel state and a dirty form depends on that state, the platform guards the
+   * change before committing: returns `true` synchronously when unaffected, `false` synchronously if skipped (such as
+   * `source: "auto"`), or a `Promise<boolean>` resolving `true` once confirmed and applied or `false` if cancelled.
+   */
+  set(value: RuntimeJsonValue | null, options?: { readonly source?: PanelStateChangeSource }): PanelStateWriteResult;
 }
 
 export function useMemberParam(name: string): MemberParam {

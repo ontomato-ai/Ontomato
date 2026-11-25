@@ -640,7 +640,7 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
       expect(awaiting).toMatchObject({ ok: true, kind: "awaiting_confirmation" });
       if (!awaiting.ok || awaiting.kind !== "awaiting_confirmation") throw new Error("Expected confirmation");
 
-      harness.instance.state.set("parentScope", "Scope-B");
+      harness.instance.applyAuthorizedState({ parentScope: "Scope-B" });
       await nextTick();
       const staleFixed = await awaiting.confirmation.dispatch();
       expect(staleFixed).toMatchObject({ ok: false, reason: "stale" });

@@ -89,7 +89,7 @@ const pageCounter = usePageCounter();
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
-type ShownInstance = Pick<PanelInstanceView, "refresh" | "validateState" | "applyState" | "blocksNavigation" | "probePresentation" | "presentationAddress" | "fillForm" | "executeAction" | "snapshotMeta" | "isLoading">;
+type ShownInstance = Pick<PanelInstanceView, "refresh" | "validateState" | "applyState" | "blockedForms" | "blocksNavigation" | "guardNavigation" | "guardAgentPresentation" | "presentationAddress" | "fillForm" | "executeAction" | "snapshotMeta" | "isLoading">;
 const host = shallowRef<ShownInstance | null>(null);
 /** Enclosing single outer frame host at full page; null beside a conversation (`props.navigate`). */
 const outerFrame = props.navigate ? null : inject(applicationFrameHostKey, null);
@@ -105,11 +105,17 @@ watch(host, (nextHost) => {
   }
 });
 const pageController: DisplayPageController = {
-  blocksNavigation(next) {
-    return host.value?.blocksNavigation(next) ?? false;
+  blockedForms(next) {
+    return host.value?.blockedForms?.(next) ?? [];
   },
-  async probePresentation(next) {
-    return host.value?.probePresentation(next);
+  blocksNavigation(next) {
+    return host.value?.blocksNavigation?.(next) ?? false;
+  },
+  guardNavigation(next) {
+    return host.value?.guardNavigation?.(next) ?? Promise.resolve(true);
+  },
+  guardAgentPresentation(next) {
+    return host.value?.guardAgentPresentation?.(next) ?? Promise.resolve({ ok: true });
   },
   presentationAddress(address, patch) {
     return host.value?.presentationAddress(address, patch) ?? address;
@@ -812,19 +818,22 @@ watch(use, (next, previous) => {
 /*
  * The shown page sent to its bare address — its menu row clicked while it is open, or the address typed without a state —
  * opens it at its panel's defaults, as a native page goes back to its start: only a page shown again from another keeps
- * the state it was left at. A page with unsaved changes is not reset under them: the address goes back to its state.
+ * the state it was left at. Same-path dirty-form guarding runs in `useUnsavedChanges.guardSamePath` before navigation.
  */
 watch([() => use.value?.id, opened], ([id, next], [previousId, previous]) => {
   const page = shownPage.value;
   if (!id || id !== previousId || next === previous || next.includes("?") || !page) return;
-  if (page.dirty) reportAddress({ kind: "state", address: page.reported });
-  else page.reported = pageAddress.value;
+  page.reported = pageAddress.value;
 });
 
-// Leaving the shown page with unsaved changes asks the platform's question first. Beside a conversation the display
-// controller asks instead, from the page's dirty report.
+// Leaving the shown page (or changing its query/bare address when a dirty form is affected) asks the platform's
+// question first. Beside a conversation the display controller asks instead, from the page's dirty report.
 if (!props.navigate)
-  useUnsavedChanges({ dirty: () => shownPage.value?.dirty ?? false, paths: () => use.value ? [panelUsePath(use.value.path)] : [] });
+  useUnsavedChanges({
+    dirty: () => shownPage.value?.dirty ?? false,
+    paths: () => (use.value ? [panelUsePath(use.value.path)] : []),
+    guardSamePath: (fullPath) => host.value?.guardNavigation({ address: fullPath }) ?? Promise.resolve(true),
+  });
 
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {

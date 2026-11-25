@@ -555,6 +555,21 @@ async function saveDraft(): Promise<unknown> {
 }
 
 if (props.saveOperation) {
+  const draftIdentity = () => JSON.stringify([panel.instance.memberPathOf(slot.slot), member.inputs.value]);
+  const draftInputStateKeys = () => {
+    const declaration = panel.manifest.members[slot.slot];
+    if (!declaration) return [] as string[];
+    const keys = new Set<string>();
+    if ("fromState" in declaration.target) keys.add(declaration.target.fromState);
+    for (const input of Object.values(declaration.inputs ?? {})) {
+      if ("state" in input) keys.add(input.state);
+    }
+    return [...keys];
+  };
+  const restored = panel.instance.forms.takeStashedDraft<Record<string, RuntimeJsonValue>>(slot.slot, draftIdentity());
+  if (restored) {
+    internalDraftValues.value = { ...restored };
+  }
   const emptyFields = ref([] as const);
   const emptyErrors = ref<Readonly<Record<string, string>>>({});
   const formHandle: PanelFormHandle = {
@@ -608,6 +623,14 @@ if (props.saveOperation) {
         objectType: target.className || objectType,
         primaryKey: target.primaryKey,
       };
+    },
+    draft: {
+      identity: draftIdentity,
+      inputStateKeys: draftInputStateKeys,
+      capture: () => (internalDraftValues.value ? { ...internalDraftValues.value } : null),
+      restore: (draft) => {
+        internalDraftValues.value = draft ? { ...(draft as Record<string, RuntimeJsonValue>) } : null;
+      },
     },
     snapshot: () => {
       const target = containerRecord.value;
@@ -711,8 +734,21 @@ function isItemInteractiveTarget(target: EventTarget | null): boolean {
 
 function selectItem(item: GroupedGridItem, event?: Event) {
   if (event && isItemInteractiveTarget(event.target)) return;
-  selectedParam?.set({ className: item.itemRef.className, primaryKey: item.itemRef.primaryKey });
-  emit("select", item.itemRef);
+  const finish = () => {
+    emit("select", item.itemRef);
+  };
+  if (!selectedParam) {
+    finish();
+    return;
+  }
+  const applied = selectedParam.set({ className: item.itemRef.className, primaryKey: item.itemRef.primaryKey });
+  if (applied === true) {
+    finish();
+  } else if (applied !== false) {
+    void applied.then((ok) => {
+      if (ok) finish();
+    });
+  }
 }
 
 const itemElements = new Map<string, HTMLElement>();

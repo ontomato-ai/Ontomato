@@ -104,7 +104,8 @@ const ActionDetail = {
 
     async function onRemoveDone(outcome) {
       if (outcome?.kind !== "success") return;
-      // Clear selection and wait a tick so any dirty form unmounts before leaving for the catalog.
+      // Discard any local edits on the deleted action and clear selection before leaving for the catalog.
+      instance.forms.discard("form");
       if (selectedKey.value) instance.state.set("selected", null);
       await nextTick();
       void navigate(CATALOG_PATH).catch(() => undefined);

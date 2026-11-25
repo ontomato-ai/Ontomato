@@ -107,18 +107,24 @@ const currentValue = computed<ScalarValue | null>(() => {
 
 function select(option: ResolvedOption) {
   if (props.disabled || option.disabled || option.value === currentValue.value) return;
+  const finish = () => {
+    emit("update:modelValue", option.value);
+    emit("change", option.value);
+  };
+  let applied: boolean | Promise<boolean> = true;
   if (props.state) {
     if (!panel) throw new Error(`SegmentedControl state '${props.state}' requires a panel context`);
-    panel.instance.state.set(props.state, option.value);
+    applied = panel.instance.state.set(props.state, option.value);
   } else if (panel && member) {
     if (panel.manifest.members[member.key]?.outputs?.value) {
-      void panel.instance.output(member.key, "value", option.value);
+      applied = panel.instance.output(member.key, "value", option.value);
     } else {
-      valueParam!.set(option.value);
+      applied = valueParam!.set(option.value);
     }
   }
-  emit("update:modelValue", option.value);
-  emit("change", option.value);
+  if (applied === false) return;
+  if (applied && typeof applied !== "boolean") void applied.then((ok) => { if (ok) finish(); });
+  else finish();
 }
 
 function isOptionTabbable(option: ResolvedOption, index: number): boolean {

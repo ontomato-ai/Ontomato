@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElInput } from "element-plus/es/components/input/index";
-import { confirmDanger, confirmUnsavedSwitch } from "@ontomato/platform-shell";
+import { confirmDanger } from "@ontomato/platform-shell";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import type { FormFieldRejection } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -181,7 +181,6 @@ const inputStateKeys = computed(() => {
   if (state.value !== null) names.add(state.value);
   return [...names];
 });
-let acceptedState = panel.instance.state.values.value;
 
 function draftIdentity() {
   return JSON.stringify({ target: target.value });
@@ -488,9 +487,9 @@ function restoreRollback(draft: PanelFormDraft) {
 function load(next: PanelFormTarget | null) {
   const reading = ++latestRead;
   failure.value = null;
-  const rollback = panel.instance.forms.takeRollback(draftIdentity());
-  if (rollback) {
-    restoreRollback(rollback);
+  const stashed = panel.instance.forms.takeStashedDraft<PanelFormDraft>(slot.slot, draftIdentity());
+  if (stashed) {
+    restoreRollback(stashed);
     return;
   }
   if (next === null) {
@@ -728,7 +727,6 @@ function saveInput(payloadValues: PanelFormValues) {
 
 let mounted = false;
 let unmounted = false;
-let confirmingSwitch = false;
 
 function formContextChanged() {
   return requestedTarget.value?.kind !== target.value?.kind
@@ -857,73 +855,9 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-watch(requestedTarget, async () => {
-  if (confirmingSwitch) return;
-  if (!formContextChanged()) {
-    acceptedState = panel.instance.state.values.value;
-    return;
-  }
-  const probing = panel.instance.forms.probing;
-  if (probing && dirty.value) return;
-  const shouldGuard = !probing && dirty.value && !saving.value;
-  let savedBeforeSwitch = false;
-  if (shouldGuard) {
-    confirmingSwitch = true;
-    let leave: boolean;
-    try {
-      if (effectiveUnsavedSwitchMode.value === "save-discard-cancel") {
-        const decision = await confirmUnsavedSwitch(
-          tr("platform.formLeaveUnsavedSwitch", "This form has unsaved changes. Save before switching, or discard them?"),
-          tr("platform.unsavedChanges", "Unsaved changes"),
-          {
-            saveButtonText: tr("platform.formSaveAndSwitch", "Save and switch"),
-            discardButtonText: tr("platform.formDiscardChanges", "Discard changes"),
-          },
-        );
-        if (unmounted || !formContextChanged()) return;
-        if (decision === "discard") {
-          leave = true;
-        } else if (decision === "save") {
-          try {
-            await write(undefined, undefined, { allowPendingSwitch: true });
-            leave = true;
-            savedBeforeSwitch = true;
-          } catch (reason) {
-            if (!(reason instanceof PanelConfirmationDeferred)) {
-              showRefusal(reason);
-            }
-            leave = false;
-          }
-        } else {
-          leave = false;
-        }
-      } else {
-        leave = panel.confirmLeaveUnsaved
-          ? await panel.confirmLeaveUnsaved()
-          : await confirmDanger(
-              tr("platform.formLeaveUnsaved", "This form has changes you have not saved. Discard them and open the other item?"),
-              tr("platform.unsavedChanges", "Unsaved changes"),
-              {
-                confirmButtonText: tr("platform.discard", "Discard"),
-                cancelButtonText: tr("platform.keepEditing", "Keep editing"),
-              },
-            );
-      }
-    } finally {
-      confirmingSwitch = false;
-    }
-    if (unmounted || !formContextChanged()) return;
-    if (!leave) {
-      const current = panel.instance.state.values.value;
-      panel.instance.state.setState(Object.fromEntries(inputStateKeys.value.flatMap((name) => (
-        jsonValuesEqual(current[name], acceptedState[name]) ? [] : [[name, acceptedState[name]!]]
-      ))));
-      return;
-    }
-  }
+watch(requestedTarget, () => {
+  if (!formContextChanged()) return;
   pendingRefresh = false;
-  if (shouldGuard && !savedBeforeSwitch) discard();
-  acceptedState = panel.instance.state.values.value;
   target.value = requestedTarget.value;
   formInstanceId.value = randomId();
   load(target.value);
@@ -1012,28 +946,43 @@ useProjectionForm({
     };
   },
   submit: (override) => write(override),
+  async saveBeforeSwitch() {
+    try {
+      await write(undefined, undefined, { allowPendingSwitch: true });
+      return !dirty.value;
+    } catch (reason) {
+      if (!(reason instanceof PanelConfirmationDeferred)) showRefusal(reason);
+      return false;
+    }
+  },
+  unsavedSwitchMode: () => effectiveUnsavedSwitchMode.value,
+  saving: () => saving.value,
   dirty: () => dirty.value,
   editingTarget: () => target.value,
   discard,
   draft: {
     identity: draftIdentity,
     inputStateKeys: () => inputStateKeys.value,
-    capture: () => ({
-      ownerOpened: ownerOpened.value!,
-      ownerShown: description.value!,
-      values: canonicalValues.value,
-      changed: changed.value,
-      submitted: submitted.value,
-      invalid: (jsonError.value
-        ? { "/cases": { source: jsonText.value, message: jsonError.value } satisfies InvalidFormText }
-        : {}) as Readonly<Record<string, InvalidFormText>>,
-      errors: errors.value,
-      refusal: refusal.value,
-      editedPaths: dirtyFields.value,
-      userEditedPaths: dirtyFields.value,
-      agentFilledPaths: changed.value,
-    }),
-    restore: restoreRollback,
+    capture: () => {
+      if (!ownerOpened.value || !description.value) return null;
+      return {
+        ownerOpened: ownerOpened.value,
+        ownerShown: description.value,
+        values: canonicalValues.value,
+        changed: changed.value,
+        submitted: submitted.value,
+        invalid: (jsonError.value
+          ? { "/cases": { source: jsonText.value, message: jsonError.value } satisfies InvalidFormText }
+          : {}) as Readonly<Record<string, InvalidFormText>>,
+        errors: errors.value,
+        refusal: refusal.value,
+        editedPaths: dirtyFields.value,
+        userEditedPaths: dirtyFields.value,
+        agentFilledPaths: changed.value,
+      };
+    },
+    restore: (draft) => restoreRollback(draft as PanelFormDraft),
+    clearLocalDraft: () => clearLocalDraft(target.value),
   },
   snapshot() {
     if (!ownerOpened.value) return null;

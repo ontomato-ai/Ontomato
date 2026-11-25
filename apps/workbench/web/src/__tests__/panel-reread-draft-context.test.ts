@@ -399,30 +399,47 @@ describe("Gap 5 precondition: Projection.vue row-scoped isolation", () => {
   });
 });
 
-describe("D5-2: usePanelFormDraft.confirmSwitch save-discard-cancel", () => {
+describe("D5-2: PanelInstance three-state save-discard-cancel switch guard", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("handles save (proceed only on success), discard (reset without confirm), and cancel", async () => {
-    const baseInstance = createPanelInstance(runManifest, {
+    const switchManifest = definePanel({
+      state: { selected: { type: { kind: "scalar", type: "string" } } },
+      members: { edit: { target: { projectionId: runProjection.id }, inputs: { target: { state: "selected" } } } },
+    });
+    const baseInstance = createPanelInstance(switchManifest, {
       pageKey: "form-page",
       url: () => "/form",
       label: () => "Form",
-      initial: {},
+      initial: { selected: "item-1" },
       text,
       readProjection: async () => runProjection,
       ...noOperations,
     });
     const dirty = ref(true);
-    const submit = vi.fn(async () => true as unknown);
-    const reset = vi.fn(async (_opts?: { confirm?: boolean }) => {});
+    const submit = vi.fn(async () => {
+      dirty.value = false;
+      return true as unknown;
+    });
+    const reset = vi.fn(async (_opts?: { confirm?: boolean }) => {
+      dirty.value = false;
+      return true;
+    });
     baseInstance.forms.register("edit", {
       dirty: () => dirty.value,
+      unsavedSwitchMode: () => "save-discard-cancel",
       submit,
-      discard: async () => { await reset({ confirm: false }); },
+      discard: () => { void reset({ confirm: false }); },
       editingTarget: () => null,
       fill: async () => ({ ok: false, reason: "form_not_ready", message: "none" }),
+      draft: {
+        identity: () => "edit:1",
+        inputStateKeys: () => ["selected"],
+        capture: () => null,
+        restore: () => {},
+      },
       handle: {
         dirty: computed(() => dirty.value),
         submitting: computed(() => false),
@@ -443,8 +460,8 @@ describe("D5-2: usePanelFormDraft.confirmSwitch save-discard-cancel", () => {
     const wrapper = mountComponent(defineComponent({
       setup() {
         provide(panelContextKey, {
-          panel: { content: { html: "", module: "" }, manifest: runManifest },
-          manifest: runManifest,
+          panel: { content: { html: "", module: "" }, manifest: switchManifest },
+          manifest: switchManifest,
           instance: baseInstance,
           projection: async () => runProjection,
           invoke: async () => null,
@@ -465,31 +482,39 @@ describe("D5-2: usePanelFormDraft.confirmSwitch save-discard-cancel", () => {
       },
     }));
 
+    expect(controlsRef.value?.dirty).toBe(true);
     const confirmSpy = vi.spyOn(ElMessageBox, "confirm");
 
-    // 1) Save succeeds -> proceeds
+    // 1) Save succeeds -> proceeds and commits new state
     confirmSpy.mockResolvedValueOnce("confirm" as never);
-    await expect(controlsRef.value?.confirmSwitch?.("save-discard-cancel")).resolves.toBe(true);
+    await expect(baseInstance.state.set("selected", "item-2")).resolves.toBe(true);
     expect(submit).toHaveBeenCalledTimes(1);
+    expect(baseInstance.state.values.value.selected).toBe("item-2");
 
-    // 2) Save fails (returns null) -> aborts switch
+    // 2) Save fails (returns null) -> aborts switch and keeps state
+    dirty.value = true;
     submit.mockResolvedValueOnce(null);
     confirmSpy.mockResolvedValueOnce("confirm" as never);
-    await expect(controlsRef.value?.confirmSwitch?.("save-discard-cancel")).resolves.toBe(false);
+    await expect(baseInstance.state.set("selected", "item-3")).resolves.toBe(false);
+    expect(baseInstance.state.values.value.selected).toBe("item-2");
 
     // 3) Discard -> calls reset({ confirm: false }) and proceeds
     confirmSpy.mockRejectedValueOnce("cancel");
-    await expect(controlsRef.value?.confirmSwitch?.("save-discard-cancel")).resolves.toBe(true);
+    await expect(baseInstance.state.set("selected", "item-3")).resolves.toBe(true);
     expect(reset).toHaveBeenCalledWith({ confirm: false });
+    expect(baseInstance.state.values.value.selected).toBe("item-3");
 
     // 4) Close/Esc -> aborts without submit or reset
+    dirty.value = true;
     confirmSpy.mockRejectedValueOnce("close");
-    await expect(controlsRef.value?.confirmSwitch?.("save-discard-cancel")).resolves.toBe(false);
+    await expect(baseInstance.state.set("selected", "item-4")).resolves.toBe(false);
+    expect(baseInstance.state.values.value.selected).toBe("item-3");
 
     // 5) Not dirty -> proceeds immediately without prompting
     dirty.value = false;
     await nextTick();
-    await expect(controlsRef.value?.confirmSwitch?.("save-discard-cancel")).resolves.toBe(true);
+    expect(baseInstance.state.set("selected", "item-4")).toBe(true);
+    expect(baseInstance.state.values.value.selected).toBe("item-4");
     expect(confirmSpy).toHaveBeenCalledTimes(4);
 
     wrapper.unmount();
