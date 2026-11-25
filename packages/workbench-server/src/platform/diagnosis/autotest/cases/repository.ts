@@ -327,7 +327,7 @@ export function parseCaseSetImportPayload(
       return JSON.parse(cleaned);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`Invalid JSON: ${detail}`);
+      throw new Error(`Invalid JSON: ${detail}`, { cause: error });
     }
   }
   return parseCaseSetCsv(cleaned);
