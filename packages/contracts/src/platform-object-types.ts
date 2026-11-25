@@ -352,6 +352,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         requiredParams: ["version"], result: "panelGraphConnections",
       },
       instanceGraphStatistics: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
+      instanceGraphClasses: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       instanceGraphSearch: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", className: "className", version: "keyword" }, result: "panelRecordQuery",

@@ -524,6 +524,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         readParams.keyword.parse(params.version), readParams.keyword.optional().parse(params.sampleToken),
       ),
       instanceGraphStatistics: () => graph.statistics(),
+      instanceGraphClasses: () => graph.classes(),
       instanceGraphSearch: (_selection, params) => graph.search(
         readParams.keyword.optional().parse(params.search), readParams.className.optional().parse(params.className),
         readParams.keyword.optional().parse(params.version),

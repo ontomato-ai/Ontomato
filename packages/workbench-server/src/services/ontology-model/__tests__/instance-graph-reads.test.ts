@@ -141,3 +141,36 @@ it("replaces raw upstream error text with localized messages on graph failures",
     message: en["panels.objectDetail.graphVersionChanged"],
   });
 });
+
+it("returns object type records with instanceCount for metaField pickers and empty list while generating", async () => {
+  javaReply("nodes", {
+    version: "v1", sampleToken: "sample", nodeCount: 20, edgeCount: 0,
+    relationTypes: [], classes: [group], overviewNodes: [order],
+    overviewEdges: [], overviewEdgesTruncated: false,
+  });
+  const rows = panelReadResultSchemas.panelRecordList.parse(await graph.classes());
+  expect(rows).toEqual([
+    {
+      className: "platform:ObjectType",
+      primaryKey: from.className,
+      label: "Orders",
+      fields: {
+        className: from.className,
+        classLabel: "Orders",
+        instanceCount: 20,
+        sampleCount: 1,
+      },
+      fieldLabels: {
+        className: en["panels.objectDetail.className"],
+        classLabel: en["panels.objectDetail.classLabel"],
+        instanceCount: en["panels.objectDetail.instanceCount"],
+        sampleCount: en["panels.objectDetail.sampleCount"],
+      },
+    },
+  ]);
+
+  vi.stubGlobal("fetch", vi.fn(async () =>
+    Response.json({ success: true, status: "GENERATING", data: null }),
+  ));
+  expect(await graph.classes()).toEqual([]);
+});

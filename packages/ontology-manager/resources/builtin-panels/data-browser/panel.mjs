@@ -78,14 +78,77 @@ await mountPanel({
     });
     const selectedNodeClassLabel = computed(() => resolveClassDisplayName(selectedNode.value?.className ?? ""));
 
-    // Graph stats & version sync for graph search.
+    // Graph mode, stats, sampling/truncation details & version sync for graph search.
+    const graphActiveMode = usePanelOutput("instanceGraph", "activeMode");
     const graphNodeCount = usePanelOutput("instanceGraph", "nodeCount");
     const graphEdgeCount = usePanelOutput("instanceGraph", "edgeCount");
+    const graphDrawnNodeCount = usePanelOutput("instanceGraph", "drawnNodeCount");
+    const graphDrawnEdgeCount = usePanelOutput("instanceGraph", "drawnEdgeCount");
+    const graphEdgesTruncated = usePanelOutput("instanceGraph", "overviewEdgesTruncated");
+    const graphComplete = usePanelOutput("instanceGraph", "complete");
+    const graphFailures = usePanelOutput("instanceGraph", "failures");
+    const graphGroups = usePanelOutput("instanceGraph", "groups");
+    const graphRelationKinds = usePanelOutput("instanceGraph", "relationKinds");
+    const graphNeighborProgress = usePanelOutput("instanceGraph", "neighborProgress");
+    const graphDrawingProgress = usePanelOutput("instanceGraph", "drawingProgress");
     const graphVersionOutput = usePanelOutput("instanceGraph", "graphVersion");
+
+    const isGraphInstanceMode = computed(() => graphActiveMode.value === "instance");
+    const graphFailureList = computed(() =>
+      Array.isArray(graphFailures.value)
+        ? graphFailures.value.filter((item) => typeof item === "string" && item.trim())
+        : [],
+    );
+    const graphIsIncomplete = computed(
+      () => graphComplete.value === false || graphFailureList.value.length > 0,
+    );
+    const graphIsEdgesTruncated = computed(() => graphEdgesTruncated.value === true);
+    const graphHasNotice = computed(() => graphIsEdgesTruncated.value || graphIsIncomplete.value);
+
     const graphStatsLabel = computed(() => {
+      if (isGraphInstanceMode.value) {
+        const drawn = typeof graphDrawnNodeCount.value === "number"
+          ? graphDrawnNodeCount.value
+          : (typeof graphNodeCount.value === "number" ? graphNodeCount.value : null);
+        if (drawn === null) return "";
+        const edges = typeof graphDrawnEdgeCount.value === "number"
+          ? graphDrawnEdgeCount.value
+          : (typeof graphEdgeCount.value === "number" ? graphEdgeCount.value : 0);
+        return t("db.graphStatsLoaded", { drawn, edges });
+      }
       if (typeof graphNodeCount.value !== "number") return "";
       const edges = typeof graphEdgeCount.value === "number" ? graphEdgeCount.value : 0;
+      const drawn = typeof graphDrawnNodeCount.value === "number" ? graphDrawnNodeCount.value : null;
+      if (drawn !== null && drawn > 0 && drawn < graphNodeCount.value) {
+        return t("db.graphStatsSampled", { drawn, total: graphNodeCount.value, edges });
+      }
       return t("db.graphStatsSummary", { nodes: graphNodeCount.value, edges });
+    });
+
+    const graphDrawingLabel = computed(() => {
+      const progress = graphDrawingProgress.value;
+      if (!progress || typeof progress !== "object") return "";
+      const total = typeof progress.total === "number" ? progress.total : 0;
+      if (total <= 0) return "";
+      const drawn = typeof progress.drawn === "number" ? progress.drawn : 0;
+      return t("db.graphDrawingProgress", { drawn, total });
+    });
+
+    const graphNeighborProgressLabel = computed(() => {
+      if (!isGraphInstanceMode.value) return "";
+      const progress = graphNeighborProgress.value;
+      if (!progress || typeof progress !== "object" || typeof progress.total !== "number") return "";
+      const loaded = typeof progress.loaded === "number" ? progress.loaded : 0;
+      return t("db.graphNeighborProgress", { loaded, total: progress.total });
+    });
+
+    // Clear panel graphStart/expandedNodes when OntologyGraph returns to overview via its floating back button.
+    watch(graphActiveMode, (mode, prev) => {
+      if (mode === "overview" && prev === "instance") {
+        if (instance.state.values.value.graphStart != null || (instance.state.values.value.expandedNodes?.length ?? 0) > 0) {
+          instance.state.setState({ graphStart: null, expandedNodes: [] });
+        }
+      }
     });
 
     watch(
@@ -99,25 +162,104 @@ await mountPanel({
       { immediate: true },
     );
 
-    // Sync optional graph search class filter ref -> string parameter state so null omits className cleanly.
+    // Bidirectional sync between ReferencePicker object ref (`graphSearchClass`) and OntologyGraph scalar (`graphSearchClassName` / `selectedGroup`).
     const graphSearchClassKey = computed(() => state.value.graphSearchClass?.primaryKey ?? null);
-    const graphSearchClassLabel = computed(() => resolveClassDisplayName(graphSearchClassKey.value ?? ""));
+    const graphSearchClassNameState = computed(() => {
+      const raw = state.value.graphSearchClassName;
+      return typeof raw === "string" && raw ? raw : null;
+    });
+    const activeGraphSearchClass = computed(() => graphSearchClassKey.value ?? graphSearchClassNameState.value);
+    const graphSearchClassLabel = computed(() => resolveClassDisplayName(activeGraphSearchClass.value ?? ""));
+
+    watch(graphSearchClassKey, (next, prev) => {
+      if (next === prev) return;
+      if ((instance.state.values.value.graphSearchClassName ?? null) !== next) {
+        instance.state.set("graphSearchClassName", next);
+      }
+    });
+
+    watch(graphSearchClassNameState, (next, prev) => {
+      if (next === prev) return;
+      const currentKey = instance.state.values.value.graphSearchClass?.primaryKey ?? null;
+      if (currentKey !== next) {
+        instance.state.set(
+          "graphSearchClass",
+          next ? { className: OBJECT_TYPE, primaryKey: next } : null,
+        );
+      }
+    });
+
+    // Inspector neighborhood filter form: local draft commits atomically to `state.neighborFilter` on Apply.
+    function readAppliedNeighborFilter() {
+      const raw = state.value.neighborFilter;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return { direction: "both", targetClass: "", relationKind: "", fitAfterExpand: false };
+      }
+      const direction = raw.direction === "outgoing" || raw.direction === "incoming" ? raw.direction : "both";
+      const targetClass = typeof raw.targetClass === "string" ? raw.targetClass : "";
+      const relationKind = typeof raw.relationKind === "string" ? raw.relationKind : "";
+      const fitAfterExpand = Boolean(raw.fitAfterExpand);
+      return { direction, targetClass, relationKind, fitAfterExpand };
+    }
+
+    const initialNeighbor = readAppliedNeighborFilter();
+    const draftNeighborDirection = ref(initialNeighbor.direction);
+    const draftNeighborTargetClass = ref(initialNeighbor.targetClass);
+    const draftNeighborRelationKind = ref(initialNeighbor.relationKind);
+    const draftFitAfterExpand = ref(initialNeighbor.fitAfterExpand);
+
     watch(
-      graphSearchClassKey,
-      (next) => {
-        if ((instance.state.values.value.graphSearchClassName ?? null) !== next) {
-          instance.state.set("graphSearchClassName", next);
-        }
+      () => state.value.neighborFilter,
+      () => {
+        const applied = readAppliedNeighborFilter();
+        draftNeighborDirection.value = applied.direction;
+        draftNeighborTargetClass.value = applied.targetClass;
+        draftNeighborRelationKind.value = applied.relationKind;
+        draftFitAfterExpand.value = applied.fitAfterExpand;
       },
-      { immediate: true },
     );
+
+    const neighborTargetOptions = computed(() => {
+      if (!Array.isArray(graphGroups.value)) return [];
+      return graphGroups.value
+        .filter((item) => item && typeof item.id === "string" && item.id)
+        .map((item) => ({
+          id: item.id,
+          label: typeof item.label === "string" && item.label ? item.label : resolveClassDisplayName(item.id),
+        }));
+    });
+
+    const neighborRelationKindOptions = computed(() => {
+      if (!Array.isArray(graphRelationKinds.value)) return [];
+      return graphRelationKinds.value
+        .filter((item) => item && typeof item.id === "string" && item.id)
+        .map((item) => ({
+          id: item.id,
+          label: typeof item.label === "string" && item.label ? item.label : item.id,
+        }));
+    });
+
+    const neighborDirectionOptions = computed(() => [
+      { value: "both", label: t("db.directionBoth") },
+      { value: "outgoing", label: t("db.directionOutgoing") },
+      { value: "incoming", label: t("db.directionIncoming") },
+    ]);
+
+    function applyNeighborFilter() {
+      instance.state.set("neighborFilter", {
+        direction: draftNeighborDirection.value || "both",
+        targetClass: draftNeighborTargetClass.value || null,
+        relationKind: draftNeighborRelationKind.value || null,
+        fitAfterExpand: Boolean(draftFitAfterExpand.value),
+      });
+    }
 
     const graphQueryInput = computed({
       get: () => (typeof state.value.graphQuery === "string" ? state.value.graphQuery : ""),
       set: (value) => instance.state.set("graphQuery", value || ""),
     });
     const showGraphCandidates = computed(
-      () => Boolean(graphQueryInput.value.trim() || graphSearchClassKey.value),
+      () => Boolean(graphQueryInput.value.trim() || activeGraphSearchClass.value),
     );
 
     function onGraphQueryClear() {
@@ -159,8 +301,7 @@ await mountPanel({
       const node = selectedNode.value;
       if (!node?.className || !node?.primaryKey) return;
       const target = { className: node.className, primaryKey: node.primaryKey };
-      const currentStart = state.value.graphStart;
-      if (!currentStart) {
+      if (!isGraphInstanceMode.value || !state.value.graphStart) {
         instance.state.set("graphStart", target);
         return;
       }
@@ -387,9 +528,24 @@ await mountPanel({
       selectedNodeFallbackTitle,
       selectedNodeClassLabel,
       onClassNamesListed,
+      isGraphInstanceMode,
       graphStatsLabel,
-      graphSearchClassKey,
+      graphDrawingLabel,
+      graphNeighborProgressLabel,
+      graphIsEdgesTruncated,
+      graphIsIncomplete,
+      graphFailureList,
+      graphHasNotice,
+      graphSearchClassKey: activeGraphSearchClass,
       graphSearchClassLabel,
+      draftNeighborDirection,
+      draftNeighborTargetClass,
+      draftNeighborRelationKind,
+      draftFitAfterExpand,
+      neighborTargetOptions,
+      neighborRelationKindOptions,
+      neighborDirectionOptions,
+      applyNeighborFilter,
       graphQueryInput,
       showGraphCandidates,
       onGraphQueryClear,

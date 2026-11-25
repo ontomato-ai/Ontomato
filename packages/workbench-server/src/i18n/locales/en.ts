@@ -29,6 +29,8 @@ export const en = {
   "panels.objectDetail.className": "Class name",
   "panels.objectDetail.classLabel": "Class label",
   "panels.objectDetail.primaryKey": "Primary key",
+  "panels.objectDetail.instanceCount": "Instances",
+  "panels.objectDetail.sampleCount": "Sampled",
   "panels.favorite.className": "Object type",
   "panels.favorite.primaryKey": "Primary key",
   "panels.favorite.title": "Title",
