@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
   mountPanel,
   usePanelContext,
@@ -7,6 +7,8 @@ import {
 } from "@ontomato/sdk/panel";
 
 const DASHBOARD = "platform:Dashboard";
+const LAYOUT_DEBOUNCE_MS = 400;
+const LAYOUT_WARN_THROTTLE_MS = 4000;
 
 function cardIdFromPrimaryKey(primaryKey) {
   const raw = String(primaryKey ?? "");
@@ -64,6 +66,21 @@ function outcomeOf(receipt) {
   return response?.outcome ?? receipt.outcome ?? { kind: "unknown" };
 }
 
+function scrollGroupIntoView(groupId) {
+  const id = String(groupId ?? "").trim();
+  if (!id || typeof document === "undefined") return;
+  const selector = typeof CSS !== "undefined" && typeof CSS.escape === "function"
+    ? `[data-group-id="${CSS.escape(id)}"]`
+    : `[data-group-id="${id.replace(/"/g, '\\"')}"]`;
+  const scroll = () => {
+    document.querySelector(selector)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
+  void nextTick(() => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(scroll);
+    else scroll();
+  });
+}
+
 await mountPanel({
   setup() {
     const { instance, notify, t } = usePanelContext();
@@ -105,9 +122,14 @@ await mountPanel({
       }
     });
 
-    // Clear selected card and dialog when switching to a different board, while preserving valid deep links.
+    // Clear selected card, dialog, and stale pending layout edits when switching boards.
     watch(dashboardPrimaryKey, (nextBoardId, prevBoardId) => {
       if (nextBoardId === prevBoardId) return;
+      clearPendingLayoutTimer();
+      if (pendingLayoutBoardId !== nextBoardId) {
+        pendingLayoutPayload = null;
+        pendingLayoutBoardId = null;
+      }
       if (cardPrimaryKey.value && !cardBelongsToBoard(cardPrimaryKey.value, nextBoardId)) {
         instance.state.setState({ cardId: null, cardDialog: null });
       } else if (values.value.cardDialog && !cardPrimaryKey.value) {
@@ -115,30 +137,31 @@ await mountPanel({
       }
     });
 
-    // Per-card member refs for targeted single-card refresh without reloading the whole board.
+    // Per-card member refs for targeted single-card refresh after saving parameters, plus title cache for dialog headers.
     const cardRefs = new Map();
-    function setCardRef(primaryKey, el) {
+    const cardTitles = ref({});
+
+    function rememberCardTitle(primaryKey, title) {
+      if (!primaryKey || typeof title !== "string") return;
+      const trimmed = title.trim();
+      if (!trimmed || cardTitles.value[primaryKey] === trimmed) return;
+      cardTitles.value = { ...cardTitles.value, [primaryKey]: trimmed };
+    }
+
+    function setCardRef(primaryKey, el, title) {
       if (!primaryKey) return;
+      if (title) rememberCardTitle(primaryKey, title);
       if (el && typeof el.refresh === "function") {
         cardRefs.set(primaryKey, el);
       } else {
         cardRefs.delete(primaryKey);
       }
     }
-    onBeforeUnmount(() => {
-      cardRefs.clear();
-    });
 
     function refreshCard(primaryKey) {
       const target = cardRefs.get(primaryKey);
       if (target && typeof target.refresh === "function") {
         target.refresh();
-      }
-    }
-
-    function refreshAllCards() {
-      for (const target of cardRefs.values()) {
-        if (typeof target.refresh === "function") target.refresh();
       }
     }
 
@@ -156,6 +179,22 @@ await mountPanel({
     }
 
     // ---------- Card dialogs ----------
+    const selectedCardTitle = computed(() =>
+      cardPrimaryKey.value ? cardTitles.value[cardPrimaryKey.value] ?? "" : "",
+    );
+
+    const paramDialogTitle = computed(() =>
+      selectedCardTitle.value
+        ? t("dialog.parametersTitleWithName", { name: selectedCardTitle.value })
+        : t("dialog.parametersTitle"),
+    );
+
+    const sourceDialogTitle = computed(() =>
+      selectedCardTitle.value
+        ? t("dialog.metricSourceTitleWithName", { name: selectedCardTitle.value })
+        : t("dialog.metricSourceTitle"),
+    );
+
     const paramDialogOpen = computed({
       get: () => values.value.cardDialog === "parameters" && hasCard.value,
       set: (open) => {
@@ -174,12 +213,22 @@ await mountPanel({
       },
     });
 
-    function openCardDialog(itemRef, dialog) {
+    function openCardDialog(itemRef, dialog, title) {
       if (!itemRef?.primaryKey) return;
+      if (title) rememberCardTitle(itemRef.primaryKey, title);
       instance.state.setState({
         cardId: { className: itemRef.className, primaryKey: itemRef.primaryKey },
         cardDialog: dialog,
       });
+    }
+
+    function onCardRowAction(payload) {
+      if (!payload?.ref?.primaryKey) return;
+      if (payload.id === "parameters") {
+        openCardDialog(payload.ref, "parameters");
+      } else if (payload.id === "metricSource") {
+        openCardDialog(payload.ref, "metricSource");
+      }
     }
 
     function closeCardDialog() {
@@ -204,17 +253,77 @@ await mountPanel({
       notify({ kind: "error", text: t("notice.actionFailed", { reason: error?.message ?? String(error) }) });
     }
 
+    let layoutWarnLastAt = 0;
+    function warnLayoutSaveFailed() {
+      const now = Date.now();
+      if (!layoutWarnLastAt || now - layoutWarnLastAt > LAYOUT_WARN_THROTTLE_MS) {
+        layoutWarnLastAt = now;
+        notify({ kind: "warning", text: t("notice.layoutSaveFailed") });
+      }
+    }
+
+    // Silent debounced layout persistence matching the original DashboardPanel behavior.
+    let layoutTimer = null;
+    let layoutSaving = false;
+    let pendingLayoutPayload = null;
+    let pendingLayoutBoardId = null;
+
+    function clearPendingLayoutTimer() {
+      if (layoutTimer !== null) {
+        clearTimeout(layoutTimer);
+        layoutTimer = null;
+      }
+    }
+
     const opSaveLayout = usePanelOperation("boardGrid", "saveLayout", {
       available: hasBoard,
       onSettled(receipt) {
         const outcome = outcomeOf(receipt);
-        if (outcome.kind === "success") {
-          notify({ kind: "success", text: t("notice.layoutSaved") });
-        } else {
-          notifyFailure(outcome);
+        if (outcome.kind !== "success" && outcome.kind !== "cancel") {
+          warnLayoutSaveFailed();
         }
       },
-      onError: notifyError,
+      onError() {
+        warnLayoutSaveFailed();
+      },
+    });
+
+    async function flushPendingLayout() {
+      clearPendingLayoutTimer();
+      if (layoutSaving || !pendingLayoutPayload) return;
+      layoutSaving = true;
+      try {
+        while (pendingLayoutPayload) {
+          const payload = pendingLayoutPayload;
+          const boardId = pendingLayoutBoardId;
+          pendingLayoutPayload = null;
+          pendingLayoutBoardId = null;
+          if (!boardId || boardId !== dashboardPrimaryKey.value) break;
+          await opSaveLayout.run(payload);
+        }
+      } finally {
+        layoutSaving = false;
+      }
+    }
+
+    function onLayoutChange(change) {
+      const boardId = dashboardPrimaryKey.value;
+      if (!boardId) return;
+      pendingLayoutPayload = layoutPayloadFromChange(change);
+      pendingLayoutBoardId = boardId;
+      clearPendingLayoutTimer();
+      layoutTimer = setTimeout(() => {
+        layoutTimer = null;
+        void flushPendingLayout();
+      }, LAYOUT_DEBOUNCE_MS);
+    }
+
+    onBeforeUnmount(() => {
+      clearPendingLayoutTimer();
+      if (pendingLayoutPayload) {
+        void flushPendingLayout();
+      }
+      cardRefs.clear();
     });
 
     const opCreateGroup = usePanelOperation("boardGrid", "createGroup", {
@@ -224,6 +333,9 @@ await mountPanel({
         if (outcome.kind === "success") {
           groupDialogOpen.value = false;
           notify({ kind: "success", text: t("notice.groupCreated") });
+          if (outcome.data?.id) {
+            scrollGroupIntoView(outcome.data.id);
+          }
         } else {
           notifyFailure(outcome);
         }
@@ -274,12 +386,6 @@ await mountPanel({
           cardDialog: null,
         });
       }
-    }
-
-    function onLayoutChange(change) {
-      if (!hasBoard.value) return;
-      const payload = layoutPayloadFromChange(change);
-      void opSaveLayout.run(payload);
     }
 
     // ---------- Group create / rename dialog ----------
@@ -336,19 +442,33 @@ await mountPanel({
       void opDeleteGroup.run({ groupId: group.id });
     }
 
+    function handleGroupCommand(cmd, group, index) {
+      if (groupBusy.value) return;
+      if (cmd === "create_above") {
+        openCreateGroup(index);
+      } else if (cmd === "create_below") {
+        openCreateGroup(index + 1);
+      } else if (cmd === "rename") {
+        openRenameGroup(group);
+      } else if (cmd === "delete") {
+        deleteGroup(group);
+      }
+    }
+
     return {
       t,
       hasBoard,
       hasCard,
       noBoards,
       setCardRef,
-      refreshCard,
-      refreshAllCards,
       cardFieldString,
       cardFormats,
       paramDialogOpen,
       sourceDialogOpen,
+      paramDialogTitle,
+      sourceDialogTitle,
       openCardDialog,
+      onCardRowAction,
       closeCardDialog,
       onCardParametersSaved,
       onBoardCreated,
@@ -362,6 +482,7 @@ await mountPanel({
       openRenameGroup,
       submitGroupDialog,
       deleteGroup,
+      handleGroupCommand,
     };
   },
 });
