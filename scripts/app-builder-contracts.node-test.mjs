@@ -484,8 +484,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(join(offlineSdk, "components.json"), JSON.stringify(catalogue));
     const oldChecker = checkModule.replace("export const domainProductIdSchema", "const domainProductIdSchema");
     await writeFile(join(offlineSdk, "check.mjs"), oldChecker);
-    assert.deepEqual(JSON.parse((await run("panel", "check", directory, "--sdk-dir", offlineSdk)).stdout).unchecked,
-      [{ kind: "projection", id: "tasks" }]);
+    const offlineUnchecked = JSON.parse((await run("panel", "check", directory, "--sdk-dir", offlineSdk)).stdout);
+    assert.equal(offlineUnchecked.typeTableChecked, false);
+    assert.deepEqual(offlineUnchecked.unchecked, [{ kind: "projection", id: "tasks" }]);
     await writeFile(join(offlineSdk, "check.mjs"), checkModule);
     const builtin = join(directory, "builtin");
     await mkdir(builtin);
@@ -539,7 +540,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       "Action legacy-action is unavailable. Stored function is missing\n" +
       "Action bad-action (ReviewQueue) is unavailable. target: invalid field\n" +
       "Customer type catalogue is unavailable. Object type catalogue permission required\n");
-    assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
+    assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, typeTableChecked: true, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],

@@ -1,21 +1,50 @@
 # Offline check and component reference
 
-The installed release includes `docs/components.md` (the compact grouped component overview), per-component single
+The installed SDK release includes `docs/components.md` (the compact grouped component overview), per-component single
 pages `docs/components/<ComponentId>.md`, `docs/components/ui-primitives.md`, `docs/components/theme-tokens.md`,
 `components.json` (the machine-readable catalogue), and `docs/reference.md` (the full `@ontomato/sdk` API reference,
 optional — do not read upfront). Open those files directly offline. Online, use
 `node "$SKILL/scripts/ontomato.mjs" sdk read docs/components.md` and `sdk read docs/components/<ComponentId>.md`.
 
-Save the author type table with `node "$SKILL/scripts/ontomato.mjs" panel type --all > type-table.json`.
-With the installed SDK release matching the intended deployment, run:
+### Fetch offline check materials from a connected environment
+
+An installed SDK release directory (`$SDK_RELEASE`) only needs three files to run offline checks: `sdk.json`,
+`components.json`, and `node/panel-check.mjs`. Download them from the target deployment (plus the author type table so
+owner reads, parameters, operations, and Actions are verified):
 
 ```sh
-node "$SKILL/scripts/panel-check.mjs" ./my-panel --sdk-dir "$SDK_RELEASE" --type-table ./type-table.json
+mkdir -p "$SDK_RELEASE/node"
+node "$SKILL/scripts/ontomato.mjs" sdk read sdk.json > "$SDK_RELEASE/sdk.json"
+node "$SKILL/scripts/ontomato.mjs" sdk read components.json > "$SDK_RELEASE/components.json"
+node "$SKILL/scripts/ontomato.mjs" sdk read node/panel-check.mjs > "$SDK_RELEASE/node/panel-check.mjs"
+node "$SKILL/scripts/ontomato.mjs" panel type --all > ./type-table.json
 ```
 
-`SDK_RELEASE` is the directory containing `sdk.json`. The command uses the installed check module and
-component catalogue, reports unchecked references, and needs no running service. Use the online
-`ontomato.mjs panel check` for already-registered references that need server lookup.
+### Run offline checks (with vs. without a type table)
+
+- **Full offline check (recommended — verifies reads, operations, and Actions against `type-table.json`):**
+
+```sh
+node "$SKILL/scripts/ontomato.mjs" panel check ./my-app --sdk-dir "$SDK_RELEASE" --type-table ./type-table.json
+# or directly via the standalone script (requires --type-table):
+node "$SKILL/scripts/panel-check.mjs" ./my-app --sdk-dir "$SDK_RELEASE" --type-table ./type-table.json
+```
+
+- **Structure-only offline check (when `--type-table` is omitted):**
+
+```sh
+node "$SKILL/scripts/ontomato.mjs" panel check ./my-app --sdk-dir "$SDK_RELEASE"
+```
+
+  Omitting `--type-table` checks `application.json` (including required `declaration.icon` — list valid icon names with
+  `node "$SKILL/scripts/ontomato.mjs" sdk icons`), `panel.json` / `projections/*.json` schemas (including `"data": {}`
+  on ordinary projections with no data reads such as `OperationButton`), allowed imports, CSS/UI guardrails, and
+  component ports, **but does not verify owner reads, parameters, operations, or customer `Action` IDs against a type
+  table**. Check the output's `typeTableChecked` field (or pass `--type-table`) to confirm whether a type table was
+  checked.
+
+Use the online `node "$SKILL/scripts/ontomato.mjs" panel check ./my-app` when you also need server lookup for
+already-registered platform/domain projections or panels.
 
 ### Metric charts and single-member refresh
 

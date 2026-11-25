@@ -38,7 +38,9 @@ After publishing through Application Builder, open `/applications/app-template-t
 3. Define a Delete `@ontomato/sdk:OperationButton` projection in `projections/` with the owner's delete operation
    and `config.hideWhenUnavailable: true`. Reference its ID from the detail manifest's `remove` member, and bind
    its operation target to `selected`. Place `<projection v-show="selectedKey && ready" slot="remove" @done="onDeleted">`
-   inside `<template #actions>`. Keep the button mounted long enough to handle `@done` after deletion clears the selection.
+   inside `<template #actions>` only when Delete is valid for this detail view and needs to stay mounted across
+   `letGo` clearing `selected` until `@done` navigates (unmount mode-invalid actions with `v-if` or gate via
+   `usePanelOperation(..., { available })`).
 4. Update IDs, paths (`CATALOG_PATH` / `DETAIL_PATH`), and `application.json` to match your application ID.
 5. Set `"allowStandalone": true` in `application.json` if you want to share direct external
    links from the application's sidebar menu or properties.
