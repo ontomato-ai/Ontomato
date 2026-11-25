@@ -39,13 +39,15 @@ async function describeStatusInputSchema(host: Host) {
 
   const inputSchema = cachedZodToRuntimeJsonSchema(statusInputSchema, { effectStrategy: "input" });
   const properties = inputSchema.properties as { status: Record<string, RuntimeJsonValue> };
+  const { description: _rawDescription, ...statusProperty } = properties.status;
   return {
     ...inputSchema,
     properties: {
       ...properties,
       status: {
-        ...properties.status,
+        ...statusProperty,
         title: status.label,
+        ...(status.help ? { description: status.help } : {}),
         oneOf: status.control.options.map(option => ({ const: option.value, title: option.label })),
       },
     },

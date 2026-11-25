@@ -38,7 +38,7 @@ interface LegendItem {
  */
 const props = withDefaults(
   defineProps<{
-    /** Optional panel message key or fallback text shown when both code and segments are empty. */
+    /** Optional panel message key or fallback text shown when no annotation segments exist or when both code and segments are empty. */
     emptyText?: string;
     /** Optional panel message key or fallback label for the stale-code warning badge. */
     staleLabel?: string;
@@ -169,6 +169,9 @@ function flattenSegments(
 }
 
 const flatSegments = computed<readonly FlattenedSegment[]>(() => flattenSegments(annotated.value?.segments));
+const showEmptySegments = computed(
+  () => codeLines.value.length > 0 && flatSegments.value.length === 0 && resolvedEmptyText.value.length > 0,
+);
 
 function toneForSegment(segment: AnnotatedCodeSegment): AnnotatedCodeTone {
   if (segment.tone) return segment.tone;
@@ -369,7 +372,7 @@ function selectRef(refKey: string) {
       <div class="sdk-annotated-code-content">
         <div
           class="sdk-annotated-code-body"
-          :class="{ 'is-single-pane': codeLines.length === 0 || flatSegments.length === 0 }"
+          :class="{ 'is-single-pane': codeLines.length === 0 || (flatSegments.length === 0 && !showEmptySegments) }"
         >
           <div v-if="codeLines.length > 0" ref="codeBox" class="sdk-annotated-code-lines">
             <div
@@ -385,86 +388,89 @@ function selectRef(refKey: string) {
             </div>
           </div>
 
-          <div v-if="flatSegments.length > 0" class="sdk-annotated-code-seg-pane">
-            <div v-if="legendItems.length > 0" class="sdk-annotated-code-legend">
-              <span v-if="resolvedLegendLabel" class="sdk-annotated-code-legend-title">{{ resolvedLegendLabel }}</span>
-              <span
-                v-for="item in legendItems"
-                :key="item.kind"
-                class="sdk-annotated-code-legend-item"
-                :data-kind="item.kind"
-                :data-tone="item.tone"
-              >
-                <span class="sdk-annotated-code-legend-dot" aria-hidden="true"></span>
-                <span>{{ item.label }}</span>
-              </span>
-            </div>
-
-            <div ref="segmentsBox" class="sdk-annotated-code-segments">
-              <div
-                v-for="entry in flatSegments"
-                :key="entry.segment.id"
-                class="sdk-annotated-code-seg"
-                role="button"
-                tabindex="0"
-                :data-segment-id="entry.segment.id"
-                :data-kind="entry.segment.kind"
-                :data-depth="entry.depth"
-                :data-tone="toneForSegment(entry.segment)"
-                :data-open="isSegmentOpen(entry.segment.id)"
-                :aria-current="activeSegmentId === entry.segment.id ? 'true' : undefined"
-                :style="{ '--ac-depth': Math.min(entry.depth, 5) }"
-                @click="pickSegment(entry.segment)"
-                @keydown.enter.prevent="pickSegment(entry.segment)"
-                @keydown.space.prevent="pickSegment(entry.segment)"
-              >
-                <div class="sdk-annotated-code-seg-head">
-                  <span class="sdk-annotated-code-seg-kind">{{ entry.segment.kindLabel }}</span>
-                  <span class="sdk-annotated-code-seg-title">{{ entry.segment.title }}</span>
-                  <span class="sdk-annotated-code-seg-range">{{ formatLineRange(entry.segment.lineRange) }}</span>
-                  <button
-                    v-if="entry.segment.details && entry.segment.details.length > 0"
-                    type="button"
-                    class="sdk-annotated-code-seg-toggle"
-                    :aria-expanded="isSegmentOpen(entry.segment.id)"
-                    @click.stop="toggleSegment(entry.segment.id)"
-                    @keydown.enter.stop
-                    @keydown.space.stop
-                  >
-                    {{ isSegmentOpen(entry.segment.id) ? t("platform.annotatedCodeCollapse") : t("platform.annotatedCodeExpand") }}
-                  </button>
-                </div>
-
-                <p v-if="entry.segment.note" class="sdk-annotated-code-seg-note">{{ entry.segment.note }}</p>
-
-                <dl
-                  v-if="entry.segment.details && entry.segment.details.length > 0 && isSegmentOpen(entry.segment.id)"
-                  class="sdk-annotated-code-seg-details"
-                  @click.stop
+          <div v-if="flatSegments.length > 0 || showEmptySegments" class="sdk-annotated-code-seg-pane">
+            <p v-if="showEmptySegments" class="sdk-annotated-code-seg-empty" role="status">{{ resolvedEmptyText }}</p>
+            <template v-else>
+              <div v-if="legendItems.length > 0" class="sdk-annotated-code-legend">
+                <span v-if="resolvedLegendLabel" class="sdk-annotated-code-legend-title">{{ resolvedLegendLabel }}</span>
+                <span
+                  v-for="item in legendItems"
+                  :key="item.kind"
+                  class="sdk-annotated-code-legend-item"
+                  :data-kind="item.kind"
+                  :data-tone="item.tone"
                 >
-                  <template v-for="(detail, detailIndex) in entry.segment.details" :key="`${entry.segment.id}-detail-${detailIndex}`">
-                    <dt>{{ detail.label }}</dt>
-                    <dd class="sdk-annotated-code-mono">
-                      <template v-for="(part, partIndex) in detail.parts" :key="`${entry.segment.id}-part-${detailIndex}-${partIndex}`">
-                        <button
-                          v-if="part.refKey"
-                          type="button"
-                          class="sdk-annotated-code-ref"
-                          :data-ref-key="part.refKey"
-                          :title="resolvedRefActionLabel"
-                          @click.stop="selectRef(part.refKey)"
-                          @keydown.enter.stop
-                          @keydown.space.stop
-                        >
-                          {{ part.text }}
-                        </button>
-                        <span v-else>{{ part.text }}</span>
-                      </template>
-                    </dd>
-                  </template>
-                </dl>
+                  <span class="sdk-annotated-code-legend-dot" aria-hidden="true"></span>
+                  <span>{{ item.label }}</span>
+                </span>
               </div>
-            </div>
+
+              <div ref="segmentsBox" class="sdk-annotated-code-segments">
+                <div
+                  v-for="entry in flatSegments"
+                  :key="entry.segment.id"
+                  class="sdk-annotated-code-seg"
+                  role="button"
+                  tabindex="0"
+                  :data-segment-id="entry.segment.id"
+                  :data-kind="entry.segment.kind"
+                  :data-depth="entry.depth"
+                  :data-tone="toneForSegment(entry.segment)"
+                  :data-open="isSegmentOpen(entry.segment.id)"
+                  :aria-current="activeSegmentId === entry.segment.id ? 'true' : undefined"
+                  :style="{ '--ac-depth': Math.min(entry.depth, 5) }"
+                  @click="pickSegment(entry.segment)"
+                  @keydown.enter.prevent="pickSegment(entry.segment)"
+                  @keydown.space.prevent="pickSegment(entry.segment)"
+                >
+                  <div class="sdk-annotated-code-seg-head">
+                    <span class="sdk-annotated-code-seg-kind">{{ entry.segment.kindLabel }}</span>
+                    <span class="sdk-annotated-code-seg-title">{{ entry.segment.title }}</span>
+                    <span class="sdk-annotated-code-seg-range">{{ formatLineRange(entry.segment.lineRange) }}</span>
+                    <button
+                      v-if="entry.segment.details && entry.segment.details.length > 0"
+                      type="button"
+                      class="sdk-annotated-code-seg-toggle"
+                      :aria-expanded="isSegmentOpen(entry.segment.id)"
+                      @click.stop="toggleSegment(entry.segment.id)"
+                      @keydown.enter.stop
+                      @keydown.space.stop
+                    >
+                      {{ isSegmentOpen(entry.segment.id) ? t("platform.annotatedCodeCollapse") : t("platform.annotatedCodeExpand") }}
+                    </button>
+                  </div>
+
+                  <p v-if="entry.segment.note" class="sdk-annotated-code-seg-note">{{ entry.segment.note }}</p>
+
+                  <dl
+                    v-if="entry.segment.details && entry.segment.details.length > 0 && isSegmentOpen(entry.segment.id)"
+                    class="sdk-annotated-code-seg-details"
+                    @click.stop
+                  >
+                    <template v-for="(detail, detailIndex) in entry.segment.details" :key="`${entry.segment.id}-detail-${detailIndex}`">
+                      <dt>{{ detail.label }}</dt>
+                      <dd class="sdk-annotated-code-mono">
+                        <template v-for="(part, partIndex) in detail.parts" :key="`${entry.segment.id}-part-${detailIndex}-${partIndex}`">
+                          <button
+                            v-if="part.refKey"
+                            type="button"
+                            class="sdk-annotated-code-ref"
+                            :data-ref-key="part.refKey"
+                            :title="resolvedRefActionLabel"
+                            @click.stop="selectRef(part.refKey)"
+                            @keydown.enter.stop
+                            @keydown.space.stop
+                          >
+                            {{ part.text }}
+                          </button>
+                          <span v-else>{{ part.text }}</span>
+                        </template>
+                      </dd>
+                    </template>
+                  </dl>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -614,6 +620,17 @@ function selectRef(refKey: string) {
   flex-direction: column;
   gap: var(--spacing-xs);
   min-width: 0;
+}
+
+.sdk-annotated-code-seg-empty {
+  margin: 0;
+  padding: var(--spacing-md);
+  border: 1px dashed var(--ui-divider);
+  border-radius: var(--radius-xs);
+  background: var(--ui-fill-tertiary);
+  color: var(--sdk-text-color-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 
 .sdk-annotated-code-legend {

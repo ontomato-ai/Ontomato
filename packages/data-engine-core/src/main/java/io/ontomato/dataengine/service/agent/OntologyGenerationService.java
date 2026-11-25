@@ -23,6 +23,7 @@ public class OntologyGenerationService {
           "metric",
           "describe",
           "quality");
+  private static final ThreadLocal<OntologyAgentAccess.Context> CURRENT_CONTEXT = new ThreadLocal<>();
   private static final ThreadLocal<QueryAccessService.Access> CURRENT_ACCESS = new ThreadLocal<>();
   private static final ThreadLocal<Owner> CURRENT = new ThreadLocal<>();
   private static final ThreadLocal<String> SOURCE_RUN = new ThreadLocal<>();
@@ -87,6 +88,58 @@ public class OntologyGenerationService {
     var previous=CURRENT_ACCESS.get();CURRENT_ACCESS.set(access);
     try { return asOwner(new QueryAccessService.GrantUser(access.initiatorUserId()==null?access.user().getId():access.initiatorUserId(),access.user().getDomainId()),work); }
     finally { if(previous==null) CURRENT_ACCESS.remove(); else CURRENT_ACCESS.set(previous); }
+  }
+
+  /** Runs background host work under an authenticated request context captured on the servlet thread. */
+  public static <T> T asContext(OntologyAgentAccess.Context context, Work<T> work) {
+    if (context == null) throw new IllegalArgumentException("Context is required");
+    var previousContext = CURRENT_CONTEXT.get();
+    var previousAccess = CURRENT_ACCESS.get();
+    var previousOwner = CURRENT.get();
+    CURRENT_CONTEXT.set(context);
+    if (context.access() != null) CURRENT_ACCESS.set(context.access());
+    CURRENT.set(context.owner());
+    try {
+      return work.run();
+    } catch (RuntimeException error) {
+      throw error;
+    } catch (Exception error) {
+      throw new IllegalStateException(error.getMessage(), error);
+    } finally {
+      if (previousContext == null) CURRENT_CONTEXT.remove();
+      else CURRENT_CONTEXT.set(previousContext);
+      if (previousAccess == null) CURRENT_ACCESS.remove();
+      else CURRENT_ACCESS.set(previousAccess);
+      if (previousOwner == null) CURRENT.remove();
+      else CURRENT.set(previousOwner);
+    }
+  }
+
+  /** Captures the initiating request context before handing background generation off the servlet thread. */
+  public OntologyAgentAccess.Context captureContext(Owner owner, String lang) {
+    var existing = CURRENT_CONTEXT.get();
+    if (existing != null) {
+      return lang == null ? existing : new OntologyAgentAccess.Context(
+          existing.owner(), existing.access(), existing.token(), existing.apiKey(),
+          lang, existing.expiresAt(), existing.callerId(), existing.executionUserId());
+    }
+    var request = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+    if (!(request instanceof org.springframework.web.context.request.ServletRequestAttributes)) {
+      return null;
+    }
+    long deadline = Instant.now().plusSeconds(deadlineSeconds("explain")).toEpochMilli();
+    var captured = asOwner(
+        new QueryAccessService.GrantUser(owner.userId(), owner.domainId()),
+        () -> callers.getObject().ownerContext(
+            owner, executionAccess(owner.domainId()), lang == null ? "en" : lang, deadline));
+    // Background generation outlives the HTTP request (and any calling agent turn), so prefer direct
+    // user credentials when present instead of binding to a transient caller reference.
+    if (captured.token() != null || captured.apiKey() != null) {
+      return new OntologyAgentAccess.Context(
+          captured.owner(), captured.access(), captured.token(), captured.apiKey(),
+          captured.language(), captured.expiresAt(), null, captured.executionUserId());
+    }
+    return captured;
   }
   public static String sourceRun() { return SOURCE_RUN.get(); }
 
@@ -237,7 +290,15 @@ public class OntologyGenerationService {
     try {
       checkBusiness(businessId);
       runtime.json(domain,run,"/v1/sessions","POST",Map.of(),session);
-      var context=callers.getObject().ownerContext(owner,executionAccess(domain),lang==null?"en":lang,Instant.parse(store.run(session,run,owner).getString("deadline")).toEpochMilli());
+      long runDeadline = Instant.parse(store.run(session,run,owner).getString("deadline")).toEpochMilli();
+      var captured = CURRENT_CONTEXT.get();
+      var context = captured != null
+          ? new OntologyAgentAccess.Context(
+              captured.owner(), captured.access(), captured.token(), captured.apiKey(),
+              lang == null ? captured.language() : lang,
+              captured.expiresAt() == null ? runDeadline : Math.min(runDeadline, captured.expiresAt()),
+              captured.callerId(), captured.executionUserId())
+          : callers.getObject().ownerContext(owner, executionAccess(domain), lang == null ? "en" : lang, runDeadline);
       channel.getObject().send(agentId(kind),session,run,JSONObject.of("role","notification","kind","agent-message","source",JSONObject.of("kind","external"),"content","Complete the ontology "+kind+" task. Read the "+(metricView?"metricview-generation":"ontology-generation")+" skill and write outputs/result.json.","timestamp",System.currentTimeMillis()),
         JSONObject.of("kind",kind,"businessId",businessId,"prompt",prompt,"source",source),context,sourceRun(),false);
       while (true) {
