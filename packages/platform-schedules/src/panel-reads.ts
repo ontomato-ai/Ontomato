@@ -79,7 +79,7 @@ function taskRecord(
   task: PlatformTask,
   locale: string,
   translate: Translate,
-  appNames?: ReadonlyMap<string, string>,
+  appMeta?: ReadonlyMap<string, { name: string; icon?: string }>,
 ): PanelRecord {
   const stateLabel = task.enabled
     ? (task.pause === null ? translate("platformSchedules.panelFields.stateOn") : translate("platformSchedules.panelFields.statePaused"))
@@ -140,7 +140,8 @@ function taskRecord(
     },
     fields: {
       application: task.appId,
-      applicationName: appNames?.get(task.appId) ?? task.appId,
+      applicationName: appMeta?.get(task.appId)?.name ?? task.appId,
+      ...(appMeta?.get(task.appId)?.icon ? { applicationIcon: appMeta.get(task.appId)!.icon } : {}),
       settings: task.summary.map(item => `${item.label}: ${item.value}`).join("; "),
       state: task.enabled ? (task.pause === null ? "on" : `paused: ${task.pause.message}`) : "off",
       stateLabel,
@@ -400,19 +401,26 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     return { applications: await api.applications(), missingIds: [] };
   }
 
-  async function resolveAppNames(): Promise<ReadonlyMap<string, string>> {
+  async function resolveAppMeta(): Promise<ReadonlyMap<string, { name: string; icon?: string }>> {
     try {
       const { applications } = await readApplicationsStatus();
-      return new Map(applications.map(app => [app.id, app.name]));
+      return new Map(applications.map(app => [app.id, { name: app.name, ...(app.icon ? { icon: app.icon } : {}) }]));
     } catch {
       return new Map();
     }
   }
 
   return {
-    async list() {
-      const [{ tasks }, appNames] = await Promise.all([api.list(), resolveAppNames()]);
-      return tasks.map(task => taskRecord(task, locale, translate, appNames));
+    async list(params?: { application?: string; search?: string }) {
+      const [{ tasks }, appMeta] = await Promise.all([api.list(), resolveAppMeta()]);
+      const application = params?.application?.trim() ?? "";
+      const query = params?.search?.trim().toLowerCase() ?? "";
+      const filtered = tasks.filter(task => {
+        if (application && task.appId !== application) return false;
+        if (query && !task.title.toLowerCase().includes(query)) return false;
+        return true;
+      });
+      return filtered.map(task => taskRecord(task, locale, translate, appMeta));
     },
     async status(): Promise<PanelRecord> {
       const [listResult, appsResult] = await Promise.allSettled([api.list(), readApplicationsStatus()]);
@@ -447,7 +455,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       };
     },
     async counts(by?: string): Promise<PanelGroupCounts> {
-      const [{ tasks }, appNames] = await Promise.all([api.list(), resolveAppNames()]);
+      const [{ tasks }, appMeta] = await Promise.all([api.list(), resolveAppMeta()]);
       if (by === "attention") {
         let issues = 0;
         let running = 0;
@@ -466,15 +474,15 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       }
       const byApp = new Map<string, number>();
       for (const task of tasks) byApp.set(task.appId, (byApp.get(task.appId) ?? 0) + 1);
-      const orderedIds = [...new Set([...appNames.keys(), ...byApp.keys()])].filter(id => byApp.has(id));
+      const orderedIds = [...new Set([...appMeta.keys(), ...byApp.keys()])].filter(id => byApp.has(id));
       return [
         { key: "", label: translate("platformSchedules.panelFields.allApplications"), count: tasks.length },
-        ...orderedIds.map(id => ({ key: id, label: appNames.get(id) ?? id, count: byApp.get(id) ?? 0 })),
+        ...orderedIds.map(id => ({ key: id, label: appMeta.get(id)?.name ?? id, count: byApp.get(id) ?? 0 })),
       ];
     },
     async record(primaryKey: string) {
-      const [task, appNames] = await Promise.all([api.task(primaryKey), resolveAppNames()]);
-      return taskRecord(task, locale, translate, appNames);
+      const [task, appMeta] = await Promise.all([api.task(primaryKey), resolveAppMeta()]);
+      return taskRecord(task, locale, translate, appMeta);
     },
     async form(primaryKey: string, params: TaskFormParams) {
       const task = await api.task(primaryKey);

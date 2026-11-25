@@ -750,7 +750,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
 
     try {
       await vi.waitFor(() => expect(controller?.executeAction).toBeTypeOf("function"));
-      await vi.waitFor(() => expect(mounted.element.querySelectorAll(".schedules-list-col .sdk-object-list-card")).toHaveLength(2));
+      await vi.waitFor(() => expect(mounted.element.querySelectorAll(".schedules-list-col .sdk-sts-card")).toHaveLength(2));
 
       // 1. With no task selected, all three custom operations are rejected as action_unavailable (not action_not_found).
       for (const operation of ["opEnable.setEnabled", "opRunNow.runNow", "opDelete.delete"]) {

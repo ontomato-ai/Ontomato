@@ -342,7 +342,15 @@ const ApplicationDetailPanel = {
         openPanelCatalogue(reference.primaryKey);
       } else if (reference.className === PROJECTION) {
         void openCatalogueRecord("/ontology/projections/detail", reference.primaryKey);
+      } else if (reference.className === APPLICATION) {
+        void openCatalogueRecord("/ontology/applications/detail", reference.primaryKey);
       }
+    }
+
+    function onOpenAssetGraph(target) {
+      if (!target?.primaryKey) return;
+      if (target.className === APPLICATION && target.primaryKey === selectedKey.value) return;
+      onNavigateReference(target);
     }
 
     const grantKindOptions = computed(() => [
@@ -397,6 +405,7 @@ const ApplicationDetailPanel = {
       onUsedPanelRowAction,
       openPanelCatalogue,
       onNavigateReference,
+      onOpenAssetGraph,
     };
   },
 };

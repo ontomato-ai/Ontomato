@@ -329,8 +329,13 @@
         ></projection>
       </div>
 
-      <!-- Tab 3: Panels & Projections -->
+      <!-- Tab 3: Panels & Projections & local asset reference graph (AP-08) -->
       <div v-if="isTabMounted('assets')" v-show="tabModel === 'assets'" class="apps-tab-panel" data-tab="assets">
+        <section class="apps-card">
+          <h2 class="apps-card-title">{{ t('assets.referenceGraph') }}</h2>
+          <projection slot="referenceGraph" @open="onOpenAssetGraph"></projection>
+        </section>
+
         <div class="apps-assets-grid">
           <section class="apps-card">
             <h2 class="apps-card-title">

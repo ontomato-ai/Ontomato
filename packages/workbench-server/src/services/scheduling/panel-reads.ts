@@ -17,6 +17,10 @@ import { config } from "../../config/application";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
+import { withReadDirective } from "../product-panels/read-directive";
+
+const SCHEDULE_LIST_REREAD_MS = 30_000;
+const SCHEDULE_RUN_REREAD_MS = 5_000;
 
 const applicationCatalogResponse = z.object({ success: z.literal(true), data: applicationCatalogSchema });
 
@@ -52,7 +56,7 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
     }
     return { applications: resolved, missingIds };
   }
-  return createScheduledTaskReads({
+  const reads = createScheduledTaskReads({
     async list() {
       const response = await backendGet("scheduled-task-list", base, options);
       return platformTaskListSchema.parse(JSON.parse(response.text));
@@ -86,4 +90,38 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
       return platformScheduleFormSchema.parse(JSON.parse(response.text));
     },
   }, locale, (key, values) => tForLocale(locale, key, values));
+
+  return {
+    ...reads,
+    async list(params?: { application?: string; search?: string }) {
+      const rows = await reads.list(params);
+      return rows.some(row => row.outputs?.isRunning === true)
+        ? withReadDirective(rows, { rereadAfterMs: SCHEDULE_LIST_REREAD_MS })
+        : rows;
+    },
+    async record(primaryKey: string) {
+      const row = await reads.record(primaryKey);
+      return row.outputs?.isRunning === true
+        ? withReadDirective(row, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
+        : row;
+    },
+    async runRecords(primaryKey: string, cursor?: string) {
+      const page = await reads.runRecords(primaryKey, cursor);
+      return page.rows.some(row => row.outputs?.isRunning === true)
+        ? withReadDirective(page, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
+        : page;
+    },
+    async runRecord(primaryKey: string, runId: string) {
+      const row = await reads.runRecord(primaryKey, runId);
+      return row.outputs?.isRunning === true
+        ? withReadDirective(row, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
+        : row;
+    },
+    async latestRunRecord(primaryKey: string) {
+      const row = await reads.latestRunRecord(primaryKey);
+      return row.outputs?.isRunning === true
+        ? withReadDirective(row, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
+        : row;
+    },
+  };
 }

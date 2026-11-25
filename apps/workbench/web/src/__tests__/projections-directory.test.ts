@@ -824,6 +824,44 @@ async function mountProjectionsApp(options: MountOptions = {}) {
         }));
         return Response.json({ status: "ready", value: rows });
       }
+      if (member === "referenceGraph") {
+        const key = readTargetKey(body);
+        const fixture = FIXTURES[key];
+        const centerId = `asset:${key}`;
+        const nodes = [
+          {
+            id: centerId,
+            assetId: key,
+            name: fixture?.name ?? key,
+            kind: "object-projection",
+            category: "element",
+            revision: fixture?.revision ?? 1,
+          },
+          ...(fixture?.usedByPanels ?? []).map((panel) => ({
+            id: `asset:${panel.id}`,
+            assetId: panel.id,
+            name: panel.name,
+            kind: "page",
+            category: "composition",
+          })),
+        ];
+        const edges = (fixture?.usedByPanels ?? []).map((panel) => ({
+          source: `asset:${panel.id}`,
+          target: centerId,
+          relation: "contains",
+          storage: "product-index",
+        }));
+        return Response.json({
+          status: "ready",
+          value: {
+            primaryKey: key,
+            label: fixture?.name ?? key,
+            fields: {
+              graph: { kind: "json", value: { nodes, edges } },
+            },
+          },
+        });
+      }
       if (
         member === "dataList"
         || member === "configList"

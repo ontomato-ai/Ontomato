@@ -404,7 +404,8 @@ describe("platform-ontology composite query", () => {
     expect(projection?.definition).toBe(platformTypeDetails[PRODUCT_PROJECTION]?.definition);
     expect(Object.keys(projection?.reads ?? {}).sort()).toEqual([
       "componentOptions", "configRows", "createForm", "dataRows", "form", "grantRows", "grants",
-      "inputRows", "objectTypeOptions", "operationRows", "outputRows", "query", "record", "usedBy", "usedByRows",
+      "inputRows", "objectTypeOptions", "operationRows", "outputRows", "query", "record",
+      "referenceGraph", "usedBy", "usedByRows",
     ]);
     expect(projection?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PROJECTION}.save`);
 

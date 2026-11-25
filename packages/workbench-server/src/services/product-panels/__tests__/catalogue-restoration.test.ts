@@ -341,3 +341,45 @@ it("maps projection summaries and details to standard PanelRecord records with o
     },
   })]);
 });
+
+it("builds local referenceGraph payload for an application with its entry panels (AP-08)", async () => {
+  const row = {
+    id: "app-graph-demo",
+    names: { en: "Graph Demo App" },
+    descriptions: { en: "" },
+    icon: "layout-grid",
+    source: "domain" as const,
+    canMaintain: true,
+    canGrant: true,
+    canEditEntries: true,
+    entryCount: 1,
+    entry: { path: "/applications/app-graph-demo" },
+    framePanelId: "panel-frame",
+    panelUses: [{
+      id: "use-1",
+      pageKey: "orders",
+      panelId: "panel-orders",
+      path: "/orders",
+      names: { en: "Orders" },
+    }],
+    groups: [],
+  };
+  vi.mocked(backendGet).mockResolvedValueOnce({
+    text: JSON.stringify({ success: true, data: row }),
+  } as Awaited<ReturnType<typeof backendGet>>);
+  vi.mocked(listCurrentProducts)
+    .mockResolvedValueOnce({ items: [{ id: "panel-frame", name: "Frame" }, { id: "panel-orders", name: "Orders page" }] } as never)
+    .mockResolvedValueOnce({ items: [] } as never);
+  const adapter = createApplicationReadAdapter(owner, viewer);
+  const graphRecord = panelRecordSchema.parse(await adapter.referenceGraph(row.id));
+  const graph = (graphRecord.fields.graph as { kind: "json"; value: { nodes: Array<{ id: string }>; edges: Array<{ source: string; target: string }> } }).value;
+  expect(graph.nodes.map(node => node.id)).toEqual(expect.arrayContaining([
+    "asset:app-graph-demo",
+    "asset:panel-frame",
+    "asset:panel-orders",
+  ]));
+  expect(graph.edges).toEqual(expect.arrayContaining([
+    expect.objectContaining({ source: "asset:app-graph-demo", target: "asset:panel-frame" }),
+    expect.objectContaining({ source: "asset:app-graph-demo", target: "asset:panel-orders" }),
+  ]));
+});

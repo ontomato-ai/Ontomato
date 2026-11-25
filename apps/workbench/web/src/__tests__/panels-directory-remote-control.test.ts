@@ -557,6 +557,51 @@ async function mountPanelsApp(options: HarnessOptions = {}) {
           value: options.usedByRowsFor ? options.usedByRowsFor(key) : [],
         });
       }
+      if (member === "referenceGraph") {
+        const key = readTargetKey(body);
+        if (!key) return Response.json({ status: "empty" });
+        const centerId = `asset:${key}`;
+        const label = key === "panel-b" ? "Panel B" : key === "panel-a" ? "Panel A" : `Panel ${key}`;
+        return Response.json({
+          status: "ready",
+          value: {
+            primaryKey: key,
+            className: PRODUCT_PANEL,
+            label,
+            fields: {
+              graph: {
+                kind: "json",
+                value: {
+                  nodes: [
+                    {
+                      id: centerId,
+                      assetId: key,
+                      name: label,
+                      kind: "panel",
+                      category: "panel",
+                    },
+                    {
+                      id: "asset:proj-1",
+                      assetId: "proj-1",
+                      name: "Summary Projection",
+                      kind: "object-projection",
+                      category: "element",
+                    },
+                  ],
+                  edges: [
+                    {
+                      source: centerId,
+                      target: "asset:proj-1",
+                      relation: "contains",
+                      storage: "product-index",
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        });
+      }
       if (member === "grantsList") {
         const key = readTargetKey(body);
         return Response.json({
@@ -1306,11 +1351,16 @@ describe("panels two-entry architecture (catalog + detail)", () => {
       openProjBtn!.click();
       await waitFor(() => navigated.includes("/ontology/projections/detail?selected=proj-1"), "navigated to projection detail");
 
-      // Usage tab: hidden users banner & page skills section rendered; row action opens entry path.
+      // Usage tab: hidden users banner, reference graph & page skills section rendered; row action opens entry path.
       await display.present(presentFrame({ tab: "usage" }, display.page.value!.address));
       await waitFor(() => {
         const text = mounted.element.querySelector('[data-tab="usage"]')?.textContent ?? "";
-        return text.includes("2 more users you may not read") && text.includes("Page skills") && text.includes("Demo App");
+        return (
+          text.includes("2 more users you may not read")
+          && text.includes("Page skills")
+          && text.includes("Demo App")
+          && Boolean(mounted.element.querySelector('[data-tab="usage"] .sdk-product-asset-graph'))
+        );
       }, "usage tab rendered");
 
       // Grants tab: domain sharing toggle dispatches productPanels.share.
