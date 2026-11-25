@@ -8,11 +8,10 @@ import {
 
 const CONNECTION_TYPE = "platform:ModelConnection";
 const MODEL_TYPE = "platform:ModelEntry";
-const USAGE_PATH = "/settings/model-config/usage";
 
 await mountPanel({
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const { instance, notify, t } = usePanelContext();
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
@@ -213,10 +212,6 @@ await mountPanel({
       }
     }
 
-    function openUsage() {
-      void navigate(USAGE_PATH).catch(() => undefined);
-    }
-
     return {
       t,
       selectedKey,
@@ -245,7 +240,6 @@ await mountPanel({
       onConnectionDeleted,
       onModelSaved,
       onModelRowAction,
-      openUsage,
     };
   },
 });

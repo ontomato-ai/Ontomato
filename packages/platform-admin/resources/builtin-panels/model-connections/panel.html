@@ -184,7 +184,6 @@
       :draft="connectionDraft"
     >
       <template #actions>
-        <sdk-button @click="openUsage">{{ t('action.openUsage') }}</sdk-button>
         <sdk-button type="primary" @click="openCreateConnection">{{ t('connections.add') }}</sdk-button>
       </template>
     </page-header>
@@ -231,13 +230,6 @@
               {{ testStatus.text }}
             </p>
             <projection slot="modelsList" @row-action="onModelRowAction"></projection>
-          </section>
-
-          <section class="mc-card">
-            <div class="mc-card-head">
-              <h3 class="mc-section-title">{{ t('usages.title') }}</h3>
-            </div>
-            <projection slot="usagesList"></projection>
           </section>
         </template>
 

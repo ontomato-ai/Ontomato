@@ -1299,7 +1299,7 @@ export default {
       "autotestRun": "Autotest run",
       "autotestCaseArtifact": "Test case artifact",
       "dslQuery": "DSL query",
-      "modelConnection": "Model connection",
+      "modelConnection": "Model provider",
       "modelEntry": "Configured model",
       "modelUsage": "Model usage",
       "favorite": "Favorite",

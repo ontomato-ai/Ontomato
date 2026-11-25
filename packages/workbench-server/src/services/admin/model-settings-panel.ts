@@ -975,48 +975,6 @@ export function createModelConnectionReads(actor: PanelOperationActor) {
         };
       });
     },
-
-    async usages(primaryKey: string): Promise<PanelRecord[]> {
-      const [settings, agents] = await Promise.all([
-        readSettings(host, actor.credentials),
-        readOntologyAgents(host, actor.credentials),
-      ]);
-      if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
-      const names = new Set(modelsForConnection(settings, primaryKey).map(([modelName]) => modelName));
-      const rows: PanelRecord[] = [];
-      const fieldLabels = {
-        where: t("panels.modelSettings.usages.where"),
-        model: t("panels.modelSettings.usages.model"),
-      };
-      if (settings.defaultModel && names.has(settings.defaultModel)) {
-        rows.push({
-          primaryKey: `default:${settings.defaultModel}`,
-          label: t("panels.modelSettings.fields.defaultModel"),
-          fields: { where: t("panels.modelSettings.fields.defaultModel"), model: settings.defaultModel },
-          fieldLabels,
-        });
-      }
-      if (settings.embeddingModel && names.has(settings.embeddingModel)) {
-        rows.push({
-          primaryKey: `embedding:${settings.embeddingModel}`,
-          label: t("panels.modelSettings.fields.embeddingModel"),
-          fields: { where: t("panels.modelSettings.fields.embeddingModel"), model: settings.embeddingModel },
-          fieldLabels,
-        });
-      }
-      for (const agent of agents) {
-        const ref = agent.modelSelection.modelId;
-        if (ref && names.has(ref)) {
-          rows.push({
-            primaryKey: `agent:${agent.id}`,
-            label: agent.name,
-            fields: { where: agent.name, model: ref },
-            fieldLabels,
-          });
-        }
-      }
-      return rows;
-    },
   };
 }
 

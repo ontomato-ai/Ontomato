@@ -133,8 +133,8 @@
           "ar": "المزودون والنماذج"
         },
         "descriptions": {
-          "en": "Manage domain provider connections and public chat or embedding models",
-          "zh-CN": "维护域内模型服务商连接及公开对话、向量模型"
+          "en": "Manage domain model providers and public chat or embedding models",
+          "zh-CN": "维护域内模型服务商及公开对话、向量模型"
         }
       },
       {
