@@ -239,6 +239,7 @@
 </style>
 
 <div id="app" v-cloak class="db-page">
+  <page-header density="bar" :title="t('panel.name')"></page-header>
   <header class="db-topbar">
     <div class="db-tabs-wrap">
       <projection slot="boardTabs" class="db-tabs-member">
@@ -258,11 +259,8 @@
       v-else-if="hasBoard"
       slot="boardGrid"
       :empty-group-title="t('group.untitled')"
-      :draft-saving="boardDraftSaving"
       @layout-change="onLayoutChange"
       @row-action="onCardRowAction"
-      @draft-save="onDraftSave"
-      @draft-discard="onDraftDiscard"
     >
       <template #empty>
         <div class="db-empty-state" data-testid="dashboard-groups-empty">
@@ -299,7 +297,6 @@
           <button
             type="button"
             class="db-group-more"
-            :data-group-snap="trackGroup(group)"
             :title="t('group.more')"
             :aria-label="t('group.more')"
             :disabled="groupBusy || locked"
@@ -419,10 +416,10 @@
         </div>
       </template>
 
-      <template #item="{ row, itemRef, title, group, colSpan, rowSpan, section, draftOverride }">
+      <template #item="{ row, itemRef, title, draftOverride }">
         <projection
           v-if="row.fields && row.fields.kind === 'chart'"
-          :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label, { row, group, colSpan, rowSpan, section })"
+          :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label)"
           slot="chartCard"
           :inputs="{ target: itemRef }"
           :title="title || row.label"
@@ -449,7 +446,7 @@
         </projection>
         <projection
           v-else
-          :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label, { row, group, colSpan, rowSpan, section })"
+          :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label)"
           slot="metricCard"
           :inputs="{ target: itemRef }"
           :field="cardFieldString(row, 'valueField')"

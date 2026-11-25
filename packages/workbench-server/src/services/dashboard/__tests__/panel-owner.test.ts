@@ -419,6 +419,20 @@ describe("dashboard panel server operations", () => {
     const savedLayoutBoard = mocks.saveDashboard.mock.calls.at(-1)?.[2] as DashboardDetail;
     expect(savedLayoutBoard.name).toBe("Renamed Board");
     expect(savedLayoutBoard.groups[0]?.charts[0]?.layout).toEqual({ colSpan: 12, rowSpan: 2 });
+
+    const patched = await saveLayoutOp.execute(
+      host,
+      { kind: "object", objectType: DASHBOARD, primaryKey: "dash-1" },
+      {
+        groupRenames: { "g-1": "Executive Overview" },
+        itemRenames: { [dashboardCardPrimaryKey({ dashboardId: "dash-1", cardId: "m-card-1" })]: "Total ARR" },
+      },
+      "intent-3b",
+    );
+    expect(patched.kind).toBe("success");
+    const patchedBoard = mocks.saveDashboard.mock.calls.at(-1)?.[2] as DashboardDetail;
+    expect(patchedBoard.groups[0]?.title).toBe("Executive Overview");
+    expect(patchedBoard.groups[0]?.metrics[0]?.name).toBe("Total ARR");
   });
 
   it("inspects delete impact and refuses deletion when a chart card is referenced by a projection", async () => {

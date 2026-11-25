@@ -99,11 +99,11 @@ it("keeps a datum ready during a same-target refresh and clears it immediately w
   await vi.waitFor(() => expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1", label: "t-1" } }));
 
   instance.refresh({ objectTypes: [], objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }] });
-  expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1", label: "t-1" } });
+  expect(summary.value).toMatchObject({ status: "ready", refreshing: true, value: { primaryKey: "t-1", label: "t-1" } });
   releaseRefresh();
-  await vi.waitFor(() => expect(summary.value).toMatchObject({
+  await vi.waitFor(() => expect(summary.value).toEqual({
     status: "ready",
-    value: { primaryKey: "t-1", label: "Refreshed task" },
+    value: expect.objectContaining({ primaryKey: "t-1", label: "Refreshed task" }),
   }));
 
   instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-2" });

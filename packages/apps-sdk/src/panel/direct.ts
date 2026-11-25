@@ -40,7 +40,8 @@ export type PanelOperationAffected = ReturnType<typeof panelOperationAffectedSch
  * `unreachable`, and is worded in the reader's language where it is shown, not with the browser's own words.
  */
 export type MemberDataState =
-  | Exclude<PanelDataState, { status: "error" }>
+  | (Extract<PanelDataState, { status: "ready" }> & { readonly refreshing?: true })
+  | Exclude<PanelDataState, { status: "error" | "ready" }>
   | { status: "error"; message: string; code?: string; unreachable?: true; retry?: () => void }
   | { status: "awaiting" };
 
@@ -756,7 +757,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
               state.value = awaitsInputs(projection, entryData, placement, inputs(), own())
                 ? { status: "awaiting" }
                 : { status: "loading" };
-            } else if (state.value.status !== "ready") {
+            } else if (state.value.status === "ready") {
+              if (!state.value.refreshing) {
+                state.value = { ...state.value, refreshing: true };
+              }
+            } else {
               state.value = { status: "loading" };
             }
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.

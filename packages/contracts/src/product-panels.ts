@@ -306,8 +306,6 @@ export const applicationPanelUseSchema = z.object({
   groupKey: applicationMetadataSchema.shape.groups.element.shape.key.optional(),
   /** Suppresses the host's bottom floating PageComposer when set to `"none"` (e.g. page renders an inline composer). */
   pageComposer: applicationPanelPageComposerSchema.optional(),
-  /** Renders a 48px single-entry application header bar in the outer platform frame when the entry menu is hidden. */
-  frameHeader: z.boolean().optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 

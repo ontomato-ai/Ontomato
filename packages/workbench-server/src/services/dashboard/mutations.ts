@@ -17,7 +17,7 @@ import {
 import { resolveDashboardDatasets } from "./create-from-analysis";
 import { planReferenceDashboard } from "./reference-planning";
 import { DashboardMetricClient } from "./metric-client";
-import { dashboardReplaceLayoutSchema } from "@ontomato/contracts/dashboard";
+import { dashboardChartFileSchema, dashboardReplaceLayoutSchema } from "@ontomato/contracts/dashboard";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import {
   createDashboard,
@@ -177,6 +177,76 @@ export async function deleteDashboardChart(
   await saveLayout(ownerId, domainId, requireDashboardId(body?.id),
     detail => detail.groups.map(group => ({ ...group, charts: group.charts.filter(card => card.id !== chartId) })));
 }
+export interface DashboardDraftPatch {
+  name?: string;
+  groupRenames?: Readonly<Record<string, string>>;
+  itemRenames?: Readonly<Record<string, string>>;
+  itemOverrides?: Readonly<Record<string, { title?: string; fileOverride?: unknown }>>;
+}
+
+function normalizeDraftChartFile(override: unknown, currentFile: { name: string; content: unknown }, cardId: string) {
+  if (!override || typeof override !== "object" || Array.isArray(override)) return undefined;
+  const candidate = override as { name?: unknown; content?: unknown };
+  const raw =
+    typeof candidate.name === "string"
+    && candidate.name.endsWith(".chart.json")
+    && candidate.content
+    && typeof candidate.content === "object"
+      ? { name: candidate.name, content: candidate.content }
+      : {
+          name: currentFile?.name?.endsWith(".chart.json") ? currentFile.name : `${cardId}.chart.json`,
+          content: override,
+        };
+  return parseDashboardInput(dashboardChartFileSchema, raw);
+}
+
+export async function applyDashboardDraftPatch(
+  ownerId: string,
+  domainId: string,
+  dashboardId: string,
+  patch: DashboardDraftPatch,
+  credentials: AssistantCredentials,
+) {
+  const trimmedName = patch.name !== undefined ? patch.name.trim() : undefined;
+  if (trimmedName !== undefined && !trimmedName) throw new HttpError(400, "name is required", "INVALID_REQUEST");
+  const groupRenames = patch.groupRenames ?? {};
+  const itemRenames = patch.itemRenames ?? {};
+  const itemOverrides = patch.itemOverrides ?? {};
+  const client = new DashboardMetricClient(domainId, credentials);
+  const lookupKey = <T,>(map: Readonly<Record<string, T>>, cardId: string): T | undefined => {
+    const pk = `${encodeURIComponent(dashboardId)}/${encodeURIComponent(cardId)}`;
+    return map[pk] ?? map[`${dashboardId}/${cardId}`] ?? map[cardId];
+  };
+  await saveLayout(ownerId, domainId, dashboardId, (detail) =>
+    Promise.all(detail.groups.map(async (group) => ({
+      id: group.id,
+      title: typeof groupRenames[group.id] === "string" ? groupRenames[group.id]! : group.title,
+      charts: await Promise.all(group.charts.map(async (card) => {
+        const override = lookupKey(itemOverrides, card.id);
+        const nextName = lookupKey(itemRenames, card.id) ?? override?.title;
+        const chartFile = override?.fileOverride !== undefined
+          ? normalizeDraftChartFile(override.fileOverride, card.chartFile, card.id)
+          : undefined;
+        if (chartFile && !isDeepStrictEqual(chartFile, card.chartFile)) {
+          await validateDashboardChartDrawing(card, chartFile.content, client);
+        }
+        return {
+          ...card,
+          ...(typeof nextName === "string" && nextName.trim() ? { name: nextName.trim() } : {}),
+          ...(chartFile ? { chartFile } : {}),
+        };
+      })),
+      metrics: group.metrics.map((card) => {
+        const override = lookupKey(itemOverrides, card.id);
+        const nextName = lookupKey(itemRenames, card.id) ?? override?.title;
+        return {
+          ...card,
+          ...(typeof nextName === "string" && nextName.trim() ? { name: nextName.trim() } : {}),
+        };
+      }),
+    }))), trimmedName);
+}
+
 export async function replaceDashboardLayout(
   ownerId: string,
   domainId: string,

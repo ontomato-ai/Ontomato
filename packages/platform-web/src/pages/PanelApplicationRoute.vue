@@ -990,7 +990,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         v-show="page === displayedPage"
         :key="`${page.use.id}:${page.use.panelId}`"
         :ref="(instance) => setPageHost(page, instance as ShownInstance | null)"
-        :class="{ 'panel-host-page': !props.navigate }"
+        :class="{ 'panel-host-page': !props.navigate, 'panel-host-beside': Boolean(props.navigate) }"
         :port="page.port"
         :labels="labels"
         :language="language"
@@ -1050,6 +1050,10 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   min-width: 0;
   box-sizing: border-box;
   overflow: hidden;
+}
+/* Single-entry application bar headers belong to full-page routes; beside a conversation the side pane draws its own title bar. */
+.panel-host-beside :deep(.sdk-page-header.bar) {
+  display: none;
 }
 .panel-application-status {
   flex-shrink: 0;

@@ -147,12 +147,12 @@
           "editable": true,
           "collapsible": false,
           "groupSurface": "card",
-          "sectionItemHeaderDivider": {
+          "itemHeaderDivider": {
             "metric": "none",
             "chart": "line"
           },
           "controlsVisibility": "hover",
-          "allowDraftPreview": true,
+          "saveOperation": "saveLayout",
           "rowActions": {
             "maxVisible": 0,
             "items": [
@@ -208,8 +208,7 @@
           "allowViewToggle": false,
           "allowZoom": false,
           "tableMaxRows": 500,
-          "truncationDisplay": "none",
-          "keepPreviousOnRefresh": true
+          "truncationDisplay": "none"
         },
         "name": "Chart card",
         "description": "Independent chart projection for one dashboard chart card",
@@ -228,8 +227,7 @@
           "surface": "bare",
           "showLabel": false,
           "valueSize": "large",
-          "truncationDisplay": "none",
-          "keepPreviousOnRefresh": true
+          "truncationDisplay": "none"
         },
         "name": "Metric card",
         "description": "Independent KPI metric projection for one dashboard numeric card",

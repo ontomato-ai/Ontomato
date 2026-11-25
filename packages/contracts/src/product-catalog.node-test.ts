@@ -639,8 +639,6 @@ test("applicationPanelUseSchema accepts pageComposer bottom/none and rejects inv
   };
   assert.equal(applicationPanelUseSchema.parse({ ...base, pageComposer: "none" }).pageComposer, "none");
   assert.equal(applicationPanelUseSchema.parse({ ...base, pageComposer: "bottom" }).pageComposer, "bottom");
-  assert.equal(applicationPanelUseSchema.parse({ ...base, frameHeader: true }).frameHeader, true);
-  assert.equal(applicationPanelUseSchema.safeParse({ ...base, frameHeader: "bar" }).success, false);
   assert.equal(applicationPanelUseSchema.safeParse({ ...base, pageComposer: "inline" }).success, false);
   assert.equal(builtinNativeEntrySchema.safeParse({
     id: "native-entry",

@@ -274,7 +274,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "list",
     meaning:
-      "Collapsible grid groups with drag, resize, and row actions. Arranges either records from its `rows` (`panelRecordList`) datum (optionally preserving empty groups and group order from a parent container `record` datum's `groupsField`) or fixed static items from `items` (with optional `groups` and typed `layout` state) into collapsible groups on a responsive CSS grid (`columns`, `sectionColumns`, `rowHeight`, `sectionRowHeights`, `rowSizing`, `gap`) with optional stacked section tracks (`sectionField`, `sectionOrder`, `sectionResizeAxes`), configurable outer group and item surfaces (`groupSurface`, `itemSurface`, `itemHeaderDivider`), hover-revealed or always-visible controls (`controlsVisibility`), whole-grid draft preview (`draftMode`, `draftNotice`, `draftOverrides`), drag-and-drop group and item reordering (within or across groups), pointer-driven cell resizing (`colSpanField`, `rowSpanField`, or per-item span bounds), optional item hiding (`allowHide`) and header toggles (`showGroupHeaders`, `showItemHeaders`), selection highlight and scroll-into-view (`selected`), and built-in per-item `rowActions`. Renders each cell body via the scoped `#item` slot (alongside `#item-header-actions`, `#item-header-extra`, `#group-header-actions`, `#group-empty`, and `#empty`) and never fetches cell body content itself. Writes `layout` state and emits `layout-change` only when the reader finishes a drag, resize, or hide interaction, never on initial load or restore.",
+      "Collapsible grid groups with drag, resize, and row actions. Arranges either records from its `rows` (`panelRecordList`) datum (optionally preserving empty groups and group order from a parent container `record` datum's `groupsField`) or fixed static items from `items` (with optional `groups` and typed `layout` state) into collapsible groups on a responsive CSS grid (`columns`, `sectionColumns`, `rowHeight`, `sectionRowHeights`, `rowSizing`, `gap`) with optional stacked section tracks (`sectionField`, `sectionOrder`, `sectionResizeAxes`), configurable outer group and item surfaces (`groupSurface`, `itemSurface`, `itemHeaderDivider`), hover-revealed or always-visible controls (`controlsVisibility`), whole-grid unsaved draft preview saved via a registered operation (`saveOperation`), drag-and-drop group and item reordering (within or across groups), pointer-driven cell resizing (`colSpanField`, `rowSpanField`, or per-item span bounds), optional item hiding (`allowHide`) and header toggles (`showGroupHeaders`, `showItemHeaders`), selection highlight and scroll-into-view (`selected`), and built-in per-item `rowActions`. Renders each cell body via the scoped `#item` slot (alongside `#item-header-actions`, `#item-header-extra`, `#group-header-actions`, `#group-empty`, and `#empty`) and never fetches cell body content itself. Writes `layout` state and emits `layout-change` only when the reader finishes a drag, resize, or hide interaction, never on initial load or restore.",
     effects:
       "In record mode, reads its `rows` list and optional container `record` datum as the reader, writes the panel's `selected` state, and runs declared per-item operations through the platform coordinator. In fixed-member mode, reads and writes the panel's typed `layout` state without querying any datum.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
@@ -502,7 +502,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "chart",
     meaning:
-      "Draws a dashboard chart (`template` + MetricView `result`). Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. Supports optional fullscreen zoom (`zoomable` / `v-model:zoomed`), formatted data-table overlay switching (`viewMode` / `allowDataView`), hover-revealed or slot-integrated truncation indicator (`truncationDisplay` + `truncation-change`), and flicker-free refresh (`keepPreviousOnRefresh`). It fills the height of the box its member is placed in and falls back to a 320px default height when that box has no definite height. The projection keeps no drawing, query or data of its own.",
+      "Draws a dashboard chart (`template` + MetricView `result`). Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. Supports optional fullscreen zoom (`allowZoom` / `v-model:zoomed`), formatted data-table overlay switching (`viewMode` / `allowViewToggle`), and hover-revealed or slot-integrated truncation indicator (`truncationDisplay` + `truncation-change`). It fills the height of the box its member is placed in and falls back to a 320px default height when that box has no definite height. The projection keeps no drawing, query or data of its own.",
     effects: "Sends no request of its own: the platform reads the source card's template and the MetricView's output, both as the reader.",
     bindsElement: ["MetricView:*"],
     // The chart file and the output it is filled with: drawn once both are read.
@@ -759,7 +759,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "chart",
     meaning:
-      "KPI metric cards from a MetricView, record, list, or query `total`. Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants with configurable `surface` (`card` or `bare` for embedding inside outer dashboard cards), `showLabel`, `valueSize` (`default` or `large` 32px KPI numeral), `truncationDisplay`, and flicker-free `keepPreviousOnRefresh`. Directly consumes a MetricView's `result` (`metricOutput`), a single `record` (`panelRecord`), `rows` (`panelRecordList` uses list length; `panelRecordQuery` uses strictly the owner-returned `total`), or `objects` (`panelOntologyObjects` owner `total`), or standalone `value`/`items` props. Pure presentation: never computes aggregations on the client.",
+      "KPI metric cards from a MetricView, record, list, or query `total`. Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants with configurable `surface` (`card` or `bare` for embedding inside outer dashboard cards), `showLabel`, `valueSize` (`default` or `large` 32px KPI numeral), and `truncationDisplay`. Directly consumes a MetricView's `result` (`metricOutput`), a single `record` (`panelRecord`), `rows` (`panelRecordList` uses list length; `panelRecordQuery` uses strictly the owner-returned `total`), or `objects` (`panelOntologyObjects` owner `total`), or standalone `value`/`items` props. Pure presentation: never computes aggregations on the client.",
     effects: "Reads the bound MetricView `result`, `record`, `rows`, or `objects` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -879,6 +879,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "DashboardMetricPreview",
     role: "control",
     group: "chart",
+    panelUsable: false,
     meaning:
       "Workspace dashboard KPI and chart preview. Renders scalar KPI tiles (3-column grid) above thumbnail charts (2-column grid, 220px height) from `rows` (`platform:DashboardCard`) or direct `cards`, selecting clicked items into `selected` state.",
     effects: "Reads its bound `rows` datum as the reader and writes the panel's `selected` state on click.",
@@ -899,6 +900,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ScheduledTaskSummaryList",
     role: "control",
     group: "list",
+    panelUsable: false,
     meaning:
       "Workspace scheduled task attention summary and grouped list. Renders a three-counter top strip (Needs intervention, Recent results, Running), three priority-ordered task sections with status dots and multi-line excerpts, and an inline Resolve action for paused or failed tasks.",
     effects: "Reads its bound `rows` datum as the reader and writes `selected` / `resolveTarget` panel state when the reader opens or resolves a task.",
@@ -925,6 +927,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ScheduledTaskRunDetail",
     role: "presentation",
     group: "detail",
+    panelUsable: false,
     meaning:
       "Scheduled task recent-run detail view. Renders pause/failure callout banners, status dot and trigger strip, two-column Started/Finished timestamp `<dl>`, cleaned multi-paragraph execution output, and a Refresh button.",
     effects: "Reads its bound `record` datum as the reader and refreshes it when the reader clicks Refresh.",

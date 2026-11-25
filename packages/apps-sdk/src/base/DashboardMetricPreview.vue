@@ -31,20 +31,6 @@ const props = withDefaults(
     cards?: readonly DashboardMetricPreviewCard[];
     /** Optional filter limiting displayed cards to specific primary keys (preserving order). */
     cardIds?: readonly string[];
-    /** Record field identifying `"metric"` vs `"chart"` cards (default `"cardKind"`). */
-    kindField?: string;
-    /** Record field holding scalar metric display value (default `"value"`). */
-    valueField?: string;
-    /** Record field holding optional metric unit suffix (default `"unit"`). */
-    unitField?: string;
-    /** Record field holding chart `.chart.json` content (default `"chartFile"`). */
-    chartFileField?: string;
-    /** Record field holding metric/chart query output `{ columns, rows, truncation? }` (default `"output"`). */
-    outputField?: string;
-    /** Record field holding per-card error text (default `"error"`). */
-    errorField?: string;
-    /** Record field holding truncation/partial boolean or notice (default `"partial"`). */
-    partialField?: string;
     /** Maximum number of scalar metric cards rendered when `cardIds` is omitted (default `3`). */
     maxMetrics?: number;
     /** Maximum number of thumbnail chart cards rendered when `cardIds` is omitted (default `2`). */
@@ -57,13 +43,6 @@ const props = withDefaults(
   {
     cards: undefined,
     cardIds: undefined,
-    kindField: "cardKind",
-    valueField: "value",
-    unitField: "unit",
-    chartFileField: "chartFile",
-    outputField: "output",
-    errorField: "error",
-    partialField: "partial",
     maxMetrics: 3,
     maxCharts: 2,
     chartHeight: "220px",
@@ -142,11 +121,11 @@ function extractChartFile(raw: unknown): unknown {
 }
 
 function parseRecordCard(row: PlatformObjectRecord): DashboardMetricPreviewCard {
-  const rawKind = String(rawRecordField(row, props.kindField) ?? rawRecordField(row, "kind") ?? "").toLowerCase();
-  const file = extractChartFile(rawRecordField(row, props.chartFileField));
+  const rawKind = String(rawRecordField(row, "cardKind") ?? rawRecordField(row, "kind") ?? "").toLowerCase();
+  const file = extractChartFile(rawRecordField(row, "chartFile"));
   const kind: "metric" | "chart" = rawKind === "chart" || (!rawKind && file !== undefined) ? "chart" : "metric";
-  const output = extractOutput(rawRecordField(row, props.outputField));
-  const rawVal = rawRecordField(row, props.valueField);
+  const output = extractOutput(rawRecordField(row, "output"));
+  const rawVal = rawRecordField(row, "value");
   let value: string | number | null = null;
   if (rawVal !== undefined && rawVal !== null && rawVal !== "") {
     value = typeof rawVal === "number" || typeof rawVal === "string"
@@ -163,11 +142,11 @@ function parseRecordCard(row: PlatformObjectRecord): DashboardMetricPreviewCard 
       value = chartValueText(output.rows[0]?.[colKey], formats?.[colKey]);
     }
   }
-  const unitRaw = rawRecordField(row, props.unitField);
+  const unitRaw = rawRecordField(row, "unit");
   const unit = typeof unitRaw === "string" ? unitRaw : "";
-  const errRaw = rawRecordField(row, props.errorField);
+  const errRaw = rawRecordField(row, "error");
   const error = typeof errRaw === "string" ? errRaw : "";
-  const partialRaw = rawRecordField(row, props.partialField);
+  const partialRaw = rawRecordField(row, "partial");
   const partial = Boolean(partialRaw) || Boolean(output?.truncation);
   const ref: ObjectListRef = {
     className: row.className || "platform:DashboardCard",

@@ -2,7 +2,6 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { confirmDanger } from "@ontomato/platform-shell";
-import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { PageHeaderDraft, PageHeaderLabels } from "./page-header-types";
 
 /**
@@ -16,8 +15,6 @@ const props = withDefaults(
   defineProps<{
     /** The page's title text; omit when supplying custom content via `#title` or when the header carries only actions. */
     title?: string;
-    /** Optional locale-keyed title map resolved against the active UI locale when `title` is omitted. */
-    names?: Readonly<Record<string, string>> | null;
     /** Optional single-line subtitle/description shown beside (compact) or below (expanded) the title. */
     description?: string | null;
     /** Explicit label for the back button (for example "Back to relation types"); omitted hides the back button. */
@@ -33,7 +30,6 @@ const props = withDefaults(
   }>(),
   {
     title: "",
-    names: null,
     description: null,
     backLabel: undefined,
     compact: true,
@@ -89,13 +85,7 @@ const resolvedLabels = computed<PageHeaderLabels>(() => ({
   keepEditing: props.labels?.keepEditing ?? translate("platform.keepEditing", "Keep editing"),
 }));
 
-const currentLocale = computed(() => i18n?.locale.value ?? "en");
-
-const resolvedTitle = computed(() => {
-  if (props.title) return props.title;
-  if (!props.names) return "";
-  return localizedApplicationText(props.names, currentLocale.value) ?? "";
-});
+const resolvedTitle = computed(() => props.title ?? "");
 
 const effectiveDensity = computed<"bar" | "compact" | "expanded">(() =>
   props.density ?? (props.compact ? "compact" : "expanded"),

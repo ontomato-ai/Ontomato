@@ -904,6 +904,7 @@ describe("builtin-product-dashboards panel", () => {
     const groupTitles = [...element.querySelectorAll<HTMLElement>(".sdk-grouped-grid-group-title")].map((el) => el.textContent?.trim());
     expect(groupTitles).toEqual(["Revenue", "Untitled group"]);
 
+    expect(element.querySelector(".sdk-page-header.bar")?.textContent).toContain("Dashboards");
     const metricCardEl = element.querySelector<HTMLElement>('[data-primary-key="d1/m1"]')!;
     const chartCardEl = element.querySelector<HTMLElement>('[data-primary-key="d1/c1"]')!;
     expect(metricCardEl.getAttribute("tabindex")).toBe("0");
@@ -990,30 +991,13 @@ describe("builtin-product-dashboards panel", () => {
 
     const saveCall = dispatched.find((item) => item.operationId.endsWith("boardGrid.saveLayout"))!.call;
     expect(saveCall.input).toEqual({
-      groups: [
-        {
-          id: "g1",
-          title: "Revenue Q4",
-          metrics: [{ id: "m1", layout: { colSpan: 3, rowSpan: 1 } }],
-          charts: [
-            {
-              id: "c1",
-              name: "Regional Sales",
-              layout: { colSpan: 6, rowSpan: 2 },
-              chartFile: {
-                name: "c1.chart.json",
-                content: lineChartContent,
-              },
-            },
-          ],
+      groupRenames: { g1: "Revenue Q4" },
+      itemRenames: { "d1/c1": "Regional Sales" },
+      itemOverrides: {
+        "d1/c1": {
+          fileOverride: lineChartContent,
         },
-        {
-          id: "g2",
-          title: "Pipeline",
-          metrics: [],
-          charts: [],
-        },
-      ],
+      },
     });
   });
 
