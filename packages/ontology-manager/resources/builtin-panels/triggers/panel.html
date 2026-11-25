@@ -13,13 +13,6 @@
     width: 200px;
     max-width: 100%;
   }
-  .triggers-search-icon {
-    color: var(--sdk-text-color-placeholder);
-  }
-  .triggers-btn-icon {
-    margin-inline-end: 6px;
-    flex-shrink: 0;
-  }
   .triggers-body {
     display: flex;
     flex: 1;
@@ -54,14 +47,24 @@
     gap: var(--spacing-xs);
     flex-shrink: 0;
   }
-  .triggers-stat-inner {
+  .triggers-stat-chip {
     display: inline-flex;
-    align-items: baseline;
-    gap: 4px;
+    align-items: center;
+    padding: 1px 8px;
+    border: 1px solid var(--sdk-border-color-light);
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
   }
-  .triggers-stat-count {
+  .triggers-title-cell {
     display: inline-flex;
     align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+  .triggers-version {
+    font-size: 11px;
+    color: var(--sdk-text-color-secondary);
+    flex-shrink: 0;
   }
   .triggers-table-host {
     min-width: 0;
@@ -84,69 +87,54 @@
         <sdk-input
           class="triggers-search"
           v-model="search"
+          :prefix-icon="searchIcon"
           :placeholder="t('search.placeholder')"
           :aria-label="t('search.placeholder')"
           clearable
-        >
-          <template #prefix>
-            <svg class="triggers-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <circle cx="7" cy="7" r="4.5" />
-              <path d="m10.5 10.5 3 3" />
-            </svg>
-          </template>
-        </sdk-input>
-        <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-            <path d="M21 3v5h-5" />
-            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-            <path d="M8 16H3v5" />
-          </svg>
-        </sdk-button>
-        <sdk-button type="primary" :disabled="creating" @click="startCreate">
-          <svg class="triggers-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14" />
-            <path d="M12 5v14" />
-          </svg>
-          <span>{{ t("action.new") }}</span>
+        ></sdk-input>
+        <sdk-button
+          text
+          icon="refresh-cw"
+          :loading="refreshing"
+          :aria-label="t('action.refresh')"
+          :title="t('action.refresh')"
+          @click="refresh"
+        ></sdk-button>
+        <sdk-button type="primary" icon="plus" :disabled="creating" @click="startCreate">
+          {{ t("action.new") }}
         </sdk-button>
       </template>
     </page-header>
 
     <div class="triggers-body">
       <p class="triggers-note">
-        <svg class="triggers-note-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5" />
-          <path d="M16 2v4" />
-          <path d="M8 2v4" />
-          <path d="M3 10h5" />
-          <path d="M17.5 17.5 16 16.3V14" />
-          <circle cx="16" cy="16" r="6" />
-        </svg>
+        <component :is="scheduleIcon" :size="14" class="triggers-note-icon" aria-hidden="true" />
         <span class="triggers-note-text">{{ t("note.text") }}</span>
         <span class="triggers-stats">
-          <sdk-tag size="small" effect="plain" type="info">
-            <span class="triggers-stat-inner">
-              <span>{{ t("stats.armed") }}</span>
-              <projection slot="armedStats" class="triggers-stat-count"></projection>
-            </span>
-          </sdk-tag>
-          <sdk-tag size="small" effect="plain" type="info">
-            <span class="triggers-stat-inner">
-              <span>{{ t("stats.total") }}</span>
-              <projection slot="totalStats" class="triggers-stat-count"></projection>
-            </span>
-          </sdk-tag>
+          <span class="triggers-stat-chip">
+            <projection slot="armedStats"></projection>
+          </span>
+          <span class="triggers-stat-chip">
+            <projection slot="totalStats"></projection>
+          </span>
         </span>
       </p>
 
       <div class="triggers-table-host">
-        <projection slot="triggers" @row-action="onRowAction"></projection>
+        <projection slot="triggers" @row-action="onRowAction">
+          <template #cell-triggerTitle="{ value }">
+            <span class="triggers-title-cell">
+              <span>{{ Array.isArray(value) ? value[0] : value }}</span>
+              <span v-if="Array.isArray(value) && value[1]" class="triggers-version">{{ value[1] }}</span>
+            </span>
+          </template>
+        </projection>
       </div>
     </div>
 
     <sdk-dialog
       v-model="dialog"
+      :before-close="beforeCloseDialog"
       :title="dialogTitle"
       width="min(39rem, calc(100% - 2rem))"
       append-to-body
@@ -162,14 +150,14 @@
           slot="createForm"
           @saved="onFormSaved"
           @discarded="closeDialog"
-          @cancel="closeDialog"
+          @cancel="cancelDialog"
         ></projection>
         <projection
           v-else-if="editing"
           slot="editForm"
           @saved="onFormSaved"
           @discarded="closeDialog"
-          @cancel="closeDialog"
+          @cancel="cancelDialog"
         ></projection>
       </div>
       <template #footer>
@@ -180,7 +168,7 @@
           <sdk-button
             type="primary"
             :loading="Boolean(activeDraft && activeDraft.saving)"
-            :disabled="!activeDraft || !activeDraft.canSave"
+            :disabled="!activeDraft || Boolean(activeDraft.saving)"
             @click="activeDraft && activeDraft.save()"
           >
             {{ t("action.save") }}

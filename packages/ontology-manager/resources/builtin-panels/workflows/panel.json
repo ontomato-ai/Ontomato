@@ -74,29 +74,31 @@
               "key": "label",
               "labelKey": "col.name",
               "subtitleKey": "subtitle",
-              "minWidth": 160
+              "minWidth": 160,
+              "wrap": true
             },
             {
-              "key": "status",
+              "key": "statusBadges",
               "labelKey": "col.status",
-              "kind": "tag",
-              "width": 82
+              "minWidth": 96,
+              "width": 112,
+              "wrap": true
             },
             {
               "key": "version",
               "labelKey": "col.version",
-              "subtitleKey": "hasDraftLabel",
-              "width": 68
+              "width": 64
             },
             {
               "key": "stepsSummary",
               "labelKey": "col.steps",
-              "minWidth": 160
+              "minWidth": 140
             },
             {
               "key": "grantsSummary",
               "labelKey": "col.grants",
-              "width": 150
+              "minWidth": 140,
+              "wrap": true
             },
             {
               "key": "createdBy",
@@ -111,25 +113,23 @@
           ],
           "rowActions": {
             "labelKey": "col.actions",
-            "width": 140,
-            "minWidth": 132,
-            "maxVisible": 2,
-            "fixed": false,
+            "width": 244,
+            "minWidth": 232,
+            "maxVisible": 4,
+            "fixed": "right",
             "items": [
               {
                 "kind": "local",
                 "id": "view",
-                "labelKey": "action.view"
-              },
-              {
-                "kind": "local",
-                "id": "grants",
-                "labelKey": "action.grants"
+                "labelKey": "action.view",
+                "icon": "eye",
+                "primary": true
               },
               {
                 "kind": "operation",
                 "operation": "activate",
                 "labelKey": "action.activate",
+                "icon": "play-circle",
                 "when": {
                   "field": "canActivate",
                   "equals": true
@@ -139,6 +139,7 @@
                 "kind": "operation",
                 "operation": "deactivate",
                 "labelKey": "action.deactivate",
+                "icon": "pause-circle",
                 "when": {
                   "field": "canDeactivate",
                   "equals": true
@@ -148,6 +149,7 @@
                 "kind": "operation",
                 "operation": "delete",
                 "labelKey": "action.delete",
+                "icon": "trash-2",
                 "danger": true,
                 "disabledWhen": {
                   "field": "statusCode",
@@ -190,20 +192,21 @@
         "description": "Form for authoring and saving a new workflow draft through platform:Workflow.save.",
         "id": "builtin-product-ontology-workflows-create-form"
       },
-      "grantsHeader": {
-        "component": "ObjectHeader",
+      "grantsInForceTitle": {
+        "component": "RecordTemplate",
         "type": "platform:Workflow",
         "target": "inspectingGrants",
         "data": {
           "record": "record"
         },
         "config": {
-          "subtitleField": "version",
-          "statusField": "status"
+          "templateKey": "grants.inForceTitle",
+          "inline": true,
+          "emptyPlaceholder": ""
         },
-        "name": "Inspected workflow header",
-        "description": "Displays the name, version, and status of the workflow whose effective grants are being inspected.",
-        "id": "builtin-product-ontology-workflows-grants-header"
+        "name": "Effective grants revision heading",
+        "description": "Displays the active revision version heading for grants currently in force.",
+        "id": "builtin-product-ontology-workflows-grants-in-force-title"
       },
       "grantCaseScopedSteps": {
         "component": "ObjectList",
@@ -357,7 +360,6 @@
         "action.refresh": "Refresh",
         "action.newWorkflow": "New workflow",
         "action.view": "View",
-        "action.grants": "Grants",
         "action.activate": "Activate",
         "action.deactivate": "Deactivate",
         "action.delete": "Delete",
@@ -370,10 +372,12 @@
         "grants.title": "Authority in force",
         "grants.titleNamed": "Authority in force — {name}",
         "grants.desc": "What this workflow's active revision actually lets roles run. The executor asks only whether a subject may run an action, so this records what an activation approved.",
+        "grants.empty": "This workflow currently conveys no authority.",
+        "grants.unavailable": "Could not read authority.",
         "grants.caseScopedTitle": "Case-scoped steps",
         "grants.caseScopedHint": "These steps are authorized per run for the current assignee. Activation intentionally writes no role-level grant.",
         "grants.emptyCaseScoped": "No case-scoped steps in this workflow.",
-        "grants.inForceTitle": "Current revision grants in force",
+        "grants.inForceTitle": "In force (revision {activeGrantVersion})",
         "grants.inForceHint": "Capabilities currently granted to roles by this workflow's active revision.",
         "grants.emptyInForce": "This workflow currently grants no role-level permissions.",
         "grants.supersededTitle": "Stored but no longer granted",
@@ -406,7 +410,6 @@
         "action.refresh": "刷新",
         "action.newWorkflow": "新建工作流",
         "action.view": "查看",
-        "action.grants": "授权",
         "action.activate": "激活",
         "action.deactivate": "失效",
         "action.delete": "删除",
@@ -419,10 +422,12 @@
         "grants.title": "生效中授权",
         "grants.titleNamed": "生效中授权 — {name}",
         "grants.desc": "本流程当前生效版本实际允许各角色执行的能力清单。执行器只判定某主体能否运行动作，此处完整呈现激活后落地的权限记录。",
+        "grants.empty": "该流程当前未授予任何权限",
+        "grants.unavailable": "无法读取授权",
         "grants.caseScopedTitle": "按实例授权步骤",
         "grants.caseScopedHint": "这些步骤按运行实例动态授予当前处理人，激活时不会写入角色级固定授权。",
         "grants.emptyCaseScoped": "当前流程没有按实例授权的步骤。",
-        "grants.inForceTitle": "本流程当前生效授权",
+        "grants.inForceTitle": "当前生效（{activeGrantVersion}）",
         "grants.inForceHint": "本流程当前生效版本向各角色授予的能力权限。",
         "grants.emptyInForce": "本流程当前未授予任何角色级权限。",
         "grants.supersededTitle": "本流程已失效的历史修订授权",

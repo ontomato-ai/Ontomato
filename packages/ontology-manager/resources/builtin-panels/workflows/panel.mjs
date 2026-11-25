@@ -1,4 +1,4 @@
-import { computed } from "vue";
+import { computed, reactive, watch } from "vue";
 import {
   mountPanel,
   usePanelBack,
@@ -26,14 +26,51 @@ await mountPanel({
     const inspectingGrantsKey = computed(() => inspectingGrants.value?.primaryKey ?? "");
 
     const viewLabel = usePanelOutput("viewForm", "label");
-    const grantsLabel = usePanelOutput("grantsHeader", "label");
     const createDraft = usePanelFormDraft("createForm", { when: creating });
 
     const viewDialogTitle = computed(() =>
       viewLabel.value ? t("view.titleNamed", { name: viewLabel.value }) : t("view.title"),
     );
-    const grantsDialogTitle = computed(() =>
-      grantsLabel.value ? t("grants.titleNamed", { name: grantsLabel.value }) : t("grants.title"),
+    const grantsDialogTitle = computed(() => {
+      const ref = inspectingGrants.value;
+      const name = ref?.primaryKey ? instance.objectName("platform:Workflow", ref.primaryKey) : null;
+      return name ? t("grants.titleNamed", { name }) : t("grants.title");
+    });
+
+    const initialGrantState = () => ({ count: 0, loading: true, error: null });
+    const grantStates = reactive({
+      caseScoped: initialGrantState(),
+      inForce: initialGrantState(),
+      superseded: initialGrantState(),
+      direct: initialGrantState(),
+    });
+
+    watch(inspectingGrantsKey, () => {
+      grantStates.caseScoped = initialGrantState();
+      grantStates.inForce = initialGrantState();
+      grantStates.superseded = initialGrantState();
+      grantStates.direct = initialGrantState();
+    });
+
+    function onGrantState(group, snapshot) {
+      grantStates[group] = {
+        count: Number(snapshot?.count ?? 0),
+        loading: Boolean(snapshot?.loading),
+        error: snapshot?.error ?? null,
+      };
+    }
+
+    const grantsLoading = computed(
+      () => grantStates.caseScoped.loading || grantStates.inForce.loading || grantStates.superseded.loading || grantStates.direct.loading,
+    );
+    const grantsError = computed(
+      () => grantStates.caseScoped.error || grantStates.inForce.error || grantStates.superseded.error || grantStates.direct.error,
+    );
+    const grantsHasWorkflowAuthority = computed(
+      () => grantStates.caseScoped.count > 0 || grantStates.inForce.count > 0 || grantStates.superseded.count > 0,
+    );
+    const grantsEmpty = computed(
+      () => !grantsLoading.value && !grantsError.value && !grantsHasWorkflowAuthority.value,
     );
 
     function openView(ref) {
@@ -110,11 +147,11 @@ await mountPanel({
 
     function onRowAction({ id, ref }) {
       if (id === "view") openView(ref);
-      else if (id === "grants") openGrants(ref);
     }
 
     return {
       t,
+      refreshing: instance.refreshing,
       viewingKey,
       inspectingGrantsKey,
       viewDialogOpen,
@@ -123,6 +160,12 @@ await mountPanel({
       createDraft,
       grantsDialogOpen,
       grantsDialogTitle,
+      grantStates,
+      grantsLoading,
+      grantsError,
+      grantsHasWorkflowAuthority,
+      grantsEmpty,
+      onGrantState,
       startCreate,
       closeView,
       requestCloseCreate,

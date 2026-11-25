@@ -23,6 +23,7 @@ const nightly = {
   id: "tr-1",
   name: "Nightly check",
   description: "Checks inventory every morning",
+  version: 3,
   status: "PUBLISHED",
   statusLabel: "Published",
   enabled: true,
@@ -56,6 +57,28 @@ const triggerForm = {
   errors: [],
   save: { method: "POST", path: "/trigger/save", bodySchema: { type: "object" } },
 };
+const triggerFormWithStatus = {
+  ...triggerForm,
+  fields: [
+    ...triggerForm.fields,
+    {
+      path: "/status",
+      label: "Status",
+      required: true,
+      readOnly: false,
+      control: {
+        kind: "select",
+        options: [
+          { value: "PENDING_REVIEW", label: "Draft", description: null, disabled: false, disabledReason: null },
+          { value: "PUBLISHED", label: "Publish", description: null, disabled: false, disabledReason: null },
+          { value: "UNUSED", label: "Retired", description: null, disabled: false, disabledReason: null },
+        ],
+      },
+      valueSchema: { type: "string", enum: ["PENDING_REVIEW", "PUBLISHED", "UNUSED"] },
+    },
+  ],
+  values: { ...triggerForm.values, status: "UNUSED" },
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -83,7 +106,18 @@ describe("trigger catalog reads", () => {
   it("lists and queries triggers with owner display fields, tones, and pagination", async () => {
     const listed = ok([
       nightly,
-      { ...nightly, id: "tr-2", name: "Weekly restock", description: "", status: "UNUSED", statusLabel: "Retired", enabled: false, effectLabel: "Workflow · Restock" },
+      {
+        ...nightly,
+        id: "tr-2",
+        name: "Weekly restock",
+        description: "",
+        version: null,
+        status: "PENDING_REVIEW",
+        statusLabel: "Draft",
+        enabled: false,
+        cadenceSummary: null,
+        effectLabel: "Workflow · Restock",
+      },
     ]);
     ownerAnswering({
       "/trigger/queryList": body => body.countOnly === true
@@ -100,7 +134,12 @@ describe("trigger catalog reads", () => {
       subtitle: "Checks inventory every morning",
       fields: {
         status: "Published",
+        statusCode: "PUBLISHED",
+        version: 3,
+        triggerTitle: ["Nightly check", "v3"],
         enabled: true,
+        conditionKind: "Schedule",
+        cadence: "Daily at 09:00",
         condition: "Daily at 09:00",
         timeZone: "Asia/Shanghai",
         effect: "Action · Check stock",
@@ -112,6 +151,18 @@ describe("trigger catalog reads", () => {
         updatedAt: "2026-11-22T08:30:00.000Z",
       },
       tones: { status: "success", enabled: "success" },
+    });
+    expect(records[1]).toMatchObject({
+      primaryKey: "tr-2",
+      fields: {
+        status: "Draft",
+        statusCode: "PENDING_REVIEW",
+        version: 1,
+        triggerTitle: ["Weekly restock", "v1"],
+        conditionKind: "Schedule",
+        cadence: "",
+      },
+      tones: { status: "info", enabled: "info" },
     });
 
     const searched = await adapter.query({ search: "restock", size: 1 });
@@ -145,6 +196,35 @@ describe("trigger catalog reads", () => {
 
     expect(panelOwnerOperationDescriptorSchema.parse(await adapter[`${SET_TRIGGER_STATUS}.describe`]()).handlerRef).toBe(SET_TRIGGER_STATUS);
     expect(panelOwnerOperationDescriptorSchema.parse(await adapter[`${DELETE_TRIGGER}.describe`]()).handlerRef).toBe(DELETE_TRIGGER);
+  });
+
+  it("restricts form status options to PUBLISHED and PENDING_REVIEW and maps UNUSED edit baseline to PENDING_REVIEW", async () => {
+    ownerAnswering({
+      "/trigger/form": ok(triggerFormWithStatus),
+    });
+
+    const adapter = createTriggerReadAdapter(owner, viewer);
+    const editForm = await adapter.form("tr-2", { changedField: null });
+    const statusField = editForm.fields.find(field => field.path === "/status");
+    expect(statusField?.control).toMatchObject({
+      kind: "select",
+      options: [
+        { value: "PUBLISHED", label: "Publish" },
+        { value: "PENDING_REVIEW", label: "Draft" },
+      ],
+    });
+    expect(statusField?.valueSchema).toMatchObject({ type: "string", enum: ["PUBLISHED", "PENDING_REVIEW"] });
+    expect(editForm.values.status).toBe("PENDING_REVIEW");
+
+    const createForm = await adapter.createForm({ changedField: null });
+    const createStatusField = createForm.fields.find(field => field.path === "/status");
+    expect(createStatusField?.control).toMatchObject({
+      kind: "select",
+      options: [
+        { value: "PUBLISHED", label: "Publish" },
+        { value: "PENDING_REVIEW", label: "Draft" },
+      ],
+    });
   });
 
   it("preserves coded owner refusals on missing trigger reads", async () => {

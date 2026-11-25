@@ -23,17 +23,19 @@ import { operationHost } from "../product-panels/operation-host";
  */
 
 const TRIGGER_FIELDS = [
-  "status", "enabled", "condition", "timeZone", "effect", "executor",
-  "nextRunAt", "lastFiredAt", "createdBy", "reviewedBy", "updatedAt",
+  "status", "statusCode", "version", "triggerTitle", "enabled", "conditionKind", "cadence", "condition",
+  "timeZone", "effect", "executor", "nextRunAt", "lastFiredAt", "createdBy", "reviewedBy", "updatedAt",
 ] as const;
 
 const triggerSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   description: z.string().nullish(),
+  version: z.number().int().nullish(),
   status: z.string().nullish(),
   statusLabel: z.string().nullish(),
   enabled: z.boolean().nullish(),
+  conditionKind: z.string().nullish(),
   conditionKindLabel: z.string().nullish(),
   cadenceSummary: z.string().nullish(),
   condition: z.object({ timeZone: z.string().nullish() }).passthrough().nullish(),
@@ -60,22 +62,60 @@ export interface TriggerFormParams {
   changedField?: string | null;
 }
 
-function statusTone(status: string | null | undefined): "success" | "warning" | "info" {
-  if (status === "PUBLISHED") return "success";
-  if (status === "PENDING_REVIEW") return "warning";
-  return "info";
+function statusTone(status: string | null | undefined): "success" | "info" {
+  return status === "PUBLISHED" ? "success" : "info";
+}
+
+function restrictFormStatusOptions(form: PanelFormDescription): PanelFormDescription {
+  let hasStatusField = false;
+  const fields = form.fields.map((field) => {
+    if (field.path !== "/status" || field.control.kind !== "select") return field;
+    const kept = field.control.options.filter(
+      option => option.value === "PUBLISHED" || option.value === "PENDING_REVIEW",
+    );
+    if (kept.length === 0) return field;
+    hasStatusField = true;
+    const ordered = [
+      ...kept.filter(option => option.value === "PUBLISHED"),
+      ...kept.filter(option => option.value === "PENDING_REVIEW"),
+    ];
+    const allowedValues = ordered.map(option => option.value);
+    const valueSchema = typeof field.valueSchema === "object" && field.valueSchema !== null
+      ? { ...field.valueSchema, enum: allowedValues }
+      : field.valueSchema;
+    return {
+      ...field,
+      valueSchema,
+      control: { ...field.control, options: ordered },
+    };
+  });
+  if (!hasStatusField) return form;
+  const currentStatus = form.values.status;
+  const values = typeof currentStatus === "string" && currentStatus !== "PUBLISHED" && currentStatus !== "PENDING_REVIEW"
+    ? { ...form.values, status: "PENDING_REVIEW" }
+    : form.values;
+  return { ...form, fields, values };
 }
 
 function triggerRecord(trigger: TriggerAsset, fieldLabels: Record<string, string>): PanelRecord {
   const enabled = Boolean(trigger.enabled);
+  const version = trigger.version ?? 1;
+  const statusCode = trigger.status ?? "";
+  const conditionKind = trigger.conditionKindLabel ?? trigger.conditionKind ?? "";
+  const cadence = trigger.cadenceSummary ?? "";
   return {
     primaryKey: trigger.id,
     label: trigger.name,
     ...(trigger.description ? { subtitle: trigger.description } : {}),
     fieldLabels,
     fields: {
-      status: trigger.statusLabel ?? trigger.status ?? "",
+      status: trigger.statusLabel ?? statusCode,
+      statusCode,
+      version,
+      triggerTitle: [trigger.name, `v${version}`],
       enabled,
+      conditionKind,
+      cadence,
       condition: trigger.cadenceSummary ?? trigger.conditionKindLabel ?? "",
       timeZone: trigger.condition?.timeZone ?? "",
       effect: trigger.effectLabel ?? "",
@@ -103,6 +143,8 @@ function queried(records: readonly PanelRecord[], params: Record<string, unknown
     ? records.filter(record => [
       record.label,
       record.subtitle ?? "",
+      String(record.fields.conditionKind ?? ""),
+      String(record.fields.cadence ?? ""),
       String(record.fields.condition ?? ""),
       String(record.fields.effect ?? ""),
       String(record.fields.executor ?? ""),
@@ -140,10 +182,11 @@ export function createTriggerReadAdapter(reader: ProductOwner, viewer: Assistant
   const fieldLabels = () => Object.fromEntries(
     TRIGGER_FIELDS.map(name => [name, translate(`panels.trigger.fields.${name}`)]),
   );
-  function definitionForm(name: string, target: PanelFormTarget, { values, changedField }: TriggerFormParams) {
-    return owner(name, "/trigger/form", {
+  async function definitionForm(name: string, target: PanelFormTarget, { values, changedField }: TriggerFormParams) {
+    const form = await owner(name, "/trigger/form", {
       target, ...(values !== undefined && { values }), changedField: changedField ?? null,
     }, panelFormDescriptionSchema);
+    return restrictFormStatusOptions(form);
   }
   async function list(): Promise<PanelRecord[]> {
     const labels = fieldLabels();

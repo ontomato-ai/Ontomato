@@ -19,6 +19,6 @@ This panel lists domain `platform:Trigger` definitions in a full-width table wit
    - Open the edit dialog with `present({ editing: { className: "platform:Trigger", primaryKey: "<id>" } })`.
    - Use `fill_form` on `editForm` to modify fields and leave unsaved until the user asks to save via `page_action`.
 4. **Publish / Disable a trigger inline:**
-   - Use `page_action` on `triggers` with the row's verbatim `rowKey` (`platform:Trigger:<id>`) and operation `triggers.setStatus` (`publish` when `enabled === false`, `disable` when `enabled === true`).
+   - Use `page_action` on `triggers` with the row's verbatim `rowKey` (`platform:Trigger:<id>`) and operation `triggers.setStatus` (`disable` when `statusCode === "PUBLISHED"`, `publish` otherwise).
 5. **Delete a trigger inline:**
    - Use `page_action` on `triggers` with the row's verbatim `rowKey` (`platform:Trigger:<id>`) and operation `triggers.delete` (`remove`). Confirmation is enforced by the platform.

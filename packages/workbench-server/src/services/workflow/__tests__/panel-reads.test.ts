@@ -29,7 +29,7 @@ const workflow = {
   ],
 };
 const draft = { id: "wf-2", name: "Draft flow", status: "DRAFT", steps: [] };
-const grant = { roleCode: "buyer", capabilityId: "act-1", stepNo: 2, scope: { kind: "all" }, inForce: true };
+const grant = { roleCode: "buyer", capabilityId: "act-1", stepNo: 2, scope: { kind: "all" }, inForce: true, activatedByWorkflowVersion: 2 };
 
 function readOwner(refused: string[] = []) {
   const responses: Record<string, unknown> = {
@@ -63,18 +63,19 @@ it("projects the list, including original step summaries, lifecycle and authoriz
   const records = panelRecordListSchema.parse(await adapter.list());
   expect(sent.map(call => call.path).sort()).toEqual(["/action/queryList", "/workflow/grants", "/workflow/query", "/workflow/subjects"]);
   expect(records[0]).toMatchObject({
-    primaryKey: "wf-1", label: "Restock flow", subtitle: "Approve and restock", tones: { status: "success" },
+    primaryKey: "wf-1", label: "Restock flow", subtitle: "Approve and restock", tones: { status: "success", statusBadges: "success" },
     fields: {
-      status: "Active", statusCode: "ACTIVE", hasDraft: true, hasDraftLabel: "Draft", version: "v2",
+      status: "Active", statusBadges: ["Active", "Draft"], statusCode: "ACTIVE", hasDraft: true, hasDraftLabel: "Draft", version: "v2", activeGrantVersion: "v2",
       stepsSummary: "Review [Fixed logic · Rule (deterministic) · Alice (a) · Per-case authorization] → Ship [Automatic · Agent (decision) · Praxis system principal]",
       grantsSummary: "1 capabilities granted to 1 roles · 1 steps use per-case authorization",
       createdBy: "Alice", reviewedBy: "bob-login", canActivate: true, canDeactivate: true,
     },
   });
   expect(records[1]).toMatchObject({
-    fields: { status: "Draft", version: "v0", grantsSummary: "No grants", stepsSummary: "No steps defined", createdBy: "Unspecified" },
-    tones: { grantsSummary: "warning", status: "warning" },
+    fields: { status: "Draft", statusBadges: ["Draft"], version: "v0", grantsSummary: "No grants", stepsSummary: "No steps defined", createdBy: "Unspecified" },
+    tones: { grantsSummary: "warning", status: "warning", statusBadges: "warning" },
   });
+  expect(records[1].fields).not.toHaveProperty("activeGrantVersion");
 });
 
 it("filters before paginating and reads a single record by ID", async () => {
@@ -122,13 +123,22 @@ it("describes a fully read-only existing form and an editable draft that preserv
   const { adapter } = readOwner();
   const detail = panelFormDescriptionSchema.parse(await adapter.form("wf-1"));
   expect(walkFields(detail.fields).every(field => field.readOnly)).toBe(true);
+  expect(walkFields(detail.fields).find(field => field.path === "/invocationChoice")?.warning).toBe(
+    "Automatic invocation is reserved for future use.",
+  );
   expect(detail.values).toMatchObject({
     runContract: { className: "Order", statusOpen: ["open"], statusDone: ["done"] },
     steps: [{ invocationChoice: "fixed", actorPolicy: { parameters: { amount: 10 } } }, { invocationChoice: "automatic" }],
   });
   const create = panelFormDescriptionSchema.parse(await adapter.createForm({}));
+  expect(create.values).toMatchObject({ steps: [] });
   const fields = walkFields(create.fields);
   expect(fields.some(field => field.readOnly)).toBe(false);
+  expect(fields.find(field => field.path === "/caseScoped")).toBeUndefined();
+  const invocationField = fields.find(field => field.path === "/invocationChoice");
+  expect(invocationField?.refreshOnChange).toBe(true);
+  expect(invocationField?.help).toBeNull();
+  expect(invocationField?.warning).toBeUndefined();
   const actorPolicyField = fields.find(field => field.path === "/actorPolicy");
   const modeField = fields.find(field => field.path === "/mode");
   expect(actorPolicyField?.required).toBe(true);
@@ -137,12 +147,19 @@ it("describes a fully read-only existing form and an editable draft that preserv
   expect(fields.find(field => field.path === "/actionId")?.control).toMatchObject({ allowCreate: true, options: [{ value: "act-1", label: "Buy", description: null, disabled: false, disabledReason: null }] });
   expect(fields.find(field => field.path === "/executionPrincipalId")?.control).toMatchObject({
     allowCreate: true, options: [
-      { value: "alice", label: "Alice", description: null, disabled: false, disabledReason: null },
-      { value: "bob", label: "bob-login", description: null, disabled: false, disabledReason: null },
+      { value: "alice", label: "Alice (a)", description: null, disabled: false, disabledReason: null },
+      { value: "bob", label: "bob-login (bob-login)", description: null, disabled: false, disabledReason: null },
     ],
   });
   const values = { ...create.values, name: "Work in progress" };
   expect((await adapter.createForm({ values, changedField: "/name" })).values).toEqual(values);
+  const autoForm = panelFormDescriptionSchema.parse(await adapter.createForm({
+    values: { ...values, steps: [{ name: "Auto", invocationChoice: "automatic", actorPolicy: { mode: "none" } }] },
+    changedField: "/steps/0/invocationChoice",
+  }));
+  expect(walkFields(autoForm.fields).find(field => field.path === "/invocationChoice")?.warning).toBe(
+    "Automatic invocation is reserved for future use.",
+  );
 });
 
 it("exposes the three lifecycle operation descriptions with their confirmation impact", async () => {

@@ -45,6 +45,14 @@ describe("built-in workflows panel validation", () => {
 
     expect(mod).not.toContain("usePanelData");
     expect(html).not.toMatch(/el-|--el-|v-loading/);
+    expect(html).not.toContain("<svg");
+    expect(html).not.toContain(".sdk-object-list-table");
+    expect(desc.manifest.members).not.toHaveProperty("grantsHeader");
+    expect(desc.manifest.members).toHaveProperty("grantsInForceTitle");
+    expect(desc.manifest.members.catalog.config.rowActions).toMatchObject({
+      maxVisible: 4,
+      fixed: "right",
+    });
     expect(Object.values(desc.manifest.members as Record<string, { component?: string }>)).not.toContainEqual(
       expect.objectContaining({ component: "PanelData" }),
     );
