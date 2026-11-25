@@ -21,7 +21,7 @@ import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
 import { listComponentPackages, readComponentPackage } from "../component-packages/store";
 
-type AuthorComponentDeclaration = ComponentDeclaration & Partial<Pick<AppsSdkComponentCatalogEntry, "module" | "exportName" | "group">>;
+type AuthorComponentDeclaration = ComponentDeclaration & Partial<Pick<AppsSdkComponentCatalogEntry, "module" | "exportName" | "group" | "panelUsable">>;
 type AuthorComponentEntry = { declaration: AuthorComponentDeclaration; label: string; packageName?: string };
 
 const SDK_COMPONENT_GROUP_ORDER = new Map<AppsSdkComponentGroup, number>(
@@ -30,6 +30,18 @@ const SDK_COMPONENT_GROUP_ORDER = new Map<AppsSdkComponentGroup, number>(
 
 function sdkComponentGroupLabel(group: AppsSdkComponentGroup | undefined, locale: string | undefined): string | undefined {
   return group ? tForLocale(locale, `panels.sdkComponent.group.${group}`) : undefined;
+}
+
+function sdkComponentRoleLabel(role: ComponentDeclaration["role"], locale: string | undefined): string {
+  return role === "presentation"
+    ? tForLocale(locale, "panels.sdkComponent.rolePresentation")
+    : role === "control"
+      ? tForLocale(locale, "panels.sdkComponent.roleControl")
+      : role;
+}
+
+function sdkComponentPanelUsableLabel(panelUsable: boolean, locale: string | undefined): string {
+  return tForLocale(locale, panelUsable ? "panels.sdkComponent.panelUsableYes" : "panels.sdkComponent.panelUsableShellOnly");
 }
 
 function sdkComponentGroupRank(group: AppsSdkComponentGroup | undefined): number {
@@ -125,29 +137,45 @@ export async function countSdkComponents(owner: ProductOwner) {
   return { rows: [], total: (await readAuthorComponentCatalogue(owner)).size };
 }
 
-export type ListSdkComponentsFilter = {
-  search?: string;
-  group?: AppsSdkComponentGroup;
-};
-
 export async function listSdkComponents(
   owner: ProductOwner,
   locale: string | undefined,
-  filter?: ListSdkComponentsFilter,
+  search?: string,
 ): Promise<PanelRecord[]> {
   const components = await readAuthorComponentCatalogue(owner);
-  const term = filter?.search?.trim().toLowerCase();
-  const groupFilter = filter?.group;
+  const term = search?.trim().toLowerCase();
+  const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const fieldLabels = {
-    package: tForLocale(locale, "panels.sdkComponent.package"),
-    group: tForLocale(locale, "panels.sdkComponent.group"),
-    meaning: tForLocale(locale, "panels.sdkComponent.meaning"),
+    package: word("package"),
+    role: word("role"),
+    panelUsable: word("panelUsable"),
+    group: word("group"),
+    bindsElement: word("bindsElement"),
   };
   const matched: Array<{ rank: number; record: PanelRecord }> = [];
-  for (const [primaryKey, { label, declaration: { group, meaning, effects }, packageName }] of components) {
-    if (groupFilter && group !== groupFilter) continue;
+  for (const [primaryKey, { label, declaration, packageName }] of components) {
+    const { role, group, bindsElement, meaning, effects } = declaration;
+    const panelUsable = declaration.panelUsable !== false;
+    const packageLabel = packageName ?? word("domain");
+    const roleLabel = sdkComponentRoleLabel(role, locale);
+    const panelUsableLabel = sdkComponentPanelUsableLabel(panelUsable, locale);
     const groupLabel = sdkComponentGroupLabel(group, locale);
-    if (term && ![primaryKey, label, packageName, group, groupLabel, meaning, effects].some(text => text?.toLowerCase().includes(term))) {
+    if (
+      term
+      && ![
+        primaryKey,
+        label,
+        packageLabel,
+        role,
+        roleLabel,
+        panelUsableLabel,
+        group,
+        groupLabel,
+        ...(bindsElement ?? []),
+        meaning,
+        effects,
+      ].some(text => text?.toLowerCase().includes(term))
+    ) {
       continue;
     }
     matched.push({
@@ -156,9 +184,15 @@ export async function listSdkComponents(
         primaryKey,
         label,
         fields: {
-          package: packageName ?? tForLocale(locale, "panels.sdkComponent.domain"),
+          package: packageLabel,
+          role: roleLabel,
+          panelUsable: panelUsableLabel,
           ...(groupLabel && { group: groupLabel }),
-          meaning,
+        },
+        ...(bindsElement?.length ? { tags: { bindsElement: [...bindsElement] } } : {}),
+        tones: {
+          role: role === "control" ? "info" : "default",
+          panelUsable: panelUsable ? "success" : "default",
         },
         fieldLabels,
       },
@@ -181,11 +215,9 @@ export async function readSdkComponentRecord(
   const { declaration } = entry;
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const packageLabel = entry.packageName ?? word("domain");
-  const roleLabel = declaration.role === "presentation"
-    ? word("rolePresentation")
-    : declaration.role === "control"
-      ? word("roleControl")
-      : declaration.role;
+  const roleLabel = sdkComponentRoleLabel(declaration.role, locale);
+  const panelUsable = declaration.panelUsable !== false;
+  const panelUsableLabel = sdkComponentPanelUsableLabel(panelUsable, locale);
   const groupLabel = sdkComponentGroupLabel(declaration.group, locale);
   const fields: PanelRecord["fields"] = {
     componentId: declaration.componentId,
@@ -194,6 +226,7 @@ export async function readSdkComponentRecord(
     ...(declaration.exportName && { exportName: declaration.exportName }),
     role: roleLabel,
     ...(groupLabel && { group: groupLabel }),
+    panelUsable: panelUsableLabel,
     meaning: declaration.meaning,
     ...(declaration.effects && { effects: declaration.effects }),
   };
@@ -206,6 +239,7 @@ export async function readSdkComponentRecord(
     ...(declaration.bindsElement?.length ? { tags: { bindsElement: [...declaration.bindsElement] } } : {}),
     tones: {
       role: declaration.role === "control" ? "info" : "default",
+      panelUsable: panelUsable ? "success" : "default",
     },
     fieldLabels: {
       componentId: word("componentId"),
@@ -214,6 +248,7 @@ export async function readSdkComponentRecord(
       exportName: word("exportName"),
       role: word("role"),
       group: word("group"),
+      panelUsable: word("panelUsable"),
       bindsElement: word("bindsElement"),
       meaning: word("meaning"),
       effects: word("effects"),

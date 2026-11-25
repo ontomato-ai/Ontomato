@@ -1,7 +1,8 @@
 import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { DETAIL_SELECTIONS, detailSelectionAddress, type DetailSelection } from "./detail-selection";
-import { panelEntryApplication } from "./catalog";
+import { builtinApplicationForPath, panelEntryApplication } from "./catalog";
 
 /**
  * The pages this assembly mounts beside a conversation (DESIGN.md "Applications and shells"). A page's own address is
@@ -26,8 +27,13 @@ export function pilotPageResolver(
     const address = detailSelectionAddress(selections, asked) ?? asked;
     const [path] = address.split("?");
     // A built-in application's panel entry at its own address (`/dashboards`, `/ontology/components`), as the reader's
-    // catalog lists it: the same page that shows it full, as that application's page.
-    const entry = panelEntryApplication(path);
+    // catalog lists it: the same page that shows it full, as that application's page. When only navigation summaries
+    // (without `panelUses`) are loaded, match the owning built-in address space and let `PanelApplicationRoute` resolve it.
+    const owner = builtinApplicationForPath(path);
+    const entry = panelEntryApplication(path)
+      ?? (owner && owner.panelUses === undefined && path !== platformRoutes.chat.path && path !== platformRoutes.home.path
+        ? owner.id
+        : null);
     if (entry) {
       return {
         id: "panel-application",

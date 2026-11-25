@@ -76,6 +76,9 @@ vi.mock("../catalog", () => ({
   useApplicationCatalog: () => ({
     applications: catalogApplications,
     loading: ref(false),
+    applicationById: (id: string) => (catalogApplications.value as Array<{ id: string }>).find((app) => app.id === id) ?? null,
+    ensureApplication: vi.fn().mockResolvedValue(null),
+    refreshApplication: vi.fn().mockResolvedValue(null),
     refresh: vi.fn().mockResolvedValue([]),
   }),
 }));

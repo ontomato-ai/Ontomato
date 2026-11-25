@@ -72,7 +72,7 @@ const props = defineProps<{
 const appBody = ref<HTMLElement | null>(null);
 useAppTheme(appBody, () => props.appTheme, () => props.preferences.theme);
 
-const emit = defineEmits<{ selectApp: [id: string] }>();
+const emit = defineEmits<{ selectApp: [id: string]; railVisible: [visible: boolean] }>();
 
 /** The application whose prefix holds an address, the longest match winning: the rail's current row follows the address. */
 function appFor(path: string): PlatformAppDeclaration | null {
@@ -120,11 +120,12 @@ const hideRail = computed(() => {
   if (activeAppId.value && props.standaloneApplications?.includes(activeAppId.value)) return true;
   if (!standaloneAllowed.value) return false;
   if (externalTab.value) return true;
-  return (route.query.standalone === "1" || standaloneRequested.value) && !props.loading;
+  return route.query.standalone === "1" || standaloneRequested.value;
 });
+watch(hideRail, (hidden) => emit("railVisible", !hidden), { immediate: true });
 watch(
-  [() => route.query.standalone, () => activeApp.value, () => props.loading],
-  ([flag, app, loading]) => {
+  [() => route.query.standalone, () => activeApp.value],
+  ([flag, app]) => {
     if (flag === "1") standaloneRequested.value = true;
     if (app && !allowsStandalone(app)) {
       standaloneRequested.value = false;
@@ -139,7 +140,7 @@ watch(
       return;
     }
     if (!standaloneRequested.value || externalTab.value) return;
-    if (loading && app === null) return;
+    if (app === null) return;
     standaloneRequested.value = false;
     externalTab.value = true;
     rememberExternalLinkTab();

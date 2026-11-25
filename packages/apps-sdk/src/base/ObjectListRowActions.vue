@@ -3,11 +3,13 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
 import { appIcon } from "@ontomato/platform-shell";
+import type { ObjectListRowActionPrefill } from "./object-list-types";
 
 export interface ResolvedRowActionItem {
   readonly key: string;
   readonly kind: "operation" | "local";
   readonly operation?: string;
+  readonly prefill?: ObjectListRowActionPrefill;
   readonly id?: string;
   readonly to?: string;
   readonly label: string;
@@ -36,6 +38,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   trigger: [item: ResolvedRowActionItem];
+  "menu-open-change": [open: boolean];
 }>();
 
 const { t } = useI18n();
@@ -117,6 +120,7 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
       class="sdk-object-list-action-more"
       :disabled="busy"
       @command="handleOverflowCommand"
+      @visible-change="emit('menu-open-change', $event)"
     >
       <button
         type="button"

@@ -1,16 +1,25 @@
 <script setup lang="ts">
+import { ref } from "vue";
+import { useFootDockSpace } from "./use-foot-dock-space";
+
 /**
  * One entry's page as an application's frame holds it: inside a frame it stands where the frame's `<current-entry>` is,
  * at the width the frame gives it, and the panel draws its own `<page-header>` (or omits it).
+ *
+ * When a floating foot (`PageComposer`) is mounted here, its live rendered height is measured once and exposed as
+ * `--pane-dock-space` (and `pageDockSpaceKey`), so pages clear the floating composer automatically without guessing
+ * fixed pixels.
  */
+const foot = ref<HTMLElement | null>(null);
+const { dockStyle } = useFootDockSpace(foot);
 </script>
 
 <template>
-  <div class="panel-entry-unit">
+  <div class="panel-entry-unit" :style="dockStyle">
     <div class="panel-entry-unit-body">
       <slot />
     </div>
-    <div v-if="$slots.foot" class="panel-entry-unit-foot platform-page-gutter">
+    <div v-if="$slots.foot" ref="foot" class="panel-entry-unit-foot platform-page-gutter">
       <slot name="foot" />
     </div>
   </div>

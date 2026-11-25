@@ -127,3 +127,57 @@ it("resolves hash externalLink fields to full URLs with one-click copy and omits
     else delete (navigator as { clipboard?: unknown }).clipboard;
   }
 });
+
+it("defaults to comfortable airy density and supports explicit compact density", async () => {
+  const defaultRoot = await mountSummary({
+    primaryKey: "app-default",
+    className: APPLICATION,
+    label: "Default density",
+    fields: { id: "app-default", allowStandalone: true },
+    fieldLabels: { id: "Application ID", allowStandalone: "Allow standalone" },
+  });
+  const defaultSummary = defaultRoot.querySelector<HTMLElement>(".sdk-object-summary")!;
+  expect(defaultSummary.dataset.density).toBe("comfortable");
+  expect(defaultSummary.classList.contains("sdk-object-summary-compact")).toBe(false);
+
+  const compactProjections: Record<string, DirectProjection> = {
+    "app-summary": {
+      ...projections["app-summary"]!,
+      config: {
+        ...projections["app-summary"]!.config,
+        density: "compact",
+      },
+    },
+  };
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "applications-direct-compact",
+    url: () => "/ontology/applications",
+    label: () => "Applications",
+    initial: { selected: { className: APPLICATION, primaryKey: "app-compact" } } as never,
+    text: createPanelText({}, ref("en"), "en"),
+    ...noOperations,
+    readProjection: async (id) => compactProjections[id]!,
+    read: async () => ({
+      status: "ready",
+      value: {
+        primaryKey: "app-compact",
+        className: APPLICATION,
+        label: "Compact density",
+        fields: { id: "app-compact" },
+        fieldLabels: { id: "Application ID" },
+      } as never,
+    }),
+  });
+  const compactRoot = document.createElement("div");
+  document.body.append(compactRoot);
+  const app = createApp({
+    setup: () => () => h(PanelMember, { instance, member: "summary" }),
+  }).use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
+  app.mount(compactRoot);
+  mounted.push(app);
+  await vi.waitFor(() => expect(compactRoot.querySelector(".sdk-object-summary dl")).not.toBeNull());
+
+  const compactSummary = compactRoot.querySelector<HTMLElement>(".sdk-object-summary")!;
+  expect(compactSummary.dataset.density).toBe("compact");
+  expect(compactSummary.classList.contains("sdk-object-summary-compact")).toBe(true);
+});

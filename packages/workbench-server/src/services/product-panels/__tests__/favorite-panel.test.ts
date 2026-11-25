@@ -18,6 +18,9 @@ const state = vi.hoisted(() => ({
   dashboardCards: {} as HomeDashboardCards,
   pinnedSessions: [] as string[],
   pinnedObjects: [] as HomePinnedObject[],
+  dashboardsById: {} as Record<string, unknown>,
+  metricDescribe: vi.fn(),
+  metricExecute: vi.fn(),
 }));
 
 vi.mock("../../platform-home/store", () => ({
@@ -53,11 +56,22 @@ vi.mock("../../ontology-model/customer-reads", () => ({
 }));
 
 vi.mock("../../dashboard/access", () => ({
-  getOwnedDashboard: vi.fn(async (_u, _d, id: string) => ({
+  getOwnedDashboard: vi.fn(async (_u, _d, id: string) => state.dashboardsById[id] ?? {
     id,
     name: `Board ${id}`,
     groups: [],
-  })),
+  }),
+}));
+
+vi.mock("../../dashboard/metric-client", () => ({
+  DashboardMetricClient: class {
+    describe(metricId: string) {
+      return state.metricDescribe(metricId);
+    }
+    execute(query: unknown, revision: number) {
+      return state.metricExecute(query, revision);
+    }
+  },
 }));
 
 vi.mock("../../dashboard/store", () => ({
@@ -115,6 +129,9 @@ beforeEach(() => {
   state.dashboardCards = {};
   state.pinnedSessions = [];
   state.pinnedObjects = [];
+  state.dashboardsById = {};
+  state.metricDescribe.mockReset();
+  state.metricExecute.mockReset();
 });
 
 it("lists real object identities, checks status, and adds/removes/reorders across target types", async () => {
@@ -193,4 +210,105 @@ it("lists real object identities, checks status, and adds/removes/reorders acros
     favorited: false,
   });
   expect(await adapter.list({ targetGroup: "objects" })).toEqual([]);
+});
+
+it("executes live dashboard card previews with formatted KPI values, chart payloads, truncation, error isolation, and default cap", async () => {
+  const makeMetric = (id: string, metricId: string, unit = "USD") => ({
+    id,
+    name: `Metric ${id}`,
+    valueField: "total",
+    unit,
+    formats: { total: { kind: "number", decimals: 1 } },
+    query: { metricId, parameters: {} },
+  });
+  const makeChart = (id: string, metricId: string) => ({
+    id,
+    name: `Chart ${id}`,
+    query: { metricId, parameters: {} },
+    chartFile: {
+      name: `${id}.chart.json`,
+      content: {
+        dataset: [{ id: "metric", dimensions: ["day", "total"], source: [] }],
+        series: [{ id: "main", type: "bar", datasetId: "metric", encode: { x: "day", y: "total" } }],
+        ontomato: {},
+      },
+    },
+  });
+
+  state.dashboardIds = ["dash-live"];
+  state.dashboardsById["dash-live"] = {
+    id: "dash-live",
+    name: "Revenue Board",
+    groups: [
+      {
+        id: "g1",
+        title: "Overview",
+        metrics: [
+          makeMetric("m1", "metric-ok"),
+          makeMetric("m2", "metric-fail"),
+          makeMetric("m3", "metric-ok"),
+          makeMetric("m4", "metric-ok"),
+        ],
+        charts: [
+          makeChart("c1", "metric-chart"),
+          makeChart("c2", "metric-chart"),
+          makeChart("c3", "metric-chart"),
+        ],
+      },
+    ],
+  };
+
+  state.metricDescribe.mockImplementation(async (metricId: string) => ({
+    id: metricId,
+    name: metricId,
+    revision: 3,
+    status: "PUBLISHED",
+    parameterDefs: [],
+  }));
+  state.metricExecute.mockImplementation(async (query: { metricId: string }) => {
+    if (query.metricId === "metric-fail") {
+      throw new Error("Metric engine timeout");
+    }
+    if (query.metricId === "metric-chart") {
+      return {
+        columns: [{ key: "day", label: "Day" }, { key: "total", label: "Total" }],
+        rows: [{ day: "Mon", total: 42 }],
+        truncation: { returnedRows: 1, totalRows: 50 },
+      };
+    }
+    return {
+      columns: [{ key: "total", label: "Total" }],
+      rows: [{ total: 1234.5 }],
+    };
+  });
+
+  const rows = await adapter.list({ targetGroup: "dashboardCards" });
+  // Default cap without explicit dashboardCards selection: 3 metrics + 2 charts
+  expect(rows.map(r => r.fields.cardId)).toEqual(["m1", "m2", "m3", "c1", "c2"]);
+
+  // Deduplicated describe calls per unique metricId
+  expect(state.metricDescribe).toHaveBeenCalledTimes(3);
+
+  // Metric m1 formatted cleanly
+  expect(rows[0]?.fields).toMatchObject({
+    cardKind: "metric",
+    value: "1,234.5",
+    unit: "USD",
+    partial: false,
+  });
+  expect(rows[0]?.fields.output).toMatchObject({ kind: "json" });
+
+  // Metric m2 isolated error without failing siblings
+  expect(rows[1]?.fields).toMatchObject({
+    cardKind: "metric",
+    error: "Metric engine timeout",
+  });
+
+  // Chart c1 carries wrapped chartFile, output, and partial truncation flag
+  expect(rows[3]?.fields).toMatchObject({
+    cardKind: "chart",
+    partial: true,
+    chartFile: { kind: "json" },
+    output: { kind: "json" },
+  });
 });

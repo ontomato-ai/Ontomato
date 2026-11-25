@@ -40,7 +40,7 @@
     display: grid;
     grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.15fr);
     gap: var(--page-content-gap);
-    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     align-items: start;
   }
 

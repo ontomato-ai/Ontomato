@@ -3,6 +3,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
+import { firstVisiblePanelPath } from "./catalog";
 import type { AppPartition } from "./partition";
 export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
@@ -96,7 +97,8 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
   renderers: Record<string, NativeLayout> = {}): AppPartition[] {
   return applications.filter(app => app.kind === "hosted" || app.kind === "connected" || app.kind === "product"
     || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])
-    || Boolean(app.panelUses?.length)).map((app) => {
+    || Boolean(app.panelUses?.length)
+    || (app.panelUses === undefined && Boolean(app.framePanelId))).map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
     const panels = isPanelApplication(app);
     const applicationRoute = embedded || panels;
@@ -112,23 +114,17 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
-    const orderedUses = app.groups?.length
-      ? [
-          ...[...app.groups].sort((left, right) => left.sort - right.sort).flatMap(group =>
-            (app.panelUses ?? []).filter(use => use.groupKey === group.key),
-          ),
-          ...(app.panelUses ?? []).filter(use => !use.groupKey || !app.groups!.some(group => group.key === use.groupKey)),
-        ]
-      : (app.panelUses ?? []);
-    const firstPanelUse = orderedUses.find(use => Boolean(use.names)) ?? orderedUses[0];
+    const firstPanelPath = firstVisiblePanelPath(app);
     const entryHome = layout.entryHome
-      ? (app.panelUses?.some(use => panelUsePath(use.path) === layout.entryHome) ? layout.entryHome : undefined)
-      : (!applicationRoute && !hasLegacyLayout && firstPanelUse ? panelUsePath(firstPanelUse.path) : undefined);
+      ? (app.panelUses === undefined
+        ? app.entry.path
+        : (app.panelUses.some(use => panelUsePath(use.path) === layout.entryHome) ? layout.entryHome : undefined))
+      : (!applicationRoute && !hasLegacyLayout && firstPanelPath ? firstPanelPath : undefined);
     return { ...layout, entryHome, entries, id: app.id, label: localizedApplicationText(app.names, locale) ?? app.id, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : localizedApplicationText(app.descriptions, locale) ?? null), icon: app.icon, rail: app.rail, category: app.category,
       allowStandalone: app.allowStandalone,
       framePanelId: app.framePanelId,
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
-      home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home ?? (firstPanelUse ? panelUsePath(firstPanelUse.path) : undefined) };
+      home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home ?? (firstPanelPath ?? undefined) };
   });
 }

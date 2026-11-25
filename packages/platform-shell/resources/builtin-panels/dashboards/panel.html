@@ -35,7 +35,7 @@
     min-width: 0;
     min-height: 0;
     overflow: auto;
-    padding: var(--spacing-lg, 16px) var(--page-gutter, 20px) var(--spacing-xl, 24px);
+    padding: var(--spacing-lg, 16px) var(--page-gutter, 20px) calc(var(--spacing-xl, 24px) + var(--pane-dock-space, 0px));
     box-sizing: border-box;
   }
   .db-no-boards {
@@ -167,9 +167,22 @@
     border-color: var(--sdk-border-color);
     color: var(--sdk-color-primary);
   }
+  .db-icon-btn--active {
+    background: var(--sdk-fill-color);
+    border-color: var(--sdk-border-color);
+    color: var(--sdk-color-primary);
+  }
   .db-icon-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+  .db-truncation-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--sdk-color-warning);
+    line-height: 1;
   }
   .db-card-projection {
     width: 100%;
@@ -180,7 +193,7 @@
     flex-direction: column;
   }
   .db-card-projection--metric {
-    justify-content: center;
+    justify-content: flex-end;
   }
   .db-dialog-form {
     display: flex;
@@ -214,7 +227,7 @@
       padding: var(--spacing-md, 12px) var(--spacing-sm, 12px) var(--spacing-sm, 8px);
     }
     .db-canvas {
-      padding: var(--spacing-sm, 12px);
+      padding: var(--spacing-sm, 12px) var(--spacing-sm, 12px) calc(var(--spacing-sm, 12px) + var(--pane-dock-space, 0px));
     }
     .db-empty-state {
       padding: 16px;
@@ -244,8 +257,12 @@
     <projection
       v-else-if="hasBoard"
       slot="boardGrid"
+      :empty-group-title="t('group.untitled')"
+      :draft-saving="boardDraftSaving"
       @layout-change="onLayoutChange"
       @row-action="onCardRowAction"
+      @draft-save="onDraftSave"
+      @draft-discard="onDraftDiscard"
     >
       <template #empty>
         <div class="db-empty-state" data-testid="dashboard-groups-empty">
@@ -272,19 +289,20 @@
         </div>
       </template>
 
-      <template #group-header-actions="{ group, index }">
+      <template #group-header-actions="{ group, index, locked }">
         <sdk-dropdown
           trigger="click"
           placement="bottom-end"
-          :disabled="groupBusy"
+          :disabled="groupBusy || locked"
           @command="(cmd) => handleGroupCommand(cmd, group, index)"
         >
           <button
             type="button"
             class="db-group-more"
+            :data-group-snap="trackGroup(group)"
             :title="t('group.more')"
             :aria-label="t('group.more')"
-            :disabled="groupBusy"
+            :disabled="groupBusy || locked"
             data-action="group-menu"
             @click.stop
           >
@@ -324,13 +342,73 @@
         </div>
       </template>
 
-      <template #item-header-actions="{ row, itemRef, title }">
+      <template #item-title-suffix="{ itemRef }">
+        <span
+          v-if="getCardTruncation(itemRef.primaryKey)"
+          class="db-truncation-icon"
+          role="note"
+          :title="getCardTruncation(itemRef.primaryKey)"
+          :aria-label="getCardTruncation(itemRef.primaryKey)"
+          data-testid="card-truncation-warning"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </svg>
+        </span>
+      </template>
+
+      <template #item-header-actions="{ row, itemRef, title, locked }">
         <div v-if="row.fields && row.fields.kind === 'chart'" class="db-card-actions">
+          <button
+            type="button"
+            class="db-icon-btn"
+            :title="t('card.zoom')"
+            :aria-label="t('card.zoom')"
+            data-action="card-zoom"
+            @click.stop="setCardZoomed(itemRef.primaryKey, true)"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 15 6 6" />
+              <path d="m15 9 6-6" />
+              <path d="M21 16v5h-5" />
+              <path d="M21 8V3h-5" />
+              <path d="M3 16v5h5" />
+              <path d="m3 21 6-6" />
+              <path d="M3 8V3h5" />
+              <path d="M9 9 3 3" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="db-icon-btn"
+            :class="{ 'db-icon-btn--active': getCardViewMode(itemRef.primaryKey) === 'table' }"
+            :title="getCardViewMode(itemRef.primaryKey) === 'table' ? t('card.viewChart') : t('card.viewData')"
+            :aria-label="getCardViewMode(itemRef.primaryKey) === 'table' ? t('card.viewChart') : t('card.viewData')"
+            :aria-pressed="getCardViewMode(itemRef.primaryKey) === 'table'"
+            data-action="card-toggle-view"
+            @click.stop="toggleCardViewMode(itemRef.primaryKey)"
+          >
+            <svg v-if="getCardViewMode(itemRef.primaryKey) === 'table'" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 3v18h18" />
+              <path d="M18 17V9" />
+              <path d="M13 17V5" />
+              <path d="M8 17v-3" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M3 9h18" />
+              <path d="M3 15h18" />
+              <path d="M9 3v18" />
+            </svg>
+          </button>
           <button
             type="button"
             class="db-icon-btn"
             :title="t('card.parameters')"
             :aria-label="t('card.parameters')"
+            :disabled="locked"
             data-action="card-parameters"
             @click.stop="openCardDialog(itemRef, 'parameters', title || row.label)"
           >
@@ -341,25 +419,44 @@
         </div>
       </template>
 
-      <template #item="{ row, itemRef, title }">
+      <template #item="{ row, itemRef, title, group, colSpan, rowSpan, section, draftOverride }">
         <projection
           v-if="row.fields && row.fields.kind === 'chart'"
-          :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label)"
+          :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label, { row, group, colSpan, rowSpan, section })"
           slot="chartCard"
           :inputs="{ target: itemRef }"
+          :title="title || row.label"
+          :file-override="draftOverride ? draftOverride.fileOverride : undefined"
+          :view-mode="getCardViewMode(itemRef.primaryKey)"
+          :zoomed="isCardZoomed(itemRef.primaryKey)"
           min-height="100%"
           class="db-card-projection db-card-projection--chart"
-        ></projection>
+          @update:view-mode="(mode) => setCardViewMode(itemRef.primaryKey, mode)"
+          @update:zoomed="(open) => setCardZoomed(itemRef.primaryKey, open)"
+          @truncation-change="(hint) => setCardTruncation(itemRef.primaryKey, hint)"
+        >
+          <template #table-footer-actions>
+            <sdk-button
+              size="small"
+              text
+              type="primary"
+              data-action="table-metric-source"
+              @click.stop="openCardDialog(itemRef, 'metricSource', title || row.label)"
+            >
+              {{ t("card.metricSource") }}
+            </sdk-button>
+          </template>
+        </projection>
         <projection
           v-else
-          :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label)"
+          :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label, { row, group, colSpan, rowSpan, section })"
           slot="metricCard"
           :inputs="{ target: itemRef }"
           :field="cardFieldString(row, 'valueField')"
           :unit="cardFieldString(row, 'unit')"
           :formats="cardFormats(row)"
-          variant="compact"
           class="db-card-projection db-card-projection--metric"
+          @truncation-change="(hint) => setCardTruncation(itemRef.primaryKey, hint)"
         ></projection>
       </template>
     </projection>
@@ -393,12 +490,18 @@
     <projection
       v-if="sourceDialogOpen && hasCard"
       slot="cardMetricSource"
+      @navigate="onNavigateMetric"
     ></projection>
     <template #footer>
       <div class="db-dialog-footer">
         <sdk-button data-action="close-metric-source" @click="closeCardDialog">
           {{ t("dialog.close") }}
         </sdk-button>
+        <projection
+          v-if="sourceDialogOpen && hasCard"
+          slot="cardMetricOpen"
+          @navigate="onNavigateMetric"
+        ></projection>
       </div>
     </template>
   </sdk-dialog>

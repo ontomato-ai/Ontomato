@@ -57,6 +57,7 @@ import {
   type FormSaveResult,
 } from "../panel/member-forms";
 import { formControlsKey } from "./form-controls";
+import { collectFormChangeSummary, type FormChangeSummaryEntry } from "./form-change-summary";
 import { formSecretPaths } from "./form-secret-fields";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
@@ -156,6 +157,13 @@ const props = withDefaults(defineProps<{
   columns?: 1 | 2;
   /** How save refusals render at the foot of the form: compact `"summary"` (default) or an aggregated `"alert"` with a problems list. */
   refusalPresentation?: "summary" | "alert";
+  /**
+   * Renders a compact bordered comparison table below the form fields whenever any editable field differs from its
+   * initial baseline value, showing field label, strikethrough previous value, and bold new value. Defaults to `false`.
+   */
+  showChangeSummary?: boolean;
+  /** Optional heading (panel message key or plain text) shown above the change comparison table when `showChangeSummary` is enabled. */
+  changeSummaryTitle?: string;
 }>(), {
   fixedFields: () => ({}),
   layout: "stacked",
@@ -170,6 +178,8 @@ const props = withDefaults(defineProps<{
   showToc: true,
   columns: 1,
   refusalPresentation: "summary",
+  showChangeSummary: false,
+  changeSummaryTitle: undefined,
 });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created (primaryKey is null when not reported). */
@@ -2121,6 +2131,23 @@ const showActionBar = computed(() => {
 /** The fields an assistant filled, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
 
+/** Before/after entries for all modified editable fields when `showChangeSummary` is enabled. */
+const changeSummaryEntries = computed<readonly FormChangeSummaryEntry[]>(() => {
+  if (!props.showChangeSummary || !prunedOpenedValues.value) return [];
+  const secretSet = new Set(formSecretPaths(fields.value, prunedValues.value));
+  return collectFormChangeSummary(fields.value, prunedOpenedValues.value, prunedValues.value, {
+    locale: locale.value,
+    secretPaths: secretSet,
+    translate: t,
+  });
+});
+
+const resolvedChangeSummaryTitle = computed(() => {
+  const title = props.changeSummaryTitle?.trim();
+  if (!title) return "";
+  return panel.t(title);
+});
+
 const prevStepLabel = computed(() => (te("platform.formPrevStep") ? t("platform.formPrevStep") : "Previous"));
 const nextStepLabel = computed(() => (te("platform.formNextStep") ? t("platform.formNextStep") : "Next"));
 
@@ -2394,6 +2421,29 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
           </form-advanced-section>
         </div>
         <slot name="after-fields"></slot>
+        <div
+          v-if="showChangeSummary && changeSummaryEntries.length > 0"
+          class="sdk-owner-form-changes"
+          data-testid="object-form-change-summary"
+          role="region"
+          :aria-label="resolvedChangeSummaryTitle || t('platform.formChangedCount', { count: changeSummaryEntries.length }, changeSummaryEntries.length)"
+        >
+          <p v-if="resolvedChangeSummaryTitle" class="sdk-owner-form-changes-title">{{ resolvedChangeSummaryTitle }}</p>
+          <div class="sdk-owner-form-changes-wrap">
+            <table class="sdk-owner-form-changes-table">
+              <tbody>
+                <tr v-for="entry in changeSummaryEntries" :key="entry.path">
+                  <th scope="row" class="sdk-owner-form-changes-label">{{ entry.label }}</th>
+                  <td class="sdk-owner-form-changes-diff">
+                    <span class="sdk-owner-form-changes-was">{{ entry.from }}</span>
+                    <span class="sdk-owner-form-changes-arrow" aria-hidden="true">→</span>
+                    <span class="sdk-owner-form-changes-now">{{ entry.to }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
         <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
           {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
         </p>
@@ -2805,6 +2855,63 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
   gap: var(--spacing-sm);
   padding-top: var(--spacing-sm);
   border-top: 1px solid var(--ui-divider);
+}
+
+.sdk-owner-form-changes {
+  margin-top: var(--spacing-md);
+}
+.sdk-owner-form-changes-title {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+}
+.sdk-owner-form-changes-wrap {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+}
+.sdk-owner-form-changes-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.sdk-owner-form-changes-label {
+  width: 1%;
+  min-width: 104px;
+  padding: 8px 12px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-weight: 500;
+  text-align: start;
+  white-space: nowrap;
+  vertical-align: top;
+  border-right: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.sdk-owner-form-changes-diff {
+  padding: 8px 12px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  vertical-align: top;
+  word-break: break-word;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.sdk-owner-form-changes-table tr:last-child .sdk-owner-form-changes-label,
+.sdk-owner-form-changes-table tr:last-child .sdk-owner-form-changes-diff {
+  border-bottom: 0;
+}
+.sdk-owner-form-changes-was {
+  color: var(--el-text-color-tertiary, var(--el-text-color-placeholder));
+  text-decoration: line-through;
+}
+.sdk-owner-form-changes-arrow {
+  margin: 0 6px;
+  color: var(--el-text-color-tertiary, var(--el-text-color-placeholder));
+}
+.sdk-owner-form-changes-now {
+  color: var(--el-text-color-primary);
+  font-weight: var(--font-semibold);
 }
 
 @container sdk-owner-form (max-width: 720px) {

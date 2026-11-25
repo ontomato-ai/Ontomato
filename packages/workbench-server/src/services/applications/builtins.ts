@@ -176,6 +176,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "path": "/dashboards",
         "access": { "kind": "domain-member" },
         "icon": "dashboards",
+        "frameHeader": true,
         "names": {
           "en": "Dashboards",
           "zh-CN": "仪表盘",

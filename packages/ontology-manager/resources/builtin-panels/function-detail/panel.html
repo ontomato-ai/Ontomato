@@ -21,7 +21,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
   .fn-detail-card {
     display: flex;
@@ -70,7 +70,7 @@
 
   @container fn-detail-page (max-width: 640px) {
     .fn-detail-body {
-      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
     .fn-detail-card {
       padding: var(--spacing-md);

@@ -10,6 +10,7 @@ import { useMember, useMemberData, useMemberOutput, useMemberParam } from "../pa
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { stateObject, type PanelFieldValue } from "../panel/state";
 import { useDataStateLabels } from "./data-state-labels";
+import { unwrapJsonField } from "./display-value";
 import type { ObjectListRef } from "./object-list-types";
 import { displayFieldText, rawRecordField } from "./record-field";
 import type { DashboardMetricPreviewCard } from "./dashboard-metric-preview-types";
@@ -121,8 +122,9 @@ const selectedKey = computed<string | null>(() => {
 });
 
 function extractOutput(raw: unknown): DashboardMetricOutput | null {
-  if (!raw || typeof raw !== "object") return null;
-  const candidate = raw as Record<string, unknown>;
+  const unwrapped = unwrapJsonField(raw);
+  if (!unwrapped || typeof unwrapped !== "object") return null;
+  const candidate = unwrapped as Record<string, unknown>;
   if (Array.isArray(candidate.columns) && Array.isArray(candidate.rows)) {
     return candidate as unknown as DashboardMetricOutput;
   }
@@ -130,12 +132,13 @@ function extractOutput(raw: unknown): DashboardMetricOutput | null {
 }
 
 function extractChartFile(raw: unknown): unknown {
-  if (!raw || typeof raw !== "object") return undefined;
-  const candidate = raw as Record<string, unknown>;
+  const unwrapped = unwrapJsonField(raw);
+  if (!unwrapped || typeof unwrapped !== "object") return undefined;
+  const candidate = unwrapped as Record<string, unknown>;
   if ("content" in candidate && candidate.content && typeof candidate.content === "object") {
     return candidate.content;
   }
-  return raw;
+  return unwrapped;
 }
 
 function parseRecordCard(row: PlatformObjectRecord): DashboardMetricPreviewCard {
@@ -150,10 +153,14 @@ function parseRecordCard(row: PlatformObjectRecord): DashboardMetricPreviewCard 
       ? rawVal
       : displayFieldText(rawVal as never, locale.value, translate);
   } else if (kind === "metric" && output && output.rows.length > 0) {
-    const firstCol = output.columns[0];
-    if (firstCol) {
-      const formats = rawRecordField(row, "formats") as Readonly<Record<string, Parameters<typeof chartValueText>[1]>> | undefined;
-      value = chartValueText(output.rows[0]?.[firstCol.key], formats?.[firstCol.key]);
+    const mappedField = rawRecordField(row, "valueField");
+    const colKey = typeof mappedField === "string" && mappedField ? mappedField : output.columns[0]?.key;
+    if (colKey) {
+      const rawFormats = unwrapJsonField(rawRecordField(row, "formats"));
+      const formats = rawFormats && typeof rawFormats === "object"
+        ? (rawFormats as Readonly<Record<string, Parameters<typeof chartValueText>[1]>>)
+        : undefined;
+      value = chartValueText(output.rows[0]?.[colKey], formats?.[colKey]);
     }
   }
   const unitRaw = rawRecordField(row, props.unitField);

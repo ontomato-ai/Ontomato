@@ -20,7 +20,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap);
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
   .sdk-toolbar {
     display: flex;
@@ -31,10 +31,6 @@
   }
   .sdk-toolbar .sdk-search {
     width: 280px;
-    max-width: 100%;
-  }
-  .sdk-toolbar .sdk-group-filter {
-    width: 160px;
     max-width: 100%;
   }
   .sdk-search-icon {
@@ -53,39 +49,14 @@
     height: auto;
     gap: 0;
   }
-  .sdk-table-host .sdk-object-list-table {
-    table-layout: fixed;
-    width: 100%;
-  }
-  .sdk-table-host .sdk-object-list-table .sdk-object-list-col-shrink {
-    max-width: none;
-  }
-  .sdk-table-host .sdk-object-list-table td:not(.sdk-object-list-group-cell) {
-    height: var(--table-row-height, 40px);
-    padding-block: 6px;
-  }
-  .sdk-table-host .sdk-object-list-table td:not(.sdk-object-list-group-cell) .sdk-object-list-cell-text {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  .sdk-table-host .sdk-object-list-table td:not(.sdk-object-list-group-cell) .sdk-object-list-cell-main {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .sdk-table-host .sdk-object-list-table td:first-child .sdk-object-list-cell-main {
     color: var(--sdk-text-color-primary);
     font-weight: var(--font-semibold);
   }
-  .sdk-table-host .sdk-object-list-table td:nth-child(2) .sdk-object-list-cell-main {
+  .sdk-table-host .sdk-object-list-table td:nth-child(5) .sdk-object-list-cell-main {
     color: var(--sdk-text-color-secondary);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-  }
-  .sdk-table-host .sdk-object-list-table td:nth-child(3) .sdk-object-list-cell-main {
-    color: var(--sdk-text-color-secondary);
-    font-weight: var(--font-regular);
   }
   .sdk-detail-title-wrap {
     display: inline-flex;
@@ -138,7 +109,7 @@
     flex-direction: column;
     gap: var(--page-content-gap);
     min-width: 0;
-    padding: var(--page-content-gap) var(--page-gutter);
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
   .sdk-detail-card {
     min-width: 0;
@@ -147,25 +118,16 @@
     border-radius: var(--radius-md);
     background: var(--sdk-bg-color);
   }
-  @container sdk-components-page (max-width: 640px) {
-    .sdk-table-host .sdk-object-list-table {
-      table-layout: auto;
-    }
-    .sdk-table-host .sdk-object-list-table .sdk-object-list-col-shrink {
-      max-width: 24rem;
-    }
-  }
   @container sdk-components-page (max-width: 560px) {
     .sdk-toolbar {
       flex-direction: column;
       align-items: stretch;
     }
-    .sdk-toolbar .sdk-search,
-    .sdk-toolbar .sdk-group-filter {
+    .sdk-toolbar .sdk-search {
       width: 100%;
     }
     .sdk-detail-body {
-      padding-block: var(--spacing-md) var(--page-content-gap);
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
     .sdk-detail-card {
       padding: var(--spacing-md);
@@ -205,28 +167,10 @@
               </svg>
             </template>
           </sdk-input>
-          <sdk-select
-            v-model="group"
-            class="sdk-group-filter"
-            :aria-label="t('components.group.label')"
-          >
-            <sdk-option
-              v-for="option in groupOptions"
-              :key="option.value"
-              :value="option.value"
-              :label="option.label"
-            ></sdk-option>
-          </sdk-select>
           <span v-if="countText" class="sdk-count">{{ countText }}</span>
         </div>
         <div class="sdk-table-host">
-          <projection slot="list" @choose="open" @clear-filters="clearFilters">
-            <template #empty="{ narrowed, clearFilters: clear }">
-              <sdk-empty :description="narrowed ? t('components.list.noMatch') : t('components.list.empty')">
-                <sdk-button v-if="narrowed" size="small" @click="clear">{{ t('components.list.clearFilters') }}</sdk-button>
-              </sdk-empty>
-            </template>
-          </projection>
+          <projection slot="list" @choose="open"></projection>
         </div>
       </div>
     </div>

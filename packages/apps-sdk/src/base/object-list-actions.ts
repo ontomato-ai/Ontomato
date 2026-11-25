@@ -173,6 +173,8 @@ export function resolveRowActionAddress(
   });
 }
 
+export { resolveRowOperationPrefill, resolveRowPrefillSource } from "./operation-prefill";
+
 /** Formats a numeric pixel width or CSS length string into a CSS style value. */
 export function formatColumnLength(value: number | string | undefined): string | undefined {
   if (value === undefined) return undefined;

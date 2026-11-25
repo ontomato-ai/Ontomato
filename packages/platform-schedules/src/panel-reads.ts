@@ -113,15 +113,21 @@ function taskRecord(
       stateLabel,
       enabled: task.enabled,
       revision: task.revision,
+      ...(task.activeRunId ? { activeRunId: task.activeRunId } : {}),
       pauseCode: task.pause?.code ?? "",
-      ...(task.pause ? { pauseReason: task.pause.message } : {}),
+      ...(task.pause ? { pauseReason: task.pause.message, pauseMessage: task.pause.message } : {}),
       nextRun: task.nextRunAt ?? "",
+      ...(task.nextRunAt ? { nextRunAt: task.nextRunAt } : {}),
       lastRun: task.lastRun?.status ?? "",
+      ...(task.lastRun?.status ? { lastRunStatus: task.lastRun.status } : {}),
+      ...(task.lastRun?.trigger ? { trigger: task.lastRun.trigger } : {}),
       lastRunFinishedAt: task.lastRun?.finishedAt ?? "",
       frequency: scheduledTaskFrequencyText(task.frequency, locale, translate),
       timeZone: task.timeZone,
       notifyEmail: task.notifyEmail ?? "",
       lastRunAt: task.lastRun?.startedAt ?? "",
+      ...(task.lastRun?.startedAt ? { lastRunStartedAt: task.lastRun.startedAt } : {}),
+      ...(task.lastRun?.error?.message ? { lastRunError: task.lastRun.error.message } : {}),
       lastRunSummary: lastRunSummaryRaw ? previewMarkdownText(lastRunSummaryRaw) : "",
       latestResultPath: task.latestResult?.link.path ?? "",
       latestRunId,
@@ -407,6 +413,48 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     },
     async runRecord(primaryKey: string, runId: string): Promise<PanelRecord> {
       return runRecord(await api.run(primaryKey, runId), translate);
+    },
+    async latestRunRecord(primaryKey: string): Promise<PanelRecord> {
+      const task = await api.task(primaryKey);
+      const latestRunId = task.activeRunId ?? task.lastRun?.id ?? null;
+      let run: PlatformTaskRun | null = null;
+      if (latestRunId) {
+        try {
+          run = await api.run(primaryKey, latestRunId);
+        } catch {
+          run = null;
+        }
+      }
+      const fallback = task.lastRun;
+      const status = run?.status ?? fallback?.status ?? (task.activeRunId ? "running" : undefined);
+      const trigger = run?.trigger ?? fallback?.trigger;
+      const startedAt = run?.startedAt ?? fallback?.startedAt;
+      const finishedAt = run?.finishedAt ?? fallback?.finishedAt ?? undefined;
+      const timeZone = run?.snapshot.timeZone ?? task.timeZone;
+      const error = run?.error ?? fallback?.error ?? null;
+      const errorMessage = error ? formatRunError(error, translate) : undefined;
+      const result = run?.result ?? undefined;
+      const resultSummary = run?.resultSummary ?? fallback?.resultSummary ?? undefined;
+      return {
+        primaryKey: latestRunId ?? task.id,
+        label: task.title,
+        fields: {
+          ...(task.pause ? { pauseMessage: task.pause.message } : {}),
+          ...(status ? { status } : {}),
+          ...(trigger ? { trigger } : {}),
+          ...(startedAt ? { startedAt } : {}),
+          ...(finishedAt ? { finishedAt } : {}),
+          ...(timeZone ? { timeZone } : {}),
+          ...(errorMessage ? { errorMessage } : {}),
+          ...(result !== undefined && result !== null ? { result } : {}),
+          ...(resultSummary ? { resultSummary } : {}),
+        },
+        ...(status ? { tones: { status: runStatusTone(status) } } : {}),
+        outputs: {
+          resultPath: run?.resultLink?.path ?? task.latestResult?.link.path ?? "",
+          isRunning: status === "running",
+        },
+      };
     },
     [runNowRead]() {
       return panelOwnerOperationDescriptorSchema.parse({

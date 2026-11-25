@@ -75,6 +75,7 @@ vi.mock("../../app-builder/sdk", () => ({
           exportName: "WildcardBox",
           role: "presentation",
           group: "layout",
+          panelUsable: false,
           meaning: "Accepts any datum name.",
           data: {
             "*": { results: ["panelRecord"], required: false },
@@ -122,11 +123,15 @@ beforeAll(() => {
       "zh-CN": {
         messages: {
           ...en,
+          "panels.sdkComponent.rolePresentation": "展示组件",
           "panels.sdkComponent.roleControl": "控件",
           "panels.sdkComponent.group": "用途分组",
           "panels.sdkComponent.group.list": "列表",
           "panels.sdkComponent.group.graph": "图谱",
           "panels.sdkComponent.group.layout": "布局",
+          "panels.sdkComponent.panelUsable": "使用范围",
+          "panels.sdkComponent.panelUsableYes": "面板可用",
+          "panels.sdkComponent.panelUsableShellOnly": "仅平台外壳",
           "panels.sdkComponent.yes": "是",
           "panels.sdkComponent.no": "否",
           "panels.sdkComponent.wildcard": "任意名称",
@@ -158,11 +163,12 @@ it("formats platform:SDKComponent record and all five specification tables accor
       exportName: "SampleList",
       role: "控件",
       group: "列表",
+      panelUsable: "面板可用",
       meaning: "Shows a list of records.",
       effects: "Reads records through the platform.",
     },
     tags: { bindsElement: ["PlatformObjectType:*"] },
-    tones: { role: "info" },
+    tones: { role: "info", panelUsable: "success" },
   });
 
   const dataRows = panelRecordListSchema.parse(await readSdkComponentDataRows(owner, id, "zh-CN"));
@@ -232,28 +238,41 @@ it("describes the two ObjectRelations wiring choices in the reader's locale", as
   }
 });
 
-it("lists components in canonical purpose group order and filters full catalogue by group and search", async () => {
+it("lists components in canonical purpose group order with summary attributes and searches across full metadata", async () => {
   const all = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN"));
-  expect(all.map(row => ({ key: row.primaryKey, group: row.fields.group }))).toEqual([
-    { key: "@ontomato/sdk:SampleList", group: "列表" },
-    { key: "@ontomato/sdk:ObjectRelations", group: "图谱" },
-    { key: "@ontomato/sdk:WildcardBox", group: "布局" },
-    { key: "@acme/widgets:ActionCard", group: undefined },
+  expect(all).toMatchObject([
+    {
+      primaryKey: "@ontomato/sdk:SampleList",
+      fields: { package: "@ontomato/sdk", role: "控件", panelUsable: "面板可用", group: "列表" },
+      tags: { bindsElement: ["PlatformObjectType:*"] },
+      tones: { role: "info", panelUsable: "success" },
+    },
+    {
+      primaryKey: "@ontomato/sdk:ObjectRelations",
+      fields: { package: "@ontomato/sdk", role: "控件", panelUsable: "面板可用", group: "图谱" },
+      tones: { role: "info", panelUsable: "success" },
+    },
+    {
+      primaryKey: "@ontomato/sdk:WildcardBox",
+      fields: { package: "@ontomato/sdk", role: "展示组件", panelUsable: "仅平台外壳", group: "布局" },
+      tones: { role: "default", panelUsable: "default" },
+    },
+    {
+      primaryKey: "@acme/widgets:ActionCard",
+      fields: { package: "@acme/widgets", role: "控件", panelUsable: "面板可用" },
+      tones: { role: "info", panelUsable: "success" },
+    },
   ]);
+  for (const row of all) {
+    expect(row.fields).not.toHaveProperty("meaning");
+  }
 
-  const graphOnly = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", { group: "graph" }));
-  expect(graphOnly.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:ObjectRelations"]);
-
-  const listAndSearch = panelRecordListSchema.parse(
-    await listSdkComponents(owner, "zh-CN", { group: "list", search: "records" }),
-  );
-  expect(listAndSearch.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:SampleList"]);
-
-  const mismatchedGroup = panelRecordListSchema.parse(
-    await listSdkComponents(owner, "zh-CN", { group: "layout", search: "SampleList" }),
-  );
-  expect(mismatchedGroup).toEqual([]);
-
-  const byGroupLabel = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", { search: "图谱" }));
+  const byGroupLabel = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "图谱"));
   expect(byGroupLabel.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:ObjectRelations"]);
+
+  const byAvailability = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "仅平台外壳"));
+  expect(byAvailability.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:WildcardBox"]);
+
+  const byMeaning = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "records"));
+  expect(byMeaning.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:SampleList"]);
 });
