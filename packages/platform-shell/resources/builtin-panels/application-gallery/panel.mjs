@@ -1,10 +1,11 @@
 import { computed } from "vue";
-import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 /*
- * Built-in application gallery panel: renders available applications (`platform:Application.available`)
- * and enabled agents (`platform:AgentDefinition.available`) as clickable cards backed by real object
- * identities, with per-card pin/unpin operations synchronized to personal home preferences.
+ * Built-in application gallery panel: renders available applications (`platform:Application`) and
+ * enabled agents (`platform:AgentDefinition`) in one continuous card grid via
+ * `platform:Application.available`, with per-card pin/unpin operations synchronized to personal
+ * home preferences.
  */
 
 const CATEGORIES = ["all", "business", "agents", "build", "admin"];
@@ -29,42 +30,6 @@ await mountPanel({
       },
     });
 
-    const appsStatus = usePanelOutput("applications", "status");
-    const appsFiltered = usePanelOutput("applications", "filteredCount");
-    const appsLoaded = usePanelOutput("applications", "loadedCount");
-    const agentsStatus = usePanelOutput("agents", "status");
-    const agentsFiltered = usePanelOutput("agents", "filteredCount");
-    const agentsLoaded = usePanelOutput("agents", "loadedCount");
-
-    const appsCount = computed(() => appsFiltered.value ?? appsLoaded.value ?? 0);
-    const agentsCount = computed(() => agentsFiltered.value ?? agentsLoaded.value ?? 0);
-
-    const showApplications = computed(() => category.value !== "agents");
-    const showAgents = computed(() => category.value === "all" || category.value === "agents");
-
-    const appsReadyEmpty = computed(() =>
-      (appsStatus.value === "ready" || appsStatus.value === "empty") && appsCount.value === 0,
-    );
-    const agentsReadyEmpty = computed(() =>
-      (agentsStatus.value === "ready" || agentsStatus.value === "empty") && agentsCount.value === 0,
-    );
-
-    const showCombinedEmpty = computed(() =>
-      category.value === "all" && appsReadyEmpty.value && agentsReadyEmpty.value,
-    );
-    const hideEmptyApplicationsInAll = computed(() =>
-      category.value === "all" && appsReadyEmpty.value,
-    );
-    const hideEmptyAgentsInAll = computed(() =>
-      category.value === "all" && agentsReadyEmpty.value,
-    );
-    const showSectionHeadings = computed(() =>
-      category.value === "all"
-      && !hideEmptyApplicationsInAll.value
-      && !hideEmptyAgentsInAll.value
-      && appsCount.value > 0
-      && agentsCount.value > 0,
-    );
     const filtered = computed(() => category.value !== "all" || searchText.value.trim() !== "");
 
     function selectCategory(next) {
@@ -81,12 +46,6 @@ await mountPanel({
       categories: CATEGORIES,
       category,
       searchText,
-      showApplications,
-      showAgents,
-      showCombinedEmpty,
-      hideEmptyApplicationsInAll,
-      hideEmptyAgentsInAll,
-      showSectionHeadings,
       filtered,
       selectCategory,
       clearFilters,

@@ -29,6 +29,7 @@ export const en = {
   "panels.favorite.added": "Added “{name}” to favorites",
   "panels.favorite.removed": "Removed “{name}” from favorites",
   "panels.favorite.unavailable": "Unavailable",
+  "panels.favorite.loadUnavailable": "Favorites could not be loaded. Applications and agents are still available below.",
   "panels.recentVisit.title": "Title",
   "panels.recentVisit.appName": "Application",
   "panels.recentVisit.context": "Context",

@@ -809,7 +809,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       available: {
         source: "type", parameterMode: "fixed",
         params: { category: "applicationGalleryCategory", search: "keyword", favoritesOnly: "favoritesOnly" },
-        result: "panelRecordList",
+        result: "panelRecordQuery",
         outputs: {
           openPath: { kind: "scalar", type: "string" },
         },
