@@ -44,6 +44,24 @@ class AuthorizationServiceTest {
     }
 
     @Test
+    void managementReadsAndChangesAreIndependentAndDomainAdminsUseTheCatalog() {
+        var actor = new VerifiedIdentity("domain", "user", CredentialLimit.UNRESTRICTED);
+        var admin = authorization.resolveSubject(actor);
+        assertTrue(authorization.decide(admin, new Management(AuthorizationPolicies.READ)).allowed());
+        assertTrue(authorization.decide(admin, new Management(AuthorizationPolicies.CHANGE)).allowed());
+
+        when(subjects.resolveRoles("domain", "user")).thenReturn(
+                new RoleResolution(Set.of("role"), Set.of("role"), List.of(), Set.of(), Map.of(), false));
+        when(store.policies("domain", Set.of("role"))).thenReturn(
+                List.of(new PolicyRef("role", "operations", PolicyKind.MANAGEMENT)));
+        when(store.managementOperations("domain", Set.of("operations"))).thenReturn(Set.of(AuthorizationPolicies.READ));
+
+        var reader = authorization.resolveSubject(actor);
+        assertTrue(authorization.decide(reader, new Management(AuthorizationPolicies.READ)).allowed());
+        assertFalse(authorization.decide(reader, new Management(AuthorizationPolicies.CHANGE)).allowed());
+    }
+
+    @Test
     void policiesDoNotOpenAnotherAuthorsDraftOrMakeTheUserAWorkflowActor() {
         var ctx = authorization.resolveSubject(new VerifiedIdentity("domain", "user", CredentialLimit.UNRESTRICTED));
         var scope = new GrantScope(GrantScope.Kind.assigned_to_self, "Ticket", "assignee");

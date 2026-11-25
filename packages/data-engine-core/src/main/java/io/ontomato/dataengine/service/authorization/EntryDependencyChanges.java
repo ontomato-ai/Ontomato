@@ -36,7 +36,8 @@ public final class EntryDependencyChanges {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A domain, source and entry changes are required");
         if (publication.source().kind() == null
                 || !Set.of("panel", "application", "object-detail").contains(publication.source().kind())
-                || publication.source().id() == null || publication.source().id().isBlank())
+                || publication.source().id() == null || publication.source().id().isBlank()
+                || publication.source().actorId() == null || publication.source().actorId().isBlank())
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid entry dependency source");
 
         transactions.executeWithoutResult(ignored -> {
@@ -70,7 +71,7 @@ public final class EntryDependencyChanges {
                 if (store.objectGrants(target, added.verb(), Set.of(policy)).stream()
                         .anyMatch(grant -> java.util.Objects.equals(grant.scope(), added.scope()))) continue;
                 var grant = new ObjectGrant(policy, target, added.verb(), added.scope());
-                store.addPendingGrant(new PendingGrant(0, source.kind(), source.id(), entry, grant));
+                store.addPendingGrant(new PendingGrant(0, source.kind(), source.id(), source.actorId(), entry, grant));
             }
         }
     }
