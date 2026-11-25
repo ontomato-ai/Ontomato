@@ -7,7 +7,7 @@ import type { PanelInstance } from "./instance";
 import type { PanelObjectRef } from "./state";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
-import type { PanelFormAdapter, PanelFormAdapters, PanelFormHandle } from "./forms";
+import { scopedFormSlot, type PanelFormAdapter, type PanelFormAdapters, type PanelFormHandle } from "./forms";
 import {
   adapterPart,
   platformObjectAdapter,
@@ -19,7 +19,7 @@ import {
 } from "./platform-objects";
 import { valueAt } from "./form-values";
 import { resolveActiveField } from "../base/form-placement";
-import { formFieldSlotKey } from "./slot-context";
+import { formFieldSlotKey, useListRowSlot } from "./slot-context";
 import { projectionElement } from "./projection-element";
 import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
@@ -210,10 +210,25 @@ export function useProjectionSlot(): ProjectionSlot {
 }
 
 /**
+ * Computes the form registry key for the current projection slot: the manifest slot name for top-level forms, or a
+ * row/card-scoped key when mounted inside an `ObjectList` row/card slot so multiple instances can coexist.
+ */
+export function projectionFormSlotKey(): string {
+  const drawn = useProjectionSlot();
+  const listRowSlot = useListRowSlot();
+  if (!listRowSlot) return drawn.slot;
+  const itemKey = listRowSlot.itemKey.value;
+  const suffix = itemKey !== undefined
+    ? (typeof itemKey === "string" ? itemKey : `${itemKey.className}:${itemKey.primaryKey}`)
+    : `${listRowSlot.ref.value.className}:${listRowSlot.ref.value.primaryKey}`;
+  return scopedFormSlot(drawn.slot, suffix);
+}
+
+/**
  * Registers a form component with the instance under its slot: the form other slots' field ports edit, the draft the
  * address names, the header's save and discard and the unsaved state the host is told.
  */
-export function useProjectionForm(adapter: PanelFormAdapter): void {
+export function useProjectionForm(adapter: PanelFormAdapter): string {
   const context = usePanelContext();
   const drawn = useProjectionSlot();
   // A form may save itself or supply its draft to another member's operation.
@@ -223,13 +238,15 @@ export function useProjectionForm(adapter: PanelFormAdapter): void {
     Object.values(member.readOperationInputs ?? {}).some((input) => input.draft?.slot === drawn.slot));
   if (!hasOwnOperation && !hasSiblingDraftOperation)
     throw new Error(`The projection in member '${drawn.slot}' names no operation, so its form cannot save`);
-  const unregisterForm = context.instance.forms.register(drawn.slot, adapter);
+  const registrationKey = projectionFormSlotKey();
+  const unregisterForm = context.instance.forms.register(registrationKey, adapter);
   const overlayScope = inject(overlayFormScopeKey, null);
-  const unregisterOverlay = overlayScope?.register(drawn.slot, context.instance.forms);
+  const unregisterOverlay = overlayScope?.register(registrationKey, context.instance.forms);
   onBeforeUnmount(() => {
     unregisterOverlay?.();
     unregisterForm();
   });
+  return registrationKey;
 }
 
 /** One field of a form in this panel instance, as a field projection reads and edits it. */
