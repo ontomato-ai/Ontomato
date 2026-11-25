@@ -2,6 +2,8 @@
 import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
+import { appIcon, hasAppIcon } from "@ontomato/platform-shell";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
@@ -67,8 +69,10 @@ const props = withDefaults(
      * already displays the selected count beside the batch actions.
      */
     showBatchCount?: boolean;
-    /** Optional leading icon on the button (`trash` for destructive removal, `check` for approval). */
-    icon?: "trash" | "check";
+    /** Optional leading icon on the button (`"trash"`, `"check"`, or any curated platform icon name such as `"plug"` or `"refresh-cw"`). */
+    icon?: string;
+    /** Optional pre-supplied operation parameters (for example a row-scoped `{ sourceId }` for a read-only probe); skips the input dialog when all required inputs are provided. */
+    parameters?: Readonly<Record<string, RuntimeJsonValue>>;
     /** Optional custom surface label for the button; defaults to the owner's formal operation label (confirmation dialogs and agent catalogs always keep the owner's formal label). */
     label?: string;
     /** Optional panel message key resolved via `panel.t` for localized surface labels. */
@@ -82,7 +86,7 @@ const props = withDefaults(
     /** Whether to render read-only operation results and read failures inline beneath the button (default `true`). Set `false` when the panel renders `<operation-result>` in a dedicated region via `@read` and `@error`. */
     showResult?: boolean;
   }>(),
-  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false, hideWhenUnavailable: false, showResult: true },
+  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, parameters: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false, hideWhenUnavailable: false, showResult: true },
 );
 
 const emit = defineEmits<{
@@ -226,9 +230,33 @@ const ready = computed(() =>
   !props.disabled && isOperationReady(descriptor.value, targetInfo.value, running.value, panel.instance.forms),
 );
 
+const resolvedPlatformIcon = computed(() => {
+  if (!props.icon || props.icon === "trash" || props.icon === "check") return null;
+  const trimmed = props.icon.trim();
+  if (!trimmed) return null;
+  if (hasAppIcon(trimmed)) return appIcon(trimmed);
+  const kebab = trimmed
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
+    .replace(/([a-zA-Z])(\d)/g, "$1-$2")
+    .replace(/[_\s]+/g, "-")
+    .toLowerCase();
+  return hasAppIcon(kebab) ? appIcon(kebab) : null;
+});
+
 function onTriggerClick() {
   if (!descriptor.value || !ready.value) return;
   if (targetInfo.value.batch) publishBatchReceipt?.(null);
+  if (props.parameters && Object.keys(props.parameters).length > 0) {
+    const provided: Record<string, RuntimeJsonValue> = { ...props.parameters };
+    const missingRequired = inputFields.value.some(
+      (field) => field.required && !(field.name in provided),
+    );
+    if (!missingRequired) {
+      void run(props.operation, descriptor.value, provided);
+      return;
+    }
+  }
   trigger(props.operation, descriptor.value);
 }
 
@@ -374,6 +402,13 @@ onBeforeUnmount(unregisterAction);
         >
           <path d="M20 6 9 17l-5-5" />
         </svg>
+        <component
+          :is="resolvedPlatformIcon"
+          v-else-if="resolvedPlatformIcon && !dispatching"
+          class="sdk-operation-icon"
+          :size="14"
+          aria-hidden="true"
+        />
         <span>{{ label }}</span>
       </el-button>
       <operation-input-dialog
@@ -385,8 +420,13 @@ onBeforeUnmount(unregisterAction);
         @confirm="confirmInput"
       ></operation-input-dialog>
       <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
-      <p v-if="failure && (showResult || descriptor?.effect !== 'read')" role="alert">{{ failure.message }}</p>
-      <operation-result v-if="read && showResult" :result="read"></operation-result>
+      <template v-if="showResult && $slots.result">
+        <slot v-if="read || failure" name="result" :result="read" :error="failure" :loading="dispatching" />
+      </template>
+      <template v-else>
+        <p v-if="failure && (showResult || descriptor?.effect !== 'read')" role="alert">{{ failure.message }}</p>
+        <operation-result v-if="read && showResult" :result="read"></operation-result>
+      </template>
       <template v-if="receipt">
         <p v-if="receipt.kind === 'not-dispatched'" role="alert">{{ receipt.message }}</p>
         <p v-else-if="outcome === null" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>

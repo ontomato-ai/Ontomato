@@ -27,6 +27,8 @@ const props = withDefaults(
     exclude?: readonly string[];
     /** Render fields marked `advanced: true` directly inline instead of collapsing them into an Advanced disclosure. */
     inlineAdvanced?: boolean;
+    /** Grid column count for fields rendered by this slice (`1` default or `2`). */
+    columns?: 1 | 2;
   }>(),
   {
     fields: undefined,
@@ -36,6 +38,7 @@ const props = withDefaults(
     rest: false,
     exclude: undefined,
     inlineAdvanced: false,
+    columns: 1,
   },
 );
 
@@ -95,9 +98,13 @@ const advanced = computed(() =>
 </script>
 
 <template>
-  <div class="sdk-object-form-fields" :data-form-group="group || section || (rest ? 'rest' : undefined)">
+  <div
+    class="sdk-object-form-fields"
+    :class="{ 'is-two-col': columns === 2 }"
+    :data-form-group="group || section || (rest ? 'rest' : undefined)"
+  >
     <FormFieldPlace v-for="entry in plain" :key="entry.path" :field="entry.field" :path="entry.path" :disabled="entry.disabled" />
-    <FormAdvancedSection v-if="advanced.length" :paths="advanced.map((entry) => entry.path)">
+    <FormAdvancedSection v-if="advanced.length" class="sdk-object-form-fields-advanced" :paths="advanced.map((entry) => entry.path)">
       <FormFieldPlace v-for="entry in advanced" :key="entry.path" :field="entry.field" :path="entry.path" :disabled="entry.disabled" />
     </FormAdvancedSection>
   </div>
@@ -106,5 +113,18 @@ const advanced = computed(() =>
 <style scoped>
 .sdk-object-form-fields {
   min-width: 0;
+}
+.sdk-object-form-fields.is-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-md);
+}
+.sdk-object-form-fields-advanced {
+  grid-column: 1 / -1;
+}
+@container sdk-owner-form (max-width: 640px) {
+  .sdk-object-form-fields.is-two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

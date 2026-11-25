@@ -823,6 +823,7 @@ const simpleControls = [
   z.object({
     kind: z.literal("text"), multiline: z.boolean().optional(),
     secret: z.boolean().optional(),
+    clearable: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
     rows: positiveInteger.optional(),
     variables: z.array(z.object({
@@ -853,7 +854,7 @@ const simpleControls = [
     allowCreate: z.boolean().optional(),
     placeholder: z.string().nullish(),
     /** The kind defines the value and selection rules. Presentation only changes how choices are drawn. */
-    presentation: z.enum(["dropdown", "radio", "checklist", "tree"]).optional(),
+    presentation: z.enum(["dropdown", "radio", "checklist", "tree", "tag"]).optional(),
     /** Named selections of declared options, for multiple selection only. */
     presets: z.array(z.object({
       label: z.string().min(1),
@@ -888,7 +889,15 @@ const simpleControls = [
   }).strict(),
   /** Each editable row is one string in the owner's JSON array. */
   z.object({ kind: z.literal("string-array") }).strict(),
-  z.object({ kind: z.literal("number") }).strict(),
+  z.object({
+    kind: z.literal("number"),
+    min: z.number().finite().optional(),
+    max: z.number().finite().optional(),
+    step: z.number().finite().positive().optional(),
+    precision: z.number().int().nonnegative().optional(),
+    /** Presentation only changes how the numeric value is drawn (`input` default or `stepper`). */
+    presentation: z.enum(["input", "stepper"]).optional(),
+  }).strict(),
   /** A local time value in HH:mm, with null and presence determined by the owner's value schema. */
   z.object({ kind: z.literal("time") }).strict(),
   /** The time zone is a separate owner field. */
@@ -906,6 +915,18 @@ const arrayControl = z.object({
   defaultItem: runtimeJsonObjectSchema.optional(),
   /** An owner-provided stable identity, addressed relative to the row. */
   itemKeyPath: fieldPath.optional(),
+  /** Presentation only changes how rows are drawn: bordered `cards` (default), single-row `inline` grid, or compact `table`. */
+  presentation: z.enum(["cards", "inline", "table"]).optional(),
+  /** Grid column count inside each item card (`1` or `2`). */
+  columns: z.union([z.literal(1), z.literal(2)]).optional(),
+  /** Whether Move Up / Move Down controls are offered; defaults to `true` for cards and `false` for inline/table. */
+  reorderable: z.boolean().optional(),
+  /** When true, the row set is fixed by the owner (no Add, Remove, or Reorder controls). */
+  fixedRows: z.boolean().optional(),
+  /** Optional owner-localized label for the Add row button. */
+  addLabel: z.string().min(1).optional(),
+  /** Optional owner-localized empty-state message when no rows are present. */
+  emptyText: z.string().min(1).optional(),
 }).strict();
 
 const variantKey = z.string().min(1).refine(
@@ -917,8 +938,10 @@ const objectControl = z.object({
   kind: z.literal("object"),
   /** Initial value when explicitly added. Removing an object writes null. */
   defaultObject: runtimeJsonObjectSchema.optional(),
-  /** Relative JSON Pointer to a fixed-option scalar select in `fields` whose value chooses the active variant. */
+  /** Relative JSON Pointer to a fixed-option scalar select or hidden discriminator in `fields` choosing the active variant. */
   variantBy: fieldPath.optional(),
+  /** Grid column count for this object's child fields (`1` or `2`). */
+  columns: z.union([z.literal(1), z.literal(2)]).optional(),
 }).strict();
 
 const fieldShape = z.object({
@@ -934,6 +957,8 @@ const fieldShape = z.object({
   readOnly: z.boolean(),
   readOnlyReason: z.string().min(1).optional(),
   refreshOnChange: z.boolean().optional(),
+  /** In a multi-column grid, span across all columns instead of occupying a single column cell. */
+  fullWidth: z.boolean().optional(),
   advanced: z.literal(true).optional().describe(
     "Group this field with the advanced fields at the end of its form, object, or array row. The group starts collapsed and opens when it contains a field error.",
   ),
@@ -985,13 +1010,22 @@ export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema }
       });
     return;
   }
+  if (control.kind === "number") {
+    if (control.min !== undefined && control.max !== undefined && control.min > control.max) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "min"],
+        message: "Minimum value must be less than or equal to maximum value",
+      });
+    }
+    return;
+  }
   if (control.kind === "select") {
     const { multiple, presentation, presets } = control;
-    if ((multiple && presentation === "radio")
+    if ((multiple && (presentation === "radio" || presentation === "tag"))
       || (!multiple && (presentation === "checklist" || presentation === "tree")))
       ctx.addIssue({
         code: z.ZodIssueCode.custom, path: ["control", "presentation"],
-        message: "Radio requires single selection and checklist or tree requires multiple selection",
+        message: "Radio and tag require single selection and checklist or tree requires multiple selection",
       });
     if (!multiple && presets)
       ctx.addIssue({
@@ -1045,51 +1079,54 @@ export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema }
 
   const discriminators = control.fields.filter(field => field.path === variantBy);
   const discriminator = discriminators[0];
-  if (discriminators.length !== 1 || !discriminator || discriminator.control.kind !== "select") {
+  if (discriminators.length !== 1 || !discriminator || (discriminator.control.kind !== "select" && discriminator.control.kind !== "hidden")) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
-      message: `variantBy '${variantBy}' must point to a unique select field in fields`,
+      message: `variantBy '${variantBy}' must point to a unique select or hidden field in fields`,
     });
     return;
   }
-  const select = discriminator.control;
-  if (select.multiple) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
-      message: `variantBy '${variantBy}' cannot point to a multi-select field`,
-    });
-    return;
-  }
-  if (select.allowCreate) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
-      message: `variantBy '${variantBy}' cannot point to an allowCreate select field`,
-    });
-    return;
-  }
-  if (select.options.some(option => typeof option.value !== "string" && typeof option.value !== "number")) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
-      message: `variantBy '${variantBy}' select options must be scalar values`,
-    });
-    return;
-  }
-  const optionKeys = new Set<string>();
-  for (const option of select.options) {
-    const key = String(option.value);
-    if (optionKeys.has(key)) {
+  let optionKeys: Set<string> | null = null;
+  if (discriminator.control.kind === "select") {
+    const select = discriminator.control;
+    if (select.multiple) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
-        message: `variantBy '${variantBy}' select options must have unique scalar values`,
+        message: `variantBy '${variantBy}' cannot point to a multi-select field`,
       });
       return;
     }
-    optionKeys.add(key);
+    if (select.allowCreate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+        message: `variantBy '${variantBy}' cannot point to an allowCreate select field`,
+      });
+      return;
+    }
+    if (select.options.some(option => typeof option.value !== "string" && typeof option.value !== "number")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+        message: `variantBy '${variantBy}' select options must be scalar values`,
+      });
+      return;
+    }
+    optionKeys = new Set<string>();
+    for (const option of select.options) {
+      const key = String(option.value);
+      if (optionKeys.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+          message: `variantBy '${variantBy}' select options must have unique scalar values`,
+        });
+        return;
+      }
+      optionKeys.add(key);
+    }
   }
 
   const commonPaths = control.fields.map(field => field.path);
   for (const [key, variantFields] of Object.entries(variants)) {
-    if (!optionKeys.has(key)) {
+    if (optionKeys !== null && !optionKeys.has(key)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom, path: ["control", "variants", key],
         message: `Variant '${key}' does not match any option of '${variantBy}'`,
@@ -1191,9 +1228,14 @@ export function panelFormObjectActiveVariant(
 ): string | undefined {
   if (!control.variantBy || !control.variants || !isPlainJsonObject(value)) return undefined;
   const discriminator = control.fields.find(field => field.path === control.variantBy);
-  if (!discriminator || discriminator.control.kind !== "select") return undefined;
+  if (!discriminator) return undefined;
   const current = readPointerValue(value, control.variantBy);
   if (typeof current !== "string" && typeof current !== "number") return undefined;
+  if (discriminator.control.kind === "hidden") {
+    const key = String(current);
+    return Object.hasOwn(control.variants, key) ? key : undefined;
+  }
+  if (discriminator.control.kind !== "select") return undefined;
   const matched = discriminator.control.options.find(option => option.value === current);
   return matched === undefined ? undefined : String(matched.value);
 }

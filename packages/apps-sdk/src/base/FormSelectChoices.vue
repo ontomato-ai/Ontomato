@@ -5,6 +5,7 @@ import { ElButton } from "element-plus/es/components/button/index";
 import { ElInput } from "element-plus/es/components/input/index";
 import { ElRadio, ElRadioGroup } from "element-plus/es/components/radio/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
+import { ElTag } from "element-plus/es/components/tag/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { findPanelFormOption, type PanelFormOption } from "@ontomato/contracts/form-fields";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
@@ -120,6 +121,17 @@ function choosePreset(preset: Preset) {
   replaceOptions(available.value, available.value.filter(option =>
     preset.values.some(value => jsonValuesEqual(option.value, value))).map(option => option.value));
 }
+
+const tagEntry = computed(() => {
+  const first = selectedOptions.value[0];
+  if (!first) return null;
+  const option = first.option;
+  const label = option?.label ?? (typeof first.value === "string" || typeof first.value === "number" ? String(first.value) : JSON.stringify(first.value));
+  const tone = option?.tone;
+  const type = tone === "info" || tone === "success" || tone === "warning" || tone === "danger" ? tone : "info";
+  const detail = option ? optionNote(option) : "";
+  return { label, type, detail, hasTone: tone !== undefined && tone !== "default" };
+});
 </script>
 
 <template>
@@ -156,6 +168,18 @@ function choosePreset(preset: Preset) {
         :title="optionNote(option)"
       >{{ option.label }}</el-radio>
     </el-radio-group>
+    <div
+      v-else-if="control.presentation === 'tag'"
+      class="sdk-form-select-tag"
+      :aria-label="label"
+    >
+      <template v-if="tagEntry">
+        <el-tag v-if="tagEntry.hasTone" :type="tagEntry.type" size="small" effect="light">{{ tagEntry.label }}</el-tag>
+        <span v-else class="sdk-form-select-tag-plain">{{ tagEntry.label }}</span>
+        <span v-if="tagEntry.detail" class="sdk-form-select-tag-detail">{{ tagEntry.detail }}</span>
+      </template>
+      <span v-else class="sdk-form-select-tag-empty">{{ control.placeholder || "—" }}</span>
+    </div>
     <el-select
       v-else
       :model-value="control.multiple ? dropdownValues : singleDropdownValue"
@@ -222,6 +246,26 @@ function choosePreset(preset: Preset) {
 }
 .sdk-form-select-list + .el-input {
   margin-top: var(--spacing-sm);
+}
+.sdk-form-select-tag {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  min-height: 24px;
+  font-size: var(--text-sm);
+  color: var(--el-text-color-regular);
+}
+.sdk-form-select-tag-plain {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+}
+.sdk-form-select-tag-detail {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+}
+.sdk-form-select-tag-empty {
+  color: var(--el-text-color-placeholder);
 }
 </style>
 <style scoped src="./form-option.css"></style>

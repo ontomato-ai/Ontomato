@@ -9,7 +9,8 @@ export { ElAvatar as SdkAvatar, ElAvatarGroup as SdkAvatarGroup } from "element-
 export { ElBacktop as SdkBacktop } from "element-plus/es/components/backtop/index";
 export { ElBadge as SdkBadge } from "element-plus/es/components/badge/index";
 export { ElBreadcrumb as SdkBreadcrumb, ElBreadcrumbItem as SdkBreadcrumbItem } from "element-plus/es/components/breadcrumb/index";
-export { ElButton as SdkButton, ElButtonGroup as SdkButtonGroup } from "element-plus/es/components/button/index";
+export { SdkButton } from "../ui/SdkButton";
+export { ElButtonGroup as SdkButtonGroup } from "element-plus/es/components/button/index";
 export { ElCalendar as SdkCalendar } from "element-plus/es/components/calendar/index";
 export { ElCard as SdkCard } from "element-plus/es/components/card/index";
 export { ElCarousel as SdkCarousel, ElCarouselItem as SdkCarouselItem } from "element-plus/es/components/carousel/index";

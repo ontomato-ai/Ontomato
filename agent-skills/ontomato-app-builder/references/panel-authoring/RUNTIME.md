@@ -16,7 +16,7 @@ To show an application by its icon key, draw `<component :is="appIcon(key)" :siz
 The panel context a panel module runs under.
 
 ```ts
-function usePanelContext(): PanelContext
+function usePanelContext(): ResolvedPanelContext
 ```
 
 ### PanelContext
@@ -25,6 +25,10 @@ function usePanelContext(): PanelContext
 interface PanelContext {
   /** This instance: its state, page context, projections and operations. */
   readonly instance: PanelInstance;
+  /** True while one or more refreshes triggered by `refreshObjects()` are in flight. */
+  readonly refreshing?: ComputedRef<boolean>;
+  /** Re-reads all mounted projections and data in this panel instance; resolves once they settle. */
+  refreshObjects?: () => Promise<void>;
   /**
    * In an application's frame: the entry the reader opened (it follows the reader to another entry of the application),
    * and the menu the same resolution gave, to draw the frame's menu with and mark the entry. Null in any other panel.
@@ -69,10 +73,13 @@ interface PanelInstance {
   /**
    * Anything this panel shows may have changed: every datum it shows is read again, as the page header's refresh reads
    * it, and every component that reads its own data is told so. The page's own code calls it to keep what it shows
-   * current (polling while a run goes on); an operation's reported changes need no call.
+   * current (polling while a run goes on); an operation's reported changes need no call. Resolves once all triggered
+   * refreshes settle.
    */
-  refreshObjects(): void;
-  onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
+  refreshObjects(): Promise<void>;
+  /** True while one or more refreshes triggered by `refreshObjects()` are in flight. */
+  readonly refreshing: ComputedRef<boolean>;
+  onObjectChanged(listener: (object: PanelObjectIdentity | null) => unknown): () => void;
   /** Reactive map of read-only outputs published by projection members (`outputs[member][name]`), separate from writable `state`. */
   readonly outputs: Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue | null>>>>;
 }
@@ -165,10 +172,12 @@ interface PageHeaderDraft {
   readonly saving?: boolean;
   /** Optional explicit save-enabled override; defaults to `dirty && !saving`. */
   readonly canSave?: boolean;
+  /** Whether clicking Discard asks for a confirmation dialog before invoking `discard` and emitting `discard`. */
+  readonly confirmDiscard?: boolean;
   /** Optional handler invoked when Save is clicked (alternative to listening for `@save`). */
   readonly save?: () => void;
-  /** Optional handler invoked when Discard is clicked (alternative to listening for `@discard`). */
-  readonly discard?: () => void;
+  /** Optional handler invoked when Discard is clicked (alternative to listening for `@discard`); returning `false` suppresses the `discard` event. */
+  readonly discard?: () => void | boolean | Promise<void | boolean>;
 }
 ```
 

@@ -43,6 +43,10 @@
         },
         "config": {
           "layout": "tabs",
+          "tabsVariant": "pill",
+          "inlineRename": true,
+          "inlineRenameOperation": "rename",
+          "inlineRenameField": "name",
           "searchable": false,
           "showFooter": false,
           "fallbackToFirst": true,
@@ -53,7 +57,8 @@
               {
                 "kind": "operation",
                 "operation": "rename",
-                "labelKey": "board.rename"
+                "labelKey": "board.rename",
+                "prefill": true
               },
               {
                 "kind": "operation",
@@ -154,7 +159,8 @@
               {
                 "kind": "operation",
                 "operation": "renameCard",
-                "labelKey": "card.rename"
+                "labelKey": "card.rename",
+                "prefill": true
               },
               {
                 "kind": "local",
@@ -237,6 +243,9 @@
           "form": "form"
         },
         "operation": "platform:DashboardCard.save",
+        "config": {
+          "showChangeSummary": true
+        },
         "name": "Card parameters form",
         "description": "Edit and save MetricView query parameters for the selected dashboard card",
         "id": "builtin-product-db10a000-4e3b-4000-8000-000000000006"
@@ -250,6 +259,11 @@
         },
         "config": {
           "showTitle": false,
+          "bordered": true,
+          "columns": 1,
+          "keyValueFields": [
+            "parameters"
+          ],
           "fields": [
             "metric",
             "status",

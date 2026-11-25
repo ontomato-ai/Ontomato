@@ -102,6 +102,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     panel: message.panel,
     manifest: message.panel.manifest,
     instance,
+    refreshing: instance.refreshing,
+    refreshObjects: () => instance.refreshObjects(),
     projection: (id) => instance.projection(id),
     invoke: (handlerRef, call) => instance.runHandler(handlerRef, call),
     projectionsChanged(listener) {
