@@ -4,7 +4,7 @@ import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel
 import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { DirectProjection, ProductProjection } from "@ontomato/contracts/product-panels";
-import { createDirectPanelInstance, type MemberDataState, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { frameMemberData } from "../../../../../packages/apps-sdk/src/panel/frame-member";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -92,7 +92,7 @@ it("preserves previous ready answer on same-target reread error & retry, and cle
   let nextAnswer: (request: PanelMemberReadRequest) => ProductPanelReadResponse | Promise<ProductPanelReadResponse> = () => ({
     status: "ready",
     value: firstFormValue,
-    rowOperations: { "t-1": { run: { status: "available" } } },
+    rowOperations: { "t-1": { run: { available: true } } },
   });
 
   const instance = createDirectPanelInstance(manifest, {
@@ -123,7 +123,7 @@ it("preserves previous ready answer on same-target reread error & retry, and cle
     const firstReady = {
       status: "ready" as const,
       value: firstFormValue,
-      rowOperations: { "t-1": { run: { status: "available" } } },
+      rowOperations: { "t-1": { run: { available: true } } },
     };
     expect(state.value).toEqual(firstReady);
 
@@ -246,7 +246,7 @@ it("preserves previous ready answer on same-target reread failure & retry and cl
 
   const statusInput = ref("pending");
   const initialRows = { rows: [{ primaryKey: "k-1", label: "Night cutoff", fields: {} }], total: 1 };
-  let readImpl: () => Promise<MemberDataState> = async () => ({ status: "ready", value: initialRows });
+  let readImpl: () => Promise<ProductPanelReadResponse> = async () => ({ status: "ready", value: initialRows });
 
   const data = frameMemberData(projection, "list", instance, () => ({ status: statusInput.value }), () => readImpl());
   const scope = effectScope();
@@ -269,7 +269,7 @@ it("preserves previous ready answer on same-target reread failure & retry and cl
     expect(typeof state.value.retry).toBe("function");
 
     // Retry while loading keeps `previous`, and `forbidden` clears it
-    const retryDeferred = createDeferred<MemberDataState>();
+    const retryDeferred = createDeferred<ProductPanelReadResponse>();
     readImpl = () => retryDeferred.promise;
     state.value.retry!();
     expect(state.value).toEqual({ status: "loading", previous: { status: "ready", value: initialRows } });
