@@ -661,10 +661,11 @@ describe("builtin object-detail and object-detail-body panels", () => {
       }),
     );
     try {
-      await vi.waitFor(() => expect(pageA.element.textContent).toContain("Back to workspace"));
-      const backBtn = Array.from(pageA.element.querySelectorAll<HTMLButtonElement>("button")).find((btn) =>
-        btn.textContent?.includes("Back to workspace"),
-      )!;
+      await vi.waitFor(() => {
+        const backBtn = pageA.element.querySelector<HTMLButtonElement>("button.sdk-page-header-back");
+        expect(backBtn?.textContent?.trim()).toBe("Back");
+      });
+      const backBtn = pageA.element.querySelector<HTMLButtonElement>("button.sdk-page-header-back")!;
       backBtn.click();
       await vi.waitFor(() => expect(fromWorkspace.router.currentRoute.value.fullPath).toBe("/workspace"));
     } finally {
@@ -676,10 +677,11 @@ describe("builtin object-detail and object-detail-body panels", () => {
       panelAddress(detailUse.path, { selected: { className: "Order", primaryKey: "ord-1" } }),
     );
     try {
-      await vi.waitFor(() => expect(pageB.element.textContent).toContain("Back to data browser"));
-      const backBtn = Array.from(pageB.element.querySelectorAll<HTMLButtonElement>("button")).find((btn) =>
-        btn.textContent?.includes("Back to data browser"),
-      )!;
+      await vi.waitFor(() => {
+        const backBtn = pageB.element.querySelector<HTMLButtonElement>("button.sdk-page-header-back");
+        expect(backBtn?.textContent?.trim()).toBe("Back");
+      });
+      const backBtn = pageB.element.querySelector<HTMLButtonElement>("button.sdk-page-header-back")!;
       backBtn.click();
       await vi.waitFor(() => expect(fromBrowser.router.currentRoute.value.fullPath).toBe("/browser/data/Order"));
     } finally {
