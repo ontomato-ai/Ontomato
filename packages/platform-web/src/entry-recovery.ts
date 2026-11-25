@@ -158,6 +158,11 @@ export const ENTRY_RECOVERY_SCRIPT = `(function () {
     var entryUrl = window.location.pathname + window.location.search;
     window.fetch(entryUrl, { cache: "reload", credentials: "same-origin" })
       .then(function (response) {
+        // Startup may have succeeded while the entry request was in flight.
+        if (isAppMounted()) {
+          clearReloadMark();
+          return;
+        }
         if (!response || !response.ok) {
           showUpdatePrompt();
           return;
@@ -165,7 +170,8 @@ export const ENTRY_RECOVERY_SCRIPT = `(function () {
         window.location.reload();
       })
       .catch(function () {
-        showUpdatePrompt();
+        if (isAppMounted()) clearReloadMark();
+        else showUpdatePrompt();
       });
   }
 

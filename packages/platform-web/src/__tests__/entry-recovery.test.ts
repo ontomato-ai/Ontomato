@@ -233,6 +233,22 @@ describe("stale entry script recovery", () => {
     expect(root.textContent).toBe("mounted");
   });
 
+  it("does not reload if the app mounts while fetching a fresh entry", async () => {
+    const reload = vi.spyOn(window.location, "reload").mockImplementation(() => {});
+    let resolveEntry!: (response: Response) => void;
+    vi.spyOn(window, "fetch").mockReturnValue(new Promise((resolve) => { resolveEntry = resolve; }));
+    installRecoveryScript();
+    const script = document.createElement("script");
+    script.type = "module";
+    dispatchResourceError(script, { src: "./assets/index-old.js" });
+
+    document.getElementById("app")!.setAttribute("data-v-app", "");
+    resolveEntry(new Response("<html></html>"));
+
+    await vi.waitFor(() => expect(sessionStorage.getItem("ontomato_stale_entry_reload")).toBeNull());
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it("clears the retry marker once a page finishes loading cleanly", async () => {
     const reloadSpy = vi.spyOn(window.location, "reload").mockImplementation(() => {});
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>

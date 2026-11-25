@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { mount } from "@vue/test-utils";
 import ElementPlus, { ElMessage } from "element-plus";
+import { createPinia } from "pinia";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
 import { platformPageAccessKey } from "@ontomato/platform-shell";
@@ -74,15 +75,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function openChat(query: Record<string, string>) {
+async function openChat(query: Record<string, string>, standalone = false) {
+  const path = standalone ? "/applications/app-data-agent-workbench/workbench" : platformRoutes.chat.path;
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ ...platformRoutes.chat, component: { render: () => null } }],
+    routes: [{ path, component: { render: () => null } }],
   });
-  await router.push({ path: platformRoutes.chat.path, query });
+  await router.push({ path, query });
+  const internalPages = standalone ? {
+    dashboard: "/applications/app-data-agent-workbench/dashboards",
+    schedules: "/applications/app-data-agent-workbench/schedules",
+    agents: "/applications/app-data-agent-workbench/agents",
+  } : undefined;
   const wrapper = mount(BusinessWorkbench, {
-    props: { defaultLogo: "", defaultBrandName: "Ontomato" },
-    global: { plugins: [i18n, ElementPlus, router], provide: {
+    props: { defaultLogo: "", defaultBrandName: "Ontomato", internalPages },
+    global: { plugins: [i18n, ElementPlus, router, createPinia()], provide: {
         [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
         // The platform answers which of its pages the account may open; here, every one.
         [platformPageAccessKey as symbol]: () => true,
@@ -92,6 +99,20 @@ async function openChat(query: Record<string, string>) {
   for (let index = 0; index < 3; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
   return { router, shell: wrapper.findComponent({ name: "AgentShell" }) };
 }
+
+it("restores the standalone application's active conversation from its address after remounting", async () => {
+  const session = "44444444-4444-4444-8444-444444444444";
+  const { router, shell } = await openChat({ standalone: "1" }, true);
+  shell.vm.$emit("update:sessionId", session);
+  await vi.waitFor(() => expect(router.currentRoute.value.query).toMatchObject({ standalone: "1", sessionId: session }));
+
+  const reopened = await openChat({ standalone: "1", sessionId: String(router.currentRoute.value.query.sessionId) }, true);
+  expect(reopened.shell.props("sessionId")).toBe(session);
+  expect(sent).toEqual([]);
+
+  reopened.shell.vm.$emit("update:sessionId", null);
+  await vi.waitFor(() => expect(reopened.router.currentRoute.value.query.sessionId).toBeUndefined());
+});
 
 describe("a link to one agent", () => {
   it("selects that agent over the remembered one, on a new conversation, and leaves the address", async () => {

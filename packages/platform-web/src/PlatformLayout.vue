@@ -153,7 +153,8 @@ watch(
  */
 const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
 const applicationFrame = computed<ApplicationFrameSpec | null>(() => {
-  if (props.blocked) return null;
+  // Edition-owned standalone routes already provide their own layout.
+  if (props.blocked || route.meta.standaloneApplication === true) return null;
   const app = activeApp.value;
   if (!app?.framePanelId) return null;
   const groups: AppMenuGroup[] = (app.groups ?? []).map((group) => ({

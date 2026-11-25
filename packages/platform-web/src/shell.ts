@@ -26,6 +26,7 @@ import {
 } from "@ontomato/platform-admin";
 import { readRuntimeConfig } from "./config";
 export { readRuntimeConfig } from "./config";
+export { reloadOnStaleBuild } from "./stale-build";
 import { serviceHome } from "./view";
 import "./style.css";
 
@@ -77,23 +78,6 @@ export function startShellPreferences(profile: ManagerShellProfile): ManagerShel
     theme: computed(() => isDark.value ? "dark" : "light"),
     setTheme,
   };
-}
-
-const STALE_BUILD_RELOAD_KEY = "ontology_manager_stale_build_reload";
-
-/*
- * Pages load as hashed chunks on first entry. After a redeployment an open tab still runs the old entry, whose chunks
- * no longer exist; reload once so the tab picks up the new build (the page is kept in the hash). The key records which
- * entry already reloaded, so a chunk that still fails after the reload surfaces its error instead of reloading in a loop.
- */
-export function reloadOnStaleBuild() {
-  window.addEventListener("vite:preloadError", (event) => {
-    const entry = import.meta.url;
-    if (sessionStorage.getItem(STALE_BUILD_RELOAD_KEY) === entry) return;
-    sessionStorage.setItem(STALE_BUILD_RELOAD_KEY, entry);
-    event.preventDefault();
-    window.location.reload();
-  });
 }
 
 /**

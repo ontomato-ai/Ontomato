@@ -128,10 +128,13 @@ function resolvePage(href: string): DisplayPage | null {
  */
 async function serialize(page: DisplayPage | null, view: DisplayView, history: DisplayHistory): Promise<boolean> {
   const { page: _page, ...rest } = route.query;
+  const query = props.internalPages && !requestedAgent() && !requestedAgentKind()
+    ? { ...rest, sessionId: conversationId.value ?? undefined }
+    : rest;
   const to: RouteLocationRaw =
     page && view === "full" && display.view.value === "side" && !props.internalPages
       ? page.address
-      : { query: page ? { ...route.query, page: page.address } : rest };
+      : { query: page ? { ...query, page: page.address } : query };
   const failure = await (history === "push" || router.resolve(to).path !== route.path ? router.push(to) : router.replace(to));
   // The address already saying this is the router's duplicated navigation, however the link that wrote it encoded it.
   return !failure || isNavigationFailure(failure, NavigationFailureType.duplicated);
@@ -244,6 +247,9 @@ watch(agentId, (id) => {
 // The conversation this tab holds is what a page's own composer goes on in: same tab, same agent.
 watch(conversationId, (id) => {
   if (id && agentId.value) rememberSession(agentId.value, id);
+  // The standalone application can reopen this conversation after a document reload.
+  if (!props.internalPages || requestedAgent() || requestedAgentKind() || queryText(route.query.sessionId) === id) return;
+  void router.replace({ query: { ...route.query, sessionId: id ?? undefined }, hash: route.hash });
 });
 
 /**

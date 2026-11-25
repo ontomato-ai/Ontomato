@@ -225,6 +225,27 @@ describe("the platform layout", () => {
     expect(mounts).toBe(1);
   });
 
+  it("keeps a standalone workbench visible when a late catalog declares an application frame", async () => {
+    const { wrapper, router, apps } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
+    const path = "/applications/app-data-agent-workbench/workbench";
+    router.addRoute({ path, component: page("Conversation"), meta: { standaloneApplication: true } });
+    await router.push({ path, query: { standalone: "1", sessionId: "current-session" } });
+    const conversation = wrapper.get(".page-double").element;
+
+    await wrapper.setProps({ apps: [...apps, {
+      id: "app-data-agent-workbench",
+      label: "Data Agent",
+      icon: "pages",
+      category: "business",
+      prefix: "/applications/app-data-agent-workbench",
+      framePanelId: "builtin-product-platform-frame",
+      groups: [],
+    }] });
+
+    expect(wrapper.find(".mock-frame-menu").exists()).toBe(false);
+    expect(wrapper.get(".page-double").element).toBe(conversation);
+  });
+
   it("heads a page that names itself with its own title, its description and its way back when it has them", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
