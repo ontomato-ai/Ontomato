@@ -372,6 +372,7 @@ export const applicationEntryResolutionQuerySchema = z.union([
 ]);
 export type ApplicationEntryResolutionQuery = z.infer<typeof applicationEntryResolutionQuerySchema>;
 export const applicationEntryMenuSchema = z.object({
+  singleEntry: z.boolean(),
   names: applicationMetadataSchema.shape.names.optional(),
   groups: applicationMetadataSchema.shape.groups,
   panelUses: z.array(applicationMenuEntrySchema),

@@ -75,7 +75,7 @@ beforeEach(() => {
     return { text: JSON.stringify({ success: true, data: {
       applicationId: source.applicationId, framePanelId: root,
       use: { id: useId, pageKey: "list", panelId: "panel-content", path: "/ontology/list", access: { kind: "domain-member" } },
-      menu: { names: { en: "Ontology" }, groups: [], panelUses: [] },
+      menu: { singleEntry: true, names: { en: "Ontology" }, groups: [], panelUses: [] },
     } }) };
   });
   mocks.post.mockImplementation(async (_endpoint, url: string, body) => {

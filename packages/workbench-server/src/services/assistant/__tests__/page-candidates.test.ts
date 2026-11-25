@@ -267,7 +267,7 @@ beforeEach(() => {
         const use = data.panelUses.find((entry: { id: string }) => entry.id === requested);
         if (!use) return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
         return Response.json({ success: true, data: {
-          applicationId: data.applicationId, use, menu: { groups: [], panelUses: [] },
+          applicationId: data.applicationId, use, menu: { singleEntry: true, groups: [], panelUses: [] },
         } });
       }
       throw new Error(`Unexpected fetch URL: ${url}`);

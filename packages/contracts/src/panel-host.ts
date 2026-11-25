@@ -163,6 +163,7 @@ const panelReadResults = [
   z.object({
     status: z.literal("ready"),
     value: runtimeJsonValueSchema,
+    rereadAfterMs: z.number().int().min(1000).max(300_000).optional(),
     /** Batch per-row operation availability returned together with list query data to eliminate N+1 requests. */
     rowOperations: panelRowOperationsMapSchema.optional(),
   }).strict(),
@@ -193,6 +194,9 @@ export const panelDataStateSchema = z.discriminatedUnion("status", [
 ]);
 export type PanelDataState = z.infer<typeof panelDataStateSchema>;
 
+export const panelCurrentUserSchema = z.object({ displayName: z.string().min(1) }).strict();
+export type PanelCurrentUser = z.infer<typeof panelCurrentUserSchema>;
+
 /** What the host writes into a panel frame's document before its module runs: the run's facts, as one JSON value. */
 export const panelHostMessageSchema = z
   .object({
@@ -203,6 +207,7 @@ export const panelHostMessageSchema = z
     pageKey: z.string().min(1).max(200),
     /** The effective application use shared with the skill. Candidates have no use and cannot write an operation. */
     use: panelUseRefSchema.nullable(),
+    currentUser: panelCurrentUserSchema.nullable().optional(),
     /** The instance's address, as the reader and a message see it. */
     url: z.string().min(1).max(4000),
     label: z.string().min(1).max(500),

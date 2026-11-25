@@ -351,7 +351,7 @@ beforeAll(async () => {
       success: true,
       data: {
         applicationId: "app-m7",
-        menu: { groups: [], panelUses: [] },
+        menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: "owners", pageKey: "owners", path: "/owners", panelId, access: { kind: "domain-member" } },
       },
     });

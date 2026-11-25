@@ -229,7 +229,7 @@ beforeAll(async () => {
     if (req.query.applicationId !== use.applicationId) { next(); return; }
     expect(req.header("tk")).toBe("model-reader");
     res.json({ success: true, data: {
-      applicationId: use.applicationId, menu: { groups: [], panelUses: [] },
+      applicationId: use.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: use.useId, pageKey: use.useId, path: `/applications/${use.applicationId}/${use.useId}`, panelId,
         access: { kind: "domain-member" } },
     } });

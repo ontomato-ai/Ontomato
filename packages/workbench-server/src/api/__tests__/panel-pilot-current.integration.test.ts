@@ -208,7 +208,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     const uses = workbenchApplications.find(app => app.id === "schedules")!.declaration.panelUses!;
     res.json({ success: true, data: {
-      applicationId: "schedules", menu: { groups: [], panelUses: uses },
+      applicationId: "schedules", menu: { singleEntry: uses.filter(use => use.names != null).length <= 1, groups: [], panelUses: uses },
       use: uses.find(use => use.id === req.query.useId),
     } });
   });
@@ -217,7 +217,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
       applicationId: "app-schedules",
-      menu: { groups: [], panelUses: [] },
+      menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: "pilot", pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId,
         access: { kind: "domain-member" } },
     } });
@@ -231,7 +231,7 @@ beforeAll(async () => {
       { id: "data", pageKey: "data", path: "/applications/ontology-pilot/data", panelId: dataPanelId, access: { kind: "domain-member" } },
     ];
     res.json({ success: true, data: {
-      applicationId: "ontology-pilot", menu: { groups: [], panelUses: [] }, use: uses.find(use => use.id === req.query.useId),
+      applicationId: "ontology-pilot", menu: { singleEntry: true, groups: [], panelUses: [] }, use: uses.find(use => use.id === req.query.useId),
     } });
   });
   app.post("/admin/getMetas", (req, res) => {
@@ -275,7 +275,7 @@ beforeAll(async () => {
     if (req.query.applicationId !== "agent-settings") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
-      applicationId: "agent-settings", menu: { groups: [], panelUses: [] },
+      applicationId: "agent-settings", menu: { singleEntry: true, groups: [], panelUses: [] },
       use: {
         id: "settings", pageKey: "settings", path: "/applications/agent-settings/settings", panelId: agentPanelId,
         access: { kind: "domain-member" },
@@ -327,7 +327,7 @@ beforeAll(async () => {
     const family = String(req.query.applicationId);
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
-      applicationId: family, menu: { groups: [], panelUses: [] },
+      applicationId: family, menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: "data", pageKey: "data", path: `/applications/${family}/data`,
         panelId: `panel-${family}`, access: { kind: "domain-member" } },
     } });

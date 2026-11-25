@@ -31,9 +31,10 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { tForLocale } from "../../i18n";
 import { parseTurnKey } from "../../logging/log-context";
-import { executeDslViaBackend } from "../data-query/dsl-executor";
+import { executeDslViaBackend, hasDslExecutionError } from "../data-query/dsl-executor";
 import {
   collectDslResultSections,
+  describeDslResultSections,
   registerDslResultSectionProvider,
   type DslResultSectionContext,
   type DslResultSectionProvider,
@@ -263,8 +264,9 @@ export const opsDiagnosisWriteOperations = [
         const turn = parseTurnKey(turnKey);
         if (!turn) throw new HttpError(400, "Invalid turnKey");
         const existing = loadManifest(turnKey);
-        if (existing && existing.domainId !== domainId) {
-          throw new HttpError(403, "Workspace access denied");
+        if (existing) {
+          if (existing.domainId !== domainId) throw new HttpError(403, "Workspace access denied");
+          return { kind: "success", data: { turnKey }, created: { objectType: TURN_EVIDENCE, primaryKey: turnKey } };
         }
         await assistantEvidenceReader().verifyDomain(turn.threadId, domainId);
         await buildTurnWorkspace({
@@ -573,18 +575,22 @@ export const opsDiagnosisWriteOperations = [
   },
 ] satisfies readonly PanelServerOperation[];
 
-function normalizeDslExecutionPayload(payload: unknown): unknown {
-  if (
-    payload
-    && typeof payload === "object"
-    && !Array.isArray(payload)
-    && (payload as Record<string, unknown>).success === true
-    && (payload as Record<string, unknown>).data !== undefined
-    && !Array.isArray((payload as Record<string, unknown>).data)
-  ) {
-    return (payload as Record<string, unknown>).data;
-  }
-  return payload;
+function describeDslTable(locale?: string) {
+  return {
+    id: "table",
+    label: tForLocale(locale, "panels.ops.dsl.dataTable"),
+    emptyText: tForLocale(locale, "panels.ops.dsl.noData"),
+    kind: "records",
+  } as const;
+}
+
+function describeDslRawResponse(locale?: string) {
+  return {
+    id: "raw",
+    label: tForLocale(locale, "panels.ops.dsl.rawResponse"),
+    emptyText: tForLocale(locale, "panels.ops.dsl.noResponse"),
+    kind: "json",
+  } as const;
 }
 
 function parseDslDraftObject(raw: unknown, locale?: string): Record<string, unknown> {
@@ -792,41 +798,24 @@ export const opsDiagnosisReadOperations = [
     targetSchema: panelFormTargetSchema.optional(),
     inputSchema: panelReadOperationInputSchema,
     resultSchema: panelReadOperationSectionsResultSchema,
+    describeResultSections(_host, locale) {
+      return [describeDslTable(locale), ...describeDslResultSections(locale), describeDslRawResponse(locale)];
+    },
     async execute(host, call) {
       await requireObserveAccessDomain(host.executor.owner, host.executor.credentials);
       const locale = host.locale;
       const { draft } = panelReadOperationInputSchema.parse(call.input);
       const dslObject = parseDslDraftObject(draft.dsl, locale);
-      const execution = await executeDslViaBackend(dslObject, host.executor.credentials.token ?? "");
-      if (!execution.ok) {
-        throw new HttpError(
-          execution.status || 502,
-          execution.detail || tForLocale(locale, "panels.ops.dsl.executeFailed"),
-          "DSL_EXECUTION_FAILED",
-        );
-      }
-      const normalized = normalizeDslExecutionPayload(execution.payload);
-      const { columns, rows } = extractDslAnswerTable(normalized);
-      const extraSections = collectDslResultSections({ payload: normalized, locale });
+      const payload = await executeDslViaBackend(dslObject, host.executor.credentials.token ?? "");
+      const hasError = hasDslExecutionError(payload);
+      const sectionPayload = hasError ? undefined : payload;
       return {
         kind: "sections",
+        ...(hasError && { defaultSectionId: "raw" }),
         sections: [
-          {
-            id: "table",
-            label: tForLocale(locale, "panels.ops.dsl.dataTable"),
-            emptyText: tForLocale(locale, "panels.ops.dsl.noData"),
-            kind: "records",
-            columns,
-            rows,
-          },
-          ...extraSections,
-          {
-            id: "raw",
-            label: tForLocale(locale, "panels.ops.dsl.rawResponse"),
-            emptyText: tForLocale(locale, "panels.ops.dsl.noResponse"),
-            kind: "json",
-            value: toSafeRuntimeJsonValue(normalized),
-          },
+          { ...describeDslTable(locale), ...extractDslAnswerTable(sectionPayload) },
+          ...collectDslResultSections({ payload: sectionPayload, locale }),
+          { ...describeDslRawResponse(locale), value: toSafeRuntimeJsonValue(payload) },
         ],
       };
     },

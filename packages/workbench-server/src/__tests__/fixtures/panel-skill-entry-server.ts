@@ -174,7 +174,8 @@ export async function startPanelSkillEntryServer(options: {
   app.get("/platform/applications/resolve-entry", (req, res) => {
     expect(req.header("tk")).toBe("editor");
     const entry = entries.find(use => req.query.applicationId === use.applicationId && req.query.useId === use.useId)!;
-    res.json({ success: true, data: { applicationId: entry.applicationId, menu: { groups: [], panelUses: [] }, use: javaUse(entry) } });
+    const singleEntry = entries.filter(use => use.applicationId === entry.applicationId).length <= 1;
+    res.json({ success: true, data: { applicationId: entry.applicationId, menu: { singleEntry, groups: [], panelUses: [] }, use: javaUse(entry) } });
   });
   // The browser's resolve-entry (the panel route opens an entry by its address, and checks a kept page by its use):
   // Java's answer from the same entries, with the application's menu of them.
@@ -187,7 +188,7 @@ export async function startPanelSkillEntryServer(options: {
       return;
     }
     const menu = entries.filter(use => use.applicationId === found.applicationId).map(javaUse);
-    res.json({ success: true, data: { applicationId: found.applicationId, use: javaUse(found), menu: { groups: [], panelUses: menu } } });
+    res.json({ success: true, data: { applicationId: found.applicationId, use: javaUse(found), menu: { singleEntry: menu.length <= 1, groups: [], panelUses: menu } } });
   });
   app.get("/api/data-query/platform/applications/:id/panel-uses", (req, res) => {
     res.json({ success: true, data: { applicationId: req.params.id, entry: { path: `/applications/${req.params.id}`, renderer: "panels" },

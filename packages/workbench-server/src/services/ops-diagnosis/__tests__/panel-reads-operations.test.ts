@@ -27,12 +27,14 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
+import { BackendResponseError, BackendUnavailableError } from "../../../utils/backend-client";
 import { HttpError } from "../../../utils/errors";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
 import { buildTurnWorkspace } from "../../../platform/diagnosis/observe/workspaces/builder";
 import { loadManifest, saveManifest } from "../../../platform/diagnosis/observe/workspaces/store";
-import { panelServerOperation, type PanelOperationHost, type PanelReadServerOperation, type PanelWriteServerOperation } from "../../product-panels/server-operations";
+import { describeServerOperation, panelServerOperation, type PanelOperationHost, type PanelReadServerOperation, type PanelWriteServerOperation } from "../../product-panels/server-operations";
+import { unwrapReadDirective } from "../../product-panels/read-directive";
 import { platformTypeEntries } from "../../product-panels/type-table";
 import {
   createAutotestCaseArtifactReadAdapter,
@@ -60,7 +62,7 @@ const mocks = vi.hoisted(() => ({
   keptArtifacts: new Set<string>(),
   verifyDomain: vi.fn(async () => {}),
   resolveEvidence: vi.fn(),
-  executeDslViaBackend: vi.fn(),
+  backendPost: vi.fn(),
   activeRun: null as { runId: string } | null,
 }));
 
@@ -130,9 +132,18 @@ vi.mock("../../../platform/diagnosis/observe/workspaces/diagnosis-source", () =>
   diagnosisEvidenceReader: () => ({ resolve: mocks.resolveEvidence }),
 }));
 
-vi.mock("../../data-query/dsl-executor", () => ({
-  executeDslViaBackend: mocks.executeDslViaBackend,
+vi.mock("../../../utils/backend-client", async importOriginal => ({
+  ...await importOriginal<typeof import("../../../utils/backend-client")>(),
+  backendPost: mocks.backendPost,
 }));
+
+vi.mock("../../../config/application", async importOriginal => {
+  const { config } = await importOriginal<typeof import("../../../config/application")>();
+  return { config: { ...config, dataQuery: { ...config.dataQuery, baseUrl: "http://backend" } } };
+});
+
+const jsonHeaders = new Headers({ "content-type": "application/json" });
+const backendJson = (payload: unknown) => ({ headers: jsonHeaders, text: JSON.stringify(payload) });
 
 function makeHost(domainId = "domain-a", locale = "en"): PanelOperationHost {
   const actor = { owner: { domainId, userId: "user-1" }, credentials: { token: "tok", locale } };
@@ -187,6 +198,7 @@ beforeEach(() => {
   mocks.assertObserveAccess.mockReset().mockResolvedValue(undefined);
   mocks.verifyDomain.mockReset().mockResolvedValue(undefined);
   mocks.resolveEvidence.mockReset();
+  mocks.backendPost.mockReset();
 
   fs.mkdirSync(path.join(mocks.knowledgeDir, "guides"), { recursive: true });
   fs.writeFileSync(path.join(mocks.knowledgeDir, "index.md"), "# Ops Guide\n\nSee [Logs](./guides/logs.md).", "utf8");
@@ -297,6 +309,10 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     }
 
     const buildOp = globalWrite(BUILD_TURN_EVIDENCE);
+    expect(await buildOp.execute(host, null, { turnKey: turnA }, "existing")).toMatchObject({
+      kind: "success", created: { objectType: TURN_EVIDENCE, primaryKey: turnA },
+    });
+    expect(mocks.resolveEvidence).not.toHaveBeenCalled();
     mocks.resolveEvidence.mockResolvedValueOnce(turnEvidence("turn.threadA.9"));
     const built = await buildOp.execute(host, null, { turnKey: "turn.threadA.9" }, "i2");
     expect(built).toMatchObject({
@@ -434,12 +450,16 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     fs.writeFileSync(path.join(caseDir, "trace.json"), '{"ok":true}', "utf8");
 
     const runAdapter = createAutotestRunReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
-    expect((await runAdapter.list()).map((r) => r.primaryKey)).toEqual([runId]);
+    expect(await runAdapter.list()).toMatchObject([{ primaryKey: runId }]);
     const runRecord = await runAdapter.record(runId);
+    expect(runRecord).toHaveProperty("fields");
+    if (!("fields" in runRecord)) throw new Error("Expected a terminal run record");
     expect(runRecord.outputs).toEqual({ status: "completed", active: false, kept: false });
     expect(runRecord.fields.accuracyRate).toBe("50.0%");
 
     const wrongOnly = await runAdapter.results(runId, { verdict: "wrong" });
+    expect(Array.isArray(wrongOnly)).toBe(true);
+    if (!Array.isArray(wrongOnly)) throw new Error("Expected terminal run results");
     expect(wrongOnly.map((r) => r.fields.caseId)).toEqual(["c2"]);
     expect(wrongOnly[0]!.primaryKey).toBe(encodeAutotestCaseArtifactKey(runId, "c2"));
 
@@ -465,6 +485,13 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     expect((await downloadCase.execute(host, { target: caseTarget, input: {} })).kind).toBe("file");
 
     mocks.activeRun = { runId };
+    const metaPath = path.join(runDir, "run.json");
+    const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+    fs.writeFileSync(metaPath, JSON.stringify({ ...meta, status: "stopping" }));
+    for (const result of [await runAdapter.list(), await runAdapter.record(runId), await runAdapter.results(runId)]) {
+      expect(unwrapReadDirective(result).directive).toEqual({ rereadAfterMs: 5000 });
+    }
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
     const deleteRunOp = objectWrite(DELETE_AUTOTEST_RUN);
     expect(await deleteRunOp.unavailable?.(host, runTarget)).toBeDefined();
     expect(await deleteRunOp.execute(host, runTarget, {}, "r2")).toMatchObject({ kind: "refusal", code: "RUN_BUSY" });
@@ -472,7 +499,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     mocks.activeRun = null;
     expect(await deleteRunOp.unavailable?.(host, runTarget)).toBeUndefined();
     expect(await deleteRunOp.execute(host, runTarget, {}, "r3")).toMatchObject({ kind: "success" });
-    expect((await runAdapter.list()).length).toBe(0);
+    expect(await runAdapter.list()).toEqual([]);
   });
 
   it("reads the DSL draft form and executes dslQuery.execute with default 2 sections and provider-inserted middle sections", async () => {
@@ -497,16 +524,30 @@ describe("Observe and Autotest panel owner reads and operations", () => {
       executeOp.execute(host, { target: { kind: "draft" }, input: { draft: { dsl: "{invalid" }, parameters: {} } }),
     ).rejects.toMatchObject({ status: 422, code: "INVALID_DSL_QUERY" });
 
-    // Backend failure is surfaced as HttpError.
-    mocks.executeDslViaBackend.mockResolvedValueOnce({
-      ok: false,
-      executeUrl: "http://backend/dsl/executeV1",
-      status: 503,
-      detail: "Backend down",
-    });
-    await expect(
-      executeOp.execute(host, { target: { kind: "draft" }, input: { draft: { dsl: DEFAULT_DSL_QUERY_TEXT }, parameters: {} } }),
-    ).rejects.toMatchObject({ status: 503, code: "DSL_EXECUTION_FAILED" });
+    const call = { target: { kind: "draft" as const }, input: { draft: { dsl: DEFAULT_DSL_QUERY_TEXT }, parameters: {} } };
+    const descriptor = await describeServerOperation(executeOp, host, "executeDsl");
+    expect(descriptor.resultSections?.map(({ id }) => id)).toEqual(["table", "raw"]);
+
+    mocks.backendPost.mockRejectedValueOnce(new BackendUnavailableError("dsl/executeV1"));
+    await expect(executeOp.execute(host, call)).rejects.toMatchObject({ status: 503, code: "DSL_EXECUTION_FAILED" });
+
+    const executionError = { error: "Invalid query structure", sourceAnalysis: {} };
+    for (const status of [401, 403, 422, 500]) {
+      const detail = status === 422 ? { success: false, code: status, message: "Owner rejected request" }
+        : status === 500 ? { status, error: "Internal Server Error" } : executionError;
+      mocks.backendPost.mockRejectedValueOnce(new BackendResponseError(status, JSON.stringify(detail), jsonHeaders));
+      await expect(executeOp.execute(host, call)).rejects.toMatchObject({ status });
+    }
+
+    mocks.backendPost.mockResolvedValueOnce(backendJson({ error: "Execution failed" }));
+    mocks.backendPost.mockRejectedValueOnce(new BackendResponseError(400, JSON.stringify(executionError), jsonHeaders));
+    for (const value of [{ error: "Execution failed" }, executionError]) {
+      expect(panelReadOperationResultSchema.parse(await executeOp.execute(host, call))).toMatchObject({
+        kind: "sections",
+        defaultSectionId: "raw",
+        sections: [{ id: "table", columns: [], rows: [] }, { id: "raw", value }],
+      });
+    }
 
     // Default response returns 2 sections: records table followed by raw JSON.
     const backendPayload = {
@@ -524,19 +565,16 @@ describe("Observe and Autotest panel owner reads and operations", () => {
         ],
       },
     };
-    mocks.executeDslViaBackend.mockResolvedValue({
-      ok: true,
-      executeUrl: "http://backend/dsl/executeV1",
-      payload: backendPayload,
-    });
+    mocks.backendPost.mockResolvedValue(backendJson(backendPayload));
 
     const twoSections = panelReadOperationResultSchema.parse(await executeOp.execute(host, {
       target: { kind: "draft" },
       input: { draft: { dsl: '{"problem":"List servers","answer":{"steps":[]}}' }, parameters: {} },
     }));
-    expect(mocks.executeDslViaBackend).toHaveBeenLastCalledWith(
+    expect(mocks.backendPost).toHaveBeenLastCalledWith(
+      "dsl/executeV1", "http://backend/dsl/executeV1",
       { problem: "List servers", answer: { steps: [] } },
-      "tok",
+      expect.objectContaining({ token: "tok" }),
     );
     expect(twoSections).toMatchObject({
       kind: "sections",
@@ -565,17 +603,13 @@ describe("Observe and Autotest panel owner reads and operations", () => {
       ],
     });
 
-    // Registered provider inserts extra section(s) strictly between data table and raw response.
-    const unregister = registerDslResultSectionProvider(({ payload }) => {
-      const generated = (payload as { data?: Array<{ generatedQuery?: string }> })?.data?.[0]?.generatedQuery;
-      if (!generated) return null;
-      return {
-        id: "generated-query",
-        label: "Generated query",
-        kind: "code",
-        language: "javascript",
-        content: generated,
-      };
+    const generatedSection = { id: "generated-query", label: "Generated query", kind: "code", language: "javascript" } as const;
+    const unregister = registerDslResultSectionProvider({
+      describe: () => generatedSection,
+      build: ({ payload }) => ({
+        ...generatedSection,
+        content: (payload as { data?: Array<{ generatedQuery?: string }> })?.data?.[0]?.generatedQuery ?? "",
+      }),
     });
     try {
       const threeSections = await executeOp.execute(host, {

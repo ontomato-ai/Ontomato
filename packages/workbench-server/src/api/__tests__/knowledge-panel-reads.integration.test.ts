@@ -330,7 +330,7 @@ beforeAll(async () => {
       success: true,
       data: {
         applicationId: "app-knowledge",
-        menu: { groups: [], panelUses: [] },
+        menu: { singleEntry: true, groups: [], panelUses: [] },
       use: {
           id: "knowledge", pageKey: "knowledge", path: "/ontology/knowledge", panelId,
           access: { kind: "domain-member" },

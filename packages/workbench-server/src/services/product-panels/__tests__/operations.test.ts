@@ -110,7 +110,7 @@ beforeEach(()=>{
    }
    if (new URL(url).searchParams.get("useId") !== use.id)
      throw new HttpError(404, "Unknown use", "NOT_FOUND");
-   return {text:JSON.stringify({success:true,data:{applicationId:"A",use,menu:{groups:[],panelUses:[]}}})};
+   return {text:JSON.stringify({success:true,data:{applicationId:"A",use,menu:{singleEntry:true,groups:[],panelUses:[]}}})};
  });
  mocks.pages.mockResolvedValue({ resolveSource: mocks.resolveMember });
  mocks.assertPermission.mockResolvedValue(undefined);
@@ -1218,7 +1218,7 @@ it.each([
       }
       const otherUse = { ...use, id: "other-tasks", path: "/applications/B/other-tasks" };
       return { text: JSON.stringify({ success: true, data: {
-        applicationId: "B", use: otherUse, menu: { groups: [], panelUses: [] },
+        applicationId: "B", use: otherUse, menu: { singleEntry: true, groups: [], panelUses: [] },
       } }) };
     });
   }

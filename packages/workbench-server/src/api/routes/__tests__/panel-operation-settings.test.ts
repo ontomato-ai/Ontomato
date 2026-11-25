@@ -51,7 +51,7 @@ beforeAll(async()=>{
    if (req.header("tk") !== "owner") { res.sendStatus(403); return; }
    if (req.query.useId !== "tasks") { res.sendStatus(404); return; }
    res.json({ success: true, data: {
-     applicationId: "app-tasks", menu: { groups: [], panelUses: [] },
+     applicationId: "app-tasks", menu: { singleEntry: true, groups: [], panelUses: [] },
      use: { id: "tasks", pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "panel-tasks",
        access: { kind: "domain-member" } },
    } });

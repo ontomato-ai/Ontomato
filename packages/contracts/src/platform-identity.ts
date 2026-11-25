@@ -30,6 +30,7 @@ export const applicationCatalogSchema = z.array(z.object({
   descriptions: z.record(z.string()), icon: z.string(), rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number(),
   entry: z.object({ path: z.string(), renderer: z.string().optional(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
+  singleEntry: z.boolean().optional(),
   groups: applicationMetadataSchema.shape.groups.optional(),
   panelUses: z.array(applicationMenuEntrySchema).optional(),
   framePanelId: z.string().min(1).optional(),

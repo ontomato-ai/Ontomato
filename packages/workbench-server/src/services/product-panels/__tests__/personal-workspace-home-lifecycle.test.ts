@@ -117,7 +117,7 @@ beforeEach(() => {
         applicationId: "home",
         use: homeUse,
         framePanelId: homeApp.framePanelId,
-        menu: { groups: [], panelUses: homeApp.declaration.panelUses },
+        menu: { singleEntry: true, groups: [], panelUses: homeApp.declaration.panelUses },
       },
     }),
   ));
