@@ -360,7 +360,6 @@ it("builds local referenceGraph payload for an application with its entry panels
       pageKey: "orders",
       panelId: "panel-orders",
       path: "/orders",
-      access: { kind: "domain-member" as const },
       names: { en: "Orders" },
     }],
     groups: [],
