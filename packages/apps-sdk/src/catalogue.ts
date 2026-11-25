@@ -394,9 +394,9 @@ export const components: readonly ComponentMetadata[] = [
     group: "form",
     panelUsable: false,
     meaning:
-      "Platform-dedicated three-pane editor for ops diagnosis test case sets (`platform:OpsTestCaseSet`). Combines a resizable case list, structured single-case form, live bidirectionally synchronized collapsible JSON pane, and optional Save/Revert footer bar. Binds the standard projection form protocol (`data.form` + `operations.save`), registers with `instance.forms` (`usePanelFormDraft`, `usePanelBack`), and supports `persistDraft` (default `false`) and `unsavedSwitchMode` (`'discard-or-cancel'` or `'save-discard-cancel'`).",
+      "Platform-dedicated three-pane editor for ops diagnosis test case sets (`platform:AutotestCaseSet`). Combines a resizable case list, structured single-case form, live bidirectionally synchronized collapsible JSON pane, and optional Save/Revert footer bar. Binds the standard projection form protocol (`data.form` + `operations.save`), registers with `instance.forms` (`usePanelFormDraft`, `usePanelBack`), and supports `persistDraft` (default `false`) and `unsavedSwitchMode` (`'discard-or-cancel'` or `'save-discard-cancel'`).",
     effects: "Reads the test case set form and saves through the projection's declared save operation.",
-    bindsElement: ["PlatformObjectType:platform:OpsTestCaseSet"],
+    bindsElement: ["PlatformObjectType:platform:AutotestCaseSet"],
     data: {
       form: { results: ["panelFormDescription"], required: true, runtimeParams: ["values", "changedField"] },
     },

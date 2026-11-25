@@ -9,7 +9,8 @@
           "form": "form"
         },
         "config": {
-          "actions": "none"
+          "actions": "none",
+          "persistDraft": true
         },
         "name": "DSL editor",
         "description": "JSON code editor for composing a read-only DSL query draft",
