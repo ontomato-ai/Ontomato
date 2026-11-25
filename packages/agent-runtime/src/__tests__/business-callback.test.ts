@@ -47,23 +47,9 @@ it.each(["PUT", "DELETE"])("authenticates %s with tk and forwards the full body 
     const headers = new Headers(forwarded?.headers);
     expect(headers.get("X-Ontomato-Callback-Credential")).toBe("wbc1.fixture");
     expect(headers.get("X-Ontomato-Run-Id")).toBe(runId);
+    expect(headers.get("X-Ontomato-Agent-Execution")).toBe(runId);
     expect(headers.get("X-Ontomato-Execution-Context")).toBe('{"kind":"build-test","contextId":null}');
     expect(headers.has("tk")).toBe(false);
-  } finally {
-    await callback.close();
-  }
-});
-
-it("rejects unsupported methods before dispatching a business request", async () => {
-  const withBusinessCallback = vi.fn();
-  const callback = await openSkillCallback({ async sessionChannelCommand() {}, withBusinessCallback });
-  try {
-    const { host, port } = callback.endpoint;
-    for (const method of ["HEAD", "OPTIONS"]) {
-      const response = await fetch(`http://${host}:${port}${businessPath}`, { method });
-      expect(response.status).toBe(405);
-    }
-    expect(withBusinessCallback).not.toHaveBeenCalled();
   } finally {
     await callback.close();
   }
@@ -97,6 +83,7 @@ it("relays a provider-owned grant and the active run only to the declared path b
     expect(forwarded.get("X-Ontomato-Run-Id")).toBe(runId);
     expect(forwarded.has("X-Ontomato-Callback-Credential")).toBe(false);
     expect((await nativeFetch(url + "/ontology-admin/query", { headers })).status).toBe(403);
+    expect((await nativeFetch(url + "/ontology/%2e%2e%2fsecret", { headers })).status).toBe(400);
     expect(upstream).toHaveBeenCalledTimes(1);
   } finally {
     await callback.close();

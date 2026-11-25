@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { Readable } from "node:stream";
 import type { ReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
-import { runtimeBusinessCallbacksSchema, type RuntimeBusinessCallback } from "@ontomato/contracts/agent-runtime-business-callbacks";
+import { AGENT_EXECUTION_HEADER, callbackResponseHeaders, runtimeBusinessCallbacksSchema, unsafeCallbackPath, type RuntimeBusinessCallback } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { runtimeIdSchema, runtimeKeySchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError } from "./errors";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -42,7 +42,7 @@ export function matchesBusinessPath(path: string, prefix: string) {
   return path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : prefix + "/");
 }
 
-/** Extend only the declared path; Workbench authorizes the operation and method. */
+/** Extend the declared owner URL with the authenticated session request. */
 export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispatcher, req: Request, res: Response) {
   const kind = callbackName.parse(req.params.kind);
   const scope = {
@@ -51,14 +51,13 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
   };
   const sessionId = runtimeIdSchema.parse(req.params.sessionId);
   const token = req.header("X-Ontomato-Callback-Credential") ?? req.header("tk");
-  const suffix = req.params[0] as string | undefined;
-  const segments = suffix?.split("/") ?? [];
-  if (segments.some(part => part === "." || part === ".." || part.includes("%") || part.includes("\\")))
+  const suffix = req.path;
+  if (unsafeCallbackPath(decodeURIComponent(suffix)))
     throw new RuntimeError(400, "INVALID_REQUEST", "Invalid skill callback path");
 
   await dispatcher.withBusinessCallback(scope, sessionId, kind, token, async (declaration, runId, signal) => {
     const target = new URL(declaration.baseUrl);
-    if (segments.length) target.pathname = target.pathname.replace(/\/$/u, "") + "/" + segments.map(encodeURIComponent).join("/");
+    if (suffix !== "/" || target.pathname === "/") target.pathname = target.pathname.replace(/\/$/u, "") + suffix;
     if (!matchesBusinessPath(target.pathname, declaration.pathPrefix))
       throw new RuntimeError(403, "FORBIDDEN", "Business callback path is outside the declared scope");
     const queryAt = req.originalUrl.indexOf("?");
@@ -67,6 +66,7 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
     const headers = new Headers({
       [declaration.credentialHeader]: declaration.credential,
       "X-Ontomato-Run-Id": runId,
+      [AGENT_EXECUTION_HEADER]: runId,
       "X-Ontomato-Session-Id": sessionId,
     });
     const permitted = ["Accept", "Accept-Language", "Content-Type", "Idempotency-Key"];
@@ -81,15 +81,12 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
     res.once("close", close);
     try {
       const upstream = await fetch(target, {
-        method: req.method, headers, redirect: "error",
-        body: req.method !== "GET" && Buffer.isBuffer(req.body) ? req.body as Uint8Array<ArrayBuffer> : undefined,
+        method: req.method, headers, redirect: "manual",
+        body: req.method !== "GET" && req.method !== "HEAD" && Buffer.isBuffer(req.body) ? req.body as Uint8Array<ArrayBuffer> : undefined,
         signal: AbortSignal.any([signal, client.signal]),
       });
       res.status(upstream.status);
-      for (const name of ["Content-Type", "Content-Disposition"]) {
-        const value = upstream.headers.get(name);
-        if (value) res.setHeader(name, value);
-      }
+      callbackResponseHeaders(upstream.headers, (name, value) => res.setHeader(name, value));
       if (upstream.body) {
         res.flushHeaders();
         await pipeline(Readable.fromWeb(upstream.body as ReadableStream<Uint8Array>), res);
