@@ -47,6 +47,7 @@ export const en = {
   "panels.agentSession.agentName": "Agent",
   "panels.agentSession.updatedAt": "Updated",
   "panels.agentSession.untitled": "Untitled session",
+  "panels.agentSession.running": "Running",
   "panels.agentSession.rename": "Rename session",
   "panels.agentSession.renamed": "Renamed session to “{name}”",
   "panels.agentSession.delete": "Delete session",

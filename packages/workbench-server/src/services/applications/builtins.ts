@@ -270,27 +270,54 @@ export const workbenchApplications: BuiltinApplication[] = [
     ],
     "scheduleAdapter": "workbench:operations",
     "allowStandalone": false,
-    "framePanelId": "builtin-product-platform-frame",
+    "framePanelId": "builtin-product-ops-frame",
     "declaration": {
       "names": {
         "en": "Operations diagnosis",
-        "zh-CN": "运维诊断"
+        "zh-CN": "运维诊断",
+        "zh-TW": "維運診斷",
+        "ja": "運用診断",
+        "de": "Betriebsdiagnose",
+        "fr": "Diagnostic opérationnel",
+        "it": "Diagnostica operativa",
+        "ar": "تشخيص العمليات"
       },
       "descriptions": {
         "en": "Diagnose agent and service failures",
         "zh-CN": "诊断智能体与服务故障"
       },
       "icon": "diagnosis",
-      "groups": [],
+      "groups": [
+        {
+          "key": "autotest",
+          "sort": 1,
+          "names": {
+            "en": "Automatic tests",
+            "zh-CN": "自动测试",
+            "zh-TW": "自動測試",
+            "ja": "自動テスト",
+            "de": "Automatische Tests",
+            "fr": "Tests automatiques",
+            "it": "Test automatici",
+            "ar": "الاختبارات التلقائية"
+          }
+        }
+      ],
       "permissions": [],
       "panelUses": [{
+        "id": "ops-diagnosis",
+        "pageKey": "ops-diagnosis",
+        "kind": "frame-conversation",
+        "path": "/ops/diagnosis",
+        "access": { "permissionCode": "observer" }
+      }, {
         "id": "ops-turn-evidence",
         "pageKey": "ops-turn-evidence",
         "panelId": "builtin-product-ops-turn-evidence",
         "path": "/ops/turn",
         "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
-        "icon": "microscope",
+        "icon": "file-search",
         "names": {
           "en": "Turn evidence",
           "zh-CN": "Turn 取证",
@@ -310,52 +337,32 @@ export const workbenchApplications: BuiltinApplication[] = [
         "pageKey": "ops-test-run",
         "kind": "native",
         "path": "/ops/test",
+        "groupKey": "autotest",
         "access": { "permissionCode": "observer" },
-        "icon": "microscope",
+        "icon": "flask-conical",
         "names": {
-          "en": "Automatic tests",
-          "zh-CN": "自动测试",
-          "zh-TW": "自動測試",
-          "ja": "自動テスト",
-          "de": "Automatische Tests",
-          "fr": "Tests automatiques",
-          "it": "Test automatici",
-          "ar": "الاختبارات التلقائية"
+          "en": "Test Execution",
+          "zh-CN": "测试执行",
+          "zh-TW": "測試執行",
+          "ja": "テスト実行",
+          "de": "Testausführung",
+          "fr": "Exécution des tests",
+          "it": "Esecuzione test",
+          "ar": "تنفيذ الاختبار"
         },
         "descriptions": {
           "en": "Run automated test suites and follow live execution progress",
           "zh-CN": "执行自动测试批次并实时观察测试进度与日志"
         }
       }, {
-        "id": "ops-autotest-cases",
-        "pageKey": "ops-autotest-cases",
-        "panelId": "builtin-product-ops-autotest-cases",
-        "path": "/ops/cases",
-        "access": { "permissionCode": "observer" },
-        "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
-        "icon": "clipboard-list",
-        "names": {
-          "en": "Test cases",
-          "zh-CN": "测试用例",
-          "zh-TW": "測試用例",
-          "ja": "テストケース",
-          "de": "Testfälle",
-          "fr": "Cas de test",
-          "it": "Casi di test",
-          "ar": "حالات الاختبار"
-        },
-        "descriptions": {
-          "en": "Create, import, edit, and delete autotest case sets in form or JSON mode",
-          "zh-CN": "新建、导入、表单/JSON 双视图编辑与删除自动测试用例集"
-        }
-      }, {
         "id": "ops-autotest-results",
         "pageKey": "ops-autotest-results",
         "panelId": "builtin-product-ops-autotest-results",
         "path": "/ops/results",
+        "groupKey": "autotest",
         "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
-        "icon": "clipboard-list",
+        "icon": "flask-conical",
         "inputs": { "caseDetailPath": { "literal": "/ops/autotest/case" } },
         "names": {
           "en": "Test results",
@@ -376,8 +383,32 @@ export const workbenchApplications: BuiltinApplication[] = [
         "pageKey": "ops-autotest-case-artifact",
         "panelId": "builtin-product-ops-autotest-case-artifact",
         "path": "/ops/autotest/case",
+        "groupKey": "autotest",
         "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" }
+      }, {
+        "id": "ops-autotest-cases",
+        "pageKey": "ops-autotest-cases",
+        "panelId": "builtin-product-ops-autotest-cases",
+        "path": "/ops/cases",
+        "groupKey": "autotest",
+        "access": { "permissionCode": "observer" },
+        "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
+        "icon": "flask-conical",
+        "names": {
+          "en": "Test cases",
+          "zh-CN": "测试用例",
+          "zh-TW": "測試用例",
+          "ja": "テストケース",
+          "de": "Testfälle",
+          "fr": "Cas de test",
+          "it": "Casi di test",
+          "ar": "حالات الاختبار"
+        },
+        "descriptions": {
+          "en": "Create, import, edit, and delete autotest case sets in form or JSON mode",
+          "zh-CN": "新建、导入、表单/JSON 双视图编辑与删除自动测试用例集"
+        }
       }, {
         "id": "ops-live-logs",
         "pageKey": "ops-live-logs",
@@ -406,7 +437,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "path": "/ops/dsl",
         "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
-        "icon": "function",
+        "icon": "square-terminal",
         "names": {
           "en": "DSL execution",
           "zh-CN": "DSL 执行",
@@ -428,7 +459,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "path": "/ops/knowledge",
         "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
-        "icon": "knowledge",
+        "icon": "book-open",
         "names": {
           "en": "Operations knowledge",
           "zh-CN": "运维知识",
@@ -449,7 +480,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-feedback",
         "path": "/ops/feedback",
         "access": { "permissionCode": "user-feedback" },
-        "icon": "clipboard-list",
+        "icon": "thumbs-up",
         "names": {
           "en": "User feedback",
           "zh-CN": "用户反馈",

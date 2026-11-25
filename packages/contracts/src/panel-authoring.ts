@@ -95,13 +95,15 @@ const inlineMemberSchema = z.object({
   agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry and AgentChat. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
   prefill: panelConversationEntryFields.shape.prefill.describe("ConversationEntry text placed in the page composer without sending it."),
   prefillKey: panelConversationEntryFields.shape.prefillKey.describe("ConversationEntry opening sentence as a key in this panel's content.messages, read in the reader's language. Use it instead of prefill in a panel shipped to several languages."),
+  submit: panelConversationEntryFields.shape.submit.describe("ConversationEntry flag to submit non-empty prefill immediately on a reader click."),
+  newSession: panelConversationEntryFields.shape.newSession.describe("ConversationEntry flag to start a fresh conversation session on a reader click."),
   sourceCard: dashboardCardRequestSchema.optional().describe("Optional for MetricChart. Use {dashboardId, cardId} to bind an existing dashboard card through the chart owner, or omit it and bind MetricChart data directly."),
   name: z.string().optional().describe("Projection display name. Defaults to the member name."),
   description: z.string().optional().describe("Projection description. Defaults to the member name."),
 }).strict().superRefine((member, ctx) => {
   const issue = (field: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: field, message });
   if (isOfficialComponent(member.component, "MetricChart") && member.sourceCard !== undefined) {
-    for (const field of ["id", "type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "inputs", "config", "agent", "prefill", "prefillKey", "name", "description"] as const) {
+    for (const field of ["id", "type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "inputs", "config", "agent", "prefill", "prefillKey", "submit", "newSession", "name", "description"] as const) {
       if (member[field] !== undefined) issue([field], "MetricChart takes its projection definition from the source card");
     }
     return;
@@ -120,12 +122,12 @@ const inlineMemberSchema = z.object({
   }
   if (isOfficialComponent(member.component, "AgentChat")) {
     if (member.agent === undefined) issue(["agent"], "AgentChat needs an agent target");
-    for (const field of ["type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "prefill", "prefillKey"] as const) {
+    for (const field of ["type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "prefill", "prefillKey", "submit", "newSession"] as const) {
       if (member[field] !== undefined) issue([field], "AgentChat uses only its declared agent, optional session state/inputs, and config");
     }
     return;
   }
-  for (const field of ["agent", "prefill", "prefillKey"] as const) {
+  for (const field of ["agent", "prefill", "prefillKey", "submit", "newSession"] as const) {
     if (member[field] !== undefined) issue([field], field === "agent" ? "This field is only for ConversationEntry or AgentChat" : "This field is only for ConversationEntry");
   }
 

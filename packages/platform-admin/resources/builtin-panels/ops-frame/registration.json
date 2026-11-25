@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ops-frame",
+      "input": {
+        "name": "Operations diagnosis frame",
+        "description": "Dedicated operations diagnosis application frame with persistent AgentChat, entry-driven navigation, autotest tab strip, and recent diagnosis sessions."
+      }
+    }
+  ]
+}

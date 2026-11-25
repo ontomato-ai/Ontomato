@@ -70,6 +70,8 @@ input sources such as another member's read-only output. The inline shorthand ac
 | `agent` | No | Required for ConversationEntry and AgentChat. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}. |
 | `prefill` | No | ConversationEntry text placed in the page composer without sending it. |
 | `prefillKey` | No | ConversationEntry opening sentence as a key in this panel's content.messages, read in the reader's language. Use it instead of prefill in a panel shipped to several languages. |
+| `submit` | No | ConversationEntry flag to submit non-empty prefill immediately on a reader click. |
+| `newSession` | No | ConversationEntry flag to start a fresh conversation session on a reader click. |
 | `sourceCard` | No | Optional for MetricChart. Use {dashboardId, cardId} to bind an existing dashboard card through the chart owner, or omit it and bind MetricChart data directly. |
 | `name` | No | Projection display name. Defaults to the member name. |
 | `description` | No | Projection description. Defaults to the member name. |

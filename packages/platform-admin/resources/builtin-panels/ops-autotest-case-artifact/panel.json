@@ -147,13 +147,15 @@
         "component": "ConversationEntry",
         "agent": "page-default",
         "prefillKey": "panel.diagnosePrefill",
+        "submit": true,
+        "newSession": true,
         "config": {
           "type": "primary",
           "size": "small",
           "labelKey": "panel.diagnose"
         },
         "name": "Diagnose this case",
-        "description": "Opens the operations diagnosis composer with an opening prompt for the current autotest case artifact.",
+        "description": "Start a new operations diagnosis session and submit the opening prompt for the current autotest case artifact.",
         "id": "builtin-product-4958f510-728f-49b2-bd8b-3080de58ba96"
       },
       "download": {

@@ -138,13 +138,15 @@
         "component": "ConversationEntry",
         "agent": "page-default",
         "prefillKey": "panel.diagnosePrefill",
+        "submit": true,
+        "newSession": true,
         "config": {
           "type": "primary",
           "size": "small",
           "labelKey": "panel.diagnose"
         },
         "name": "Diagnose this turn",
-        "description": "Open the operations diagnosis assistant composer prefilled to diagnose the selected turn evidence.",
+        "description": "Start a new operations diagnosis session and submit the opening prompt for the selected turn evidence.",
         "id": "builtin-product-9d3e5b21-4c7a-4e8f-b120-7a9c3e5f1005"
       },
       "refreshTurn": {

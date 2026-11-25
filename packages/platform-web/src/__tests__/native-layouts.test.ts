@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
-import { OPS_DIAGNOSIS_KIND } from "@ontomato/contracts/ops-diagnosis";
 import { appDeclarations } from "../partition";
 import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
@@ -137,7 +136,7 @@ it("propagates framePanelId and leaves panel application menus to their frame pa
   expect(single.groups).toEqual([]);
 });
 
-describe("the operations application's unified platform frame", () => {
+describe("the operations application's dedicated frame", () => {
   const catalog = catalogFixture();
   const filterPanelUses = (granted: readonly string[]) =>
     catalog.map((app) =>
@@ -157,14 +156,14 @@ describe("the operations application's unified platform frame", () => {
 
   it("opens on user feedback for a reader who holds only user-feedback", () => {
     const feedbackOnly = operations(["user-feedback"]);
-    expect(feedbackOnly.framePanelId).toBe("builtin-product-platform-frame");
+    expect(feedbackOnly.framePanelId).toBe("builtin-product-ops-frame");
     expect(feedbackOnly.home).toBe("/ops/feedback");
     expect(feedbackOnly.groups!.flatMap((group) => group.pages.map((page) => page.id))).toEqual(["/ops/feedback"]);
   });
 
-  it("opens on turn evidence for an observer and lists unified frame menu entries including feedback when granted without /ops/diagnosis", () => {
+  it("opens on turn evidence for an observer with dedicated ops-frame and lists menu entries including feedback when granted", () => {
     const observer = operations(["observer", "user-feedback"]);
-    expect(observer.framePanelId).toBe("builtin-product-platform-frame");
+    expect(observer.framePanelId).toBe("builtin-product-ops-frame");
     expect(observer.home).toBe("/ops/turn");
     const pageIds = observer.groups!.flatMap((group) => group.pages.map((page) => page.id));
     expect(pageIds).toEqual(expect.arrayContaining(["/ops/turn", "/ops/knowledge", "/ops/feedback"]));
@@ -175,29 +174,21 @@ describe("the operations application's unified platform frame", () => {
     expect(operations(["user-feedback"], withoutFeedback).home).not.toBe("/ops/feedback");
   });
 
-  it("redirects legacy /ops/diagnosis links to /agents/chat with ops-diagnosis selected and prefills without auto-sending", async () => {
+  it("redirects /ops root to /ops/diagnosis and leaves /ops/diagnosis to the catalog frame-conversation entry", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { name: "Chat", path: "/agents/chat", component: { render: () => null } },
+        { name: "OpsDiagnosis", path: "/ops/diagnosis", component: { render: () => null } },
         ...observePageRoutes(),
       ],
     });
 
-    await router.push("/ops/diagnosis");
-    expect(router.currentRoute.value.path).toBe("/agents/chat");
-    expect(router.currentRoute.value.query).toEqual({ agentKind: OPS_DIAGNOSIS_KIND });
+    await router.push("/ops");
+    expect(router.currentRoute.value.path).toBe("/ops/diagnosis");
 
-    await router.push("/ops/diagnosis?sessionId=session-123");
-    expect(router.currentRoute.value.path).toBe("/agents/chat");
-    expect(router.currentRoute.value.query).toEqual({ agentKind: OPS_DIAGNOSIS_KIND, sessionId: "session-123" });
-
-    await router.push("/ops/diagnosis?diagnose=1&sourceSessionId=sess-1&sourceRunId=run-2");
-    expect(router.currentRoute.value.path).toBe("/agents/chat");
-    expect(router.currentRoute.value.query.agentKind).toBe(OPS_DIAGNOSIS_KIND);
-    expect(router.currentRoute.value.query.prompt).toBeUndefined();
-    expect(String(router.currentRoute.value.query.prefill)).toContain("sess-1");
-    expect(String(router.currentRoute.value.query.prefill)).toContain("run-2");
+    await router.push("/ops/diagnosis?frame.sessionId=session-123");
+    expect(router.currentRoute.value.path).toBe("/ops/diagnosis");
+    expect(router.currentRoute.value.query).toEqual({ "frame.sessionId": "session-123" });
   });
 });
 

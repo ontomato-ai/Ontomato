@@ -105,7 +105,7 @@ export const operationsScheduleApplication: ScheduleApplication = {
       return {
         ...emptyExecution(),
         handle: { sessionId, agentId: diagnosis.id },
-        resultLink: { appId: "agents", path: `/agents/chat?agentId=${encodeURIComponent(diagnosis.id)}&sessionId=${sessionId}` },
+        resultLink: { appId: "operations", path: `/ops/diagnosis?frame.sessionId=${sessionId}` },
       };
     });
   },
@@ -115,16 +115,13 @@ export const operationsScheduleApplication: ScheduleApplication = {
       if (input.handle?.batchId !== undefined || loadRunMeta(batchId)) return batchState(input);
     }
     const sessionId = typeof input.handle?.sessionId === "string" ? input.handle.sessionId : scheduledSessionId(input.runId);
-    const agentId = typeof input.handle?.agentId === "string" ? input.handle.agentId : (await assistantStore.opsDiagnosis(input.owner.domainId))?.id;
-    const chatPath = agentId
-      ? `/agents/chat?agentId=${encodeURIComponent(agentId)}&sessionId=${sessionId}`
-      : `/ops/diagnosis?sessionId=${sessionId}`;
+    const diagnosisPath = `/ops/diagnosis?frame.sessionId=${sessionId}`;
     try {
-      return await scheduledConversationStatus(assistantService, input.owner, sessionId, input.runId, "agents", chatPath);
+      return await scheduledConversationStatus(assistantService, input.owner, sessionId, input.runId, "operations", diagnosisPath);
     } catch (error) {
       // Read-only fallback for historical scheduled inspections persisted in legacy `ops_sessions`.
       if (!(error instanceof HttpError && error.status === 404)) throw error;
-      return scheduledConversationStatus(diagnosisService, input.owner, sessionId, input.runId, "operations", `/ops/diagnosis?sessionId=${sessionId}`);
+      return scheduledConversationStatus(diagnosisService, input.owner, sessionId, input.runId, "operations", diagnosisPath);
     }
   },
 };
