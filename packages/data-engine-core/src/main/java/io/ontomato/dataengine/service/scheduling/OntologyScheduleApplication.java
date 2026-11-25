@@ -29,10 +29,11 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   /** A saved task holds each parameter's text under this prefix and the parameter's name. */
   private static final String PARAMETER_KEY = "parameter:";
 
+  private static final int EXECUTION_TIMEOUT_MINUTES = 60;
+
   private final FunctionDao functions;
   private final ActionService actions;
   private final ABCProgramService programs;
-  private final BusinessConfigService configs;
   private final IdentityService identity;
   private final OntologyScheduleReferences references;
   private final CapabilityGrantLookup grants;
@@ -102,7 +103,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   public int deadlineMinutes(Execution execution) {
-    return Math.max(1, configs.get(execution.domainId()).getReportCardPythonTimeout()) + 1;
+    return EXECUTION_TIMEOUT_MINUTES + 1;
   }
 
   private record Target(Action action, Function function, String label) {
@@ -347,14 +348,14 @@ public class OntologyScheduleApplication implements ScheduleApplication {
             "executionId",
             execution.runId()));
     try {
-      int timeout = Math.max(1, configs.get(actor.domain()).getReportCardPythonTimeout());
       io.ontomato.dataengine.bean.PythonExecuteResult result;
       if (target.action() != null) {
-        result = actions.executeScheduled(target.action(), values, actor.locale(), actor.user(), actor.permission(), timeout, execution.runId());
+        result = actions.executeScheduled(target.action(), values, actor.locale(), actor.user(), actor.permission(),
+            EXECUTION_TIMEOUT_MINUTES, execution.runId());
       } else {
         var function = MetricViewBindings.executionWriteFunction(target.function(), values);
         var output = programs.execute(execution.runId().toString(), function, actor.creator(), actor.permission(),
-            ServiceConst.NOT_SANDBOX, actor.locale(), timeout, actor.domain(),
+            ServiceConst.NOT_SANDBOX, actor.locale(), EXECUTION_TIMEOUT_MINUTES, actor.domain(),
             new ABCProgramService.ExecutionContext(execution.runId(), null, ExecutionTarget.LIVE));
         result = (io.ontomato.dataengine.bean.PythonExecuteResult) output[1];
       }

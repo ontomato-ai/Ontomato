@@ -24,4 +24,4 @@ Read only when symptom characteristics match; entries only provide candidate dir
 | Business class/field/relation names report not exist, graph missing links | [Schema/metadata inconsistency causes query anomalies](schema-metadata-mismatch-causes-query-errors.md) |
 | DSL correct, execution succeeds but no result or abnormal result | [Missing data relations or identifier inconsistency causes empty query results](missing-or-inconsistent-data-relations-cause-empty-results.md) |
 
-Execution-layer failure modes (DSL execution NPE, illegal SQL) are attached under the [Standard Query Turn](../standard-query-turn/index.md) topic.
+See [Business Data Retrieval](../standard-query-turn/index.md) for retrieval and DSL execution failures.

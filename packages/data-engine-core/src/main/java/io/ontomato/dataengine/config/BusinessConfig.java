@@ -17,8 +17,6 @@ public class BusinessConfig {
 
     private Long dslCookerTimeout;
 
-    private Integer reportCardPythonTimeout = 60;
-    
     private String lang;
     
     private String dataAdapter;

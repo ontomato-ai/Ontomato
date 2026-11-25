@@ -13,7 +13,6 @@ import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
-import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.WorkflowDao;
 import io.ontomato.dataengine.service.*;
@@ -94,16 +93,12 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     when(grantsForActions.admission(anyString(), anyString(), anyString(), anyString())).thenReturn(CapabilityGrantLookup.Admission.ALL);
     targetQueries = mock(OntologyQueryService.class);
     programs = new ABCProgramServiceImpl();
-    var configs = mock(BusinessConfigService.class);
-    var config = new BusinessConfig();
-    config.setReportCardPythonTimeout(1);
-    when(configs.get("sales")).thenReturn(config);
     // Ontology tasks created before Triggers took over keep running on this scheduler until they are migrated. The
     // fixture seeds them through the API, which the retired application refuses for new tasks (see
     // retiredOntologyApplicationRefusesNewTasksAndKeepsExistingOnes), so it uses a copy that still accepts them.
     ontology =
         new OntologyScheduleApplication(
-            functions, actions, programs, configs, identities, references, grantsForActions) {
+            functions, actions, programs, identities, references, grantsForActions) {
           @Override
           public boolean acceptsNewTasks() {
             return true;
@@ -111,7 +106,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         };
     retiredOntology =
         new OntologyScheduleApplication(
-            functions, actions, programs, configs, identities, references, grantsForActions);
+            functions, actions, programs, identities, references, grantsForActions);
     wireActionExecutor();
     var remote = mock(WorkbenchScheduleApplications.class);
     applications = scheduleApplications(List.of(ontology), remote);
@@ -865,7 +860,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     assertEquals("Target is not readable or is outside the granted scope", recorded.error().message());
     verify(identities, never()).requireActionExecutionAccess("alice", "sales");
     verify(targetQueries).actionTargetExists(eq(action.getTarget()), eq("001"), any(), any());
-    verify(actions).executeScheduled(eq(action), any(), eq("en"), eq(user), any(), eq(1), eq(run));
+    verify(actions).executeScheduled(eq(action), any(), eq("en"), eq(user), any(), eq(60), eq(run));
   }
 
   @Test
