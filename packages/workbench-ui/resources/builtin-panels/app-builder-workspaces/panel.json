@@ -1,0 +1,342 @@
+{
+  "manifest": {
+    "state": {
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false
+      },
+      "renaming": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AppWorkspace"
+        },
+        "deepLink": false
+      }
+    },
+    "members": {
+      "workspaces": {
+        "component": "ObjectList",
+        "type": "platform:AppWorkspace",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "search": "search"
+        },
+        "operations": {
+          "delete": {
+            "operation": "appWorkspaces.delete",
+            "target": "row"
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchPlaceholder": "list.searchPlaceholder",
+          "fallbackToFirst": false,
+          "emptyText": "list.empty",
+          "emptyHint": "list.emptyHint",
+          "noMatchText": "list.noMatch",
+          "columns": [
+            {
+              "key": "name",
+              "labelKey": "table.name",
+              "minWidth": 200
+            },
+            {
+              "key": "shortHeadCommit",
+              "labelKey": "table.commit",
+              "width": 110
+            },
+            {
+              "key": "busyLabel",
+              "labelKey": "table.status",
+              "kind": "tag",
+              "width": 130
+            },
+            {
+              "key": "publishedAppName",
+              "labelKey": "table.publishedApp",
+              "emptyKey": "table.unpublished",
+              "minWidth": 160
+            },
+            {
+              "key": "updatedAt",
+              "labelKey": "table.updatedAt",
+              "kind": "time",
+              "width": 160
+            }
+          ],
+          "rowActions": {
+            "labelKey": "table.actions",
+            "maxVisible": 3,
+            "items": [
+              {
+                "kind": "local",
+                "id": "open",
+                "labelKey": "action.open",
+                "primary": true
+              },
+              {
+                "kind": "local",
+                "id": "rename",
+                "labelKey": "action.rename"
+              },
+              {
+                "kind": "operation",
+                "operation": "delete",
+                "labelKey": "action.delete",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "App builder workspaces",
+        "description": "Searchable list of App Builder workspaces with open, rename, and delete actions.",
+        "id": "builtin-product-83fae8b3-5b9d-41c4-a12d-25b8469151e3"
+      },
+      "createForm": {
+        "component": "ObjectForm",
+        "type": "platform:AppWorkspace",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "appWorkspaces.create",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "Create workspace form",
+        "description": "Form to create a new App Builder workspace.",
+        "id": "builtin-product-97ef5054-2439-4447-ba0f-2b68bb4e345e"
+      },
+      "renameForm": {
+        "component": "ObjectForm",
+        "type": "platform:AppWorkspace",
+        "target": "renaming",
+        "data": {
+          "form": "form"
+        },
+        "operation": "appWorkspaces.save",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "Rename workspace form",
+        "description": "Form to rename an existing App Builder workspace.",
+        "id": "builtin-product-2c0496f4-3b8e-43f9-975c-d1791c20855a"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.title": "App builder",
+        "panel.description": "Create and manage workspaces, collaborate with the builder agent, and publish applications.",
+        "action.create": "New workspace",
+        "action.refresh": "Refresh",
+        "action.open": "Open",
+        "action.rename": "Rename",
+        "action.delete": "Delete",
+        "list.searchPlaceholder": "Search workspaces by name",
+        "list.empty": "No workspaces yet",
+        "list.emptyHint": "Click \"New workspace\" above to create your first workspace and start building.",
+        "list.noMatch": "No matching workspaces",
+        "table.name": "Workspace",
+        "table.commit": "Commit",
+        "table.status": "Status",
+        "table.publishedApp": "Published app",
+        "table.unpublished": "Not published",
+        "table.updatedAt": "Updated",
+        "table.actions": "Actions",
+        "dialog.createTitle": "New workspace",
+        "dialog.renameTitle": "Rename workspace",
+        "notify.created": "Workspace created",
+        "notify.renamed": "Workspace renamed",
+        "notify.deleted": "Workspace deleted"
+      },
+      "zh-CN": {
+        "panel.title": "应用构建",
+        "panel.description": "创建与管理应用工作区，与应用构建智能体协作并发布应用。",
+        "action.create": "新建工作区",
+        "action.refresh": "刷新",
+        "action.open": "打开",
+        "action.rename": "重命名",
+        "action.delete": "删除",
+        "list.searchPlaceholder": "按名称搜索工作区",
+        "list.empty": "暂无工作区",
+        "list.emptyHint": "点击上方「新建工作区」创建第一个工作区并开始构建。",
+        "list.noMatch": "没有匹配的工作区",
+        "table.name": "工作区名称",
+        "table.commit": "当前提交",
+        "table.status": "状态",
+        "table.publishedApp": "已发布应用",
+        "table.unpublished": "未发布",
+        "table.updatedAt": "更新时间",
+        "table.actions": "操作",
+        "dialog.createTitle": "新建工作区",
+        "dialog.renameTitle": "重命名工作区",
+        "notify.created": "已新建工作区",
+        "notify.renamed": "已重命名工作区",
+        "notify.deleted": "已删除工作区"
+      },
+      "zh-TW": {
+        "panel.title": "應用建構",
+        "panel.description": "建立與管理應用工作區，與應用建構智能體協作並發佈應用。",
+        "action.create": "新建工作區",
+        "action.refresh": "重新整理",
+        "action.open": "開啟",
+        "action.rename": "重新命名",
+        "action.delete": "刪除",
+        "list.searchPlaceholder": "依名稱搜尋工作區",
+        "list.empty": "尚無工作區",
+        "list.emptyHint": "點擊上方「新建工作區」建立第一個工作區並開始建構。",
+        "list.noMatch": "沒有符合條件的工作區",
+        "table.name": "工作區名稱",
+        "table.commit": "目前提交",
+        "table.status": "狀態",
+        "table.publishedApp": "已發佈應用",
+        "table.unpublished": "未發佈",
+        "table.updatedAt": "更新時間",
+        "table.actions": "操作",
+        "dialog.createTitle": "新建工作區",
+        "dialog.renameTitle": "重新命名工作區",
+        "notify.created": "已建立工作區",
+        "notify.renamed": "已重新命名工作區",
+        "notify.deleted": "已刪除工作區"
+      },
+      "ja": {
+        "panel.title": "アプリビルダー",
+        "panel.description": "ワークスペースを作成・管理し、ビルダーエージェントと協働してアプリを公開します。",
+        "action.create": "新規ワークスペース",
+        "action.refresh": "更新",
+        "action.open": "開く",
+        "action.rename": "名前を変更",
+        "action.delete": "削除",
+        "list.searchPlaceholder": "ワークスペース名で検索",
+        "list.empty": "ワークスペースがまだありません",
+        "list.emptyHint": "上の「新規ワークスペース」をクリックして最初のワークスペースを作成してください。",
+        "list.noMatch": "一致するワークスペースがありません",
+        "table.name": "ワークスペース",
+        "table.commit": "コミット",
+        "table.status": "状態",
+        "table.publishedApp": "公開アプリ",
+        "table.unpublished": "未公開",
+        "table.updatedAt": "更新日時",
+        "table.actions": "操作",
+        "dialog.createTitle": "新規ワークスペース",
+        "dialog.renameTitle": "ワークスペース名を変更",
+        "notify.created": "ワークスペースを作成しました",
+        "notify.renamed": "ワークスペース名を変更しました",
+        "notify.deleted": "ワークスペースを削除しました"
+      },
+      "de": {
+        "panel.title": "App-Builder",
+        "panel.description": "Arbeitsbereiche erstellen und verwalten, mit dem Builder-Agenten zusammenarbeiten und Anwendungen veröffentlichen.",
+        "action.create": "Neuer Arbeitsbereich",
+        "action.refresh": "Aktualisieren",
+        "action.open": "Öffnen",
+        "action.rename": "Umbenennen",
+        "action.delete": "Löschen",
+        "list.searchPlaceholder": "Arbeitsbereiche nach Namen suchen",
+        "list.empty": "Noch keine Arbeitsbereiche",
+        "list.emptyHint": "Klicken Sie oben auf „Neuer Arbeitsbereich“, um Ihren ersten Arbeitsbereich anzulegen.",
+        "list.noMatch": "Keine passenden Arbeitsbereiche",
+        "table.name": "Arbeitsbereich",
+        "table.commit": "Commit",
+        "table.status": "Status",
+        "table.publishedApp": "Veröffentlichte App",
+        "table.unpublished": "Nicht veröffentlicht",
+        "table.updatedAt": "Aktualisiert",
+        "table.actions": "Aktionen",
+        "dialog.createTitle": "Neuer Arbeitsbereich",
+        "dialog.renameTitle": "Arbeitsbereich umbenennen",
+        "notify.created": "Arbeitsbereich erstellt",
+        "notify.renamed": "Arbeitsbereich umbenannt",
+        "notify.deleted": "Arbeitsbereich gelöscht"
+      },
+      "fr": {
+        "panel.title": "Constructeur d'applications",
+        "panel.description": "Créez et gérez vos espaces de travail, collaborez avec l'agent constructeur et publiez vos applications.",
+        "action.create": "Nouvel espace de travail",
+        "action.refresh": "Actualiser",
+        "action.open": "Ouvrir",
+        "action.rename": "Renommer",
+        "action.delete": "Supprimer",
+        "list.searchPlaceholder": "Rechercher des espaces de travail par nom",
+        "list.empty": "Aucun espace de travail pour le moment",
+        "list.emptyHint": "Cliquez sur « Nouvel espace de travail » ci-dessus pour créer votre premier espace de travail.",
+        "list.noMatch": "Aucun espace de travail correspondant",
+        "table.name": "Espace de travail",
+        "table.commit": "Commit",
+        "table.status": "Statut",
+        "table.publishedApp": "Application publiée",
+        "table.unpublished": "Non publiée",
+        "table.updatedAt": "Mis à jour",
+        "table.actions": "Actions",
+        "dialog.createTitle": "Nouvel espace de travail",
+        "dialog.renameTitle": "Renommer l'espace de travail",
+        "notify.created": "Espace de travail créé",
+        "notify.renamed": "Espace de travail renommé",
+        "notify.deleted": "Espace de travail supprimé"
+      },
+      "it": {
+        "panel.title": "Generatore di applicazioni",
+        "panel.description": "Crea e gestisci aree di lavoro, collabora con l'agente costruttore e pubblica applicazioni.",
+        "action.create": "Nuova area di lavoro",
+        "action.refresh": "Aggiorna",
+        "action.open": "Apri",
+        "action.rename": "Rinomina",
+        "action.delete": "Elimina",
+        "list.searchPlaceholder": "Cerca aree di lavoro per nome",
+        "list.empty": "Nessuna area di lavoro",
+        "list.emptyHint": "Fai clic su \"Nuova area di lavoro\" in alto per creare la prima area di lavoro.",
+        "list.noMatch": "Nessuna area di lavoro corrispondente",
+        "table.name": "Area di lavoro",
+        "table.commit": "Commit",
+        "table.status": "Stato",
+        "table.publishedApp": "App pubblicata",
+        "table.unpublished": "Non pubblicata",
+        "table.updatedAt": "Aggiornato",
+        "table.actions": "Azioni",
+        "dialog.createTitle": "Nuova area di lavoro",
+        "dialog.renameTitle": "Rinomina area di lavoro",
+        "notify.created": "Area di lavoro creata",
+        "notify.renamed": "Area di lavoro rinominata",
+        "notify.deleted": "Area di lavoro eliminata"
+      },
+      "ar": {
+        "panel.title": "منشئ التطبيقات",
+        "panel.description": "إنشاء مساحات العمل وإدارتها والتعاون مع وكيل البناء ونشر التطبيقات.",
+        "action.create": "مساحة عمل جديدة",
+        "action.refresh": "تحديث",
+        "action.open": "فتح",
+        "action.rename": "إعادة تسمية",
+        "action.delete": "حذف",
+        "list.searchPlaceholder": "ابحث عن مساحات العمل بالاسم",
+        "list.empty": "لا توجد مساحات عمل بعد",
+        "list.emptyHint": "انقر على «مساحة عمل جديدة» أعلاه لإنشاء أول مساحة عمل والبدء في البناء.",
+        "list.noMatch": "لا توجد مساحات عمل مطابقة",
+        "table.name": "مساحة العمل",
+        "table.commit": "الإيداع",
+        "table.status": "الحالة",
+        "table.publishedApp": "التطبيق المنشور",
+        "table.unpublished": "غير منشور",
+        "table.updatedAt": "آخر تحديث",
+        "table.actions": "الإجراءات",
+        "dialog.createTitle": "مساحة عمل جديدة",
+        "dialog.renameTitle": "إعادة تسمية مساحة العمل",
+        "notify.created": "تم إنشاء مساحة العمل",
+        "notify.renamed": "تمت إعادة تسمية مساحة العمل",
+        "notify.deleted": "تم حذف مساحة العمل"
+      }
+    }
+  }
+}

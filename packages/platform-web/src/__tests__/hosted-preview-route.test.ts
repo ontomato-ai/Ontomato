@@ -68,3 +68,24 @@ it("never requests a preview token or loads a frame when the build-test read is 
   expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.register).not.toHaveBeenCalled();
 });
+
+it("redirects legacy /app-builder/:workspaceId URLs to the workspace panel or chat beside it", async () => {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/app-builder/workspace", component: { template: "<div />" } },
+      { path: "/agents/chat", component: { template: "<div />" } },
+      ...appBuilderPages(),
+    ],
+  });
+
+  await router.push(`/app-builder/${workspaceId}`);
+  expect(router.currentRoute.value.fullPath).toBe(`/app-builder/workspace?workspace=${workspaceId}`);
+
+  await router.push(`/app-builder/${workspaceId}?sessionId=session-1`);
+  expect(router.currentRoute.value.path).toBe("/agents/chat");
+  expect(router.currentRoute.value.query).toEqual({
+    sessionId: "session-1",
+    page: `/app-builder/workspace?workspace=${workspaceId}`,
+  });
+});

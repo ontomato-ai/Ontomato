@@ -130,6 +130,7 @@ test("every shipped builtin panel passes checkBuiltinPanelSource with zero third
       "packages/platform-admin/resources/builtin-panels",
       "packages/platform-schedules/resources/builtin-panels",
       "packages/platform-shell/resources/builtin-panels",
+      "packages/workbench-ui/resources/builtin-panels",
     ];
     let checked = 0;
     for (const root of roots) {

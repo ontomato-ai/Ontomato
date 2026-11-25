@@ -38,6 +38,7 @@ describe("readBuiltinProducts", () => {
       path.join(packagesRoot, "platform-schedules/resources/builtin-panels"),
       path.join(packagesRoot, "platform-admin/resources/builtin-panels"),
       path.join(packagesRoot, "platform-shell/resources/builtin-panels"),
+      path.join(packagesRoot, "workbench-ui/resources/builtin-panels"),
     ];
 
     const bundle = await mkdtemp(path.join(tmpdir(), "builtin-products-test-"));
@@ -130,6 +131,37 @@ describe("readBuiltinProducts", () => {
       expect(auditLog!.manifest.members).toHaveProperty("logDetail");
       expect(auditLog!.content.html).not.toMatch(/<el-|--el-/);
       expect(auditLog!.content.module).not.toContain("usePanelData");
+
+      const appBuilderWorkspaces = panels.get("builtin-product-app-builder-workspaces");
+      expect(appBuilderWorkspaces).toBeDefined();
+      expect(appBuilderWorkspaces!.manifest.state.search?.deepLink).toBe(true);
+      expect(appBuilderWorkspaces!.manifest.state.creating?.deepLink).toBe(false);
+      expect(appBuilderWorkspaces!.manifest.state.renaming?.deepLink).toBe(false);
+      expect(appBuilderWorkspaces!.manifest.members).toHaveProperty("workspaces");
+      expect(appBuilderWorkspaces!.manifest.members).toHaveProperty("createForm");
+      expect(appBuilderWorkspaces!.manifest.members).toHaveProperty("renameForm");
+      expect(appBuilderWorkspaces!.content.html).not.toMatch(/<el-|--el-/);
+
+      const appBuilderWorkspace = panels.get("builtin-product-app-builder-workspace");
+      expect(appBuilderWorkspace).toBeDefined();
+      expect(appBuilderWorkspace!.manifest.state.workspace?.deepLink).toBe(true);
+      expect(appBuilderWorkspace!.manifest.state.tab?.deepLink).toBe(true);
+      expect(appBuilderWorkspace!.manifest.state.filePath?.deepLink).toBe(true);
+      expect(appBuilderWorkspace!.manifest.state.fileSearch?.deepLink).toBe(true);
+      expect(appBuilderWorkspace!.manifest.state.diffTarget?.deepLink).toBe(true);
+      expect(appBuilderWorkspace!.manifest.state.renaming?.deepLink).toBe(false);
+      expect(appBuilderWorkspace!.manifest.state.publishing?.deepLink).toBe(false);
+      expect(appBuilderWorkspace!.manifest.state.sessionsOpen?.deepLink).toBe(false);
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("detailHeader");
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("conversationEntry");
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("workspaceSummary");
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("fileTree");
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("fileViewer");
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("diffViewer");
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("commitsList");
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("releasesList");
+      expect(appBuilderWorkspace!.manifest.members).toHaveProperty("sessionsList");
+      expect(appBuilderWorkspace!.content.html).not.toMatch(/<el-|--el-/);
 
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();

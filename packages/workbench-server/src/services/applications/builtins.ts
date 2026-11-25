@@ -459,6 +459,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     ],
     "scheduleAdapter": null,
     "allowStandalone": false,
+    "framePanelId": "builtin-product-platform-frame",
     "declaration": {
       "names": {
         "en": "App builder",
@@ -488,6 +489,45 @@ export const workbenchApplications: BuiltinApplication[] = [
           },
           "groupKey": "entry",
           "sort": 0
+        }
+      ],
+      "panelUses": [
+        {
+          "id": "app-builder-workspaces",
+          "pageKey": "app-builder-workspaces",
+          "panelId": "builtin-product-app-builder-workspaces",
+          "path": "/app-builder",
+          "access": { "permissionCode": "app-builder" },
+          "icon": "builder",
+          "defaultAgent": { "kind": "preset", "agentKind": "app-builder" },
+          "names": {
+            "en": "Workspaces",
+            "zh-CN": "工作区",
+            "zh-TW": "工作區",
+            "ja": "ワークスペース",
+            "de": "Arbeitsbereiche",
+            "fr": "Espaces de travail",
+            "it": "Aree di lavoro",
+            "ar": "مساحات العمل"
+          },
+          "descriptions": {
+            "en": "Create and manage App Builder workspaces",
+            "zh-CN": "创建和管理应用构建工作区",
+            "zh-TW": "建立並管理應用建構工作區",
+            "ja": "アプリビルダーのワークスペースを作成・管理します",
+            "de": "App-Builder-Arbeitsbereiche erstellen und verwalten",
+            "fr": "Créer et gérer des espaces de travail du constructeur d'applications",
+            "it": "Crea e gestisci le aree di lavoro del generatore di applicazioni",
+            "ar": "إنشاء وإدارة مساحات عمل منشئ التطبيقات"
+          }
+        },
+        {
+          "id": "app-builder-workspace",
+          "pageKey": "app-builder-workspace",
+          "panelId": "builtin-product-app-builder-workspace",
+          "path": "/app-builder/workspace",
+          "access": { "permissionCode": "app-builder" },
+          "defaultAgent": { "kind": "preset", "agentKind": "app-builder" }
         }
       ]
     }

@@ -19,8 +19,8 @@ const fixture = vi.hoisted(() => ({
   regularAgent: "33333333-3333-4333-8333-333333333333",
   regularSession: "44444444-4444-4444-8444-444444444444",
 }));
-vi.mock("../../../services/app-builder/bootstrap", () => ({
-  appBuilderBootstrap: async () => ({ agentId: fixture.builderAgent }),
+vi.mock("../../../services/product-panels/type-table", () => ({
+  readPanelTypeTable: async () => ({ objectTypes: {}, resultSchemas: {} }),
 }));
 vi.mock("../../../services/assistant/service", () => ({
   assistantService: {
@@ -76,15 +76,15 @@ afterAll(async () => {
 function request(entry: string, headers: Record<string, string> = { tk: "synthetic-token" }, regular = false) {
   const sessionId = regular ? fixture.regularSession : fixture.builderSession;
   const agentId = regular ? fixture.regularAgent : fixture.builderAgent;
-  return realFetch(base + (entry === "bootstrap" ? "/api/app-builder/bootstrap"
+  return realFetch(base + (entry === "type-table" ? "/api/app-builder/type-table"
     : `/api/assistant/sessions${entry === "run" ? `/${sessionId}/runs` : ""}`), {
-    method: entry === "bootstrap" ? "GET" : "POST",
+    method: entry === "type-table" ? "GET" : "POST",
     headers: { ...headers, "Content-Type": "application/json", "Idempotency-Key": fixture.builderSession },
-    body: entry === "bootstrap" ? undefined : JSON.stringify(entry === "run" ? { message: "Build an app" } : { agentId }),
+    body: entry === "type-table" ? undefined : JSON.stringify(entry === "run" ? { message: "Build an app" } : { agentId }),
   });
 }
 
-for (const [entry, allowedStatus] of [["bootstrap", 200], ["session", 201], ["run", 202]] as const) {
+for (const [entry, allowedStatus] of [["type-table", 200], ["session", 201], ["run", 202]] as const) {
   describe(entry, () => {
     it.each([
       ["token", { tk: "synthetic-token" }],

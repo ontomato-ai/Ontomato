@@ -516,7 +516,7 @@ const actions = computed(() => [
       <section class="workspace-section" :class="{'half-width':child.span==='half'}" :data-section="section">
         <header><h2>{{ child.asset ? productText(child.asset.name) : '' }}</h2>
           <div v-if="section === 'apps' || section === 'data' || section === 'tasks'" class="section-actions">
-            <el-button v-if="!props.platformWidgetAsset&&section === 'apps' && canBuild" text @click="router.push({ name: platformRoutes.appBuilder.name })">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
+            <el-button v-if="!props.platformWidgetAsset&&section === 'apps' && canBuild" text @click="router.push(platformRoutes.appBuilder.path)">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
             <el-button v-if="!props.platformWidgetAsset&&(section === 'apps' || section === 'data')" text :disabled="saving || refreshing" @click="configure('resources')">{{ section === 'apps' ? (t('ontology.productHomeManageApplications')) : (t('ontology.productHomeManageFollowed')) }}</el-button>
             <el-button v-if="section === 'tasks' && catalog.applications.value.some(app => app.id === 'schedules')" text @click="router.push(platformRoutes.schedules.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
             <el-button v-if="section === 'data' && catalog.applications.value.some(app => app.id === 'dashboards')" text @click="router.push(platformRoutes.dashboards.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>

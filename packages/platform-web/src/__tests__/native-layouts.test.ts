@@ -54,6 +54,11 @@ describe("the platform's applications", () => {
     expect(browser.home).toBe("/browser/data");
     expect(browser.framePanelId).toBe("builtin-product-platform-frame");
     expect(browser.groups).toEqual([]);
+    const appBuilder = declarations.find((app) => app.id === "app-builder")!;
+    expect(appBuilder.prefix).toBe("/app-builder");
+    expect(appBuilder.home).toBe("/app-builder");
+    expect(appBuilder.framePanelId).toBe("builtin-product-platform-frame");
+    expect(appBuilder.groups).toEqual([]);
   });
 
   it("admits fully panel-backed built-in applications without native-layouts and lands home on the first visible named entry", () => {

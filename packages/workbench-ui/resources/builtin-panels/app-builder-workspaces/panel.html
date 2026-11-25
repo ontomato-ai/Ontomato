@@ -1,0 +1,97 @@
+<style>
+  [v-cloak] { display: none; }
+  .abw-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: abw-page / inline-size;
+  }
+  .abw-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .abw-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-content-gap, var(--spacing-md));
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 48px);
+    min-width: 0;
+  }
+  .abw-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .abw-form-wrap .sdk-owner-form,
+  .abw-form-wrap .sdk-owner-form-inner {
+    height: auto;
+  }
+  .abw-form-wrap .sdk-owner-form-body {
+    overflow: visible;
+  }
+  @container abw-page (max-width: 36rem) {
+    .abw-body {
+      padding: var(--spacing-sm) var(--spacing-md) calc(var(--page-content-gap) + 48px);
+    }
+  }
+</style>
+
+<div id="app" v-cloak class="abw-page">
+  <page-header :title="t('panel.title')" :description="t('panel.description')">
+    <template #actions>
+      <div class="abw-actions">
+        <sdk-button @click="refresh">{{ t("action.refresh") }}</sdk-button>
+        <sdk-button type="primary" @click="openCreate">{{ t("action.create") }}</sdk-button>
+      </div>
+    </template>
+  </page-header>
+
+  <div class="abw-body">
+    <projection
+      slot="workspaces"
+      @choose="onChooseWorkspace"
+      @row-action="onRowAction"
+      @operation-done="onOperationDone"
+    ></projection>
+  </div>
+
+  <sdk-dialog
+    v-model="createOpen"
+    :title="t('dialog.createTitle')"
+    width="min(480px, calc(100% - 24px))"
+    append-to-body
+    destroy-on-close
+  >
+    <div class="abw-form-wrap">
+      <projection
+        v-if="createOpen"
+        slot="createForm"
+        @saved="onCreated"
+        @cancel="closeCreate"
+        @discarded="closeCreate"
+      ></projection>
+    </div>
+  </sdk-dialog>
+
+  <sdk-dialog
+    :model-value="Boolean(renaming)"
+    :title="t('dialog.renameTitle')"
+    width="min(480px, calc(100% - 24px))"
+    append-to-body
+    destroy-on-close
+    @update:model-value="onRenameDialogUpdate"
+  >
+    <div class="abw-form-wrap">
+      <projection
+        v-if="renaming"
+        slot="renameForm"
+        @saved="onRenamed"
+        @cancel="closeRename"
+        @discarded="closeRename"
+      ></projection>
+    </div>
+  </sdk-dialog>
+</div>

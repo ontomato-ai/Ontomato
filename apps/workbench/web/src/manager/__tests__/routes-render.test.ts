@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { App } from "vue";
 import type { Router } from "vue-router";
 import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
-import { appBuilderBootstrapSchema } from "@ontomato/contracts/app-builder";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import {
@@ -44,7 +43,6 @@ const NODE_ANSWERS: Readonly<Record<string, unknown>> = {
   "GET /observe/agent/agents": agentHostAgentListSchema.parse({ agents: [AGENT] }),
   "GET /observe/agent/sessions": agentHostSessionPageSchema.parse({ sessions: [], nextCursor: null }),
   "GET /workbench-appearance": { brand: { name: "Ontomato", subtitle: "", logo: "" } } satisfies WorkbenchAppearance,
-  "GET /app-builder/bootstrap": appBuilderBootstrapSchema.parse({ agent: AGENT }),
   "GET /workspaces": { items: [] },
 };
 /** The data engine's answers a page needs in its own shape to draw: the domain's configuration and its adapters. */

@@ -49,8 +49,8 @@ export const platformRoutes = {
   cases: { name: "ObserveCases", path: "/ops/cases" },
   caseDetail: { name: "ObserveAutoTestCaseDetail", path: "/ops/autotest/runs/:runId/cases/:caseId" },
   dsl: { name: "ObserveDsl", path: "/ops/dsl" },
-  /** 应用构建: the workspace in the address, the open conversation as `?sessionId=`. */
-  appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
+  /** App builder directory entry served by the panel entry guard. */
+  appBuilder: { name: "AppBuilder", path: "/app-builder" },
   feedback: { name: "Feedback", path: "/ops/feedback" },
   data: { name: "manager-data", path: "/browser/data/:className?" },
   objectView: { name: "manager-object-view", path: "/browser/views/:className" },
