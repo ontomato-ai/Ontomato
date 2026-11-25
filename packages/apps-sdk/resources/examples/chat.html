@@ -25,8 +25,8 @@
     </div>
     <sdk-alert v-if="error" type="error" :title="error" show-icon @close="error = ''"></sdk-alert>
     <div class="conversation">
-      <agent-chat-panel v-if="agent" :key="agent.id" :client="client" :agent-id="agent.id" :agent="agent"
-        :labels="labels" v-model:session-id="sessionId" @error="error = $event"></agent-chat-panel>
+      <agent-chat v-if="agent" :key="agent.id" :client="client" :agent-id="agent.id" :agent="agent"
+        :labels="labels" v-model:session-id="sessionId" @error="error = $event"></agent-chat>
       <sdk-empty v-else-if="agents?.length === 0" description="You may use no agent yet"></sdk-empty>
     </div>
   </div>
@@ -35,13 +35,13 @@
     import { computed, createApp, ref, watch } from "vue";
     import { connectAppContext } from "@ontomato/sdk";
     import { SdkAlert, SdkButton, SdkEmpty, SdkOption, SdkSelect } from "@ontomato/sdk/ui";
-    import { AgentChatPanel, createAssistantClient, useShellLabels } from "@ontomato/sdk/chat";
+    import { AgentChat, createAssistantClient, useShellLabels } from "@ontomato/sdk/chat";
 
     const context = await connectAppContext();
     const client = createAssistantClient(context);
 
     createApp({
-      components: { AgentChatPanel, SdkAlert, SdkButton, SdkEmpty, SdkOption, SdkSelect },
+      components: { AgentChat, SdkAlert, SdkButton, SdkEmpty, SdkOption, SdkSelect },
       setup() {
         const agents = ref(null);
         const agentId = ref(null);

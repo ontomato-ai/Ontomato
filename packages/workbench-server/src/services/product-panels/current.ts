@@ -1,7 +1,7 @@
 import { themeOverrideProblems } from "@ontomato/design-tokens/theme-overrides";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
-  AGENT_CHAT_PANEL_COMPONENT, METRIC_CHART_COMPONENT, builtinProductPanelInputSchema, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
+  AGENT_CHAT_COMPONENT, METRIC_CHART_COMPONENT, builtinProductPanelInputSchema, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
   type ApplicationPanelReferencesRequest, type ProductPanel, type ProductProjection,
   type ProductPanelInput, type ProductProjectionInput, type RegisterProductProjectionRequest,
 } from "@ontomato/contracts/product-panels";
@@ -249,7 +249,7 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
       .filter(row => {
         const def = row.definition;
         return def && typeof def === "object" && !Array.isArray(def) && "componentId" in def
-          && (def as { componentId?: unknown }).componentId === AGENT_CHAT_PANEL_COMPONENT;
+          && (def as { componentId?: unknown }).componentId === AGENT_CHAT_COMPONENT;
       })
       .map(row => row.id),
   );
@@ -275,7 +275,7 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     if (chatProjectionIds.size > 0 && use.pageComposer !== "none" && panelContainsAgentChat(use.panelId)) {
       throw new HttpError(
         400,
-        `Entry '${use.id}' mounts AgentChatPanel and must declare pageComposer: "none"`,
+        `Entry '${use.id}' mounts AgentChat and must declare pageComposer: "none"`,
         "INVALID_PANEL_ENTRY_PAGE_COMPOSER",
       );
     }

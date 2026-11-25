@@ -191,7 +191,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     { componentId: "OperationButton", data: {} },
     { componentId: "PanelData", data: { "*": datum("panelRecordList") } },
     { componentId: "MetricChart", data: {} },
-    { componentId: "AgentChatPanel", data: {}, inputs: { sessionId: { kind: "scalar", type: "string" } }, outputs: { sessionId: { kind: "scalar", type: "string" } } },
+    { componentId: "AgentChat", data: {}, inputs: { sessionId: { kind: "scalar", type: "string" } }, outputs: { sessionId: { kind: "scalar", type: "string" } } },
   ] };
   const checkModule = `
     const ok = data => ({ success: true, data });
@@ -245,9 +245,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     }
     export function expandPanelAuthoringMember(key, member, { state, components, typeTable }) {
       if (!components.some(component => component.componentId === member.component)) throw new Error("member " + key + ": component unavailable");
-      if (member.component === "AgentChatPanel") {
+      if (member.component === "AgentChat") {
         const projection = {
-          componentId: "@ontomato/sdk:AgentChatPanel",
+          componentId: "@ontomato/sdk:AgentChat",
           data: {},
           inputs: member.state?.sessionId ? { sessionId: { kind: "scalar", type: "string" } } : {},
           outputs: member.state?.sessionId ? { sessionId: { kind: "scalar", type: "string" } } : {},
@@ -687,7 +687,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     }));
     assert.equal(JSON.parse((await run("panel", "check", detailDir)).stdout).status, "valid");
 
-    // A panel mounting AgentChatPanel must declare pageComposer: "none" on its application entry.
+    // A panel mounting AgentChat must declare pageComposer: "none" on its application entry.
     const chatDir = join(directory, "chat-app");
     await mkdir(chatDir, { recursive: true });
     await writeFile(join(chatDir, "panel.html"), '<div id="app"><projection slot="chat"></projection></div>\n');
@@ -697,7 +697,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
         state: { sessionId: { type: { kind: "scalar", type: "string" }, deepLink: true } },
         members: {
           chat: {
-            component: "AgentChatPanel",
+            component: "AgentChat",
             agent: { kind: "preset", agentKind: "regular" },
             state: { sessionId: "sessionId" },
           },
@@ -726,7 +726,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     };
     await writeFile(join(chatDir, "registration.json"), JSON.stringify(chatRegistration));
     await assert.rejects(run("panel", "check", chatDir), error =>
-      error.stderr.includes('mounts AgentChatPanel and must set "pageComposer": "none"'));
+      error.stderr.includes('mounts AgentChat and must set "pageComposer": "none"'));
     chatRegistration.applications[0].input.panelUses[0].pageComposer = "none";
     await writeFile(join(chatDir, "registration.json"), JSON.stringify(chatRegistration));
     assert.equal(JSON.parse((await run("panel", "check", chatDir)).stdout).status, "valid");

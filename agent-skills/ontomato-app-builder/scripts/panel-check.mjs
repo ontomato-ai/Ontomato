@@ -563,13 +563,13 @@ export async function checkPanelWorkspace(directory, {
       }
     }
   }
-  const agentChatComponent = checks.AGENT_CHAT_PANEL_COMPONENT ?? "@ontomato/sdk:AgentChatPanel";
+  const agentChatComponent = checks.AGENT_CHAT_COMPONENT ?? "@ontomato/sdk:AgentChat";
   const panelHasAgentChat = [...resolvedProjections.values()].some(record => record.componentId === agentChatComponent);
   if (panelHasAgentChat && workspace.panel?.id) {
     for (const { id: appId, input: { panelUses } } of material.applications ?? []) {
       for (const use of panelUses ?? []) {
         if (use.panelId === workspace.panel.id && use.pageComposer !== "none") {
-          throw new Error(`application ${appId}: panelUse '${use.id}' mounts AgentChatPanel and must set "pageComposer": "none"`);
+          throw new Error(`application ${appId}: panelUse '${use.id}' mounts AgentChat and must set "pageComposer": "none"`);
         }
       }
     }

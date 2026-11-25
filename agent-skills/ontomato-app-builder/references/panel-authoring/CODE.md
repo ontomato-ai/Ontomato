@@ -886,8 +886,10 @@ template `ref` to `<projection slot="...">` and call `memberRef.value?.refresh()
 
 Conversation shell chrome (history list, message stream, dockable page area) belongs to the platform shell rather than
 an application panel — do not build a custom chat page inside a panel, and do not import `@ontomato/sdk/chat` in
-`panel.mjs` (direct panels allow only `vue` and `@ontomato/sdk/panel`; `AgentChatPanel` / `AgentShell` are standalone
-shell components and cannot be placed as panel projections).
+`panel.mjs` (direct panels allow only `vue` and `@ontomato/sdk/panel`; `AgentShell` is platform-host only and cannot
+be placed as a panel projection). Place an `AgentChat` projection member when a panel embeds a live conversation with a
+declared agent (pairing with `"pageComposer": "none"` on that entry), or place `ConversationEntry` to hand off to the
+platform conversation shell.
 
 - **Button entry (`presentation="button"`, default):** Add a `ConversationEntry` projection when the page needs a button
   that opens the composer with a specific agent (`agent: "page-default"`, `{ "kind": "id", "id": "<agentId>" }`, or

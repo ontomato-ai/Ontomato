@@ -189,7 +189,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="agent-chat-panel">
+  <div class="agent-chat">
     <ShellConversation
       :items="safeItems"
       :session-id="conversation.state.sessionId"
@@ -214,7 +214,7 @@ defineExpose({
 </template>
 
 <style scoped>
-.agent-chat-panel {
+.agent-chat {
   display: flex;
   flex-direction: column;
   height: 100%;

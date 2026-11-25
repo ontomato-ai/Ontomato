@@ -3,7 +3,7 @@ import { defineComponent, h } from "vue";
 import { createI18n } from "vue-i18n";
 import { describe, expect, it, vi } from "vitest";
 import {
-  AgentChatPanel as ShellAgentChatPanel,
+  AgentChat as ShellAgentChat,
   panelChatHostKey,
   type AgentHostAgent,
   type AgentHostClient,
@@ -12,7 +12,7 @@ import {
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import en from "../../../workbench-ui/src/locales/en";
-import AgentChatPanel from "../../../apps-sdk/src/chat/AgentChatPanel.vue";
+import AgentChat from "../../../apps-sdk/src/chat/AgentChat.vue";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
 
@@ -100,7 +100,7 @@ function makeProjection(target: PanelConversationEntry["target"]): ProductProjec
     editable: true,
     createdAt: "2026-11-25T00:00:00Z",
     updatedAt: "2026-11-25T00:00:00Z",
-    componentId: "@ontomato/sdk:AgentChatPanel",
+    componentId: "@ontomato/sdk:AgentChat",
     inputs: { sessionId: { kind: "scalar", type: "string" } },
     outputs: { sessionId: { kind: "scalar", type: "string" } },
     data: {},
@@ -136,7 +136,7 @@ function mountProjectionChat(options: {
     operations: {},
   } as unknown as PanelMemberContext;
   const stub = defineComponent({
-    name: "AgentChatPanel",
+    name: "AgentChat",
     props: {
       client: { type: Object, required: true },
       agentId: { type: String, required: true },
@@ -156,7 +156,7 @@ function mountProjectionChat(options: {
       return () => h("div", { class: "stub-shell-chat", "data-agent-id": props.agentId, "data-session-id": props.sessionId ?? "" });
     },
   });
-  const wrapper = mount(AgentChatPanel, {
+  const wrapper = mount(AgentChat, {
     props: { sessionId: options.sessionId ?? null },
     global: {
       plugins: [i18n],
@@ -171,14 +171,14 @@ function mountProjectionChat(options: {
         } satisfies PanelChatHost,
       },
       stubs: {
-        AgentChatPanel: stub,
+        AgentChat: stub,
       },
     },
   });
-  return { wrapper, client, outputs, ShellAgentChatPanel };
+  return { wrapper, client, outputs, ShellAgentChat };
 }
 
-describe("AgentChatPanel projection member", () => {
+describe("AgentChat projection member", () => {
   it("resolves a declared agent ID through the platform client, syncs sessionId, claims composer, and resets on New chat", async () => {
     const release = vi.fn();
     const claimComposer = vi.fn(() => release);
@@ -192,7 +192,7 @@ describe("AgentChatPanel projection member", () => {
     expect(claimComposer).toHaveBeenCalledTimes(1);
     expect(client.listAgents).toHaveBeenCalledTimes(1);
     expect(outputs.get("status")).toBe("ready");
-    expect(wrapper.find(".sdk-agent-chat-panel-title").text()).toBe("Department Helper");
+    expect(wrapper.find(".sdk-agent-chat-title").text()).toBe("Department Helper");
     expect(wrapper.find(".stub-shell-chat").attributes("data-agent-id")).toBe(DEPT_AGENT.id);
 
     // Sending creates a session through the shared platform AgentHostClient and writes sessionId back.
@@ -204,7 +204,7 @@ describe("AgentChatPanel projection member", () => {
     expect(outputs.get("sessionId")).toBe("sess-created-1");
 
     // Clicking New chat resets the session back to null.
-    await wrapper.find(".sdk-agent-chat-panel-btn").trigger("click");
+    await wrapper.find(".sdk-agent-chat-btn").trigger("click");
     expect(wrapper.emitted("update:sessionId")?.at(-1)).toEqual([null]);
     expect(outputs.get("sessionId")).toBeNull();
 
@@ -248,7 +248,7 @@ describe("AgentChatPanel projection member", () => {
 
   it("preserves standalone mode when explicit client, agentId, agent and labels are passed", async () => {
     const client = makeClient([DEPT_AGENT]);
-    const wrapper = mount(AgentChatPanel, {
+    const wrapper = mount(AgentChat, {
       props: {
         client,
         agentId: DEPT_AGENT.id,
@@ -257,8 +257,8 @@ describe("AgentChatPanel projection member", () => {
       global: {
         plugins: [i18n],
         stubs: {
-          AgentChatPanel: defineComponent({
-            name: "AgentChatPanel",
+          AgentChat: defineComponent({
+            name: "AgentChat",
             props: { agentId: { type: String, required: true } },
             setup(props) {
               return () => h("div", { class: "standalone-chat", "data-agent-id": props.agentId });

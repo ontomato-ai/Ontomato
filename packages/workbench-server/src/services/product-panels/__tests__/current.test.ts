@@ -119,10 +119,10 @@ it("does not accept a legacy asset ID as a current panel reference", async () =>
   await expect(validateApplicationPanelReferences(request("p"))).resolves.toBeUndefined();
 });
 
-it("requires pageComposer: 'none' on any application entry mounting an AgentChatPanel projection (direct or nested)", async () => {
+it("requires pageComposer: 'none' on any application entry mounting an AgentChat projection (direct or nested)", async () => {
   await saveCurrentProjection(owner, credentials, "chat-proj", {
     name: "Chat", description: "", visibility: "domain",
-    componentId: "@ontomato/sdk:AgentChatPanel",
+    componentId: "@ontomato/sdk:AgentChat",
     inputs: {}, outputs: {}, data: {}, config: {},
     conversationEntry: { target: { kind: "preset", agentKind: "regular" } },
     revision: 0,
