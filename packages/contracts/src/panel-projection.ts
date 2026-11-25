@@ -1009,6 +1009,14 @@ export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema }
   }
   if (control.kind !== "object") return;
   const { variantBy, variants } = control;
+  // An object a reader fills must say which child fields it has; without any, a form draws a field with nothing in it,
+  // which reads as no value rather than as a mistake. A whole JSON document the reader takes as source is a `code`
+  // control instead, and rows of the same fields are an `object-array`.
+  if (control.fields.length === 0)
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "fields"],
+      message: "An object control must declare the child fields a reader fills; use a code control for a whole JSON document",
+    });
   if (variantBy === undefined && variants === undefined) return;
   if (variantBy === undefined) {
     ctx.addIssue({

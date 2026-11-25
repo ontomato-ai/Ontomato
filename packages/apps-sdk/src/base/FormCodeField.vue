@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, shallowRef, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
@@ -12,9 +12,19 @@ import { useFormControls } from "./form-controls";
  * owner's JSON value: the source shown is that value, an edit that parses writes the parsed value, and one that does not
  * stays in the form draft as text, marked on the field, and the form will not save it as an owner value.
  * No value is drawn as no text, as every empty field is, never as the word null, and emptied text is no value.
+ *
+ * An editor that has not been fetched yet, or could not be, never leaves the field blank: the owner's source is drawn as
+ * read-only text, and a field that could not be fetched also says it cannot be edited here. A blank field reads as an
+ * owner value that is not there, which is how a code field has been mistaken for a missing value.
  */
 const props = defineProps<{ field: PanelFormField; path: string; disabled: boolean }>();
-const CodeEditor = defineAsyncComponent(() => import("@ontomato/foundation-ui/code").then((module) => module.CodeEditor));
+/** The platform's editor, once fetched; until then the source is drawn as text. */
+const Editor = shallowRef<Component | null>(null);
+/** Whether the editor could not be fetched at all, so the field can only be read here. */
+const unavailable = ref(false);
+void import("@ontomato/foundation-ui/code")
+  .then((module) => { Editor.value = module.CodeEditor; })
+  .catch(() => { unavailable.value = true; });
 const controls = useFormControls();
 const { t } = useI18n();
 
@@ -70,18 +80,46 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <code-editor
+  <component
+    :is="Editor"
+    v-if="Editor"
     class="sdk-form-code"
     :model-value="text"
     :language="language"
     :readonly="disabled"
     :min-height="120"
     @update:model-value="edit"
-  ></code-editor>
+  ></component>
+  <template v-else>
+    <pre class="sdk-form-code sdk-form-code-source" data-code-source>{{ text }}</pre>
+    <p v-if="unavailable" role="alert" class="sdk-form-field-unavailable">{{ t("platform.formControlUnavailable") }}</p>
+  </template>
 </template>
 
 <style scoped>
 .sdk-form-code {
   width: 100%;
+}
+/* The source before the editor is drawn reads as this one field's value, in the editor's own frame. */
+.sdk-form-code-source {
+  box-sizing: border-box;
+  min-height: 120px;
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+}
+.sdk-form-field-unavailable {
+  color: var(--el-color-danger-text);
+  font-size: var(--text-xs);
+  margin: 0;
 }
 </style>

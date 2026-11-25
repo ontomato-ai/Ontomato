@@ -3251,6 +3251,28 @@ test("panel form fields accept an optional non-empty warning message", async () 
   assert.equal(panelFormFieldSchema.safeParse({ ...baseField, warning: "" }).success, false);
 });
 
+test("an object control must declare the child fields a reader fills", async () => {
+  const { panelFormFieldSchema } = await import("./panel-projection");
+  const child = { ...editableField, path: "/mode", label: "Mode", valueSchema: { type: "string" }, control: { kind: "text" as const } };
+  const baseField = {
+    ...editableField,
+    path: "/function/queryPackage",
+    label: "Query package",
+    valueSchema: { type: "object" },
+    required: true,
+  };
+  const parses = (control: unknown) => panelFormFieldSchema.safeParse({ ...baseField, control });
+
+  // An object with no child field is a declaration error: the generic form would draw an empty field, which reads as no value.
+  const childless = parses({ kind: "object", fields: [] });
+  assert.equal(childless.success, false);
+  assert.deepEqual(childless.error?.issues.map(issue => issue.path.join("/")), ["control/fields"]);
+  assert.equal(parses({ kind: "object", fields: [], variants: { none: [] } }).success, false);
+  assert.equal(parses({ kind: "object", fields: [child] }).success, true);
+  // A whole JSON document a reader takes as source is a code control, not an object.
+  assert.equal(parses({ kind: "code", language: "json" }).success, true);
+});
+
 test("object form fields declare discriminated variants, validate invariants, and prune inactive values recursively", () => {
   const opt = (value: string | number, label: string, disabled = false) => ({
     value, label, description: null, disabled, disabledReason: disabled ? "Unavailable" : null,
