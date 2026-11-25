@@ -128,6 +128,7 @@ export const DELETE_AGENT_SESSION = "agentSessions.delete";
 export const SET_HOME_PANEL = "productPanels.setAsHome";
 export const RESET_HOME_PANEL = "productPanels.resetHome";
 export const SET_ACTION_STATUS = "actions.setStatus";
+export const TRIAL_ACTION = "actions.trial";
 export const DELETE_ACTION = "actions.delete";
 export const SET_TRIGGER_STATUS = "triggers.setStatus";
 export const DELETE_TRIGGER = "triggers.delete";
@@ -211,6 +212,15 @@ const referenceReads = {
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
+const actionTrialOutputs = {
+  actionStatus: { kind: "scalar", type: "string" },
+  trialStatus: { kind: "scalar", type: "string" },
+  trialStatusLabel: { kind: "scalar", type: "string" },
+  lastTrialAt: { kind: "scalar", type: "string" },
+  lastTrialError: { kind: "scalar", type: "string" },
+  publishBlockedCode: { kind: "scalar", type: "string" },
+  publishBlockedReason: { kind: "scalar", type: "string" },
+} as const satisfies Readonly<Record<string, PanelReadOutputType>>;
 const objectListRead = { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" } as const;
 const countRead = { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordQuery" } as const;
 const ontologyTypeDetailList = {
@@ -506,7 +516,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     childCollections: ["parameters", "codeSegments"],
     reads: {
       ...metadataList, count: countRead,
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord", outputs: actionTrialOutputs },
+      trialSummary: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord", outputs: actionTrialOutputs },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "actionDefinition" },
@@ -527,7 +538,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
     },
-    operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION, CHECK_ACTION_SANDBOX_PERMISSION],
+    operations: [`${ACTION}.save`, SET_ACTION_STATUS, TRIAL_ACTION, DELETE_ACTION, CHECK_ACTION_SANDBOX_PERMISSION],
   },
   [WORKFLOW]: {
     ...describeType("workflow", "capability"),

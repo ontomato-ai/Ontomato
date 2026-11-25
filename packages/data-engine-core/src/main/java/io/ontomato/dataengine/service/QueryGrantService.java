@@ -62,11 +62,13 @@ public class QueryGrantService {
     var target=authority.target();
     JSONObject binding=JSONObject.of("executionUserId",authority.executionUserId(),"initiatorUserId",authority.initiatorUserId());
     if(target.testing()) {
-      var current=contexts.require(target.contextId(),authority.userId(),authority.domainId());
-      current.requireClasses(authority.classNames());
+      var current = target.actionTrial()
+          ? contexts.requireActionTrial(target.contextId(), authority.userId(), authority.domainId())
+          : contexts.require(target.contextId(), authority.userId(), authority.domainId());
+      if (!current.actionTrial() || !authority.classNames().isEmpty()) current.requireClasses(authority.classNames());
       expiresAt=Math.min(expiresAt,Math.min(current.expiresAt(),target.expiresAt()));
       binding.put("contextId",current.contextId());
-      binding.put("executionKind","build-test");
+      binding.put("executionKind", current.actionTrial() ? "action-trial" : "build-test");
       if (!current.sandboxId().equals(authority.sandboxId()))
         binding.put("contextSandboxId",current.sandboxId());
     }
@@ -140,7 +142,9 @@ public class QueryGrantService {
           "Query grant requires a valid subject, domain, run and deadline");
     if (!List.of("retrieval-exploration", "user-read", "package-read", "sandbox-write", "ontology-generation", "knowledge-governance")
         .contains(purpose)) throw new IllegalArgumentException("Invalid grant purpose");
-    if(binding!=null && binding.getString("contextId")!=null && (sandboxId==null || classNames==null || classNames.isEmpty()))
+    if (binding != null && binding.getString("contextId") != null
+        && (sandboxId == null || classNames == null || (classNames.isEmpty()
+            && !"action-trial".equals(binding.getString("executionKind")))))
       throw new IllegalArgumentException("BUILD_TEST_FORBIDDEN: test grant requires target and finite classes");
     String id = UUID.randomUUID().toString();
     JSONObject claims = new JSONObject();
@@ -194,9 +198,14 @@ public class QueryGrantService {
               claims.getString("domainId"),
               System.currentTimeMillis());
       if (count == null || count != 1) throw new IllegalArgumentException();
-      if("build-test".equals(claims.getString("executionKind")) && claims.getString("contextId")==null) throw new IllegalArgumentException();
-      if(claims.getString("contextId")!=null) {
-        var target=contexts.require(claims.getString("contextId"),claims.getString("userId"),claims.getString("domainId"));
+      String kind = claims.getString("executionKind");
+      String contextId = claims.getString("contextId");
+      boolean actionTrial = "action-trial".equals(kind);
+      if ((actionTrial || "build-test".equals(kind)) && contextId == null) throw new IllegalArgumentException();
+      if (contextId != null) {
+        String user = claims.getString("userId"), domain = claims.getString("domainId");
+        var target = actionTrial ? contexts.requireActionTrial(contextId, user, domain) : contexts.require(contextId, user, domain);
+        // An empty action trial can run Python but cannot call any data operation.
         target.requireClasses(claims.getList("classNames",String.class));
         String contextSandbox = claims.getString("contextSandboxId");
         if(!target.sandboxId().equals(contextSandbox == null ? claims.getString("sandboxId") : contextSandbox))
@@ -218,6 +227,9 @@ public class QueryGrantService {
   private static boolean allows(JSONObject claims, String runId, String path) {
     String purpose = claims.getString("purpose");
     if (purpose == null) return false;
+    if ("action-trial".equals(claims.getString("executionKind")))
+      return "sandbox-write".equals(purpose) && (requiresWriteGrant(path)
+          || "/ontology/query/execute-dsl".equals(path) || "/ontology/query/distinct-values".equals(path));
     return switch (purpose) {
       case "retrieval-exploration" ->
           path.equals("/ontology/retrievals/runtime-context") || read(path)

@@ -86,6 +86,16 @@ class DataSandboxServiceLifecycleTest {
         verify(writes).insert("item", rows, previewId, "domain");
         verify(writes).insert("item", rows, trial, "domain");
 
+        String emptyTrial = service.open("domain", "user", "empty-run", System.currentTimeMillis() + 60_000, List.of());
+        var emptyTarget = service.requireActionTrial(emptyTrial, "user", "domain");
+        assertTrue(emptyTarget.actionTrial());
+        assertEquals(emptyTrial, emptyTarget.sandboxId());
+        assertTrue(emptyTarget.classNames().isEmpty());
+        assertThrows(BuildTestException.class, () -> emptyTarget.requireClasses(List.of("item")));
+        assertTrue(service.resolveTarget(emptyTrial, "domain").classTables().isEmpty());
+        service.close(emptyTrial, "domain");
+        assertEquals("CLOSED", jdbc.rows.get(emptyTrial).getString("state"));
+
         service.close(previewId);
         service.close(trial, "domain");
         assertEquals("CLOSED", jdbc.rows.get(previewId).getString("state"));

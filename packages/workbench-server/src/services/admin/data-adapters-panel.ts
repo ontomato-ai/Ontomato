@@ -1691,7 +1691,7 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
         resolvedConn = resolved.connection;
       }
 
-      const payload = { type: targetAdapter.type, ...resolvedConn };
+      const payload = { type: targetAdapter.type, ...resolvedConn, ...(testedSourceId ? { sourceId: testedSourceId } : {}) };
       const envelope = await ownerPost(host, "/businessConfig/testDataAdapter", payload, envelopeWithDataSchema);
       if (!envelope.success) {
         throw new HttpError(

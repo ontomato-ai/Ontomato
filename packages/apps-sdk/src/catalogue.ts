@@ -394,9 +394,9 @@ export const components: readonly ComponentMetadata[] = [
     group: "form",
     panelUsable: false,
     meaning:
-      "Platform-dedicated three-pane editor for ops diagnosis test case sets (`platform:OpsTestCaseSet`). Combines a resizable case list, structured single-case form, live bidirectionally synchronized collapsible JSON pane, and optional Save/Revert footer bar. Binds the standard projection form protocol (`data.form` + `operations.save`), registers with `instance.forms` (`usePanelFormDraft`, `usePanelBack`), and supports `persistDraft` (default `false`) and `unsavedSwitchMode` (`'discard-or-cancel'` or `'save-discard-cancel'`).",
+      "Platform-dedicated three-pane editor for ops diagnosis test case sets (`platform:AutotestCaseSet`). Combines a resizable case list, structured single-case form, live bidirectionally synchronized collapsible JSON pane, and optional Save/Revert footer bar. Binds the standard projection form protocol (`data.form` + `operations.save`), registers with `instance.forms` (`usePanelFormDraft`, `usePanelBack`), and supports `persistDraft` (default `false`) and `unsavedSwitchMode` (`'discard-or-cancel'` or `'save-discard-cancel'`).",
     effects: "Reads the test case set form and saves through the projection's declared save operation.",
-    bindsElement: ["PlatformObjectType:platform:OpsTestCaseSet"],
+    bindsElement: ["PlatformObjectType:platform:AutotestCaseSet"],
     data: {
       form: { results: ["panelFormDescription"], required: true, runtimeParams: ["values", "changedField"] },
     },
@@ -823,10 +823,13 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "content",
     meaning:
-      "Shows an object's files as a searchable folder/file tree and writes the selected path to state; pair with `ObjectTextReader`. Shows one object's files — a skill package's, say — as a folder/file tree, from its `files` datum (an owner's records, one per file, at the path `pathField` gives, else the record's own key). Clicking a file selects it: `selected` is the file's key, which the placement can bind to the panel's state so another member (an ObjectTextReader's `record`) reads that file. When `searchable` is enabled, a local filter box filters the tree and binds its keyword to `search` public state. When nothing is selected (`selected` is null), `defaultKey` selects that file if present, otherwise `fallbackToFirst` selects the first file in tree order; an explicit selection is kept intact even if absent from `files` so a paired reader can report it in place. By default folders open and close without selecting; set `directoryIndexFile` (e.g. `'index.md'`) to let clicking a folder select its matching direct index file (or clear selection when the folder has none) while keeping the disclosure chevron dedicated to folding.",
-    effects: "Reads the owner's files as the reader; it writes only the panel's own state.",
+      "Shows a searchable path tree (`files` + `pathField`) or parent-linked object hierarchy (`rows` + `parentField`) and writes `selected` (string key or object reference) to state. In path mode, reads `files` (default `pathField: 'path'`, fallback record key) as folders/files; folders toggle unless `directoryIndexFile` (e.g. `'index.md'`) or `selectableFolders` is enabled, keeping the disclosure chevron dedicated to folding. In hierarchy mode (`parentField`, e.g. `'parentId'`), reads `rows` (or `files`) into a parent-linked tree preserving sibling order where any parent or leaf node is selectable while its chevron folds independently. `selected` binds either scalar string keys or object-ref state `{ className, primaryKey }`; `searchable` binds `search` public state; when nothing is selected, `defaultKey` or `fallbackToFirst` selects an initial node without overwriting an explicit selection.",
+    effects: "Reads the owner's records or files as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
-    data: { files: { results: ["panelRecordList"], required: true } },
+    data: {
+      files: { results: ["panelRecordList"], required: false },
+      rows: { results: ["panelRecordList"], required: false },
+    },
     outputs: {
       selected: { kind: "scalar", type: "string" },
       search: { kind: "scalar", type: "string" },

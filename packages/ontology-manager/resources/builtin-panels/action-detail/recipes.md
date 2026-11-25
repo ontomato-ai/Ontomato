@@ -3,7 +3,7 @@
 This non-menu detail page at `/ontology/assets/actions/detail` inspects and edits one domain action (`platform:Action`):
 its definition form, the definition the owner derives from its explained code, its annotated code explanation, and
 deletion. The single-row page header carries the back link to `/ontology/assets/actions`, the action title/status
-(`header.record`), the delete button (`remove.delete`), and the header Save/Discard controls wired to `form`.
+(`header.record`), sandbox trial, publish, delete, and the Save/Discard controls wired to `form`.
 
 ## Seeing what is on the page
 
@@ -17,7 +17,7 @@ deletion. The single-row page header carries the back link to `/ontology/assets/
   - **Code explanation**: `explanation.content` (`annotatedExplanation`).
   The owner makes a system action read-only and a published action's code read-only; do not work around either.
 - The mounted projection reads on this page are `header.record`, `form.form` / `form.createForm`,
-  `derivedSummary.record`, `derivedEffects.rows`, `derivedParameters.rows`, `derivedConditions.rows`, and
+  `trialSummary.record`, `derivedSummary.record`, `derivedEffects.rows`, `derivedParameters.rows`, `derivedConditions.rows`, and
   `explanation.content`. Use only these mounted reads.
 - Before editing or continuing the reader's edit, check `observe_display` and read `form.form` once; when it differs
   from what you were about to change, say how.
@@ -26,28 +26,20 @@ deletion. The single-row page header carries the back link to `/ontology/assets/
   `derivedSummary.record`, `derivedEffects.rows`, `derivedParameters.rows`, and `derivedConditions.rows` for the
   effects, parameters, and submission conditions derived from the same code.
 
-## Running a definition in the owner's sandbox
+## Saving, trialing and publishing
 
-A sandbox trial is optional. It records how the exact code and parameters ran for the publication review.
-The current run reaches the owner's authoring endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK`
-with each call and use JSON bodies. The session bridge supplies the active run header.
-
-1. `GET $ONTOMATO_AUTHORING_URL/action/context`: the Python protocol and helpers the owner runs. Write the code by it.
-2. `POST $ONTOMATO_AUTHORING_URL/action/prepare` with the sample the run executes against:
-   `{"objDatas":[{"className":"<technical class>","rows":[{…}]}],"relDatas":[],"vectorDatas":[]}`. Each row carries
-   its primary key and the attributes the code reads or writes, by the technical class and field names. Nothing is
-   taken from live data.
-3. `POST $ONTOMATO_AUTHORING_URL/action/reset` with `{}`.
-4. `POST $ONTOMATO_AUTHORING_URL/action/test` with `{"code":"<function.code>","parameterDefs":<function.parameters>}`,
-   each parameter carrying the sample value it runs with in `value`. A non-empty `result.error` is the owner's answer:
-   fix the code or the sample and repeat from step 3.
-5. Optionally call `POST $ONTOMATO_AUTHORING_URL/action/explain-draft` with the same `code` and `parameterDefs` to
-   prepare or inspect the draft explanation in this run. Do **not** pass `explanationRef` into `fill_form`:
-   `explanationRef` is not a form field. Saving a draft invalidates an old explanation when the code changes
-   and generates the new one in the background.
-
-An unavailable sandbox or a failed trial still allows saving a pending draft. Report the trial result to the author.
-
+1. Save the draft with `page_action` `form.save` (owner endpoint `POST /action/save`). Saving does not require a trial.
+   Saving changed code generates a current explanation in the background. Wait for the save before trialing.
+2. Trial the saved action with `page_action` `trial.trial` (`actions.trial`, targeting `selected`). Supply `sample`
+   and `parameters` as JSON objects. An external caller uses `POST /action/trial` with `{ id, sample, parameters }`.
+   A sample can contain `objDatas`, `relDatas`, and `vectorDatas`. Each item in `objDatas` has a technical
+   `className` and a `rows` array. Include the primary keys and attributes the action uses. `parameters` maps
+   each parameter name to its trial value. The owner opens the sandbox, loads the sample, runs the action,
+   records its receipt, and closes the sandbox in the same call. Use the receipt's `passed` and `error` to report
+   the result, and `trialSummary.record` to read the latest status before publishing.
+3. Publish using `page_action` `publish.setStatus` with `input.status: "PUBLISHED"` (or catalog `setStatus.setStatus`).
+   The owner requires an up-to-date code explanation and a passed latest trial for the exact saved code,
+   target and parameter schema. Report the owner's reason if publication is blocked.
 
 ## Form field paths (`form.form` / `form.createForm`)
 
@@ -68,19 +60,18 @@ Do **not** pass a whole `/function` object as one field, and do **not** pass `ex
 
 1. Read `form.form` first. Use only the owner's declared field paths listed above and current values; do not invent
    field names.
-2. Offer a sandbox trial when the code or parameters change.
-3. Ensure the target action is open on the `"definition"` tab via `present` (`selected`, `activeTab: "definition"`).
-4. Call `fill_form` on `form` with only the changed field paths (never a top-level `function` field and never
+2. Ensure the target action is open on the `"definition"` tab via `present` (`selected`, `activeTab: "definition"`).
+3. Call `fill_form` on `form` with only the changed field paths (never a top-level `function` field and never
    `explanationRef`). The page marks the changed fields and keeps them unsaved in the header draft bar.
-5. Leave saving to the reader, or invoke `page_action` `form.save` when the reader explicitly asks to save (default
+4. Leave saving to the reader, or invoke `page_action` `form.save` when the reader explicitly asks to save (default
    sessions ask for confirmation in chat first; full-auto saves directly).
 
-Saving a new action creates a pending draft. Editing an existing action preserves its status. Use the catalog's status operation to publish after the explanation is ready.
+Saving a new action creates a pending draft. Editing an existing action preserves its status. Follow the save, trial and publish workflow above for the saved action.
 The owner refuses changes to a published action's code at `/function/code`.
 
 ## Creating an action via agent
 
-1. Write the action. Offer a sandbox trial if the reader wants to verify the code.
+1. Write the action.
 2. Open create mode on this page via `present` with `{ state: { selected: null, creating: true, activeTab: "definition" } }`.
 3. Read `form.createForm` once for defaults, then call `fill_form` on `form` with the authored fields.
 4. Let the reader review and save in the header, or invoke `page_action` `form.save` when requested. On save, the page

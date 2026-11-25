@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { panelSecretValuePresent, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { projectionElement } from "../panel/projection-element";
-import { Comment, computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, shallowRef, useSlots, watch, type VNode } from "vue";
+import { Comment, Fragment, Text, computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, shallowRef, useSlots, watch, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElAlert } from "element-plus/es/components/alert/index";
 import { ElButton } from "element-plus/es/components/button/index";
@@ -76,7 +76,7 @@ import {
   resolveActiveField,
   validateFormFieldValue,
 } from "./form-placement";
-import { resolveLocalizedText } from "./localized-text";
+import { readConfigString, resolveLocalizedText } from "./localized-text";
 import {
   formFieldsContextKey,
   type ObjectFormGroup,
@@ -127,6 +127,17 @@ const props = withDefaults(defineProps<{
    * and Reset to default on the right when the owner declares a `defaultValue`.
    */
   layout?: "stacked" | "rows";
+  /**
+   * Where field labels sit relative to their controls when `layout` is `"stacked"`:
+   * `"top"` (default) places labels above controls; `"left"` or `"right"` places labels inline beside controls.
+   * Ignored when `layout` is `"rows"`.
+   */
+  labelPosition?: "top" | "left" | "right";
+  /**
+   * Label width when `labelPosition` is `"left"` or `"right"` (CSS length string or pixel number; defaults to
+   * `"96px"` when unset).
+   */
+  labelWidth?: string | number;
   /**
    * Where Save, Discard and the unsaved marker live: `footer` (default) keeps them at the foot of the form;
    * `create-only` shows Cancel/Create in create mode and lets the panel wire edit Save/Discard into its own
@@ -186,6 +197,8 @@ const props = withDefaults(defineProps<{
 }>(), {
   fixedFields: () => ({}),
   layout: "stacked",
+  labelPosition: undefined,
+  labelWidth: undefined,
   actions: "footer",
   presentation: "default",
   groups: undefined,
@@ -212,7 +225,7 @@ const emit = defineEmits<{
   /** Emitted when the active tab or step changes in `"tabs"` or `"steps"` presentation. */
   "update:activeGroup": [groupKey: string];
 }>();
-interface FormFieldSlotScope {
+type FormFieldSlotScope = {
   readonly field: PanelFormField;
   readonly path: string;
   readonly arrayPath?: string;
@@ -224,7 +237,7 @@ interface FormFieldSlotScope {
   readonly disabled: boolean;
   readonly set: (value: RuntimeJsonValue) => void;
   readonly remove: () => void;
-}
+};
 
 interface FormArrayItemFooterSlotScope {
   readonly arrayPath: string;
@@ -245,6 +258,8 @@ defineSlots<{
   "after-fields"?(): unknown;
   /** Custom renderer for a specific field by dot-path (`#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`) or JSON Pointer. */
   [key: `field-${string}`]: ((props: FormFieldSlotScope) => unknown) | undefined;
+  /** Trailing content rendered beneath a field's default control (`#field-after-embeddingModel`, `#field-after-modelSelection.modelId`, `#field-after-items.*.skillId`) or JSON Pointer. */
+  [key: `field-after-${string}`]: ((props: FormFieldSlotScope) => unknown) | undefined;
   /** Catch-all custom field renderer; returning empty content falls back to the default control. */
   field?(props: FormFieldSlotScope): unknown;
   /** Catch-all custom renderer for array item fields; returning empty content falls back to `#field` or the default control. */
@@ -278,16 +293,35 @@ const localDraftStore = useLocalDraftStore();
 const objectType = projectionElement(slot.projection).id;
 const member = useMember();
 
+const projectionConfig = computed<Record<string, unknown> | undefined>(() => (
+  (member.projection.config as Record<string, unknown> | undefined)
+  ?? (slot.projection.config as Record<string, unknown> | undefined)
+));
+
+const effectiveLabelPosition = computed<"top" | "left" | "right">(() => {
+  if (props.layout === "rows") return "top";
+  const configured = props.labelPosition ?? readConfigString(projectionConfig.value, "labelPosition", "label-position");
+  return configured === "left" || configured === "right" || configured === "top" ? configured : "top";
+});
+
+const effectiveLabelWidth = computed<string | undefined>(() => {
+  if (props.layout === "rows" || effectiveLabelPosition.value === "top") return undefined;
+  const raw = props.labelWidth !== undefined
+    ? props.labelWidth
+    : (projectionConfig.value?.labelWidth ?? projectionConfig.value?.["label-width"]);
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) return `${raw}px`;
+  if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
+  return "96px";
+});
+
 const effectivePersistDraft = computed<boolean>(() => {
   if (props.persistDraft !== undefined) return props.persistDraft;
-  const projectionConfig = slot.projection.config as Record<string, unknown> | undefined;
-  return projectionConfig?.persistDraft === true;
+  return projectionConfig.value?.persistDraft === true;
 });
 
 const effectiveUnsavedSwitchMode = computed<ObjectFormUnsavedSwitchMode>(() => {
   if (props.unsavedSwitchMode !== undefined) return props.unsavedSwitchMode;
-  const projectionConfig = slot.projection.config as Record<string, unknown> | undefined;
-  return projectionConfig?.unsavedSwitchMode === "save-discard-cancel"
+  return projectionConfig.value?.unsavedSwitchMode === "save-discard-cancel"
     ? "save-discard-cancel"
     : "discard-or-cancel";
 });
@@ -1567,8 +1601,49 @@ provide(formFieldsContextKey, {
 const topLevelPaths = computed(() => new Set(fields.value.map((field) => field.path)));
 const hasDefaults = computed(() => fields.value.some((field) => field.control.kind !== "hidden" && field.defaultValue !== undefined));
 
-function hasRenderedNodes(nodes: VNode[]): boolean {
-  return nodes.some((node) => node.type !== Comment);
+function hasRenderedNodes(nodes: readonly VNode[]): boolean {
+  return nodes.some((node) => {
+    if (node.type === Comment) return false;
+    if (node.type === Text) return String(node.children ?? "").trim() !== "";
+    if (node.type === Fragment) {
+      return Array.isArray(node.children) && hasRenderedNodes(node.children as VNode[]);
+    }
+    return true;
+  });
+}
+
+function pointerToDot(pointer: string): string {
+  return pointer.replace(/^\/+/u, "").replaceAll("/", ".");
+}
+
+function fieldSlotNames(prefix: string, field: PanelFormField, absolutePath: string, arrayPath?: string) {
+  const dotName = arrayPath !== undefined
+    ? `${prefix}-${pointerToDot(arrayPath)}.*.${pointerToDot(field.path)}`
+    : `${prefix}-${pointerToDot(absolutePath)}`;
+  const rawName = arrayPath !== undefined
+    ? `${prefix}-${arrayPath}/*${field.path}`
+    : `${prefix}-${absolutePath}`;
+  return { dotName, rawName };
+}
+
+function buildFieldSlotProps(
+  field: PanelFormField,
+  absolutePath: string,
+  disabled?: boolean,
+  arrayPath?: string,
+  index?: number,
+): FormFieldSlotScope {
+  return {
+    field,
+    path: absolutePath,
+    ...(arrayPath !== undefined ? { arrayPath, itemPath: field.path, index } : {}),
+    value: valueAt(values.value, absolutePath),
+    error: allErrors.value[absolutePath],
+    changed: changed.value.has(absolutePath),
+    disabled: Boolean(disabled) || field.readOnly || saving.value,
+    set: (value: RuntimeJsonValue) => set(absolutePath, value),
+    remove: () => remove(absolutePath),
+  };
 }
 
 provide(formControlsKey, {
@@ -1579,6 +1654,7 @@ provide(formControlsKey, {
   changed,
   busy: saving,
   layout: computed(() => props.layout),
+  labelPosition: effectiveLabelPosition,
   showRequiredMark: computed(() => props.showRequiredMark),
   hasDefaults,
   sharedReadOnlyReasons,
@@ -1590,32 +1666,24 @@ provide(formControlsKey, {
   reorder,
   invalid: markInvalid,
   resolveFieldSlot(field, absolutePath, disabled, arrayPath, index) {
-    const pointerToDot = (pointer: string) => pointer.replace(/^\/+/u, "").replaceAll("/", ".");
-    const dotName = arrayPath !== undefined
-      ? `field-${pointerToDot(arrayPath)}.*.${pointerToDot(field.path)}`
-      : `field-${pointerToDot(absolutePath)}`;
-    const rawName = arrayPath !== undefined
-      ? `field-${arrayPath}/*${field.path}`
-      : `field-${absolutePath}`;
+    const { dotName, rawName } = fieldSlotNames("field", field, absolutePath, arrayPath);
     const exactSlot = slots[dotName] ?? slots[rawName];
     const fallbackSlot = arrayPath !== undefined ? (slots["row-field"] ?? slots.field) : slots.field;
     const chosen = exactSlot ?? fallbackSlot;
     if (!chosen) return undefined;
-    const slotProps = {
-      field,
-      path: absolutePath,
-      ...(arrayPath !== undefined ? { arrayPath, itemPath: field.path, index } : {}),
-      value: valueAt(values.value, absolutePath),
-      error: allErrors.value[absolutePath],
-      changed: changed.value.has(absolutePath),
-      disabled: disabled || field.readOnly || saving.value,
-      set: (value: RuntimeJsonValue) => set(absolutePath, value),
-      remove: () => remove(absolutePath),
-    };
+    const slotProps = buildFieldSlotProps(field, absolutePath, disabled, arrayPath, index);
     if (!exactSlot) {
       const rendered = chosen(slotProps);
       if (!hasRenderedNodes(rendered)) return undefined;
     }
+    return { slot: chosen, props: slotProps };
+  },
+  resolveFieldAfterSlot(field, absolutePath, arrayPath, index, disabled) {
+    const { dotName, rawName } = fieldSlotNames("field-after", field, absolutePath, arrayPath);
+    const chosen = slots[dotName] ?? slots[rawName];
+    if (!chosen) return undefined;
+    const slotProps = buildFieldSlotProps(field, absolutePath, disabled, arrayPath, index);
+    if (!hasRenderedNodes(chosen(slotProps))) return undefined;
     return { slot: chosen, props: slotProps };
   },
   resolveArrayItemFooterSlot(arrayPath, item, index, key, disabled, readOnly) {
@@ -2382,14 +2450,23 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
     ref="formElement"
     class="sdk-owner-form"
     :class="[
-      { 'sdk-owner-form-rows': props.layout === 'rows' },
+      {
+        'sdk-owner-form-rows': props.layout === 'rows',
+        'is-label-left': effectiveLabelPosition === 'left' && props.layout !== 'rows',
+        'is-label-right': effectiveLabelPosition === 'right' && props.layout !== 'rows',
+      },
       `sdk-owner-form-presentation-${effectivePresentation}`,
     ]"
   >
     <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
-    <el-form label-position="top" :hide-required-asterisk="!showRequiredMark" class="sdk-owner-form-inner">
+    <el-form
+      :label-position="effectiveLabelPosition"
+      :label-width="effectiveLabelWidth"
+      :hide-required-asterisk="!showRequiredMark"
+      class="sdk-owner-form-inner"
+    >
       <div class="sdk-owner-form-body">
         <div
           v-if="restoredDraftState"
@@ -2762,6 +2839,45 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+/* Compact horizontal label alignment for 620px modal and dialog forms. */
+.sdk-owner-form.is-label-left :deep(.sdk-form-field-frame),
+.sdk-owner-form.is-label-right :deep(.sdk-form-field-frame) {
+  align-items: flex-start;
+  margin-bottom: var(--spacing-sm, 12px);
+}
+.sdk-owner-form.is-label-left :deep(.sdk-form-field-frame:last-child),
+.sdk-owner-form.is-label-right :deep(.sdk-form-field-frame:last-child) {
+  margin-bottom: 0;
+}
+.sdk-owner-form.is-label-left :deep(.sdk-form-field-frame > .el-form-item__label),
+.sdk-owner-form.is-label-right :deep(.sdk-form-field-frame > .el-form-item__label) {
+  display: inline-flex;
+  align-items: flex-start;
+  min-height: var(--control-height, 32px);
+  height: auto;
+  padding-top: 6px;
+  padding-bottom: 4px;
+  padding-inline-end: var(--spacing-sm, 12px);
+  line-height: 1.35;
+  word-break: break-word;
+}
+.sdk-owner-form.is-label-left :deep(.sdk-form-field-frame > .el-form-item__label) {
+  justify-content: flex-start;
+  text-align: left;
+}
+.sdk-owner-form.is-label-right :deep(.sdk-form-field-frame > .el-form-item__label) {
+  justify-content: flex-end;
+  text-align: right;
+}
+.sdk-owner-form.is-label-left :deep(.sdk-form-field-frame > .el-form-item__content),
+.sdk-owner-form.is-label-right :deep(.sdk-form-field-frame > .el-form-item__content) {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.sdk-owner-form.is-label-left :deep(.sdk-form-field-frame > .el-form-item__content > :is(.el-input, .el-textarea, .el-select)),
+.sdk-owner-form.is-label-right :deep(.sdk-form-field-frame > .el-form-item__content > :is(.el-input, .el-textarea, .el-select)) {
+  width: 100%;
 }
 .sdk-owner-form-body {
   flex: 1 1 auto;

@@ -43,13 +43,14 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionForm;
 import io.ontomato.dataengine.service.ActionService;
+import io.ontomato.dataengine.service.ActionTrialService;
+import io.ontomato.dataengine.service.ActionTrialStore;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
-import io.ontomato.dataengine.service.agent.GenerationOperations;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
@@ -89,7 +90,9 @@ public class ActionController {
 	@Autowired
 	private ActionDraftService actionDraftService;
 
-	@Autowired private GenerationOperations generationOperations;
+	@Autowired private ActionTrialService actionTrials;
+
+	@Autowired private ActionTrialStore actionTrialStore;
 
 	@Autowired
 	private SubjectDirectory subjectDirectory;
@@ -287,8 +290,7 @@ public class ActionController {
 			} else {
 				ObjectNode display = withDisplay(action, subjectNames(user.getDomainId(), List.of(action)), lang);
 				if ("publication-review".equals(param.getString("purpose"))) {
-					display.put("sandboxTrialLabel", langService.get(lang,
-							"Action.sandboxTrial." + generationOperations.actionTrialStatus(action)));
+					display.set("sandboxTrialLabel", display.get("trialStatusLabel"));
 					if (action.getCodeSegments() == null || action.getCodeSegments().isEmpty())
 						display.put("explanationMissingLabel", langService.get(lang, "Action.explanationMissing"));
 				}
@@ -517,6 +519,41 @@ public class ActionController {
 		return ret;
 	}
 
+	@PostMapping("/action/trial")
+	public JSONObject trial(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
+			@RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			if (!(param.get("id") instanceof String id) || id.isBlank())
+				throw new OwnerRefusal("ACTION_TRIAL_INVALID", "id: expected a nonempty action id");
+			JSONObject sample = trialObject(param, "sample");
+			JSONObject parameters = trialObject(param, "parameters");
+			User user = SystemUtils.getCurUser();
+			ret.put("data", actionTrials.trialSavedAction(id, sample, parameters, lang, user,
+					identityService.getCurrentUserDataPermission(), executionTimeout(user)));
+			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
+	private static JSONObject trialObject(JSONObject body, String field) {
+		Object value = body.get(field);
+		if (value != null && !(value instanceof Map<?, ?>))
+			throw new OwnerRefusal("ACTION_TRIAL_INVALID", field + ": expected an object");
+		return body.getJSONObject(field);
+	}
+
+	private int executionTimeout(User user) {
+		BusinessConfig config = businessConfigService.get(user.getDomainId());
+		return Math.max(1, (int) (config.getDslCookerTimeout() / 60000));
+	}
+
 	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/action/execute")
     @ResponseBody
@@ -549,11 +586,7 @@ public class ActionController {
 					}
 				}
 			}
-			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-    		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
-			if (timeoutMinutes <= 0) {
-				timeoutMinutes = 1;
-			}
+			int timeoutMinutes = executionTimeout(user);
 			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)));
 			if (result.getError() != null && !"".equals(result.getError().trim())) {
 				throw new Exception(result.getError());
@@ -595,11 +628,23 @@ public class ActionController {
 
 	/** The action's creator and reviewer ids become the names a reader sees; a missing subject stays null. */
 	private ObjectNode withDisplay(Action action, Map<String, String> names, String lang) {
+		return withDisplay(action, names, lang, actionTrialStore.latest(action));
+	}
+
+	private ObjectNode withDisplay(Action action, Map<String, String> names, String lang, ActionTrialStore.TrialSummary latest) {
 		ObjectNode item = objectMapper.valueToTree(action);
 		item.put("createdByName", names.get(action.getCreatedBy()));
 		item.put("reviewedByName", names.get(action.getReviewedBy()));
 		item.put("statusLabel", statusLabel(action.getStatus(), lang));
 		item.put("originLabel", originLabel(action.getOrigin(), lang));
+		String trialStatus = actionTrialStore.statusCode(latest);
+		var block = actionTrialStore.publishBlock(action, latest, lang);
+		item.put("trialStatus", trialStatus);
+		item.put("trialStatusLabel", langService.get(lang, "Action.sandboxTrial." + trialStatus));
+		item.put("lastTrialAt", latest == null ? null : latest.testedAt().toString());
+		item.put("lastTrialError", "failed".equals(trialStatus) ? latest.error() : null);
+		item.put("publishBlockedCode", block == null ? null : block.code());
+		item.put("publishBlockedReason", block == null ? null : block.reason());
 		labelKinds(item.path("codeSegments"), lang);
 		labelKinds(item.path("definition").path("effects"), lang);
 		return item;
@@ -620,7 +665,8 @@ public class ActionController {
 	private ArrayNode withDisplay(List<Action> actions, String domainId, String lang) {
 		Map<String, String> names = subjectNames(domainId, actions);
 		ArrayNode items = objectMapper.createArrayNode();
-		for (Action action : actions) items.add(withDisplay(action, names, lang));
+		var trials = actionTrialStore.latestByActions(domainId, actions);
+		for (Action action : actions) items.add(withDisplay(action, names, lang, trials.get(action.getId())));
 		return items;
 	}
 

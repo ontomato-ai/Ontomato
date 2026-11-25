@@ -32,7 +32,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
-  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, EXTERNAL_MCP_SERVICE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIGGER, USER, WORKFLOW,
+  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, EXTERNAL_MCP_SERVICE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIAL_ACTION, TRIGGER, USER, WORKFLOW,
   RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
@@ -45,12 +45,13 @@ import {
   panelOperationSchema, panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
-import { findPanelFormOption, panelFormObjectSelectError } from "./form-fields";
+import { findPanelFormOption, panelFormObjectSelectError, panelFormOptionSchema } from "./form-fields";
 import {
   panelFormDescriptionSchema, panelFormFieldSchema, panelFormFrequencyValueSchema,
   panelFormObjectActiveFields, panelFormObjectActiveVariant, panelFormObjectAllFields,
   panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
-  panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperation,
+  panelObjectListColumnSchema, panelRecordFieldArrayItemSchema, panelRecordFieldText,
+  panelRecordFieldValueSchema, panelRecordTagFieldValueSchema, panelStateOperation, projectionBindingKeys, projectionOperation,
   projectionOperationTargetMatches, projectionPorts, pruneInactivePanelFormVariants,
   type PanelFormField, type PanelFormObjectControl, type PanelFormValues,
 } from "./panel-projection";
@@ -1948,6 +1949,7 @@ test("bridge and skill agree about the specific semantic reads", () => {
 
 test("Action definition reads and writes use distinct exact binding requests", () => {
   const definitions = binding(ACTION);
+  const trial = bindingKey({ kind: "PlatformOperation", id: TRIAL_ACTION });
   const deletion = bindingKey({ kind: "PlatformOperation", id: DELETE_ACTION });
   const status = bindingKey({ kind: "PlatformOperation", id: SET_ACTION_STATUS });
   for (const path of ["/action/queryList", "/action/queryById", "/action/definitionForm"]) {
@@ -1962,6 +1964,10 @@ test("Action definition reads and writes use distinct exact binding requests", (
   assert.ok(!clientSends([deletion], "DELETE", "/data-query", "/action/delete"));
   assert.ok(clientSends([status], "POST", "/data-query", "/action/setStatus", { ids: ["example"], status: 1 }));
   assert.ok(!clientSends([status], "POST", "", "/action/setStatus"));
+  assert.ok(clientSends([trial], "POST", "/data-query", "/action/trial", { id: "example" }));
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/action/trial"));
+  assert.ok(!clientSends([trial], "GET", "/data-query", "/action/trial"));
+  assert.ok(platformObjectTypes[ACTION].operations?.includes(TRIAL_ACTION));
 });
 
 test("Trigger definition reads and writes use exact binding requests", () => {
@@ -4127,4 +4133,63 @@ test("group E pack 1 contracts validate secret autoDownload and extended form co
       ],
     },
   }).success, true);
+});
+
+test("value-carried tag field values, form option tones, and ObjectList column tooltip/tagEffect contracts", () => {
+  const activeTag = panelRecordTagFieldValueSchema.parse({
+    kind: "tag",
+    label: "Active",
+    tone: "success",
+    icon: "check-circle",
+  });
+  assert.deepEqual(activeTag, { kind: "tag", label: "Active", tone: "success", icon: "check-circle" });
+
+  // Standalone and array-embedded tag values validate and extract plain text via label.
+  const draftTag = { kind: "tag", label: "Draft", tone: "warning" } as const;
+  assert.equal(panelRecordFieldValueSchema.safeParse(activeTag).success, true);
+  assert.equal(panelRecordFieldArrayItemSchema.safeParse(draftTag).success, true);
+  assert.equal(panelRecordFieldValueSchema.safeParse([activeTag, draftTag, "Plain"]).success, true);
+  assert.equal(panelRecordFieldText(activeTag), "Active");
+  assert.equal(panelRecordFieldText([activeTag, draftTag, "Plain"]), "Active, Draft, Plain");
+
+  // Strict schema rejects unknown keys, invalid tone, and empty icon.
+  assert.equal(panelRecordTagFieldValueSchema.safeParse({ kind: "tag", label: "Bad", extra: true }).success, false);
+  assert.equal(panelRecordTagFieldValueSchema.safeParse({ kind: "tag", label: "Bad", tone: "purple" }).success, false);
+  assert.equal(panelRecordTagFieldValueSchema.safeParse({ kind: "tag", label: "Bad", icon: "" }).success, false);
+
+  // panelFormOptionSchema supports the 5-level semantic tone taxonomy.
+  for (const tone of ["default", "info", "success", "warning", "danger"] as const) {
+    assert.equal(panelFormOptionSchema.safeParse({
+      value: tone,
+      label: tone,
+      description: null,
+      disabled: false,
+      disabledReason: null,
+      tone,
+    }).success, true);
+  }
+  assert.equal(panelFormOptionSchema.safeParse({
+    value: "bad",
+    label: "Bad",
+    description: null,
+    disabled: false,
+    disabledReason: null,
+    tone: "muted",
+  }).success, false);
+
+  // ObjectList column supports headerTooltipKey and tagEffect ("light" | "plain").
+  assert.deepEqual(panelObjectListColumnSchema.parse({
+    key: "status",
+    kind: "tags",
+    headerTooltipKey: "status.tooltip",
+    tagEffect: "plain",
+  }), {
+    key: "status",
+    kind: "tags",
+    headerTooltipKey: "status.tooltip",
+    tagEffect: "plain",
+  });
+  assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "light" }).success, true);
+  assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "dark" }).success, false);
+  assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", headerTooltipKey: "" }).success, false);
 });

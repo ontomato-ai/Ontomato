@@ -91,6 +91,10 @@
   .ops-dsl-form-slot .sdk-owner-form-body {
     overflow: hidden;
   }
+  .ops-dsl-form-slot .sdk-owner-form-draft-banner {
+    flex: 0 0 auto;
+    margin-block-end: var(--spacing-sm);
+  }
   .ops-dsl-code-field {
     gap: var(--spacing-xs);
   }
@@ -135,13 +139,6 @@
     min-height: 0;
     height: 100%;
     margin-block-start: 0;
-  }
-  .ops-dsl-empty {
-    flex: 1 1 auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 240px;
   }
   .ops-dsl-error {
     flex-shrink: 0;
@@ -229,13 +226,11 @@
           class="ops-dsl-error"
         ></sdk-alert>
         <operation-result
-          v-if="executionResult"
           :result="executionResult"
+          operation-slot="executeDsl"
+          :empty-text="t('panel.emptyResult')"
           class="ops-dsl-result-view"
         ></operation-result>
-        <div v-else-if="!executionError" class="ops-dsl-empty">
-          <sdk-empty :description="t('panel.emptyResult')"></sdk-empty>
-        </div>
       </div>
     </section>
   </div>

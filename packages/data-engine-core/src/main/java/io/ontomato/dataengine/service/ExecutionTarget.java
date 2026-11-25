@@ -6,7 +6,14 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 /** Resolved by Java at the HTTP boundary; never bind this type from request data. */
-public record ExecutionTarget(String contextId, String sandboxId, List<String> classNames, Long expiresAt, String executionUserId, String initiatorUserId) {
+public record ExecutionTarget(String contextId, String sandboxId, List<String> classNames, Long expiresAt, String executionUserId, String initiatorUserId, boolean actionTrial) {
+  public ExecutionTarget(String contextId, String sandboxId, List<String> classNames, Long expiresAt,
+      String executionUserId, String initiatorUserId) {
+    this(contextId, sandboxId, classNames, expiresAt, executionUserId, initiatorUserId, false);
+  }
+  public static ExecutionTarget actionTrial(String sandboxId, List<String> classNames, long expiresAt) {
+    return new ExecutionTarget(sandboxId, sandboxId, classNames, expiresAt, null, null, true);
+  }
   public ExecutionTarget(String contextId, String sandboxId, List<String> classNames, Long expiresAt) {
     this(contextId,sandboxId,classNames,expiresAt,null,null);
   }

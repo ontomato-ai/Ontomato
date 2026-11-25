@@ -1330,3 +1330,131 @@ test("read parameter named target allocates a distinct input port when member.ta
     diffTarget: { state: "diffTarget" },
   });
 });
+
+test("ObjectTree expands both files + scalar selected and rows + object selected, and rejects missing data", () => {
+  const objectTreeComponent = buildComponent("ObjectTree", {
+    data: {
+      files: { results: ["panelRecordList"], required: false },
+      rows: { results: ["panelRecordList"], required: false },
+    },
+    outputs: {
+      selected: { kind: "scalar", type: "string" },
+      search: { kind: "scalar", type: "string" },
+    },
+  });
+  const treeTable = {
+    objectTypes: {
+      "platform:Skill": {
+        reads: {
+          files: { source: "object" as const, parameterMode: "fixed" as const, params: {}, result: "panelRecordList" as const },
+        },
+        operations: [],
+      },
+      "platform:OrgUnit": {
+        reads: {
+          list: { source: "type" as const, parameterMode: "fixed" as const, params: {}, result: "panelRecordList" as const },
+        },
+        operations: [
+          panelOperationDeclarationSchema.parse({
+            id: "org.refresh",
+            kind: "action",
+            effect: "write",
+            batch: false,
+            target: { source: "input", input: "target" },
+            inputSchema: { type: "object" },
+          }),
+        ],
+      },
+    },
+  };
+  const treeState = panelManifestSchema.parse({
+    state: {
+      skill: { type: { kind: "object", objectType: "platform:Skill" } },
+      selectedFile: { type: { kind: "scalar", type: "string" } },
+      selectedOrg: { type: { kind: "object", objectType: "platform:OrgUnit" } },
+      wrongOrg: { type: { kind: "object", objectType: "platform:Skill" } },
+      search: { type: { kind: "scalar", type: "string" } },
+    },
+    members: {},
+  }).state;
+
+  // 1. Path mode: data.files + scalar string selected.
+  const filesMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectTree",
+    type: "platform:Skill",
+    target: "skill",
+    data: { files: "files" },
+    state: { selected: "selectedFile", search: "search" },
+  });
+  assert("component" in filesMember);
+  const expandedFiles = expandPanelAuthoringMember("skillFiles", filesMember, {
+    state: treeState,
+    components: [...components, objectTreeComponent],
+    typeTable: treeTable,
+  });
+  assert.deepEqual(expandedFiles.projection.outputs, {
+    selected: { kind: "scalar", type: "string" },
+    search: { kind: "scalar", type: "string" },
+  });
+  assert.deepEqual(expandedFiles.placement.outputs, {
+    selected: { state: "selectedFile" },
+    search: { state: "search" },
+  });
+
+  // 2. Hierarchy mode: data.rows + object-ref selected bound to platform:OrgUnit.
+  const rowsMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectTree",
+    type: "platform:OrgUnit",
+    data: { rows: "list" },
+    state: { selected: "selectedOrg", search: "search" },
+    config: { parentField: "parentId" },
+  });
+  assert("component" in rowsMember);
+  const expandedRows = expandPanelAuthoringMember("orgTree", rowsMember, {
+    state: treeState,
+    components: [...components, objectTreeComponent],
+    typeTable: treeTable,
+  });
+  assert.deepEqual(expandedRows.projection.outputs, {
+    selected: { kind: "object", objectType: "platform:OrgUnit" },
+    search: { kind: "scalar", type: "string" },
+  });
+  assert.deepEqual(expandedRows.placement.outputs, {
+    selected: { state: "selectedOrg" },
+    search: { state: "search" },
+  });
+
+  // 3. Rejects mismatched object state type for selected.
+  const wrongObjectMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectTree",
+    type: "platform:OrgUnit",
+    data: { rows: "list" },
+    state: { selected: "wrongOrg" },
+  });
+  assert("component" in wrongObjectMember);
+  assert.throws(
+    () => expandPanelAuthoringMember("badOrgTree", wrongObjectMember, {
+      state: treeState,
+      components: [...components, objectTreeComponent],
+      typeTable: treeTable,
+    }),
+    /cannot receive component output 'selected'/,
+  );
+
+  // 4. Rejects ObjectTree when neither data.files nor data.rows is declared.
+  const noDataMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectTree",
+    type: "platform:OrgUnit",
+    target: "selectedOrg",
+    operation: "org.refresh",
+  });
+  assert("component" in noDataMember);
+  assert.throws(
+    () => expandPanelAuthoringMember("emptyTree", noDataMember, {
+      state: treeState,
+      components: [...components, objectTreeComponent],
+      typeTable: treeTable,
+    }),
+    /ObjectTree requires either 'data\.files' or 'data\.rows'/,
+  );
+});

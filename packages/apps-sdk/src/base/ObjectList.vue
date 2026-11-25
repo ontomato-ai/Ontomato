@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { ElAlert } from "element-plus/es/components/alert/index";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
+import { ElTooltip } from "element-plus/es/components/tooltip/index";
 import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -19,10 +20,13 @@ import {
   panelRecordItemKey,
   panelRecordObjectRef,
   panelRowOperationKey,
+  type PanelFieldTone,
   type PanelRecordChildReferenceFieldValue,
+  type PanelRecordFieldArrayItem,
   type PanelRecordFieldValue,
   type PanelRecordQuery,
   type PanelRecordReferenceFieldValue,
+  type PanelRecordTagFieldValue,
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
@@ -127,6 +131,7 @@ import type {
   ObjectListRef,
   ObjectListRenameCancelPayload,
   ObjectListRenameCommitPayload,
+  ObjectListRowActionCondition,
   ObjectListRowActionErrorEvent,
   ObjectListRowActionPrefill,
   ObjectListRowActionResultEvent,
@@ -150,6 +155,7 @@ import {
   displayFieldText,
   isRecordChildReference,
   isRecordReference,
+  isRecordTag,
   rawRecordField,
   recordFieldArrayItems,
   referenceDisplayLabel,
@@ -248,6 +254,9 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "searchSubmit",
   "rowToneField",
   "rowToneMap",
+  "checkDisabledWhen",
+  "rowActionIconVariant",
+  "metaField",
 ]);
 
 interface ParsedListData {
@@ -463,6 +472,12 @@ const props = withDefaults(
     rowToneField?: string;
     /** Optional mapping from `row.fields[rowToneField]` values to semantic tones (`"success" | "danger" | "warning" | "info"`). */
     rowToneMap?: Readonly<Record<string, ObjectListRowTone>>;
+    /** Optional per-row condition(s) disabling row selection checkboxes and excluding matching rows from select-all. */
+    checkDisabledWhen?: ObjectListRowActionCondition | readonly ObjectListRowActionCondition[];
+    /** Visual variant for icon-only inline row action buttons: `"ghost"` (default) or `"bordered"` (`24x24` outlined square). */
+    rowActionIconVariant?: "ghost" | "bordered";
+    /** Optional field key rendered right-aligned on the second line beside the subtitle in compact `"list"` layout. */
+    metaField?: string;
   }>(),
   {
     layout: "auto",
@@ -524,6 +539,9 @@ const props = withDefaults(
     searchSubmit: undefined,
     rowToneField: undefined,
     rowToneMap: undefined,
+    checkDisabledWhen: undefined,
+    rowActionIconVariant: undefined,
+    metaField: undefined,
   },
 );
 
@@ -719,6 +737,30 @@ const effectiveRowToneMap = computed<Readonly<Record<string, ObjectListRowTone>>
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   return raw as Readonly<Record<string, ObjectListRowTone>>;
 });
+const effectiveCheckDisabledWhen = computed<
+  ObjectListRowActionCondition | readonly ObjectListRowActionCondition[] | undefined
+>(() => {
+  const raw = props.checkDisabledWhen ?? rawConfig.value?.checkDisabledWhen;
+  if (!raw || typeof raw !== "object") return undefined;
+  if (Array.isArray(raw)) {
+    return raw.length > 0 ? (raw as readonly ObjectListRowActionCondition[]) : undefined;
+  }
+  return raw as ObjectListRowActionCondition;
+});
+function isRowCheckDisabled(row: PlatformObjectRecord): boolean {
+  return matchesRowActionWhen(row, effectiveCheckDisabledWhen.value, false);
+}
+const effectiveRowActionIconVariant = computed<"ghost" | "bordered">(() => {
+  const raw = props.rowActionIconVariant ?? rawConfig.value?.rowActionIconVariant;
+  return raw === "bordered" ? "bordered" : "ghost";
+});
+const effectiveMetaField = computed<string | undefined>(() => {
+  const raw = props.metaField ?? rawConfig.value?.metaField;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : undefined;
+});
+const headerHelpIcon = curatedIcon("circle-help");
 
 const VALID_ROW_TONES = new Set<ObjectListRowTone>(["success", "danger", "warning", "info"]);
 function resolveRowTone(row: PlatformObjectRecord): ObjectListRowTone | null {
@@ -1565,11 +1607,16 @@ const checkedRefs = computed<readonly ObjectListRef[]>(() =>
   stateObjects(checkedParam.value.value as PanelFieldValue),
 );
 const checkedIdentityKeys = computed(() => new Set(checkedRefs.value.map(refKey)));
+const selectableVisibleRows = computed(() => rows.value.filter((row) => !isRowCheckDisabled(row)));
 const allVisibleChecked = computed(
-  () => rows.value.length > 0 && rows.value.every((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
+  () =>
+    selectableVisibleRows.value.length > 0
+    && selectableVisibleRows.value.every((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
 );
 const someVisibleChecked = computed(
-  () => !allVisibleChecked.value && rows.value.some((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
+  () =>
+    !allVisibleChecked.value
+    && selectableVisibleRows.value.some((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
 );
 
 const lastDynamicColumns = ref<readonly ObjectListColumn[]>([]);
@@ -2314,7 +2361,7 @@ function csvCellText(row: PlatformObjectRecord, column: ObjectListColumn): strin
             ? referenceDisplayLabel(item)
             : isRecordChildReference(item)
               ? childReferenceDisplayLabel(item)
-              : scalarFieldText(item, t),
+              : resolveTagArrayItem(item, column).label,
         )
         .filter((part) => part.length > 0)
         .join(column.listSeparator ?? ", ");
@@ -3200,6 +3247,7 @@ function onListItemKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
 function toggleChecked(row: PlatformObjectRecord, checked: boolean) {
   const identity = rowCheckKey(row);
   if (checked) {
+    if (isRowCheckDisabled(row)) return;
     if (checkedIdentityKeys.value.has(identity)) return;
     setChecked([...checkedRefs.value, rowObjectRef(row)]);
   } else {
@@ -3208,14 +3256,15 @@ function toggleChecked(row: PlatformObjectRecord, checked: boolean) {
 }
 
 function toggleAllVisible(checked: boolean) {
-  const visibleKeys = new Set(rows.value.map(rowCheckKey));
+  const selectable = selectableVisibleRows.value;
+  const selectableKeys = new Set(selectable.map(rowCheckKey));
   if (checked) {
-    const added = rows.value
+    const added = selectable
       .filter((row) => !checkedIdentityKeys.value.has(rowCheckKey(row)))
       .map(rowObjectRef);
     setChecked([...checkedRefs.value, ...added]);
   } else {
-    setChecked(checkedRefs.value.filter((item) => !visibleKeys.has(refKey(item))));
+    setChecked(checkedRefs.value.filter((item) => !selectableKeys.has(refKey(item))));
   }
 }
 
@@ -3243,11 +3292,12 @@ const summaryKey = computed(() => props.subtitleField ?? "subtitle");
 
 function rowHasSecondLine(row: PlatformObjectRecord): boolean {
   return fieldValue(row, summaryKey.value) !== ""
+    || Boolean(effectiveMetaField.value && fieldValue(row, effectiveMetaField.value) !== "")
     || Boolean(props.tagsField && recordFieldArrayItems(row, props.tagsField).length > 0);
 }
 
 const listHasTwoLines = computed(() =>
-  Boolean(props.subtitleField || props.tagsField)
+  Boolean(props.subtitleField || effectiveMetaField.value || props.tagsField)
   || rows.value.some(rowHasSecondLine),
 );
 
@@ -3318,13 +3368,75 @@ function columnMapped(row: PlatformObjectRecord, column: ObjectListColumn): Reso
   });
 }
 
+interface ResolvedTagArrayItem {
+  readonly label: string;
+  readonly tone: PanelFieldTone;
+  readonly icon?: string;
+}
+
+/**
+ * Resolve display text, semantic tone, and optional platform icon for one non-reference item inside a tag array.
+ * Tag tones travel on the value itself (`kind: "tag"`) or on `column.valueMap` — never via `row.tones`.
+ */
+function resolveTagArrayItem(
+  item: Exclude<PanelRecordFieldArrayItem, PanelRecordReferenceFieldValue | PanelRecordChildReferenceFieldValue>,
+  column?: ObjectListColumn,
+): ResolvedTagArrayItem {
+  if (isRecordTag(item)) {
+    return {
+      label: item.label,
+      tone: item.tone ?? "info",
+      icon: item.icon,
+    };
+  }
+  if (column?.valueMap) {
+    const mapped = resolveValueMapEntry(item, column.valueMap, {
+      locale: locale.value,
+      panelText: panel.t,
+      t,
+      te,
+    });
+    if (mapped) {
+      return {
+        label: mapped.label ?? scalarFieldText(item, t),
+        tone: mapped.tone ?? "info",
+        icon: mapped.icon,
+      };
+    }
+  }
+  return {
+    label: scalarFieldText(item, t),
+    tone: "info",
+  };
+}
+
+function recordTagField(row: PlatformObjectRecord, key: string): PanelRecordTagFieldValue | null {
+  const raw = rawRecordField(row, key);
+  return isRecordTag(raw) ? raw : null;
+}
+
+function statusFieldTone(row: PlatformObjectRecord, field: string): string {
+  const tag = recordTagField(row, field);
+  if (tag) return tag.tone ?? "default";
+  return row.tones?.[field] ?? "default";
+}
+
 function columnIsTag(row: PlatformObjectRecord, column: ObjectListColumn): boolean {
   if (fieldValue(row, column.key) === "") return false;
+  if (column.kind !== "text" && recordTagField(row, column.key)) return true;
   return column.kind === "tag" || Boolean(columnMapped(row, column)?.tone);
 }
 
 function columnTone(row: PlatformObjectRecord, column: ObjectListColumn): string {
+  const tag = recordTagField(row, column.key);
+  if (tag) return tag.tone ?? "default";
   return columnMapped(row, column)?.tone ?? row.tones?.[column.key] ?? "default";
+}
+
+function columnTagIcon(row: PlatformObjectRecord, column: ObjectListColumn): string | undefined {
+  const tag = recordTagField(row, column.key);
+  if (tag?.icon) return tag.icon;
+  return columnMapped(row, column)?.icon;
 }
 
 function columnIconName(row: PlatformObjectRecord, column: ObjectListColumn): string | undefined {
@@ -4499,13 +4611,13 @@ defineExpose({
         <slot name="filters"></slot>
       </div>
       <div v-if="showCheckRow" class="sdk-object-list-check-row">
-        <label class="sdk-object-list-select-all" :class="{ disabled: !rows.length }">
+        <label class="sdk-object-list-select-all" :class="{ disabled: !selectableVisibleRows.length }">
           <input
             :ref="selectAllCheckboxRef"
             type="checkbox"
             :checked="allVisibleChecked"
             :indeterminate.prop="someVisibleChecked"
-            :disabled="!rows.length"
+            :disabled="!selectableVisibleRows.length"
             @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
           />
           <span>{{ t("platform.listSelectAll") }}</span>
@@ -4684,7 +4796,7 @@ defineExpose({
                   :aria-label="t('platform.listSelectAll')"
                   :checked="allVisibleChecked"
                   :indeterminate.prop="someVisibleChecked"
-                  :disabled="!rows.length"
+                  :disabled="!selectableVisibleRows.length"
                   @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
                 />
               </th>
@@ -4694,7 +4806,22 @@ defineExpose({
                 :key="column.key"
                 :class="[columnFit.get(column.key), { 'sdk-object-list-col-pinned-left': isPinnedPrimaryColumn(colIndex) }]"
                 :style="columnStyle(column)"
-              >{{ columnLabel(column) }}</th>
+              >
+                <span v-if="column.headerTooltipKey" class="sdk-object-list-th-with-tip">
+                  <span>{{ columnLabel(column) }}</span>
+                  <el-tooltip :content="panel.t(column.headerTooltipKey)" placement="top">
+                    <span
+                      class="sdk-object-list-th-help"
+                      tabindex="0"
+                      :aria-label="panel.t(column.headerTooltipKey)"
+                      @click.stop
+                    >
+                      <component :is="headerHelpIcon" :size="14" aria-hidden="true" />
+                    </span>
+                  </el-tooltip>
+                </span>
+                <template v-else>{{ columnLabel(column) }}</template>
+              </th>
               <th
                 v-if="hasActionColumn"
                 class="sdk-object-list-actions-col"
@@ -4771,6 +4898,7 @@ defineExpose({
                       type="checkbox"
                       :aria-label="entry.row.label"
                       :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
+                      :disabled="isRowCheckDisabled(entry.row)"
                       @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                     />
                   </td>
@@ -4846,7 +4974,23 @@ defineExpose({
                           >
                             {{ referenceDisplayLabel(item) }}
                           </button>
-                          <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                          <span
+                            v-else
+                            class="sdk-object-list-tag"
+                            :data-tone="resolveTagArrayItem(item, column).tone"
+                            :data-effect="column.tagEffect"
+                          >
+                            <component
+                              :is="appIcon(resolveTagArrayItem(item, column).icon!)"
+                              v-if="resolveTagArrayItem(item, column).icon"
+                              :size="13"
+                              :stroke-width="2"
+                              class="sdk-object-list-tag-icon"
+                              :data-icon="resolveTagArrayItem(item, column).icon"
+                              aria-hidden="true"
+                            />
+                            <span>{{ resolveTagArrayItem(item, column).label }}</span>
+                          </span>
                         </template>
                         <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
                       </span>
@@ -4854,14 +4998,15 @@ defineExpose({
                         v-else-if="columnIsTag(entry.row, column)"
                         class="sdk-object-list-tag"
                         :data-tone="columnTone(entry.row, column)"
+                        :data-effect="column.tagEffect"
                       >
                         <component
-                          :is="appIcon(columnMapped(entry.row, column)!.icon!)"
-                          v-if="columnMapped(entry.row, column)?.icon"
+                          :is="appIcon(columnTagIcon(entry.row, column)!)"
+                          v-if="columnTagIcon(entry.row, column)"
                           :size="13"
                           :stroke-width="2"
                           class="sdk-object-list-tag-icon"
-                          :data-icon="columnMapped(entry.row, column)!.icon"
+                          :data-icon="columnTagIcon(entry.row, column)"
                           aria-hidden="true"
                         />
                         <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
@@ -4941,7 +5086,23 @@ defineExpose({
                         >
                           {{ referenceDisplayLabel(item) }}
                         </button>
-                        <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                        <span
+                          v-else
+                          class="sdk-object-list-tag"
+                          :data-tone="resolveTagArrayItem(item, column).tone"
+                          :data-effect="column.tagEffect"
+                        >
+                          <component
+                            :is="appIcon(resolveTagArrayItem(item, column).icon!)"
+                            v-if="resolveTagArrayItem(item, column).icon"
+                            :size="13"
+                            :stroke-width="2"
+                            class="sdk-object-list-tag-icon"
+                            :data-icon="resolveTagArrayItem(item, column).icon"
+                            aria-hidden="true"
+                          />
+                          <span>{{ resolveTagArrayItem(item, column).label }}</span>
+                        </span>
                       </template>
                       <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
                     </span>
@@ -4949,14 +5110,15 @@ defineExpose({
                       v-else-if="columnIsTag(entry.row, column)"
                       class="sdk-object-list-tag"
                       :data-tone="columnTone(entry.row, column)"
+                      :data-effect="column.tagEffect"
                     >
                       <component
-                        :is="appIcon(columnMapped(entry.row, column)!.icon!)"
-                        v-if="columnMapped(entry.row, column)?.icon"
+                        :is="appIcon(columnTagIcon(entry.row, column)!)"
+                        v-if="columnTagIcon(entry.row, column)"
                         :size="13"
                         :stroke-width="2"
                         class="sdk-object-list-tag-icon"
-                        :data-icon="columnMapped(entry.row, column)!.icon"
+                        :data-icon="columnTagIcon(entry.row, column)"
                         aria-hidden="true"
                       />
                       <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
@@ -5019,6 +5181,7 @@ defineExpose({
                         :locked="isGroupLocked"
                         :busy="isRowBusy(entry.row)"
                         :row-label="entry.row.label || entry.row.primaryKey"
+                        :icon-variant="effectiveRowActionIconVariant"
                         @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                       />
                     </list-row-slot-host>
@@ -5029,6 +5192,7 @@ defineExpose({
                       :locked="isGroupLocked"
                       :busy="isRowBusy(entry.row)"
                       :row-label="entry.row.label || entry.row.primaryKey"
+                      :icon-variant="effectiveRowActionIconVariant"
                       @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                     />
                   </td>
@@ -5159,7 +5323,7 @@ defineExpose({
               <span
                 v-if="statusField && statusStyle === 'dot' && fieldValue(row, statusField) !== ''"
                 class="sdk-object-list-status-dot"
-                :data-tone="row.tones?.[statusField] ?? 'default'"
+                :data-tone="statusFieldTone(row, statusField)"
                 :title="fieldValue(row, statusField)"
               ></span>
               <span
@@ -5176,7 +5340,7 @@ defineExpose({
               <span
                 v-if="statusField && statusStyle !== 'dot' && fieldValue(row, statusField) !== ''"
                 class="sdk-object-list-tag"
-                :data-tone="row.tones?.[statusField] ?? 'default'"
+                :data-tone="statusFieldTone(row, statusField)"
               >{{ fieldValue(row, statusField) }}</span>
               <div
                 v-if="hasActionColumn && (slots.actions || resolvedRowActionsFor(row).length > 0)"
@@ -5202,6 +5366,7 @@ defineExpose({
                   :locked="isGroupLocked"
                   :busy="isRowBusy(row)"
                   :row-label="row.label || row.primaryKey"
+                  :icon-variant="effectiveRowActionIconVariant"
                   @menu-open-change="(open) => onTabMenuOpenChange(rowIdentityKey(row), open)"
                   @trigger="(item) => triggerRowAction(row, rowIndex, item)"
                 />
@@ -5248,7 +5413,7 @@ defineExpose({
             <span
               v-if="statusField && fieldValue(row, statusField) !== ''"
               class="sdk-object-list-tag"
-              :data-tone="row.tones?.[statusField] ?? 'default'"
+              :data-tone="statusFieldTone(row, statusField)"
             >{{ fieldValue(row, statusField) }}</span>
             <div v-if="hasActionColumn" class="sdk-object-list-accordion-actions" @click.stop.prevent>
               <ObjectListRowActions
@@ -5256,6 +5421,7 @@ defineExpose({
                 :max-visible="rowActions?.maxVisible ?? 2"
                 :locked="isGroupLocked"
                 :row-label="row.label || row.primaryKey"
+                :icon-variant="effectiveRowActionIconVariant"
                 @trigger="(item) => triggerRowAction(row, rowIndex, item)"
               />
             </div>
@@ -5362,6 +5528,7 @@ defineExpose({
                   class="sdk-object-list-card-check"
                   :aria-label="entry.row.label"
                   :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
+                  :disabled="isRowCheckDisabled(entry.row)"
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
@@ -5379,7 +5546,7 @@ defineExpose({
                 <span
                   v-if="statusField && fieldValue(entry.row, statusField) !== ''"
                   class="sdk-object-list-tag"
-                  :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                  :data-tone="statusFieldTone(entry.row, statusField)"
                 >{{ fieldValue(entry.row, statusField) }}</span>
               </div>
               <p
@@ -5411,6 +5578,7 @@ defineExpose({
                   class="sdk-object-list-card-check"
                   :aria-label="entry.row.label"
                   :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
+                  :disabled="isRowCheckDisabled(entry.row)"
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
@@ -5457,7 +5625,7 @@ defineExpose({
                       <span
                         v-if="statusField && fieldValue(entry.row, statusField) !== ''"
                         class="sdk-object-list-tag"
-                        :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                        :data-tone="statusFieldTone(entry.row, statusField)"
                       >{{ fieldValue(entry.row, statusField) }}</span>
                     </span>
                     <span
@@ -5478,6 +5646,7 @@ defineExpose({
                     :locked="isGroupLocked"
                     :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
+                    :icon-variant="effectiveRowActionIconVariant"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
                 </div>
@@ -5554,7 +5723,23 @@ defineExpose({
                         >
                           {{ referenceDisplayLabel(item) }}
                         </button>
-                        <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                        <span
+                          v-else
+                          class="sdk-object-list-tag"
+                          :data-tone="resolveTagArrayItem(item, column).tone"
+                          :data-effect="column.tagEffect"
+                        >
+                          <component
+                            :is="appIcon(resolveTagArrayItem(item, column).icon!)"
+                            v-if="resolveTagArrayItem(item, column).icon"
+                            :size="13"
+                            :stroke-width="2"
+                            class="sdk-object-list-tag-icon"
+                            :data-icon="resolveTagArrayItem(item, column).icon"
+                            aria-hidden="true"
+                          />
+                          <span>{{ resolveTagArrayItem(item, column).label }}</span>
+                        </span>
                       </template>
                       <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
                     </span>
@@ -5562,14 +5747,15 @@ defineExpose({
                       v-else-if="columnIsTag(entry.row, column)"
                       class="sdk-object-list-tag"
                       :data-tone="columnTone(entry.row, column)"
+                      :data-effect="column.tagEffect"
                     >
                       <component
-                        :is="appIcon(columnMapped(entry.row, column)!.icon!)"
-                        v-if="columnMapped(entry.row, column)?.icon"
+                        :is="appIcon(columnTagIcon(entry.row, column)!)"
+                        v-if="columnTagIcon(entry.row, column)"
                         :size="13"
                         :stroke-width="2"
                         class="sdk-object-list-tag-icon"
-                        :data-icon="columnMapped(entry.row, column)!.icon"
+                        :data-icon="columnTagIcon(entry.row, column)"
                         aria-hidden="true"
                       />
                       <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
@@ -5612,7 +5798,22 @@ defineExpose({
                   >
                     {{ referenceDisplayLabel(item) }}
                   </button>
-                  <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                  <span
+                    v-else
+                    class="sdk-object-list-tag"
+                    :data-tone="resolveTagArrayItem(item).tone"
+                  >
+                    <component
+                      :is="appIcon(resolveTagArrayItem(item).icon!)"
+                      v-if="resolveTagArrayItem(item).icon"
+                      :size="13"
+                      :stroke-width="2"
+                      class="sdk-object-list-tag-icon"
+                      :data-icon="resolveTagArrayItem(item).icon"
+                      aria-hidden="true"
+                    />
+                    <span>{{ resolveTagArrayItem(item).label }}</span>
+                  </span>
                 </template>
               </div>
               <div v-if="hasActionColumn && !cardHeaderActions" class="sdk-object-list-card-actions" @click.stop>
@@ -5635,6 +5836,7 @@ defineExpose({
                     :locked="isGroupLocked"
                     :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
+                    :icon-variant="effectiveRowActionIconVariant"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
                 </list-row-slot-host>
@@ -5645,6 +5847,7 @@ defineExpose({
                   :locked="isGroupLocked"
                   :busy="isRowBusy(entry.row)"
                   :row-label="entry.row.label || entry.row.primaryKey"
+                  :icon-variant="effectiveRowActionIconVariant"
                   @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                 />
               </div>
@@ -5774,6 +5977,7 @@ defineExpose({
                 class="sdk-object-list-row-check"
                 :aria-label="entry.row.label"
                 :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
+                :disabled="isRowCheckDisabled(entry.row)"
                 @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
               />
               <component
@@ -5821,7 +6025,7 @@ defineExpose({
                     <span
                       v-if="statusField && statusStyle === 'dot' && fieldValue(entry.row, statusField) !== ''"
                       class="sdk-object-list-status-dot"
-                      :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                      :data-tone="statusFieldTone(entry.row, statusField)"
                       :title="fieldValue(entry.row, statusField)"
                       aria-hidden="true"
                     ></span>
@@ -5839,11 +6043,30 @@ defineExpose({
                     <span
                       v-if="statusField && statusStyle !== 'dot' && fieldValue(entry.row, statusField) !== ''"
                       class="sdk-object-list-tag"
-                      :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                      :data-tone="statusFieldTone(entry.row, statusField)"
                     >{{ fieldValue(entry.row, statusField) }}</span>
                   </span>
                   <span
-                    v-if="fieldValue(entry.row, summaryKey) !== ''"
+                    v-if="effectiveMetaField && (fieldValue(entry.row, summaryKey) !== '' || fieldValue(entry.row, effectiveMetaField) !== '')"
+                    class="sdk-object-list-item-sub-row"
+                  >
+                    <span
+                      class="sdk-object-list-item-sub"
+                      :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
+                      :style="{ WebkitLineClamp: subtitleLines }"
+                    >
+                      <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </span>
+                    <span v-if="fieldValue(entry.row, effectiveMetaField) !== ''" class="sdk-object-list-item-meta">
+                      <template v-for="(part, index) in textSegmentsFor(entry.row, effectiveMetaField, fieldValue(entry.row, effectiveMetaField))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </span>
+                  </span>
+                  <span
+                    v-else-if="fieldValue(entry.row, summaryKey) !== ''"
                     class="sdk-object-list-item-sub"
                     :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
                     :style="{ WebkitLineClamp: subtitleLines }"
@@ -5874,7 +6097,22 @@ defineExpose({
                       >
                         {{ referenceDisplayLabel(item) }}
                       </span>
-                      <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                      <span
+                        v-else
+                        class="sdk-object-list-tag"
+                        :data-tone="resolveTagArrayItem(item).tone"
+                      >
+                        <component
+                          :is="appIcon(resolveTagArrayItem(item).icon!)"
+                          v-if="resolveTagArrayItem(item).icon"
+                          :size="13"
+                          :stroke-width="2"
+                          class="sdk-object-list-tag-icon"
+                          :data-icon="resolveTagArrayItem(item).icon"
+                          aria-hidden="true"
+                        />
+                        <span>{{ resolveTagArrayItem(item).label }}</span>
+                      </span>
                     </template>
                   </span>
                 </span>
@@ -5900,6 +6138,7 @@ defineExpose({
                     :locked="isGroupLocked"
                     :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
+                    :icon-variant="effectiveRowActionIconVariant"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
                 </list-row-slot-host>
@@ -5910,6 +6149,7 @@ defineExpose({
                   :locked="isGroupLocked"
                   :busy="isRowBusy(entry.row)"
                   :row-label="entry.row.label || entry.row.primaryKey"
+                  :icon-variant="effectiveRowActionIconVariant"
                   @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                 />
               </div>
@@ -6687,6 +6927,39 @@ defineExpose({
   white-space: nowrap;
   width: 100%;
 }
+.sdk-object-list-item-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+.sdk-object-list-item-sub-row > .sdk-object-list-item-sub {
+  flex: 1 1 auto;
+  width: auto;
+}
+.sdk-object-list-item-meta {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.sdk-object-list-th-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sdk-object-list-th-help {
+  display: inline-flex;
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  cursor: help;
+}
+.sdk-object-list-th-help:hover,
+.sdk-object-list-th-help:focus-visible {
+  color: var(--el-text-color-primary);
+}
 .sdk-object-list-item-sub-clamped {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -6879,6 +7152,32 @@ defineExpose({
 .sdk-object-list-tag[data-tone="danger"] {
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger-text);
+}
+.sdk-object-list-tag[data-effect="plain"],
+.sdk-object-list-tag[data-effect="plain"][data-tone="default"] {
+  background: transparent;
+  border: 1px solid var(--el-border-color);
+  color: var(--el-text-color-regular);
+}
+.sdk-object-list-tag[data-effect="plain"][data-tone="info"] {
+  background: transparent;
+  border-color: var(--el-color-info-light-5, var(--el-color-info));
+  color: var(--el-color-info-text, var(--el-color-info));
+}
+.sdk-object-list-tag[data-effect="plain"][data-tone="success"] {
+  background: transparent;
+  border-color: var(--el-color-success-light-5, var(--el-color-success));
+  color: var(--el-color-success-text, var(--el-color-success));
+}
+.sdk-object-list-tag[data-effect="plain"][data-tone="warning"] {
+  background: transparent;
+  border-color: var(--el-color-warning-light-5, var(--el-color-warning));
+  color: var(--el-color-warning-text, var(--el-color-warning));
+}
+.sdk-object-list-tag[data-effect="plain"][data-tone="danger"] {
+  background: transparent;
+  border-color: var(--el-color-danger-light-5, var(--el-color-danger));
+  color: var(--el-color-danger-text, var(--el-color-danger));
 }
 .sdk-object-list-cards {
   align-content: start;

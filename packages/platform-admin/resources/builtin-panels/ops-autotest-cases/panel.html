@@ -70,22 +70,27 @@
     align-items: center;
     gap: var(--spacing-sm);
   }
+  .ops-cases-page .ops-cases-layout .sdk-two-pane-detail-body {
+    padding: 0;
+    overflow: hidden;
+  }
   .ops-cases-detail-body {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    gap: var(--spacing-md);
+    height: 100%;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
-  .ops-cases-form-wrap {
+  .ops-cases-workbench {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
     width: 100%;
+    height: 100%;
     min-width: 0;
-  }
-  .ops-cases-form-wrap .sdk-owner-form,
-  .ops-cases-form-wrap .sdk-owner-form-inner {
-    height: auto;
-  }
-  .ops-cases-form-wrap .sdk-owner-form-body {
-    overflow: visible;
+    min-height: 0;
   }
   .ops-cases-empty {
     display: flex;
@@ -135,32 +140,6 @@
     color: var(--sdk-text-color-secondary);
     word-break: break-all;
   }
-  .ops-cases-footer {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--page-gutter);
-    border-top: 1px solid var(--sdk-border-color, var(--ui-border));
-    background: var(--sdk-bg-color);
-  }
-  .ops-cases-footer-left {
-    font-size: var(--text-xs);
-    line-height: var(--leading-sm);
-  }
-  .ops-cases-status-unsaved {
-    color: var(--sdk-color-warning);
-    font-weight: var(--font-medium);
-  }
-  .ops-cases-status-saved {
-    color: var(--sdk-text-color-placeholder, var(--sdk-text-color-secondary));
-  }
-  .ops-cases-footer-right {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-  }
   .ops-cases-dock-room {
     flex: none;
     width: 100%;
@@ -178,9 +157,6 @@
   }
   @container ops-cases-page (max-width: 45rem) {
     .ops-cases-body {
-      padding: var(--spacing-sm) var(--spacing-md);
-    }
-    .ops-cases-footer {
       padding: var(--spacing-sm) var(--spacing-md);
     }
   }
@@ -223,12 +199,6 @@
               <projection slot="detailHeader" :fallback-title="selectedKey"></projection>
             </div>
             <div class="ops-cases-detail-controls">
-              <segmented-control
-                state="editMode"
-                default-value="form"
-                :options="editModeOptions"
-                :aria-label="t('detail.editModeAria')"
-              ></segmented-control>
               <projection slot="deleteCaseSet" @done="onDeleteDone"></projection>
             </div>
           </div>
@@ -236,12 +206,11 @@
       </template>
 
       <div v-if="selectedKey" class="ops-cases-detail-body">
-        <div class="ops-cases-form-wrap">
-          <projection
-            slot="caseSetForm"
-            @saved="onCaseSetSaved"
-          ></projection>
-        </div>
+        <projection
+          slot="caseSetForm"
+          class="ops-cases-workbench"
+          @saved="onCaseSetSaved"
+        ></projection>
       </div>
 
       <template #empty>
@@ -253,29 +222,6 @@
     </two-pane-layout>
   </div>
 
-  <footer v-if="selectedKey" class="ops-cases-footer" role="region" :aria-label="t('footer.aria')">
-    <div class="ops-cases-footer-left" role="status" aria-live="polite">
-      <span v-if="draftDirty" class="ops-cases-status-unsaved">
-        ● {{ t("footer.unsaved") }}
-      </span>
-      <span v-else class="ops-cases-status-saved">
-        {{ t("footer.saved") }}
-      </span>
-    </div>
-    <div class="ops-cases-footer-right">
-      <sdk-button :disabled="!draftDirty || draftSaving" @click="revertDraft">
-        {{ t("footer.revert") }}
-      </sdk-button>
-      <sdk-button
-        type="primary"
-        :loading="draftSaving"
-        :disabled="!draftCanSave || draftSaving"
-        @click="saveDraft"
-      >
-        {{ t("footer.save") }}
-      </sdk-button>
-    </div>
-  </footer>
   <div class="ops-cases-dock-room" aria-hidden="true"></div>
 
   <sdk-dialog

@@ -608,6 +608,18 @@
     "value": "Generate an explanation for the current action code before publishing."
   },
   {
+    "key": "Action.trialRequired",
+    "value": "Run a successful sandbox trial for this action before publishing."
+  },
+  {
+    "key": "Action.trialFailed",
+    "value": "The latest sandbox trial failed. Fix the issue and run the trial again before publishing."
+  },
+  {
+    "key": "Action.trialSandboxUnavailable",
+    "value": "The sandbox for this action trial is unavailable"
+  },
+  {
     "key": "Action.sandboxTrial.notRun",
     "value": "Sandbox trial: not run for this definition"
   },
