@@ -7,25 +7,19 @@ vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
 
 import { useManagerClient } from "../../../../../../packages/ontology-manager/src/context";
 
-vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowser.vue", () => ({
-  __esModule: true,
-  default: defineComponent({
-    name: "DataBrowserDouble",
-    props: { initialClass: String },
-    setup: (props) => {
-      const client = useManagerClient();
-      void client.getMetas().catch(() => undefined);
-      return () => h("p", { class: "page-double" }, `data ${props.initialClass}`);
-    },
-  }),
-}));
-
 vi.mock("../../../../../../packages/workbench-ui/src/features/workbench/components/BusinessWorkbench.vue", () => ({
   default: defineComponent({ name: "BusinessDouble", setup: () => () => h("p", { class: "page-double" }, "agents") }),
 }));
 
 vi.mock("../../../../../../packages/platform-admin/src/pages/SystemMonitorPage.vue", () => ({
-  default: defineComponent({ name: "SystemMonitorDouble", setup: () => () => h("p", { class: "page-double" }, "monitor") }),
+  default: defineComponent({
+    name: "SystemMonitorDouble",
+    setup: () => {
+      const client = useManagerClient();
+      void client.getMetas().catch(() => undefined);
+      return () => h("p", { class: "page-double" }, "monitor");
+    },
+  }),
 }));
 
 const { isolateShellPerTest } = await import("./isolation");
@@ -84,9 +78,9 @@ describe("open-source Ontology Service page", () => {
   it.each([
     ["/", "#/home", null],
     ["/#/", "#/home", null],
-    ["/?view=data-browser", "#/browser/data", "data "],
+    ["/?view=data-browser", "#/browser/data", null],
     ["/?view=assets", "#/ontology/assets/metrics", null],
-    ["/#/data/Order", "#/browser/data/Order", "data Order"],
+    ["/#/data/Order", "#/browser/data?selectedClass=Order&viewMode=table", null],
     ["/#/objects", "#/ontology/objects", null],
     ["/#/admin", "#/settings/records/system-monitor", null],
     ["/#/admin/audit-log", "#/settings/records/audit-log", null],
@@ -142,8 +136,7 @@ describe("open-source Ontology Service page", () => {
 
   it("with one locale there is no language control; the theme control switches the whole page and is stored under the Ontology Service key", async () => {
     localStorage.setItem("theme-preference", "light");
-    // A page the Manager still draws itself, whose frame follows the theme (object types and workflows are built-in panels now).
-    await start("/?theme=dark#/browser/data/Order");
+    await start("/?theme=dark#/settings/records/system-monitor");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     // The theme and language live in the rail's account menu now.
     document.querySelector<HTMLButtonElement>(".account-trigger")!.click();
@@ -156,16 +149,15 @@ describe("open-source Ontology Service page", () => {
     await settle();
     expect(document.documentElement.classList.contains("dark")).toBe(true);
     expect(document.documentElement.style.getPropertyValue("--el-bg-color")).not.toBe(light);
-    expect(document.querySelector(".ontology-manager")?.classList.contains("is-dark")).toBe(true);
     expect(localStorage.getItem("theme-preference")).toBe("dark");
   });
 
   it("a 401 stops the page with its status; a 402 keeps it", async () => {
     statusFor = (url) => (url.endsWith("/admin/getMetas") ? 402 : 200);
-    await start("/#/browser/data/Order");
+    await start("/#/settings/records/system-monitor");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
     statusFor = (url) => (url.endsWith("/admin/getMetas") ? 401 : 200);
-    await start("/#/browser/data/Order");
+    await start("/#/settings/records/system-monitor");
     expect(document.querySelector(".platform-shell")).toBeNull();
   });
 });

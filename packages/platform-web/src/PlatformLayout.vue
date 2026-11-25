@@ -146,8 +146,6 @@ watch(
   },
   { immediate: true },
 );
-const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
-
 /**
  * Any route belonging to an application with a declared frame panel (hybrid built-in applications such as Ontology
  * manager, native built-in applications such as System settings, or pure panel applications) runs inside the single
@@ -196,7 +194,6 @@ const headerLabels = computed(() => ({
   <PlatformShell
     :loading="loading"
     :hide-rail="hideRail"
-    :class="{ 'object-browser-layout': browserWorkspace }"
     :apps="blocked ? [] : railApps"
     :active-app-id="activeAppId"
     :account="account"
@@ -234,7 +231,7 @@ const headerLabels = computed(() => ({
           <div
             v-else
             class="platform-page-body platform-page-gutter"
-            :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null || appFramed, 'browser-workspace': browserWorkspace }"
+            :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null || appFramed }"
           >
             <RouterView />
           </div>
@@ -267,7 +264,6 @@ const headerLabels = computed(() => ({
 .platform-page-body.own-frame {
   padding: 0;
 }
-.platform-page-body.browser-workspace,
 .platform-page-body:has(> .panel-application-area),
 .platform-page-body:has(> .panel-host) {
   padding: 0;

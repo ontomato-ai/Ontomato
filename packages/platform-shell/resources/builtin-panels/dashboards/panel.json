@@ -51,10 +51,12 @@
             "maxVisible": 0,
             "items": [
               {
+                "kind": "operation",
                 "operation": "rename",
                 "labelKey": "board.rename"
               },
               {
+                "kind": "operation",
                 "operation": "remove",
                 "labelKey": "board.delete",
                 "danger": true
@@ -112,6 +114,10 @@
         "config": {
           "columns": 12,
           "rowHeight": 160,
+          "sectionRowHeights": {
+            "metric": 150,
+            "chart": 340
+          },
           "gap": 16,
           "groupsField": "groups",
           "groupKeyField": "groupId",
@@ -130,10 +136,12 @@
             "maxVisible": 0,
             "items": [
               {
+                "kind": "operation",
                 "operation": "renameCard",
                 "labelKey": "card.rename"
               },
               {
+                "kind": "operation",
                 "operation": "deleteCard",
                 "labelKey": "card.delete",
                 "danger": true

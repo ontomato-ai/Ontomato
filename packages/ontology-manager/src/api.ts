@@ -105,55 +105,6 @@ export interface OntologyRelation {
   toField?: string;
 }
 
-/** A data instance node in the instance graph. */
-export interface InstanceGraphNode {
-  id: string;
-  name: string;
-  class: string;
-  isCenter?: boolean;
-}
-
-/** A directed relation between two instance nodes. */
-export interface InstanceGraphEdge {
-  source: string;
-  target: string;
-  type?: string;
-  label?: string;
-}
-
-export interface InstanceGraphData {
-  nodes: InstanceGraphNode[];
-  edges: InstanceGraphEdge[];
-}
-
-export interface InstanceGraphSummary {
-  sampleToken?: string;
-  classes: Array<{ class: string; instanceCount: number | null; sampleCount?: number }>;
-  relationships: Array<{ source: string; target: string; count: number; type?: string; types?: string[] }>;
-  nodeCount: number | null;
-  edgeCount: number | null;
-  componentCount: number;
-  isolatedNodeCount: number;
-  largestComponentSize: number;
-  complete?: boolean;
-  failures?: string[];
-  relationTypes?: string[];
-  overviewNodes?: InstanceGraphNode[];
-  overviewEdges?: InstanceGraphEdge[];
-  overviewEdgesTruncated?: boolean;
-  version: string;
-  generatedAt: string;
-}
-
-export interface InstanceNeighborhood extends InstanceGraphData {
-   total: number | null;
-  nextOffset: number | null;
-  version: string;
-}
-
-/** The instance graph state the data engine reports; only READY carries data. */
-export type InstanceGraphStatus = "READY" | "GENERATING" | "NOT_GENERATED";
-
 export interface CreateOntologyObjectInput {
   className: string;
   /** Primary key attribute the backend saves with the class (an enabled varchar); must be id for the M3 data source. */
@@ -503,67 +454,6 @@ export function createManagerClient(
     return post("/ontology/model/relationship/delete", { relationship: relationName });
   }
 
-  /** search is submitted only when a non-empty keyword was entered in data browsing. */
-  async function loadObjectData(
-    className: string,
-    page: number,
-    pageSize: number,
-    search?: string
-  ) {
-    const response = await post("/data/getWholeClassDataByPage", {
-      classname: className,
-      pagenum: page,
-      pagecount: pageSize,
-      search,
-    });
-    return {
-      rows: Array.isArray(response.data) ? response.data : [],
-      total: Number(response.total_count || 0),
-    };
-  }
-
-  async function loadInstanceGraphSummary(): Promise<
-    { status: "READY"; summary: InstanceGraphSummary } | { status: Exclude<InstanceGraphStatus, "READY"> }
-  > {
-    const response = await send("/data/instanceGraph/nodes", { method: "GET" });
-    return response.status === "READY"
-      ? { status: "READY", summary: response.data as InstanceGraphSummary }
-      : { status: response.status };
-  }
-
-  async function loadInstanceGraphConnections(version: string, sampleToken?: string) {
-    return (await post("/data/instanceGraph/connections", { version, sampleToken })).data as {
-      overviewEdges: InstanceGraphEdge[]; overviewEdgesTruncated: boolean; version: string;
-    };
-  }
-
-  async function loadInstanceGraphStatistics() {
-    return (await send("/data/instanceGraph/statistics", { method: "GET" })).data as { nodeCount: number; classes: Array<{ class: string; instanceCount: number }> };
-  }
-
-  async function searchInstanceGraph(term: string, version: string, className?: string) {
-    const response = await post("/data/instanceGraph/search", { term, version, class: className, limit: 50 });
-    if (response.status !== "READY") throw new Error(context.text("instanceGraphNotGenerated"));
-    return response.data as { nodes: InstanceGraphNode[]; hasMore: boolean; version: string };
-  }
-
-  async function loadInstanceNeighborhood(id: string, version: string, offset = 0, filters?: { relationType?: string; neighborClass?: string; direction?: string }) {
-    const response = await post("/data/instanceGraph/neighborhood", { id, version, offset, limit: 100, ...filters });
-    if (response.status !== "READY") throw new Error(context.text("instanceGraphNotGenerated"));
-    return response.data as InstanceNeighborhood;
-  }
-
-  /** One instance's full record; the data engine returns classDef plus a flat attribute map. */
-  async function queryInstanceInfo(id: string, className: string) {
-    const response = await post("/data/queryInfoByNode", { id, class: className });
-    const info = (response.data ?? {}) as Record<string, any>;
-    const key = info.classDef?.attrs?.find((attr: Record<string, unknown>) => attr.primaryKey === true || attr.primary_key === true)?.name;
-    if (key && info.data && typeof info.data === "object" && id.startsWith(`${className}:`)) {
-      info.data = { ...info.data, [key]: id.slice(className.length + 1) };
-    }
-    return info as Record<string, unknown>;
-  }
-
   /** Every skill of the domain, for the capability overview. Charts are drawn from a chart file, not by a skill. */
   async function loadSkills() {
     const response = await send("/skills", { method: "GET" }, "");
@@ -673,7 +563,6 @@ export function createManagerClient(
     loadDashboard,
     loadSkills,
     request,
-    loadInstanceGraphStatistics,
     dispose: transport.dispose,
     requestSmartAsset,
     getMetas,
@@ -687,13 +576,7 @@ export function createManagerClient(
     updateOntologyRelation,
     createOntologyRelation,
     deleteOntologyRelation,
-    loadObjectData,
     loadSmartAssets,
-    loadInstanceGraphSummary,
-    loadInstanceGraphConnections,
-    searchInstanceGraph,
-    loadInstanceNeighborhood,
-    queryInstanceInfo,
     listDataAdapters,
     loadWorkflows,
   };

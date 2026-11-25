@@ -9,7 +9,14 @@ import { HttpError } from "../../../utils/errors";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
 import type { PanelOperationHost } from "../server-operations";
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), panelUsers: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  query: vi.fn(),
+  grant: vi.fn(),
+  panelUsers: vi.fn(),
+  homePanelId: vi.fn(),
+  readHomePanel: vi.fn(),
+  saveHomePanel: vi.fn(),
+}));
 vi.mock("../../../infrastructure/postgres", () => ({
   getPostgresPool: () => ({ query: mocks.query }),
   qualifiedTable: (name: string) => name,
@@ -24,6 +31,13 @@ vi.mock("../../product-governance/grants", async importOriginal => ({
   productGrantAllowed: async () => false,
 }));
 vi.mock("../used-by", () => ({ panelUsers: mocks.panelUsers, panelsUsingProjection: vi.fn() }));
+vi.mock("../../platform-home/store", () => ({
+  platformHomeStore: { homePanelId: mocks.homePanelId },
+}));
+vi.mock("../../platform-home/service", () => ({
+  readHomePanel: mocks.readHomePanel,
+  saveHomePanel: mocks.saveHomePanel,
+}));
 
 import { createProductPanelReadAdapter } from "../catalog-reads";
 
@@ -80,6 +94,9 @@ beforeEach(() => {
     if (id !== "reader-panel") throw new HttpError(403, "Use Grant required", "PRODUCT_FORBIDDEN");
   });
   mocks.panelUsers.mockReset().mockResolvedValue({ panels: [], applicationEntries: [], classNames: [], hiddenCount: 0 });
+  mocks.homePanelId.mockReset().mockResolvedValue(null);
+  mocks.readHomePanel.mockReset().mockResolvedValue(null);
+  mocks.saveHomePanel.mockReset().mockResolvedValue(undefined);
 });
 
 it("lists visible broken panels without search or pagination and exposes a revision only when removable", async () => {
@@ -139,4 +156,64 @@ it("allows the author to confirm and delete a broken panel after its Grants are 
     affected: { objects: [{ objectType: PRODUCT_PANEL, primaryKey: "author-panel" }] },
   });
   await expect(adapter.record("author-panel")).rejects.toMatchObject({ status: 404 });
+});
+
+it("resolves ProductPanel.homePanel across default, usable custom, and unavailable custom states, and updates via setAsHome/resetHome", async () => {
+  const defaultHome = panelRecordSchema.parse(await adapter.homePanel());
+  expect(defaultHome).toMatchObject({
+    primaryKey: "default",
+    className: PRODUCT_PANEL,
+    outputs: { isCustomHome: false, panelId: "", unavailable: false },
+  });
+
+  mocks.homePanelId.mockResolvedValueOnce("healthy-panel");
+  mocks.readHomePanel.mockResolvedValueOnce({
+    id: "healthy-panel",
+    name: "Orders",
+    description: "",
+    revision: 4,
+    editable: true,
+    visibility: "private",
+    content: healthyDefinition.content,
+    manifest: healthyDefinition.manifest,
+  });
+  const customHome = panelRecordSchema.parse(await adapter.homePanel());
+  expect(customHome).toMatchObject({
+    primaryKey: "healthy-panel",
+    label: "Orders",
+    outputs: { isCustomHome: true, panelId: "healthy-panel", unavailable: false },
+  });
+
+  mocks.homePanelId.mockResolvedValueOnce("hidden-panel");
+  mocks.readHomePanel.mockRejectedValueOnce(new HttpError(403, "Use Grant required", "PRODUCT_FORBIDDEN"));
+  const forbiddenHome = panelRecordSchema.parse(await adapter.homePanel());
+  expect(forbiddenHome).toMatchObject({
+    primaryKey: "hidden-panel",
+    outputs: { isCustomHome: true, panelId: "hidden-panel", unavailable: true },
+  });
+  expect(forbiddenHome.fields.unavailableReason).toBeTruthy();
+
+  const { productCatalogServerOperations } = await import("../catalog-operations");
+  const setAsHome = productCatalogServerOperations.find(op => op.handlerRef === "productPanels.setAsHome");
+  const resetHome = productCatalogServerOperations.find(op => op.handlerRef === "productPanels.resetHome");
+  if (setAsHome?.kind !== "action" || setAsHome.targetInput === undefined) throw new Error("Missing productPanels.setAsHome");
+  if (resetHome?.kind !== "action" || resetHome.targetInput !== undefined) throw new Error("Missing productPanels.resetHome");
+
+  await expect(setAsHome.execute(host, { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "healthy-panel" }, {}, "set-home")).resolves.toMatchObject({
+    kind: "success",
+    affected: { objectTypes: [PRODUCT_PANEL], objects: [{ objectType: PRODUCT_PANEL, primaryKey: "healthy-panel" }] },
+  });
+  expect(mocks.saveHomePanel).toHaveBeenCalledWith(owner, credentials, "healthy-panel");
+
+  mocks.saveHomePanel.mockRejectedValueOnce(new HttpError(403, "Use Grant required", "PRODUCT_FORBIDDEN"));
+  await expect(setAsHome.execute(host, { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "hidden-panel" }, {}, "set-hidden")).resolves.toMatchObject({
+    kind: "refusal",
+    code: "PRODUCT_FORBIDDEN",
+  });
+
+  await expect(resetHome.execute(host, null, {}, "reset-home")).resolves.toMatchObject({
+    kind: "success",
+    affected: { objectTypes: [PRODUCT_PANEL] },
+  });
+  expect(mocks.saveHomePanel).toHaveBeenCalledWith(owner, credentials, null);
 });

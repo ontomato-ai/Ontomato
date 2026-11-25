@@ -16,7 +16,6 @@ import {
   Puzzle,
   Share2,
   SquareFunction,
-  Table2,
   Tags,
   Workflow as WorkflowIcon,
   GitBranch,
@@ -99,8 +98,6 @@ const pages: readonly ManagerNavigationPage[] = [
   page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING),
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
-  // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
-  { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
 ];
 
 /**

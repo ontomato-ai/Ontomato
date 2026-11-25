@@ -35,10 +35,18 @@ const mocks = vi.hoisted(() => ({
   metricForm: vi.fn(),
   metricParameters: vi.fn(),
   validateDrawing: vi.fn(),
+  readFavoriteKeySet: vi.fn(),
 }));
 
 vi.mock("../../charts/import", () => ({ prepareChartImport: vi.fn() }));
 vi.mock("../create-from-analysis", () => ({ resolveDashboardDatasets: vi.fn() }));
+vi.mock("../../platform-home/service", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../platform-home/service")>();
+  return {
+    ...actual,
+    readFavoriteKeySet: mocks.readFavoriteKeySet,
+  };
+});
 
 vi.mock("../../../infrastructure/postgres-transaction", () => ({
   transaction: async <T>(fn: (client: unknown) => Promise<T>) => fn({}),
@@ -242,6 +250,7 @@ beforeEach(() => {
     parameters: { region: "EMEA" },
     errors: [],
   });
+  mocks.readFavoriteKeySet.mockResolvedValue(new Set());
 });
 
 describe("dashboard panel owner reads", () => {
@@ -253,7 +262,13 @@ describe("dashboard panel owner reads", () => {
     expect(list[0]).toMatchObject({ primaryKey: "dash-1", className: DASHBOARD, label: "Operations Board" });
 
     const record = panelRecordSchema.parse(await adapter.record("dash-1"));
-    expect(record.outputs).toEqual({ name: "Operations Board", groupCount: 2, cardCount: 2 });
+    expect(record.outputs).toEqual({
+      name: "Operations Board",
+      groupCount: 2,
+      cardCount: 2,
+      openPath: "/dashboards?dashboardId=dash-1",
+      favorited: false,
+    });
     expect(record.fields.groups).toEqual({
       kind: "json",
       value: [
@@ -297,7 +312,13 @@ describe("dashboard panel owner reads", () => {
     const cardData = createDashboardCardReadAdapter(owner, credentials);
 
     const cardRecord = panelRecordSchema.parse(await cardOwner.record(cardKey));
-    expect(cardRecord.outputs).toEqual({ name: "Active Orders", kind: "metric", metricId: "mv-orders" });
+    expect(cardRecord.outputs).toEqual({
+      name: "Active Orders",
+      kind: "metric",
+      metricId: "mv-orders",
+      openPath: "/dashboards?dashboardId=dash-1&cardId=m-card-1",
+      favorited: false,
+    });
 
     const form = panelFormDescriptionSchema.parse(await cardOwner.form(cardKey, {}));
     expect(form.revision).toBe("rev-7");

@@ -53,18 +53,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     ],
   },
   {
-    renderer: "browser",
-    descriptionKey: "platform.descriptions.objectBrowser",
-    sections: [
-      {
-        key: "browser:pages",
-        titleKey: "platform.objectBrowser",
-        // Instance graph and table are modes of one browser, not separate application tabs.
-        paths: [platformRoutes.data.path],
-      },
-    ],
-  },
-  {
     renderer: "agents",
     // The conversation is where the platform is entered, by every member of the domain; the agent settings and the models
     // follow it at the foot of the column.
@@ -105,21 +93,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     renderer: "dashboards",
     sections: [{ key: "dashboards:all", titleKey: "assistant.featureDashboards", paths: [platformRoutes.dashboards.path] }],
   },
-  {
-    renderer: "settings",
-    // Its pages are shown through its platform frame panel, by group; an account enters at the first page it may open.
-    sections: [
-      { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path] },
-      // The licence is the enterprise edition's; the open-source navigation has no such page, so it is not listed.
-      { key: "settings:system", titleKey: "platform.settingsGroups.system", paths: [platformRoutes.general.path, platformRoutes.license.path] },
-      {
-        key: "settings:connections",
-        titleKey: "platform.settingsGroups.connections",
-        paths: [platformRoutes.adapters.path, platformRoutes.externalMcp.path, platformRoutes.publishedMcp.path],
-      },
-      { key: "settings:records", titleKey: "platform.settingsGroups.records", paths: [platformRoutes.audit.path, platformRoutes.monitor.path] },
-    ],
-  },
 ];
 
 export const nativeLayouts: Record<string, NativeLayout> = Object.fromEntries(layouts.map(({ renderer, ...layout }) => [renderer, layout]));
@@ -139,12 +112,20 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       label: localizedApplicationText(use.names, locale) ?? use.pageKey,
       ...(use.icon ? { icon: use.icon } : {}),
     }] as const] : []) ?? []) : undefined;
-    // Panel applications and fully panel-backed built-ins draw navigation through their frame panel, never the shell.
+    // Panel applications and catalog-driven built-ins draw navigation through their frame panel, never the shell.
     const layout: NativeLayout = applicationRoute || app.kind === "product" || !hasLegacyLayout ? { sections: [] } : {
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
-    const firstPanelUse = app.panelUses?.find(use => Boolean(use.names)) ?? app.panelUses?.[0];
+    const orderedUses = app.groups?.length
+      ? [
+          ...[...app.groups].sort((left, right) => left.sort - right.sort).flatMap(group =>
+            (app.panelUses ?? []).filter(use => use.groupKey === group.key),
+          ),
+          ...(app.panelUses ?? []).filter(use => !use.groupKey || !app.groups!.some(group => group.key === use.groupKey)),
+        ]
+      : (app.panelUses ?? []);
+    const firstPanelUse = orderedUses.find(use => Boolean(use.names)) ?? orderedUses[0];
     const entryHome = layout.entryHome
       ? (app.panelUses?.some(use => panelUsePath(use.path) === layout.entryHome) ? layout.entryHome : undefined)
       : (!applicationRoute && !hasLegacyLayout && firstPanelUse ? panelUsePath(firstPanelUse.path) : undefined);

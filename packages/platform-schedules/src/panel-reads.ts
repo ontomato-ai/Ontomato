@@ -77,6 +77,19 @@ function taskRecord(
     : translate("platformSchedules.panelFields.stateOff");
   const stateTone: PanelFieldTone = task.enabled ? (task.pause === null ? "success" : "warning") : "info";
   const lastRunSummaryRaw = task.lastRun?.error?.message ?? task.lastRun?.resultSummary ?? "";
+  const isRunning = task.activeRunId !== null || task.lastRun?.status === "running";
+  const needsIntervention = task.pause !== null || (!isRunning && task.lastRun?.status === "failed");
+  const attentionGroup = needsIntervention
+    ? "issues"
+    : isRunning
+      ? "running"
+      : task.lastRun?.status === "completed"
+        ? "results"
+        : "idle";
+  const latestRunId = task.activeRunId ?? task.lastRun?.id ?? "";
+  const openPath = latestRunId
+    ? `/schedules?taskId=${encodeURIComponent(task.id)}&runId=${encodeURIComponent(latestRunId)}`
+    : `/schedules?taskId=${encodeURIComponent(task.id)}`;
   return {
     primaryKey: task.id,
     label: task.title,
@@ -104,12 +117,16 @@ function taskRecord(
       ...(task.pause ? { pauseReason: task.pause.message } : {}),
       nextRun: task.nextRunAt ?? "",
       lastRun: task.lastRun?.status ?? "",
+      lastRunFinishedAt: task.lastRun?.finishedAt ?? "",
       frequency: scheduledTaskFrequencyText(task.frequency, locale, translate),
       timeZone: task.timeZone,
       notifyEmail: task.notifyEmail ?? "",
       lastRunAt: task.lastRun?.startedAt ?? "",
       lastRunSummary: lastRunSummaryRaw ? previewMarkdownText(lastRunSummaryRaw) : "",
       latestResultPath: task.latestResult?.link.path ?? "",
+      latestRunId,
+      attentionGroup,
+      needsIntervention,
     },
     tones: {
       state: stateTone,
@@ -122,7 +139,11 @@ function taskRecord(
       paused: task.pause !== null,
       pauseCode: task.pause?.code ?? "",
       latestResultPath: task.latestResult?.link.path ?? "",
-      isRunning: task.activeRunId !== null || task.lastRun?.status === "running",
+      isRunning,
+      needsIntervention,
+      attentionGroup,
+      latestRunId,
+      openPath,
     },
   };
 }
@@ -338,8 +359,24 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       const [{ tasks }, appNames] = await Promise.all([api.list(), resolveAppNames()]);
       return tasks.map(task => taskRecord(task, locale, translate, appNames));
     },
-    async counts(): Promise<PanelGroupCounts> {
+    async counts(by?: string): Promise<PanelGroupCounts> {
       const [{ tasks }, appNames] = await Promise.all([api.list(), resolveAppNames()]);
+      if (by === "attention") {
+        let issues = 0;
+        let running = 0;
+        let results = 0;
+        for (const task of tasks) {
+          const isRunning = task.activeRunId !== null || task.lastRun?.status === "running";
+          if (task.pause !== null || (!isRunning && task.lastRun?.status === "failed")) issues += 1;
+          else if (isRunning) running += 1;
+          else if (task.lastRun?.status === "completed") results += 1;
+        }
+        return [
+          { key: "issues", label: translate("platformSchedules.attention.issues"), count: issues },
+          { key: "results", label: translate("platformSchedules.attention.results"), count: results },
+          { key: "running", label: translate("platformSchedules.attention.running"), count: running },
+        ];
+      }
       const byApp = new Map<string, number>();
       for (const task of tasks) byApp.set(task.appId, (byApp.get(task.appId) ?? 0) + 1);
       const orderedIds = [...new Set([...appNames.keys(), ...byApp.keys()])].filter(id => byApp.has(id));

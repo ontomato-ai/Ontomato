@@ -1073,4 +1073,42 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertEquals(upgraded, records());
     }
 
+    @Test void mergesEditionBuiltinEntriesAndAdmitsNativeEntriesWithoutPanelGrantsOrSkills() throws Exception {
+        var editionAuth = new ApplicationPanelUse("authorization", "authorization", null,
+            "/settings/system-config/authorization", new ApplicationPanelUse.Access("authorization-management", null),
+            null, Map.of("en", "License"), null, null, "system-settings", "key-round", ApplicationPanelUse.NATIVE_KIND);
+        when(access.builtinEntries("settings")).thenReturn(List.of(editionAuth));
+        when(access.canEnter(any(), any())).thenReturn(true);
+        when(access.panelUses(any(), any())).thenAnswer(call -> call.getArgument(0));
+        when(access.pageSkills(any(), any())).thenReturn(List.of());
+        // Panel grant returns true ONLY for builtin-product-audit-log, false for everything else (including null).
+        when(grants.allowed(any(), eq("use"))).thenAnswer(call -> "builtin-product-audit-log".equals(call.getArgument(0)));
+
+        var settings = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/settings.json"));
+        catalog.builtins("data-engine", List.of(settings));
+
+        var user = new QueryAccessService.GrantUser("admin", "domain-a");
+        // Visible catalog includes admitted panel + both native entries (system-monitor & edition-merged authorization).
+        var view = catalog.view(catalog.require("settings"), user);
+        var visibleUses = view.getList("panelUses", ApplicationPanelUse.class);
+        assertEquals(List.of("audit-log", "system-monitor", "authorization"),
+            visibleUses.stream().map(ApplicationPanelUse::id).toList());
+
+        // Resolving a panel entry returns the full menu including admitted native entries.
+        var resolved = catalog.resolveEntry("/settings/records/audit-log", user);
+        var menu = (ApplicationCatalog.EntryMenu) resolved.get("menu");
+        assertEquals(List.of("audit-log", "system-monitor", "authorization"),
+            menu.panelUses().stream().map(ApplicationPanelUse::id).toList());
+
+        // Native entries are never resolved as product panels or exported as panel page skills.
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> catalog.resolveEntry("/settings/records/system-monitor", user));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> catalog.resolveEntry("/settings/system-config/authorization", user));
+        assertTrue(catalog.panelSkillSources("domain-a").stream().noneMatch(src ->
+            "system-monitor".equals(src.useId()) || "authorization".equals(src.useId())));
+        assertTrue(catalog.pageSkills(user).admittedEntrances().stream().noneMatch(entrance ->
+            "system-monitor".equals(entrance.pageKey()) || "authorization".equals(entrance.pageKey())));
+    }
+
 }

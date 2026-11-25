@@ -17,10 +17,12 @@ import {
 } from "@ontomato/contracts/panel-host";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
-import type {
-  ApplicationEntryMenu,
-  ApplicationPanelUse,
-  CurrentApplicationEntry,
+import {
+  isBuiltinProductId,
+  isNativeApplicationEntry,
+  type ApplicationEntryMenu,
+  type ApplicationPanelUse,
+  type CurrentApplicationEntry,
 } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import {
@@ -165,9 +167,12 @@ const catalogApp = computed(() =>
     : null,
 );
 
-const anchorUse = computed<ApplicationPanelUse | null>(() =>
-  catalogApp.value?.panelUses?.[0] ?? matchingPanelEntry.value?.use ?? null,
-);
+const anchorUse = computed<ApplicationPanelUse | null>(() => {
+  const panelUse = catalogApp.value?.panelUses?.find(
+    (entry): entry is ApplicationPanelUse => !isNativeApplicationEntry(entry),
+  );
+  return panelUse ?? matchingPanelEntry.value?.use ?? null;
+});
 
 function refreshFrame(change: PanelObjectChange) {
   frameHost.value?.refresh(change.target, change.affected, change.operation);
@@ -190,7 +195,7 @@ const port = computed<PanelHostPort | null>(() => {
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
-  if (frame.hostGroups?.length) {
+  if (frame.hostGroups?.length || isBuiltinProductId(frame.framePanelId)) {
     const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, router);
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;

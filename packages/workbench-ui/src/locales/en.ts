@@ -241,6 +241,12 @@ export default {
     "readerClose": "Close",
     "readerEmpty": "No content available",
     "readerLoading": "Loading…",
+    "readerDiffEmpty": "No file changed",
+    "readerDiffFilesChanged": "{n} file | {n} files",
+    "readerDiffFileAdded": "New file",
+    "readerDiffFileModified": "Modified",
+    "readerDiffFileDeleted": "Deleted",
+    "readerDiffBinaryChanged": "Binary file changed",
     "uploadChooseFile": "Choose file",
     "uploadCancel": "Cancel",
     "uploadInvalidType": "Only {accept} files are supported",
@@ -1296,7 +1302,9 @@ export default {
       "modelConnection": "Model connection",
       "modelEntry": "Configured model",
       "modelUsage": "Model usage",
-      "favorite": "Favorite object"
+      "favorite": "Favorite",
+      "recentVisit": "Recent visit",
+      "agentSession": "Session"
     },
     "relations": {
       "object-type": {

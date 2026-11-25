@@ -20,7 +20,7 @@ import type { PanelFormDescription } from "@ontomato/contracts/panel-projection"
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
-import type { DirectProjection, ProductProjection } from "@ontomato/contracts/product-panels";
+import { applicationPanelUseSchema, type DirectProjection, type ProductProjection } from "@ontomato/contracts/product-panels";
 import type { DisplayPageController } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
@@ -450,7 +450,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
 
   it("exposes schedules panel's opEnable.setEnabled, opRunNow.runNow, and opDelete.delete to page_action with shared settlement", async () => {
     const application = catalogFixture().find((app) => app.id === "schedules")!;
-    const use = application.panelUses![0]!;
+    const use = applicationPanelUseSchema.parse(application.panelUses![0]!);
     const taskId = "10000000-0000-4000-8000-000000000001";
     const taskId2 = "10000000-0000-4000-8000-000000000002";
     const activeRunId = "20000000-0000-4000-8000-000000000099";

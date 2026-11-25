@@ -635,14 +635,18 @@ describe("built-in model panels validation", () => {
     await validateBuiltinProductReferences(panels, projections, readCatalogue as never);
 
     const settings = JSON.parse(readFileSync(resolve(repoRoot, "packages/data-engine-core/src/main/resources/applications/settings.json"), "utf8"));
-    const uses = settings.declaration.panelUses as Array<{ id: string; panelId: string }>;
+    const uses = settings.declaration.panelUses as Array<{ id: string; panelId?: string; kind?: string }>;
     for (const use of uses) {
-      panelCheck.builtinApplicationPanelUseSchema.parse(use);
+      if (use.kind === "native") {
+        panelCheck.builtinNativeEntrySchema.parse(use);
+      } else {
+        panelCheck.builtinApplicationPanelUseSchema.parse(use);
+      }
     }
     const modelUses = uses.filter((use) => use.id === "model-usage" || use.id === "model-connections");
     expect(modelUses).toHaveLength(2);
     for (const use of modelUses) {
-      expect(panels.has(use.panelId)).toBe(true);
+      expect(panels.has(use.panelId!)).toBe(true);
     }
   });
 });
