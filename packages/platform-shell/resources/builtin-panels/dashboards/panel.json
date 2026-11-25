@@ -51,10 +51,12 @@
             "maxVisible": 0,
             "items": [
               {
+                "kind": "operation",
                 "operation": "rename",
                 "labelKey": "board.rename"
               },
               {
+                "kind": "operation",
                 "operation": "remove",
                 "labelKey": "board.delete",
                 "danger": true
@@ -134,10 +136,12 @@
             "maxVisible": 0,
             "items": [
               {
+                "kind": "operation",
                 "operation": "renameCard",
                 "labelKey": "card.rename"
               },
               {
+                "kind": "operation",
                 "operation": "deleteCard",
                 "labelKey": "card.delete",
                 "danger": true

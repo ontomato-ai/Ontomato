@@ -2397,14 +2397,15 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
   config.items.forEach((item, index) => {
     if (!matchesRowActionWhen(row, item.when, true)) return;
     const disabledByCondition = item.disabledWhen ? matchesRowActionWhen(row, item.disabledWhen, false) : false;
-    if (item.kind === "operation") {
-      const op = rowOps[item.operation];
+    if (item.kind === "operation" || (!("kind" in item) && "operation" in item && typeof (item as { operation?: unknown }).operation === "string")) {
+      const opName = (item as { operation: string }).operation;
+      const op = rowOps[opName];
       if (!op || (item.hideWhenUnavailable && !op.available)) return;
       const label = item.labelKey ? panel.t(item.labelKey) : item.label ?? op.label;
       resolved.push({
-        key: `op:${item.operation}:${index}`,
+        key: `op:${opName}:${index}`,
         kind: "operation",
-        operation: item.operation,
+        operation: opName,
         label,
         icon: item.icon,
         iconOnly: item.iconOnly,
