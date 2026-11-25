@@ -63,6 +63,7 @@ export const app = {
         "packages/contracts/src/query-subgraph.schema.json",
         "packages/contracts/src/query-package.schema.json",
         "packages/contracts/src/authoring.java.schema.json",
+        "packages/contracts/src/workbench-management-operations.json",
         "packages/contracts/query-subgraph.md",
         "packages/contracts/query-package.md",
         "packages/contracts/examples/query-subgraphs.json",
