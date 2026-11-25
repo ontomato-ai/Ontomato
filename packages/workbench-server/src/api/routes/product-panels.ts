@@ -40,7 +40,7 @@ import { getLocaleFromRequest } from "../utils/request";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
 import {
-  readCurrentPanelRecord, readCurrentProjectionRecord, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection,
+  readCurrentPanelRecord, readCurrentProjectionRecord, readCurrentProjectionRecords, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection,
   validateApplicationPanelReferences,
 } from "../../services/product-panels/current";
 import { HttpError } from "../../utils/errors";
@@ -90,9 +90,13 @@ async function readBundledPanelProjections(
       "projectionId" in member.target ? [member.target.projectionId] : [],
     ),
   )];
+  if (!ids.length) return {};
+  const loaded = await readCurrentProjectionRecords(caller.owner, caller.credentials, ids);
   const entries = await Promise.all(ids.map(async (projectionId): Promise<[string, BundledPanelProjection] | null> => {
+    const item = loaded.get(projectionId)!;
     try {
-      const projection = await readCurrentProjectionRecord(caller.owner, caller.credentials, projectionId, false);
+      if (!item.ok) throw item.error;
+      const { projection } = item;
       const domainComponent = await validateProjectionComponent(
         projectionId, projection, undefined, { domainId: projection.domainId },
       );

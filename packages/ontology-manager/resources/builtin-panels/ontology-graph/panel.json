@@ -73,7 +73,7 @@
         "component": "ObjectCount",
         "type": "platform:ObjectType",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "label": "对象类型"
@@ -84,7 +84,7 @@
         "component": "ObjectCount",
         "type": "platform:Attribute",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "label": "属性"
@@ -95,7 +95,7 @@
         "component": "ObjectCount",
         "type": "platform:Relationship",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "label": "关系类型"

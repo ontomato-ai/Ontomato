@@ -46,6 +46,7 @@ export class PanelReadBatchCache {
   private readonly entries = new Map<string, Promise<PanelEntry>>();
   private readonly grants = new Map<string, Promise<boolean>>();
   private readonly products = new Map<string, Promise<CurrentProductRow | undefined>>();
+  private readonly reads = new Map<string, Promise<unknown>>();
 
   constructor(private readonly domainId: string, private readonly viewer: AssistantCredentials) {}
 
@@ -59,6 +60,10 @@ export class PanelReadBatchCache {
 
   product(target: Target, client?: QueryClient) {
     return memoize(this.products, targetKey(target), () => findCurrentProduct(this.domainId, target.kind, target.id, client));
+  }
+
+  read(key: string, load: () => Promise<unknown>) {
+    return memoize(this.reads, key, load);
   }
 
   async prefetch(targets: readonly Target[]) {

@@ -721,6 +721,13 @@ export type ProjectionDataReadOutcome =
   | { status: "ready"; value: Extract<ProductPanelReadResponse, { status: "ready" }>["value"]; declaration: PlatformReadDeclaration }
   | { status: "empty"; declaration: PlatformReadDeclaration };
 
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(",")}}`;
+}
+
 export async function executeProjectionDataRead(
   owner: ProductOwner,
   viewer: AssistantCredentials,
@@ -730,6 +737,8 @@ export async function executeProjectionDataRead(
   runtimeParams?: ProductPanelReadRequest["runtimeParams"],
   callerUserName?: string,
   location?: McpRequestLocation,
+  batchCache?: PanelReadBatchCache,
+  readScopeKey?: string,
 ): Promise<ProjectionDataReadOutcome> {
   const inputs = effectiveInputs(projection, member, submittedInputs);
   if (!Object.hasOwn(projection.data, dataName)) {
@@ -754,7 +763,21 @@ export async function executeProjectionDataRead(
     ? customerReads(owner, viewer, callerUserName)[selection.method]
     : readAdapters(owner, viewer, callerUserName, location)[selection.typeId]?.[selection.method];
   if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
-  const result = await read(selection, params, projection);
+  const invoke = () => Promise.resolve(read(selection, params, projection));
+  const result = await (batchCache && readScopeKey !== undefined
+    ? batchCache.read(
+        JSON.stringify([
+          readScopeKey,
+          selection.kind,
+          selection.typeId,
+          selection.method,
+          selection.primaryKey ?? null,
+          selection.typeId === DASHBOARD_CARD ? projection.id : null,
+          stableJson(params),
+        ]),
+        invoke,
+      )
+    : invoke());
   if (declaration.result === "panelRecordList") {
     const value = panelReadResultSchemas.panelRecordList.parse(result);
     return value.length ? { status: "ready", value, declaration } : { status: "empty", declaration };
@@ -784,8 +807,12 @@ export async function readProductPanelData(
         { panel, projection, member, slot }, inputs);
       return { status: "ready", value: runtimeJsonObjectSchema.parse(value) };
     }
+    const readScopeKey = request.source.kind === "candidate"
+      ? JSON.stringify(["candidate", request.source.workspace.id, request.source.workspace.ref, readViewer.headers?.[BUILD_TEST_HEADER] ?? null])
+      : "registered";
     const outcome = await executeProjectionDataRead(
       owner, readViewer, { member, projection, slot }, request.dataName, submittedInputs, request.runtimeParams, callerUserName, location,
+      batchCache, readScopeKey,
     );
     if (outcome.status === "empty") return { status: "empty" };
     let rowOperations;

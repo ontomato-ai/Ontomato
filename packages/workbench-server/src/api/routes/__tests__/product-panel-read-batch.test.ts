@@ -134,6 +134,8 @@ it("reads a 19-member frame with one entry lookup, two grant calls and isolated 
     ["domain-a", [root]],
     ["domain-a", projectionIds.filter(id => id !== projectionIds[2])],
   ]);
+  // Identical authorized reads within one batch (16x OBJECT_TYPE + 1x ATTRIBUTE + 1x RELATIONSHIP) deduplicate to 3 calls.
+  expect(mocks.list).toHaveBeenCalledTimes(3);
 });
 
 it("does not carry cached entries or grants across batches or inspect a denied root's members", async () => {

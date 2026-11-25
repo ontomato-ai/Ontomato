@@ -31,10 +31,11 @@ import {
 } from "@ontomato/platform-shell";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import {
-  panelModuleFor, PanelMemberUnavailable, readProjectionForRender, type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
+  panelModuleFor, PanelMemberUnavailable, preloadCatalogueComponents, readProjectionForRender,
+  type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
 } from "@ontomato/apps-sdk/direct";
 import {
-  currentDefinitionCacheScope, framePanelCacheKey, getCachedPanel, ingestBundledPanelProjections,
+  currentDefinitionCacheScope, framePanelCacheKey, getCachedPanel, getCachedProjection, ingestBundledPanelProjections,
   invalidateCachedPanel, invalidateCachedPanelById, invalidateCachedProjection, readCachedProjection,
   reconcileDefinitionCacheWithSnapshot, setCachedPanel,
 } from "./panel-definition-cache";
@@ -199,6 +200,27 @@ async function snapshot(panelId: string) {
  */
 export type PanelObjectChange = DisplayObjectChange;
 
+function panelProjectionComponentIds(
+  manifest: PanelManifest,
+  bundled?: Record<string, BundledPanelProjection>,
+): string[] {
+  const ids = new Set<string>();
+  for (const member of Object.values(manifest.members)) {
+    if (!("projectionId" in member.target)) continue;
+    const entry = bundled?.[member.target.projectionId];
+    const componentId = entry?.status === "ready"
+      ? entry.projection.componentId
+      : getCachedProjection(member.target.projectionId)?.projection.componentId;
+    if (componentId) ids.add(componentId);
+  }
+  return [...ids];
+}
+
+function warmPanelProjectionComponents(manifest: PanelManifest, bundled?: Record<string, BundledPanelProjection>) {
+  const ids = panelProjectionComponentIds(manifest, bundled);
+  if (ids.length) void preloadCatalogueComponents(ids);
+}
+
 /**
  * The platform's panel host for one use relation of the application whose page is showing it. `changed` is that page's:
  * a change its frame's operations report reaches the page through it.
@@ -248,6 +270,7 @@ export function platformPanelHost(
       try {
         const cached = getCachedPanel(use.panelId);
         if (cached) {
+          warmPanelProjectionComponents(cached.manifest);
           const fields = personalFields(cached.manifest, controlled);
           if (fields.length) {
             pendingPersonalState = {
@@ -279,6 +302,7 @@ export function platformPanelHost(
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?includeProjections=1`));
         setCachedPanel(use.panelId, answer.panel, scope);
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
         panelDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
         sourceReconciled = true;
@@ -404,6 +428,7 @@ export function framePanelHost(
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
       setCachedPanel(cacheKey, answer.panel, scope);
       mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+      warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
       frameDomainComponents = answer.domainComponents;
       lastPanel = answer.panel;
       sourceReconciled = true;
@@ -510,6 +535,7 @@ export function builtinFramePanelHost(
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
       setCachedPanel(cacheKey, answer.panel, scope);
       mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+      warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
       lastPanel = answer.panel;
       sourceReconciled = true;
       return { kind: "registered", applicationId, use: placeholderUse, panel: answer.panel };
@@ -542,6 +568,7 @@ export function builtinFramePanelHost(
           () => readPlatformProjection(id),
           readOptions?.dynamic ? { verifyAccess: true } : { mountUnavailable },
         ),
+        preloadComponentIds: panelProjectionComponentIds(source.panel.manifest),
         use: null,
         read: () => Promise.resolve({ status: "forbidden", reason: "Native frame does not read panel data" }),
         confirmOperation: () => Promise.reject(new Error("A native frame runs no panel operations")),
@@ -670,6 +697,7 @@ function directOptions(
       () => readPlatformProjection(id),
       readOptions?.dynamic ? { verifyAccess: true } : { mountUnavailable },
     ),
+    preloadComponentIds: panelProjectionComponentIds(source.panel.manifest),
     use: root ? { ...use, root } : use,
     read: request => readPanelData({ source: readSource, ...request }),
     confirmOperation: (preparation, hooks) => confirmPanelIntent(

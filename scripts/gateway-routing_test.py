@@ -1,4 +1,5 @@
 """Check actual upstream request lines using the gateway's pinned Nginx base, without product images."""
+import gzip
 import http.client
 from pathlib import Path
 import subprocess
@@ -36,6 +37,16 @@ class GatewayRoutingTest(unittest.TestCase):
             echoes.write_text("\n".join(
                 f'''server {{
   listen 127.0.0.1:{port};
+  location = /api/gzip-probe {{
+    default_type application/json;
+    add_header X-Echo-Upstream {service};
+    return 200 "{{\\"payload\\":\\"{'x' * 2048}\\"}}";
+  }}
+  location = /api/sse-probe {{
+    default_type text/event-stream;
+    add_header X-Echo-Upstream {service};
+    return 200 "data: {'y' * 2048}\\n\\n";
+  }}
   location / {{
     default_type text/plain;
     add_header X-Echo-Upstream {service};
@@ -111,6 +122,26 @@ class GatewayRoutingTest(unittest.TestCase):
                 self.assertEqual((response.status, response.getheader("Location")),
                                  (302, prefix + "/?__manager=1&view=assets"))
                 connection.close()
+                # Large JSON/JS payloads are gzipped when requested, while SSE streams stay uncompressed.
+                for path, expect_gzip, expected_marker in [
+                    (prefix + "/api/gzip-probe", True, "xxxx"),
+                    (prefix + "/api/sse-probe", False, "yyyy"),
+                ]:
+                    with self.subTest(prefix=prefix, development=development, gzip_probe=path):
+                        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+                        try:
+                            conn.request("GET", path, headers={"Accept-Encoding": "gzip"})
+                            resp = conn.getresponse()
+                            raw = resp.read()
+                            self.assertEqual(resp.status, 200)
+                            if expect_gzip:
+                                self.assertEqual(resp.getheader("Content-Encoding"), "gzip")
+                                self.assertIn(expected_marker, gzip.decompress(raw).decode())
+                            else:
+                                self.assertIsNone(resp.getheader("Content-Encoding"))
+                                self.assertIn(expected_marker, raw.decode())
+                        finally:
+                            conn.close()
                 print(f"nginx -t, legacy redirect and upstream request lines passed: prefix={prefix or '/'} "
                       f"mode={'development' if development else 'production'}", flush=True)
             finally:

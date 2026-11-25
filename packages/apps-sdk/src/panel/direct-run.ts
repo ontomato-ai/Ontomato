@@ -3,6 +3,7 @@ import { ID_INJECTION_KEY } from "element-plus/es/hooks/use-id/index.mjs";
 import * as panelEntry from "../entries/panel";
 import SecretDeliveryDialog from "../base/SecretDeliveryDialog.vue";
 import { baseComponents } from "../base-components";
+import { preloadCatalogueComponents } from "../catalogue-components";
 import { panelContextKey } from "./context";
 import { directPanelContext } from "./direct";
 import { mountDirectPanel, type DirectPanelMount, type DirectPanelMountOptions } from "./direct-mount";
@@ -72,6 +73,7 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
       }
       return [localName, await port.loadDomainComponent(runtime)] as const;
     })),
+    port.preloadComponentIds?.length ? preloadCatalogueComponents(port.preloadComponentIds) : Promise.resolve(),
   ]);
   const overlayRoot = port.run.overlayRoot;
   if (overlayRoot && !overlayRoot.isConnected) throw new Error("The panel was removed before its component mounted");
