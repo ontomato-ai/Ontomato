@@ -19,8 +19,11 @@ import {
   deleteProductPanelQuerySchema, deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
-import { APPLICATION, APPLICATION_PANEL_USE, OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RESET_HOME_PANEL, SET_HOME_PANEL } from "@ontomato/contracts/platform-object-types";
+import { parseDashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
+import { APPLICATION, APPLICATION_PANEL_USE, DASHBOARD_CARD, OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RESET_HOME_PANEL, SET_HOME_PANEL } from "@ontomato/contracts/platform-object-types";
 import { saveHomePanel } from "../platform-home/service";
+import { dashboardChartSources } from "../dashboard/chart-sources";
+import { createChartProjectionService } from "./chart-sources";
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { createLogger } from "../../logging/logger";
@@ -260,6 +263,38 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
           ? createProductProjectionReadAdapter(owner, credentials) : createProductPanelReadAdapter(owner, credentials);
         const fields = async () => (await (target.kind === "object" ? reads.form(primaryKey, {}) : reads.createForm({}))).fields;
         if (kind === "projection") {
+          if (target.kind === "draft" && values.componentId === METRIC_CHART_COMPONENT) {
+            const templateData = values.data && typeof values.data === "object"
+              ? (values.data as Record<string, unknown>).template
+              : undefined;
+            const sourceObject = templateData && typeof templateData === "object"
+              ? ((templateData as Record<string, unknown>).source as Record<string, unknown> | undefined)?.object
+              : undefined;
+            const literal = sourceObject && typeof sourceObject === "object"
+              ? (sourceObject as Record<string, unknown>).literal as Record<string, unknown> | undefined
+              : undefined;
+            if (!literal || literal.className !== DASHBOARD_CARD || typeof literal.primaryKey !== "string") {
+              throw new HttpError(400, "Select a dashboard chart card to register a chart projection", "INVALID_REQUEST");
+            }
+            const sourceCard = parseDashboardCardPrimaryKey(literal.primaryKey);
+            const chartService = createChartProjectionService(dashboardChartSources);
+            const registered = await chartService.register(owner, credentials, sourceCard);
+            const desiredName = typeof values.name === "string" && values.name.trim() ? values.name.trim() : registered.name;
+            const desiredDescription = typeof values.description === "string" ? values.description : registered.description;
+            if (registered.editable && (desiredName !== registered.name || desiredDescription !== registered.description)) {
+              await saveCurrentProjection(owner, credentials, registered.id, {
+                name: desiredName,
+                description: desiredDescription,
+                visibility: registered.visibility,
+                componentId: METRIC_CHART_COMPONENT,
+                revision: registered.revision,
+              });
+            }
+            if (registered.editable && values.visibility === "domain" && registered.visibility !== "domain") {
+              await changeCurrentProductDomainGrant(owner, credentials, "projection", registered.id, true);
+            }
+            return { primaryKey: registered.id, data: { id: registered.id }, created: true };
+          }
           await saveCurrentProjection(owner, credentials, primaryKey,
             formValues(registerProductProjectionRequestSchema, { ...values, revision: expectedRevision }, fields));
         } else {
@@ -381,6 +416,17 @@ const applicationSave: PanelWriteServerOperation = {
       }
 
       const id = target.primaryKey;
+      if ("declaration" in values && "entry" in values && "entryAccess" in values) {
+        // Copy-create submitted from section="create" against a source application target.
+        const { id: formId, ...createValues } = values;
+        checkDefaultAgentShapes(createValues);
+        const body = formValues(applicationCatalogueCreateSchema, createValues,
+          async () => (await java.form({ section: "create", target, changedField: null })).fields);
+        const newId = writeInput(applicationDraftIdSchema,
+          formId ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length));
+        await java.create(newId, body);
+        return { primaryKey: newId, data: { id: newId }, created: true };
+      }
       if (submittedFields?.length === 0) return { primaryKey: id, data: { id } };
       const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "access", "groupKey", "inputs", "defaultAgent"]);
       const isSingleEntry = !("panelUses" in values) && (

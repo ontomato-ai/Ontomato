@@ -67,7 +67,7 @@
     </page-header>
 
     <div class="apps-catalog">
-      <projection slot="catalogue" class="apps-list-slot" @choose="openDetail">
+      <projection slot="catalogue" class="apps-list-slot" @choose="openDetail" @row-action="onRowAction">
         <template #filters>
           <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
           <sdk-select
@@ -97,6 +97,24 @@
           @saved="onCreated"
           @discarded="cancelCreate"
           @cancel="cancelCreate"
+        ></projection>
+      </div>
+    </sdk-dialog>
+
+    <sdk-dialog
+      v-model="copyDialog"
+      :title="t('copy.title')"
+      width="680px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="apps-create-body">
+        <projection
+          v-if="copyDialog"
+          slot="copyForm"
+          @saved="onCopied"
+          @discarded="cancelCopy"
+          @cancel="cancelCopy"
         ></projection>
       </div>
     </sdk-dialog>

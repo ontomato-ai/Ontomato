@@ -7,6 +7,13 @@
           "type": "boolean"
         }
       },
+      "copySource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Application"
+        },
+        "deepLink": false
+      },
       "search": {
         "type": {
           "kind": "scalar",
@@ -56,6 +63,11 @@
           "pagination": "pages",
           "showChevron": true,
           "pageSize": 20,
+          "pageSizes": [
+            20,
+            50,
+            100
+          ],
           "fallbackToFirst": false,
           "searchPlaceholder": "search.placeholder",
           "emptyText": "list.empty",
@@ -96,7 +108,21 @@
               "timeFormat": "datetime",
               "width": 168
             }
-          ]
+          ],
+          "rowActions": {
+            "labelKey": "col.actions",
+            "width": 96,
+            "align": "right",
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "local",
+                "id": "copy",
+                "labelKey": "action.copy",
+                "tone": "default"
+              }
+            ]
+          }
         },
         "id": "builtin-product-2fb20dd5-c6b9-4cfa-aeaf-c3b22c01765e"
       },
@@ -111,6 +137,31 @@
           "actions": "create-only"
         },
         "id": "builtin-product-c5de0138-e117-4696-835d-13050a683311"
+      },
+      "copyForm": {
+        "component": "ObjectForm",
+        "type": "platform:Application",
+        "target": "copySource",
+        "data": {
+          "form": {
+            "read": "form",
+            "params": {
+              "section": {
+                "literal": "entry"
+              },
+              "entryId": {
+                "literal": "__copy__"
+              }
+            }
+          }
+        },
+        "operation": "platform:Application.save",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "应用目录 · 复制表单",
+        "description": "基于所选应用的公开声明与可见面板入口预填新应用副本并保存创建。",
+        "id": "builtin-product-a51c8d30-9e42-4b63-8c14-7f2091d5b001"
       }
     }
   },
@@ -120,9 +171,12 @@
         "panel.name": "应用",
         "panel.description": "本域可见的全部应用：内置的与域内建的同列。点击一行查看并维护它的身份、入口、面板引用与授权。",
         "action.create": "新建应用",
+        "action.copy": "复制",
         "action.refresh": "刷新",
         "search.placeholder": "搜索应用名称",
-        "scope.visible": "全部可见",
+        "scope.visible": "全部已授权",
+        "scope.mine": "我创建的",
+        "scope.shared": "共享给我的",
         "scope.maintainable": "我能维护的",
         "sort.label": "排序",
         "sort.id": "产品结构顺序",
@@ -134,16 +188,23 @@
         "col.maintenance": "当前授权",
         "col.owner": "所有者",
         "col.updatedAt": "更新时间",
+        "col.actions": "操作",
+        "copy.title": "复制应用",
+        "copy.suffix": "{name}（副本）",
         "list.empty": "暂无匹配应用",
-        "notify.created": "应用已创建。"
+        "notify.created": "应用已创建。",
+        "notify.copied": "已复制并创建新应用。"
       },
       "en": {
         "panel.name": "Applications",
         "panel.description": "Every application visible in this domain, built-in and domain-built alike. Open one to inspect and maintain its identity, entries, panels and grants.",
         "action.create": "New application",
+        "action.copy": "Copy",
         "action.refresh": "Refresh",
         "search.placeholder": "Search applications",
-        "scope.visible": "All visible",
+        "scope.visible": "All authorized",
+        "scope.mine": "Created by me",
+        "scope.shared": "Shared with me",
         "scope.maintainable": "Maintainable",
         "sort.label": "Sort",
         "sort.id": "Default order",
@@ -155,16 +216,23 @@
         "col.maintenance": "Access",
         "col.owner": "Owner",
         "col.updatedAt": "Updated",
+        "col.actions": "Actions",
+        "copy.title": "Copy application",
+        "copy.suffix": "{name} (Copy)",
         "list.empty": "No matching applications",
-        "notify.created": "Application created."
+        "notify.created": "Application created.",
+        "notify.copied": "Application copied."
       },
       "zh-TW": {
         "panel.name": "應用",
         "panel.description": "本域可見的全部應用：內建的與域內建的同列。點擊一行檢視並維護它的身分、入口、面板引用與授權。",
         "action.create": "新建應用",
+        "action.copy": "複製",
         "action.refresh": "重新整理",
         "search.placeholder": "搜尋應用名稱",
-        "scope.visible": "全部可見",
+        "scope.visible": "全部已授權",
+        "scope.mine": "我建立的",
+        "scope.shared": "共享給我的",
         "scope.maintainable": "我能維護的",
         "sort.label": "排序",
         "sort.id": "產品結構順序",
@@ -176,8 +244,12 @@
         "col.maintenance": "目前授權",
         "col.owner": "擁有者",
         "col.updatedAt": "更新時間",
+        "col.actions": "操作",
+        "copy.title": "複製應用",
+        "copy.suffix": "{name}（副本）",
         "list.empty": "暫無符合的應用",
-        "notify.created": "應用已建立。"
+        "notify.created": "應用已建立。",
+        "notify.copied": "已複製並建立新應用。"
       }
     }
   }

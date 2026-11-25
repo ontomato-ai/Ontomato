@@ -71,11 +71,12 @@ public class ApplicationController {
     @GetMapping("/platform/applications/catalogue")
     public R<JSONObject> catalogue(@RequestParam(defaultValue = "") String search,
             @RequestParam(defaultValue = "visible") String scope, @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer page,
             @RequestParam(defaultValue = "30") int size, @RequestParam(defaultValue = "id") String sort,
             @RequestParam(defaultValue = "false") boolean countOnly, Locale locale) {
         User user = current();
         return R.of(countOnly ? catalog.catalogueCount(user)
-                : catalog.catalogue(user, search, scope, cursor, size, sort, locale));
+                : catalog.catalogue(user, search, scope, cursor, page, size, sort, locale));
     }
 
     @GetMapping("/platform/applications/catalogue/{id}")

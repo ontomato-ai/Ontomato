@@ -3,7 +3,7 @@ import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
 
 export function agentDefinitionRecord(
-  { id, name, description, enabled }: { id: string; name: string; description: string; enabled: boolean },
+  { id, name, description, enabled, icon }: { id: string; name: string; description: string; enabled: boolean; icon?: string | null },
   category: AgentDefinitionCategory,
   locale: string | undefined,
   canEdit: boolean,
@@ -14,6 +14,7 @@ export function agentDefinitionRecord(
     label: name,
     fields: {
       name, description,
+      icon: icon ?? "",
       enabled: tForLocale(locale, enabled ? "panels.agentForm.enabledOn" : "panels.agentForm.enabledOff"),
       category: tForLocale(locale, `panels.agentDefinition.category.${category}`),
       ...(domainShared !== undefined && { domainShared }),

@@ -57,6 +57,49 @@
         },
         "default": false,
         "deepLink": false
+      },
+      "createMode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "standard",
+        "deepLink": false
+      },
+      "bindingObjectType": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "deepLink": false
+      },
+      "bindingMetric": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:MetricView"
+        },
+        "deepLink": false
+      },
+      "bindingAction": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Action"
+        },
+        "deepLink": false
+      },
+      "selectedDashboard": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Dashboard"
+        },
+        "deepLink": false
+      },
+      "selectedChartCard": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:DashboardCard"
+        },
+        "deepLink": false
       }
     },
     "members": {
@@ -91,9 +134,9 @@
           "showChevron": true,
           "pageSize": 20,
           "pageSizes": [
-            10,
             20,
-            50
+            50,
+            100
           ],
           "fallbackToFirst": false,
           "searchPlaceholder": "search.placeholder",
@@ -120,6 +163,12 @@
               "key": "owner",
               "labelKey": "col.owner",
               "width": 130
+            },
+            {
+              "key": "access",
+              "labelKey": "col.access",
+              "kind": "tag",
+              "width": 96
             },
             {
               "key": "scope",
@@ -191,6 +240,120 @@
         "name": "投影目录 · 新建表单",
         "description": "属主的投影创建表单：按所选组件填写完整字段新建一条普通投影。",
         "id": "builtin-product-f6a07193-d8c8-4cf0-a0dd-febe9945ed80"
+      },
+      "bindingObjectTypePicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "bindingObjectType"
+        },
+        "config": {
+          "placeholderKey": "binding.pickObjectType",
+          "clearable": true,
+          "size": "small"
+        },
+        "name": "投影目录 · 对象类绑定选择",
+        "description": "按发布名称选择要绑定到投影数据的对象类。",
+        "id": "builtin-product-c81f2a10-4b39-4d8e-9a11-7e3051b2c001"
+      },
+      "bindingMetricPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:MetricView",
+        "data": {
+          "rows": "query"
+        },
+        "state": {
+          "selected": "bindingMetric"
+        },
+        "config": {
+          "placeholderKey": "binding.pickMetric",
+          "clearable": true,
+          "size": "small"
+        },
+        "name": "投影目录 · 指标视图绑定选择",
+        "description": "按发布名称选择要绑定到投影数据的指标视图。",
+        "id": "builtin-product-c81f2a10-4b39-4d8e-9a11-7e3051b2c002"
+      },
+      "bindingActionPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:Action",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "bindingAction"
+        },
+        "config": {
+          "placeholderKey": "binding.pickAction",
+          "clearable": true,
+          "size": "small"
+        },
+        "name": "投影目录 · 行动绑定选择",
+        "description": "按发布名称选择要绑定到投影操作的行动。",
+        "id": "builtin-product-c81f2a10-4b39-4d8e-9a11-7e3051b2c003"
+      },
+      "dashboardPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:Dashboard",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selectedDashboard"
+        },
+        "config": {
+          "placeholderKey": "chart.pickDashboard",
+          "clearable": true,
+          "size": "default"
+        },
+        "name": "投影目录 · 看板选择",
+        "description": "选择要从中辨认图表的看板。",
+        "id": "builtin-product-c81f2a10-4b39-4d8e-9a11-7e3051b2c004"
+      },
+      "dashboardCardsList": {
+        "component": "ObjectList",
+        "type": "platform:Dashboard",
+        "target": "selectedDashboard",
+        "data": {
+          "rows": "cards"
+        },
+        "state": {
+          "selected": "selectedChartCard"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": true,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "statusField": "kind",
+          "searchPlaceholder": "chart.searchCards",
+          "emptyText": "chart.noCards"
+        },
+        "name": "投影目录 · 看板卡片列表",
+        "description": "列出所选看板中的图表与指标卡片供辨认选择。",
+        "id": "builtin-product-c81f2a10-4b39-4d8e-9a11-7e3051b2c005"
+      },
+      "chartCardPreview": {
+        "component": "MetricChart",
+        "type": "platform:DashboardCard",
+        "target": "selectedChartCard",
+        "data": {
+          "template": "chartTemplate",
+          "result": "result"
+        },
+        "config": {
+          "minHeight": "260px",
+          "allowViewToggle": false,
+          "allowZoom": false,
+          "tableMaxRows": 200,
+          "truncationDisplay": "none"
+        },
+        "name": "投影目录 · 看板图表预览",
+        "description": "实时预览所选看板图表卡片以便确认引用。",
+        "id": "builtin-product-c81f2a10-4b39-4d8e-9a11-7e3051b2c006"
       }
     }
   },
@@ -215,10 +378,35 @@
         "col.objectType": "绑定对象",
         "col.empty": "—",
         "col.owner": "所属人",
+        "col.access": "当前权限",
         "col.scope": "共享范围",
         "col.updatedAt": "更新时间",
         "list.empty": "没有符合条件的投影",
         "form.createTitle": "新建投影",
+        "create.standard": "普通投影",
+        "create.chart": "从看板选择图投影",
+        "binding.quickTitle": "常用绑定",
+        "binding.kindObjectType": "对象类",
+        "binding.kindMetric": "指标视图",
+        "binding.pickObjectType": "按名称查找对象类",
+        "binding.pickMetric": "按名称查找指标视图",
+        "binding.pickAction": "按名称查找发布行动",
+        "binding.datumKey": "数据槽位名",
+        "binding.opKey": "操作槽位名",
+        "binding.manualId": "或输入已知 ID",
+        "binding.apply": "写入绑定",
+        "binding.showJson": "JSON 高级编辑",
+        "binding.hideJson": "收起 JSON",
+        "binding.invalidJson": "JSON 格式不正确",
+        "chart.stepTitle": "从看板辨认并选择图表",
+        "chart.stepDesc": "选择看板与图表卡片并确认预览，保存时由图表属主登记真实引用，不拷贝旧图副本。",
+        "chart.pickDashboard": "选择看板",
+        "chart.searchCards": "搜索看板卡片",
+        "chart.noCards": "当前看板暂无卡片，请先选择看板",
+        "chart.selectHint": "请在左侧选择一张图表卡片查看预览",
+        "chart.nonChartHint": "当前选中项不是图表卡片，请选择图表类型的卡片",
+        "chart.applyCard": "带入草稿并继续",
+        "chart.appliedHint": "已写入图表来源引用：{card}，可调整名称与说明后保存。",
         "notify.saved": "已保存",
         "notify.created": "已创建投影",
         "action.back": "返回投影"
@@ -242,10 +430,35 @@
         "col.objectType": "Object type",
         "col.empty": "—",
         "col.owner": "Owner",
+        "col.access": "Access",
         "col.scope": "Scope",
         "col.updatedAt": "Updated",
         "list.empty": "No matching projections",
         "form.createTitle": "New projection",
+        "create.standard": "Standard projection",
+        "create.chart": "From dashboard chart",
+        "binding.quickTitle": "Quick binding",
+        "binding.kindObjectType": "Object type",
+        "binding.kindMetric": "Metric view",
+        "binding.pickObjectType": "Find object type by name",
+        "binding.pickMetric": "Find metric view by name",
+        "binding.pickAction": "Find published action by name",
+        "binding.datumKey": "Datum key",
+        "binding.opKey": "Operation key",
+        "binding.manualId": "Or enter known ID",
+        "binding.apply": "Apply binding",
+        "binding.showJson": "Advanced JSON",
+        "binding.hideJson": "Hide JSON",
+        "binding.invalidJson": "Invalid JSON format",
+        "chart.stepTitle": "Identify and select a dashboard chart",
+        "chart.stepDesc": "Choose a dashboard and chart card to preview it, then write its real chart projection reference without copying legacy files.",
+        "chart.pickDashboard": "Choose dashboard",
+        "chart.searchCards": "Search dashboard cards",
+        "chart.noCards": "Select a dashboard to browse its cards",
+        "chart.selectHint": "Select a chart card on the left to preview it",
+        "chart.nonChartHint": "The selected card is not a chart; pick a chart card",
+        "chart.applyCard": "Use selected chart",
+        "chart.appliedHint": "Chart source reference written: {card}. Adjust name or description and save.",
         "notify.saved": "Saved.",
         "notify.created": "Projection created.",
         "action.back": "Back to projections"
@@ -269,10 +482,35 @@
         "col.objectType": "綁定物件",
         "col.empty": "—",
         "col.owner": "所屬人",
+        "col.access": "目前權限",
         "col.scope": "共享範圍",
         "col.updatedAt": "更新時間",
         "list.empty": "沒有符合條件的投影",
         "form.createTitle": "新建投影",
+        "create.standard": "一般投影",
+        "create.chart": "從看板選擇圖投影",
+        "binding.quickTitle": "常用綁定",
+        "binding.kindObjectType": "物件類",
+        "binding.kindMetric": "指標檢視",
+        "binding.pickObjectType": "依名稱查找物件類",
+        "binding.pickMetric": "依名稱查找指標檢視",
+        "binding.pickAction": "依名稱查找發佈行動",
+        "binding.datumKey": "資料槽位名",
+        "binding.opKey": "操作槽位名",
+        "binding.manualId": "或輸入已知 ID",
+        "binding.apply": "寫入綁定",
+        "binding.showJson": "JSON 進階編輯",
+        "binding.hideJson": "收合 JSON",
+        "binding.invalidJson": "JSON 格式不正確",
+        "chart.stepTitle": "從看板辨認並選擇圖表",
+        "chart.stepDesc": "選擇看板與圖表卡片並確認預覽，儲存時由圖表屬主登記真實引用。",
+        "chart.pickDashboard": "選擇看板",
+        "chart.searchCards": "搜尋看板卡片",
+        "chart.noCards": "請先選擇看板",
+        "chart.selectHint": "請在左側選擇圖表卡片查看預覽",
+        "chart.nonChartHint": "目前選中項不是圖表卡片，請選擇圖表類型卡片",
+        "chart.applyCard": "帶入草稿並繼續",
+        "chart.appliedHint": "已寫入圖表來源引用：{card}。",
         "notify.saved": "已儲存",
         "notify.created": "已建立投影",
         "action.back": "返回投影"
@@ -296,6 +534,7 @@
         "col.objectType": "対象オブジェクト型",
         "col.empty": "—",
         "col.owner": "所有者",
+        "col.access": "権限",
         "col.scope": "共有範囲",
         "col.updatedAt": "更新日時",
         "list.empty": "一致するプロジェクションがありません",
@@ -323,6 +562,7 @@
         "col.objectType": "نوع الكائن",
         "col.empty": "—",
         "col.owner": "المالك",
+        "col.access": "الصلاحية",
         "col.scope": "النطاق",
         "col.updatedAt": "آخر تحديث",
         "list.empty": "لا توجد إسقاطات مطابقة",
@@ -350,6 +590,7 @@
         "col.objectType": "Type d'objet",
         "col.empty": "—",
         "col.owner": "Propriétaire",
+        "col.access": "Accès",
         "col.scope": "Portée",
         "col.updatedAt": "Mis à jour",
         "list.empty": "Aucune projection correspondante",
@@ -377,6 +618,7 @@
         "col.objectType": "Objekttyp",
         "col.empty": "—",
         "col.owner": "Eigentümer",
+        "col.access": "Zugriff",
         "col.scope": "Bereich",
         "col.updatedAt": "Aktualisiert",
         "list.empty": "Keine passenden Projektionen",
@@ -404,6 +646,7 @@
         "col.objectType": "Tipo di oggetto",
         "col.empty": "—",
         "col.owner": "Proprietario",
+        "col.access": "Accesso",
         "col.scope": "Ambito",
         "col.updatedAt": "Aggiornato",
         "list.empty": "Nessuna proiezione corrispondente",

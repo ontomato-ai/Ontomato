@@ -129,9 +129,13 @@ it("opens a skill's detail address and selected catalog links at the non-menu sk
 });
 
 it.each(["/ontology/agents", "/agents/settings"])("routes agent detail, legacy selected links, and /new at %s to the two-entry catalog and detail panels", (prefix) => {
-  expect(open(`${prefix}/new`)).toEqual({ path: prefix, state: {} });
+  expect(open(`${prefix}/new`)).toEqual({ path: prefix, state: { creating: "true" } });
+  expect(open(`${prefix}?creating=true`)).toBeNull();
   expect(open(`${prefix}/agent-1`)).toEqual({
     path: `${prefix}/detail`, state: { selected: "agent-1" },
+  });
+  expect(open(`${prefix}/agent%201`)).toEqual({
+    path: `${prefix}/detail`, state: { selected: "agent 1" },
   });
   expect(open(`${prefix}?selected=agent-1`)).toEqual({
     path: `${prefix}/detail`, state: { selected: "agent-1" },

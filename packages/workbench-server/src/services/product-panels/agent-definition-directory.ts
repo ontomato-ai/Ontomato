@@ -168,6 +168,7 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
     name: assistantName(agent, viewer.locale),
     description: assistantDescription(agent, viewer.locale),
     enabled: agent.enabled,
+    icon: agent.icon,
   }, isPresetAgentKind(agent.kind) ? "preset" : "custom", viewer.locale, canEdit, domainShared);
   const systemRecord = (agent: SystemAgent, canEdit: boolean, domainShared?: boolean) =>
     agentDefinitionRecord({ ...agent, enabled: true }, "system", viewer.locale, canEdit, domainShared);
