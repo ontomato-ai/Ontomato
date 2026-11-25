@@ -105,6 +105,7 @@ beforeAll(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("platform count reads", () => {
@@ -246,22 +247,54 @@ describe("platform count reads", () => {
   });
 
   it("counts only definitions with view, including visible system agents", async () => {
-    mocks.query.mockResolvedValue({ rows: [
-      { id: "visible", kind: "regular" }, { id: "hidden", kind: "analysis" }, { id: "builder", kind: "app-builder" },
-    ] });
+    const rows = [
+      { id: "visible", kind: "regular", domain_id: owner.domainId, owner_id: "author" },
+      { id: "hidden", kind: "analysis", domain_id: owner.domainId, owner_id: "another-author" },
+      { id: "builder", kind: "app-builder", domain_id: owner.domainId, owner_id: null },
+    ];
+    mocks.query.mockResolvedValue({ rows });
+    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
     vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe("/product-governance/resources");
-      expect(JSON.parse(String(init.body))).toEqual({ verb: "view" });
-      expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
-      return Response.json({ ids: ["visible", "builder", RETRIEVAL_AGENT_ID] });
+      const path = new URL(url).pathname;
+      const headers = new Headers(init.headers);
+      expect(headers.get("tk")).toBe(viewer.token);
+      expect(headers.get("x-scope")).toBe(viewer.headers["x-scope"]);
+      if (path === `/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`) {
+        expect(init.method).toBe("GET");
+        return Response.json({ success: true, data: {
+          id: RETRIEVAL_AGENT_ID, kind: "retrieval", name: "Data retrieval", modelSelection: { modelId: null }, editable: false,
+        } });
+      }
+      expect(path).toBe("/authorization/objects/decide-batch");
+      expect(init.method).toBe("POST");
+      expect(headers.get("X-Ontomato-Query-Service-Token")).toBe("count-test-token");
+      expect(JSON.parse(String(init.body))).toEqual({ requests: rows.map(row => ({
+        target: { domainId: owner.domainId, kind: "AGENT", id: row.id },
+        ownerFacts: { ownerId: row.owner_id, state: "PUBLISHED" }, verb: "VIEW",
+      })) });
+      return Response.json({ decisions: [
+        { allowed: true, code: null, reason: null },
+        { allowed: false, code: "OBJECT_FORBIDDEN", reason: "View permission required" },
+        { allowed: true, code: null, reason: null },
+      ] });
     });
     await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
     expect(mocks.assertPermission).not.toHaveBeenCalled();
   });
 
   it("returns zero when the viewer has no agent view grants", async () => {
-    vi.stubGlobal("fetch", async () => Response.json({ ids: [] }));
-    mocks.query.mockResolvedValue({ rows: [{ id: "private-agent", kind: "custom" }] });
+    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
+    vi.stubGlobal("fetch", async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path === `/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`) {
+        return Response.json({ success: false, code: 403 }, { status: 403 });
+      }
+      expect(path).toBe("/authorization/objects/decide-batch");
+      return Response.json({ decisions: [{ allowed: false, code: "OBJECT_FORBIDDEN", reason: "View permission required" }] });
+    });
+    mocks.query.mockResolvedValue({ rows: [
+      { id: "private-agent", kind: "custom", domain_id: owner.domainId, owner_id: "author" },
+    ] });
     await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 0 } });
   });
 

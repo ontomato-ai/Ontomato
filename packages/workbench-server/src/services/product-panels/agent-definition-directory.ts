@@ -3,7 +3,7 @@ import {
   ontologyAgentModelSchema, ontologyAgentModelWriteSchema, type ModelSelection,
 } from "@ontomato/contracts/model-settings";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
-import { RETRIEVAL_AGENT_ID, productGrantVerbSchema, type ProductGrantRecord } from "@ontomato/contracts/product-governance";
+import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelFormDescription, PanelFormRequest, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
@@ -15,20 +15,20 @@ import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import { agentDefinitionRecord } from "../assistant/definition-record";
 import { formJsonSchema, modelPanelField, modelSelectionWrite } from "../assistant/model-panel-form";
 import { describeAgentDefinitionForm } from "../assistant/definition-form";
-import { readAgentDefinitionRow } from "../assistant/definitions";
 import { assistantDescription, assistantName } from "../assistant/labels";
 import { isPresetAgentKind } from "../assistant/preset-definitions";
 import { assistantService } from "../assistant/service";
 import { assistantStore, type AssistantOwner, type AgentRow } from "../assistant/store";
 import { readFavorites } from "../platform-home/service";
 import { createOpsDiagnosisDefinition } from "../ops-diagnosis/panel-model";
-import { grantedProductIds, productGrantAllowed, readProductGrantRecords, requireProductGrant } from "../product-governance/grants";
+import { decideObjects, readAgentAccess, requireAllowed } from "../product-governance/authorization";
+import { agentObject, allowedAgents } from "../assistant/authorization";
 import { ownerEnvelopeSchema } from "./data-query-operations";
 import { operationHost } from "./operation-host";
 
 const retrievalPath = `${DATA_QUERY_GATEWAY}/ontology/ai/agent-models`;
 export const systemFormValues = modelSelectionWrite.extend({ name: z.string().optional(), description: z.string().optional() });
-type SystemAgent = { id: string; name: string; description: string; modelSelection: ModelSelection };
+type SystemAgent = { id: string; name: string; description: string; modelSelection: ModelSelection; editable?: boolean };
 type SystemOwner = {
   read(): Promise<SystemAgent>;
   save(id: string, selection: ModelSelection): Promise<{ modelSelection: ModelSelection }>;
@@ -49,13 +49,13 @@ export function createSystemAgentOwners(owner: AssistantOwner, viewer: Assistant
   }
   const retrieval: SystemOwner = {
     async read() {
-      const { id, modelSelection } = await callRetrieval(
+      const { id, modelSelection, editable } = await callRetrieval(
         `${retrievalPath}/${RETRIEVAL_AGENT_ID}`,
-        ontologyAgentModelSchema,
+        ontologyAgentModelSchema.extend({ editable: z.boolean() }).strict(),
         { method: "GET" },
       );
       return {
-        id, modelSelection,
+        id, modelSelection, editable,
         name: tForLocale(viewer.locale, "panels.agentDefinition.retrievalName"),
         description: tForLocale(viewer.locale, "panels.agentDefinition.retrievalDescription"),
       };
@@ -71,15 +71,23 @@ export function createSystemAgentOwners(owner: AssistantOwner, viewer: Assistant
   return {
     builder,
     diagnosis,
-    fixed: [
-      { id: RETRIEVAL_AGENT_ID, source: retrieval },
-    ],
+    retrieval,
     async forTarget(primaryKey: string) {
       if (primaryKey === RETRIEVAL_AGENT_ID) return retrieval;
       if (await builder.matches(primaryKey)) return builder;
       if (await diagnosis.matches(primaryKey)) return diagnosis;
     },
   };
+}
+
+export async function agentPolicyDefinition(
+  owner: AssistantOwner, credentials: AssistantCredentials, id: string,
+) {
+  if (id === RETRIEVAL_AGENT_ID) {
+    await createSystemAgentOwners(owner, credentials).retrieval.read();
+    return agentObject({ id, domain_id: owner.domainId, owner_id: null });
+  }
+  return agentObject(await assistantStore.agent(id, owner));
 }
 
 function systemAgentForm(agent: SystemAgent, inputs: Pick<PanelFormRequest, "values">, canEdit: boolean, locale?: string): PanelFormDescription {
@@ -119,9 +127,6 @@ function validateId(primaryKey: string) {
     throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
 }
 
-const isShared = (grants: ProductGrantRecord[]) =>
-  grants.some(grant => grant.principalKind === "domain" && grant.verb === "use");
-
 export interface VisibleAgentMcpUsage {
   /** Whether the caller can view at least one MCP-capable agent definition in this domain. */
   readonly hasVisibleAgents: boolean;
@@ -131,22 +136,17 @@ export interface VisibleAgentMcpUsage {
 
 /**
  * Returns caller-visible agents' external MCP service references using the agent owner's own
- * visibility rules (`grantedProductIds("view", viewer)` + `assistantStore.channelAgents`).
+ * definition authorization.
  */
 export async function readVisibleAgentMcpUsages(
   owner: AssistantOwner,
   viewer: AssistantCredentials,
 ): Promise<VisibleAgentMcpUsage> {
-  const [ids, agents] = await Promise.all([
-    grantedProductIds("view", viewer),
-    assistantStore.channelAgents(owner.domainId),
-  ]);
-  const visible = new Set(ids);
+  const agents = (await assistantStore.channelAgents(owner.domainId))
+    .filter(agent => !isAppBuilderKind(agent.kind) && !isOpsDiagnosisKind(agent.kind));
+  const visible = await allowedAgents(agents, "VIEW", viewer);
   const byServiceId = new Map<string, string[]>();
-  let visibleCount = 0;
-  for (const agent of agents) {
-    if (!visible.has(agent.id) || isAppBuilderKind(agent.kind) || isOpsDiagnosisKind(agent.kind)) continue;
-    visibleCount += 1;
+  for (const agent of visible) {
     const label = assistantName(agent, viewer.locale);
     for (const serviceId of agent.enabled_mcp_service_ids ?? []) {
       const list = byServiceId.get(serviceId);
@@ -154,7 +154,7 @@ export async function readVisibleAgentMcpUsages(
       else byServiceId.set(serviceId, [label]);
     }
   }
-  return { hasVisibleAgents: visibleCount > 0, byServiceId };
+  return { hasVisibleAgents: visible.length > 0, byServiceId };
 }
 
 type FormInputs = Pick<PanelFormRequest, "values" | "changedField">;
@@ -173,30 +173,26 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
   const systemRecord = (agent: SystemAgent, canEdit: boolean, domainShared?: boolean) =>
     agentDefinitionRecord({ ...agent, enabled: true }, "system", viewer.locale, canEdit, domainShared);
 
-  async function visibleDefinitions() {
-    const [ids, agents] = await Promise.all([
-      grantedProductIds("view", viewer),
-      assistantStore.channelAgents(owner.domainId),
-    ]);
-    const visible = new Set(ids);
-    const stored: AgentRow[] = [];
-    const builtIn = [];
-    for (const agent of agents) {
-      if (!visible.has(agent.id)) continue;
-      if (isAppBuilderKind(agent.kind)) builtIn.push({ id: agent.id, source: systems.builder });
-      else if (isOpsDiagnosisKind(agent.kind)) builtIn.push({ id: agent.id, source: systems.diagnosis });
-      else stored.push(agent);
+  async function viewRetrieval() {
+    try {
+      return await systems.retrieval.read();
+    } catch (error) {
+      if (!(error instanceof HttpError && error.status === 403)) throw error;
+      return undefined;
     }
-    builtIn.push(...systems.fixed.filter(agent => visible.has(agent.id)));
-    return { stored, builtIn };
   }
 
-  async function grants(primaryKey: string) {
-    validateId(primaryKey);
-    await requireProductGrant(primaryKey, "edit", viewer);
-    if (!await systems.forTarget(primaryKey)) await readAgentDefinitionRow(primaryKey, owner);
-    const result = await readProductGrantRecords(primaryKey, viewer);
-    return { grants: result.grants, shared: isShared(result.grants) };
+  async function grants(id: string) {
+    validateId(id);
+    return readAgentAccess(await agentPolicyDefinition(owner, viewer, id), viewer);
+  }
+
+  async function viewLocal(id: string) {
+    const agent = await assistantStore.agent(id, owner);
+    const object = agentObject(agent);
+    const [view, edit] = await decideObjects([{ ...object, verb: "VIEW" }, { ...object, verb: "EDIT" }], viewer);
+    requireAllowed(view);
+    return { agent, canEdit: edit.allowed, object };
   }
 
   return {
@@ -234,37 +230,44 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
       });
     },
     async list() {
-      const [{ stored, builtIn }, editIds] = await Promise.all([
-        visibleDefinitions(),
-        grantedProductIds("edit", viewer),
-      ]);
-      const editable = new Set(editIds);
-      return [
-        ...stored.map(agent => storedRecord(agent, editable.has(agent.id))),
-        ...await Promise.all(builtIn.map(async ({ id, source }) => systemRecord(await source.read(), editable.has(id)))),
-      ];
+      const agents = await allowedAgents(await assistantStore.channelAgents(owner.domainId), "VIEW", viewer);
+      const editable = new Set((await allowedAgents(agents, "EDIT", viewer)).map(agent => agent.id));
+      const local = await Promise.all(agents.map(async agent => {
+        const source = isAppBuilderKind(agent.kind) ? systems.builder : isOpsDiagnosisKind(agent.kind) ? systems.diagnosis : undefined;
+        return source ? systemRecord(await source.read(), editable.has(agent.id)) : storedRecord(agent, editable.has(agent.id));
+      }));
+      const retriever = await viewRetrieval();
+      return retriever ? [...local, systemRecord(retriever, retriever.editable === true)] : local;
     },
     async count() {
-      const { stored, builtIn } = await visibleDefinitions();
-      return { rows: [], total: stored.length + builtIn.length };
+      const [visible, retriever] = await Promise.all([
+        assistantStore.channelAgents(owner.domainId).then(agents => allowedAgents(agents, "VIEW", viewer)),
+        viewRetrieval(),
+      ]);
+      return { rows: [], total: visible.length + Number(retriever !== undefined) };
     },
     async record(primaryKey: string) {
       validateId(primaryKey);
-      await requireProductGrant(primaryKey, "view", viewer);
-      const source = await systems.forTarget(primaryKey);
-      const canEdit = await productGrantAllowed(primaryKey, "edit", viewer);
-      const domainShared = canEdit ? isShared((await readProductGrantRecords(primaryKey, viewer)).grants) : undefined;
-      return source
-        ? systemRecord(await source.read(), canEdit, domainShared)
-        : storedRecord(await readAgentDefinitionRow(primaryKey, owner), canEdit, domainShared);
+      if (primaryKey === RETRIEVAL_AGENT_ID) {
+        const retriever = await systems.retrieval.read();
+        const shared = retriever.editable ? (await grants(primaryKey)).shared : undefined;
+        return systemRecord(retriever, retriever.editable === true, shared);
+      }
+      const { agent, object, canEdit } = await viewLocal(primaryKey);
+      const shared = canEdit ? (await readAgentAccess(object, viewer)).shared : undefined;
+      const source = isAppBuilderKind(agent.kind) ? systems.builder : isOpsDiagnosisKind(agent.kind) ? systems.diagnosis : undefined;
+      return source ? systemRecord(await source.read(), canEdit, shared) : storedRecord(agent, canEdit, shared);
     },
     async form(primaryKey: string, inputs: FormInputs) {
       validateId(primaryKey);
+      if (primaryKey === RETRIEVAL_AGENT_ID) {
+        const retriever = await systems.retrieval.read();
+        return systemAgentForm(retriever, inputs, retriever.editable === true, viewer.locale);
+      }
       const source = await systems.forTarget(primaryKey);
       if (!source)
         return describeAgentDefinitionForm({ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey }, ...inputs }, owner, viewer);
-      await requireProductGrant(primaryKey, "view", viewer);
-      const canEdit = await productGrantAllowed(primaryKey, "edit", viewer);
+      const { canEdit } = await viewLocal(primaryKey);
       return systemAgentForm(await source.read(), inputs, canEdit, viewer.locale);
     },
     async createForm(inputs: FormInputs) {
@@ -272,29 +275,25 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
     },
     grants,
     async grantRows(primaryKey: string): Promise<PanelRecord[]> {
-      const result = await grants(primaryKey);
-      const highest = new Map<string, ProductGrantRecord>();
-      const levels = productGrantVerbSchema.options;
-      for (const grant of result.grants) {
-        const key = `${grant.principalKind}:${grant.principalId}`;
-        const previous = highest.get(key);
-        if (!previous || levels.indexOf(grant.verb) > levels.indexOf(previous.verb)) highest.set(key, grant);
-      }
-      return Array.from(highest, ([key, { principalKind, principalId, principalName, verb: level }]): PanelRecord => {
-        const isDomain = principalKind === "domain";
-        const principalKindLabel = isDomain ? word("grantDomain") : catalogueWord(principalKind === "role" ? "grantRole" : "grantPrincipal");
-        const levelLabel = level === "view" ? word("grantView") : catalogueWord(level === "edit" ? "grantEdit" : "grantUse");
-        const tone = level === "edit" ? "warning" : level === "view" ? "info" : "default";
-        return {
-          primaryKey: key,
-          className: AGENT_DEFINITION,
-          label: isDomain ? principalKindLabel : principalName || principalId,
-          ...(!isDomain && principalName && principalName !== principalId && { subtitle: principalId }),
-          fields: { principalKind, principalKindLabel, principalId, level, levelLabel, verb: level, verbLabel: levelLabel, revocable: !isDomain },
-          fieldLabels: { principalKindLabel: catalogueWord("grantKind"), levelLabel: catalogueWord("grantVerb"), verbLabel: catalogueWord("grantVerb") },
-          tones: { principalKindLabel: isDomain ? "success" : "info", levelLabel: tone, verbLabel: tone },
-        };
-      });
+      const { grants: policyGrants, shared } = await grants(primaryKey);
+      return [
+        ...policyGrants.map(({ policyId, name, level }): PanelRecord => {
+          const verb = level.toLowerCase();
+          const levelLabel = level === "VIEW" ? word("grantView") : catalogueWord(level === "EDIT" ? "grantEdit" : "grantUse");
+          return {
+            primaryKey: policyId,
+            className: AGENT_DEFINITION,
+            label: name,
+            fields: { policyId, level: verb, levelLabel, verb, verbLabel: levelLabel, revocable: true },
+            fieldLabels: { levelLabel: catalogueWord("grantVerb"), verbLabel: catalogueWord("grantVerb") },
+            tones: { levelLabel: level === "EDIT" ? "warning" : level === "VIEW" ? "info" : "default" },
+          };
+        }),
+        ...(shared ? [{
+          primaryKey: "domain", className: AGENT_DEFINITION, label: word("grantDomain"),
+          fields: { level: "use", levelLabel: catalogueWord("grantUse"), revocable: false },
+        }] : []),
+      ];
     },
   };
 }

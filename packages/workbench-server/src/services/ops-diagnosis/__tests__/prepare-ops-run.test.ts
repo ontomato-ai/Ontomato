@@ -40,7 +40,7 @@ const agent: AgentRow = {
   description: "Read evidence and diagnose faults",
   icon: "wrench",
   enabled: true,
-  execution_user_id: null,
+  owner_id: null, execution_user_id: null,
   system_prompt: null,
   model_selection: { modelId: "diagnosis-model" },
   skills: [{ namespace: { kind: "provider", provider: "workbench" }, name: "ops-diagnosis" }],

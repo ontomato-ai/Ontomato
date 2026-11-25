@@ -18,6 +18,13 @@ An `ObjectForm` projection needs its own operation or a sibling write that binds
   confirmation), busy state, and unsaved-changes notice — no manual submit boilerplate needed.
 - **`config.fixedFields`**: fix parent-determined fields by JSON Pointer path (`{"state":"selected","path":"/primaryKey"}`
   or `{"literal":"..."}`) so they display read-only and submit with every save.
+- **Automatic single-field save (`submitOn`)**: owner form descriptions and individual fields may declare
+  `submitOn?: "manual" | "blur" | "change"` (default `"manual"`; a field's `submitOn` overrides the form's). Edited
+  fields marked `"blur"` or `"change"` automatically dispatch a single-field save on blur or change without needing a
+  manual Save click.
+- **Form reference pickers**: place `ReferencePicker` inside `#field-<dotPath>` slots. In form-field mode it consumes
+  `MemberDataState` to preserve known choices with an inline Retry alert on read failure, and accepts
+  `config.refreshable: true` to show a manual refresh button beside the dropdown.
 - `ObjectForm` automatically renders word counters for schema `maxLength` fields, password masking (`show-password`) for
   single-line `text` fields declaring `secret: true`, and disables cascading select fields
   when the owner declares `disabledWhenEmpty`.
@@ -41,10 +48,12 @@ and `usePanelOperation` writes. Assistant observation hides plaintext. People en
 ### Assistant live form filling and saving
 
 Use `present` to open the target page, tab or dialog beside the conversation, then `fill_form` on the mounted
-`ObjectForm`. Changed fields are marked and stay unsaved for review. When asked to save, use `page_action`
-for the form's declared save, with conversation confirmation by default. When an agent's same-page `present` would switch a dirty form's target
-or unmount it, the host returns `blocked_unsaved`. Unrelated state updates succeed while the dirty form stays
-mounted on the same target. Human clicks go through the panel's unsaved confirmation.
+`ObjectForm`. Changed `"manual"` fields are marked and stay unsaved for review; when asked to save them, use
+`page_action` for the form's declared save, with conversation confirmation by default. Changing a field declared with
+`submitOn: "blur" | "change"` triggers the form's registered save operation through the §2.4.2 confirmation chain
+(`awaiting_confirmation` by default, or `executed` in full-auto). When an agent's same-page `present` would switch a
+dirty form's target or unmount it, the host returns `blocked_unsaved`. Unrelated state updates succeed while the dirty
+form stays mounted on the same target. Human clicks go through the panel's unsaved confirmation.
 
 To split one form across sections, configure `presentation` and `groups` or place `<object-form-fields>` in
 the form's default slot. The sections share the same draft and save. A form's `saved` event gives

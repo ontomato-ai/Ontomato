@@ -59,7 +59,8 @@ let server: Server | undefined;
 let contentRoot: string;
 
 const panelSourcesByDomain = new Map<string, PanelSkillSource[]>();
-const registrations: { domainId: string; id: string; shared: boolean; legacyMenuPermission?: string }[] = [];
+const publications: { domainId: string; ids: string[] }[] = [];
+const registrations: { domainId: string; id: string }[] = [];
 let failRegistrationFor: string | undefined;
 const startupDomain = "domain-enumerated-by-java";
 const presetKinds = ["regular", "analysis", GOVERNANCE_KIND].sort();
@@ -127,7 +128,7 @@ async function expectReadOnlyAgentLists(domainId: string) {
   );
   const { rows } = await readAgents();
   const definitionIds = rows.filter(row => row.kind !== "app-builder" && row.kind !== "ops-diagnosis").map(row => row.id).sort();
-  const chatAgentIds = rows.filter(row => row.kind !== "app-builder").map(row => row.id).sort();
+  const chatAgentIds = rows.map(row => row.id);
   const upgrades = await upgradeRecordCount(domainId);
 
   expect((await assistantStore.agents(domainId)).map(agent => agent.id).sort()).toEqual(definitionIds);
@@ -201,11 +202,24 @@ beforeAll(async () => {
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     registrations.push(req.body);
+    return res.json({ success: true });
+  });
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    const domainId = req.header("tk");
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    res.json({ decisions: req.body.requests.map(({ target }: { target: { domainId: string; id: string } }) =>
+      target.domainId === domainId && publications.some(row => row.domainId === domainId && row.ids.includes(target.id))
+        ? { allowed: true }
+        : { allowed: false, code: "FORBIDDEN", reason: "Agent is not published in this domain" }) });
+  });
+  app.post("/authorization/objects/published-agent-presets", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     if (req.body.domainId === failRegistrationFor) {
       failRegistrationFor = undefined;
       return res.status(422).json({ error: { code: "FIXTURE_FAILURE", message: "Registration failed" } });
     }
-    return res.json({ success: true });
+    publications.push(req.body);
+    return res.sendStatus(204);
   });
   app.post("/product-governance/resources", (req, res) => {
     res.json({ ids: registrations.filter(row => row.domainId === req.header("tk")).map(row => row.id) });
@@ -269,7 +283,7 @@ afterAll(async () => {
   if (contentRoot) await rm(contentRoot, { recursive: true, force: true });
 });
 
-it("migrates legacy roles once and keeps new domains and later custom agents out of the migration", async () => {
+it("publishes only domain presets once and retries when publication fails", async () => {
   const legacyDomain = "legacy-grants";
   const newDomain = "new-grants";
   const addAgent = async (domainId: string, kind: string) => {
@@ -283,34 +297,37 @@ it("migrates legacy roles once and keeps new domains and later custom agents out
   const oldCustom = await addAgent(legacyDomain, "custom-legacy");
   const builderCopy = await addAgent(legacyDomain, "app-builder:copy");
   await initializeDomainPresetAgents(legacyDomain);
-  const legacyRows = registrations.filter(row => row.domainId === legacyDomain);
-  const legacyBuilder = await assistantStore.appBuilder(legacyDomain);
-  const legacyDiagnosis = (await assistantStore.opsDiagnosis(legacyDomain))!;
-  const systemIds = new Set([legacyBuilder.id, legacyDiagnosis.id]);
-  const migratedIds = (await assistantStore.agents(legacyDomain)).filter(agent => agent.id !== builderCopy).map(agent => agent.id);
-  expect(legacyRows.map(row => row.id).sort()).toEqual([...migratedIds, ...systemIds].sort());
-  for (const row of legacyRows) {
-    expect(row).toMatchObject({ shared: true, ownerId: null, grantAdmin: true, verbs: ["use", "view", "edit"] });
-    if (systemIds.has(row.id)) expect(row).not.toHaveProperty("legacyMenuPermission");
-    else expect(row.legacyMenuPermission).toBe("analysis-agent");
-  }
+  const builtinKinds = new Set([...presetKinds, "app-builder", "ops-diagnosis"]);
+  const presetIds = async (domainId: string) => (await assistantStore.channelAgents(domainId))
+    .filter(agent => builtinKinds.has(agent.kind)).map(agent => agent.id);
+  const legacyIds = await presetIds(legacyDomain);
+  expect(legacyIds).toHaveLength(builtinKinds.size);
+  expect(publications.filter(row => row.domainId === legacyDomain)).toEqual([
+    { domainId: legacyDomain, ids: expect.arrayContaining(legacyIds) },
+  ]);
+  const legacyPublication = publications.find(row => row.domainId === legacyDomain)!;
+  expect(legacyPublication.ids).toHaveLength(legacyIds.length);
+  expect(legacyPublication.ids).not.toContain(oldCustom);
+  expect(legacyPublication.ids).not.toContain(builderCopy);
 
   const newCustom = await addAgent(legacyDomain, "custom-after-upgrade");
-  const before = registrations.length;
+  const before = publications.length;
   await initializeDomainPresetAgents(legacyDomain);
-  const later = registrations.slice(before);
-  expect(later.map(row => row.id)).toEqual(expect.arrayContaining([...systemIds]));
-  const excluded = new Set<string>([oldCustom, newCustom, builderCopy]);
-  expect(later.some(row => excluded.has(row.id) || row.legacyMenuPermission)).toBe(false);
+  expect(publications).toHaveLength(before);
+  expect(legacyPublication.ids).not.toContain(newCustom);
+  expect(registrations.filter(row => row.domainId === legacyDomain)).toEqual([]);
 
   failRegistrationFor = newDomain;
   await expect(initializeDomainPresetAgents(newDomain)).rejects.toMatchObject({ code: "FIXTURE_FAILURE" });
+  expect(await assistantStore.channelAgents(newDomain)).toEqual([]);
   await initializeDomainPresetAgents(newDomain);
-  const newRows = registrations.filter(row => row.domainId === newDomain);
-  const newBuilder = await assistantStore.appBuilder(newDomain);
-  const newDiagnosis = (await assistantStore.opsDiagnosis(newDomain))!;
-  expect(newRows.map(row => row.id)).toEqual(expect.arrayContaining([newBuilder.id, newDiagnosis.id]));
-  expect(newRows.some(row => row.legacyMenuPermission)).toBe(false);
+  const newIds = await presetIds(newDomain);
+  expect(newIds).toHaveLength(builtinKinds.size);
+  expect(publications.filter(row => row.domainId === newDomain)).toEqual([
+    { domainId: newDomain, ids: expect.arrayContaining(newIds) },
+  ]);
+  expect(publications.find(row => row.domainId === newDomain)?.ids).toHaveLength(newIds.length);
+
 });
 
 it("upgrades existing domains at startup once the registered governance panel is exposed", async () => {

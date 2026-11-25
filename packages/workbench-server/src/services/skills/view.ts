@@ -192,7 +192,7 @@ export function pageSkillDefaultAgent(group: PageSkillGroup) {
 
 /** Read the skill and default for the requested entry. */
 export async function readPageCandidateSkill(caller: PageSkillViewCaller, entrance: PageSkillEntrance,
-  usableIds: ReadonlySet<string>, member?: PageSkillMember,
+  usableIds?: ReadonlySet<string>, member?: PageSkillMember,
 ) {
   const { domainId, initiatorCredentials, userId } = caller;
   const placement = pageSkillPlacementKey(entrance);

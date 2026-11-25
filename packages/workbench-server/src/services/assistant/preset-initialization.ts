@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { PoolClient } from "pg";
 import { z } from "zod";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { config } from "../../config/application";
@@ -7,13 +6,13 @@ import { environment } from "../../config/environment";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { findCurrentProduct } from "../../infrastructure/product-current";
-import { backendGet } from "../../utils/backend-client";
-import { APP_BUILDER, APP_BUILDER_KIND } from "../app-builder/definition";
+import { backendGet, backendPost } from "../../utils/backend-client";
+import { APP_BUILDER } from "../app-builder/definition";
 import { OPS_DIAGNOSIS, OPS_DIAGNOSIS_KIND } from "../ops-diagnosis/definition";
 import { panelSkillRef } from "../product-panels/skill-identity";
 import { readPanelSkillSources } from "../product-panels/skill-provider";
 import { GOVERNANCE_KIND, GOVERNANCE_PANEL_ID, GOVERNANCE_PRESET_VERSION } from "./governance-definition";
-import { registerProductResource } from "../product-governance/grants";
+import { productGovernanceServiceHeaders } from "../product-governance/grants";
 import { presetAgentDefinitions } from "./preset-definitions";
 
 const domainPresets = [
@@ -22,8 +21,8 @@ const domainPresets = [
   { ...OPS_DIAGNOSIS, sortOrder: 3 },
 ];
 
-const legacyGrantsKind = "legacy-agent-grants";
-const legacyGrantsVersion = 1;
+const presetPublicationKind = "preset-object-policy";
+const presetPublicationVersion = 1;
 
 async function shouldUpgradeGovernancePreset(domainId: string) {
   const applied = await getPostgresPool().query(
@@ -35,26 +34,10 @@ async function shouldUpgradeGovernancePreset(domainId: string) {
   return (await readPanelSkillSources(domainId)).some(source => source.panelId === GOVERNANCE_PANEL_ID);
 }
 
-async function markLegacyGrants(client: Pick<PoolClient, "query">, domainId: string) {
-  await client.query(
-    `INSERT INTO ${table("assistant_preset_upgrades")} (domain_id,kind,version)
-     VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
-    [domainId, legacyGrantsKind, legacyGrantsVersion],
-  );
-}
-
 export async function initializeDomainPresetAgents(domainId: string): Promise<void> {
   const upgradeGovernance = await shouldUpgradeGovernancePreset(domainId);
-  const { rows, migrateLegacy, builderId, diagnosisId } = await transaction(async client => {
+  await transaction(async client => {
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`assistant-presets:${domainId}`]);
-    const { rows: [{ count: existingCount }] } = await client.query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM ${table("assistant_agents")} WHERE domain_id=$1`,
-      [domainId],
-    );
-    const marker = await client.query(
-      `SELECT 1 FROM ${table("assistant_preset_upgrades")} WHERE domain_id=$1 AND kind=$2 AND version=$3`,
-      [domainId, legacyGrantsKind, legacyGrantsVersion],
-    );
     const legacyDiagnosisModel = (await client.query<{ model_selection: unknown }>(
       `SELECT model_selection FROM ${table("ops_diagnosis_settings")} WHERE domain_id=$1`,
       [domainId],
@@ -70,32 +53,29 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
         [randomUUID(), domainId, preset.kind, preset.name, preset.description, icon, modelSelection, JSON.stringify(preset.skills), preset.sortOrder],
       );
     }
-    if (existingCount === 0) await markLegacyGrants(client, domainId);
-
-    const migrateLegacy = existingCount > 0 && !marker.rowCount;
-    const { rows } = await client.query<{ id: string }>(
-      `SELECT id FROM ${table("assistant_agents")}
-       WHERE domain_id=$1 AND kind NOT IN ('app-builder','ops-diagnosis') AND kind NOT LIKE 'app-builder:%'
-       ${migrateLegacy ? "" : "AND kind=ANY($2::text[])"}`,
-      migrateLegacy ? [domainId] : [domainId, Object.keys(presetAgentDefinitions)],
+    const publication = await client.query(
+      `INSERT INTO ${table("assistant_preset_upgrades")} (domain_id,kind,version)
+       VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [domainId, presetPublicationKind, presetPublicationVersion],
     );
-    const { rows: [{ id: builderId }] } = await client.query<{ id: string }>(
-      `SELECT id FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`,
-      [domainId, APP_BUILDER_KIND],
-    );
-    const { rows: [{ id: diagnosisId }] } = await client.query<{ id: string }>(
-      `SELECT id FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`,
-      [domainId, OPS_DIAGNOSIS_KIND],
-    );
-    const registration = { rows, migrateLegacy, builderId, diagnosisId };
-    if (!upgradeGovernance) return registration;
+    if (publication.rowCount) {
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=ANY($2::text[])`,
+        [domainId, domainPresets.map(preset => preset.kind)],
+      );
+      await backendPost(
+        "published-agent-presets", `${config.dataQuery.baseUrl}/authorization/objects/published-agent-presets`,
+        { domainId, ids: rows.map(({ id }) => id) }, { headers: productGovernanceServiceHeaders(), retries: 1 },
+      );
+    }
+    if (!upgradeGovernance) return;
 
     const recorded = await client.query(
       `INSERT INTO ${table("assistant_preset_upgrades")} (domain_id,kind,version)
        VALUES($1,$2,$3) ON CONFLICT(domain_id,kind,version) DO NOTHING`,
       [domainId, GOVERNANCE_KIND, GOVERNANCE_PRESET_VERSION],
     );
-    if (!recorded.rowCount) return registration;
+    if (!recorded.rowCount) return;
 
     const ref = panelSkillRef(domainId, GOVERNANCE_PANEL_ID);
     const key = runtimeSkillKey(ref);
@@ -103,23 +83,12 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
       `SELECT id,skills FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2 FOR UPDATE`,
       [domainId, GOVERNANCE_KIND],
     );
-    if (agent.skills.some(skill => runtimeSkillKey(skill) === key)) return registration;
+    if (agent.skills.some(skill => runtimeSkillKey(skill) === key)) return;
     await client.query(
       `UPDATE ${table("assistant_agents")} SET skills=$2::jsonb WHERE id=$1`,
       [agent.id, JSON.stringify([...agent.skills, ref])],
     );
-    return registration;
   });
-
-  for (const { id } of rows) {
-    await registerProductResource({ domainId }, id, true, {
-      ownerId: null, verbs: ["use", "view", "edit"], grantAdmin: true,
-      ...(migrateLegacy && { legacyMenuPermission: "analysis-agent" }),
-    });
-  }
-  if (migrateLegacy) await markLegacyGrants(getPostgresPool(), domainId);
-  for (const id of [builderId, diagnosisId])
-    await registerProductResource({ domainId }, id, true, { ownerId: null, verbs: ["use", "view", "edit"], grantAdmin: true });
 }
 
 export async function initializeExistingDomainPresetAgents(): Promise<void> {

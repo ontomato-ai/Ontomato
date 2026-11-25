@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { grantedProductIds } from "../product-governance/grants";
+import { allowedAgents } from "./authorization";
 import { assistantService } from "./service";
 import { assistantStore } from "./store";
 import { withScheduledUserActivity } from "./scheduled-activity";
@@ -13,9 +13,8 @@ export const assistantScheduleApplication: ScheduleApplication = {
   async authorize() {},
   async form(input, { owner, credentials }) {
     const zh = credentials.locale?.startsWith("zh");
-    const usableIds = new Set(await grantedProductIds("use", credentials));
     const agents = await assistantStore.agents(owner.domainId);
-    const options = agents.filter(agent => usableIds.has(agent.id))
+    const options = (await allowedAgents(agents, "USE", credentials))
       .map(agent => option(agent.id, agent.name, agent.enabled ? null : zh ? "智能体已停用" : "Agent disabled", agent.description));
     const selected = input.values.agentId;
     if (selected && !options.some(entry => entry.value === selected)) {

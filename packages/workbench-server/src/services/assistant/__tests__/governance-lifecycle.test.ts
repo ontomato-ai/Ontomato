@@ -3,7 +3,7 @@ import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 const mocks=vi.hoisted(()=>({grant:vi.fn(),resolveExecution:vi.fn(),query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),turns:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),closeAuthoring:vi.fn(),callback:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),open:vi.fn(),links:vi.fn(),scope:vi.fn(),scopeClose:vi.fn(),status:vi.fn(),overview:vi.fn(),record:vi.fn(),recordWindow:vi.fn()}));
-vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant }));
+vi.mock("../authorization", () => ({ requireAgent: mocks.grant }));
 vi.mock("../execution-setting",()=>({resolveAgentExecution:mocks.resolveExecution}));
 vi.mock("../store",()=>({assistantStore:{agent:mocks.agent,session:mocks.session,turn:mocks.turn,turns:mocks.turns,create:mocks.create,reserve:mocks.reserve,admitted:mocks.admitted,settled:mocks.settled,recordRetrievalScope:mocks.scope,governanceWindow:mocks.record,recordGovernanceWindow:mocks.recordWindow,isBuilderRun:async()=>false}}));
 vi.mock("../governance",()=>({closeGovernanceWindow:mocks.close}));
@@ -145,7 +145,7 @@ it("provider and scheduled results link to the conversation instead of a governa
 
 it("steering a governance-only run does not turn its registered caller scope into query preparation",async()=>{
  mocks.turn.mockResolvedValue({id:runId,session_id:sessionId,retrieval_scope_id:runId});
- mocks.agent.mockRejectedValue(new Error("do not reload changed definitions"));
+ mocks.agent.mockResolvedValue({ id: agentId, kind: "custom", enabled: true, class_names: [] });
  await expect(agentChannelService.prepare({...preparation(),mode:"steer"},"domain")).resolves.toEqual({accepted:true});
  expect(mocks.overview).not.toHaveBeenCalled();
 });
@@ -158,7 +158,7 @@ it("refuses a revoked agent on both session creation and continuation before wri
     .rejects.toMatchObject({ status: 403, code: "PRODUCT_FORBIDDEN" });
   await expect(assistantService.send(sessionId, runId, { message: "Continue" }, owner, credentials, "human"))
     .rejects.toMatchObject({ status: 403, code: "PRODUCT_FORBIDDEN" });
-  expect(mocks.grant).toHaveBeenCalledWith(agentId, "use", credentials);
+  expect(mocks.grant).toHaveBeenCalledWith(expect.objectContaining({ id: agentId }), "USE", credentials);
   expect(mocks.create).not.toHaveBeenCalled();
   expect(mocks.request).not.toHaveBeenCalled();
 });
