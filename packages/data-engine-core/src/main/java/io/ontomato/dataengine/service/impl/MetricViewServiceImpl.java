@@ -474,6 +474,19 @@ public class MetricViewServiceImpl implements MetricViewService {
     return MetricView.STATUS_PUBLISHED.equals(metric.getStatus()) || ownCandidate;
   }
 
+  /**
+   * Draft-level executability when editing an existing metric: changing a published metric's draft status to UNUSED
+   * (or to another status the caller cannot execute) must fail execution rather than relying solely on stored state.
+   */
+  private static boolean executableDraft(MetricView draft, MetricView stored, User user) {
+    String status = draft.getStatus();
+    if (status == null) return true;
+    if (MetricView.STATUS_PUBLISHED.equals(status)) return true;
+    return MetricView.STATUS_PENDING_REVIEW.equals(status)
+        && stored != null
+        && user.getId().equals(stored.getCreatedBy());
+  }
+
   @Override
   public List<MetricView> queryList(String status, String functionId, String className, String domainId) {
     Objects.requireNonNull(domainId, "Current domain is required");
@@ -714,7 +727,7 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     if (metric.getId() != null) {
       stored = queryById(metric.getId(), user.getDomainId());
       if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
-      if (!executable(stored, user))
+      if (!executable(stored, user) || !executableDraft(metric, stored, user))
         throw new OwnerRefusal("METRIC_VIEW_NOT_EXECUTABLE", "Executable read metric not found");
     } else if (!executable(metric, user)) {
       throw new OwnerRefusal("METRIC_VIEW_NOT_EXECUTABLE", "Executable read metric not found");

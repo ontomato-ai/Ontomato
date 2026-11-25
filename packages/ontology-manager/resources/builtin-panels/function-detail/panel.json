@@ -41,10 +41,39 @@
         },
         "operation": "platform:Function.save",
         "config": {
-          "actions": "none"
+          "actions": "none",
+          "presentation": "cards",
+          "cardColumns": 2,
+          "groups": [
+            {
+              "key": "basic",
+              "titleKey": "section.basic",
+              "column": "main",
+              "fields": [
+                "/name",
+                "/description",
+                "/operation"
+              ]
+            },
+            {
+              "key": "logic",
+              "titleKey": "section.logic",
+              "descriptionKey": "section.logicEyebrow",
+              "column": "side",
+              "fields": [
+                "/sourceArtifact",
+                "/queryPackage",
+                "/returnDef/columnLabels",
+                "/parameters",
+                "/returnDef/classNames",
+                "/logic",
+                "/code"
+              ]
+            }
+          ]
         },
         "name": "函数定义",
-        "description": "属主给出的读/写函数字段；读函数有查询逻辑包和列标签，写函数有参数、返回类和代码，保存走 platform:Function.save。",
+        "description": "属主给出的读/写函数字段；左侧为基本信息与操作类型，右侧为函数逻辑（读函数含查询逻辑包和列标签，写函数含内联参数行、返回类和代码），保存走 platform:Function.save。",
         "id": "builtin-product-c13d625c-cb14-45d3-8d6c-2765c8616a11"
       },
       "remove": {
@@ -72,6 +101,9 @@
         "newFunction": "New function",
         "action.delete": "Delete",
         "action.retry": "Retry",
+        "section.basic": "Functions",
+        "section.logic": "Function Logic",
+        "section.logicEyebrow": "Execution definition",
         "detail.loading": "Loading function...",
         "detail.forbidden": "You do not have permission to view this function.",
         "detail.loadError": "Failed to load this function.",
@@ -84,6 +116,9 @@
         "newFunction": "新建函数",
         "action.delete": "删除",
         "action.retry": "重试",
+        "section.basic": "函数",
+        "section.logic": "函数逻辑",
+        "section.logicEyebrow": "执行定义",
         "detail.loading": "正在读取该函数…",
         "detail.forbidden": "当前账号无权读取该函数。",
         "detail.loadError": "读取该函数失败。",

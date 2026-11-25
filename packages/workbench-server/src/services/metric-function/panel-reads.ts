@@ -42,7 +42,18 @@ const metricCatalogueQuerySchema = catalogueQuerySchema.extend({
   origin: panelReadParameterSchemas.metricViewOrigin.optional(),
 }).strict();
 
+const metricCatalogueListSchema = z.object({
+  search: panelReadParameterSchemas.keyword.optional(),
+  status: panelReadParameterSchemas.metricViewStatus.optional(),
+  origin: panelReadParameterSchemas.metricViewOrigin.optional(),
+}).strict();
+
 const functionCatalogueQuerySchema = catalogueQuerySchema.extend({
+  operation: panelReadParameterSchemas.functionOperation.optional(),
+}).strict();
+
+const functionCatalogueListSchema = z.object({
+  search: panelReadParameterSchemas.keyword.optional(),
   operation: panelReadParameterSchemas.functionOperation.optional(),
 }).strict();
 
@@ -171,6 +182,13 @@ export function createMetricReadAdapter(_owner: ProductOwner, viewer: AssistantC
       const { total } = await owner("metric-count", "/metricView/queryList", { countOnly: true }, metricCountSchema);
       return { rows: [], total };
     },
+    async list(params: Record<string, unknown>): Promise<PanelRecordQuery> {
+      const { status, origin, search } = metricCatalogueListSchema.parse(params);
+      const body = { ...(status ? { status } : {}), ...(origin ? { origin } : {}) };
+      const columns = labels();
+      const metrics = await owner("metric-list", "/metricView/queryList", body, z.array(metricSchema));
+      return queried(metrics.map(metric => metricRecord(metric, columns)), { search });
+    },
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const { status, origin, ...paging } = metricCatalogueQuerySchema.parse(params);
       const body = { ...(status ? { status } : {}), ...(origin ? { origin } : {}) };
@@ -214,6 +232,13 @@ export function createFunctionReadAdapter(_owner: ProductOwner, viewer: Assistan
   const { owner, fieldLabels, form } = ownerReads(viewer, "FUNCTION_READ_FAILED");
   const labels = () => fieldLabels("function", ["operation"]);
   return {
+    async list(params: Record<string, unknown>): Promise<PanelRecordQuery> {
+      const { operation, search } = functionCatalogueListSchema.parse(params);
+      const columns = labels();
+      const body = operation ? { operation } : {};
+      const functions = await owner("function-list", "/function/queryList", body, z.array(functionSchema));
+      return queried(functions.map(fn => functionRecord(fn, columns)), { search });
+    },
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const { operation, ...paging } = functionCatalogueQuerySchema.parse(params);
       const columns = labels();

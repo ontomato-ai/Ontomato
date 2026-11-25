@@ -23,15 +23,6 @@
     min-width: 0;
     padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
-  .fn-detail-card {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    padding: var(--page-section-padding, var(--spacing-lg));
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
   .fn-detail-form {
     min-width: 0;
   }
@@ -41,6 +32,18 @@
   }
   .fn-detail-form .sdk-owner-form-body {
     overflow: visible;
+  }
+  .fn-detail-body [data-field="/queryPackage"] .sdk-form-code {
+    min-height: 360px !important;
+  }
+  .fn-detail-body [data-field="/returnDef/columnLabels"] .sdk-form-code {
+    min-height: 88px !important;
+  }
+  .fn-detail-body [data-field="/code"] .sdk-form-code {
+    min-height: 300px !important;
+  }
+  .fn-detail-body [data-field="/code"] .sdk-form-code.readonly-mode {
+    min-height: 180px !important;
   }
   .fn-detail-state {
     display: flex;
@@ -72,9 +75,6 @@
     .fn-detail-body {
       padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
-    .fn-detail-card {
-      padding: var(--spacing-md);
-    }
   }
 </style>
 <div id="app" v-cloak>
@@ -94,16 +94,14 @@
     </page-header>
 
     <div v-if="formMounted" class="fn-detail-body">
-      <section class="fn-detail-card">
-        <div class="fn-detail-form">
-          <projection
-            slot="definition"
-            @saved="onSaved"
-            @discarded="onDiscarded"
-            @cancel="onCancel"
-          ></projection>
-        </div>
-      </section>
+      <div class="fn-detail-form">
+        <projection
+          slot="definition"
+          @saved="onSaved"
+          @discarded="onDiscarded"
+          @cancel="onCancel"
+        ></projection>
+      </div>
     </div>
     <div v-else-if="!selectedKey" class="fn-detail-state">
       <sdk-empty :description="t('detail.missing')"></sdk-empty>

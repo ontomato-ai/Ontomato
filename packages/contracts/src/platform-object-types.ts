@@ -417,6 +417,15 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("metricView", "capability"),
     reads: {
       count: countRead,
+      list: {
+        source: "type", parameterMode: "fixed",
+        params: {
+          search: "keyword",
+          status: "metricViewStatus",
+          origin: "metricViewOrigin",
+        },
+        result: "panelRecordQuery",
+      },
       query: {
         source: "type", parameterMode: "fixed",
         params: {
@@ -502,6 +511,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [FUNCTION]: {
     ...describeType("function", "capability"),
     reads: {
+      list: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", operation: "functionOperation" },
+        result: "panelRecordQuery",
+      },
       query: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", operation: "functionOperation", cursor: "cursor", size: "size" },

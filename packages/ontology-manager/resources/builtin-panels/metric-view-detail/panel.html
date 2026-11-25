@@ -36,6 +36,15 @@
     min-width: 0;
     padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
+  .mv-detail-body [data-field="/function/queryPackage"] .sdk-form-code {
+    min-height: 360px !important;
+  }
+  .mv-detail-body [data-field="/function/returnDef/columnLabels"] .sdk-form-code {
+    min-height: 88px !important;
+  }
+  .mv-detail-body [data-field="/function/code"] .sdk-form-code {
+    min-height: 180px !important;
+  }
   .mv-state-box {
     display: flex;
     flex-direction: column;
@@ -66,6 +75,37 @@
   .mv-test-source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .mv-test-select { width: 18rem; max-width: 100%; }
   .mv-test-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0 var(--spacing-md); }
+  .mv-test-pane { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .mv-test-markdown-preview {
+    min-height: 180px;
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .mv-test-placeholder {
+    margin: 0;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+  }
+  .mv-test-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+    width: 100%;
+  }
+  .mv-test-footer-hint {
+    margin-inline-end: auto;
+    text-align: start;
+  }
+  .mv-test-footer-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
   .mv-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); }
 </style>
 <div id="app" v-cloak>
@@ -146,15 +186,58 @@
 
         <sdk-tabs v-model="testTab">
           <sdk-tab-pane :label="t('metricViews.testMarkdownTab')" name="markdown">
-            <projection slot="testMarkdown" :disabled="trialDisabled" @read="onMarkdownRead"></projection>
+            <div class="mv-test-pane">
+              <sdk-alert v-if="markdownError" type="error" :closable="false" :title="markdownError"></sdk-alert>
+              <sdk-radio-group v-model="markdownMode" size="small" :aria-label="t('metricViews.testMarkdownTab')">
+                <sdk-radio value="preview">{{ t("metricViews.testMarkdownPreview") }}</sdk-radio>
+                <sdk-radio value="source">{{ t("metricViews.testMarkdownSource") }}</sdk-radio>
+              </sdk-radio-group>
+              <div v-if="markdownMode === 'preview'" class="mv-test-markdown-preview" role="status">
+                <markdown-view v-if="markdownText" :content="markdownText"></markdown-view>
+                <p v-else class="mv-test-placeholder">{{ t("metricViews.testMarkdownPlaceholder") }}</p>
+              </div>
+              <code-editor
+                v-else
+                :model-value="markdownText"
+                language="markdown"
+                readonly
+                :min-height="300"
+                :placeholder="t('metricViews.testMarkdownPlaceholder')"
+              ></code-editor>
+            </div>
           </sdk-tab-pane>
           <sdk-tab-pane :label="t('metricViews.testJsonTab')" name="json">
-            <projection slot="testJson" :disabled="trialDisabled" @read="onJsonRead"></projection>
+            <div class="mv-test-pane">
+              <sdk-alert v-if="!isDraftPublished" type="warning" :closable="false" :title="t('metricViews.testJsonPublishedOnly')"></sdk-alert>
+              <sdk-alert v-if="jsonError" type="error" :closable="false" :title="jsonError"></sdk-alert>
+              <operation-result :result="jsonResult" empty-text="metricViews.testJsonPlaceholder"></operation-result>
+            </div>
           </sdk-tab-pane>
         </sdk-tabs>
       </div>
       <template #footer>
-        <sdk-button @click="testOpen = false">{{ t("metricViews.close") }}</sdk-button>
+        <div class="mv-test-footer">
+          <p v-if="!isDraftPublished" class="mv-hint mv-test-footer-hint" role="status">
+            {{ t("metricViews.testJsonPublishedOnly") }}
+          </p>
+          <div class="mv-test-footer-actions">
+            <sdk-button @click="testOpen = false">{{ t("metricViews.close") }}</sdk-button>
+            <sdk-button
+              type="primary"
+              icon="play"
+              :loading="markdownTrialRunning"
+              :disabled="markdownTrialDisabled"
+              @click="runMarkdownTest"
+            >{{ t("metricViews.testMarkdown") }}</sdk-button>
+            <sdk-button
+              icon="play"
+              :loading="jsonTrialRunning"
+              :disabled="jsonTrialDisabled"
+              :title="!isDraftPublished ? t('metricViews.testJsonPublishedOnly') : undefined"
+              @click="runJsonTest"
+            >{{ t("metricViews.testJson") }}</sdk-button>
+          </div>
+        </div>
       </template>
     </sdk-dialog>
   </section>

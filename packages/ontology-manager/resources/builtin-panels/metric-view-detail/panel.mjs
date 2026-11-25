@@ -1,8 +1,9 @@
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import {
   mountPanel,
   usePanelContext,
   usePanelFormDraft,
+  usePanelOperation,
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
@@ -85,14 +86,21 @@ await mountPanel({
     });
     const bindingRows = computed(() => (Array.isArray(formValues.value.bindings) ? formValues.value.bindings : []));
 
-    function onSaved(saved) {
-      const patch = {};
-      if (state.value.mode) patch.mode = null;
-      if (saved?.primaryKey && selectedKey.value !== saved.primaryKey) {
-        patch.selected = { className: "platform:MetricView", primaryKey: saved.primaryKey };
-      }
-      if (Object.keys(patch).length > 0) instance.state.setState(patch);
+    async function onSaved(saved) {
+      // ObjectForm.settleSave calls moveTo synchronously before emitting saved, so check mode === "create" as well.
+      const wasCreate = isCreateMode.value || state.value.mode === "create";
       panel.notify({ kind: "success", text: t("metricViews.saved") });
+      if (wasCreate) {
+        const patch = {};
+        if (state.value.mode) patch.mode = null;
+        if (saved?.primaryKey && selectedKey.value !== saved.primaryKey) {
+          patch.selected = { className: "platform:MetricView", primaryKey: saved.primaryKey };
+        }
+        if (Object.keys(patch).length > 0) instance.state.setState(patch);
+        return;
+      }
+      await nextTick();
+      void navigate(CATALOG_PATH).catch(() => undefined);
     }
 
     async function onDiscarded() {
@@ -333,9 +341,89 @@ await mountPanel({
     const hasInvalidTestParams = computed(() => (
       testSource.value === "explicit" && Object.keys(testErrors.value).length > 0
     ));
+    const isDraftPublished = computed(() => formValues.value.status === "PUBLISHED");
     const trialDisabled = computed(() => (
       !formMounted.value || !hasFunctionDraft.value || hasInvalidTestParams.value
     ));
+
+    const markdownResult = shallowRef(null);
+    const jsonResult = shallowRef(null);
+    const markdownMode = ref("preview");
+    const markdownText = computed(() => (
+      markdownResult.value?.kind === "markdown" ? markdownResult.value.markdown : ""
+    ));
+    const markdownError = ref("");
+    const jsonError = ref("");
+
+    function invalidParamsReason() {
+      const firstError = Object.values(testErrors.value).find((msg) => typeof msg === "string" && msg.length > 0);
+      return firstError || true;
+    }
+
+    const markdownDisabledReason = computed(() => {
+      if (!formMounted.value || !hasFunctionDraft.value) return t("metricViews.testNoDraft");
+      if (hasInvalidTestParams.value) return invalidParamsReason();
+      return false;
+    });
+
+    const jsonDisabledReason = computed(() => {
+      if (!formMounted.value || !hasFunctionDraft.value) return t("metricViews.testNoDraft");
+      if (hasInvalidTestParams.value) return invalidParamsReason();
+      if (!isDraftPublished.value) return t("metricViews.testJsonPublishedOnly");
+      return false;
+    });
+
+    let testMarkdownOp;
+    let testJsonOp;
+    // Share a single busy guard across both trial operations so Markdown and JSON runs cannot overlap.
+    const trialBusy = computed(() => Boolean(testMarkdownOp?.running.value || testJsonOp?.running.value));
+
+    testMarkdownOp = usePanelOperation("testMarkdown", "test", {
+      available: () => formMounted.value && testOpen.value,
+      disabled: () => markdownDisabledReason.value,
+      busy: () => trialBusy.value,
+      onSettled: (result) => {
+        markdownError.value = "";
+        markdownResult.value = result;
+        testTab.value = "markdown";
+      },
+      onError: (error) => {
+        markdownError.value = error.message;
+        testTab.value = "markdown";
+      },
+    });
+
+    testJsonOp = usePanelOperation("testJson", "testExecute", {
+      available: () => formMounted.value && testOpen.value,
+      disabled: () => jsonDisabledReason.value,
+      busy: () => trialBusy.value,
+      onSettled: (result) => {
+        jsonError.value = "";
+        jsonResult.value = result;
+        testTab.value = "json";
+      },
+      onError: (error) => {
+        jsonError.value = error.message;
+        testTab.value = "json";
+      },
+    });
+
+    const markdownTrialRunning = testMarkdownOp.running;
+    const jsonTrialRunning = testJsonOp.running;
+    const markdownTrialDisabled = computed(() => trialDisabled.value || trialBusy.value);
+    const jsonTrialDisabled = computed(() => trialDisabled.value || trialBusy.value || !isDraftPublished.value);
+
+    function resetTrialResults() {
+      markdownResult.value = null;
+      jsonResult.value = null;
+      markdownMode.value = "preview";
+      markdownError.value = "";
+      jsonError.value = "";
+    }
+
+    watch(selectedKey, () => {
+      resetTrialResults();
+    });
 
     function parameterLabel(parameter) {
       return parameter.type ? `${parameter.name} (${parameter.type})` : parameter.name;
@@ -348,6 +436,7 @@ await mountPanel({
 
     function openTest() {
       clearExplicitTestDraft();
+      resetTrialResults();
       instance.state.setState({
         testOpen: true,
         testSource: "explicit",
@@ -356,12 +445,16 @@ await mountPanel({
       });
     }
 
-    function onMarkdownRead() {
-      testTab.value = "markdown";
+    function runMarkdownTest() {
+      if (markdownTrialDisabled.value) return;
+      markdownError.value = "";
+      void testMarkdownOp.run();
     }
 
-    function onJsonRead() {
-      testTab.value = "json";
+    function runJsonTest() {
+      if (jsonTrialDisabled.value) return;
+      jsonError.value = "";
+      void testJsonOp.run();
     }
 
     return {
@@ -386,14 +479,24 @@ await mountPanel({
       testTab,
       testValues,
       testErrors,
-      trialDisabled,
+      isDraftPublished,
+      markdownResult,
+      markdownMode,
+      markdownText,
+      jsonResult,
+      markdownError,
+      jsonError,
+      markdownTrialRunning,
+      jsonTrialRunning,
+      markdownTrialDisabled,
+      jsonTrialDisabled,
       bindingSourceValue,
       parameterLabel,
       bindingLabel,
       openTest,
       onParamInput,
-      onMarkdownRead,
-      onJsonRead,
+      runMarkdownTest,
+      runJsonTest,
       refresh: () => instance.refreshObjects(),
     };
   },

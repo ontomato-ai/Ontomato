@@ -255,6 +255,50 @@ it("searches a catalogue by name or description in any case and pages what it ke
     await expect(reads.query({ cursor })).rejects.toMatchObject({ status: 400, code: "INVALID_CURSOR" });
 });
 
+it("lists all matching metrics and functions without pagination while preserving search and filters", async () => {
+  const metrics = Array.from({ length: 25 }, (_, index) => ({
+    ...metricAsset,
+    id: `m${index}`,
+    name: index % 2 === 0 ? `Revenue ${index}` : `Orders ${index}`,
+    description: "",
+  }));
+  const functions = Array.from({ length: 25 }, (_, index) => ({
+    ...functionAsset,
+    id: `f${index}`,
+    name: `fn_${index}`,
+    description: index % 5 === 0 ? "revenue helper" : "",
+  }));
+  const sent = catalogueOwner(path => ({
+    success: true,
+    data: path.endsWith("/metricView/queryList") ? metrics : functions,
+  }));
+  const metricReads = createMetricReadAdapter(owner, viewer);
+  const functionReads = createFunctionReadAdapter(owner, viewer);
+
+  const allMetrics = panelReadResultSchemas.panelRecordQuery.parse(await metricReads.list({ status: "PUBLISHED" }));
+  expect(allMetrics.rows).toHaveLength(25);
+  expect(allMetrics.total).toBe(25);
+  expect(allMetrics).not.toHaveProperty("nextCursor");
+
+  const filteredMetrics = await metricReads.list({ search: "revenue" });
+  expect(filteredMetrics.rows).toHaveLength(13);
+  expect(filteredMetrics.total).toBe(13);
+  expect(filteredMetrics).not.toHaveProperty("nextCursor");
+
+  const filteredFunctions = panelReadResultSchemas.panelRecordQuery.parse(
+    await functionReads.list({ search: "REVENUE", operation: "OPERATION_READ" }),
+  );
+  expect(filteredFunctions.rows).toHaveLength(5);
+  expect(filteredFunctions.total).toBe(5);
+  expect(filteredFunctions).not.toHaveProperty("nextCursor");
+
+  expect(sent).toEqual([
+    { path: "/metricView/queryList", body: { status: "PUBLISHED" } },
+    { path: "/metricView/queryList", body: {} },
+    { path: "/function/queryList", body: { operation: "OPERATION_READ" } },
+  ]);
+});
+
 it("forwards metric status/origin filters and function operation filter to their owners", async () => {
   const sent = catalogueOwner(path => ({ success: true, data: path.endsWith("/metricView/queryList") ? [metricAsset] : [functionAsset] }));
   const metrics = createMetricReadAdapter(owner, viewer);
