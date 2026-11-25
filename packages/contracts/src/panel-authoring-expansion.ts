@@ -216,7 +216,8 @@ export function expandPanelAuthoringMember(
     const { read, type: declaredType, params: explicit = {} } = typeof shorthand === "string" ? { read: shorthand } : shorthand;
     const readType = declaredType ?? typeId ?? fail(`${path}.type`, "Declare the datum's owner type");
     // Relationship identities are resolved by the domain owner at registration.
-    const relationship = isObjectRelations && name === "neighbors" && declaredType !== undefined
+    const datumDecl = appsSdkComponentDatum(componentData, name);
+    const relationship = datumDecl?.results.includes("panelRelationNeighbors") === true && declaredType !== undefined
       && !declaredType.startsWith("platform:") && Object.hasOwn(customerRelationReads, read);
     if (!relationship && !Object.hasOwn(objectTypes, readType))
       fail(`${path}.type`, `Type '${readType}' is absent from the author type table`);
@@ -226,7 +227,7 @@ export function expandPanelAuthoringMember(
     dataTypes.set(name, readType);
     dataRowTypes.set(name, declaration.rowType ?? readType);
     readsOntologyObjects ||= declaration.result === "panelOntologyObjects";
-    const datum = appsSdkComponentDatum(componentData, name) ?? fail(path, "The component does not declare this datum");
+    const datum = datumDecl ?? fail(path, "The component does not declare this datum");
     if (!datum.results.includes(declaration.result))
       fail(path, `The component does not accept result '${declaration.result}' for this datum`);
     let source: DirectProjectionData["source"];
@@ -256,7 +257,11 @@ export function expandPanelAuthoringMember(
     }
     const parameterNames = new Set([
       ...Object.keys(explicit), ...(declaration.parameterMode === "fixed"
-        ? Object.keys(declaration.params).filter(param => Object.hasOwn(member.state ?? {}, param)) : []),
+        ? Object.keys(declaration.params).filter((param) =>
+            Object.hasOwn(member.state ?? {}, param)
+            && !(componentId === "@ontomato/sdk:ObjectTree" && param === "search"),
+          )
+        : []),
     ]);
     const params = Object.fromEntries([...parameterNames].map(param => {
       const paramPath = `${path}.params.${param}`;

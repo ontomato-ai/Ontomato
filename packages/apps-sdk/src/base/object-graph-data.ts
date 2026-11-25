@@ -3,7 +3,8 @@ import { useI18n } from "vue-i18n";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import type { GraphCanvasEdge, GraphCanvasNode } from "@ontomato/foundation-ui/graph";
 import { valueAt } from "../panel/form-values";
-import { useMember, useMemberData } from "../panel/member";
+import { useMember } from "../panel/member";
+import { useCollectionData, type CollectionCoverage } from "./collection-data";
 
 /** JSON Pointers into each edge record's `fields` naming its source and target node keys. */
 export interface EdgeEndsConfig {
@@ -18,6 +19,10 @@ export interface GraphRecords {
   readonly error: string | null;
   /** Non-blocking notice explaining that relations cannot be viewed when `edges` is forbidden while nodes stay readable. */
   readonly edgesNotice: string | null;
+  /** Non-blocking notice explaining that `nodes` and/or `edges` were truncated by the owner. */
+  readonly coverageNotice: string | null;
+  /** True when either `edges` were refused or `nodes`/`edges` were truncated. */
+  readonly isPartialGraph: boolean;
 }
 
 /** The node an edge record names at a declared pointer: its owner's key there, or a visible failure. */
@@ -35,10 +40,33 @@ function categoryOf(record: PanelRecord, pointer: string | undefined): { categor
   return { category: value };
 }
 
+function formatGraphCoverageNotice(
+  nodesCoverage: CollectionCoverage,
+  edgesCoverage: CollectionCoverage,
+  t: (key: string, params?: Record<string, unknown>) => string,
+): string | null {
+  if (!nodesCoverage.truncated && !edgesCoverage.truncated) return null;
+  if (nodesCoverage.truncated && edgesCoverage.truncated) {
+    return t("platform.graphNodesAndEdgesTruncated", {
+      nodesLoaded: nodesCoverage.loaded,
+      edgesLoaded: edgesCoverage.loaded,
+    });
+  }
+  if (nodesCoverage.truncated) {
+    return nodesCoverage.total !== null
+      ? t("platform.graphNodesTruncatedWithTotal", { loaded: nodesCoverage.loaded, total: nodesCoverage.total })
+      : t("platform.graphNodesTruncated", { loaded: nodesCoverage.loaded });
+  }
+  return edgesCoverage.total !== null
+    ? t("platform.graphEdgesTruncatedWithTotal", { loaded: edgesCoverage.loaded, total: edgesCoverage.total })
+    : t("platform.graphEdgesTruncatedPartial", { loaded: edgesCoverage.loaded });
+}
+
 /**
- * The member's `nodes` and `edges` datums (`panelRecordList`) as a graph: a node per node record, an edge per edge
- * record between the node keys its fields name at `edgeEnds`. Either read still running is loading; node refusal or an
- * error is the graph's, while edge refusal keeps all readable nodes with a non-blocking notice.
+ * The member's `nodes` and `edges` datums (`panelRecordList` or `panelRecordQuery`) as a graph: a node per node record,
+ * an edge per edge record between the node keys its fields name at `edgeEnds`. Either read still running is loading;
+ * node refusal or an error is the graph's, while edge refusal keeps all readable nodes with a non-blocking notice.
+ * When `nodes` are truncated, edges with missing endpoints are omitted so the graph and adjacency stay consistent.
  */
 export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string): ComputedRef<GraphRecords> {
   const { t } = useI18n();
@@ -49,34 +77,55 @@ export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string
       throw new Error(`The projection in member '${member.key}' declares no edgeEnds (source, target)`);
     return { source: candidate.source, target: candidate.target };
   })();
-  const nodesState = useMemberData("nodes");
-  const edgesState = useMemberData("edges");
+  const nodesCollection = useCollectionData("nodes");
+  const edgesCollection = useCollectionData("edges");
   return computed(() => {
-    const n = nodesState.value;
-    const e = edgesState.value;
-    if (n.status === "loading" || e.status === "loading") return { nodes: [], links: [], loading: true, error: null, edgesNotice: null };
-    if (n.status === "forbidden") return { nodes: [], links: [], loading: false, error: t("platform.dataForbidden"), edgesNotice: null };
-    if (n.status === "error") return { nodes: [], links: [], loading: false, error: n.message, edgesNotice: null };
-    if (e.status === "error") return { nodes: [], links: [], loading: false, error: e.message, edgesNotice: null };
+    const n = nodesCollection.state.value;
+    const e = edgesCollection.state.value;
+    if (n.status === "loading" || e.status === "loading") {
+      return { nodes: [], links: [], loading: true, error: null, edgesNotice: null, coverageNotice: null, isPartialGraph: false };
+    }
+    if (n.status === "forbidden") {
+      return { nodes: [], links: [], loading: false, error: t("platform.dataForbidden"), edgesNotice: null, coverageNotice: null, isPartialGraph: false };
+    }
+    if (n.status === "error") {
+      return { nodes: [], links: [], loading: false, error: n.message, edgesNotice: null, coverageNotice: null, isPartialGraph: false };
+    }
+    if (e.status === "error") {
+      return { nodes: [], links: [], loading: false, error: e.message, edgesNotice: null, coverageNotice: null, isPartialGraph: false };
+    }
     const edgesForbidden = e.status === "forbidden";
     const edgesNotice = edgesForbidden ? t("platform.graphEdgesForbidden") : null;
     if (n.status !== "ready" || (e.status !== "ready" && e.status !== "empty" && !edgesForbidden)) {
-      return { nodes: [], links: [], loading: false, error: null, edgesNotice };
+      return { nodes: [], links: [], loading: false, error: null, edgesNotice, coverageNotice: null, isPartialGraph: Boolean(edgesNotice) };
     }
-    const nodeRecords = n.value as unknown as readonly PanelRecord[];
-    const edgeRecords = e.status === "ready" ? (e.value as unknown as readonly PanelRecord[]) : [];
+    const nodeRecords = nodesCollection.rows.value as readonly PanelRecord[];
+    const edgeRecords = e.status === "ready" ? (edgesCollection.rows.value as readonly PanelRecord[]) : [];
+    const nodesCoverage = nodesCollection.coverage.value;
+    const edgesCoverage = edgesCollection.coverage.value;
+    const coverageNotice = formatGraphCoverageNotice(nodesCoverage, edgesCoverage, t);
     try {
+      const nodes = nodeRecords.map((record) => ({ id: record.primaryKey, label: record.label, ...categoryOf(record, nodeCategory) }));
+      const rawLinks = edgeRecords.map((record) => ({
+        id: record.primaryKey,
+        label: record.label,
+        source: endpoint(record.primaryKey, record.fields, ends.source),
+        target: endpoint(record.primaryKey, record.fields, ends.target),
+      }));
+      const links = nodesCoverage.truncated
+        ? (() => {
+            const loadedIds = new Set(nodes.map((node) => node.id));
+            return rawLinks.filter((link) => loadedIds.has(link.source) && loadedIds.has(link.target));
+          })()
+        : rawLinks;
       return {
-        nodes: nodeRecords.map((record) => ({ id: record.primaryKey, label: record.label, ...categoryOf(record, nodeCategory) })),
-        links: edgeRecords.map((record) => ({
-          id: record.primaryKey,
-          label: record.label,
-          source: endpoint(record.primaryKey, record.fields, ends.source),
-          target: endpoint(record.primaryKey, record.fields, ends.target),
-        })),
+        nodes,
+        links,
         loading: false,
         error: null,
         edgesNotice,
+        coverageNotice,
+        isPartialGraph: Boolean(edgesNotice || coverageNotice),
       };
     } catch (reason: unknown) {
       return {
@@ -85,6 +134,8 @@ export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string
         loading: false,
         error: reason instanceof Error ? reason.message : String(reason),
         edgesNotice: null,
+        coverageNotice: null,
+        isPartialGraph: false,
       };
     }
   });

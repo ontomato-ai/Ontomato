@@ -13,9 +13,10 @@ import {
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelRecordFieldText, type PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
 import { usePanelContext } from "../panel/context";
-import { useMember, useMemberData, useMemberParam } from "../panel/member";
+import { useMember, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { stateObject, type PanelFieldValue } from "../panel/state";
+import { useCollectionData } from "./collection-data";
 import { useDataStateLabels } from "./data-state-labels";
 import { readConfigString } from "./localized-text";
 
@@ -70,13 +71,26 @@ const member = useMember();
 const declaredData = member.projection.data ?? {};
 const hasRowsDatum = Object.hasOwn(declaredData, "rows");
 const hasFilesDatum = Object.hasOwn(declaredData, "files");
-const rowsData = hasRowsDatum ? useMemberData("rows") : null;
-const filesData = hasFilesDatum || !hasRowsDatum ? useMemberData("files") : null;
-const sourceData = computed(() => {
-  if (rowsData && (!filesData || rowsData.value.status === "ready" || filesData.value.status !== "ready")) {
-    return rowsData.value;
+const rowsCollection = hasRowsDatum ? useCollectionData("rows", { ignoreImplicitParams: ["search"] }) : null;
+const filesCollection = hasFilesDatum || !hasRowsDatum ? useCollectionData("files", { ignoreImplicitParams: ["search"] }) : null;
+const activeCollection = computed(() => {
+  if (
+    rowsCollection
+    && (!filesCollection || rowsCollection.state.value.status === "ready" || filesCollection.state.value.status !== "ready")
+  ) {
+    return rowsCollection;
   }
-  return filesData!.value;
+  return filesCollection!;
+});
+const sourceData = computed(() => activeCollection.value.state.value);
+const coverage = computed(() => activeCollection.value.coverage.value);
+const coverageNotice = computed<string | null>(() => {
+  const c = coverage.value;
+  if (!c.truncated) return null;
+  const base = c.total !== null
+    ? t("platform.collectionTreeTruncatedWithTotal", { loaded: c.loaded, total: c.total })
+    : t("platform.collectionTreeTruncated", { loaded: c.loaded });
+  return c.diagnostics.length > 0 ? `${base} (${c.diagnostics.join("; ")})` : base;
 });
 
 /** The selected record's key or object reference: the panel state the placement binds, else the tree's own. */
@@ -133,7 +147,7 @@ function extractParentKey(value: PanelRecordFieldValue | undefined): string | nu
 }
 
 const records = computed(() =>
-  sourceData.value.status === "ready" ? (sourceData.value.value as unknown as PlatformObjectRecord[]) : [],
+  sourceData.value.status === "ready" ? activeCollection.value.rows.value : [],
 );
 const recordsByKey = computed(() => {
   const map = new Map<string, PlatformObjectRecord>();
@@ -238,6 +252,14 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
 
 <template>
   <div class="sdk-object-tree">
+    <p
+      v-if="coverageNotice"
+      class="sdk-object-tree-coverage"
+      role="status"
+      data-tree-coverage="partial"
+    >
+      {{ coverageNotice }}
+    </p>
     <data-state :result="sourceData as DataStateResult" :labels="labels">
       <PathTree
         :items="treeItems"
@@ -266,5 +288,16 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+}
+
+.sdk-object-tree-coverage {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-color-warning-dark-2, #b88230);
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  border: 1px solid var(--el-color-warning-light-7, #f3d19e);
 }
 </style>

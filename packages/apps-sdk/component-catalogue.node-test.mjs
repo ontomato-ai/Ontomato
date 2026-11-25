@@ -42,7 +42,7 @@ const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 /** Every directly rendered component's data names, and the read results each may hold. */
 const DECLARED_DATA = {
   ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"], supplement: ["panelRecordList"] },
-  GroupedGrid: { record: ["panelRecord"], rows: ["panelRecordList"] },
+  GroupedGrid: { record: ["panelRecord"], rows: ["panelRecordList", "panelRecordQuery"] },
   ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
   ObjectTitle: { record: ["panelRecord"] },
@@ -65,14 +65,14 @@ const DECLARED_DATA = {
     selected: ["panelOptionList", "panelRecord"],
     rows: ["panelRecordList", "panelRecordQuery"],
   },
-  ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
+  ObjectGraph: { nodes: ["panelRecordList", "panelRecordQuery"], edges: ["panelRecordList", "panelRecordQuery"] },
   OntologyGraph: {
     schema: ["panelGraphSchema"],
     counts: ["panelGraphCounts"],
     start: ["panelGraphStart"],
     overview: ["panelGraphOverview"],
     connections: ["panelGraphConnections"],
-    neighbors: ["panelGraphNeighbors"],
+    neighbors: ["panelGraphNeighbors", "panelRelationNeighbors"],
   },
   ObjectRelations: { neighbors: ["panelGraphNeighbors", "panelRelationNeighbors"] },
   MetricChart: { template: ["chartTemplate"], result: ["metricOutput"] },
@@ -81,7 +81,7 @@ const DECLARED_DATA = {
   ConversationEntry: {},
   AgentChat: {},
   AppPreview: {},
-  ObjectTree: { files: ["panelRecordList"], rows: ["panelRecordList"] },
+  ObjectTree: { files: ["panelRecordList", "panelRecordQuery"], rows: ["panelRecordList", "panelRecordQuery"] },
   ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
   AnnotatedCode: { content: ["annotatedCode"] },
 };

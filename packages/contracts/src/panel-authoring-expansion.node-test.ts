@@ -5,7 +5,7 @@ import { bindPanelAuthoringChart, expandPanelAuthoringMember, panelAuthoringMemb
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { declaredCustomerFormSaveName, hasDeclaredPlatformFormSave } from "./panel-projection";
 import { dashboardCardPrimaryKey } from "./dashboard";
-import { ATTRIBUTE, OBJECT_TYPE, CREATE_SCHEDULED_TASK, DASHBOARD_CARD, platformObjectTypes } from "./platform-object-types";
+import { ATTRIBUTE, OBJECT_TYPE, CREATE_SCHEDULED_TASK, DASHBOARD_CARD, customerOntologyReads, platformObjectTypes } from "./platform-object-types";
 import { platformTypeTableEntrySchema } from "./platform-type-table";
 import { productProjectionInputSchema } from "./product-panels";
 
@@ -1457,4 +1457,128 @@ test("ObjectTree expands both files + scalar selected and rows + object selected
     }),
     /ObjectTree requires either 'data\.files' or 'data\.rows'/,
   );
+});
+
+test("OntologyGraph accepts customer Relationship.neighbors via capability declaration, and collection components accept customer ObjectType.query", () => {
+  const customerTypeTable = {
+    objectTypes: {
+      Department: platformTypeTableEntrySchema.parse({ reads: customerOntologyReads }),
+      Course: platformTypeTableEntrySchema.parse({ reads: customerOntologyReads }),
+      CourseLink: platformTypeTableEntrySchema.parse({ reads: customerOntologyReads }),
+    },
+  };
+  const anyObject = { kind: "object" as const, objectType: "@any" };
+  const ontologyGraphComp = buildComponent("OntologyGraph", {
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Relationship:*"],
+    data: {
+      neighbors: {
+        results: ["panelGraphNeighbors", "panelRelationNeighbors"],
+        required: true,
+        runtimeParams: ["node", "layers", "relationKinds", "targetClass", "direction", "limit", "offset"],
+      },
+    },
+    inputs: { start: anyObject, selected: anyObject },
+    outputs: { selected: anyObject, visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } } },
+  });
+  const objectTreeComp = buildComponent("ObjectTree", {
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["page", "size"] },
+      files: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["page", "size"] },
+    },
+    outputs: { selected: { kind: "scalar", type: "string" } },
+  });
+  const objectGraphComp = buildComponent("ObjectGraph", {
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    data: {
+      nodes: { results: ["panelRecordList", "panelRecordQuery"], required: true, runtimeParams: ["page", "size"] },
+      edges: { results: ["panelRecordList", "panelRecordQuery"], required: true, runtimeParams: ["page", "size"] },
+    },
+    outputs: {
+      selectedNode: { kind: "object", objectType: "@data:nodes" },
+      selectedEdge: { kind: "object", objectType: "@data:edges" },
+    },
+  });
+  const groupedGridComp = buildComponent("GroupedGrid", {
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["page", "size"] },
+    },
+    outputs: { selected: { kind: "object", objectType: "@data:rows" } },
+  });
+
+  const manifestState = panelManifestSchema.parse({
+    state: {
+      dept: { type: { kind: "object", objectType: "Department" } },
+      course: { type: { kind: "object", objectType: "Course" } },
+      link: { type: { kind: "object", objectType: "CourseLink" } },
+      relKinds: { type: { kind: "list", items: { kind: "scalar", type: "string" } } },
+    },
+    members: {},
+  }).state;
+
+  // 1. OntologyGraph binds customer Relationship.neighbors without hardcoding ObjectRelations.
+  const graphRelMember = panelAuthoringMemberSchema.parse({
+    component: "OntologyGraph",
+    data: { neighbors: { read: "neighbors", type: "prereqOf" } },
+    state: { start: "course", selected: "course", visibleRelationKinds: "relKinds" },
+  });
+  assert("component" in graphRelMember);
+  const expandedRel = expandPanelAuthoringMember("courseGraph", graphRelMember, {
+    state: manifestState,
+    components: [ontologyGraphComp],
+    typeTable: customerTypeTable,
+  });
+  assert.deepEqual(expandedRel.projection.data.neighbors.source, { type: { kind: "Relationship", id: "prereqOf" } });
+
+  // 2. ObjectTree binds customer ObjectType.query with object selection.
+  const treeMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectTree",
+    type: "Department",
+    data: { rows: "query" },
+    state: { selected: "dept" },
+    config: { parentField: "parentId" },
+  });
+  assert("component" in treeMember);
+  const expandedTree = expandPanelAuthoringMember("deptTree", treeMember, {
+    state: manifestState,
+    components: [objectTreeComp],
+    typeTable: customerTypeTable,
+  });
+  assert.deepEqual(expandedTree.projection.data.rows.source, { type: { kind: "ObjectType", id: "Department" } });
+  assert.deepEqual(expandedTree.projection.outputs.selected, { kind: "object", objectType: "Department" });
+
+  // 3. ObjectGraph binds customer ObjectType.query for nodes & edges.
+  const recordGraphMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectGraph",
+    data: {
+      nodes: { type: "Course", read: "query" },
+      edges: { type: "CourseLink", read: "query" },
+    },
+    state: { selectedNode: "course", selectedEdge: "link" },
+    config: { edgeEnds: { source: "/fromId", target: "/toId" } },
+  });
+  assert("component" in recordGraphMember);
+  const expandedGraph = expandPanelAuthoringMember("courseMap", recordGraphMember, {
+    state: manifestState,
+    components: [objectGraphComp],
+    typeTable: customerTypeTable,
+  });
+  assert.deepEqual(expandedGraph.projection.data.nodes.source, { type: { kind: "ObjectType", id: "Course" } });
+  assert.deepEqual(expandedGraph.projection.data.edges.source, { type: { kind: "ObjectType", id: "CourseLink" } });
+
+  // 4. GroupedGrid binds customer ObjectType.query.
+  const gridMember = panelAuthoringMemberSchema.parse({
+    component: "GroupedGrid",
+    type: "Course",
+    data: { rows: "query" },
+    state: { selected: "course" },
+  });
+  assert("component" in gridMember);
+  const expandedGrid = expandPanelAuthoringMember("courseGrid", gridMember, {
+    state: manifestState,
+    components: [groupedGridComp],
+    typeTable: customerTypeTable,
+  });
+  assert.deepEqual(expandedGrid.projection.data.rows.source, { type: { kind: "ObjectType", id: "Course" } });
 });

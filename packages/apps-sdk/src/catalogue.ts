@@ -305,7 +305,7 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
       record: { results: ["panelRecord"], required: false },
-      rows: { results: ["panelRecordList"], required: false },
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["page", "size"] },
     },
     inputs: {
       selected: { kind: "object", objectType: "@data:rows" },
@@ -539,10 +539,10 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Draws `nodes` and `edges` reads as an interactive graph with zoom, search, and shortest-path; use for custom graphs (`OntologyGraph` for ontology schema/neighbors). Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Placed inside an `ObjectForm` field Vue slot (`#field-<path>` or `#field`), it chooses that field's list of node keys in the field's place: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all; a line sums the choice up, a legend names the three looks, and a list offers the same choice by name. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling (with `#toolbar` and `#overlay` Vue slots): a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), double-clicking a node or edge selects it and emits `choose` with its object reference (`{ className, primaryKey }`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `json` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. When `nodes` are readable and `edges` are forbidden, all readable nodes are still drawn with a non-blocking notice explaining that relations cannot be viewed; when `nodes` are forbidden the graph shows the access refusal. Each edge is drawn with its record's label; edges between the same two nodes fan out. Given `pathFrom` and `pathTo` bound to panel state, the canvas finds the shortest directed path along visible edges, highlights it distinctly from search matches (`highlightedNodes`, `highlightedEdges`), displays the path trail and hop count on the canvas, and reports what is highlighted — search matches vs a directed path with start, target, outcome and hops — into `pageContext.highlights`; when edges are partially or fully forbidden, 'no path found in the visible graph' and the hidden-relations permission notice are reported separately. What the panel highlights stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. The canvas carries zoom in and out, fit, centring the chosen node, relayout (which lets the reader's places go) and a PNG of the view; names keep their size however far the reader zooms out, a name with no room being hidden until there is; the graph is fitted again once its container settles at a new size; and its zoom is a port (`zoom`), read and set by the page. The canvas fills the height of the box its member is placed in and falls back to its own default minimum height (420px) when that box has no definite height. Each node takes its category's colour of the platform palette when `nodeCategory` (a JSON Pointer into each node record's fields) and `categories` (the order of the colours) are configured; `nodeSize` and `labelSize` (screen pixels) draw the nodes and their names larger or smaller than the platform's own, and the placement leaves rows to fit them. It decides nothing about what the nodes stand for or who may read them.",
     effects: "Reads the node and edge types' lists as the reader; it writes the enclosing form field when placed inside an `ObjectForm` field slot, or the panel state its outputs bind, never the owner.",
-    bindsElement: ["PlatformObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
-      nodes: { results: ["panelRecordList"], required: true },
-      edges: { results: ["panelRecordList"], required: true },
+      nodes: { results: ["panelRecordList", "panelRecordQuery"], required: true, runtimeParams: ["page", "size"] },
+      edges: { results: ["panelRecordList", "panelRecordQuery"], required: true, runtimeParams: ["page", "size"] },
     },
     // What the panel marks on the graph for the reader: search hits or a directed path query, never chosen.
     inputs: {
@@ -626,7 +626,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Draws an interactive ontology graph with schema, sampled-overview, and paginated one-hop neighbor modes; use for ontology explorers. Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared types and relation kinds by layer with per-type readable counts and access statuses; sampled overview mode (`overview` and optional deferred `connections` ports) renders a borderless dot-grid panorama (`fitMode: 'fit'` by default when `overview` is bound) with grouped clusters, clickable tinted group headings (`selectedGroup` / `@select-group`), aggregated inter-group edges (which fade behind a selected node's direct edges), 2-second automatic polling during `GENERATING`, refreshable `NOT_GENERATED` empty state, batch drawing progress, and version-conflict recovery; instance mode supports click-to-inspect and double-click-to-expand (`expandOn: 'activate'` by default when `overview` is bound), a node-anchored floating action bar (expand / load more / direct neighbors only), floating top-left back-to-overview button, and batch-submitted direction/target-group/relation-kind/fit-after-expand neighbor filters synced through `neighborFilter`. Preserves complete object identities, highlights drawn query matches, syncs `visibleLayers`, `visibleRelationKinds`, `expandedNodes`, `selectedGroup`, `neighborFilter`, and per-person `positions` (`json`) bidirectionally with panel state, distinguishes no-neighbors, owner-refused and read-failed outcomes, provides a bottom-left floating toolbar with Display Settings popover (edge labels, aggregate edges), zoom, fit, relayout, refresh, PNG export, bottom-right interaction hint, `#toolbar` and `#overlay` slots, and publishes read-only summary outputs (`groups`, `relationKinds`, `drawnNodeCount`, `drawnEdgeCount`, `overviewEdgesTruncated`, `complete`, `failures`, `neighborProgress`, `drawingProgress`).",
     effects: "Reads the bound graph source's schema, counts, starting node, sampled overview, deferred connections, and paginated one-hop neighbors as the reader; writes only the panel's own selection, group filter, layer filter, relation-kind filter, neighbor filter, expanded-nodes, and personal positions state.",
-    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Relationship:*"],
     // Expanding from a node is what the graph does; optional overview, deferred connections, and schema/counts/start reads activate when a placement supplies them.
     data: {
       schema: { results: ["panelGraphSchema"], required: false },
@@ -636,7 +636,7 @@ export const components: readonly ComponentMetadata[] = [
       connections: { results: ["panelGraphConnections"], required: false, runtimeParams: ["version", "sampleToken"] },
       // The node the reader expands, plus optional layers, relation kinds, target group, direction, and paging parameters.
       neighbors: {
-        results: ["panelGraphNeighbors"],
+        results: ["panelGraphNeighbors", "panelRelationNeighbors"],
         required: true,
         runtimeParams: ["node", "layers", "relationKinds", "targetClass", "direction", "limit", "offset"],
       },
@@ -935,10 +935,10 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Shows a searchable path tree (`files` + `pathField`) or parent-linked object hierarchy (`rows` + `parentField`) and writes `selected` (string key or object reference) to state. In path mode, reads `files` (default `pathField: 'path'`, fallback record key) as folders/files; folders toggle unless `selectableFolders` is enabled, keeping the disclosure chevron dedicated to folding. In hierarchy mode (`parentField`, e.g. `'parentId'`), reads `rows` (or `files`) into a parent-linked tree preserving sibling order where any parent or leaf node is selectable while its chevron folds independently. `selected` binds either scalar string keys or object-ref state `{ className, primaryKey }`; `searchable` binds `search` public state; when nothing is selected, `defaultKey` or `fallbackToFirst` selects an initial node without overwriting an explicit selection.",
     effects: "Reads the owner's records or files as the reader; it writes only the panel's own state.",
-    bindsElement: ["PlatformObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
-      files: { results: ["panelRecordList"], required: false },
-      rows: { results: ["panelRecordList"], required: false },
+      files: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["page", "size"] },
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["page", "size"] },
     },
     outputs: {
       selected: { kind: "scalar", type: "string" },

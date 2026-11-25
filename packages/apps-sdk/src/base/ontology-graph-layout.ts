@@ -183,14 +183,16 @@ export interface GraphRelationSummary {
   readonly refused: readonly PlatformGraphRelationStatus[];
   readonly failed: readonly PlatformGraphRelationStatus[];
   readonly unavailable: readonly PlatformGraphRelationStatus[];
+  readonly truncated: readonly PlatformGraphRelationStatus[];
 }
 
-/** Separates per-relation outcomes into no-neighbors, owner-refused, read-failed and unavailable states. */
+/** Separates per-relation outcomes into no-neighbors, owner-refused, read-failed, unavailable, and truncated states. */
 export function summarizeGraphRelations(relations: readonly PlatformGraphRelationStatus[]): GraphRelationSummary {
   const refused = relations.filter((item) => item.status === "refused");
   const failed = relations.filter((item) => item.status === "failed");
   const unavailable = relations.filter((item) => item.status === "unavailable");
+  const truncated = relations.filter((item) => item.status === "ok" && item.truncated === true);
   const totalEdges = relations.reduce((sum, item) => sum + item.edgeCount, 0);
   const noNeighbors = refused.length === 0 && failed.length === 0 && totalEdges === 0;
-  return { noNeighbors, refused, failed, unavailable };
+  return { noNeighbors, refused, failed, unavailable, truncated };
 }

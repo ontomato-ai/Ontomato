@@ -11,6 +11,7 @@ import { ElSwitch } from "element-plus/es/components/switch/index";
 import { ElTooltip } from "element-plus/es/components/tooltip/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { matchesObjectType, type PanelObjectRef } from "@ontomato/contracts/panel-manifest";
+import { directReadDeclaration } from "@ontomato/contracts/panel-projection";
 import type {
   PanelGraphConnections,
   PanelGraphOverview,
@@ -230,14 +231,24 @@ const member = useMember();
 
 const hasOverviewPort = Boolean(member.projection.data.overview);
 
+const neighborDatum = computed(() => member.projection.data.neighbors);
+const boundRelationshipId = computed<string | null>(() => {
+  const datum = neighborDatum.value;
+  if (!datum || !("type" in datum.source) || datum.source.type.kind !== "Relationship") return null;
+  return datum.source.type.id;
+});
+
 const neighborSupportedParams = computed<ReadonlySet<string>>(() => {
-  const datum = member.projection.data.neighbors;
+  const datum = neighborDatum.value;
   if (!datum) return new Set(["node"]);
   const declared = new Set<string>(Object.keys(datum.params ?? {}));
-  if ("type" in datum.source && datum.source.type.kind === "PlatformObjectType") {
-    const readDecl = platformObjectTypes[datum.source.type.id]?.reads?.[datum.read];
-    if (readDecl && "params" in readDecl && readDecl.params) {
-      for (const key of Object.keys(readDecl.params)) declared.add(key);
+  const readDecl = directReadDeclaration(member.projection, datum);
+  if (readDecl && readDecl.parameterMode === "fixed") {
+    for (const key of Object.keys(readDecl.params)) declared.add(key);
+  } else if ("type" in datum.source && datum.source.type.kind === "PlatformObjectType") {
+    const platformRead = platformObjectTypes[datum.source.type.id]?.reads?.[datum.read];
+    if (platformRead && "params" in platformRead && platformRead.params) {
+      for (const key of Object.keys(platformRead.params)) declared.add(key);
     }
   }
   return declared;
@@ -246,9 +257,8 @@ const neighborSupportedParams = computed<ReadonlySet<string>>(() => {
 const supportsDirectionFilter = computed(() => neighborSupportedParams.value.has("direction"));
 const supportsTargetGroupFilter = computed(() => neighborSupportedParams.value.has("targetClass"));
 const supportsRelationKindsParam = computed(() => neighborSupportedParams.value.has("relationKinds"));
-const supportsNeighborPaging = computed(
-  () => neighborSupportedParams.value.has("limit") || neighborSupportedParams.value.has("offset"),
-);
+const supportsNeighborLimit = computed(() => neighborSupportedParams.value.has("limit"));
+const supportsNeighborOffset = computed(() => neighborSupportedParams.value.has("offset"));
 
 /**
  * The relation kinds the graph shows: its `visibleRelationKinds`, a list of relation kinds (`platform:OntologyRelationKind`,
@@ -1420,6 +1430,19 @@ const canExpandSelectedNode = computed<boolean>(() => {
   return !page || page.nextOffset !== null;
 });
 
+const instanceNeighborsTruncated = computed<boolean>(() => {
+  if (activeMode.value !== "instance") return false;
+  for (const statuses of relationStatusesByNode.value.values()) {
+    if (statuses.some((entry) => entry.truncated === true)) return true;
+  }
+  return false;
+});
+const graphComplete = computed<boolean>(() => {
+  if (activeMode.value === "overview") return overviewComplete.value;
+  if (activeMode.value === "instance") return !instanceNeighborsTruncated.value && !hasMoreNeighbors.value;
+  return true;
+});
+
 useMemberOutput("activeMode", () => activeMode.value);
 useMemberOutput("graphStatus", () => graphStatus.value);
 useMemberOutput("graphVersion", () => graphVersion.value);
@@ -1429,7 +1452,7 @@ useMemberOutput("edgeCount", () => reportedEdgeCount.value);
 useMemberOutput("drawnNodeCount", () => drawnNodeCount.value);
 useMemberOutput("drawnEdgeCount", () => drawnEdgeCount.value);
 useMemberOutput("overviewEdgesTruncated", () => overviewEdgesTruncated.value);
-useMemberOutput("complete", () => overviewComplete.value);
+useMemberOutput("complete", () => graphComplete.value);
 useMemberOutput("failures", () => [...overviewFailures.value]);
 useMemberOutput("groups", () =>
   overviewGroups.value.map((group) => ({
@@ -1718,10 +1741,21 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
 
   const activeRelationKinds = (() => {
     if (!supportsRelationKindsParam.value) return undefined;
-    if (appliedNeighborRelationKind.value) return [appliedNeighborRelationKind.value];
-    if (shownKinds.value && shownKinds.value.size > 0) return [...shownKinds.value];
-    return undefined;
+    const raw = appliedNeighborRelationKind.value
+      ? [appliedNeighborRelationKind.value]
+      : shownKinds.value && shownKinds.value.size > 0
+        ? [...shownKinds.value]
+        : undefined;
+    if (!raw) return undefined;
+    if (boundRelationshipId.value) {
+      return raw.includes(boundRelationshipId.value) ? [boundRelationshipId.value] : undefined;
+    }
+    return raw;
   })();
+
+  const effectiveNeighborLimit = props.neighborPageSize > 0
+    ? Math.min(props.neighborPageSize, 100)
+    : undefined;
 
   const query: PlatformGraphNeighborsQuery = {
     node: refValue,
@@ -1729,8 +1763,8 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
     ...(activeRelationKinds ? { relationKinds: activeRelationKinds } : {}),
     ...(supportsDirectionFilter.value ? { direction: appliedNeighborDirection.value } : {}),
     ...(supportsTargetGroupFilter.value && appliedNeighborTargetGroup.value ? { targetClass: appliedNeighborTargetGroup.value } : {}),
-    ...(supportsNeighborPaging.value && props.neighborPageSize > 0 ? { limit: props.neighborPageSize } : {}),
-    ...(supportsNeighborPaging.value ? { offset: offset ?? 0 } : {}),
+    ...(supportsNeighborLimit.value && effectiveNeighborLimit !== undefined ? { limit: effectiveNeighborLimit } : {}),
+    ...(supportsNeighborOffset.value ? { offset: offset ?? 0 } : {}),
   };
 
   try {
@@ -2356,6 +2390,9 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="relationSummary.unavailable.length" class="sdk-ontology-graph-notice is-muted" role="status" data-graph-state="unavailable">
         {{ t("platform.graphRelationsUnavailable", { count: relationSummary.unavailable.length, relations: formatRelationNames(relationSummary.unavailable) }) }}
+      </div>
+      <div v-if="relationSummary.truncated.length" class="sdk-ontology-graph-notice is-info" role="status" data-graph-state="neighbors-truncated">
+        {{ t("platform.graphNeighborsTruncated", { count: relationSummary.truncated.length, relations: formatRelationNames(relationSummary.truncated) }) }}
       </div>
     </template>
 
