@@ -194,8 +194,9 @@ class BuildTestPostgresIntegrationTest {
       var boundary=new MockHttpServletRequest();boundary.addHeader(DataSandboxService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString());
       var target=contexts.resolve(boundary);
       var vector=created.getJSONArray("resources").toJavaList(JSONObject.class).stream().filter(resource->"vector".equals(resource.getString("kind"))).findFirst().orElseThrow();
-      assertNotEquals(vector.getString("logicalName"),vector.getString("name"),"The fixture must exercise server-truncated names");
-      assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?",Integer.class,vector.getString("schema"),vector.getString("name")));
+      assertTrue(vector.getString("name").matches("ot_sb_[a-z0-9]{6}_[a-z0-9]{8}_v[0-9]{2,}"),vector.toJSONString());
+      assertTrue(vector.getString("name").length()<=63,"Short internal sandbox names must avoid identifier truncation");
+      assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?",Integer.class,schema,vector.getString("name")));
       Path vectorDirectory=Path.of(vector.getString("directory"));
       // Exercise file deletion without claiming vector ingestion through an absent embedding service.
       Files.copy(Path.of("../../data-engine-core/src/test/resources/agent-contracts/files/example-1.txt"),vectorDirectory.resolve("cleanup-fixture.txt"));
