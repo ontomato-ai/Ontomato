@@ -862,7 +862,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       createForm: modelReads.createForm,
       createModelForm: modelReads.form,
       models: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: MODEL_ENTRY },
-      usages: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
     },
     operations: [
       `${MODEL_CONNECTION}.save`,
