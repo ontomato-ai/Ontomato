@@ -24,10 +24,10 @@ export interface PageCounter {
   /** The agent the counter last used, when the reader may still use it. */
   preferredAgentId: Readonly<Ref<string | null>>;
   /**
-   * Sends the page's message to the counter with the page's address: the conversation this tab holds with that agent
-   * goes on, and the same page opens beside it.
+   * Sends the page's message to the counter, optionally carrying the page's address so the same page opens beside the
+   * conversation. Omitting `page` opens the conversation directly without docking a side page.
    */
-  ask(agentId: string, text: string, page: string): void;
+  ask(agentId: string, text: string, page?: string): void;
 }
 
 export const pageCounterKey: InjectionKey<PageCounter> = Symbol("page-counter");

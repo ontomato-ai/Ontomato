@@ -482,7 +482,7 @@ public class ApplicationCatalog {
         }
         return uses.stream().map(use -> use.icon() != null && Objects.equals(priorIcons.get(use.id()), use.icon())
             ? new ApplicationPanelUse(use.id(), use.pageKey(), use.panelId(), use.path(), use.access(),
-                use.defaultAgent(), use.names(), use.descriptions(), use.inputs(), use.groupKey(), null)
+                use.defaultAgent(), use.names(), use.descriptions(), use.inputs(), use.groupKey(), null, use.kind(), use.pageComposer())
             : use).toList();
     }
 
