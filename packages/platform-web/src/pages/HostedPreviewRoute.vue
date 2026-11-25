@@ -66,12 +66,12 @@ const statusLabel = computed(() => {
 
 <template>
   <section class="hosted-preview">
-    <header>
-      <RouterLink :to="back">{{ t("appBuilder.panel") }}</RouterLink>
-      <span v-if="statusLabel" role="status">{{ t("appBuilder.testData") }} · {{ statusLabel }}</span>
-      <button type="button" :disabled="loading" @click="refresh++">{{ t("appBuilder.refreshPreview") }}</button>
+    <header class="hosted-preview-header">
+      <RouterLink :to="back" class="hosted-preview-back">← {{ t("appBuilder.panel") }}</RouterLink>
+      <span v-if="statusLabel" role="status" class="hosted-preview-status">{{ t("appBuilder.testData") }} · {{ statusLabel }}</span>
+      <button type="button" class="hosted-preview-refresh" :disabled="loading" @click="refresh++">{{ t("appBuilder.refreshPreview") }}</button>
     </header>
-    <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="error" role="alert" class="hosted-preview-error">{{ error }}</p>
     <iframe v-if="preview" ref="iframe" :key="preview.src" :title="t('appBuilder.tabPreview')" referrerpolicy="no-referrer" />
   </section>
 </template>
@@ -81,28 +81,66 @@ const statusLabel = computed(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  background: var(--el-bg-color);
 }
-header {
+.hosted-preview-header {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--el-border-color-light);
+  background: var(--el-bg-color);
   color: var(--el-text-color-regular);
+  font-size: var(--text-sm, 13px);
 }
-header a {
-  color: var(--el-color-primary);
+.hosted-preview-back {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  transition: background-color 0.15s ease;
 }
-header button {
+.hosted-preview-back:hover {
+  background: var(--el-fill-color-light);
+}
+.hosted-preview-status {
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--text-xs, 12px);
+}
+.hosted-preview-refresh {
   margin-inline-start: auto;
+  padding: 6px 14px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm, 13px);
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.hosted-preview-refresh:hover:not(:disabled) {
+  background: var(--el-fill-color-light);
+  border-color: var(--el-border-color-darker, var(--el-border-color));
+}
+.hosted-preview-refresh:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 iframe {
-  flex: 1;
+  flex: 1 1 auto;
   width: 100%;
   border: 0;
+  min-height: 0;
 }
-p {
-  margin: 12px;
+.hosted-preview-error {
+  margin: 12px 16px;
+  color: var(--el-color-danger);
 }
 </style>
