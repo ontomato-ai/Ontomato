@@ -12,6 +12,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.ontomato.dataengine.bean.action.Action;
@@ -56,7 +57,9 @@ class WorkflowServiceImplTest {
     metricGenerator = mock(WorkflowMetricGenerator.class);
     service = new WorkflowServiceImpl(workflows, actions, grants, admin, metricGenerator,
         org.springframework.transaction.support.TransactionOperations.withoutTransaction());
-    Action local = new Action(); local.setDomainId(DOMAIN);
+    Action local = new Action();
+    local.setDomainId(DOMAIN);
+    local.setStatus(Action.STATUS_PUBLISHED);
     when(actions.queryById(anyString())).thenReturn(new Object[] {local, null});
     when(metricGenerator.generate(any()))
         .thenReturn(new WorkflowMetricGenerator.Generated(List.of(), List.of()));
@@ -80,6 +83,23 @@ class WorkflowServiceImplTest {
     verify(grants).grant(DOMAIN, "w1", "LEADER", CapabilityGrantLookup.ACTION, "approve", 1, 1, GrantScope.ALL);
     verify(grants).grant(DOMAIN, "w1", "FINANCE", CapabilityGrantLookup.ACTION, "pay", 1, 2, GrantScope.ALL);
     verify(workflows).appendEvent(workflow, Workflow.EVENT_ACTIVATED, "U1");
+  }
+
+  @Test
+  void activationRefusesDraftAndUnusedActionsBeforeWritingGrants() {
+    Workflow workflow = workflow(step(1, "LEADER", "approve"));
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
+    Action action = new Action();
+    action.setDomainId(DOMAIN);
+    when(actions.queryById("approve")).thenReturn(new Object[] {action, null});
+
+    for (String status : List.of(Action.STATUS_PENDING_REVIEW, Action.STATUS_UNUSED)) {
+      action.setStatus(status);
+      assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
+    }
+
+    verify(workflows, never()).publishVersion(any());
+    verifyNoInteractions(grants);
   }
 
   @Test
@@ -417,7 +437,9 @@ class WorkflowServiceImplTest {
     workflow.setRunContract(contract);
     when(admin.getJSONRule(DOMAIN)).thenReturn(classRule("Report", "id", "stage", "status", "department"));
     assertThrows(IllegalArgumentException.class, () -> service.save(workflow));
-    var action = new Action(); action.setDomainId(DOMAIN);
+    var action = new Action();
+    action.setDomainId(DOMAIN);
+    action.setStatus(Action.STATUS_PUBLISHED);
     action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Report", "document"));
     when(actions.queryById("approve")).thenReturn(new Object[]{action, "f"});
     when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);

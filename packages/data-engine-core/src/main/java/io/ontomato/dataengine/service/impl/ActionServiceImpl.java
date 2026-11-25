@@ -43,6 +43,7 @@ import io.ontomato.dataengine.service.ParameterForms;
 import io.ontomato.dataengine.service.SandboxService;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
+import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -86,6 +87,8 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private OntologyGenerationService generationService;
 
+  @Autowired private OntologyAgentStore store;
+
   @Autowired private AgentRuntimeClient runtimeClient;
 
   @Autowired private OntologyScheduleReferences scheduledReferences;
@@ -101,7 +104,7 @@ public class ActionServiceImpl implements ActionService {
 
   @PostConstruct
 	public void initService() {
-		// Periodically clean up unpublished actions older than 12 hours
+		// Periodically clean up unclaimed candidates older than 12 hours
 		new Thread(new Runnable() {
 			@Override
 			public void run() {
@@ -112,9 +115,9 @@ public class ActionServiceImpl implements ActionService {
 						List<Object[]> oList = actionDao.queryList(Action.STATUS_PENDING_REVIEW, null, null, null);
 						for (Object[] o : oList) {
 							Action action = (Action)o[0];
-							if (!Action.ORIGIN_SYSTEM.equals(action.getOrigin())) {
+							if (!action.isAdopted() && !Action.ORIGIN_SYSTEM.equals(action.getOrigin())) {
 								if (now - action.getModifyTimestamp() > timeoutTimeRange && !scheduledReferences.referencesAction(action.getId())) {
-									actionDao.delete(action.getId());
+									actionDao.deleteExpiredCandidate(action.getId(), now - timeoutTimeRange);
 								}
 							}
 						}
@@ -262,7 +265,7 @@ public class ActionServiceImpl implements ActionService {
       action.setName(function.getName());
       action.setOrigin(Action.ORIGIN_USER);
       action.setFunction(function);
-      action.setStatus(Action.STATUS_PUBLISHED);
+      action.setStatus(Action.STATUS_PENDING_REVIEW);
       action.setDomainId(domainId);
       action.setSubmissionCriteria(envelope.getJSONObject("submissionCriteria"));
       action.setTarget(envelope.getObject("target", io.ontomato.dataengine.bean.action.ActionTarget.class));
@@ -297,107 +300,127 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
   public Action save(Action action, String explanationRef, Owner owner, String lang) throws Exception {
-    JSONArray storedCodeSegments = null;
-    BusinessMeaning storedBusinessMeaning = null;
-    String storedCodeHash = null;
-    Integer storedExplanationVersion = null;
-    String storedStatus = null;
-    if (action.getId() != null) {
-      Object[] exist = actionDao.queryById(action.getId());
-      if (exist == null) {
-        throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
+    ActionForm.requireDraftStatus(action.getStatus());
+    requireActionFunction(action.getFunction(), lang);
+    Action saved = store.transaction(() -> {
+      Action previous = null;
+      if (action.getId() != null) {
+        actionDao.lock(action.getId(), action.getDomainId());
+        previous = requireOwnedAction(action.getId(), action.getDomainId(), lang);
+        if (scheduledReferences.referencesAction(action.getId())
+            && !Objects.equals(previous.getFunction().getId(), action.getFunction().getId()))
+          throw new OwnerRefusal("ACTION_REFERENCED", "A scheduled action must retain its referenced function");
       }
-      Action existAction = (Action) exist[0];
-      if (Action.ORIGIN_SYSTEM.equals(existAction.getOrigin())) {
-        throw new OwnerRefusal("ACTION_SYSTEM", langService.get(lang, "Action.cannotModifySystem"));
+      Function function = action.getFunction();
+      function.setDomainId(action.getDomainId());
+      if (function.getId() != null && (previous == null
+          || !function.getId().equals(previous.getFunction().getId())))
+        throw new OwnerRefusal("ACTION_FUNCTION_INVALID", "The function must belong to this action");
+      boolean sameCode = previous != null && Objects.equals(previous.getFunction().getCode(), function.getCode());
+      if (previous != null && Action.STATUS_PUBLISHED.equals(previous.getStatus()) && !sameCode)
+        throw new OwnerFieldRefusal("ACTION_PUBLISHED_FROZEN", "/function/code", "invalid_object",
+            langService.get(lang, "Action.publishedIsFrozen"));
+
+      // Explanations and the reviewer come from the owner, never from the save body.
+      clearExplanation(action);
+      action.setReviewedBy(previous == null ? null : previous.getReviewedBy());
+      if (explanationRef != null) {
+        String codeHash = CodeHashUtil.sha256(function.getCode());
+        JSONObject evidence = generationService.explanationEvidence(explanationRef, owner);
+        if (!codeHash.equals(evidence.getString("sourceDigest"))
+            || evidence.getIntValue("explanationVersion") != Action.EXPLANATION_VERSION)
+          throw new OwnerFieldRefusal("ACTION_EXPLANATION_MISMATCH", "/explanationRef", "invalid_object",
+              "The explanation belongs to other code or an older version. Explain the current code again.");
+        JSONObject accepted = evidence.getJSONObject("acceptedResult");
+        setExplanation(action, codeHash, accepted.getJSONArray("codeSegments"),
+            accepted.getObject("businessMeaning", BusinessMeaning.class));
+      } else if (sameCode && ActionCodeExplanationValidator.ready(previous)) {
+        setExplanation(action, previous.getCodeHash(), previous.getCodeSegments(), previous.getBusinessMeaning());
       }
-      if (!action.getDomainId().equals(existAction.getDomainId())) {
-        throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.domainMismatch"));
+      return persistDraft(action, lang);
+    });
+    completeDraftInBackground(saved, owner, lang);
+    return saved;
+  }
+
+  Action persistDraft(Action action, String lang) {
+    action.setStatus(Action.STATUS_PENDING_REVIEW);
+    action.setAdopted(true);
+    action.setOrigin(Action.ORIGIN_USER);
+    action.setDefinition(ActionDefinitionProjector.project(action));
+    return actionDao.saveDraft(action, lang);
+  }
+
+  void completeDraftInBackground(Action action, Owner owner, String lang) {
+    String id = action.getId();
+    String domain = action.getDomainId();
+    String name = action.getName();
+    String description = action.getDescription();
+    Thread.startVirtualThread(() -> {
+      try {
+        actionDao.indexDraft(id, domain, name, description);
+      } catch (Exception error) {
+        log.warn("Could not index action {}", id, error);
       }
-      if (scheduledReferences.referencesAction(action.getId()) && (action.getFunction() == null
-          || !Objects.equals(exist[1], action.getFunction().getId())))
-        throw new OwnerRefusal("ACTION_REFERENCED", "A scheduled action must retain its referenced function");
-      storedCodeSegments = existAction.getCodeSegments();
-      storedBusinessMeaning = existAction.getBusinessMeaning();
-      storedCodeHash = existAction.getCodeHash();
-      storedExplanationVersion = existAction.getExplanationVersion();
-      storedStatus = existAction.getStatus();
-    }
-    // Explanations are server-derived. A request cannot supply them; they are reused only when the
-    // stored explanation belongs to exactly this code and to the current explanation version.
+    });
+    if (ActionCodeExplanationValidator.ready(action)) return;
+    Function function = action.getFunction();
+    String code = function.getCode();
+    String codeHash = CodeHashUtil.sha256(code);
+    List<Parameter> parameters = function.getParameters();
+    Thread.startVirtualThread(() -> {
+      try {
+        OntologyGenerationService.asOwner(new SimpleUser(owner.userId(), null, null, true, domain),
+            () -> explainCode(parameters, code, domain, lang, UUID.randomUUID().toString(),
+                (explanation, segments, meaning) -> writeExplanation(id, domain, codeHash, segments, meaning)));
+      } catch (Exception error) {
+        log.warn("Could not explain action {}", id, error);
+      }
+    });
+  }
+
+  private boolean writeExplanation(String id, String domain, String codeHash, JSONArray segments, BusinessMeaning meaning) {
+    actionDao.lock(id, domain);
+    Action current = queryById(id);
+    if (current == null || !domain.equals(current.getDomainId())
+        || !codeHash.equals(CodeHashUtil.sha256(current.getFunction().getCode()))) return false;
+    setExplanation(current, codeHash, segments, meaning);
+    actionDao.updateExplanation(current);
+    return true;
+  }
+
+  static void clearExplanation(Action action) {
     action.setCodeSegments(null);
     action.setBusinessMeaning(null);
-    Function function = action.getFunction();
-    if (function == null) {
+    action.setCodeHash(null);
+    action.setExplanationVersion(null);
+  }
+
+  private static void setExplanation(Action action, String codeHash, JSONArray segments, BusinessMeaning meaning) {
+    action.setCodeSegments(segments);
+    action.setBusinessMeaning(meaning);
+    action.setCodeHash(codeHash);
+    action.setExplanationVersion(Action.EXPLANATION_VERSION);
+  }
+
+  private void requireActionFunction(Function function, String lang) {
+    if (function == null)
       throw new OwnerFieldRefusal("ACTION_FUNCTION_INVALID", "/function", "required",
           langService.get(lang, "Function.cannotBeEmpty"));
-    }
     try {
       ActionFunctionAdmission.requireSupported(function, langService, lang);
     } catch (IllegalArgumentException error) {
       throw new OwnerFieldRefusal("ACTION_FUNCTION_INVALID", "/function", "invalid_object", error.getMessage());
     }
-    // Vector storage and the domain-scoped asset index key off the function's domain; the
-    // controller sets it on the action, so carry it onto a new function before saving.
-    if (function.getDomainId() == null || function.getDomainId().isBlank()) {
-      function.setDomainId(action.getDomainId());
-    }
-    boolean codeChanged = true;
-    if (function.getId() != null) {
-      Function existFunction = functionDao.queryById(function.getId());
-      if (existFunction == null) {
-        throw new OwnerRefusal("ACTION_FUNCTION_INVALID", langService.get(lang, "Function.notFound"));
-      }
-      codeChanged = !existFunction.getCode().equals(function.getCode());
-    }
-    // Publication freezes the program. Whoever approved the action approved exactly this code, so
-    // rewriting it in place would keep the approval while replacing what it approved. A change is a
-    // new action, reviewed on its own; re-explaining the same code stays allowed above.
-    if (Action.STATUS_PUBLISHED.equals(storedStatus) && codeChanged) {
-      throw new OwnerFieldRefusal("ACTION_PUBLISHED_FROZEN", "/function/code", "invalid_object",
-          langService.get(lang, "Action.publishedIsFrozen"));
-    }
-    actionDao.validateDefinition(action);
-    String codeHash = CodeHashUtil.sha256(function.getCode());
-    boolean reusable =
-        !codeChanged
-            && storedCodeSegments != null
-            && !storedCodeSegments.isEmpty()
-            && codeHash != null
-            && codeHash.equals(storedCodeHash)
-            && storedExplanationVersion != null
-            && storedExplanationVersion == Action.EXPLANATION_VERSION;
-    if (explanationRef != null) {
-      // An explanation accepted for an unsaved draft is reused only for exactly that code and the current version.
-      JSONObject evidence = generationService.explanationEvidence(explanationRef, owner);
-      if (!Objects.equals(codeHash, evidence.getString("sourceDigest"))
-          || evidence.getIntValue("explanationVersion") != Action.EXPLANATION_VERSION)
-        throw new IllegalArgumentException(
-            "explanationRef: the explanation was accepted for other code or an older explanation version; explain this code again");
-      JSONObject accepted = evidence.getJSONObject("acceptedResult");
-      action.setCodeSegments(accepted.getJSONArray("codeSegments"));
-      action.setBusinessMeaning(accepted.getObject("businessMeaning", BusinessMeaning.class));
-    } else if (reusable) {
-      action.setCodeSegments(storedCodeSegments);
-      action.setBusinessMeaning(storedBusinessMeaning);
-    } else {
-      return explainCode(
-          function.getParameters(),
-          function.getCode(),
-          action.getDomainId(),
-          lang,
-          UUID.randomUUID().toString(),
-          (explanation, segments, meaning) -> {
-            action.setCodeSegments(segments);
-            action.setBusinessMeaning(meaning);
-            action.setCodeHash(codeHash);
-            action.setExplanationVersion(Action.EXPLANATION_VERSION);
-            return actionDao.saveWithFunction(action, lang);
-          });
-    }
-    action.setCodeHash(codeHash);
-    action.setExplanationVersion(Action.EXPLANATION_VERSION);
-    return actionDao.saveWithFunction(action, lang);
+  }
+
+  private Action requireOwnedAction(String id, String domainId, String lang) {
+    Action action = queryById(id);
+    if (action == null || !domainId.equals(action.getDomainId()))
+      throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
+    if (Action.ORIGIN_SYSTEM.equals(action.getOrigin()))
+      throw new OwnerRefusal("ACTION_SYSTEM", langService.get(lang, "Action.cannotModifySystem"));
+    return action;
   }
 
   @Override
@@ -488,7 +511,7 @@ public class ActionServiceImpl implements ActionService {
 	}
 
   @Override
-  public JSONObject importActions(byte[] zipData, String lang, boolean allowMissingExplanation)
+  public JSONObject importActions(byte[] zipData, String lang)
       throws Exception {
     byte[] jsonBytes = ZipBundleUtil.unzipFirstJson(zipData);
     JSONArray array = JSON.parseArray(new String(jsonBytes, StandardCharsets.UTF_8));
@@ -516,24 +539,9 @@ public class ActionServiceImpl implements ActionService {
           action.setDomainId(domainId);
           function.setDomainId(domainId);
         }
-        String codeHash = CodeHashUtil.sha256(function.getCode());
-        if (!allowMissingExplanation || Action.STATUS_PUBLISHED.equals(action.getStatus())) {
-          if (action.getCodeSegments() == null || action.getCodeSegments().isEmpty()) {
-            throw new Exception(
-                "Action.codeSegments: expected a nonempty explanation; run action re-explain before importing a published asset");
-          }
-          if (!codeHash.equals(action.getCodeHash())) {
-            throw new Exception(
-                "Action "
-                    + actionId
-                    + " explanation does not match its code; run action re-explain");
-          }
-        }
-        if (Action.STATUS_PUBLISHED.equals(action.getStatus())) ActionCodeExplanationValidator.requireReady(action);
-        action.setCodeHash(codeHash);
-        action.setExplanationVersion(Action.EXPLANATION_VERSION);
-        // An import publishes what it writes, so the importer is its approver; the author is whoever
-        // the bundle records, falling back to the importer when the bundle carries none.
+        ActionCodeExplanationValidator.requireReady(action);
+        action.setAdopted(true);
+        // A domain transfer preserves the asset's status and records the importer as its reviewer.
         if (action.getCreatedBy() == null) action.setCreatedBy(importer);
         action.setReviewedBy(importer);
         actionDao.saveWithFunction(action, lang);
@@ -590,31 +598,20 @@ public class ActionServiceImpl implements ActionService {
           throw new Exception("Action has no embedded function");
         }
         String codeHash = CodeHashUtil.sha256(function.getCode());
-        boolean ready =
-            action.getCodeSegments() != null
-                && !action.getCodeSegments().isEmpty()
-                && codeHash != null
-                && codeHash.equals(action.getCodeHash())
-                && Integer.valueOf(Action.EXPLANATION_VERSION)
-                    .equals(action.getExplanationVersion());
-        if (missingOnly && ready) {
+        if (missingOnly && ActionCodeExplanationValidator.ready(action)) {
           skippedCount++;
           continue;
         }
-        explainCode(
+        boolean written = explainCode(
             function.getParameters(),
             function.getCode(),
             action.getDomainId(),
             lang,
             UUID.randomUUID().toString(),
-            (explanation, segments, meaning) -> {
-              action.setCodeSegments(segments);
-              action.setBusinessMeaning(meaning);
-              action.setCodeHash(codeHash);
-              action.setExplanationVersion(Action.EXPLANATION_VERSION);
-              return actionDao.save(action);
-            });
-        successCount++;
+            (explanation, segments, meaning) ->
+                writeExplanation(id, action.getDomainId(), codeHash, segments, meaning));
+        if (written) successCount++;
+        else skippedCount++;
       } catch (Exception e) {
         log.error("Failed to re-explain action {}: {}", id, e.getMessage(), e);
         JSONObject failure = new JSONObject();
@@ -800,6 +797,7 @@ public class ActionServiceImpl implements ActionService {
     List<ObjectNode> errors = List.of();
     if (values == null) values = PanelFormFields.asset(action);
     else if (request.get("changedField") == null) errors = ActionForm.fieldErrors(values);
+    if (existing) values.remove("status");
     String readOnlyReason = null;
     if (Action.ORIGIN_SYSTEM.equals(action.getOrigin()))
       readOnlyReason = langService.get(lang, "Action.cannotModifySystem");
@@ -808,7 +806,7 @@ public class ActionServiceImpl implements ActionService {
       codeReadOnlyReason = langService.get(lang, "Action.publishedIsFrozen");
     JSONArray classOptions = JSONArray.from(adminService.getJSONRule(domainId).get("classDef"));
     return ActionForm.describe(
-        values, errors, readOnlyReason, codeReadOnlyReason, classOptions, lang, langService);
+        values, errors, readOnlyReason, codeReadOnlyReason, !existing, classOptions, lang, langService);
   }
 
   @Override
@@ -823,14 +821,20 @@ public class ActionServiceImpl implements ActionService {
     List<StatusResult> results = new ArrayList<>();
     for (String id : new LinkedHashSet<>(ids)) {
       try {
-        Action action = queryById(id);
-        if (action == null || !domainId.equals(action.getDomainId()))
-          throw new OwnerRefusal("ACTION_NOT_FOUND", "Action not found");
-        if (Action.ORIGIN_SYSTEM.equals(action.getOrigin()))
-          throw new OwnerRefusal("ACTION_SYSTEM", langService.get(lang, "Action.cannotModifySystem"));
-        action.setStatus(status);
-        if (Action.STATUS_PUBLISHED.equals(status)) action.setReviewedBy(userId);
-        results.add(new StatusResult(id, save(action, null, new Owner(userId, domainId), lang), null, null));
+        Action saved = store.transaction(() -> {
+          actionDao.lock(id, domainId);
+          Action action = requireOwnedAction(id, domainId, lang);
+          if (Action.STATUS_PUBLISHED.equals(status)) {
+            requireActionFunction(action.getFunction(), lang);
+            if (!ActionCodeExplanationValidator.ready(action))
+              throw new OwnerRefusal("ACTION_EXPLANATION_REQUIRED",
+                  langService.get(lang, "Action.explanationRequired"));
+            action.setReviewedBy(userId);
+          }
+          action.setStatus(status);
+          return actionDao.updateStatus(action);
+        });
+        results.add(new StatusResult(id, saved, null, null));
       } catch (OwnerRefusal refusal) {
         results.add(new StatusResult(id, null, refusal, null));
       } catch (Exception error) {
@@ -868,8 +872,7 @@ public class ActionServiceImpl implements ActionService {
   }
 
   /**
-   * Fills the explanation of an already assembled draft Action. Draft creation owns the only
-   * explain call; saving the draft reuses this stored result and never explains again.
+   * Fills the explanation of an already assembled draft Action.
    */
   public void explainForDraft(Action action, String lang) throws Exception {
     Function function = action.getFunction();

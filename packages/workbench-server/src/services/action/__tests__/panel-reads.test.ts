@@ -601,7 +601,7 @@ describe("action catalog reads", () => {
       } } },
     });
     expect(sent).toEqual([{ path: "/action/definitionForm", body: { target: { kind: "draft" }, changedField: null } }]);
-    expect(status.inspectImpact).toBeUndefined();
+    expect(status.inspectImpact?.handlerRef).toBe(`${status.handlerRef}.inspect-impact`);
     expect(remove).toMatchObject({
       handlerRef: "actions.delete", label: "Delete", effect: "write", batch: false,
       target: { source: "input", input: "action" }, inspectImpact: { handlerRef: "actions.delete.inspect-impact" },

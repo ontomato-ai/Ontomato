@@ -61,7 +61,7 @@ public interface ActionService {
 
 	public JSONObject reExplainActions(List<String> ids, boolean missingOnly, String lang) throws Exception;
 
-	public JSONObject importActions(byte[] zipData, String lang, boolean allowMissingExplanation) throws Exception;
+	public JSONObject importActions(byte[] zipData, String lang) throws Exception;
 	
 	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception;
 

@@ -208,9 +208,10 @@ The SDK directory contains the built `sdk.json`. See [platform checks](reference
 | `metric-view get <id>`, `action get <id>` | Full definition with the Function and its parameters |
 | `metric-view context`, `action context` | Authorized ontology, knowledge and the owner's current authoring guide |
 | `metric-view generate [--save] <definition JSON or @file>` | Test the complete query package and its bindings, then return the owner-accepted definition |
-| `action generate [--save] --sample <JSON or @file> <definition JSON or @file>` | Prepare and reset an isolated sample, execute the Action, get the owner's explanation reference and return the accepted definition |
+| `action generate --sample <JSON or @file> <definition JSON or @file>` | Prepare and reset an isolated sample, execute the Action, get the owner's explanation reference and return the accepted definition |
 | `metric-view save <definition>`, `action save <definition>` | Save once and return the saved definition, including new IDs |
-| `metric-view publish <id>`, `action publish <id>` | Read the full definition, set `status` to `PUBLISHED`, save and read it back |
+| `action publish <id>` | Publish through the owner after it has generated the current code explanation |
+| `metric-view publish <id>` | Read the definition, set `status` to `PUBLISHED`, save and read it back |
 | `metric-view delete <id>`, `action delete <id>` | Delete the interface |
 
 Prefer an existing interface. To create one, read `context` for its kind and write the definition yourself. For a MetricView, embed an `OPERATION_READ` Function with a complete `queryPackage`. When editing, start from `metric-view get` and carry the actual bindings you intend to keep. For an Action, embed an `OPERATION_WRITE` Function with the Python protocol and explicit typed parameters described by the owner. Declare the classes and records needed for the Action in `--sample`. Java executes the Action in its own sandbox.
@@ -241,8 +242,8 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `schema`, `relationships` | At least one class name, sent as `classNames: string[]`. |
 | `execute-dsl` | Required DSL JSON, using the DSL endpoint's documented syntax. |
 | `function list/get/save/delete` | list filter defaults to `{}`; get/delete require an ID. save requires a Function object; READ uses queryPackage, WRITE uses Python v2 code. Parameter names/types/descriptions must have their declared JSON types. No boolean parameter type is added. |
-| `action` / `metric-view` `generate` | Required authored definition JSON. Action also requires `--sample <JSON or @file>`. The command tests and accepts the definition. Pass `--save` to persist the accepted definition. |
-| `action` / `metric-view` `find/get/save/publish/delete` | find requires a class, optional question defaults to omitted. get/publish/delete require ID. save takes the full definition object, with the embedded Function. publish saves that definition as PUBLISHED; it does not bypass asset admission. |
+| `action` / `metric-view` `generate` | Required authored definition JSON. Action also requires `--sample <JSON or @file>`. Use `action save` or `action generate --save <definition>` to save a pending Action draft. Use `metric-view generate --save` to persist a tested MetricView. |
+| `action` / `metric-view` `find/get/save/publish/delete` | find requires a class, optional question defaults to omitted. get/publish/delete require ID. save takes the full definition object, with the embedded Function. Action publish changes status through `/action/setStatus` after the current code explanation is ready. MetricView publish retains its definition-save path. |
 | `action` / `metric-view` `execute` | Required ID; JSON parameters default to `{}` only for zero-parameter assets. Every declared key must be present. Explicit null is accepted; `""` and `0` are preserved. Missing keys fail with `Missing parameter: <name>`. MetricView `--binding` supplies its complete saved parameter object and cannot be overridden. |
 | `action re-explain` | Optional repeated IDs; `--missing` defaults false. Results identify individual failures. |
 | `vector-upload`, `vector-delete` | Required class, attribute and object ID; upload requires text and optionally file, delete requires resource path. Vector fields are rejected by ordinary object insert/update. |

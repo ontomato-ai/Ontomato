@@ -27,6 +27,7 @@ import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.bean.action.Action;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
+import io.ontomato.dataengine.service.agent.GenerationOperations;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 import java.util.List;
@@ -76,7 +77,18 @@ class ActionPanelEndpointTest {
     when(subjects.subjectsInDomain("domain")).thenReturn(List.of());
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjects);
     ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
+    ReflectionTestUtils.setField(controller, "generationOperations", mock(GenerationOperations.class));
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
+  }
+
+  @Test
+  void publishedStatusInASaveRequestIsRefusedAtTheHttpBoundary() throws Exception {
+    JSONObject body = perform("/action/save", """
+        {"status":"PUBLISHED","submittedFields":["/name"],"name":"Approve"}""");
+
+    assertEquals("ACTION_STATUS_INVALID", body.getString("code"));
+    assertEquals("/status", body.getJSONArray("errors").getJSONObject(0).getString("field"));
+    verifyNoInteractions(actionService);
   }
 
   @Test
@@ -94,7 +106,7 @@ class ActionPanelEndpointTest {
     stored.setName("Approve order");
     stored.setDescription("Approve a pending order");
     stored.setOrigin(Action.ORIGIN_USER);
-    stored.setStatus(Action.STATUS_PENDING_REVIEW);
+    stored.setStatus(Action.STATUS_PUBLISHED);
     stored.setDomainId("domain");
     stored.setSubmissionCriteria(JSONObject.parseObject("""
         {"conditions":[{"objectParameter":"order_id","className":"Order","field":"status","operator":"=","value":"open"}]}"""));
@@ -162,6 +174,7 @@ class ActionPanelEndpointTest {
     Action action = new Action();
     action.setId("a1");
     action.setName("Approve");
+    action.setDomainId("domain");
     action.setCodeSegments(JSONArray.parseArray("""
         [{"kind":"TRY_CATCH","trySegs":[{"kind":"UPDATE_OBJECT"}],
           "catchs":[{"error":"any","segs":[{"kind":"ERROR_HANDLING"}]}]},

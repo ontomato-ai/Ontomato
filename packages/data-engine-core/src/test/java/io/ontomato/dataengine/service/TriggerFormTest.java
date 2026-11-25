@@ -13,6 +13,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.alibaba.fastjson2.JSONArray;
@@ -97,7 +98,7 @@ class TriggerFormTest {
   void formReadPreservesExecutorAndSwitchesEffectFields() {
     Trigger existing = storedActionTrigger("tr-1", "d1");
     when(triggers.queryById("tr-1")).thenReturn(existing);
-    when(actions.queryList(null, null, null, "d1")).thenReturn(List.of(action("act-1", "Check stock")));
+    when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "d1")).thenReturn(List.of(action("act-1", "Check stock")));
     when(workflows.queryList(null, "d1")).thenReturn(List.of(workflow("wf-1", "Restock flow")));
 
     JSONObject loaded = service.definitionForm(
@@ -125,7 +126,7 @@ class TriggerFormTest {
     Trigger existing = storedActionTrigger("tr-1", "d1");
     existing.setEffect(JSONObject.of("actionId", "deleted-act", "parameters", new JSONObject()));
     when(triggers.queryById("tr-1")).thenReturn(existing);
-    when(actions.queryList(null, null, null, "d1")).thenReturn(List.of(action("act-1", "Check stock")));
+    when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "d1")).thenReturn(List.of(action("act-1", "Check stock")));
     when(workflows.queryList(null, "d1")).thenReturn(List.of());
 
     JSONObject loaded = service.definitionForm(
@@ -143,6 +144,26 @@ class TriggerFormTest {
         JSONObject.of("target", JSONObject.of("kind", "object", "objectType", "platform:Trigger", "primaryKey", "tr-1")),
         "en", "d2"));
     assertEquals("TRIGGER_NOT_FOUND", crossDomain.code());
+  }
+
+  @Test
+  void savingOrPublishingATriggerCannotReferenceAnUnpublishedAction() {
+    Trigger existing = storedActionTrigger("tr-1", "d1");
+    when(triggers.queryById("tr-1")).thenReturn(existing);
+    when(workflows.queryList(null, "d1")).thenReturn(List.of());
+    JSONObject definition = TriggerForm.fromTrigger(existing);
+    User owner = user("u1", "d1");
+    Action target = action("act-1", "Check stock");
+    target.setDomainId("d1");
+    target.setStatus(Action.STATUS_PENDING_REVIEW);
+    when(actions.queryById("act-1")).thenReturn(target);
+
+    var save = assertThrows(OwnerFieldRefusal.class, () -> service.saveDefinition(definition, owner, "en"));
+    assertTrue(errorPairs(save.errors()).contains("/effect/actionId:target_unavailable"));
+    var publish = assertThrows(OwnerFieldRefusal.class,
+        () -> service.changeStatus("tr-1", Trigger.STATUS_PUBLISHED, true, owner, "en"));
+    assertTrue(errorPairs(publish.errors()).contains("/effect/actionId:target_unavailable"));
+    verify(triggers, never()).save(any(), anyString(), anyLong());
   }
 
   @Test
@@ -175,7 +196,7 @@ class TriggerFormTest {
     existing.setEffect(JSONObject.of("workflowId", "wf-1", "requester", "alice", "goalText", "Run nightly"));
     existing.setExecutor("principal:u1");
     when(triggers.queryById("tr-1")).thenReturn(existing);
-    when(actions.queryList(null, null, null, "d1")).thenReturn(List.of());
+    when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "d1")).thenReturn(List.of());
     when(workflows.queryList(null, "d1")).thenReturn(List.of(workflow("wf-1", "Restock flow")));
     when(triggers.save(any(Trigger.class), eq("u1"), anyLong())).thenAnswer(inv -> inv.getArgument(0));
 

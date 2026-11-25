@@ -4,6 +4,7 @@ import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
+import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.service.*;
@@ -267,7 +268,7 @@ public class GenerationOperations {
         });
   }
 
-  public static String testDigest(String kind, String code, JSONArray parameters) {
+  private static String testDigest(String kind, String code, JSONArray parameters) {
     return AgentJson.hash(
         JSONObject.of(
             "kind", kind, "code", code, "parameterDefs", executedParameters(kind, parameters)));
@@ -310,7 +311,7 @@ public class GenerationOperations {
         : actionParameters(window.owner().domainId(), defs));
     var parameters = MetricViewBindings.values(function);
     if (!legacy) MetricViewBindings.validateValues(function, parameters);
-    String digest = legacy ? testDigest("action", code, defs) : actionDigest(code, function.getParameters());
+    String digest = actionDigest(code, function.getParameters());
     String execution = UUID.randomUUID().toString();
     var access = window.access();
     var authority = PythonAuthority.write(access.user().getId(), window.owner().domainId(), sandbox(row))
@@ -349,7 +350,7 @@ public class GenerationOperations {
   }
 
   String actionDigest(String domainId, String code, JSONArray defs) {
-    return actionDigest(code, defs == null ? List.of() : actionParameters(domainId, defs));
+    return actionDigest(code, defs == null || defs.isEmpty() ? List.of() : actionParameters(domainId, defs));
   }
 
   private static String actionDigest(String code, List<Parameter> parameters) {
@@ -425,13 +426,36 @@ public class GenerationOperations {
     return receipt(row);
   }
 
-  Receipt requireTest(String run, String kind, String digest, String evidenceScope) {
+  Receipt latestTest(String run, String kind, String digest, String evidenceScope) {
     var rows = store.rows("SELECT execution_id,digest,result FROM ontology_generation_tests"
         + " WHERE run_id=? AND kind=? AND digest=? AND evidence_scope=?"
         + " ORDER BY created_at DESC,execution_id DESC LIMIT 1", uuid(run), kind, digest, evidenceScope);
-    var row = rows.isEmpty() ? null : rows.getFirst();
-    requirePassed(row == null ? null : row.getJSONObject("result"));
-    return receipt(row);
+    return rows.isEmpty() ? null : receipt(rows.getFirst());
+  }
+
+  Receipt requireTest(String run, String kind, String digest, String evidenceScope) {
+    Receipt test = latestTest(run, kind, digest, evidenceScope);
+    requirePassed(test == null ? null : (JSONObject) test.result());
+    return test;
+  }
+
+  public String actionTrialStatus(Action action) {
+    Function function = action.getFunction();
+    if (function == null) return "notRun";
+    JSONArray parameters = function.getParameters() == null ? null : JSONArray.from(function.getParameters());
+    var rows = store.rows("""
+        SELECT t.result FROM ontology_generation_tests t
+        LEFT JOIN ontology_platform_authoring_runs a ON a.run_id=t.run_id
+        LEFT JOIN ontology_agent_runs r ON r.id=t.run_id
+        LEFT JOIN ontology_agent_sessions s ON s.id=r.session_id
+        WHERE t.kind='action' AND t.digest=? AND COALESCE(a.domain_id,s.domain_id)=?
+        ORDER BY t.created_at DESC,t.execution_id DESC LIMIT 1
+        """, actionDigest(action.getDomainId(), function.getCode(), parameters), action.getDomainId());
+    if (rows.isEmpty()) return "notRun";
+    JSONObject result = rows.getFirst().getJSONObject("result");
+    if (result == null) return "incomplete";
+    String error = result.getString("error");
+    return error == null || error.isBlank() ? "passed" : "failed";
   }
 
   private static Receipt receipt(JSONObject row) {
@@ -442,8 +466,13 @@ public class GenerationOperations {
     requireDigest(run, packageTestDigest(kind, bundle));
   }
 
-  public void requireTest(String run, String kind, String code, JSONArray parameters) {
-    requireDigest(run, testDigest(kind, code, parameters));
+  public void requireActionTest(String run, String domain, String code, JSONArray parameters) {
+    var tests = store.rows(
+        "SELECT result FROM ontology_generation_tests WHERE run_id=? AND digest IN (?,?)"
+            + " ORDER BY created_at DESC,execution_id DESC LIMIT 1",
+        uuid(run), actionDigest(code, legacyActionParameters(domain, parameters)),
+        testDigest("action", code, parameters));
+    requirePassed(tests.isEmpty() ? null : tests.getFirst().getJSONObject("result"));
   }
 
   private void requireDigest(String run, String digest) {

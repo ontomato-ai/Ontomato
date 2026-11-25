@@ -67,7 +67,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         if (Workflow.STATUS_ACTIVE.equals(workflow.getStatus())) {
             throw new IllegalArgumentException("Activating a workflow is its own operation");
         }
-        validate(workflow, workflow.getDomainId());
+        validate(workflow, workflow.getDomainId(), false);
         return workflows.saveDraft(workflow);
     }
 
@@ -96,7 +96,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     private Workflow publish(String id, String domainId, String principalId) {
         Workflow workflow = requireForUpdate(id, domainId);
-        validate(workflow, domainId);
+        validate(workflow, domainId, true);
         int version = workflows.publishVersion(workflow);
         for (WorkflowStep step : workflow.getSteps()) {
             // Case-scoped steps are authorized per Case at execution time; a role-level grant would
@@ -184,7 +184,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     /** A step must name a role and an action that exists in this domain, or activation grants nothing. */
-    private void validate(Workflow workflow, String domainId) {
+    private void validate(Workflow workflow, String domainId, boolean activating) {
         List<String> problems = new ArrayList<>();
         List<WorkflowStep> steps = workflow.getSteps();
         Set<Integer> numbers = new LinkedHashSet<>();
@@ -204,9 +204,12 @@ public class WorkflowServiceImpl implements WorkflowService {
                     problems.add(where + " names no action");
                 } else {
                     var row = actions.queryById(step.getActionId());
-                    if (row == null || !domainId.equals(((Action) row[0]).getDomainId()))
+                    Action action = row == null ? null : (Action) row[0];
+                    if (action == null || !domainId.equals(action.getDomainId()))
                         problems.add(where + " names an unknown action: " + step.getActionId());
-                    else validateTarget(step, (Action) row[0], workflow, problems);
+                    else if (activating && !Action.STATUS_PUBLISHED.equals(action.getStatus()))
+                        problems.add(where + " requires a published action: " + step.getActionId());
+                    else validateTarget(step, action, workflow, problems);
                 }
                 if (step.getActionType() != null && !WorkflowStep.actionTypes().contains(step.getActionType())) {
                     problems.add(where + " has an unknown action type: " + step.getActionType());

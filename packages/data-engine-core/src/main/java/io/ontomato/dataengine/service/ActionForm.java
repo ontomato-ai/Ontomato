@@ -15,6 +15,12 @@ public final class ActionForm {
   private static final List<String> STATUSES =
       List.of(Action.STATUS_PENDING_REVIEW, Action.STATUS_PUBLISHED, Action.STATUS_UNUSED);
 
+  public static void requireDraftStatus(String status) {
+    if (status != null && !Action.STATUS_PENDING_REVIEW.equals(status))
+      throw new OwnerFieldRefusal("ACTION_STATUS_INVALID", "/status", "invalid_option",
+          "Save accepts only PENDING_REVIEW. Change publication status through /action/setStatus.");
+  }
+
   public static JSONObject defaultValues() {
     return JSONObject.of(
         "name", "",
@@ -38,6 +44,7 @@ public final class ActionForm {
       List<ObjectNode> errors,
       String readOnlyReason,
       String codeReadOnlyReason,
+      boolean creating,
       JSONArray classOptions,
       String lang,
       LangService langService) {
@@ -65,17 +72,19 @@ public final class ActionForm {
             readOnlyReason,
             null,
             false));
-    fields.add(
-        PanelFormFields.field(
-            "/status",
-            text(langService, lang, "PanelForm.status"),
-            PanelFormFields.select(statusOptions(lang, langService)),
-            JSONObject.of("type", "string", "enum", JSONArray.of(STATUSES.toArray())),
-            false,
-            readOnlyReason != null,
-            readOnlyReason,
-            null,
-            false));
+    if (creating) {
+      fields.add(
+          PanelFormFields.field(
+              "/status",
+              text(langService, lang, "PanelForm.status"),
+              PanelFormFields.select(statusOptions(lang, langService)),
+              JSONObject.of("type", "string", "enum", JSONArray.of(STATUSES.toArray())),
+              false,
+              true,
+              readOnlyReason,
+              null,
+              false));
+    }
     fields.add(targetField(values, classOptions, readOnlyReason, lang, langService));
     fields.add(
         PanelFormFields.field(
@@ -254,7 +263,6 @@ public final class ActionForm {
     properties.put("id", PanelFormFields.schema("string"));
     properties.put("name", JSONObject.of("type", "string", "minLength", 1));
     properties.put("description", PanelFormFields.schema("string"));
-    properties.put("status", JSONObject.of("type", "string", "enum", JSONArray.of(STATUSES.toArray())));
     properties.put("target", nullableObject());
     properties.put("submissionCriteria", nullableObject());
     properties.put("approvalMode", PanelFormFields.schema("string"));

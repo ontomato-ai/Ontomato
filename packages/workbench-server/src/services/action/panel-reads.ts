@@ -768,7 +768,7 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         ...(summary.length > 0 && { summary }),
       });
     },
-    /** The owner's form for a new action, which an agent drafts into after the owner adopts its trial run. */
+    /** The owner's form for a new action draft. */
     async createForm(params: ActionFormParams): Promise<PanelFormDescription> {
       return definitionForm("action-create-form", { kind: "draft" }, params);
     },

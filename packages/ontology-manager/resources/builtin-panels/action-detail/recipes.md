@@ -28,9 +28,8 @@ deletion. The single-row page header carries the back link to `/ontology/assets/
 
 ## Running a definition in the owner's sandbox
 
-The owner adopts a save that changes the code or the parameters only when the run that prepared it executed the
-same code and parameters in the owner's sandbox and the owner accepted it. This run reaches the owner's authoring
-endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK`
+A sandbox trial is optional. It records how the exact code and parameters ran for the publication review.
+The current run reaches the owner's authoring endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK`
 with each call and use JSON bodies. The session bridge supplies the active run header.
 
 1. `GET $ONTOMATO_AUTHORING_URL/action/context`: the Python protocol and helpers the owner runs. Write the code by it.
@@ -44,13 +43,11 @@ with each call and use JSON bodies. The session bridge supplies the active run h
    fix the code or the sample and repeat from step 3.
 5. Optionally call `POST $ONTOMATO_AUTHORING_URL/action/explain-draft` with the same `code` and `parameterDefs` to
    prepare or inspect the draft explanation in this run. Do **not** pass `explanationRef` into `fill_form`:
-   `explanationRef` is not a form field (passing it fails with `unknown_field`); after sandbox verification, the owner
-   reuses or generates the explanation for this run on save.
+   `explanationRef` is not a form field. Saving a draft invalidates an old explanation when the code changes
+   and generates the new one in the background.
 
-Run these in the same run that fills the form, and fill exactly the code and parameters that passed. Only a test of
-that exact code and those parameters with no `result.error` counts: a probe or another version passing does not, and
-the owner refuses the save. When a step is refused, do not fill the form; say which step stopped and quote the owner.
-A sample class "outside the authoring scope" is outside the classes this run was admitted for: name that class and stop.
+An unavailable sandbox or a failed trial still allows saving a pending draft. Report the trial result to the author.
+
 
 ## Form field paths (`form.form` / `form.createForm`)
 
@@ -58,7 +55,6 @@ The live `form` exposes these field paths for `fill_form`:
 
 - `/name`
 - `/description`
-- `/status` (`PENDING_REVIEW`, `PUBLISHED`, or `UNUSED`)
 - `/target` (nullable object `{ className, keyParameter }`, or leaf paths `/target/className` and `/target/keyParameter`)
 - `/function/name`
 - `/function/parameters`
@@ -72,24 +68,21 @@ Do **not** pass a whole `/function` object as one field, and do **not** pass `ex
 
 1. Read `form.form` first. Use only the owner's declared field paths listed above and current values; do not invent
    field names.
-2. When the change touches `/function/code` or `/function/parameters`, run the changed definition in the owner's
-   sandbox (above) before filling the form. A change to `/name`, `/description`, `/status`, or `/target` alone needs no
-   sandbox run: the owner compares the code and parameters with the saved ones.
+2. Offer a sandbox trial when the code or parameters change.
 3. Ensure the target action is open on the `"definition"` tab via `present` (`selected`, `activeTab: "definition"`).
 4. Call `fill_form` on `form` with only the changed field paths (never a top-level `function` field and never
    `explanationRef`). The page marks the changed fields and keeps them unsaved in the header draft bar.
 5. Leave saving to the reader, or invoke `page_action` `form.save` when the reader explicitly asks to save (default
    sessions ask for confirmation in chat first; full-auto saves directly).
 
-When an edit changes `/function/code`, say so: on save the owner reuses or generates the explanation for the new code
-from this verified run, and the derived definition and code explanation follow it. A published action's code cannot
-change (the owner refuses at `/function/code`); stop using it or create another action instead.
+Saving keeps the action pending. Use the catalog's status operation to publish after the explanation is ready.
+The owner refuses changes to a published action's code at `/function/code`.
 
 ## Creating an action via agent
 
-1. Write and test the action in the owner's sandbox (above) until it passes with no `result.error`.
+1. Write the action. Offer a sandbox trial if the reader wants to verify the code.
 2. Open create mode on this page via `present` with `{ state: { selected: null, creating: true, activeTab: "definition" } }`.
-3. Read `form.createForm` once for defaults, then call `fill_form` on `form` with the verified field paths.
+3. Read `form.createForm` once for defaults, then call `fill_form` on `form` with the authored fields.
 4. Let the reader review and save in the header, or invoke `page_action` `form.save` when requested. On save, the page
    switches to edit mode on the newly created action.
 

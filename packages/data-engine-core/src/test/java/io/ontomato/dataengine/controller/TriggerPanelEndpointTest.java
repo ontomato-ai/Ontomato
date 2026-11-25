@@ -84,6 +84,7 @@ class TriggerPanelEndpointTest {
     Action act = new Action();
     act.setId("act-1");
     act.setName("Check stock");
+    when(actionService.queryList(Action.STATUS_PUBLISHED, null, null, "domain")).thenReturn(List.of(act));
     when(actionService.queryList(null, null, null, "domain")).thenReturn(List.of(act));
     Workflow wf = new Workflow();
     wf.setId("wf-1");

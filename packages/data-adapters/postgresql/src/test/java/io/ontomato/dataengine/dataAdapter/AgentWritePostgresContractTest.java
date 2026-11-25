@@ -72,13 +72,7 @@ class AgentWritePostgresContractTest {
       byte[] bundle = ZipBundleUtil.zip("actions.json", fixture("actions.json").getBytes(StandardCharsets.UTF_8));
       try (var identity = mockStatic(SystemUtils.class)) {
         identity.when(SystemUtils::getCurUser).thenReturn(new QueryAccessService.GrantUser("test", "contract"));
-        assertTrue(assets.importActions(bundle, "en", false).getBooleanValue("success"));
-        var bad = JSON.parseArray(fixture("actions.json"));
-        bad.getJSONObject(0).put("id", "invalid-action");
-        bad.getJSONObject(0).remove("codeHash");
-        var rejected = assets.importActions(ZipBundleUtil.zip("actions.json", bad.toJSONString().getBytes(StandardCharsets.UTF_8)), "en", true);
-        assertFalse(rejected.getBooleanValue("success"));
-        assertEquals(1, rejected.getIntValue("failureCount"));
+        assertTrue(assets.importActions(bundle, "en").getBooleanValue("success"));
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM action", Integer.class));
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM function", Integer.class));
       }

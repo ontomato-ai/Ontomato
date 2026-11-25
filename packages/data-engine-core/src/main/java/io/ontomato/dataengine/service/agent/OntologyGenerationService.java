@@ -283,7 +283,7 @@ public class OntologyGenerationService {
         if (result.containsKey("code")) throw AgentHttpException.invalid("Use a source file path");
         if (kind.equals("action")) {
           String code = file(domain, session, run, AgentJson.text(result, "sourcePath"));
-          operations.requireTest(run, kind, code, result.getJSONArray("parameterDefs"));
+          operations.requireActionTest(run, domain, code, result.getJSONArray("parameterDefs"));
           result.put("code", code);
         } else {
           var bundle = packageFile(domain, session, run, AgentJson.text(result, "packagePath"));
