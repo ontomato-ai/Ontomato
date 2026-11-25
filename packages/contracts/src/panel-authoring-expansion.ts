@@ -67,10 +67,14 @@ export function expandPanelAuthoringMember(
     return fail("agent", "The agent target belongs to the official ConversationEntry or AgentChat component");
   if ((member.prefill !== undefined || member.prefillKey !== undefined) && componentId !== "@ontomato/sdk:ConversationEntry")
     return fail(member.prefill !== undefined ? "prefill" : "prefillKey", "The opening sentence belongs to the official ConversationEntry component");
+  if ((member.submit !== undefined || member.newSession !== undefined) && componentId !== "@ontomato/sdk:ConversationEntry")
+    return fail(member.submit !== undefined ? "submit" : "newSession", "Submit and newSession belong to the official ConversationEntry component");
   const conversationEntry = member.agent === undefined ? undefined : panelConversationEntrySchema.parse({
     target: member.agent === "page-default" ? { kind: "page-default" } : member.agent,
     ...(member.prefill !== undefined && { prefill: member.prefill }),
     ...(member.prefillKey !== undefined && { prefillKey: member.prefillKey }),
+    ...(member.submit !== undefined && { submit: member.submit }),
+    ...(member.newSession !== undefined && { newSession: member.newSession }),
   });
 
   const stateType = (name: string, field: string): DirectPanelPortType =>

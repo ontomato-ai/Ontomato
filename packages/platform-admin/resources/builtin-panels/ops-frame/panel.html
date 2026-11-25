@@ -1,0 +1,755 @@
+<style>
+  .ops-frame {
+    position: relative;
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--sdk-bg-color, #ffffff);
+    color: var(--sdk-text-regular, #303133);
+    font-size: var(--text-sm, 13px);
+    line-height: var(--leading-sm, 20px);
+  }
+
+  .ops-frame.is-dragging {
+    user-select: none;
+    cursor: col-resize;
+  }
+
+  /* Left sidebar column (244px desktop, drawer <= 760px) */
+  .ops-column {
+    flex: 0 0 var(--shell-app-column, 244px);
+    width: var(--shell-app-column, 244px);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 14px 10px 12px;
+    background: var(--shell-panel-bg, var(--sdk-bg-color-page, #f7f8fa));
+    border-right: 1px solid var(--sdk-border-color, #e4e7ed);
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .ops-column-head {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 10px;
+    margin-bottom: 4px;
+    font-size: var(--text-lg, 16px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--sdk-text-primary, #1f2329);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ops-nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .ops-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: var(--nav-row-height, 32px);
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--radius-md, 8px);
+    background: transparent;
+    color: var(--sdk-text-regular, #303133);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .ops-nav-item:hover {
+    background: var(--shell-panel-hover, rgba(0, 0, 0, 0.04));
+    color: var(--sdk-text-primary, #1f2329);
+  }
+
+  .ops-nav-item.active {
+    background: var(--shell-panel-selected, rgba(22, 119, 255, 0.1));
+    color: var(--sdk-text-primary, #1f2329);
+    font-weight: var(--font-semibold, 600);
+  }
+
+  .ops-nav-icon {
+    flex: 0 0 auto;
+    color: var(--sdk-text-secondary, #646a73);
+  }
+
+  .ops-nav-item.primary .ops-nav-icon,
+  .ops-nav-item.active .ops-nav-icon {
+    color: var(--brand-link, var(--sdk-color-primary, #2563eb));
+  }
+
+  .ops-nav-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Recent sessions section */
+  .ops-recent-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+
+  .ops-section-title {
+    flex-shrink: 0;
+    padding: 14px 10px 4px;
+    font-size: var(--text-xs, 12px);
+    line-height: 16px;
+    color: var(--sdk-text-secondary, #646a73);
+  }
+
+  .ops-recent-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .ops-recent-sessions {
+    --sdk-bg-color: transparent;
+  }
+
+  .ops-recent-sessions .sdk-object-list,
+  .ops-recent-sessions .sdk-object-list-body,
+  .ops-recent-sessions .sdk-object-list-items {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    gap: 2px;
+  }
+
+  .ops-recent-sessions .sdk-object-list-item {
+    border: 0;
+    border-radius: var(--radius-md, 8px);
+    background: transparent;
+    padding: 0;
+    min-height: var(--nav-row-height, 32px);
+  }
+
+  .ops-recent-sessions .sdk-object-list-item:hover {
+    background: var(--shell-panel-hover, rgba(0, 0, 0, 0.04));
+  }
+
+  .ops-recent-sessions .sdk-object-list-item-btn {
+    height: var(--nav-row-height, 32px);
+    min-height: var(--nav-row-height, 32px);
+    padding: 0 10px;
+    gap: 8px;
+    border-radius: var(--radius-md, 8px);
+    font-size: var(--text-sm, 13px);
+    line-height: var(--leading-sm, 20px);
+    color: var(--sdk-text-regular, #303133);
+  }
+
+  .ops-recent-sessions .sdk-object-list-item-btn.chosen {
+    background: var(--shell-panel-selected, rgba(22, 119, 255, 0.1));
+    color: var(--sdk-text-primary, #1f2329);
+    font-weight: var(--font-semibold, 600);
+  }
+
+  .ops-recent-sessions .sdk-object-list-status-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--sdk-color-primary, #2563eb);
+    animation: ops-session-breathe 1.6s ease-in-out infinite;
+  }
+
+  @keyframes ops-session-breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  .ops-recent-sessions .sdk-object-list-row-inline-actions {
+    opacity: 0;
+    transition: opacity 120ms ease;
+    padding-right: 4px;
+  }
+
+  .ops-recent-sessions .sdk-object-list-item:hover .sdk-object-list-row-inline-actions,
+  .ops-recent-sessions .sdk-object-list-item:focus-within .sdk-object-list-row-inline-actions,
+  .ops-recent-sessions .sdk-object-list-row-inline-actions:has([aria-expanded="true"]) {
+    opacity: 1;
+  }
+
+  .ops-recent-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: var(--nav-row-height, 32px);
+    margin-top: 4px;
+    border: 0;
+    border-radius: var(--radius-md, 8px);
+    background: transparent;
+    color: var(--sdk-text-secondary, #646a73);
+    font: inherit;
+    font-size: var(--text-xs, 12px);
+    cursor: pointer;
+  }
+
+  .ops-recent-more:hover {
+    background: var(--shell-panel-hover, rgba(0, 0, 0, 0.04));
+    color: var(--sdk-text-primary, #1f2329);
+  }
+
+  /* Workspace area (middle chat + optional right feature pane) */
+  .ops-workspace {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Single persistent AgentChat surface across all 3 states */
+  .ops-chat-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-width: 280px;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--sdk-bg-color, #ffffff);
+  }
+
+  .ops-chat-pane > .ops-chat-projection {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ops-chat-pane .sdk-agent-chat {
+    border: 0;
+    border-radius: 0;
+    min-height: 0;
+  }
+
+  .ops-compact-nav {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--sdk-border-color, #e4e7ed);
+    flex-shrink: 0;
+  }
+
+  .ops-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--sdk-text-secondary, #646a73);
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .ops-icon-btn:hover {
+    background: var(--shell-panel-hover, rgba(0, 0, 0, 0.05));
+    color: var(--sdk-text-primary, #1f2329);
+  }
+
+  /* State C floating composer overlay (keeps the exact same AgentChat mounted!) */
+  .ops-chat-pane.is-floating {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    flex: none;
+    min-width: 0;
+    padding: 0 var(--spacing-lg, 16px) var(--shell-composer-foot, 16px);
+    background: transparent;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .ops-chat-pane.is-floating.is-folded {
+    display: none;
+  }
+
+  .ops-chat-pane.is-floating > .ops-floating-card {
+    width: min(760px, 100%);
+    margin-inline: auto;
+    pointer-events: auto;
+    border: 1px solid var(--sdk-border-color, #d4d7de);
+    border-radius: var(--radius-2xl, 18px);
+    background: var(--sdk-bg-color, #ffffff);
+    box-shadow: var(--elevation-composer, 0 8px 28px rgba(0, 0, 0, 0.1));
+    overflow: hidden;
+  }
+
+  .ops-chat-pane:not(.is-floating) > .ops-floating-card {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .ops-floating-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--sdk-border-color-lighter, #ebeef5);
+    background: var(--sdk-fill-color-light, #f5f7fa);
+  }
+
+  .ops-composer-unfold {
+    position: absolute;
+    right: var(--spacing-lg, 16px);
+    bottom: var(--shell-composer-foot, 16px);
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--control-height-lg, 40px);
+    height: var(--control-height-lg, 40px);
+    padding: 0;
+    border: 1px solid var(--sdk-border-color, #dcdfe6);
+    border-radius: 9999px;
+    background: var(--sdk-bg-color, #ffffff);
+    color: var(--sdk-text-primary, #1f2329);
+    box-shadow: var(--elevation-composer, 0 8px 28px rgba(0, 0, 0, 0.1));
+    cursor: pointer;
+    transition: transform 120ms ease, border-color 120ms ease;
+  }
+
+  .ops-composer-unfold:hover {
+    border-color: var(--sdk-color-primary, #2563eb);
+    color: var(--sdk-color-primary, #2563eb);
+  }
+
+  /* Drag resize handle between chat and feature pane (State B) */
+  .ops-resize-handle {
+    position: relative;
+    flex: 0 0 6px;
+    width: 6px;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 2;
+    margin-left: -3px;
+    margin-right: -3px;
+  }
+
+  .ops-resize-handle::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 2px;
+    width: 2px;
+    background: transparent;
+    transition: background-color 120ms ease;
+  }
+
+  .ops-resize-handle:hover::after,
+  .ops-frame.is-dragging .ops-resize-handle::after {
+    background: var(--sdk-color-primary, #2563eb);
+  }
+
+  /* Right feature pane (State B side / State C full / content-only) */
+  .ops-feature-pane {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--sdk-bg-color, #ffffff);
+  }
+
+  .ops-feature-pane.is-side {
+    flex: 0 0 clamp(420px, 42vw, 760px);
+    width: clamp(420px, 42vw, 760px);
+    max-width: 760px;
+    border-left: 1px solid var(--sdk-border-color, #e4e7ed);
+  }
+
+  .ops-feature-pane.is-full {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .ops-pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 44px;
+    padding: 0 12px 0 16px;
+    border-bottom: 1px solid var(--sdk-border-color, #e4e7ed);
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+
+  .ops-pane-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .ops-pane-title {
+    margin: 0;
+    font-size: var(--text-base, 14px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--sdk-text-primary, #1f2329);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ops-pane-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  /* Autotest 3-tab strip (entry-table group driven) */
+  .ops-group-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: var(--spacing-lg, 16px);
+    padding: 0 var(--page-section-padding, 20px);
+    border-bottom: 1px solid var(--sdk-border-color, #e4e7ed);
+    flex-shrink: 0;
+    background: var(--sdk-bg-color, #ffffff);
+  }
+
+  .ops-group-tab {
+    display: inline-flex;
+    align-items: center;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--sdk-text-regular, #606266);
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+
+  .ops-group-tab:hover {
+    color: var(--sdk-text-primary, #1f2329);
+  }
+
+  .ops-group-tab.active {
+    border-bottom-color: var(--sdk-color-primary, #2563eb);
+    color: var(--sdk-text-primary, #1f2329);
+    font-weight: var(--font-semibold, 600);
+  }
+
+  .ops-feature-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .ops-feature-body.has-floating-dock {
+    padding-bottom: 88px;
+  }
+
+  .ops-feature-body > .sdk-current-entry-slot {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .ops-drawer-backdrop {
+    display: none;
+  }
+
+  @media (max-width: 760px) {
+    .ops-column {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 20;
+      transform: translateX(-100%);
+      transition: transform 160ms ease;
+      box-shadow: var(--elevation-composer, 0 8px 28px rgba(0, 0, 0, 0.14));
+    }
+
+    .ops-column.is-open {
+      transform: translateX(0);
+    }
+
+    .ops-drawer-backdrop {
+      display: block;
+      position: absolute;
+      inset: 0;
+      z-index: 19;
+      background: rgba(0, 0, 0, 0.28);
+    }
+
+    .ops-compact-nav {
+      display: flex;
+    }
+
+    .ops-feature-pane.is-side {
+      flex: 1 1 auto;
+      width: 100%;
+      max-width: none;
+      border-left: 0;
+    }
+
+    .ops-chat-pane.is-side-hidden-mobile {
+      display: none;
+    }
+
+    .ops-resize-handle {
+      display: none;
+    }
+  }
+</style>
+
+<div id="app" class="ops-frame" :class="{ 'is-dragging': dragging }">
+  <div
+    v-if="narrow && drawerOpen"
+    class="ops-drawer-backdrop"
+    aria-hidden="true"
+    @click="drawerOpen = false"
+  ></div>
+
+  <aside class="ops-column" :class="{ 'is-open': drawerOpen }" :aria-label="appTitle">
+    <div class="ops-column-head">{{ appTitle }}</div>
+
+    <nav class="ops-nav-list" :aria-label="appTitle">
+      <button
+        v-if="hasConversationEntry"
+        type="button"
+        class="ops-nav-item primary"
+        :class="{ active: isConversationEntry && !sessionId }"
+        data-ops-new-chat
+        @click="startNewChat"
+      >
+        <component :is="appIcon('square-pen')" :size="16" class="ops-nav-icon" aria-hidden="true" />
+        <span class="ops-nav-label">{{ t('nav.newChat') }}</span>
+      </button>
+
+      <button
+        v-for="item in navItems"
+        :key="item.key"
+        type="button"
+        class="ops-nav-item"
+        :class="{ active: !isConversationEntry && activeNavItem?.key === item.key }"
+        :data-ops-nav="item.groupKey ?? item.path"
+        @click="openEntry(item.path)"
+      >
+        <component :is="appIcon(item.icon)" :size="16" class="ops-nav-icon" aria-hidden="true" />
+        <span class="ops-nav-label">{{ item.label }}</span>
+      </button>
+    </nav>
+
+    <div v-if="hasConversationEntry" class="ops-recent-section">
+      <div class="ops-section-title">{{ t('recent.title') }}</div>
+      <div class="ops-recent-scroll">
+        <projection slot="recentSessions" class="ops-recent-sessions" />
+        <button
+          v-if="canShowMoreSessions"
+          type="button"
+          class="ops-recent-more"
+          data-ops-sessions-more
+          @click="showMoreSessions"
+        >
+          {{ t('recent.showMore') }}
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="ops-workspace" :data-ops-layout="layoutMode">
+    <section
+      v-if="hasConversationEntry"
+      class="ops-chat-pane"
+      :class="{
+        'is-floating': isFloating,
+        'is-folded': isFloating && composerFolded,
+        'is-side-hidden-mobile': layoutMode === 'side' && narrow,
+      }"
+      data-ops-chat-pane
+    >
+      <div v-if="layoutMode === 'pure'" class="ops-compact-nav">
+        <button
+          type="button"
+          class="ops-icon-btn"
+          :title="t('nav.openMenu')"
+          :aria-label="t('nav.openMenu')"
+          @click="drawerOpen = true"
+        >
+          <component :is="appIcon('panel-left')" :size="16" aria-hidden="true" />
+        </button>
+        <span class="ops-pane-title">{{ appTitle }}</span>
+      </div>
+
+      <div class="ops-floating-card">
+        <div v-if="isFloating" class="ops-floating-bar">
+          <button
+            type="button"
+            class="ops-icon-btn"
+            :title="t('composer.fold')"
+            :aria-label="t('composer.fold')"
+            data-ops-fold-composer
+            @click="composerFolded = true"
+          >
+            <component :is="appIcon('minus')" :size="16" aria-hidden="true" />
+          </button>
+        </div>
+        <projection
+          slot="chat"
+          class="ops-chat-projection"
+          :show-header="false"
+          :collapsed="isFloating"
+          :greeting-key="'chat.greeting'"
+          :description-key="'chat.description'"
+          :placeholder-key="'chat.placeholder'"
+          @update:session-id="onSessionIdUpdate"
+          @expand="onChatExpand"
+          @entry-triggered="onEntryTriggered"
+        />
+      </div>
+    </section>
+
+    <div
+      v-if="layoutMode === 'side'"
+      class="ops-resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      data-ops-resize-handle
+      @pointerdown="startDragging"
+    ></div>
+
+    <section
+      v-show="!isConversationEntry"
+      ref="featurePaneRef"
+      class="ops-feature-pane"
+      :class="{
+        'is-side': layoutMode === 'side',
+        'is-full': layoutMode === 'full' || layoutMode === 'content-only',
+      }"
+      :style="featurePaneStyle"
+      data-ops-feature-pane
+    >
+      <header class="ops-pane-header">
+        <div class="ops-pane-header-left">
+          <button
+            v-if="narrow"
+            type="button"
+            class="ops-icon-btn"
+            :title="t('nav.openMenu')"
+            :aria-label="t('nav.openMenu')"
+            @click="drawerOpen = true"
+          >
+            <component :is="appIcon('menu')" :size="18" aria-hidden="true" />
+          </button>
+          <h2 class="ops-pane-title">{{ paneTitle }}</h2>
+        </div>
+
+        <div v-if="hasConversationEntry" class="ops-pane-actions">
+          <button
+            type="button"
+            class="ops-icon-btn"
+            :title="layoutMode === 'side' ? t('pane.full') : t('pane.side')"
+            :aria-label="layoutMode === 'side' ? t('pane.full') : t('pane.side')"
+            data-ops-toggle-pane
+            @click="togglePaneMode"
+          >
+            <component
+              :is="appIcon(layoutMode === 'side' ? 'maximize-2' : 'columns-2')"
+              :size="16"
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            class="ops-icon-btn"
+            :title="t('pane.close')"
+            :aria-label="t('pane.close')"
+            data-ops-close-pane
+            @click="closeFeaturePane"
+          >
+            <component :is="appIcon('x')" :size="16" aria-hidden="true" />
+          </button>
+        </div>
+      </header>
+
+      <div
+        v-if="activeGroupTabs.length > 0"
+        class="ops-group-tabs"
+        role="tablist"
+        data-ops-group-tabs
+      >
+        <button
+          v-for="tab in activeGroupTabs"
+          :key="tab.id"
+          type="button"
+          role="tab"
+          class="ops-group-tab"
+          :class="{ active: activeTabPath === tab.path }"
+          :aria-selected="activeTabPath === tab.path"
+          :data-ops-tab="tab.path"
+          @click="openEntry(tab.path)"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <div
+        class="ops-feature-body"
+        :class="{ 'has-floating-dock': isFloating && !composerFolded }"
+      >
+        <current-entry member="content" />
+      </div>
+    </section>
+
+    <button
+      v-if="isFloating && composerFolded"
+      type="button"
+      class="ops-composer-unfold"
+      :title="t('composer.unfold')"
+      :aria-label="t('composer.unfold')"
+      data-ops-unfold-composer
+      @click="composerFolded = false"
+    >
+      <component :is="appIcon('message-square')" :size="18" aria-hidden="true" />
+    </button>
+  </div>
+</div>

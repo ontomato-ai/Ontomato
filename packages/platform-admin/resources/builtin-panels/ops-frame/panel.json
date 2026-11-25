@@ -1,0 +1,286 @@
+{
+  "manifest": {
+    "state": {
+      "sessionId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "pane": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "full"
+      },
+      "selectedSession": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AgentSession"
+        },
+        "deepLink": false
+      },
+      "sessionLimit": {
+        "type": {
+          "kind": "scalar",
+          "type": "number"
+        },
+        "deepLink": false,
+        "default": 20
+      }
+    },
+    "members": {
+      "content": {
+        "target": {
+          "fromPlatform": "currentEntry",
+          "candidates": {
+            "rule": "applicationEntry"
+          }
+        }
+      },
+      "chat": {
+        "id": "builtin-product-ops-frame-chat",
+        "component": "AgentChat",
+        "agent": {
+          "kind": "preset",
+          "agentKind": "ops-diagnosis"
+        },
+        "state": {
+          "sessionId": "sessionId"
+        },
+        "config": {
+          "showHeader": false
+        },
+        "name": "Operations diagnosis conversation",
+        "description": "Persistent operations diagnosis AgentChat shared across pure-chat, side-by-side, and floating-composer states."
+      },
+      "recentSessions": {
+        "id": "builtin-product-ops-frame-recent-sessions",
+        "component": "ObjectList",
+        "type": "platform:AgentSession",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "agentKind": {
+                "literal": "ops-diagnosis"
+              },
+              "limit": {
+                "state": "sessionLimit"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "selectedSession"
+        },
+        "operations": {
+          "rename": {
+            "type": "platform:AgentSession",
+            "operation": "agentSessions.rename",
+            "target": {
+              "row": true
+            }
+          },
+          "delete": {
+            "type": "platform:AgentSession",
+            "operation": "agentSessions.delete",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showHeader": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "subtitleField": "",
+          "statusField": "runningStatus",
+          "statusStyle": "dot",
+          "emptyText": "recent.empty",
+          "rowActions": {
+            "maxVisible": 0,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "rename",
+                "labelKey": "recent.rename",
+                "icon": "pencil"
+              },
+              {
+                "kind": "operation",
+                "operation": "delete",
+                "labelKey": "recent.delete",
+                "icon": "trash-2",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Recent diagnosis sessions",
+        "description": "Current reader's recent operations diagnosis conversations with live running indicator, rename, and delete actions."
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "locale.code": "en",
+        "panel.name": "Operations diagnosis",
+        "nav.newChat": "New chat",
+        "nav.openMenu": "Open navigation",
+        "recent.title": "Recent",
+        "recent.empty": "No conversations yet",
+        "recent.rename": "Rename",
+        "recent.delete": "Delete",
+        "recent.showMore": "Show more",
+        "chat.greeting": "Operations diagnosis",
+        "chat.description": "Describe symptoms or paste a Turn Key to start troubleshooting.",
+        "chat.placeholder": "Describe symptoms, or paste a Turn Key…",
+        "pane.side": "Show chat beside",
+        "pane.full": "Full screen",
+        "pane.close": "Close page",
+        "composer.fold": "Hide the message box",
+        "composer.unfold": "Ask about this page"
+      },
+      "zh-CN": {
+        "locale.code": "zh-CN",
+        "panel.name": "运维诊断",
+        "nav.newChat": "新对话",
+        "nav.openMenu": "打开导航",
+        "recent.title": "最近对话",
+        "recent.empty": "还没有对话",
+        "recent.rename": "重命名",
+        "recent.delete": "删除",
+        "recent.showMore": "显示更多",
+        "chat.greeting": "运维诊断",
+        "chat.description": "描述现象，或贴上 Turn Key 开始排障分析。",
+        "chat.placeholder": "描述现象，或贴上 Turn Key…",
+        "pane.side": "并排对话",
+        "pane.full": "全屏查看",
+        "pane.close": "关闭功能页",
+        "composer.fold": "收起输入框",
+        "composer.unfold": "问问这个页面"
+      },
+      "zh-TW": {
+        "locale.code": "zh-TW",
+        "panel.name": "維運診斷",
+        "nav.newChat": "新對話",
+        "nav.openMenu": "開啟導覽",
+        "recent.title": "最近對話",
+        "recent.empty": "還沒有對話",
+        "recent.rename": "重新命名",
+        "recent.delete": "刪除",
+        "recent.showMore": "顯示更多",
+        "chat.greeting": "維運診斷",
+        "chat.description": "描述現象，或貼上 Turn Key 開始排障分析。",
+        "chat.placeholder": "描述現象，或貼上 Turn Key…",
+        "pane.side": "並排對話",
+        "pane.full": "全螢幕檢視",
+        "pane.close": "關閉功能頁",
+        "composer.fold": "收起輸入框",
+        "composer.unfold": "詢問此頁面"
+      },
+      "ja": {
+        "locale.code": "ja",
+        "panel.name": "運用診断",
+        "nav.newChat": "新しいチャット",
+        "nav.openMenu": "ナビゲーションを開く",
+        "recent.title": "最近の会話",
+        "recent.empty": "まだ会話がありません",
+        "recent.rename": "名前を変更",
+        "recent.delete": "削除",
+        "recent.showMore": "さらに表示",
+        "chat.greeting": "運用診断",
+        "chat.description": "事象を入力するか Turn Key を貼り付けて診断を開始します。",
+        "chat.placeholder": "事象を入力、または Turn Key を貼り付け…",
+        "pane.side": "チャットを並べて表示",
+        "pane.full": "全画面表示",
+        "pane.close": "ページを閉じる",
+        "composer.fold": "入力欄を折りたたむ",
+        "composer.unfold": "このページについて質問する"
+      },
+      "de": {
+        "locale.code": "de",
+        "panel.name": "Betriebsdiagnose",
+        "nav.newChat": "Neuer Chat",
+        "nav.openMenu": "Navigation öffnen",
+        "recent.title": "Zuletzt",
+        "recent.empty": "Noch keine Unterhaltungen",
+        "recent.rename": "Umbenennen",
+        "recent.delete": "Löschen",
+        "recent.showMore": "Mehr anzeigen",
+        "chat.greeting": "Betriebsdiagnose",
+        "chat.description": "Beschreiben Sie Symptome oder fügen Sie einen Turn Key zur Fehleranalyse ein.",
+        "chat.placeholder": "Symptome beschreiben oder Turn Key einfügen…",
+        "pane.side": "Chat daneben anzeigen",
+        "pane.full": "Vollbild",
+        "pane.close": "Seite schließen",
+        "composer.fold": "Eingabefeld ausblenden",
+        "composer.unfold": "Zu dieser Seite fragen"
+      },
+      "fr": {
+        "locale.code": "fr",
+        "panel.name": "Diagnostic opérationnel",
+        "nav.newChat": "Nouvelle discussion",
+        "nav.openMenu": "Ouvrir la navigation",
+        "recent.title": "Récent",
+        "recent.empty": "Aucune conversation pour le moment",
+        "recent.rename": "Renommer",
+        "recent.delete": "Supprimer",
+        "recent.showMore": "Afficher plus",
+        "chat.greeting": "Diagnostic opérationnel",
+        "chat.description": "Décrivez les symptômes ou collez une clé Turn pour démarrer le diagnostic.",
+        "chat.placeholder": "Décrivez les symptômes ou collez une clé Turn…",
+        "pane.side": "Afficher la discussion côte à côte",
+        "pane.full": "Plein écran",
+        "pane.close": "Fermer la page",
+        "composer.fold": "Masquer la zone de saisie",
+        "composer.unfold": "Poser une question sur cette page"
+      },
+      "it": {
+        "locale.code": "it",
+        "panel.name": "Diagnostica operativa",
+        "nav.newChat": "Nuova chat",
+        "nav.openMenu": "Apri navigazione",
+        "recent.title": "Recenti",
+        "recent.empty": "Nessuna conversazione ancora",
+        "recent.rename": "Rinomina",
+        "recent.delete": "Elimina",
+        "recent.showMore": "Mostra altro",
+        "chat.greeting": "Diagnostica operativa",
+        "chat.description": "Descrivi i sintomi o incolla una Turn Key per avviare la diagnosi.",
+        "chat.placeholder": "Descrivi i sintomi o incolla una Turn Key…",
+        "pane.side": "Mostra chat accanto",
+        "pane.full": "Schermo intero",
+        "pane.close": "Chiudi pagina",
+        "composer.fold": "Nascondi casella di testo",
+        "composer.unfold": "Chiedi su questa pagina"
+      },
+      "ar": {
+        "locale.code": "ar",
+        "panel.name": "تشخيص العمليات",
+        "nav.newChat": "محادثة جديدة",
+        "nav.openMenu": "فتح التنقل",
+        "recent.title": "الأخيرة",
+        "recent.empty": "لا توجد محادثات بعد",
+        "recent.rename": "إعادة تسمية",
+        "recent.delete": "حذف",
+        "recent.showMore": "عرض المزيد",
+        "chat.greeting": "تشخيص العمليات",
+        "chat.description": "صف الأعراض أو الصق مفتاح Turn لبدء استكشاف الأخطاء وإصلاحها.",
+        "chat.placeholder": "صف الأعراض أو الصق مفتاح Turn…",
+        "pane.side": "عرض المحادثة جنبًا إلى جنب",
+        "pane.full": "ملء الشاشة",
+        "pane.close": "إغلاق الصفحة",
+        "composer.fold": "إخفاء مربع الإدخال",
+        "composer.unfold": "اسأل عن هذه الصفحة"
+      }
+    }
+  }
+}

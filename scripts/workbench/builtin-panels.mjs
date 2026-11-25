@@ -48,6 +48,12 @@ export async function stageBuiltinPanels({ directory, members, applications, che
         if (!result.success) throw new Error(`${label}: ${result.error.message}`);
         continue;
       }
+      if (use.kind === "frame-conversation") {
+        const label = `Built-in application ${application.id}, frame conversation entry ${use.id} (${use.path})`;
+        const result = checks.frameConversationEntrySchema.safeParse(use);
+        if (!result.success) throw new Error(`${label}: ${result.error.message}`);
+        continue;
+      }
       const label = `Built-in application ${application.id}, entry ${use.id} (${use.path}), panel ${use.panelId}`;
       const result = checks.builtinApplicationPanelUseSchema.safeParse(use);
       if (!result.success) throw new Error(`${label}: ${result.error.message}`);

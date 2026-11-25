@@ -126,7 +126,8 @@ describe("platform:AgentSession and platform:RecentVisit panel reads and rename"
         primaryKey: "11111111-1111-4111-8111-111111111111",
         label: "Quarterly Revenue",
         subtitle: `Analyst · ${expectedSessionTime}`,
-        fields: { running: true },
+        fields: { running: true, runningStatus: "Running" },
+        tones: { runningStatus: "info" },
         outputs: {
           openPath: "/agents/chat?agentId=22222222-2222-4222-8222-222222222222&sessionId=11111111-1111-4111-8111-111111111111",
           favorited: true,

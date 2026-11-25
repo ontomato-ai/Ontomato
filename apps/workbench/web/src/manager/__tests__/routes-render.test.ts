@@ -207,12 +207,20 @@ describe("the open-source platform's old capability library links", () => {
 
 describe("the open-source platform's conversations", () => {
   // The acceptance run found the agent platform drawing its shell but no conversation to type into.
-  it.each(["/agents/chat", "/ops/diagnosis"])("%s draws a conversation one can type into", async (path) => {
-    await open(path);
+  it("/agents/chat draws a conversation one can type into", async () => {
+    await open("/agents/chat");
     expect(
       document.querySelector(".platform-page-body form.composer textarea:not([disabled])"),
-      `no composer at ${path}`
+      "no composer at /agents/chat"
     ).not.toBeNull();
+  });
+
+  // Operations diagnosis conversation is owned by builtin-product-ops-frame as a frame-conversation entry.
+  it("/ops/diagnosis is declared as a frame-conversation entry on builtin-product-ops-frame", () => {
+    const operations = catalogFixture().find((app) => app.id === "operations");
+    expect(operations?.framePanelId).toBe("builtin-product-ops-frame");
+    expect(operations?.panelUses?.find((use) => use.path === "/ops/diagnosis")?.kind).toBe("frame-conversation");
+    expect(operations?.groups?.map((group) => group.key)).toContain("autotest");
   });
 });
 

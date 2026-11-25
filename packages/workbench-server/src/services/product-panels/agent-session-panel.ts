@@ -92,6 +92,8 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
         const openPath = sessionOpenPath(item.agentId, item.sessionId);
         const formattedUpdatedAt = formatShortDateTime(item.updatedAt, language);
         const subtitle = [item.agentName, formattedUpdatedAt].filter(Boolean).join(" · ");
+        const running = runningIds.has(item.sessionId);
+        const runningStatus = running ? sessionText(viewer.locale, "running") : "";
         return {
           className: AGENT_SESSION,
           primaryKey: item.sessionId,
@@ -103,8 +105,10 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
             agentName: item.agentName,
             updatedAt: item.updatedAt,
             favorite: favorited,
-            running: runningIds.has(item.sessionId),
+            running,
+            runningStatus,
           },
+          ...(running ? { tones: { runningStatus: "info" as const } } : {}),
           fieldLabels,
           outputs: {
             openPath,
@@ -122,6 +126,8 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
       ]);
       const displayTitle = cleanSessionDisplayTitle(session.title, untitled);
       const openPath = sessionOpenPath(session.agent_id, session.id);
+      const running = statuses[0]?.latestRun?.status === "running";
+      const runningStatus = running ? sessionText(viewer.locale, "running") : "";
       return {
         className: AGENT_SESSION,
         primaryKey: session.id,
@@ -131,8 +137,10 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
           agentId: session.agent_id,
           updatedAt: session.updated_at.toISOString(),
           favorite: favorited,
-          running: statuses[0]?.latestRun?.status === "running",
+          running,
+          runningStatus,
         },
+        ...(running ? { tones: { runningStatus: "info" as const } } : {}),
         fieldLabels,
         outputs: {
           openPath,

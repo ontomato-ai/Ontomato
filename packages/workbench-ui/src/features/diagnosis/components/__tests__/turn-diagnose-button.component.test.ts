@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { ref } from "vue";
 import { mount } from "@vue/test-utils";
 import { createI18n } from "vue-i18n";
@@ -8,16 +8,45 @@ import TurnDiagnoseButton from "../TurnDiagnoseButton.vue";
 import en from "../../../../locales/en";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../../access";
 
+const mocks = vi.hoisted(() => ({
+  listAgents: vi.fn(),
+  createSession: vi.fn(),
+  send: vi.fn(),
+  errorToast: vi.fn(),
+}));
+
+vi.mock("../../../workbench/assistant-host", () => ({
+  createAssistantClient: () => ({
+    listAgents: mocks.listAgents,
+    createSession: mocks.createSession,
+    send: mocks.send,
+  }),
+}));
+
+vi.mock("element-plus", () => ({
+  ElMessage: { error: mocks.errorToast },
+}));
+
 const router = createRouter({
   history: createMemoryHistory(),
   routes: [
     { path: "/", component: { template: "<div />" } },
-    { path: "/agents/chat", component: { template: "<div />" } },
+    { path: "/ops/diagnosis", component: { template: "<div />" } },
   ],
 });
 
 /** Open-source access: /observe has no permission gate, so the entry is always visible. */
 const ossAccess: TurnDiagnosisAccess = { prepare: () => {}, visible: () => true };
+
+beforeEach(async () => {
+  vi.resetAllMocks();
+  await router.push("/");
+  mocks.listAgents.mockResolvedValue([
+    { id: "ops-agent-1", name: "Operations Diagnosis", kind: OPS_DIAGNOSIS_KIND, enabled: true },
+  ]);
+  mocks.createSession.mockResolvedValue({ id: "diag-session-99" });
+  mocks.send.mockResolvedValue({});
+});
 
 function render(access: TurnDiagnosisAccess = ossAccess) {
   return mount(TurnDiagnoseButton, {
@@ -29,13 +58,16 @@ function render(access: TurnDiagnosisAccess = ossAccess) {
   });
 }
 
-it("opens the agent platform pre-selected on ops-diagnosis with a prefilled prompt containing the turn IDs", async () => {
+it("creates a fresh ops-diagnosis session, sends the opening prompt, and navigates to /ops/diagnosis?frame.sessionId=<id>", async () => {
   await render().find("button").trigger("click");
-  await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/agents/chat"));
-  expect(router.currentRoute.value.query.agentKind).toBe(OPS_DIAGNOSIS_KIND);
-  expect(router.currentRoute.value.query.prompt).toBeUndefined();
-  expect(String(router.currentRoute.value.query.prefill)).toContain("session-1");
-  expect(String(router.currentRoute.value.query.prefill)).toContain("run-1");
+  await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/ops/diagnosis"));
+  expect(mocks.createSession).toHaveBeenCalledWith("ops-agent-1");
+  expect(mocks.send).toHaveBeenCalledWith("diag-session-99", {
+    message: expect.stringContaining("session-1"),
+  });
+  expect(mocks.send.mock.calls[0]![1].message).toContain("run-1");
+  expect(router.currentRoute.value.query).toEqual({ "frame.sessionId": "diag-session-99" });
+  expect(router.currentRoute.value.query.diagnose).toBeUndefined();
 });
 
 it("calls prepare once on mount and follows the assembled visibility reactively", async () => {

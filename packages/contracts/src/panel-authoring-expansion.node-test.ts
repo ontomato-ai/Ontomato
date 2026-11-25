@@ -322,6 +322,27 @@ test("a short conversation entry stores its target and prefill on an ordinary pr
     const expanded = expandPanelAuthoringMember("review", specified, { state, components: [component], typeTable });
     assert.deepEqual(expanded.projection.conversationEntry, { target: agent });
   }
+
+  const instant = panelAuthoringMemberSchema.parse({
+    component: "ConversationEntry",
+    agent: "page-default",
+    prefillKey: "panel.diagnosePrefill",
+    submit: true,
+    newSession: true,
+  });
+  assert("component" in instant);
+  const instantExpanded = expandPanelAuthoringMember("diagnose", instant, { state, components: [component], typeTable });
+  assert.deepEqual(instantExpanded.projection.conversationEntry, {
+    target: { kind: "page-default" },
+    prefillKey: "panel.diagnosePrefill",
+    submit: true,
+    newSession: true,
+  });
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    component: "AgentChat",
+    agent: { kind: "preset", agentKind: "ops-diagnosis" },
+    submit: true,
+  }).success, false);
 });
 
 test("short graph ports resolve their individual datum owners and bind personal positions", () => {

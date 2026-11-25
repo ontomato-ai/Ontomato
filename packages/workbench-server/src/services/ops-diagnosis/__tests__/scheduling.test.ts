@@ -60,8 +60,8 @@ it("starts an inspection in the unified assistant host and applies the same obse
   await application.authorize(context);const request={...input(),content:{operation:"inspection",instruction:"Check failures"},formRevision:"inspection-v1"};
   const result=await application.start(request,context);
   expect(result.resultLink).toEqual({
-    appId: "agents",
-    path: expect.stringContaining(`/agents/chat?agentId=${diagnosisId}&sessionId=`),
+    appId: "operations",
+    path: expect.stringContaining("/ops/diagnosis?frame.sessionId="),
   });
   expect(mocks.create.mock.calls[0]).toEqual([expect.any(String), owner, { agentId: diagnosisId }, context.credentials, "scheduled"]);
   expect(mocks.run.mock.calls[0]).toEqual(expect.arrayContaining([request.runId,{message:"Check failures"},owner,context.credentials,"background"]));
