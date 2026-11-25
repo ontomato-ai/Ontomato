@@ -546,7 +546,33 @@ export const workbenchApplications: BuiltinApplication[] = [
           "sort": 0
         }
       ],
-      "panelUses": []
+      "panelUses": [
+        {
+          "id": "app-builder",
+          "pageKey": "app-builder",
+          "panelId": "builtin-product-app-builder",
+          "path": "/app-builder",
+          "access": {
+            "permissionCode": "app-builder"
+          },
+          "icon": "builder",
+          "pageComposer": "none",
+          "names": {
+            "en": "App builder",
+            "zh-CN": "应用构建",
+            "zh-TW": "應用構建",
+            "ja": "アプリ構築",
+            "de": "App-Builder",
+            "fr": "Constructeur d'applications",
+            "it": "Generatore di app",
+            "ar": "منشئ التطبيقات"
+          },
+          "descriptions": {
+            "en": "Build and publish applications from conversations",
+            "zh-CN": "通过对话构建并发布应用"
+          }
+        }
+      ]
     }
   }
 ];

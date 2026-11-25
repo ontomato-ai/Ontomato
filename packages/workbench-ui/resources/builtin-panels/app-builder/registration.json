@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-app-builder",
+      "input": {
+        "name": "App builder",
+        "description": "Three-column application builder workbench: applications and conversations rail, embedded builder AgentChat, and preview / files / changes / history / publish workspace."
+      }
+    }
+  ]
+}

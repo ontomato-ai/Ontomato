@@ -77,6 +77,16 @@ export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
     props: (route) => ({ workspaceId: route.params.workspaceId, revision: route.params.ref, pageKey: route.params.pageKey }),
     meta: { workbench: true, ...meta },
   },
+  {
+    path: "/app-builder/:appId",
+    redirect: (to) => ({
+      path: "/app-builder",
+      query: {
+        app: String(to.params.appId),
+        ...(typeof to.query.sessionId === "string" && to.query.sessionId ? { session: to.query.sessionId } : {}),
+      },
+    }),
+  },
 ];
 
 /**

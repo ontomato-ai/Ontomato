@@ -96,9 +96,11 @@ export class ApplicationBuilderReadAdapter {
         updatedAt: item.updatedAt,
         canEditEntries: item.canEditEntries,
         canGrant: item.canGrant,
+        statusTag: item.busy ? this.text("statusBusy") : (!item.published ? this.text("unpublishedBadge") : ""),
       },
       tones: {
         busy: item.busy ? "warning" : "default",
+        statusTag: item.busy ? "success" : (!item.published ? "info" : "default"),
       },
     }));
   }
@@ -140,6 +142,10 @@ export class ApplicationBuilderReadAdapter {
       canEditEntries: detail.canEditEntries,
       canGrant: detail.canGrant,
       currentReleaseId: detail.currentReleaseId ?? "",
+      activeRunId: detail.activeRunId ?? "",
+      driftItemsJson: JSON.stringify(detail.drift.items),
+      conflictFilesJson: JSON.stringify(detail.conflictFiles),
+      previewEntriesJson: JSON.stringify(detail.previewEntries),
     };
 
     return {
@@ -185,7 +191,9 @@ export class ApplicationBuilderReadAdapter {
       return { rows: [] as PanelRecord[], hasMore: false };
     }
     const cursor = paramsSchema.cursor.optional().parse(params.cursor);
-    const limit = paramsSchema.limit.optional().parse(params.limit) ?? 10;
+    const limit = paramsSchema.size.optional().parse(params.size)
+      ?? paramsSchema.limit.optional().parse(params.limit)
+      ?? 10;
     const { assistantService } = await import("../assistant/service");
     const page = await assistantService.list(this.owner, { workspaceId: ctx.project.workspaceId, cursor, limit });
     const rows: PanelRecord[] = page.sessions.map(session => {
@@ -202,10 +210,12 @@ export class ApplicationBuilderReadAdapter {
           agentId: session.agentId,
           status,
           running,
+          runningDot: running ? this.text("statusBusy") : "",
           statusLabel: this.text(running ? "statusBusy" : `session.${status}`),
           updatedAt: session.updatedAt,
         },
         tones: {
+          runningDot: "success",
           statusLabel: running ? "warning" : "default",
         },
       };
@@ -255,8 +265,15 @@ export class ApplicationBuilderReadAdapter {
   }
 
   async sourceCommits(appId: string, params: Record<string, unknown>) {
-    const { offset, limit } = workspacePageSchema.parse({ offset: params.offset, limit: params.limit });
+    const cursor = paramsSchema.cursor.optional().parse(params.cursor);
+    const parsedCursor = cursor !== undefined && /^\d+$/.test(cursor) ? Number(cursor) : undefined;
+    const requestedSize = paramsSchema.size.optional().parse(params.size);
+    const { offset, limit } = workspacePageSchema.parse({
+      offset: parsedCursor ?? params.offset,
+      limit: requestedSize ?? params.limit,
+    });
     const page = await readApplicationSourceCommits(this.owner, this.credentials, appId, offset, limit);
+    const nextOffset = offset + page.items.length;
     return {
       rows: page.items.map(commit => ({
         primaryKey: commit.id,
@@ -272,6 +289,7 @@ export class ApplicationBuilderReadAdapter {
         },
       })),
       hasMore: page.hasMore,
+      ...(page.hasMore ? { nextCursor: String(nextOffset) } : {}),
     };
   }
 
@@ -409,7 +427,7 @@ export class ApplicationBuilderReadAdapter {
     );
   }
 
-  async builderPublishForm(appId: string, values?: PanelFormValues): Promise<PanelFormDescription> {
+  async builderPublishForm(appId: string, values?: PanelFormValues, defaultCommit?: string): Promise<PanelFormDescription> {
     const detail = await getBuilderProject(this.owner, this.credentials, appId);
     const commitsPage = detail.materialized
       ? await readApplicationSourceCommits(this.owner, this.credentials, appId, 0, 50)
@@ -425,7 +443,8 @@ export class ApplicationBuilderReadAdapter {
         disabledReason,
       };
     });
-    const selected = options.find(opt => !opt.disabled) ?? options[0];
+    const preferred = defaultCommit ? options.find(opt => opt.value === defaultCommit && !opt.disabled) : undefined;
+    const selected = preferred ?? options.find(opt => !opt.disabled) ?? options[0];
 
     const blocked = detail.busy
       ? this.text("busy")

@@ -607,7 +607,11 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       sourceReleases: selection => appBuilder.sourceReleases(selection.primaryKey!),
       builderCreateForm: (_selection, params) => appBuilder.builderCreateForm(formParams(params).values),
       builderMetaForm: (selection, params) => appBuilder.builderMetaForm(selection.primaryKey!, formParams(params).values),
-      builderPublishForm: (selection, params) => appBuilder.builderPublishForm(selection.primaryKey!, formParams(params).values),
+      builderPublishForm: (selection, params) => appBuilder.builderPublishForm(
+        selection.primaryKey!,
+        formParams(params).values,
+        panelReadParameterSchemas.workspaceCommit.optional().parse(params.defaultCommit),
+      ),
     },
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),

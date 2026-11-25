@@ -841,12 +841,16 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           canEditEntries: { kind: "scalar", type: "boolean" },
           canGrant: { kind: "scalar", type: "boolean" },
           currentReleaseId: { kind: "scalar", type: "string" },
+          activeRunId: { kind: "scalar", type: "string" },
+          driftItemsJson: { kind: "scalar", type: "string" },
+          conflictFilesJson: { kind: "scalar", type: "string" },
+          previewEntriesJson: { kind: "scalar", type: "string" },
         },
       },
       builderSessions: {
         source: "object",
         parameterMode: "fixed",
-        params: { cursor: "cursor", limit: "limit" },
+        params: { cursor: "cursor", size: "size", limit: "limit" },
         result: "panelRecordQuery",
         rowType: AGENT_SESSION,
       },
@@ -866,7 +870,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       sourceCommits: {
         source: "object",
         parameterMode: "fixed",
-        params: { offset: "offset", limit: "limit" },
+        params: { cursor: "cursor", size: "size", offset: "offset", limit: "limit" },
         result: "panelRecordQuery",
       },
       sourceDiff: {
@@ -896,7 +900,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       builderPublishForm: {
         source: "object",
         parameterMode: "fixed",
-        params: definitionFormParams,
+        params: { ...definitionFormParams, defaultCommit: "workspaceCommit" },
         result: "panelFormDescription",
       },
     },
