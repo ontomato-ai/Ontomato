@@ -3,7 +3,6 @@ import type {
 } from "vue-router";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { observePageRoutes, type ObserveRouteOptions } from "./observe-routes";
-import DashboardsPage from "./pages/DashboardsRoute.vue";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
 
@@ -80,11 +79,10 @@ export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
 ];
 
 /**
- * The dashboards: an application of their own. Their address carries the open board as `?dashboardId=`, so a board can
- * be linked; the old address under the agent platform moves here.
+ * The dashboards' legacy address under the agent platform redirects to the canonical `/dashboards` panel entry
+ * mounted automatically by the panel entry guard.
  */
 export const dashboardPages = (): RouteRecordRaw[] => [
-  { ...routes.dashboards, component: DashboardsPage, meta: { workbench: true } },
   { path: "/agents/dashboards", redirect: (to) => ({ path: routes.dashboards.path, query: to.query }) },
 ];
 

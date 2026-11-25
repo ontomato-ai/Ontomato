@@ -123,29 +123,3 @@ export const dashboardAuthoring = {
 export type DashboardOperation = keyof typeof dashboardAuthoring;
 export const dashboardOperationSchema = z.enum(Object.keys(dashboardAuthoring) as [DashboardOperation,...DashboardOperation[]]);
 export type DashboardAuthoringForm<Operation extends DashboardOperation = DashboardOperation> = z.infer<(typeof dashboardAuthoring)[Operation]["schema"]>;
-
-const confirmText = z.string().trim().min(1);
-
-export const dashboardAgentConfirmOperationSchema = z.enum(["board.save", "card.parameters.save", "card.parameters.discard"]);
-export type DashboardAgentConfirmOperation = z.infer<typeof dashboardAgentConfirmOperationSchema>;
-
-export const dashboardAgentConfirmRequestSchema = z.object({
-  dashboardId: confirmText,
-  operation: dashboardAgentConfirmOperationSchema,
-  targetLabel: confirmText.max(200),
-  impactSummary: confirmText.max(1000).optional(),
-  requireConfirmation: z.boolean().optional(),
-  agentRun: z.object({
-    sessionId: confirmText,
-    runId: confirmText,
-    toolCallId: confirmText,
-  }).strict(),
-}).strict();
-export type DashboardAgentConfirmRequest = z.infer<typeof dashboardAgentConfirmRequestSchema>;
-
-export interface DashboardAgentConfirmResponse {
-  intentId: string;
-  autoMode: boolean;
-  questionId: string | null;
-  label: string;
-}

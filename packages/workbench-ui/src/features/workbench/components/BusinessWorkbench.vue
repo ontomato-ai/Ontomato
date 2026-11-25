@@ -18,7 +18,7 @@ import { createAssistantClient, createAssistantFeedback, createPanelOperationSet
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
-import { dashboardSelectionFrom, useDashboardStore } from "../../dashboard";
+import { useDashboardStore } from "../../dashboard";
 import { formatRelativeTime } from "../../../utils/relative-time";
 import { ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, X } from "lucide-vue-next";
 import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
@@ -27,7 +27,6 @@ import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
-  DASHBOARDS_PAGE_ID,
   PANEL_APPLICATION_PAGE_ID,
   panelApplicationPageFeature,
   workbenchFeatures,
@@ -167,7 +166,6 @@ watch(
 /** The page the display shows, mounted from its address by the assembly's registry. */
 const pilotPage = computed(() => (display.page.value ? pilot(display.page.value.address) : null));
 const pageAddress = computed(() => display.page.value?.address ?? null);
-const inDashboards = computed(() => display.page.value?.featureId === DASHBOARDS_PAGE_ID);
 const inAgentSettings = computed(() => {
   const path = pageAddress.value?.split("?")[0];
   return path === routes.agents.path || path === `${routes.agents.path}/detail`;
@@ -235,18 +233,14 @@ watch(conversationId, (id) => {
  * platform's catalog, which its page reports as it opens; before that the page has no name here, and the line names the
  * address.
  */
-function pageLabel(id: string, reported: PageContext | null): string {
-  if (id === DASHBOARDS_PAGE_ID) return t("assistant.featureDashboards");
+function pageLabel(_id: string, reported: PageContext | null): string {
   return reported?.label ?? "";
 }
 
 /**
- * What the reader has selected in the page. A dashboard's address names the board and the card; a panel reports its
- * own selection once it has one.
+ * What the reader has selected in the page. A panel reports its own selection once it has one.
  */
 function selectionIn(page: DisplayPage, reported: PageContext | null): readonly PageSelection[] {
-  const query = new URLSearchParams(page.address.split("?")[1] ?? "");
-  if (page.featureId === DASHBOARDS_PAGE_ID) return dashboardSelectionFrom(Object.fromEntries(query));
   if (page.featureId === PANEL_APPLICATION_PAGE_ID) return reported?.selection ?? [];
   return [];
 }
@@ -281,10 +275,6 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   label: appearance.value?.brand?.name || props.defaultBrandName,
   features: workbenchFeatures(
     props.features,
-    {
-      label: t("assistant.featureDashboards"),
-      address: inDashboards.value ? pageAddress.value! : (props.internalPages?.dashboard ?? routes.dashboards.path),
-    },
     inPanelApplication.value
       ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!)
       : null,

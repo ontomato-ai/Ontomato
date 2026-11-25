@@ -1,6 +1,4 @@
 import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
-import { platformRoutes } from "@ontomato/platform-shell/routes";
-import DashboardsPage from "./pages/DashboardsRoute.vue";
 import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
 import { DETAIL_SELECTIONS, detailSelectionAddress, type DetailSelection } from "./detail-selection";
 import { panelEntryApplication } from "./catalog";
@@ -10,8 +8,9 @@ import { panelEntryApplication } from "./catalog";
  * what the conversation beside it carries (`?page=`), and the resolver turns that address into the props the page's own
  * component takes: the page keeps one component and one address, and the page beside the chat is that page.
  *
- * The pages here are the dashboards, the agents' settings, a panel application's page and a built-in application's panel
- * entry, each shown by the same page the platform shows it with, so one address has one page and one panel instance.
+ * The pages here are any panel application's page and any built-in application's panel entry (including dashboards,
+ * schedules, agents' settings, and ontology pages), each shown by the same page the platform shows it with, so one
+ * address has one page and one panel instance.
  *
  * A page's own navigation (another board, another agent, the list) is the callback it is given
  * here. The callback changes the parameter the conversation carries, never the browser's address, so the conversation
@@ -25,10 +24,9 @@ export function pilotPageResolver(
 ): PilotPageResolver {
   return (asked) => {
     const address = detailSelectionAddress(selections, asked) ?? asked;
-    const [path, search = ""] = address.split("?");
-    const query = new URLSearchParams(search);
-    // A built-in application's panel entry at its own address (`/ontology/components`), as the reader's catalog lists it:
-    // the same page that shows it full, as that application's page. A declared entry is the page at its address.
+    const [path] = address.split("?");
+    // A built-in application's panel entry at its own address (`/dashboards`, `/ontology/components`), as the reader's
+    // catalog lists it: the same page that shows it full, as that application's page.
     const entry = panelEntryApplication(path);
     if (entry) {
       return {
@@ -54,21 +52,6 @@ export function pilotPageResolver(
         },
       } satisfies PilotPage;
     }
-    if (path !== platformRoutes.dashboards.path) return null;
-    return {
-      id: "dashboards",
-      component: DashboardsPage,
-      instance: path,
-      props: {
-        paired: true,
-        dashboardId: query.get("dashboardId") ?? undefined,
-        navigate: (next: { dashboardId?: string }) => {
-          const target = new URLSearchParams(search);
-          if (next.dashboardId) target.set("dashboardId", next.dashboardId);
-          else target.delete("dashboardId");
-          setPage(`${platformRoutes.dashboards.path}${target.size ? `?${target}` : ""}`);
-        },
-      },
-    } satisfies PilotPage;
+    return null;
   };
 }

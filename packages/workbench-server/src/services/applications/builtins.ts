@@ -124,6 +124,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "domain-member"
     ],
     "scheduleAdapter": null,
+    "framePanelId": "builtin-product-platform-frame",
     "declaration": {
       "names": {
         "en": "Dashboards",
@@ -136,7 +137,34 @@ export const workbenchApplications: BuiltinApplication[] = [
       "icon": "dashboards",
       "groups": [],
       "permissions": [],
-      "pageSkills": [{access:"domain-member",pageKey:"dashboard",skill:{namespace:{kind:"provider",provider:"workbench"},name:"dashboard-pages"}}]
+      "panelUses": [{
+        "id": "dashboards-main",
+        "pageKey": "dashboards",
+        "panelId": "builtin-product-dashboards",
+        "path": "/dashboards",
+        "access": { "kind": "domain-member" },
+        "icon": "dashboards",
+        "names": {
+          "en": "Dashboards",
+          "zh-CN": "仪表盘",
+          "zh-TW": "儀表板",
+          "ja": "ダッシュボード",
+          "de": "Dashboards",
+          "fr": "Tableaux de bord",
+          "it": "Dashboard",
+          "ar": "لوحات المعلومات"
+        },
+        "descriptions": {
+          "en": "Build and review dashboards of your charts and metrics",
+          "zh-CN": "制作和查看由图表、指标组成的仪表盘",
+          "zh-TW": "建立並檢視由圖表與指標組成的儀表板",
+          "ja": "チャートと指標のダッシュボードを作成・閲覧します",
+          "de": "Erstellen und prüfen Sie Dashboards aus Ihren Diagrammen und Kennzahlen",
+          "fr": "Créez et consultez vos tableaux de bord de graphiques et d'indicateurs",
+          "it": "Crea e consulta dashboard con i tuoi grafici e indicatori",
+          "ar": "أنشئ وراجع لوحات المعلومات الخاصة بالمخططات والمؤشرات"
+        }
+      }]
     }
   },
   {

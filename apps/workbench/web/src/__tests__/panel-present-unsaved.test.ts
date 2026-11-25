@@ -144,7 +144,7 @@ describe("an agent's presentation over a panel's unsaved form", () => {
       { address: scenario.address, state: { mode: "edit" }, status: "opened" },
       { address: pathname, state: { selectedTask: { className: SCHEDULED_TASK, primaryKey: selectedTask } }, status: "opened" },
       { address: `${pathname}?selectedTask=${otherTask}`, state: { selectedTask: { className: SCHEDULED_TASK, primaryKey: selectedTask } }, status: "opened" },
-      { address: "/dashboards", status: "not_opened" },
+      { address: "/applications/other-app/overview", status: "not_opened" },
     ] as const;
     for (const { status, ...target } of cases) {
       expect(await present(target)).toMatchObject(status === "not_opened" ? blockedUnsaved : { status });

@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-dashboards",
+      "input": {
+        "name": "Dashboards",
+        "description": "Build and review dashboards of your charts and metrics"
+      }
+    }
+  ]
+}

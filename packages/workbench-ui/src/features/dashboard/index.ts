@@ -1,7 +1,5 @@
 export { default as AddDatasetDialog } from "./components/AddDatasetDialog.vue";
 export { default as AddChartFileDialog } from "./components/AddChartFileDialog.vue";
-export { default as DashboardHome } from "./components/DashboardHome.vue";
-export { default as DashboardPanel } from "./components/DashboardPanel.vue";
 export { fetchDashboardList } from "./api";
 export { dashboardSelectionFrom } from "./selection";
 export { useDashboardStore } from "./stores/dashboard";

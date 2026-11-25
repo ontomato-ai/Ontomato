@@ -35,10 +35,9 @@ vi.mock("../assistant-host", async () => {
 vi.mock("../components/DatasetActions.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../components/WorkbenchAppearanceDialog.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../../diagnosis/components/TurnDiagnoseButton.vue", () => ({ default: { template: "<div />" } }));
-// The board's own drawing is another line's: the page beside the chat receives it, and this reads what it reports.
+// The board's own drawing is now the builtin dashboards panel; this test verifies panel-application context forwarding.
 vi.mock("../../dashboard", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../dashboard")>()),
-  DashboardHome: { name: "DashboardHome", template: "<div />" },
 }));
 
 const wrappers: ReturnType<typeof mount>[] = [];
@@ -61,9 +60,9 @@ async function openBoard(page: string) {
       provide: {
         [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
         [platformPageAccessKey as symbol]: () => true,
-        // The assembly's registry, as the dashboards application registers itself: one page, at its own address.
+        // Dashboards are now resolved as a panel-application entry at `/dashboards`.
         [pilotPageKey as symbol]: () => (address: string): PilotPage | null =>
-          address.startsWith("/dashboards") ? { id: "dashboards", component: { render: () => null } } : null,
+          address.startsWith("/dashboards") ? { id: "panel-application", component: { render: () => null } } : null,
       },
     },
   });
@@ -73,22 +72,37 @@ async function openBoard(page: string) {
 }
 
 describe("the board's page context", () => {
-  it("carries the board and the card chosen in it, each with the id the page's skill reads", async () => {
-    // The address the conversation carries is the page's selection: the board, and the card chosen in it with its name.
-    const page = "/dashboards?dashboardId=board-a&dashboardName=Sales&cardId=card-1&cardName=Revenue%20by%20region";
+  it("forwards the panel-reported dashboard label and selection beside a conversation", async () => {
+    const page = "/dashboards?dashboardId=board-a&cardId=card-1";
     const display = await openBoard(page);
+    display.context({
+      url: page,
+      label: "Dashboards",
+      selection: [
+        { kind: "platform:Dashboard", id: "board-a", label: "Sales" },
+        { kind: "platform:DashboardCard", id: "board-a/card-1", label: "Revenue by region" },
+      ],
+    });
     expect(display.pageContext.value).toMatchObject({
       url: page,
       label: "Dashboards",
       selection: [
-        { kind: "dashboard", id: "board-a", label: "Sales (board-a)" },
-        { kind: "dashboard-card", id: "card-1", label: "Revenue by region (card-1)" },
+        { kind: "platform:Dashboard", id: "board-a", label: "Sales" },
+        { kind: "platform:DashboardCard", id: "board-a/card-1", label: "Revenue by region" },
       ],
     });
   });
 
-  it("carries the board alone when the address names no card", async () => {
-    const display = await openBoard("/dashboards?dashboardId=board-a&dashboardName=Sales");
-    expect(display.pageContext.value).toMatchObject({ selection: [{ kind: "dashboard", id: "board-a", label: "Sales (board-a)" }] });
+  it("carries the board alone when the panel reports no card selection", async () => {
+    const page = "/dashboards?dashboardId=board-a";
+    const display = await openBoard(page);
+    display.context({
+      url: page,
+      label: "Dashboards",
+      selection: [{ kind: "platform:Dashboard", id: "board-a", label: "Sales" }],
+    });
+    expect(display.pageContext.value).toMatchObject({
+      selection: [{ kind: "platform:Dashboard", id: "board-a", label: "Sales" }],
+    });
   });
 });

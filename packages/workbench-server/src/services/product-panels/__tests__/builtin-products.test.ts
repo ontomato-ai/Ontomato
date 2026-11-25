@@ -228,6 +228,22 @@ describe("readBuiltinProducts", () => {
       expect(panelDetail!.manifest.members).toHaveProperty("form");
       expect(panelDetail!.manifest.members).toHaveProperty("deletePanel");
 
+      const dashboardsPanel = panels.get("builtin-product-dashboards");
+      expect(dashboardsPanel).toBeDefined();
+      expect(dashboardsPanel!.manifest.state.dashboardId?.deepLink).toBe(true);
+      expect(dashboardsPanel!.manifest.state.cardId?.deepLink).toBe(true);
+      expect(dashboardsPanel!.manifest.state.cardDialog?.deepLink).toBe(false);
+      expect(dashboardsPanel!.manifest.state).not.toHaveProperty("selectedCard");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("boardTabs");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("createBoard");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("boardGrid");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("chartCard");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("metricCard");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("cardParamForm");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("cardMetricSource");
+      expect(dashboardsPanel!.content.html).not.toMatch(/<el-|--el-|:deep\(/);
+      expect(dashboardsPanel!.content.module).not.toContain("usePanelData");
+
       const repoRoot = path.resolve(packagesRoot, "..");
       const { checkBuiltinPanelSource } = await import(
         path.join(repoRoot, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")

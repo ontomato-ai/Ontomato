@@ -83,7 +83,7 @@ const DraftPage = defineComponent({
 /** The assembly's registry: the two pages under the ids of pages this application sits beside its conversation. */
 const registry = () => (address: string): PilotPage | null => {
   const path = address.split("?")[0]!;
-  if (path === "/first" || path === "/second") return { id: "dashboards", component: ReportingPage, instance: path, props: { address } };
+  if (path === "/first" || path === "/second") return { id: "panel-application", component: ReportingPage, instance: path, props: { address } };
   if (path === "/draft") return { id: "agents", component: DraftPage, props: { address } };
   return null;
 };

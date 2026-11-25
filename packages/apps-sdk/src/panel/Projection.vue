@@ -137,13 +137,22 @@ const bound = computed(() => {
   const { listeners, props: placementProps } = pickProjectionPlacementAttrs(attrs, declared);
   return { ...projection.config, ...resolvedInputs.value, ...placementProps, ...listeners };
 });
+const innerRef = ref<{ refresh?: () => void } | null>(null);
+function refresh() {
+  if (typeof innerRef.value?.refresh === "function") {
+    innerRef.value.refresh();
+    return;
+  }
+  loaded.value?.member.data.refresh?.();
+}
+defineExpose({ refresh });
 </script>
 
 <template>
   <div class="sdk-panel-member" :data-member="slot" :class="placementClass" :style="placementStyle">
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-    <component :is="loaded.component" v-else v-bind="bound">
+    <component :is="loaded.component" v-else ref="innerRef" v-bind="bound">
       <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
         <slot :name="name" v-bind="slotProps ?? {}"></slot>
       </template>

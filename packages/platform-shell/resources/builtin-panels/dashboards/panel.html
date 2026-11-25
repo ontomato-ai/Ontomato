@@ -1,0 +1,419 @@
+<style>
+  [v-cloak] { display: none; }
+  .db-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color-page, var(--sdk-bg-color));
+    container: db-page / inline-size;
+  }
+  .db-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm, 12px);
+    padding: 0 var(--page-gutter, 20px);
+    min-height: 52px;
+    background: var(--sdk-bg-color);
+    border-bottom: 1px solid var(--sdk-border-color-lighter, var(--sdk-border-color));
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    min-width: 0;
+  }
+  .db-tabs-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .db-tabs-member {
+    min-width: 0;
+  }
+  .db-toolbar {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs, 8px);
+    flex: none;
+  }
+  .db-canvas {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing-md, 16px) var(--page-gutter, 20px) calc(var(--page-content-gap, 24px) + 40px);
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .db-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: var(--spacing-sm, 10px);
+    padding: 64px 24px;
+    margin: var(--spacing-lg, 24px) auto;
+    max-width: 460px;
+    width: 100%;
+    border: 1px dashed var(--sdk-border-color);
+    border-radius: var(--radius-lg, 12px);
+    background: var(--sdk-bg-color);
+    box-sizing: border-box;
+  }
+  .db-empty-title {
+    margin: 0;
+    font-size: var(--text-base, 15px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--sdk-text-color-primary);
+  }
+  .db-empty-hint {
+    margin: 0;
+    font-size: var(--text-sm, 13px);
+    line-height: 1.5;
+    color: var(--sdk-text-color-secondary);
+  }
+  .db-group-empty-hint {
+    margin: 0;
+    font-size: var(--text-xs, 12px);
+    color: var(--sdk-text-color-secondary);
+  }
+  .db-group-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .db-card-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .db-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .db-icon-btn:hover:not(:disabled) {
+    background: var(--sdk-fill-color-light);
+    color: var(--sdk-text-color-primary);
+  }
+  .db-icon-btn.is-danger:hover:not(:disabled) {
+    background: var(--sdk-color-danger-light-9, var(--sdk-fill-color-light));
+    color: var(--sdk-color-danger);
+  }
+  .db-icon-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .db-card-projection {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .db-card-projection--metric {
+    justify-content: center;
+  }
+  .db-dialog-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm, 12px);
+  }
+  .db-dialog-label {
+    font-size: var(--text-sm, 13px);
+    font-weight: var(--font-medium, 500);
+    color: var(--sdk-text-color-primary);
+  }
+  .db-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-xs, 8px);
+  }
+  .db-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .db-form-wrap .sdk-owner-form,
+  .db-form-wrap .sdk-owner-form-inner {
+    height: auto;
+  }
+  .db-form-wrap .sdk-owner-form-body {
+    overflow: visible;
+  }
+  @container db-page (max-width: 720px) {
+    .db-topbar {
+      flex-wrap: wrap;
+      padding: 6px var(--spacing-sm, 12px);
+    }
+    .db-toolbar {
+      width: 100%;
+      justify-content: flex-end;
+      padding-bottom: 4px;
+    }
+    .db-canvas {
+      padding: var(--spacing-sm, 12px);
+    }
+  }
+</style>
+
+<div id="app" v-cloak class="db-page">
+  <header class="db-topbar">
+    <div class="db-tabs-wrap">
+      <projection slot="boardTabs" class="db-tabs-member">
+        <template #tabs-extra>
+          <projection slot="createBoard" @done="onBoardCreated"></projection>
+        </template>
+      </projection>
+    </div>
+
+    <div v-if="hasBoard" class="db-toolbar">
+      <sdk-button
+        size="small"
+        :disabled="groupBusy"
+        data-action="add-group"
+        @click="openCreateGroup()"
+      >
+        {{ t("board.addGroup") }}
+      </sdk-button>
+      <sdk-button
+        size="small"
+        text
+        :aria-label="t('board.refreshAll')"
+        :title="t('board.refreshAll')"
+        data-action="refresh-all"
+        @click="refreshAllCards"
+      >
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+          <path d="M3 3v5h5" />
+          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+          <path d="M16 16h5v5" />
+        </svg>
+      </sdk-button>
+    </div>
+  </header>
+
+  <main class="db-canvas">
+    <section v-if="noBoards" class="db-empty-state" data-testid="dashboards-empty">
+      <h2 class="db-empty-title">{{ t("empty.noBoardsTitle") }}</h2>
+      <p class="db-empty-hint">{{ t("empty.noBoardsHint") }}</p>
+    </section>
+
+    <projection
+      v-else-if="hasBoard"
+      slot="boardGrid"
+      @layout-change="onLayoutChange"
+    >
+      <template #empty>
+        <div class="db-empty-state" data-testid="dashboard-groups-empty">
+          <h2 class="db-empty-title">{{ t("empty.noGroupsTitle") }}</h2>
+          <p class="db-empty-hint">{{ t("empty.noGroupsHint") }}</p>
+          <sdk-button type="primary" size="small" :disabled="groupBusy" @click="openCreateGroup()">
+            {{ t("board.addGroup") }}
+          </sdk-button>
+        </div>
+      </template>
+
+      <template #group-header-actions="{ group, index }">
+        <div class="db-group-actions">
+          <button
+            type="button"
+            class="db-icon-btn"
+            :title="t('group.rename')"
+            :aria-label="t('group.rename')"
+            :disabled="groupBusy"
+            data-action="rename-group"
+            @click.stop="openRenameGroup(group)"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="db-icon-btn"
+            :title="t('group.addBelow')"
+            :aria-label="t('group.addBelow')"
+            :disabled="groupBusy"
+            data-action="add-group-below"
+            @click.stop="openCreateGroup(index + 1)"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="db-icon-btn is-danger"
+            :title="t('group.delete')"
+            :aria-label="t('group.delete')"
+            :disabled="groupBusy"
+            data-action="delete-group"
+            @click.stop="deleteGroup(group)"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6" />
+              <path d="M14 11v6" />
+            </svg>
+          </button>
+        </div>
+      </template>
+
+      <template #group-empty>
+        <p class="db-group-empty-hint">{{ t("empty.groupHint") }}</p>
+      </template>
+
+      <template #item-header-actions="{ itemRef }">
+        <div class="db-card-actions">
+          <button
+            type="button"
+            class="db-icon-btn"
+            :title="t('card.refresh')"
+            :aria-label="t('card.refresh')"
+            data-action="refresh-card"
+            @click.stop="refreshCard(itemRef.primaryKey)"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+              <path d="M16 16h5v5" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="db-icon-btn"
+            :title="t('card.parameters')"
+            :aria-label="t('card.parameters')"
+            data-action="card-parameters"
+            @click.stop="openCardDialog(itemRef, 'parameters')"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="4" y1="21" x2="4" y2="14" />
+              <line x1="4" y1="10" x2="4" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12" y2="3" />
+              <line x1="20" y1="21" x2="20" y2="16" />
+              <line x1="20" y1="12" x2="20" y2="3" />
+              <line x1="1" y1="14" x2="7" y2="14" />
+              <line x1="9" y1="8" x2="15" y2="8" />
+              <line x1="17" y1="16" x2="23" y2="16" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="db-icon-btn"
+            :title="t('card.metricSource')"
+            :aria-label="t('card.metricSource')"
+            data-action="card-metric-source"
+            @click.stop="openCardDialog(itemRef, 'metricSource')"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </button>
+        </div>
+      </template>
+
+      <template #item="{ row, itemRef }">
+        <projection
+          v-if="row.fields && row.fields.kind === 'chart'"
+          :ref="(el) => setCardRef(itemRef.primaryKey, el)"
+          slot="chartCard"
+          :inputs="{ target: itemRef }"
+          min-height="100%"
+          class="db-card-projection db-card-projection--chart"
+        ></projection>
+        <projection
+          v-else
+          :ref="(el) => setCardRef(itemRef.primaryKey, el)"
+          slot="metricCard"
+          :inputs="{ target: itemRef }"
+          :field="cardFieldString(row, 'valueField')"
+          :unit="cardFieldString(row, 'unit')"
+          :formats="cardFormats(row)"
+          variant="compact"
+          class="db-card-projection db-card-projection--metric"
+        ></projection>
+      </template>
+    </projection>
+  </main>
+
+  <sdk-dialog
+    v-model="paramDialogOpen"
+    :title="t('dialog.parametersTitle')"
+    width="560px"
+    append-to-body
+    destroy-on-close
+  >
+    <div class="db-form-wrap">
+      <projection
+        v-if="paramDialogOpen && hasCard"
+        slot="cardParamForm"
+        @saved="onCardParametersSaved"
+        @cancel="closeCardDialog"
+        @discarded="closeCardDialog"
+      ></projection>
+    </div>
+  </sdk-dialog>
+
+  <sdk-dialog
+    v-model="sourceDialogOpen"
+    :title="t('dialog.metricSourceTitle')"
+    width="520px"
+    append-to-body
+    destroy-on-close
+  >
+    <projection
+      v-if="sourceDialogOpen && hasCard"
+      slot="cardMetricSource"
+    ></projection>
+  </sdk-dialog>
+
+  <sdk-dialog
+    v-model="groupDialogOpen"
+    :title="groupDialogTitle"
+    width="440px"
+    append-to-body
+    destroy-on-close
+  >
+    <div class="db-dialog-form">
+      <label class="db-dialog-label" for="db-group-title-input">{{ t("group.titleLabel") }}</label>
+      <sdk-input
+        id="db-group-title-input"
+        v-model="groupTitleDraft"
+        :placeholder="t('group.titlePlaceholder')"
+        maxlength="200"
+        @keyup.enter="submitGroupDialog"
+      ></sdk-input>
+    </div>
+    <template #footer>
+      <div class="db-dialog-footer">
+        <sdk-button @click="groupDialogOpen = false">{{ t("dialog.cancel") }}</sdk-button>
+        <sdk-button
+          type="primary"
+          :loading="groupBusy"
+          :disabled="!canSubmitGroup"
+          @click="submitGroupDialog"
+        >
+          {{ t("dialog.confirm") }}
+        </sdk-button>
+      </div>
+    </template>
+  </sdk-dialog>
+</div>

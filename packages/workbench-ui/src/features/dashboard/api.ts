@@ -6,8 +6,6 @@ import type {
   DashboardMetricReference,
   DashboardParameterForm,
   DashboardSaveParameters,
-  DashboardAgentConfirmRequest,
-  DashboardAgentConfirmResponse,
 } from "@ontomato/contracts/dashboard";
 import {
   dashboardAddArtifactSchema,
@@ -134,13 +132,5 @@ export async function saveCardParameters(
   input: DashboardSaveParameters
 ): Promise<{ cardId: string; query: DashboardMetricReference; revision: string }> {
   const json = await nodeApiPost("/dashboards/save-card-parameters", input);
-  return json.data;
-}
-
-/** Prepares confirmation for an agent-driven edit action on the currently open dashboard page. */
-export async function prepareDashboardAgentConfirm(
-  input: DashboardAgentConfirmRequest,
-): Promise<DashboardAgentConfirmResponse> {
-  const json = await nodeApiPost("/dashboards/agent-confirm", input);
   return json.data;
 }
