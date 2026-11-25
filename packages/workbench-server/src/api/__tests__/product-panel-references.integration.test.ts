@@ -351,8 +351,8 @@ it("reads a selected nested panel or projection and freezes its actual publisher
   expect(await outside.json()).toMatchObject({ status: "error", message: expect.stringContaining("outside this member's candidates") });
 
   await state.pool!.query(
-    `INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind, name, owner_id)
-     VALUES ($1, 'test-domain', 'custom', 'Nested analyst', 'author')`, [nestedAgentId],
+    `INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind, name, owner_id, system_prompt)
+     VALUES ($1, 'test-domain', 'custom', 'Nested analyst', 'author', 'Analyze the nested panel data')`, [nestedAgentId],
   );
   const memberPath = [detail, { member: "approve" }];
   const query = new URLSearchParams({ ...use, operationId: "detail.approve.remove", memberPath: JSON.stringify(memberPath) });

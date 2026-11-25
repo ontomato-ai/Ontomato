@@ -497,7 +497,12 @@ beforeAll(async () => {
   });
   app.get(`/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`, (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    res.json({ success: true, data: { id: RETRIEVAL_AGENT_ID, modelSelection: { modelId: null }, editable: false } });
+    res.json({
+      success: true,
+      data: {
+        id: RETRIEVAL_AGENT_ID, kind: "retrieval", name: "Data retrieval", modelSelection: { modelId: null }, editable: false,
+      },
+    });
   });
   app.post("/platform/scheduled-tasks/credential/renew", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");

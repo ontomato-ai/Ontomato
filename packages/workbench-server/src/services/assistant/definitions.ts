@@ -250,9 +250,10 @@ export async function createAgentDefinitionSnapshot(
         if (existing.domain_id !== owner.domainId || existing.owner_id !== owner.userId || !isReadableDefinition(existing.kind))
           throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
         const actual = view(existing);
+        const { publicationAccess: _publicationAccess, ...definitionInput } = input;
         const expected = assistantAgentDefinitionSchema
           .omit({ id: true })
-          .parse({ ...input, executionUserId, skills });
+          .parse({ ...definitionInput, executionUserId, skills });
         const same = (Object.keys(expected) as (keyof typeof expected)[]).every(
           (key) => JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
         );
