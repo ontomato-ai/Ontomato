@@ -48,8 +48,9 @@ class ActionTrialServiceTest {
   private final IdentitySnapshotLookup snapshots = mock(IdentitySnapshotLookup.class);
   private final ABCProgramService programs = mock(ABCProgramService.class);
   private final UserDataPermission permission = new UserDataPermission();
+  private final ActionTrialStore store = new ActionTrialStore(jdbc, schemas, messages);
   private final ActionTrialService trials =
-      new ActionTrialService(jdbc, schemas, messages, actions, identity, sandboxes, preconditions, snapshots, programs);
+      new ActionTrialService(store, messages, actions, identity, sandboxes, preconditions, snapshots, programs);
 
   @BeforeEach
   void setup() {
@@ -68,19 +69,19 @@ class ActionTrialServiceTest {
   void digestBindsTheDefinitionAndNormalizesClassNamesWithoutParameterValues() {
     var order = new ActionTarget("Order", "id");
     var id = parameter("id", Parameter.TYPE_STRING, List.of("Invoice", "/Order"), "first");
-    String digest = trials.digest(DOMAIN, CODE, order, List.of(id));
+    String digest = store.digest(DOMAIN, CODE, order, List.of(id));
 
-    assertEquals(digest, trials.digest(DOMAIN, CODE, new ActionTarget("/Order", "id"),
+    assertEquals(digest, store.digest(DOMAIN, CODE, new ActionTarget("/Order", "id"),
         List.of(parameter("id", Parameter.TYPE_STRING, List.of("Order", "/Invoice"), "second"))));
-    assertNotEquals(digest, trials.digest(DOMAIN, CODE, new ActionTarget("Invoice", "id"), List.of(id)));
-    assertNotEquals(digest, trials.digest(DOMAIN, CODE, new ActionTarget("Order", "otherId"), List.of(id)));
-    assertNotEquals(digest, trials.digest(DOMAIN, CODE, null, List.of(id)));
-    assertNotEquals(digest, trials.digest(DOMAIN, CODE + "\nprint(2)", order, List.of(id)));
-    assertNotEquals(digest, trials.digest(DOMAIN, CODE, order,
+    assertNotEquals(digest, store.digest(DOMAIN, CODE, new ActionTarget("Invoice", "id"), List.of(id)));
+    assertNotEquals(digest, store.digest(DOMAIN, CODE, new ActionTarget("Order", "otherId"), List.of(id)));
+    assertNotEquals(digest, store.digest(DOMAIN, CODE, null, List.of(id)));
+    assertNotEquals(digest, store.digest(DOMAIN, CODE + "\nprint(2)", order, List.of(id)));
+    assertNotEquals(digest, store.digest(DOMAIN, CODE, order,
         List.of(parameter("otherId", id.getType(), id.getClassNames(), id.getValue()))));
-    assertNotEquals(digest, trials.digest(DOMAIN, CODE, order,
+    assertNotEquals(digest, store.digest(DOMAIN, CODE, order,
         List.of(parameter("id", Parameter.TYPE_NUMBER, id.getClassNames(), 1))));
-    assertNotEquals(digest, trials.digest(DOMAIN, CODE, order,
+    assertNotEquals(digest, store.digest(DOMAIN, CODE, order,
         List.of(parameter("id", id.getType(), List.of("Order"), id.getValue()))));
   }
 
@@ -294,17 +295,17 @@ class ActionTrialServiceTest {
   @Test
   void displayBlockChecksExplanationThenLatestTrialAndSkipsPublishedActions() {
     Action action = action(Action.STATUS_PENDING_REVIEW);
-    var failed = new ActionTrialService.TrialSummary("failed", "FAILED", null, "bad", 12L, Instant.EPOCH);
-    var passed = new ActionTrialService.TrialSummary("passed", "PASSED", null, null, 12L, Instant.EPOCH);
-    assertEquals("ACTION_EXPLANATION_REQUIRED", trials.publishBlock(action, failed, "en").code());
+    var failed = new ActionTrialStore.TrialSummary("failed", "FAILED", null, "bad", 12L, Instant.EPOCH);
+    var passed = new ActionTrialStore.TrialSummary("passed", "PASSED", null, null, 12L, Instant.EPOCH);
+    assertEquals("ACTION_EXPLANATION_REQUIRED", store.publishBlock(action, failed, "en").code());
     action.setCodeSegments(JSONArray.of(JSONObject.of("kind", "COMPUTE")));
     action.setCodeHash(CodeHashUtil.sha256(CODE));
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
-    assertEquals("ACTION_TRIAL_REQUIRED", trials.publishBlock(action, null, "en").code());
-    assertEquals("ACTION_TRIAL_FAILED", trials.publishBlock(action, failed, "en").code());
-    assertNull(trials.publishBlock(action, passed, "en"));
+    assertEquals("ACTION_TRIAL_REQUIRED", store.publishBlock(action, null, "en").code());
+    assertEquals("ACTION_TRIAL_FAILED", store.publishBlock(action, failed, "en").code());
+    assertNull(store.publishBlock(action, passed, "en"));
     action.setStatus(Action.STATUS_PUBLISHED);
-    assertNull(trials.publishBlock(action, failed, "en"));
+    assertNull(store.publishBlock(action, failed, "en"));
   }
 
   @Test
@@ -314,7 +315,7 @@ class ActionTrialServiceTest {
     second.setId("other");
     var missingFunction = new Action();
     missingFunction.setId("missing");
-    String digest = trials.digest(DOMAIN, CODE, null, List.of());
+    String digest = store.digest(DOMAIN, CODE, null, List.of());
     clearInvocations(schemas);
     doAnswer(call -> {
       String sql = call.getArgument(0);
@@ -330,12 +331,12 @@ class ActionTrialServiceTest {
       return null;
     }).when(jdbc).query(anyString(), any(RowCallbackHandler.class), anyString(), eq(DOMAIN));
 
-    var results = trials.latestByActions(DOMAIN, List.of(first, second, missingFunction));
+    var results = store.latestByActions(DOMAIN, List.of(first, second, missingFunction));
 
     assertEquals("saved-trial", results.get(ACTION).id());
-    assertEquals("failed", trials.statusCode(results.get(ACTION)));
+    assertEquals("failed", store.statusCode(results.get(ACTION)));
     assertEquals("authoring-trial", results.get("other").id());
-    assertEquals("passed", trials.statusCode(results.get("other")));
+    assertEquals("passed", store.statusCode(results.get("other")));
     assertNull(results.get("missing"));
     verify(schemas).query(DOMAIN);
     verify(jdbc).query(anyString(), any(RowCallbackHandler.class), anyString(), eq(DOMAIN));
@@ -346,7 +347,7 @@ class ActionTrialServiceTest {
     var result = new PythonExecuteResult();
     result.setResult("{\"completed\":true}");
     result.setSpendTime(18L);
-    trials.recordAuthoringTrial(DOMAIN, "definition-digest", result, USER);
+    store.recordAuthoringTrial(DOMAIN, "definition-digest", result, USER);
 
     verify(jdbc).update(contains("INSERT INTO action_trials"), anyString(), eq(DOMAIN), isNull(),
         eq("definition-digest"), eq("PASSED"), eq(result.getResult()), isNull(), eq(18L), eq(USER), any(OffsetDateTime.class));

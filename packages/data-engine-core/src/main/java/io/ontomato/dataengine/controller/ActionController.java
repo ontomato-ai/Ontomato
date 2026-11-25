@@ -44,6 +44,7 @@ import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionForm;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.ActionTrialService;
+import io.ontomato.dataengine.service.ActionTrialStore;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
@@ -90,6 +91,8 @@ public class ActionController {
 	private ActionDraftService actionDraftService;
 
 	@Autowired private ActionTrialService actionTrials;
+
+	@Autowired private ActionTrialStore actionTrialStore;
 
 	@Autowired
 	private SubjectDirectory subjectDirectory;
@@ -625,17 +628,17 @@ public class ActionController {
 
 	/** The action's creator and reviewer ids become the names a reader sees; a missing subject stays null. */
 	private ObjectNode withDisplay(Action action, Map<String, String> names, String lang) {
-		return withDisplay(action, names, lang, actionTrials.latest(action));
+		return withDisplay(action, names, lang, actionTrialStore.latest(action));
 	}
 
-	private ObjectNode withDisplay(Action action, Map<String, String> names, String lang, ActionTrialService.TrialSummary latest) {
+	private ObjectNode withDisplay(Action action, Map<String, String> names, String lang, ActionTrialStore.TrialSummary latest) {
 		ObjectNode item = objectMapper.valueToTree(action);
 		item.put("createdByName", names.get(action.getCreatedBy()));
 		item.put("reviewedByName", names.get(action.getReviewedBy()));
 		item.put("statusLabel", statusLabel(action.getStatus(), lang));
 		item.put("originLabel", originLabel(action.getOrigin(), lang));
-		String trialStatus = actionTrials.statusCode(latest);
-		var block = actionTrials.publishBlock(action, latest, lang);
+		String trialStatus = actionTrialStore.statusCode(latest);
+		var block = actionTrialStore.publishBlock(action, latest, lang);
 		item.put("trialStatus", trialStatus);
 		item.put("trialStatusLabel", langService.get(lang, "Action.sandboxTrial." + trialStatus));
 		item.put("lastTrialAt", latest == null ? null : latest.testedAt().toString());
@@ -662,7 +665,7 @@ public class ActionController {
 	private ArrayNode withDisplay(List<Action> actions, String domainId, String lang) {
 		Map<String, String> names = subjectNames(domainId, actions);
 		ArrayNode items = objectMapper.createArrayNode();
-		var trials = actionTrials.latestByActions(domainId, actions);
+		var trials = actionTrialStore.latestByActions(domainId, actions);
 		for (Action action : actions) items.add(withDisplay(action, names, lang, trials.get(action.getId())));
 		return items;
 	}

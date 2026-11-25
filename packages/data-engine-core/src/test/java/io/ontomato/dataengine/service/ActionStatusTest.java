@@ -44,7 +44,7 @@ class ActionStatusTest {
   private final OntologyGenerationService generationService = mock(OntologyGenerationService.class);
   private final OntologyScheduleReferences scheduledReferences = mock(OntologyScheduleReferences.class);
   private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
-  private ActionTrialService trials;
+  private ActionTrialStore trials;
   private final Map<String, Action> actions = new LinkedHashMap<>();
   private final JSONArray segments = JSONArray.of(JSONObject.of("id", "s1"));
 
@@ -55,7 +55,7 @@ class ActionStatusTest {
     var schemas = mock(JSONRuleDao.class);
     when(schemas.query("domain-a")).thenReturn(Map.of("classDef",
         List.of(Map.of("className", "Order"), Map.of("className", "Invoice"))));
-    trials = new ActionTrialService(jdbc, schemas, langService, service, null, null, null, null, null);
+    trials = new ActionTrialStore(jdbc, schemas, langService);
     ReflectionTestUtils.setField(service, "actionTrials", trials);
     ReflectionTestUtils.setField(service, "store", store);
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
@@ -139,7 +139,7 @@ class ActionStatusTest {
   private void seedTrial(Action action, String status) {
     var function = action.getFunction();
     String digest = trials.digest(action.getDomainId(), function.getCode(), action.getTarget(), function.getParameters());
-    var trial = new ActionTrialService.TrialSummary("trial", status, null, null, 2L, Instant.EPOCH);
+    var trial = new ActionTrialStore.TrialSummary("trial", status, null, null, 2L, Instant.EPOCH);
     doReturn(List.of(trial)).when(jdbc).query(anyString(), any(RowMapper.class),
         eq(action.getDomainId()), eq(digest), eq(action.getId()));
   }

@@ -30,7 +30,7 @@ import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionForm;
 import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
-import io.ontomato.dataengine.service.ActionTrialService;
+import io.ontomato.dataengine.service.ActionTrialStore;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.IdentitySnapshotLookup;
 import io.ontomato.dataengine.service.ActionFunctionAdmission;
@@ -85,7 +85,7 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private LangService langService;
 
-  @Autowired private ActionTrialService actionTrials;
+  @Autowired private ActionTrialStore actionTrials;
 
   @Autowired private OntologyGenerationService generationService;
 

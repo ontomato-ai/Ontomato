@@ -30,7 +30,7 @@ public class GenerationOperations {
   private final QueryGrantService grants;
   private final DataPermissionLookup permissions;
   private final IdentityService identity;
-  private final ActionTrialService actionTrials;
+  private final ActionTrialStore actionTrials;
 
   public GenerationOperations(
       OntologyAgentStore store,
@@ -38,7 +38,7 @@ public class GenerationOperations {
       DataSandboxService sandboxService,
       WriteFunctionOperationService writes,
       PythonExecuteService python,
-      QueryGrantService grants, @Lazy DataPermissionLookup permissions, @Lazy IdentityService identity, ActionTrialService actionTrials) {
+      QueryGrantService grants, @Lazy DataPermissionLookup permissions, @Lazy IdentityService identity, ActionTrialStore actionTrials) {
     this.store = store;
     this.schemas = schemas;
     this.sandboxService = sandboxService;

@@ -95,8 +95,7 @@ class OntologyGenerationContractTest {
     var permission = new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission();
     permission.setFullData(true);
     when(permissionLookup.getDataPermission(anyString(), anyString())).thenReturn(permission);
-    var actionTrials = new io.ontomato.dataengine.service.ActionTrialService(
-        jdbc, admin, null, null, null, null, null, null, null);
+    var actionTrials = new io.ontomato.dataengine.service.ActionTrialStore(jdbc, admin, null);
     actionTrials.initialize();
     operations =
         new GenerationOperations(

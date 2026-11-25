@@ -29,8 +29,9 @@ import io.ontomato.dataengine.bean.action.Action;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
 import io.ontomato.dataengine.service.ActionTrialService;
-import io.ontomato.dataengine.service.ActionTrialService.PublishBlock;
-import io.ontomato.dataengine.service.ActionTrialService.TrialSummary;
+import io.ontomato.dataengine.service.ActionTrialStore;
+import io.ontomato.dataengine.service.ActionTrialStore.PublishBlock;
+import io.ontomato.dataengine.service.ActionTrialStore.TrialSummary;
 import java.time.Instant;
 import java.util.Map;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -48,6 +49,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 /** An Action save refused at a field keeps its field errors, and a draft's errors are a successful form read. */
 class ActionPanelEndpointTest {
   private final ActionTrialService actionTrials = mock(ActionTrialService.class);
+  private final ActionTrialStore actionTrialStore = mock(ActionTrialStore.class);
   private final ActionService actionService = mock(ActionService.class);
   private final LangService langService = mock(LangService.class);
   private final CaseExecutionGuard caseExecutionGuard = mock(CaseExecutionGuard.class);
@@ -87,7 +89,8 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjects);
     ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
     ReflectionTestUtils.setField(controller, "actionTrials", actionTrials);
-    when(actionTrials.statusCode(isNull())).thenReturn("notRun");
+    ReflectionTestUtils.setField(controller, "actionTrialStore", actionTrialStore);
+    when(actionTrialStore.statusCode(isNull())).thenReturn("notRun");
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
   }
 
@@ -315,10 +318,10 @@ class ActionPanelEndpointTest {
     var trial = new TrialSummary("t1", "FAILED", null, "invalid order", 32L, Instant.EPOCH);
     when(actionService.queryById("a1")).thenReturn(failed);
     when(actionService.queryList(null, null, null, "domain")).thenReturn(List.of(failed, untested));
-    when(actionTrials.latest(failed)).thenReturn(trial);
-    when(actionTrials.latestByActions("domain", List.of(failed, untested))).thenReturn(Map.of("a1", trial));
-    when(actionTrials.statusCode(trial)).thenReturn("failed");
-    when(actionTrials.publishBlock(failed, trial, "en")).thenReturn(new PublishBlock("ACTION_TRIAL_FAILED", "Try again"));
+    when(actionTrialStore.latest(failed)).thenReturn(trial);
+    when(actionTrialStore.latestByActions("domain", List.of(failed, untested))).thenReturn(Map.of("a1", trial));
+    when(actionTrialStore.statusCode(trial)).thenReturn("failed");
+    when(actionTrialStore.publishBlock(failed, trial, "en")).thenReturn(new PublishBlock("ACTION_TRIAL_FAILED", "Try again"));
 
     var detail = perform("/action/queryById", """
         {"id":"a1","purpose":"publication-review"}""").getJSONObject("data");
@@ -332,9 +335,9 @@ class ActionPanelEndpointTest {
     assertEquals("notRun", noTrial.getString("trialStatus"));
     assertNull(noTrial.getString("lastTrialAt"));
     assertNull(noTrial.getString("lastTrialError"));
-    verify(actionTrials).latest(failed);
-    verify(actionTrials, never()).latest(untested);
-    verify(actionTrials).latestByActions("domain", List.of(failed, untested));
+    verify(actionTrialStore).latest(failed);
+    verify(actionTrialStore, never()).latest(untested);
+    verify(actionTrialStore).latestByActions("domain", List.of(failed, untested));
   }
 
   private void assertTrialDisplay(JSONObject item) {
