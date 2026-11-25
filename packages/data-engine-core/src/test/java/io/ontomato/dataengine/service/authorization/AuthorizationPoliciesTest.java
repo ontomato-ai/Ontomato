@@ -86,6 +86,7 @@ class AuthorizationPoliciesTest {
         var ticketAction = new Action();
         ticketAction.setId("approve");
         ticketAction.setDomainId(DOMAIN);
+        ticketAction.setStatus(Action.STATUS_PUBLISHED);
         ticketAction.setTarget(new ActionTarget("Ticket", "id"));
         when(actions.queryById("approve")).thenReturn(new Object[] { ticketAction });
         when(admin.getJSONRule(DOMAIN)).thenReturn(Map.of("classDef", List.of(
@@ -122,6 +123,7 @@ class AuthorizationPoliciesTest {
         var noTargetAction = new Action();
         noTargetAction.setId("sync");
         noTargetAction.setDomainId(DOMAIN);
+        noTargetAction.setStatus(Action.STATUS_PUBLISHED);
         when(actions.queryById("sync")).thenReturn(new Object[] { noTargetAction });
         when(admin.getJSONRule(DOMAIN)).thenReturn(Map.of("classDef", List.of()));
 

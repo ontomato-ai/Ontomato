@@ -23,6 +23,7 @@ import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { AuthFailedError, BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
+import { readAuthorizationGraphFacts, type AuthorizationGraphFacts } from "../governance/policy-access";
 import { HttpError } from "../../utils/errors";
 import { listAgentDefinitions } from "../assistant/definitions";
 import { assistantSkillCatalog } from "../assistant/skills";
@@ -583,6 +584,10 @@ export class PlatformOntologyOwnerReaders {
         inForce: row.inForce === true,
       }));
     });
+  }
+
+  authorizationGraphFacts(): Promise<OwnerReadResult<AuthorizationGraphFacts>> {
+    return this.memo("java:/authorization/policies/graph-facts", () => readAuthorizationGraphFacts(this.credentials));
   }
 
   platformAccess(): Promise<OwnerReadResult<RawPlatformAccess[]>> {

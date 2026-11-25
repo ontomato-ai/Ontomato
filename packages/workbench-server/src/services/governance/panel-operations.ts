@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
@@ -12,17 +12,22 @@ import {
   DELETE_PERMISSION_POLICY,
   DELETE_ROLE,
   GENERATE_USER_API_KEY,
+  GRANT_POLICY_ENTRIES,
+  INSPECT_POLICY_ACCESS,
   ISSUE_USER_API_KEY_BATCH,
+  LIST_PENDING_POLICY_GRANTS,
   ORG_GRANT,
   ORG_MEMBERSHIP,
   ORG_POSITION,
   ORG_UNIT,
   PERMISSION_POLICY,
+  PREVIEW_POLICY_ENTRY_GRANT,
   REFRESH_POLICY_API_CATALOG,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
   REMOVE_USER,
   RESET_USER_PASSWORD,
+  RESOLVE_PENDING_POLICY_GRANT,
   REVOKE_USER_API_KEY,
   ROLE,
   SET_ORG_MEMBERSHIP_LOCKED,
@@ -51,6 +56,19 @@ import {
   valuesForTarget,
   type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
+import {
+  grantPolicyEntries,
+  grantPolicyEntriesInputSchema,
+  grantPolicyEntriesResultSchema,
+  inspectPolicyAccessInputSchema,
+  inspectPolicyAccessPayload,
+  listPendingPolicyGrantsPayload,
+  previewEntryGrantPayload,
+  previewPolicyEntryGrantInputSchema,
+  resolvePendingPolicyGrants,
+  resolvePendingPolicyGrantsInputSchema,
+  resolvePendingPolicyGrantsResultSchema,
+} from "./policy-access";
 
 /*
  * Enterprise governance owners as panel server operations: form saves, destructive/impactful actions with confirmation
@@ -65,6 +83,28 @@ const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict
 const emptyInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
 const refreshCatalogResultSchema = z.object({ refreshed: z.boolean() }).strict();
+const jsonReadResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonObjectSchema });
+
+function policyReadTargetId(target?: { kind: string; primaryKey?: string } | null): string {
+  if (!target || target.kind !== "object" || !target.primaryKey) {
+    throw new Error("Policy access reads require a selected permission policy");
+  }
+  return target.primaryKey;
+}
+
+async function writePolicyGrants(
+  target: PanelOperationTarget,
+  write: (policyId: string) => Promise<z.infer<typeof grantPolicyEntriesResultSchema> | z.infer<typeof resolvePendingPolicyGrantsResultSchema>>,
+): Promise<SinglePanelOperationOutcome> {
+  if (target.kind !== "object") throw new Error("Policy grants require a selected permission policy");
+  try {
+    const data = await write(target.primaryKey);
+    return { kind: "success", data, affected: affected(PERMISSION_POLICY, target.primaryKey, [PERMISSION_POLICY, ROLE, USER]) };
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
+    return { kind: "refusal", code: error.code ?? "POLICY_GRANT_WRITE_REFUSED", message: error.message };
+  }
+}
 
 const resetPasswordInputSchema = z.object({
   newPassword: z.string().min(1),
@@ -724,6 +764,104 @@ export const governanceServerOperations = [
           affected: { objects: [], objectTypes: [PERMISSION_POLICY] },
         }),
       );
+    },
+  },
+  {
+    handlerRef: PREVIEW_POLICY_ENTRY_GRANT,
+    labelKey: "panels.governance.policy.operations.previewEntryGrant",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: PREVIEW_POLICY_ENTRY_GRANT },
+    effect: "read",
+    batch: false,
+    target: { source: "input", input: "policy" },
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: previewPolicyEntryGrantInputSchema,
+    resultSchema: jsonReadResultSchema,
+    async execute(host: PanelOperationHost, call) {
+      const policyId = policyReadTargetId(call.target);
+      const { entryIds } = previewPolicyEntryGrantInputSchema.parse(call.input);
+      return {
+        kind: "json" as const,
+        value: await previewEntryGrantPayload(host.executor.credentials, host.executor.owner.domainId, policyId, entryIds),
+      };
+    },
+  },
+  {
+    handlerRef: GRANT_POLICY_ENTRIES,
+    labelKey: "panels.governance.policy.operations.grantEntries",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: GRANT_POLICY_ENTRIES },
+    effect: "write",
+    batch: false,
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: grantPolicyEntriesInputSchema,
+    resultSchema: grantPolicyEntriesResultSchema,
+    targetInput: "policy",
+    targetLabel: (host: Host, target: PanelRecordTarget) =>
+      governanceTargetLabel(host, target, "/panel/governance/policies/record", "PERMISSION_POLICY_UNAVAILABLE"),
+    execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>) {
+      return writePolicyGrants(target, policyId => grantPolicyEntries(host.executor.credentials, policyId, input));
+    },
+  },
+  {
+    handlerRef: LIST_PENDING_POLICY_GRANTS,
+    labelKey: "panels.governance.policy.operations.listPending",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: LIST_PENDING_POLICY_GRANTS },
+    effect: "read",
+    batch: false,
+    target: { source: "input", input: "policy" },
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: emptyInputSchema,
+    resultSchema: jsonReadResultSchema,
+    async execute(host: PanelOperationHost, call) {
+      const policyId = policyReadTargetId(call.target);
+      return {
+        kind: "json" as const,
+        value: await listPendingPolicyGrantsPayload(host.executor.credentials, host.executor.owner.domainId, policyId),
+      };
+    },
+  },
+  {
+    handlerRef: RESOLVE_PENDING_POLICY_GRANT,
+    labelKey: "panels.governance.policy.operations.resolvePending",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: RESOLVE_PENDING_POLICY_GRANT },
+    effect: "write",
+    batch: false,
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: resolvePendingPolicyGrantsInputSchema,
+    resultSchema: resolvePendingPolicyGrantsResultSchema,
+    targetInput: "policy",
+    targetLabel: (host: Host, target: PanelRecordTarget) =>
+      governanceTargetLabel(host, target, "/panel/governance/policies/record", "PERMISSION_POLICY_UNAVAILABLE"),
+    execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>) {
+      return writePolicyGrants(target, policyId => resolvePendingPolicyGrants(host.executor.credentials, policyId, input));
+    },
+  },
+  {
+    handlerRef: INSPECT_POLICY_ACCESS,
+    labelKey: "panels.governance.policy.operations.inspectAccess",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: INSPECT_POLICY_ACCESS },
+    effect: "read",
+    batch: false,
+    target: { source: "input", input: "policy" },
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: inspectPolicyAccessInputSchema,
+    resultSchema: jsonReadResultSchema,
+    async execute(host: PanelOperationHost, call) {
+      const policyId = policyReadTargetId(call.target);
+      const input = inspectPolicyAccessInputSchema.parse(call.input);
+      return {
+        kind: "json" as const,
+        value: await inspectPolicyAccessPayload(host.executor.credentials, host.executor.owner.domainId, policyId, input),
+      };
     },
   },
 

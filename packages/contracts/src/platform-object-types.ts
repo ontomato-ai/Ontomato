@@ -198,6 +198,11 @@ export const ISSUE_USER_API_KEY_BATCH = "users.issueApiKeyBatch";
 export const DELETE_ROLE = "roles.delete";
 export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
 export const REFRESH_POLICY_API_CATALOG = "permissionPolicies.refreshApiCatalog";
+export const PREVIEW_POLICY_ENTRY_GRANT = "permissionPolicies.previewEntryGrant";
+export const GRANT_POLICY_ENTRIES = "permissionPolicies.grantEntries";
+export const LIST_PENDING_POLICY_GRANTS = "permissionPolicies.listPending";
+export const RESOLVE_PENDING_POLICY_GRANT = "permissionPolicies.resolvePending";
+export const INSPECT_POLICY_ACCESS = "permissionPolicies.inspectAccess";
 export const DELETE_ORG_UNIT = "orgUnits.delete";
 export const ADD_ORG_UNIT_MEMBER = "orgUnits.addMember";
 export const SET_ORG_MEMBERSHIP_LOCKED = "orgMemberships.setLocked";
@@ -672,7 +677,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
-      REFRESH_POLICY_API_CATALOG,
+      REFRESH_POLICY_API_CATALOG, PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES,
+      LIST_PENDING_POLICY_GRANTS, RESOLVE_PENDING_POLICY_GRANT, INSPECT_POLICY_ACCESS,
     ],
   },
   [ORG_UNIT]: {
@@ -1393,8 +1399,8 @@ export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] =
   relation("org-grant.grants-role", ORG_GRANT, ROLE, "java-organization"),
   relation("role.uses-permission-policy", ROLE, PERMISSION_POLICY, "java-permission-policy"),
   relation("permission-policy.governs-object-type", PERMISSION_POLICY, OBJECT_TYPE, "java-permission-policy"),
-  relation("role.can-execute-action", ROLE, ACTION, "java-grants"),
-  relation("role.can-author-workflow", ROLE, WORKFLOW, "java-platform-access", true),
+  relation("role.can-execute-action", ROLE, ACTION, "java-authorization"),
+  relation("role.can-author-workflow", ROLE, WORKFLOW, "java-authorization", true),
   relation("role.owns-workflow-step", ROLE, WORKFLOW, "java-workflow", true),
   relation("role.can-use-product", ROLE, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
   relation("role.can-view-product", ROLE, AGENT_DEFINITION, "java-product-grants"),

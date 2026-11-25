@@ -105,8 +105,9 @@ public final class AuthorizationService {
     private Decision decideObject(SubjectContext ctx, ObjectAccess access) {
         var target = access.target();
         if (!sameDomain(ctx, target)) return differentDomain();
-        var ownership = OwnershipAdmission.decide(ctx.identity().userId(), target.kind(), access.verb(),
-                access.ownerFacts(), false);
+        var ownership = access.ownerFacts() == null ? OwnershipAdmission.Result.PASS_TO_POLICY
+                : OwnershipAdmission.decide(ctx.identity().userId(), target.kind(), access.verb(),
+                        access.ownerFacts(), false);
         if (ownership == OwnershipAdmission.Result.PRIVATE_DRAFT)
             return Decision.denied("PRIVATE_DRAFT", "Only the authors may access this draft.");
         if (ownership == OwnershipAdmission.Result.ALLOWED
@@ -157,18 +158,22 @@ public final class AuthorizationService {
             for (var edge : ctx.policyRefsByRole().entrySet()) {
                 if (edge.getValue().stream().noneMatch(ref -> ref.kind() == PolicyKind.OBJECT
                         && ref.policyId().equals(grant.policyId()))) continue;
-                List<String> values = switch (scope.kind()) {
-                    case initiated_by_self, assigned_to_self -> List.of(ctx.identity().userId());
-                    case self_organization, self_subtree, self_descendants -> {
-                        var roots = ctx.roles().rootsForRole(edge.getKey());
-                        yield roots.isEmpty() ? List.of() : subjects.organizationCodes(target.domainId(), roots, scope.kind());
-                    }
-                    case all -> throw new AssertionError();
-                };
+                var values = standaloneScopeValues(ctx, target, scope, edge.getKey());
                 if (!values.isEmpty()) matches.add(new Match(scope.className(), scope.field(), values));
             }
         }
         return new Admission(false, List.copyOf(matches));
+    }
+
+    List<String> standaloneScopeValues(SubjectContext ctx, ObjectTarget target, GrantScope scope, String roleId) {
+        return switch (scope.kind()) {
+            case initiated_by_self, assigned_to_self -> List.of(ctx.identity().userId());
+            case self_organization, self_subtree, self_descendants -> {
+                var roots = ctx.roles().rootsForRole(roleId);
+                yield roots.isEmpty() ? List.of() : subjects.organizationCodes(target.domainId(), roots, scope.kind());
+            }
+            case all -> throw new AssertionError();
+        };
     }
 
     public UserDataPermission resolveData(SubjectContext ctx, Data request) {
