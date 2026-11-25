@@ -306,6 +306,11 @@ class PanelApplicationsTest {
         assertEquals(new PageSkills.Projection(List.of(mapping), List.of(), List.of(
             new PageSkills.Entrance("menu", null, "schedules-a"),
             new PageSkills.Entrance("menu", null, "schedules-c"))), catalog.pageSkills(user));
+        var entrance = new PageSkills.Entrance("menu", null, "schedules-a");
+        when(access.panelUses(List.of(first, second), user)).thenReturn(List.of(first, second));
+        assertEquals(new PageSkills.Projection(List.of(mapping), List.of(), List.of(entrance, PanelSkills.entrance(second))),
+            catalog.pageSkills(user, entrance, "panel-p"));
+        assertEquals(List.of(sources.getFirst()), catalog.panelSkillSources("domain", "app-panel-a", "use-a"));
         verifyNoInteractions(grants);
         verify(access, never()).panelUses(closed.getList("panelUses", ApplicationPanelUse.class), user);
     }

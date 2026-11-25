@@ -132,13 +132,15 @@ beforeAll(async () => {
     grants.delete(req.body.id);
     res.json({ success: true });
   });
+  const allowed = (id: string, verb: string, token?: string) => isBuiltinProductId(id)
+    ? (token === "host-reader" || token === "host-no-entry") && verb === "use"
+    : (token === "host-reader" && grants.has(id)) ||
+      (token === "domain-component-reader" && id === "domain-component-projection" && verb === "use");
   app.post("/product-governance/check", (req, res) => {
-    const token = req.header("tk");
-    const allowed = isBuiltinProductId(req.body.id)
-      ? (token === "host-reader" || token === "host-no-entry") && req.body.verb === "use"
-      : (token === "host-reader" && grants.has(req.body.id)) ||
-        (token === "domain-component-reader" && req.body.id === "domain-component-projection" && req.body.verb === "use");
-    res.json({ allowed });
+    res.json({ allowed: allowed(req.body.id, req.body.verb, req.header("tk")) });
+  });
+  app.post("/product-governance/check-batch", (req, res) => {
+    res.json({ allowed: Object.fromEntries(req.body.ids.map((id: string) => [id, allowed(id, req.body.verb, req.header("tk"))])) });
   });
   app.post("/product-governance/resources", (req, res) => {
     if (req.header("tk") === "domain-component-reader") {

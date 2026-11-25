@@ -457,7 +457,10 @@ export const panelSkillSourceSchema = panelUseRefSchema.extend({
 });
 export type PanelSkillSource = z.infer<typeof panelSkillSourceSchema>;
 export const panelSkillSourcesResponseSchema = z.array(panelSkillSourceSchema);
-export const panelSkillSourcesQuerySchema = z.object({ domainId: id }).strict();
+export const panelSkillSourcesQuerySchema = z.union([
+  z.object({ domainId: id }).strict(),
+  panelUseRefSchema.extend({ domainId: id }),
+]);
 
 /** The Java declaration is the sole takeover authority, including for legacy writers. */
 export const panelApplicationEntrySchema = z.object({

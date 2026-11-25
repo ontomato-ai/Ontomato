@@ -76,6 +76,7 @@ import {
 } from "../logging/log-context";
 import { startArtifactCleanupScheduler } from "../platform/diagnosis/artifact-retention-cleanup";
 import { initializeConnection } from "../infrastructure/connection";
+import { registerProductResource } from "../services/product-governance/grants";
 import { requestLogger as accessLogger, errorHandler } from "../api/middleware";
 import { buildTestAccess } from "../api/build-test-access";
 import { getDefaultLocale, tApp } from "../i18n/index";
@@ -292,7 +293,7 @@ export async function startWorkbench(
   initializeWorkbenchLogging();
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
-  await initializeConnection();
+  await initializeConnection(registerProductResource);
   const { registerBuiltinProducts } = await import("../services/product-panels/builtin-products");
   await registerBuiltinProducts();
   // Production images carry the apps SDK next to the web pages; development serves neither from a build.

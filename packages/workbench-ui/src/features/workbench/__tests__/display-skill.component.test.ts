@@ -13,8 +13,8 @@ import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 import { displayOf } from "./shell";
 
 const i18n = workbenchI18n();
-const assistant = { id: "11111111-1111-4111-8111-111111111111", name: "Assistant", description: "", icon: null, enabled: true, effectiveSkills: [] };
-const specialist = { id: "22222222-2222-4222-8222-222222222222", name: "Order Specialist", description: "", icon: null, enabled: true, effectiveSkills: [] };
+const assistant = { id: "11111111-1111-4111-8111-111111111111", name: "Assistant", description: "", icon: null, enabled: true };
+const specialist = { id: "22222222-2222-4222-8222-222222222222", name: "Order Specialist", description: "", icon: null, enabled: true };
 
 const hostState = vi.hoisted(() => ({
   requests: [] as string[],

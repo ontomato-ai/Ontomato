@@ -189,9 +189,15 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   app.post("/product-governance/grants", (_req, res) => res.json({ grants: [] }));
+  const allowed = (id: string, verb: string, token?: string) => {
+    expect(token).toBe("pilot-reader");
+    return id === agentId || resourceIds.has(id) || (verb === "use" && id.startsWith("builtin-product-"));
+  };
   app.post("/product-governance/check", (req, res) => {
-    expect(req.header("tk")).toBe("pilot-reader");
-    res.json({ allowed: req.body.id === agentId || resourceIds.has(req.body.id) || (req.body.verb === "use" && req.body.id.startsWith("builtin-product-")) });
+    res.json({ allowed: allowed(req.body.id, req.body.verb, req.header("tk")) });
+  });
+  app.post("/product-governance/check-batch", (req, res) => {
+    res.json({ allowed: Object.fromEntries(req.body.ids.map((id: string) => [id, allowed(id, req.body.verb, req.header("tk"))])) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");

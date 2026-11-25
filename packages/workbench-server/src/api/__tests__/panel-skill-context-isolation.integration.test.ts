@@ -119,11 +119,15 @@ beforeAll(async () => {
     registered.add(req.body.id);
     res.json({ success: true });
   });
+  const allowed = (id: string, verb: string, token?: string) => {
+    const known = registered.has(id) || (verb === "use" && isBuiltinProductId(id));
+    return known && (token === "reader" ? denied !== id : token === "executor" && executorDenied !== id);
+  };
   app.post("/product-governance/check", (req, res) => {
-    const token = req.header("tk");
-    const known = registered.has(req.body.id) || (req.body.verb === "use" && isBuiltinProductId(req.body.id));
-    res.json({ allowed: known && (token === "reader"
-      ? denied !== req.body.id : token === "executor" && executorDenied !== req.body.id) });
+    res.json({ allowed: allowed(req.body.id, req.body.verb, req.header("tk")) });
+  });
+  app.post("/product-governance/check-batch", (req, res) => {
+    res.json({ allowed: Object.fromEntries(req.body.ids.map((id: string) => [id, allowed(id, req.body.verb, req.header("tk"))])) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("reader");

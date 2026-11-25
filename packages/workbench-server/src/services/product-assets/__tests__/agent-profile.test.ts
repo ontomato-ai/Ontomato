@@ -17,7 +17,7 @@ it('assembles the published Profile even when draft instructions and tool bindin
   const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'published',tools:['metric'],contextViews:[]});
   const metric=asset('metric',{kind:'metric-widget',renders:{kind:'MetricView',id:'published-metric'},parameters:{},valueField:'count'});
   mocks.get.mockResolvedValue({...metric,revision:2});
-  mocks.query.mockResolvedValue({rows:[{id:'profile'}]});
+  mocks.query.mockResolvedValue({rows:[{agent_id:'agent',id:'profile'}]});
   mocks.active.mockResolvedValue({snapshot:{assets:[profile,metric]}});
   const result=await agentProfileForAgent(owner,{token:'current'},'agent');
   expect(result).toMatchObject({instructions:'published',tools:[{id:'published-metric'}]});
@@ -29,7 +29,7 @@ it('does not fall back to a live projection absent from the frozen profile tree'
   await expect(assembleAgentProfile(owner,{},'profile',[profile])).rejects.toMatchObject({code:'PRODUCT_UNAVAILABLE'});
 });
 it('rejects a published Profile that embodies a different principal',async()=>{
-  mocks.query.mockResolvedValue({rows:[{id:'profile'}]});
+  mocks.query.mockResolvedValue({rows:[{agent_id:'agent',id:'profile'}]});
   mocks.active.mockResolvedValue({snapshot:{assets:[asset('profile',{kind:'agent-profile',agentId:'another',instructions:'',tools:[],contextViews:[]})]}});
   await expect(agentProfileForAgent(owner,{},'agent')).rejects.toMatchObject({code:'AGENT_PROFILE_AGENT_CHANGED'});
 });

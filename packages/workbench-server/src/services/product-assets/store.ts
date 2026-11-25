@@ -137,7 +137,6 @@ async function writeProduct(client: PoolClient, owner: ProductOwner, id: string,
     if(!edit.includes(id))throw new HttpError(403,'Product edit Grant required','PRODUCT_FORBIDDEN');
     const access=currentProductGrants(owner);if(use.includes(id))access.use.add(id);access.edit.add(id);
   }
-  await client.query(`UPDATE ${t('product_assets')} SET governance_registered=true WHERE domain_id=$1 AND id=$2`,[owner.domainId,id]);
   const saved=await getProduct(owner,id,client);
   const registration=ontologyRegistration(saved);
   if(registration)await client.query(`INSERT INTO ${t('product_ontology_outbox')} (domain_id,asset_id,revision,registration) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(domain_id,asset_id) DO UPDATE SET revision=EXCLUDED.revision,registration=EXCLUDED.registration`,[owner.domainId,id,saved.revision,JSON.stringify(registration)]);

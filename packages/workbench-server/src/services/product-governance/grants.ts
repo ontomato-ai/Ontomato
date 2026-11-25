@@ -57,14 +57,21 @@ export async function productGrantsAllowedBatch(
     const [id] = unique;
     return { [id]: await productGrantAllowed(id, verb, credentials) };
   }
+  const batches: string[][] = [];
+  for (let start = 0; start < unique.length; start += 200) batches.push(unique.slice(start, start + 200));
+  const results = await Promise.all(batches.map(ids => checkProductGrants(ids, verb, credentials)));
+  return Object.fromEntries(results.flatMap(result => Object.entries(result)));
+}
+
+async function checkProductGrants(ids: string[], verb: ProductGrantVerb, credentials: AssistantCredentials) {
   const response = await backendPost(
     "product-grant-check-batch", config.dataQuery.baseUrl + "/product-governance/check-batch",
-    { ids: unique, verb },
+    { ids: ids, verb },
     { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1 },
   );
   const allowed = JSON.parse(response.text)?.allowed;
   if (allowed === null || typeof allowed !== "object" || Array.isArray(allowed)
-      || unique.some(id => !Object.hasOwn(allowed, id) || typeof allowed[id] !== "boolean"))
+      || ids.some(id => !Object.hasOwn(allowed, id) || typeof allowed[id] !== "boolean"))
     throw new HttpError(503, "Invalid product Grant response", "PRODUCT_GOVERNANCE_UNAVAILABLE");
   return allowed;
 }

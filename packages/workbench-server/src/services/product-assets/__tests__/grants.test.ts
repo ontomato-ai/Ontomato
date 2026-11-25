@@ -1,11 +1,12 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({post:vi.fn(),query:vi.fn(),token:'service-token'}));
-vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
+vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name,getSchemaName:()=>'test'}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,buildBackendHeaders:()=>({tk:'caller'})}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({queryServiceToken:mocks.token})}}));
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://java.test'}}}));
 import {registerProductResource,requireProductGrant,grantedProductIds} from '../../product-governance/grants';
-import {migrateProductGrants,withProductGrants,currentProductGrants,requireProductUse} from '../grants';
+import {migrateProductGrants} from '../../../infrastructure/postgres-migrations/20261125-product-asset-grants/migration';
+import {withProductGrants,currentProductGrants,requireProductUse} from '../grants';
 beforeEach(()=>{vi.resetAllMocks();mocks.token='service-token';});
 it('registers persisted resource ownership through service authentication',async()=>{
   mocks.post.mockResolvedValue({text:'{"success":true}'});
@@ -24,16 +25,23 @@ it('accepts only a valid authorized resource list from the governance boundary',
   await expect(grantedProductIds('use',{token:'caller'})).resolves.toEqual(['profile']);
   await expect(grantedProductIds('use',{token:'caller'})).rejects.toMatchObject({code:'PRODUCT_GOVERNANCE_UNAVAILABLE'});
 });
-it('marks historical resources imported only after governance registration succeeds',async()=>{
-  mocks.query.mockResolvedValueOnce({rows:[{id:'shared',owner_id:'author',visibility:'domain'}]}).mockResolvedValue({rows:[]});
-  mocks.post.mockResolvedValue({text:'{"success":true}'});
-  await migrateProductGrants({domainId:'domain',userId:'reader'});
-  expect(mocks.post.mock.calls[0][2]).toEqual({domainId:'domain',ownerId:'author',id:'shared',shared:true});
-  expect(mocks.query.mock.calls[1][1]).toEqual(['domain','shared','author']);
-  mocks.query.mockReset();mocks.query.mockResolvedValue({rows:[{id:'private',owner_id:'author',visibility:'private'}]});
-  mocks.post.mockRejectedValue(new Error('Unavailable'));
-  await expect(migrateProductGrants({domainId:'domain',userId:'reader'})).rejects.toThrow('Unavailable');
-  expect(mocks.query).toHaveBeenCalledTimes(1);
+it("registers historical resources in every domain before removing the migration column", async () => {
+  const column = { rows: [{ column_name: "governance_registered" }] };
+  const shared = { domain_id: "domain", id: "shared", owner_id: "author", visibility: "domain" };
+  const privateAsset = { ...shared, domain_id: "another", id: "private", visibility: "private" };
+  mocks.query.mockResolvedValueOnce(column).mockResolvedValueOnce({ rows: [shared, privateAsset] }).mockResolvedValue({ rows: [] });
+  mocks.post.mockResolvedValue({ text: '{"success":true}' });
+  await migrateProductGrants({ query: mocks.query }, registerProductResource);
+  expect(mocks.post.mock.calls.map(call => call[2])).toEqual([
+    { domainId: "domain", ownerId: "author", id: "shared", shared: true },
+    { domainId: "another", ownerId: "author", id: "private", shared: false },
+  ]);
+  expect(mocks.query).toHaveBeenCalledTimes(3);
+  mocks.query.mockReset();
+  mocks.query.mockResolvedValueOnce(column).mockResolvedValueOnce({ rows: [privateAsset] });
+  mocks.post.mockRejectedValue(new Error("Unavailable"));
+  await expect(migrateProductGrants({ query: mocks.query }, registerProductResource)).rejects.toThrow("Unavailable");
+  expect(mocks.query).toHaveBeenCalledTimes(2);
 });
 it('keeps Grant contexts scoped to the captured subject and never defaults to owner visibility',async()=>{
   mocks.query.mockResolvedValue({rows:[]});
@@ -47,4 +55,5 @@ it('keeps Grant contexts scoped to the captured subject and never defaults to ow
     await expect(requireProductUse(owner,'shared')).resolves.toBeUndefined();
   });
   expect(()=>currentProductGrants(owner)).toThrow();
+  expect(mocks.query).not.toHaveBeenCalled();
 });

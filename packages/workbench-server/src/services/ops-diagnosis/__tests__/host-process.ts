@@ -27,7 +27,8 @@ const { initializeConnection, closeConnection } = await import("../../../infrast
 const { syncDefaultPrompts } = await import("../../../core/prompts/loader");
 const { createWorkbenchApp } = await import("../../../http/create-app");
 const { initializeDomainPresetAgents } = await import("../../assistant/preset-initialization");
-syncDefaultPrompts(); await initializeConnection();
+const { registerProductResource } = await import("../../product-governance/grants");
+syncDefaultPrompts(); await initializeConnection(registerProductResource);
 await initializeDomainPresetAgents("a");
 await initializeDomainPresetAgents("b");
 const { initializeWorkbenchLogging, getWorkbenchLogStore, closeWorkbenchLogging } = await import("../../../infrastructure/service-logs");
