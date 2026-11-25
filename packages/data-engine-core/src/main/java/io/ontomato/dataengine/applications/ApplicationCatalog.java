@@ -865,12 +865,28 @@ public class ApplicationCatalog {
             .toList();
     }
 
+    public List<ApplicationEntryEvents.EntryRoots> affectedEntryRoots(String domainId, Set<String> panelIds) {
+        return applicationsInDomain(domainId).stream()
+            .filter(ApplicationCatalog::hasPanelUseRegistration)
+            .flatMap(app -> ApplicationEntryEvents.roots(app).entrySet().stream())
+            .filter(entry -> entry.getValue().panelIds().stream().anyMatch(panelIds::contains))
+            .map(entry -> new ApplicationEntryEvents.EntryRoots(entry.getKey(), entry.getValue()))
+            .toList();
+    }
+
+    public boolean ownsEntry(String domainId, String entryId) {
+        return applicationsInDomain(domainId).stream().anyMatch(app ->
+            app.getList("panelUses", ApplicationPanelUse.class).stream().anyMatch(use ->
+                ApplicationEntryEvents.entryId(app.getString("id"), use.id()).equals(entryId)));
+    }
+
     public void deleteDomainApplication(String id, User user) {
         transactions.executeWithoutResult(tx -> {
             lockCatalog();
             var app = require(id);
             requireDomainMaintainer(app, user);
             access.retire(app);
+            ApplicationEntryEvents.append(db, user.getDomainId(), user.getId(), ApplicationEntryEvents.roots(app), Map.of());
             // The entry table is stored in this application row.
             db.update("DELETE FROM sys_application WHERE id=? AND domain_id=?", id, user.getDomainId());
         });
@@ -1078,6 +1094,9 @@ public class ApplicationCatalog {
                     grants.share(id, Boolean.TRUE.equals(body.shared()));
                 }
             }
+            ApplicationEntryEvents.append(db, user.getDomainId(), user.getId(),
+                old == null ? Map.of() : ApplicationEntryEvents.roots(old),
+                ApplicationEntryEvents.roots(id, uses, settings.framePanelId()));
             return JSONObject.of("applicationId", id, "entry", entry, "panelUses", uses);
         });
     }

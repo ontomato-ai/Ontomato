@@ -285,7 +285,7 @@ export function createWorkbenchApp(): Express {
 export async function startWorkbench(
   app: Express,
   port: number,
-  initializeApplication?: () => Promise<() => Promise<void>>,
+  initializeApplication?: () => Promise<void | (() => Promise<void>)>,
 ): Promise<void> {
   const isDev = config.nodeEnv !== "production";
   // Checked first: without the shared value no model key can be opened, so the server does not start.
@@ -302,9 +302,14 @@ export async function startWorkbench(
   const stopApplication = await initializeApplication?.();
   const { initializeExistingDomainPresetAgents } = await import("../services/assistant/preset-initialization");
   await initializeExistingDomainPresetAgents();
+  const { startWorkbenchPlatformEvents } = await import("../services/admin/account-deletion-consumer");
+  const stopPlatformEvents = startWorkbenchPlatformEvents();
   const shutdown = async () => {
     stopModelMigration();
-    try { await stopApplication?.(); } finally { await closeWorkbenchLogging(); }
+    try {
+      await stopPlatformEvents();
+      await stopApplication?.();
+    } finally { await closeWorkbenchLogging(); }
   };
   process.once("SIGTERM", () => { void shutdown().finally(() => process.exit(0)); });
   process.once("SIGINT", () => { void shutdown().finally(() => process.exit(0)); });

@@ -27,6 +27,8 @@ import { panelDefinitionProblem } from "./definition-diagnostics";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
 import { findPanelUsers, panelReferenceDefinitionSchema } from "./references";
 import { panelsUsingProjection, panelUsers } from "./used-by";
+import { removePanelDependencies } from "./entry-dependency-store";
+import { deliverEntryDependencyPublications } from "./entry-dependency-publication";
 
 const cursorSchema = z.discriminatedUnion("sort", [
   z.object({ sort: z.literal("name"), key: z.string(), id: productCurrentIdParamsSchema.shape.id }).strict(),
@@ -312,6 +314,7 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
     // The stored owner may remove this row. Revoking Java grants for the ID still requires a current edit Grant.
     const unregisterGrant = !authoredPanel || await productGrantAllowed(id, "edit", credentials);
     await removeCurrentProduct(client, domainId, kind, id, unregisterGrant);
+    await removePanelDependencies(client, domainId, owner.userId, id);
     for (const projectionId of deletedProjectionIds) await removeCurrentProduct(client, domainId, "projection", projectionId);
     return { deletedProjectionIds, retainedProjectionIdsWithoutEdit };
   });
@@ -319,6 +322,7 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
   if (!cleanup) return { success: true as const };
   for (const projectionId of cleanup.deletedProjectionIds)
     closeDeletedDefinitionStreams(owner.domainId, { kind: "projection", id: projectionId });
+  await deliverEntryDependencyPublications(owner.domainId);
   return { success: true as const, ...cleanup };
 }
 
@@ -340,6 +344,7 @@ export async function copyCurrentProduct(owner: ProductOwner, credentials: Assis
     return insertCurrentProduct(client, owner, credentials, kind, copy.id, input);
   });
   await notifyProductDefinitionChanged({ kind: "definition-changed", domainId: owner.domainId, target: { kind, id: copy.id } });
+  await deliverEntryDependencyPublications(owner.domainId);
   return currentProductRecord(row, true);
 }
 

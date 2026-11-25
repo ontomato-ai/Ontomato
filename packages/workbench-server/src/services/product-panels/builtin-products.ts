@@ -18,6 +18,7 @@ import { builtinProductTables, type CurrentProductKind } from "../../infrastruct
 import { readPanelComponentCatalogue, validateProjectionComponent } from "./component-catalogue";
 import { validateBuiltinProductReferences } from "./references";
 import { platformTypeEntries } from "./type-table";
+import { installPanelDependencies } from "./entry-dependency-store";
 
 const workspaceIdentity = z.object({
   panels: z.array(z.object({
@@ -115,5 +116,6 @@ export async function registerBuiltinProducts(root = path.join(runtimeRoot(), "d
       );
       await client.query(`DELETE FROM ${table} WHERE NOT (id=ANY($1::text[]))`, [ids]);
     }
+    await installPanelDependencies(client);
   });
 }

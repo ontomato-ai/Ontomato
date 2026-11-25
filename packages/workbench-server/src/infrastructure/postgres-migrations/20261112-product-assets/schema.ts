@@ -18,7 +18,16 @@ export async function ensureProductAssetsSchema(client: QueryableClient) {
     PRIMARY KEY(domain_id,user_id));`);
   await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_ontology_outbox')} (domain_id text NOT NULL,asset_id text NOT NULL,revision bigint NOT NULL,registration jsonb,PRIMARY KEY(domain_id,asset_id));
     CREATE TABLE IF NOT EXISTS ${t('product_object_view_heads')} (domain_id text NOT NULL,asset_id text NOT NULL,revision integer NOT NULL,PRIMARY KEY(domain_id,asset_id));
-    CREATE TABLE IF NOT EXISTS ${t('product_publication_outbox')} (domain_id text NOT NULL,bundle_id text NOT NULL,release_id text NOT NULL,PRIMARY KEY(domain_id,bundle_id));
+    CREATE TABLE IF NOT EXISTS ${t('product_publication_outbox')} (domain_id text NOT NULL,bundle_id text,release_id text);
+    ALTER TABLE ${t('product_publication_outbox')}
+      DROP CONSTRAINT IF EXISTS product_publication_outbox_pkey,
+      ALTER COLUMN bundle_id DROP NOT NULL,
+      ALTER COLUMN release_id DROP NOT NULL,
+      ADD COLUMN IF NOT EXISTS dependency_sequence bigint GENERATED ALWAYS AS IDENTITY,
+      ADD COLUMN IF NOT EXISTS dependency_change jsonb;
+    CREATE UNIQUE INDEX IF NOT EXISTS product_publication_outbox_bundle ON ${t('product_publication_outbox')} (domain_id,bundle_id);
+    CREATE INDEX IF NOT EXISTS product_publication_outbox_dependencies ON ${t('product_publication_outbox')} (domain_id,dependency_sequence)
+      WHERE dependency_change IS NOT NULL;
     CREATE TABLE IF NOT EXISTS ${t('product_subscriptions')} (domain_id text NOT NULL,principal_id text NOT NULL,id text NOT NULL,target jsonb NOT NULL,expires_at timestamptz NOT NULL,state jsonb NOT NULL,PRIMARY KEY(domain_id,principal_id,id));
     ALTER TABLE ${t('product_assets')} ADD COLUMN IF NOT EXISTS ontology_registered_revision bigint NOT NULL DEFAULT 0`);
   // Preserve IDs and parent references while correcting legacy display-only panels.

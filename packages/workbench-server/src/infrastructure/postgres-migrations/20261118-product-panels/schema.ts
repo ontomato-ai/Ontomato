@@ -19,4 +19,9 @@ export async function ensureProductPanelsSchema(client: QueryableClient) {
     PRIMARY KEY (domain_id, class_name))`);
   await client.query(`CREATE INDEX IF NOT EXISTS product_object_details_by_panel
     ON ${t("product_object_details")} (domain_id, panel_id, class_name)`);
+  await client.query(`CREATE TABLE IF NOT EXISTS ${t("product_panel_entry_dependencies")} (
+    domain_id text NOT NULL, panel_id text NOT NULL, dependencies jsonb NOT NULL,
+    PRIMARY KEY (domain_id, panel_id))`);
+  await client.query(`CREATE INDEX IF NOT EXISTS product_panel_entry_dependencies_reverse
+    ON ${t("product_panel_entry_dependencies")} USING gin (dependencies jsonb_path_ops)`);
 }
