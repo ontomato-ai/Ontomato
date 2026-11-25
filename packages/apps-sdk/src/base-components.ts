@@ -50,6 +50,7 @@ export const baseComponents = {
   CurrentEntry: () => import("./base/CurrentEntry.vue").then(module => module.default),
   MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),
   DashboardMetricPreview: () => import("./base/DashboardMetricPreview.vue").then(module => module.default),
+  ScheduledTaskAppFilterBar: () => import("./base/ScheduledTaskAppFilterBar.vue").then(module => module.default),
   ScheduledTaskSummaryList: () => import("./base/ScheduledTaskSummaryList.vue").then(module => module.default),
   ScheduledTaskRunDetail: () => import("./base/ScheduledTaskRunDetail.vue").then(module => module.default),
   EffectivePermissionsView: () => import("./base/EffectivePermissionsView.vue").then(module => module.default),

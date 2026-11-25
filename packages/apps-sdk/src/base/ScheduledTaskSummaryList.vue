@@ -1,31 +1,37 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { computed, inject, ref } from "vue";
+import { ElSwitch } from "element-plus/es/components/switch/index";
+import { appIcon, hasAppIcon } from "@ontomato/platform-shell/icons";
+import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { useI18n } from "vue-i18n";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelContextKey } from "../panel/context";
-import { useMember, useMemberData, useMemberOutput, useMemberParam } from "../panel/member";
+import { admittedOperations } from "../panel/member-operations";
+import { panelMemberKey, useMemberData, useMemberOutput, useMemberParam, useMemberRefresh } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { stateObject, type PanelFieldValue } from "../panel/state";
 import { useDataStateLabels } from "./data-state-labels";
+import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRowActions.vue";
+import { matchesRowActionWhen, resolveRowOperationParams, resolveRowOperationTarget } from "./object-list-actions";
+import { formatOperationOutcome, type OperationOutcome } from "./operation-dispatch";
+import { isActionValuesEnvelope, wrapActionOperationInput } from "./operation-input-schema";
 import type { ObjectListRef } from "./object-list-types";
 import { rawRecordField } from "./record-field";
-import type { ScheduledTaskSummaryItem } from "./scheduled-task-summary-types";
+import type { ScheduledTaskCardActions, ScheduledTaskPresentation, ScheduledTaskSummaryItem } from "./scheduled-task-summary-types";
 
-/**
- * Dedicated personal-workspace scheduled task summary & three-tier attention list (spec 2.1.2, W-07).
- *
- * Consumes a bound `rows` (`panelRecordList` / `panelRecordQuery`) of `platform:ScheduledTask` records — or direct
- * `tasks` prop — and renders:
- * 1. A top three-metric attention counter strip (Needs intervention / Recent results / Running) with alert emphasis;
- * 2. Three categorized task sections in attention priority order (`issues`, `running`, `results`);
- * 3. Per-row status dot (danger/warning/primary/success), multi-line summary/pause/error excerpt, next run timestamp,
- *    and an inline conditional "Resolve" action button for tasks requiring user intervention.
- */
+/** The personal workspace attention summary and the full cards for the same scheduled tasks. */
+const scheduledTaskType = "platform:ScheduledTask";
+const toggleOperation = "setEnabled";
 
 const props = withDefaults(
   defineProps<{
     /** Optional direct task array for standalone usage outside a `rows` datum binding. */
     tasks?: readonly ScheduledTaskSummaryItem[];
+    /** Attention summary by default, or full scheduled task cards. Also configurable on the projection. */
+    presentation?: ScheduledTaskPresentation;
+    /** Card footer actions. Operations reference names declared by the projection. */
+    rowActions?: ScheduledTaskCardActions;
     /** Maximum number of rows rendered per attention group (default `6`). */
     maxPerGroup?: number;
     /** Label for the conditional inline resolve button on intervention rows. */
@@ -49,51 +55,36 @@ const emit = defineEmits<{
   select: [task: ScheduledTaskSummaryItem];
   /** Emitted when the reader clicks the conditional "Resolve" button on a paused/failed task. */
   resolve: [task: ScheduledTaskSummaryItem];
+  /** Emitted when an available card switch requests a change through the panel. */
+  "toggle-enabled": [task: ScheduledTaskSummaryItem, enabled: boolean];
+  /** Emitted when a declared local card action is triggered. */
+  "row-action": [id: string, task: ScheduledTaskSummaryItem];
+  /** Emitted with the platform outcome of a card write. */
+  "operation-done": [name: string, outcome: OperationOutcome, task: ObjectListRef];
 }>();
 
 defineSlots<{
   /** Optional custom trailing action rendered at the end of each task row. */
   "row-actions"?(scope: { task: ScheduledTaskSummaryItem; needsIntervention: boolean }): unknown;
+  /** Card footer override. Defaults to the row-actions slot or the declared actions. */
+  "card-actions"?(scope: { task: ScheduledTaskSummaryItem; needsIntervention: boolean }): unknown;
 }>();
 
 const panel = inject(panelContextKey, null);
-const member = (() => {
-  try {
-    return useMember();
-  } catch {
-    return null;
-  }
-})();
-
-const i18n = (() => {
-  try {
-    return useI18n();
-  } catch {
-    return null;
-  }
-})();
-const locale = computed(() => i18n?.locale.value ?? "en");
+const member = inject(panelMemberKey, null)?.();
+const presentation = computed(() => props.presentation ?? member?.projection.config?.presentation ?? "summary");
+const cardActions = computed(() =>
+  props.rowActions ?? (member?.projection.config?.rowActions as ScheduledTaskCardActions | undefined),
+);
+const { t, locale, te } = useI18n();
 const isZh = computed(() => locale.value.toLowerCase().startsWith("zh"));
 function translate(key: string, fallback: string): string {
-  return i18n && i18n.te(key) ? i18n.t(key) : fallback;
+  return te(key) ? t(key) : fallback;
 }
 
-const rowsState = (() => {
-  if (!member?.projection.data?.rows) return null;
-  try {
-    return useMemberData("rows");
-  } catch {
-    return null;
-  }
-})();
-
-const selectedParam = (() => {
-  try {
-    return useMemberParam("selected");
-  } catch {
-    return null;
-  }
-})();
+const rowsState = member?.projection.data?.rows ? useMemberData("rows") : null;
+const refreshRows = rowsState ? useMemberRefresh("rows") : null;
+const selectedParam = member ? useMemberParam("selected") : null;
 
 const selectedKey = computed<string | null>(() => {
   if (!selectedParam) return null;
@@ -131,6 +122,7 @@ function parseTaskRecord(row: PlatformObjectRecord): ScheduledTaskSummaryItem {
   const lastRunSummary = readStr(row, "lastRunSummary", "resultSummary", "summary")
     ?? (typeof lastRunObj?.resultSummary === "string" ? lastRunObj.resultSummary : null);
   const nextRunAt = readStr(row, "nextRunAt");
+  const revision = rawRecordField(row, "revision");
 
   return {
     id: row.primaryKey,
@@ -143,20 +135,45 @@ function parseTaskRecord(row: PlatformObjectRecord): ScheduledTaskSummaryItem {
     lastRunErrorMessage,
     lastRunSummary,
     nextRunAt,
-    ref: { className: row.className || "platform:ScheduledTask", primaryKey: row.primaryKey },
+    ...(presentation.value === "cards" ? {
+      applicationId: readStr(row, "application", "appId"),
+      applicationName: readStr(row, "applicationName", "appName"),
+      applicationType: readStr(row, "applicationType", "appType"),
+      applicationIcon: readStr(row, "applicationIcon", "appIcon"),
+      description: readStr(row, "settings", "description") ?? row.subtitle,
+      schedule: readStr(row, "frequency", "scheduleExpression", "cron"),
+      revision: typeof revision === "number" ? revision : null,
+      stateLabel: readStr(row, "stateLabel"),
+      lastRunStartedAt: readStr(row, "lastRunStartedAt", "lastRunAt"),
+    } : {}),
+    ref: { className: row.className || scheduledTaskType, primaryKey: row.primaryKey },
     row,
   };
 }
 
+const previousCards = computed(() => {
+  if (presentation.value !== "cards" || props.tasks) return;
+  const state = rowsState?.value;
+  if (state?.status === "error" || state?.status === "loading") return state.previous;
+});
+
 const resolvedData = computed<DataStateResult<readonly ScheduledTaskSummaryItem[]>>(() => {
   if (props.tasks) {
-    return { status: "ready", value: props.tasks };
+    return presentation.value === "cards" && !props.tasks.length
+      ? { status: "empty" }
+      : { status: "ready", value: props.tasks };
   }
   if (!rowsState) return { status: "empty" };
-  const state = rowsState.value;
-  if (state.status !== "ready") return state as DataStateResult<readonly ScheduledTaskSummaryItem[]>;
+  const state = previousCards.value ?? rowsState.value;
+  if (state.status !== "ready") {
+    if (state.status === "error" && presentation.value === "cards") {
+      return { ...state, retry: state.retry ?? refreshRows ?? undefined };
+    }
+    return state;
+  }
   const raw = state.value as unknown as readonly PlatformObjectRecord[] | { rows?: readonly PlatformObjectRecord[] } | null;
   const rows = Array.isArray(raw) ? raw : (raw && typeof raw === "object" && Array.isArray((raw as { rows?: unknown }).rows) ? (raw as { rows: readonly PlatformObjectRecord[] }).rows : []);
+  if (presentation.value === "cards" && !rows.length) return { status: "empty" };
   return { status: "ready", value: rows.map(parseTaskRecord) };
 });
 
@@ -205,12 +222,16 @@ const categorized = computed(() => {
   return { issues, running, results, groups };
 });
 
-useMemberOutput("status", () => resolvedData.value.status);
-useMemberOutput("issueCount", () => categorized.value.issues.length);
-useMemberOutput("runningCount", () => categorized.value.running.length);
-useMemberOutput("resultCount", () => categorized.value.results.length);
+if (member) {
+  useMemberOutput("status", () => previousCards.value ? rowsState!.value.status : resolvedData.value.status);
+  useMemberOutput("issueCount", () => categorized.value.issues.length);
+  useMemberOutput("runningCount", () => categorized.value.running.length);
+  useMemberOutput("resultCount", () => categorized.value.results.length);
+}
 
-const labels = useDataStateLabels(() => props.emptyText || (isZh.value ? "暂无需要关注的定时任务" : "No scheduled tasks require attention"));
+const labels = useDataStateLabels(() => props.emptyText || (presentation.value === "cards"
+  ? t("platformSchedules.empty.none")
+  : isZh.value ? "暂无需要关注的定时任务" : "No scheduled tasks require attention"));
 
 function statusDotClass(task: ScheduledTaskSummaryItem): string {
   if (isRunning(task)) return "is-running";
@@ -282,12 +303,244 @@ function handleResolve(task: ScheduledTaskSummaryItem) {
   }
   emit("resolve", task);
 }
+const staleError = computed(() => previousCards.value && rowsState?.value.status === "error" ? rowsState.value : null);
+const cardsRefreshing = computed(() => rowsState?.value.status === "loading" && Boolean(previousCards.value)
+  || rowsState?.value.status === "ready" && Boolean(rowsState.value.refreshing));
+const readyRows = computed(() => previousCards.value ?? (rowsState?.value.status === "ready" ? rowsState.value : null));
+
+function taskKey(task: ScheduledTaskSummaryItem): string {
+  return panelRowOperationKey({ primaryKey: task.id, className: task.ref?.className }, scheduledTaskType);
+}
+
+function applicationIcon(task: ScheduledTaskSummaryItem) {
+  if (task.applicationIcon && hasAppIcon(task.applicationIcon)) return appIcon(task.applicationIcon);
+  const kind = task.applicationType === "agent" ? "bot" : task.applicationType;
+  if (kind && hasAppIcon(kind)) return appIcon(kind);
+  return appIcon(task.applicationId && hasAppIcon(task.applicationId) ? task.applicationId : "app-window");
+}
+
+const expandedCards = ref(new Set<string>());
+function toggleDetails(task: ScheduledTaskSummaryItem) {
+  const key = taskKey(task);
+  if (!expandedCards.value.delete(key)) expandedCards.value.add(key);
+}
+
+function runStatus(task: ScheduledTaskSummaryItem): string {
+  const status = task.activeRunId ? "running" : task.lastRunStatus;
+  switch (status) {
+    case "running":
+    case "completed":
+    case "failed":
+    case "skipped":
+      return t(`platformSchedules.runStatus.${status}`);
+    default:
+      return status || t("platformSchedules.card.neverRun");
+  }
+}
+
+const busyRows = ref(new Set<string>());
+const operationErrors = ref<Record<string, string>>({});
+
+function cardOperation(task: ScheduledTaskSummaryItem, name: string) {
+  const state = member?.operations.value;
+  const descriptor = state && admittedOperations(state)[name];
+  const binding = member?.projection.operations?.[name];
+  const row = task.row;
+  const target = row && member && binding
+    ? resolveRowOperationTarget(binding, row, scheduledTaskType, member.inputs.value)
+    : undefined;
+  const rowOperation = row ? readyRows.value?.rowOperations?.[taskKey(task)]?.[name] : undefined;
+
+  let reason: string | undefined;
+  if (rowOperation?.available === false) reason = rowOperation.unavailable?.reason || t("platform.dataForbidden");
+  else if (descriptor?.unavailable) reason = descriptor.unavailable.reason || t("platform.memberUnavailable");
+  else if (state?.status === "forbidden") reason = state.reason || t("platform.dataForbidden");
+  else if (state?.status === "error") reason = state.message;
+  else if (state?.status === "loading") reason = t("platformSchedules.notice.loading");
+  else if (!descriptor || !binding || target === undefined) reason = t("platform.memberUnavailable");
+  else if (name === toggleOperation && (descriptor.effect !== "write" || target?.kind !== "object" || task.revision == null)) {
+    reason = t("platform.memberUnavailable");
+  }
+
+  const busy = busyRows.value.has(taskKey(task))
+    || Boolean(panel && descriptor?.effect === "write" && target?.kind === "object"
+      && panel.instance.isObjectWriteInFlight(target, descriptor.handlerRef ?? panel.instance.operationIdOf(member!.key, name)));
+  return { descriptor, binding, target, reason, busy };
+}
+
+const switches = computed(() => new Map(
+  resolvedData.value.status === "ready" && presentation.value === "cards"
+    ? resolvedData.value.value.map(task => [taskKey(task), cardOperation(task, toggleOperation)])
+    : [],
+));
+
+function actionsFor(task: ScheduledTaskSummaryItem): ResolvedRowActionItem[] {
+  const items: ResolvedRowActionItem[] = [];
+  const row = task.row ?? { primaryKey: task.id, label: task.title, fields: {} };
+  for (const action of cardActions.value?.items ?? []) {
+    if (!matchesRowActionWhen(row, action.when)) continue;
+    const disabled = matchesRowActionWhen(row, action.disabledWhen, false);
+    const label = action.labelKey ? (panel?.t(action.labelKey) ?? t(action.labelKey)) : action.label;
+    if (action.kind === "local") {
+      items.push({ ...action, key: `local:${action.id}`, label: label ?? action.id, tone: action.tone ?? "default", disabled });
+      continue;
+    }
+    if (action.operation === toggleOperation) continue;
+    const operation = cardOperation(task, action.operation);
+    if (action.hideWhenUnavailable && operation.reason) continue;
+    items.push({
+      ...action,
+      key: `operation:${action.operation}`,
+      label: label ?? operation.descriptor?.label ?? action.operation,
+      tone: action.tone ?? (operation.descriptor?.inspectImpact ? "danger" : "default"),
+      disabled: disabled || Boolean(operation.reason),
+      busy: operation.busy,
+      reason: operation.reason,
+    });
+  }
+  return items;
+}
+
+function triggerCardAction(task: ScheduledTaskSummaryItem, item: ResolvedRowActionItem) {
+  if (item.disabled || item.busy || busyRows.value.has(taskKey(task))) return;
+  if (item.kind === "local" && item.id) emit("row-action", item.id, task);
+  else if (item.kind === "operation" && item.operation) void dispatchCardOperation(task, item.operation);
+}
+
+async function dispatchCardOperation(task: ScheduledTaskSummaryItem, name: string, enabled?: boolean) {
+  if (!panel || !member || !task.row || !task.ref) return;
+  const { descriptor, binding, target, reason, busy } = cardOperation(task, name);
+  if (!descriptor || !binding || target === undefined || reason || busy) return;
+  const key = taskKey(task);
+  busyRows.value.add(key);
+  delete operationErrors.value[key];
+  try {
+    const bound = resolveRowOperationParams(binding, task.row, member.inputs.value);
+    const changed: Record<string, RuntimeJsonValue> = enabled === undefined
+      ? {}
+      : { enabled, revision: task.revision! };
+    const input = isActionValuesEnvelope(descriptor.inputSchema)
+      ? wrapActionOperationInput(descriptor.inputSchema, bound, changed)
+      : { ...bound, ...changed };
+    const operationId = panel.instance.operationIdOf(member.key, name);
+    if (enabled !== undefined) emit("toggle-enabled", task, enabled);
+    if (descriptor.effect === "read") {
+      await panel.instance.readOperation(operationId, { target, input });
+      return;
+    }
+    // The instance owns preparation, confirmation, object-write locking, and invalidation.
+    const answer = await panel.instance.writeOperation(operationId, { call: { target, input } }, {
+      handlerRef: descriptor.handlerRef,
+    });
+    if (answer.decision !== "confirm" || !answer.response) return;
+    const response = answer.response;
+    if (response.kind !== "dispatched") {
+      operationErrors.value[key] = response.message;
+      return;
+    }
+    const outcome = response.outcome;
+    if (outcome) emit("operation-done", name, outcome, task.ref);
+    if (!outcome || outcome.kind === "batch") {
+      operationErrors.value[key] = t("platform.operationUnknown", { message: "" });
+    } else if (outcome.kind === "success") {
+      panel.notify({ kind: "success", text: formatOperationOutcome(outcome, t) });
+    } else {
+      operationErrors.value[key] = formatOperationOutcome(outcome, t);
+    }
+  } catch (error) {
+    operationErrors.value[key] = error instanceof Error ? error.message : String(error);
+  } finally {
+    busyRows.value.delete(key);
+  }
+}
 </script>
 
 <template>
   <div class="sdk-scheduled-task-summary">
-    <DataState :result="resolvedData" :labels="labels">
-      <div class="sdk-sts-body">
+    <DataState
+      v-if="staleError"
+      :result="{ ...staleError, retry: staleError.retry ?? refreshRows ?? undefined }"
+      :labels="labels"
+    />
+    <DataState :result="resolvedData" :labels="labels" v-slot="{ value }">
+      <div v-if="presentation === 'cards'" class="sdk-sts-cards" :aria-busy="cardsRefreshing">
+        <article
+          v-for="task in value"
+          :key="taskKey(task)"
+          class="sdk-sts-card"
+          :class="{ 'is-selected': isTaskSelected(task) }"
+          @click="handleSelect(task)"
+        >
+          <header class="sdk-sts-card-header">
+            <span class="sdk-sts-card-app">
+              <component :is="applicationIcon(task)" :size="16" aria-hidden="true" />
+              {{ task.applicationName || task.applicationId }}
+            </span>
+            <span class="sdk-sts-card-badge">
+              <span class="sdk-sts-dot" :class="statusDotClass(task)" aria-hidden="true" />
+              {{ task.stateLabel || statusText(task) }}
+            </span>
+            <span class="sdk-sts-card-switch" @click.stop>
+              <ElSwitch
+                :model-value="task.enabled"
+                :loading="switches.get(taskKey(task))?.busy"
+                :disabled="Boolean(switches.get(taskKey(task))?.reason || switches.get(taskKey(task))?.busy)"
+                :aria-label="t('platformSchedules.card.switch', { title: task.title })"
+                @update:model-value="dispatchCardOperation(task, toggleOperation, Boolean($event))"
+              />
+            </span>
+          </header>
+          <p v-if="switches.get(taskKey(task))?.reason" class="sdk-sts-card-operation-note">
+            {{ switches.get(taskKey(task))?.reason }}
+          </p>
+          <h3 class="sdk-sts-card-title">
+            <button type="button" class="sdk-sts-row-link" @click.stop="handleSelect(task)">{{ task.title }}</button>
+          </h3>
+          <p v-if="task.description" class="sdk-sts-card-description">{{ task.description }}</p>
+          <div v-if="task.pauseMessage || task.lastRunErrorMessage" class="sdk-sts-card-pause" @click.stop>
+            <button
+              type="button"
+              class="sdk-sts-row-link"
+              :aria-expanded="expandedCards.has(taskKey(task))"
+              @click="toggleDetails(task)"
+            >
+              <component :is="appIcon(expandedCards.has(taskKey(task)) ? 'chevron-down' : 'chevron-right')" :size="14" aria-hidden="true" />
+              {{ task.pauseMessage ? t('platformSchedules.panelFields.pauseReason') : runStatus(task) }}
+            </button>
+            <template v-if="expandedCards.has(taskKey(task))">
+              <p v-if="task.pauseMessage">{{ task.pauseMessage }}</p>
+              <p v-if="task.lastRunErrorMessage && task.lastRunErrorMessage !== task.pauseMessage">{{ task.lastRunErrorMessage }}</p>
+            </template>
+          </div>
+          <div class="sdk-sts-card-meta">
+            <p>
+              <span v-if="task.schedule">{{ task.schedule }}</span>
+              <span v-if="task.nextRunAt">{{ t('platformSchedules.card.next', { time: formatDate(task.nextRunAt) }) }}</span>
+            </p>
+            <p>
+              <span>{{ runStatus(task) }}</span>
+              <span v-if="task.lastRunFinishedAt || task.lastRunStartedAt">{{ formatDate((task.lastRunFinishedAt || task.lastRunStartedAt)!) }}</span>
+              <span v-if="task.revision != null" :title="task.row?.fieldLabels?.revision">{{ '#' + task.revision }}</span>
+            </p>
+            <p v-if="task.lastRunSummary && !task.lastRunErrorMessage">{{ formatSummaryExcerpt(task.lastRunSummary) }}</p>
+          </div>
+          <p v-if="operationErrors[taskKey(task)]" class="sdk-sts-card-error" role="alert">{{ operationErrors[taskKey(task)] }}</p>
+          <div v-if="cardActions?.items.length || $slots['card-actions'] || $slots['row-actions']" class="sdk-sts-card-actions" @click.stop>
+            <slot name="card-actions" :task="task" :needs-intervention="needsIntervention(task)">
+              <slot name="row-actions" :task="task" :needs-intervention="needsIntervention(task)">
+                <ObjectListRowActions
+                  :items="actionsFor(task)"
+                  :max-visible="cardActions?.maxVisible"
+                  :row-label="task.title"
+                  :busy="busyRows.has(taskKey(task))"
+                  @trigger="triggerCardAction(task, $event)"
+                />
+              </slot>
+            </slot>
+          </div>
+        </article>
+      </div>
+      <div v-else class="sdk-sts-body">
         <div class="sdk-sts-counters" aria-live="polite">
           <div class="sdk-sts-counter" :class="{ 'has-issues': categorized.issues.length > 0 }">
             <strong class="sdk-sts-count">{{ categorized.issues.length }}</strong>
@@ -381,6 +634,85 @@ function handleResolve(task: ScheduledTaskSummaryItem) {
 </template>
 
 <style scoped>
+.sdk-sts-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: var(--spacing-md, 12px);
+}
+
+.sdk-sts-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  min-width: 0;
+  padding: var(--spacing-md, 12px);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-bg-color);
+  cursor: pointer;
+}
+
+.sdk-sts-card.is-selected {
+  border-color: var(--el-color-primary);
+}
+
+.sdk-sts-card-header,
+.sdk-sts-card-app,
+.sdk-sts-card-badge,
+.sdk-sts-card-pause button,
+.sdk-sts-card-meta p {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 6px);
+}
+
+.sdk-sts-card-app {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.sdk-sts-card-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--el-fill-color-light);
+  font-size: var(--text-xs, 12px);
+}
+
+.sdk-sts-card-title,
+.sdk-sts-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sdk-sts-card-description,
+.sdk-sts-card-operation-note,
+.sdk-sts-card-meta {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm, 13px);
+}
+
+.sdk-sts-card-pause {
+  padding: var(--spacing-sm, 8px);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-color-warning-light-9);
+}
+
+.sdk-sts-card-pause button,
+.sdk-sts-card-pause p {
+  color: var(--el-color-warning-dark-2);
+}
+
+.sdk-sts-card-actions {
+  margin-top: auto;
+  align-self: flex-end;
+}
+
+.sdk-sts-card-error {
+  color: var(--el-color-danger);
+}
+
+
 .sdk-scheduled-task-summary {
   width: 100%;
   min-width: 0;

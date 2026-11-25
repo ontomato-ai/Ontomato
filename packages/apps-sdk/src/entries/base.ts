@@ -115,9 +115,13 @@ export { default as CurrentEntry } from "../base/CurrentEntry.vue";
 export { default as MetricChart } from "../base/MetricChart.vue";
 export { default as DashboardMetricPreview } from "../base/DashboardMetricPreview.vue";
 export type { DashboardMetricPreviewCard } from "../base/dashboard-metric-preview-types";
+export { default as ScheduledTaskAppFilterBar } from "../base/ScheduledTaskAppFilterBar.vue";
+export type { ScheduledTaskAppFilterItem } from "../base/scheduled-task-app-filter-types";
 export { default as ScheduledTaskSummaryList } from "../base/ScheduledTaskSummaryList.vue";
 export { default as ScheduledTaskRunDetail } from "../base/ScheduledTaskRunDetail.vue";
 export type {
+  ScheduledTaskCardActions,
+  ScheduledTaskPresentation,
   ScheduledTaskRunView,
   ScheduledTaskSummaryItem,
 } from "../base/scheduled-task-summary-types";

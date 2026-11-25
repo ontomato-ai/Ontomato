@@ -924,6 +924,21 @@ export const components: readonly ComponentMetadata[] = [
     },
   }),
   defineComponentMeta({
+    componentId: "ScheduledTaskAppFilterBar",
+    module: "@ontomato/sdk/base",
+    exportName: "ScheduledTaskAppFilterBar",
+    role: "control",
+    group: "form",
+    panelUsable: false,
+    meaning:
+      "Filters scheduled tasks by application. Shows the owner's total and counts from the counts datum or standalone items, displays up to maxVisible applications (five by default), and shows the selected overflow application's name and count on the More trigger.",
+    effects: "Writes the selected application key to selected, using an empty string for all applications.",
+    bindsElement: ["PlatformObjectType:platform:ScheduledTask"],
+    data: { counts: { results: ["panelGroupCounts"], required: false } },
+    inputs: { selected: { kind: "scalar", type: "string" } },
+    outputs: { selected: { kind: "scalar", type: "string" } },
+  }),
+  defineComponentMeta({
     componentId: "ScheduledTaskSummaryList",
     module: "@ontomato/sdk/base",
     exportName: "ScheduledTaskSummaryList",
@@ -931,8 +946,8 @@ export const components: readonly ComponentMetadata[] = [
     group: "list",
     panelUsable: false,
     meaning:
-      "Workspace scheduled task attention summary and grouped list. Renders a three-counter top strip (Needs intervention, Recent results, Running), three priority-ordered task sections with status dots and multi-line excerpts, and an inline Resolve action for paused or failed tasks.",
-    effects: "Reads its bound `rows` datum as the reader and writes `selected` / `resolveTarget` panel state when the reader opens or resolves a task.",
+      "Scheduled task list with presentation 'summary' (default workspace attention counters, groups, and Resolve action) or 'cards' (full task cards with application identity, schedule, enabled switch, pause details, and recent run). The card footer supports rowActions for declared operations and local events, and card-actions or row-actions slots.",
+    effects: "Reads its bound `rows` datum as the reader and writes `selected` / `resolveTarget` when the reader opens or resolves a task. Cards dispatch the declared row operation `setEnabled` with enabled and the observed revision, and dispatch other named row operations through the panel instance.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
