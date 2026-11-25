@@ -208,7 +208,8 @@ class OntologyRetrievalContractTest {
             runtime,
             retrieval,
             mock(OntologyGenerationService.class),
-            mock(ActionCreationService.class),mock(OntologyAgentLabels.class));
+            mock(ActionCreationService.class), mock(OntologyAgentLabels.class),
+            mock(io.ontomato.dataengine.service.authorization.AuthorizationService.class));
     var scheduleIdentity = mock(ScheduleIdentity.class);
     when(scheduleIdentity.dataPermission(owner.domainId(), owner.userId())).thenAnswer(call -> permission);
     when(scheduleIdentity.dataPermission(owner.domainId(), executor.getId())).thenAnswer(call -> executorPermission);

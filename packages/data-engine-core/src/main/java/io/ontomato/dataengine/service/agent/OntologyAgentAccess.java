@@ -59,8 +59,6 @@ public class OntologyAgentAccess {
       identity.getCurrentCredentialExpiresAt(), null);
   }
 
-  public boolean governanceAllowed() { return identity.hasKnowledgeGovernanceAccess(); }
-
   public Context forAgent(HttpServletRequest request, String agent) {
     if (!OntologyAgentStore.isKnownAgent(agent)) throw AgentHttpException.missing();
     return current(request);

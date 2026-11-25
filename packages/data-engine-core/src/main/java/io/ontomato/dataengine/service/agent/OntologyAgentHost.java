@@ -3,6 +3,11 @@ package io.ontomato.dataengine.service.agent;
 import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.*;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.CredentialLimit;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
@@ -17,19 +22,21 @@ public class OntologyAgentHost {
   private final OntologyRetrievalService retrieval;
   private final OntologyGenerationService generation;
   private final ActionCreationService actionCreation;
+  private final AuthorizationService authorization;
 
   public OntologyAgentHost(
       OntologyAgentStore store,
       AgentRuntimeClient runtime,
       OntologyRetrievalService retrieval,
       OntologyGenerationService generation,
-      ActionCreationService actionCreation,OntologyAgentLabels labels) {
+      ActionCreationService actionCreation, OntologyAgentLabels labels, AuthorizationService authorization) {
     this.labels=labels;
     this.store = store;
     this.runtime = runtime;
     this.retrieval = retrieval;
     this.generation = generation;
     this.actionCreation = actionCreation;
+    this.authorization = authorization;
   }
 
   private boolean isRetrieval(String session, Owner owner) {
@@ -70,13 +77,15 @@ public class OntologyAgentHost {
     store.update("UPDATE ontology_agent_sessions SET title=? WHERE id=?", title.strip(), uuid(session));
   }
 
-  public JSONObject agents(boolean governanceAllowed, Owner caller, String language) {
+  public JSONObject agents(Owner caller, String language) {
     var agents = new JSONArray();
     if (retrieval.canUse(caller)) {
       agents.add(labels.localize(RETRIEVER, JSONObject.of("id", RETRIEVER, "name", "Data retrieval",
           "description", "Answer a data question using the ontology", "icon", null, "enabled", true), language));
     }
-    if (governanceAllowed) {
+    var subject = authorization.resolveSubject(
+        new VerifiedIdentity(caller.domainId(), caller.userId(), CredentialLimit.UNRESTRICTED));
+    if (authorization.decide(subject, new Create(Kind.ACTION)).allowed()) {
       agents.add(labels.localize(ActionCreationService.AGENT, JSONObject.of("id", ActionCreationService.AGENT,
           "name", "Action creation", "description", "Describe a write action in conversation; the agent drafts and tests it",
           "icon", null, "enabled", true), language));
