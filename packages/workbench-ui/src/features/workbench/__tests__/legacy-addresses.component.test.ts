@@ -68,7 +68,7 @@ function platformRouter(): Router {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      ...workbenchPages(page, { component: page, props: { account: null } }),
+      ...workbenchPages(page, { props: { account: null } }),
       // Stand-ins for the canonical entries the reader's catalogue admits.
       ...["/agents/settings", "/ontology/agents", "/ontology/skills", "/:unknown(.*)*"].map((path) => ({
         path, component: page,

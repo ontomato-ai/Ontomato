@@ -34,6 +34,7 @@ import { withDomainSkills } from "../skills/operations";
 import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
 import { assistantName, assistantDescription } from "./labels";
 import {isAppBuilderKind} from '../app-builder/definition';
+import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import {transaction} from '../../infrastructure/postgres-transaction';
 import {lockProducts} from '../product-assets/store';
 import {synchronizeNativeProfile} from '../product-assets/platform-assets';
@@ -55,7 +56,7 @@ const view = (a: AgentRow, locale?: string) =>
     systemPrompt: effectiveSystemPrompt(a, locale),
   });
 export { agentDefinitionPermissions } from "./definition-permissions";
-const isReadableDefinition = (kind: string) => !isAppBuilderKind(kind);
+const isReadableDefinition = (kind: string) => !isAppBuilderKind(kind) && !isOpsDiagnosisKind(kind);
 
 export async function filterReadableAgentDefinitions(
   owner: AssistantOwner, credentials: AssistantCredentials, ids: readonly string[],

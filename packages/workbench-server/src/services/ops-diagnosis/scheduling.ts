@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { PlatformScheduleExecutionState, PlatformScheduleExecutionRequest, PlatformScheduleExecutionStatusRequest } from "@ontomato/contracts/platform-schedules";
+import { assistantService } from "../assistant/service";
+import { assistantStore } from "../assistant/store";
 import { diagnosisService } from "./service";
-import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { withScheduledUserActivity } from "../assistant/scheduled-activity";
 import { checkedForm, completeForm, emptyExecution, instruction, option, scheduledSessionId, select, type ScheduleApplication, type ScheduleContext } from "../scheduling/application";
 import { scheduledConversationStatus } from "../scheduling/conversation";
@@ -72,7 +73,8 @@ export const operationsScheduleApplication: ScheduleApplication = {
   async form(input, { owner, credentials }) {
     const zh = credentials.locale?.startsWith("zh");
     const operation = input.values.operation || "autotest";
-    const canInspect = await productGrantAllowed(DIAGNOSIS_AGENT_ID, "use", credentials);
+    const diagnosis = await assistantStore.opsDiagnosis(owner.domainId);
+    const canInspect = Boolean(diagnosis?.enabled && await productGrantAllowed(diagnosis.id, "use", credentials));
     const fields = [select("operation", zh ? "做什么" : "Operation", [
       option("autotest", zh ? "跑自动测试" : "Run automated tests"),
       option("inspection", zh ? "巡检" : "Inspection", canInspect ? null : zh ? "无权使用运维诊断智能体" : "Operations diagnosis use permission required"),
@@ -95,10 +97,16 @@ export const operationsScheduleApplication: ScheduleApplication = {
     await this.validate(input, context);
     return withScheduledUserActivity(context.owner.userId, async () => {
       if (input.content.operation === "autotest") return startBatch(input, context);
+      const diagnosis = await assistantStore.opsDiagnosis(context.owner.domainId);
+      if (!diagnosis?.enabled) throw new HttpError(404, "Operations diagnosis unavailable", "NOT_FOUND");
       const sessionId = scheduledSessionId(input.runId);
-      await diagnosisService.create(sessionId, context.owner, { agentId: DIAGNOSIS_AGENT_ID }, context.credentials);
-      await diagnosisService.send(sessionId, input.runId, {message:input.content.instruction}, context.owner, context.credentials, "background");
-      return { ...emptyExecution(), handle: { sessionId }, resultLink: { appId: "operations", path: `/ops/diagnosis?sessionId=${sessionId}` } };
+      await assistantService.create(sessionId, context.owner, { agentId: diagnosis.id }, context.credentials, "scheduled");
+      await assistantService.send(sessionId, input.runId, { message: input.content.instruction }, context.owner, context.credentials, "background");
+      return {
+        ...emptyExecution(),
+        handle: { sessionId, agentId: diagnosis.id },
+        resultLink: { appId: "agents", path: `/agents/chat?agentId=${encodeURIComponent(diagnosis.id)}&sessionId=${sessionId}` },
+      };
     });
   },
   async status(input) {
@@ -107,6 +115,16 @@ export const operationsScheduleApplication: ScheduleApplication = {
       if (input.handle?.batchId !== undefined || loadRunMeta(batchId)) return batchState(input);
     }
     const sessionId = typeof input.handle?.sessionId === "string" ? input.handle.sessionId : scheduledSessionId(input.runId);
-    return scheduledConversationStatus(diagnosisService, input.owner, sessionId, input.runId, "operations", `/ops/diagnosis?sessionId=${sessionId}`);
+    const agentId = typeof input.handle?.agentId === "string" ? input.handle.agentId : (await assistantStore.opsDiagnosis(input.owner.domainId))?.id;
+    const chatPath = agentId
+      ? `/agents/chat?agentId=${encodeURIComponent(agentId)}&sessionId=${sessionId}`
+      : `/ops/diagnosis?sessionId=${sessionId}`;
+    try {
+      return await scheduledConversationStatus(assistantService, input.owner, sessionId, input.runId, "agents", chatPath);
+    } catch (error) {
+      // Read-only fallback for historical scheduled inspections persisted in legacy `ops_sessions`.
+      if (!(error instanceof HttpError && error.status === 404)) throw error;
+      return scheduledConversationStatus(diagnosisService, input.owner, sessionId, input.runId, "operations", `/ops/diagnosis?sessionId=${sessionId}`);
+    }
   },
 };

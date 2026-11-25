@@ -3,12 +3,15 @@ import type { DefaultAgent } from "@ontomato/contracts/default-agent";
 import type { AssistantAgentsQuery, PageSkillEntrance, PageSkillLocator } from "@ontomato/contracts/page-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { workbenchIdentity } from "../../identity/installed";
 import { HttpError } from "../../utils/errors";
+import { isAppBuilderKind } from "../app-builder/definition";
+import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import { grantedProductIds } from "../product-governance/grants";
 import { withProductGrants } from "../product-assets/grants";
 import { nativeProfileId } from "../product-assets/platform-assets";
 import { profileIdForAgent } from "../product-assets/agent-profile";
-import { assistantStore, type AssistantOwner } from "./store";
+import { assistantStore, type AgentRow, type AssistantOwner } from "./store";
 import { isPresetAgentKind } from "./preset-definitions";
 import { assistantDescription, assistantName } from "./labels";
 import { effectiveAssistantSkills, readAssistantSkillView, resolveCurrentPageSkillMember } from "./skills";
@@ -46,8 +49,37 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
     };
   }
   const usableIds = new Set(await grantedProductIds("use", credentials));
-  const definitions = (await assistantStore.agents(owner.domainId))
-    .filter(agent => agent.kind !== excludePreset && usableIds.has(agent.id));
+  const stored = await assistantStore.agents(owner.domainId);
+  const diagnosisRow = stored.some(agent => isOpsDiagnosisKind(agent.kind))
+    ? undefined
+    : await assistantStore.opsDiagnosis?.(owner.domainId);
+  const rawDefinitions = diagnosisRow ? [...stored, diagnosisRow] : stored;
+  let observeAllowed: boolean | null = null;
+  async function canObserve() {
+    if (observeAllowed !== null) return observeAllowed;
+    try {
+      await workbenchIdentity().assertObserveAccess({
+        domainId: owner.domainId,
+        token: credentials.token,
+        apiKey: credentials.apiKey,
+      });
+      observeAllowed = true;
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 403) {
+        observeAllowed = false;
+      } else {
+        throw error;
+      }
+    }
+    return observeAllowed;
+  }
+  const definitions: AgentRow[] = [];
+  for (const agent of rawDefinitions) {
+    if (isAppBuilderKind(agent.kind)) continue;
+    if (agent.kind === excludePreset || !usableIds.has(agent.id)) continue;
+    if (isOpsDiagnosisKind(agent.kind) && !await canObserve()) continue;
+    definitions.push(agent);
+  }
   return withProductGrants(owner, async () => {
     const agents = [];
     for (const agent of definitions) {
@@ -56,6 +88,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       agents.push({
         id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
         icon: agent.icon, enabled: agent.enabled,
+        ...(isPresetAgentKind(agent.kind) || isOpsDiagnosisKind(agent.kind) ? { kind: agent.kind } : {}),
         // Only what this initiator's view holds: a page skill whose source could not be read is no agent's skill here.
         effectiveSkills: effectiveAssistantSkills(agent, view, profile !== null).filter(view.hasSkill),
       });
@@ -71,7 +104,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
 
     const candidateIds = new Set(candidates.map(agent => agent.id));
     const presetAgentIds = Object.fromEntries(definitions
-      .filter(agent => isPresetAgentKind(agent.kind) && candidateIds.has(agent.id))
+      .filter(agent => (isPresetAgentKind(agent.kind) || isOpsDiagnosisKind(agent.kind)) && candidateIds.has(agent.id))
       .map(agent => [agent.kind, agent.id]));
     return assistantAgentListSchema.parse({
       agents: candidates,

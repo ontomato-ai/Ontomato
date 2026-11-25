@@ -598,6 +598,7 @@ export default {
     "noConversations": "No Conversations",
     "historyConversations": "History Conversations",
     "diagnoseTurn": "Diagnose this Turn",
+    "diagnoseTurnPrefill": "Diagnose this Turn (sessionId: {sessionId}, runId: {runId}).",
     "partialResult": "Partial result: a processing or output limit of {rowLimit} was reached, so these results (even if empty) may not cover all matches."
   },
   "appearance": {

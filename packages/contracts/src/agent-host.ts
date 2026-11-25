@@ -32,6 +32,7 @@ export const agentHostAgentSchema = z
     description: z.string(),
     icon: z.string().nullable(),
     enabled: z.boolean(),
+    kind: runtimeKeySchema.optional(),
   })
   .strict();
 export const agentHostAgentListSchema = z

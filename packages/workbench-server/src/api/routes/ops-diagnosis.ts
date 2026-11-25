@@ -19,6 +19,8 @@ import { combineResultTruncation, parseQueryAnswerPayloads } from "../../utils/q
 import { HttpError } from "../../utils/errors";
 
 const router: ReturnType<typeof Router> = Router();
+// Legacy `/api/observe/agent/*` and `/api/observe/diagnoses` compatibility layer for MCP and historical `ops_sessions`
+// pending old data cleanup; active interactive diagnosis chat runs through `/api/assistant/*` (`assistant_sessions`).
 router.get("/agent/agents", wrap(async (req, res) => {
   const c = context(req);
   res.json(await diagnosisService.agents(c.owner, c.credentials));

@@ -1,17 +1,15 @@
+import { OPS_DIAGNOSIS_KIND } from "@ontomato/contracts/ops-diagnosis";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
+import { turnDiagnosisPrefill } from "@ontomato/workbench-ui";
 import type { RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-router";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
 
 export interface ObserveRouteOptions {
-  /** Override for the diagnosis conversation route (`/ops/diagnosis`), used by tests. */
-  component?: PageComponent;
   meta?: RouteMeta;
   props?: Record<string, unknown>;
 }
 
-const diagnosisPage: PageComponent = () =>
-  import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.ObserveLayout);
 const autotestPage: PageComponent = () =>
   import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.AutotestPage);
 const liveLogsPage: PageComponent = () =>
@@ -19,19 +17,28 @@ const liveLogsPage: PageComponent = () =>
 
 /**
  * Native operations diagnosis routes still awaiting Batch 2 panel migration, plus legacy deep-link redirects to the
- * migrated built-in panels (`/ops/turn`, `/ops/results`, `/ops/autotest/case`, `/ops/dsl`, `/ops/knowledge`, `/ops/feedback`).
+ * unified agent platform (`/ops/diagnosis` -> `/agents/chat`) and migrated built-in panels (`/ops/turn`, `/ops/results`,
+ * `/ops/autotest/case`, `/ops/dsl`, `/ops/knowledge`, `/ops/feedback`).
  * Every route renders inside the shared platform application frame (`builtin-product-platform-frame`).
  */
 export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecordRaw[] {
   const baseMeta: RouteMeta = { ...options.meta, ownHeader: true };
-  const routeProps = options.props;
   return [
     { ...routes.ops, redirect: routes.turn.path },
     {
       ...routes.diagnosis,
-      component: options.component ?? diagnosisPage,
-      ...(routeProps ? { props: routeProps } : {}),
-      meta: { ...baseMeta, page: routes.diagnosis.path },
+      redirect: (to) => {
+        const sourceSessionId = typeof to.query.sourceSessionId === "string" ? to.query.sourceSessionId : "";
+        const sourceRunId = typeof to.query.sourceRunId === "string" ? to.query.sourceRunId : "";
+        const sessionId = typeof to.query.sessionId === "string" ? to.query.sessionId : "";
+        const query: Record<string, string> = { agentKind: OPS_DIAGNOSIS_KIND };
+        if (to.query.diagnose === "1" && sourceSessionId && sourceRunId) {
+          query.prefill = turnDiagnosisPrefill(sourceSessionId, sourceRunId);
+        } else if (sessionId) {
+          query.sessionId = sessionId;
+        }
+        return { path: routes.chat.path, query };
+      },
     },
     {
       ...routes.turnDetail,
@@ -74,6 +81,5 @@ export const observeRoutes = {
   root: {
     ...routes.ops,
     redirect: routes.turn.path,
-    component: diagnosisPage,
   },
 };

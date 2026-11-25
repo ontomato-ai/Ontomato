@@ -1,5 +1,6 @@
 import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import { APP_BUILDER_KIND, isAppBuilderKind } from "../app-builder/definition";
+import { OPS_DIAGNOSIS_KIND } from "../ops-diagnosis/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
 import { createHash } from "node:crypto";
@@ -59,7 +60,7 @@ export interface AgentRow {
   sort_order: number;
 }
 const db = () => getPostgresPool();
-const agentDefinitionScope = "domain_id=$1 AND kind<>'app-builder'";
+const agentDefinitionScope = "domain_id=$1 AND kind NOT IN ('app-builder','ops-diagnosis')";
 
 export const assistantStore = {
   async countAgentDefinitions(domainId: string): Promise<number> {
@@ -87,6 +88,13 @@ export const assistantStore = {
     const { rows } = await db().query<AgentRow>(
       `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`,
       [domainId, APP_BUILDER_KIND],
+    );
+    return rows[0];
+  },
+  async opsDiagnosis(domainId: string): Promise<AgentRow | undefined> {
+    const { rows } = await db().query<AgentRow>(
+      `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`,
+      [domainId, OPS_DIAGNOSIS_KIND],
     );
     return rows[0];
   },

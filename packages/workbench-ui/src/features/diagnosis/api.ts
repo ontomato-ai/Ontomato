@@ -20,8 +20,6 @@ import type {
   RunResults,
 } from "@ontomato/contracts/autotest";
 import type { HttpResponse } from "@ontomato/contracts/http";
-import type { DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
-import { agentHostCreateSessionResponseSchema, agentHostSendResultSchema } from "@ontomato/contracts/agent-host";
 import { api } from "../../api";
 import { t } from "../../i18n";
 import { ApiBusinessError, apiPost, createEventSource } from "../../utils/api";
@@ -87,16 +85,6 @@ export function createDiagnosisApi(request: Pick<typeof api, "get" | "post" | "p
       const updated = response?.kept;
       if (typeof updated !== "boolean") throw new Error("Invalid artifact retention response");
       return updated;
-    },
-    async startDiagnosis(target: DiagnosisTarget, sessionId: string, runId: string, message: string) {
-      agentHostCreateSessionResponseSchema.parse(await request.post(
-        "/observe/diagnoses", { target }, { headers: { "Idempotency-Key": sessionId } }
-      ));
-      return agentHostSendResultSchema.parse(await request.post(
-        `/observe/agent/sessions/${encodeURIComponent(sessionId)}/runs`,
-        { message },
-        { headers: { "Idempotency-Key": runId } }
-      ));
     },
     initializeLogSourceConfig: () => data<LogSourceConfig>(request.get("/observe/log-source-config")),
     downloadRunUrl: (runId: string, token: string) =>

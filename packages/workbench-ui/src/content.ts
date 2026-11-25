@@ -58,9 +58,10 @@ export interface WorkbenchFixedText {
   /** Display of an empty error message (query-view/utils/display-error.ts). */
   unknownError: string;
   /**
-   * Sentences hard-coded in the observe page: the message the chat diagnosis entry sends automatically (ObserveLayout.vue),
-   * the submitted values of welcome page quick questions (WelcomePage.vue; the display uses t keys), the "cancelled" label,
-   * file load failure and large-file truncation notes of artifact details (ArtifactDetail.vue), and the test batch resume log (TestPage.vue).
+   * Sentences hard-coded in the observe pages: the legacy turn-diagnosis sentence (kept for edition content
+   * compatibility), the submitted values of welcome page quick questions (WelcomePage.vue; the display uses t keys),
+   * the "cancelled" label, file load failure and large-file truncation notes of artifact details (ArtifactDetail.vue),
+   * and the test batch resume log (TestPage.vue).
    */
   observe: {
     autoTurnDiagnosisMessage: string;

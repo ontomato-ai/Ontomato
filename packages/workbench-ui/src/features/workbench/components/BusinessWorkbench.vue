@@ -66,13 +66,15 @@ const panelOperations = createPanelOperationSettings();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 /**
- * `?agentId=` names the agent a link from elsewhere (the platform home) asks for: alone it opens a new conversation with
- * it, with `&prompt=` that conversation starts with the text, with `&sessionId=` it reopens that conversation. The page
- * starts from its own choice (the remembered agent, settled against the agent list as always) and the request replaces
- * it once the list shows the agent enabled; no conversation is opened before that.
+ * `?agentId=` or `?agentKind=` names the agent a link from elsewhere asks for: alone it opens a new conversation with
+ * it, with `&prompt=` that conversation starts with the text, with `&prefill=` the text is placed in the composer for
+ * human review without auto-sending, and with `&sessionId=` it reopens that conversation. The page starts from its own
+ * choice (the remembered agent, settled against the agent list as always) and the request replaces it once the list
+ * shows the agent enabled; no conversation is opened before that.
  */
 const queryText = (value: unknown) => (typeof value === "string" ? value : null);
 const requestedAgent = () => queryText(route.query.agentId);
+const requestedAgentKind = () => queryText(route.query.agentKind);
 const agentId = ref<string | null>(readRememberedAgent());
 /**
  * What sits beside the conversation is this application's display (`useConversationDisplay`): the one controller its
@@ -467,48 +469,72 @@ async function pageKnown(): Promise<boolean> {
   return nav.agentsState.value !== "error";
 }
 const linkAddress = () =>
-  JSON.stringify([requestedAgent(), queryText(route.query.sessionId), queryText(route.query.prompt), queryText(route.query.page)]);
+  JSON.stringify([
+    requestedAgent(),
+    requestedAgentKind(),
+    queryText(route.query.sessionId),
+    queryText(route.query.prompt),
+    queryText(route.query.prefill),
+    queryText(route.query.page),
+  ]);
 
 /**
- * Applies `?agentId=` once the agents are known. The link's parameters leave the address first, so a reload neither
- * sends its question again nor reopens what it named; the page then follows its own conversation behaviour. A disabled
- * or missing agent is reported and the page keeps the agent its own rule chose. An enabled one is selected, and then the
- * named conversation opens, or a new one starts and, with a question, sends it as its first message.
+ * Applies `?agentId=` or `?agentKind=` once the agents are known. The link's parameters leave the address first, so a
+ * reload neither sends its question again nor reopens what it named; the page then follows its own conversation
+ * behaviour. A disabled or missing agent is reported and the page keeps the agent its own rule chose. An enabled one
+ * is selected, and then the named conversation opens, or a new one starts and, with `&prompt=`, sends it as its first
+ * message, or with `&prefill=`, fills the composer without sending.
  *
  * A page's own composer (a dashboard's) sends its question here with `&page=`: the page it was written on opens beside
  * the conversation and stays there, so the reader's next message carries it and its answer can name what the page shows.
  */
 async function openRequestedAgent() {
   const id = requestedAgent();
-  if (!id) return;
+  const kind = requestedAgentKind();
+  if (!id && !kind) return;
   const address = linkAddress();
   if (pendingLink === address || consumedLink === address) return;
   pendingLink = address;
   const session = queryText(route.query.sessionId);
   const prompt = queryText(route.query.prompt);
+  const prefill = queryText(route.query.prefill);
+  const draft = prompt ?? prefill;
   const page = queryText(route.query.page);
   // The link's own parameters go before anything is awaited; the page it was written on stays, carried by the address.
-  const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
+  const {
+    agentId: _agent,
+    agentKind: _agentKind,
+    sessionId: _session,
+    prompt: _prompt,
+    prefill: _prefill,
+    ...query
+  } = route.query;
   await router.replace({ query: page ? { ...query, page } : query });
   // The page the message was written on is beside the conversation from the start: the agent is one of those offered on
   // it, and the message carries its skill, once the conversation knows it. Its agents not read, the message ends here,
   // unsent; the same address arriving again is the reader trying again.
-  if (page && !(await pageKnown())) return giveBack(prompt);
-  if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
+  if (page && !(await pageKnown())) return giveBack(draft);
+  const matched = id
+    ? nav.agents.value.find((agent) => agent.id === id && agent.enabled)
+    : nav.agents.value.find((agent) => agent.kind === kind && agent.enabled);
+  if (!matched) {
     ElMessage.error(t("assistant.agentUnavailable"));
-    return giveBack(prompt);
+    return giveBack(draft);
   }
-  agentId.value = id;
+  const targetId = matched.id;
+  agentId.value = targetId;
   // Switching agents starts a new conversation in the navigation; what the link names comes after that.
   await nextTick();
   placingFrom = page?.split("?")[0] ?? null;
   if (session) {
     nav.selectSession(session);
+  } else if (prefill && !page) {
+    nav.startNew();
   } else {
     // The conversation this tab already holds with the agent goes on; a new tab, or another agent, starts a new one.
     // Coming from a page, this runs on the way in, before the column has read the agent's conversations: the held one is
     // looked up in the host's list rather than in a list that is still empty, or every page message would start anew.
-    const held = readRememberedSession(id);
+    const held = readRememberedSession(targetId);
     if (held && !nav.sessions.value.some((row) => row.id === held)) await nav.loadSessions();
     const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
     if (continuing) nav.selectSession(held);
@@ -520,11 +546,14 @@ async function openRequestedAgent() {
   if (page) {
     await display.navigate(page, { view: "side", history: "replace" });
     await nextTick();
-    if (!(await pageKnown())) return giveBack(prompt);
+    if (!(await pageKnown())) return giveBack(draft);
   }
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
+  } else if (prefill) {
+    await nextTick();
+    shell.value!.fill(prefill);
   }
   // Placed: the address is spent, and the same one arriving again is the reader's next message.
   pendingLink = null;
@@ -532,10 +561,10 @@ async function openRequestedAgent() {
 }
 // The same address entered while the page is open (another link to an agent) does the same.
 watch(
-  () => route.query.agentId,
-  (id) => {
+  () => [route.query.agentId, route.query.agentKind] as const,
+  ([id, kind]) => {
     // The address no longer names an agent: the next one that does is a new message, even from the same page.
-    if (!id) consumedLink = null;
+    if (!id && !kind) consumedLink = null;
     void openRequestedAgent();
   },
 );
