@@ -6,14 +6,14 @@ import { installContentLayout } from "../../../content/layout";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
 import { HttpError } from "../../../utils/errors";
-const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), grantBatch: vi.fn(), grantedIds: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
 vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: (action: (client: { query: typeof mocks.query }) => unknown) => action({ query: mocks.query }) }));
-vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant, registerProductResource: mocks.register,
-  shareProductResource: mocks.share, grantedProductIds: async () => mocks.edits }));
+vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant, productGrantsAllowedBatch: mocks.grantBatch, registerProductResource: mocks.register,
+  shareProductResource: mocks.share, grantedProductIds: mocks.grantedIds }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: async () => undefined }));
 vi.mock("../definition-stream", () => ({ notifyProductDefinitionChanged: mocks.notify }));
-import { readCurrentPanel, readCurrentProjection, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences } from "../current";
+import { readCurrentPanel, readCurrentProjection, readCurrentProjectionRecords, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences } from "../current";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
 
 const owner = { domainId: "domain", userId: "author" }, credentials = { token: "caller" };
@@ -39,6 +39,8 @@ afterAll(() => rm(runtimeRoot, { recursive: true }));
 
 beforeEach(() => {
   vi.resetAllMocks(); mocks.edits = []; rows = new Map();
+  mocks.grantedIds.mockImplementation(async () => mocks.edits);
+  mocks.grantBatch.mockImplementation(async (ids: readonly string[]) => Object.fromEntries(ids.map(id => [id, true])));
   mocks.register.mockImplementation(async (_owner, id: string) => { mocks.edits.push(id); });
   mocks.query.mockImplementation(async (sql: string, args: unknown[] = []) => {
     const kind = sql.includes("product_panels") ? "panel" : "projection";
@@ -46,6 +48,9 @@ beforeEach(() => {
     if (sql.startsWith("SELECT id,definition")) return { rows: [...rows.entries()]
       .filter(([key]) => key.startsWith("panel:"))
       .map(([, row]) => ({ id: row.id, definition: row.definition })) };
+    if (sql.startsWith("SELECT id,domain_id") && sql.includes("ANY")) {
+      return { rows: (args[1] as string[]).flatMap(id => rows.has(`${kind}:${id}`) ? [rows.get(`${kind}:${id}`)!] : []) };
+    }
     if (sql.startsWith("SELECT id,domain_id")) return { rows: rows.has(key) ? [rows.get(key)] : [] };
     if (sql.startsWith("SELECT id FROM") && sql.includes("ANY")) return { rows: (args[1] as string[]).filter(id => rows.has(`panel:${id}`)).map(id => ({ id })) };
     if (sql.startsWith("SELECT id FROM")) return { rows: [] };
@@ -169,4 +174,24 @@ it("does not assume resource registration restores a revoked edit Grant", async 
 it("limits source text by UTF-8 bytes at the registration boundary", () => {
   const request = panel();
   expect(registerProductPanelRequestSchema.safeParse({ ...request, content: { ...request.content, module: "é".repeat(150_000) } }).success).toBe(false);
+});
+
+it("batches grant checks, database reads, and edit-grant checks in readCurrentProjectionRecords with per-id 403/404 isolation", async () => {
+  await seedProjection();
+  await saveCurrentProjection(owner, credentials, "y", projection());
+  mocks.query.mockClear();
+  mocks.grantBatch.mockClear();
+  mocks.grantedIds.mockClear();
+  mocks.grantBatch.mockResolvedValue({ x: true, y: true, denied: false, missing: true });
+
+  const results = await readCurrentProjectionRecords(owner, credentials, ["x", "y", "x", "denied", "missing"]);
+  expect(mocks.grantBatch).toHaveBeenCalledTimes(1);
+  expect(mocks.grantBatch).toHaveBeenCalledWith(["x", "y", "denied", "missing"], "use", credentials);
+  expect(mocks.query).toHaveBeenCalledTimes(1);
+  expect(mocks.grantedIds).toHaveBeenCalledTimes(1);
+
+  expect(results.get("x")).toMatchObject({ ok: true, projection: { id: "x", editable: true } });
+  expect(results.get("y")).toMatchObject({ ok: true, projection: { id: "y", editable: true } });
+  expect(results.get("denied")).toMatchObject({ ok: false, error: expect.objectContaining({ status: 403 }) });
+  expect(results.get("missing")).toMatchObject({ ok: false, error: expect.objectContaining({ status: 404 }) });
 });

@@ -39,6 +39,8 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
   loadDomainComponent?(runtime: DomainComponentRuntime): Promise<Component>;
   /** Author-registered components declared in `manifest.components`, keyed by component ID. */
   panelDomainComponents?: Readonly<Record<string, DomainComponentRuntime>>;
+  /** Built-in SDK projection component IDs already known from bundled/cached definitions to preload before mount. */
+  preloadComponentIds?: readonly string[];
   /** The application use the panel runs as (with `root: "frame"` for the frame); a preview runs as none and runs no operation. */
   use: PanelOperationUse | null;
   /** The panel's own words (its content's messages), in the platform's language with the deployment's default behind. */

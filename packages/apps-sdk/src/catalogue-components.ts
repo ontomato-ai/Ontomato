@@ -90,6 +90,13 @@ export async function componentFor(componentId: string, readPackage?: ComponentP
   return pending;
 }
 
+/** Preloads built-in SDK projection components in parallel so members mount in one render pass. */
+export async function preloadCatalogueComponents(componentIds: readonly string[]): Promise<void> {
+  const targets = [...new Set(componentIds)].filter(id => META.has(id) && !fetched.has(id));
+  if (!targets.length) return;
+  await Promise.allSettled(targets.map(id => componentFor(id)));
+}
+
 /** The components this version draws projections with, by ID. */
 export function catalogueComponents(): readonly string[] {
   return [...META.keys()];

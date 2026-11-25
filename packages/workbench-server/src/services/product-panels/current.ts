@@ -2,21 +2,21 @@ import { themeOverrideProblems } from "@ontomato/design-tokens/theme-overrides";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
   METRIC_CHART_COMPONENT, builtinProductPanelInputSchema, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
-  type ApplicationPanelReferencesRequest, type ProductPanel,
+  type ApplicationPanelReferencesRequest, type ProductPanel, type ProductProjection,
   type ProductPanelInput, type ProductProjectionInput, type RegisterProductProjectionRequest,
 } from "@ontomato/contracts/product-panels";
 import { domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { matchesDirectPanelValue, panelPortAccepts } from "@ontomato/contracts/panel-manifest";
 import type { PoolClient } from "pg";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { currentProductColumns, currentProductRecord, currentProductTables, findCurrentProduct, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
+import { currentProductColumns, currentProductRecord, currentProductTables, findCurrentProduct, findCurrentProducts, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
 import { qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
 import type { ProductOwner } from "../product-governance/grants";
-import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
+import { grantedProductIds, productGrantsAllowedBatch, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
@@ -64,6 +64,49 @@ async function readCurrentRecord(
 }
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
   return productProjectionSchema.parse(await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor));
+}
+
+export type CurrentProjectionBatchItem =
+  | { ok: true; projection: ProductProjection }
+  | { ok: false; error: unknown };
+
+/**
+ * Reads multiple projection records for render using one batch grant check, one database lookup, and at most one
+ * edit-grant lookup for domain-owned rows, preserving per-projection 403/404 isolation.
+ */
+export async function readCurrentProjectionRecords(
+  owner: ProductOwner, credentials: AssistantCredentials, ids: readonly string[],
+): Promise<Map<string, CurrentProjectionBatchItem>> {
+  const uniqueIds = [...new Set(ids)];
+  const results = new Map<string, CurrentProjectionBatchItem>();
+  if (!uniqueIds.length) return results;
+
+  const allowed = await productGrantsAllowedBatch(uniqueIds, "use", credentials);
+  const allowedIds: string[] = [];
+  for (const id of uniqueIds) {
+    if (allowed[id]) allowedIds.push(id);
+    else results.set(id, { ok: false, error: new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN") });
+  }
+  if (!allowedIds.length) return results;
+
+  const rows = await findCurrentProducts(owner.domainId, "projection", allowedIds);
+  const hasDomainRows = [...rows.values()].some(row => row.domainId !== null);
+  const editableIds = hasDomainRows ? new Set(await grantedProductIds("edit", credentials)) : undefined;
+
+  for (const id of allowedIds) {
+    const row = rows.get(id);
+    if (!row) {
+      results.set(id, { ok: false, error: new HttpError(404, "Current product definition not found", "PRODUCT_UNAVAILABLE") });
+      continue;
+    }
+    try {
+      const editable = row.domainId !== null && (editableIds?.has(id) ?? false);
+      results.set(id, { ok: true, projection: productProjectionSchema.parse(currentProductRecord(row, editable)) });
+    } catch (error) {
+      results.set(id, { ok: false, error });
+    }
+  }
+  return results;
 }
 export async function readCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
   const record = await readCurrentRecord(owner, credentials, "panel", id, reportMissingToAuthor);

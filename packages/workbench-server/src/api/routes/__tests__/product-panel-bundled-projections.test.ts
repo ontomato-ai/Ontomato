@@ -11,7 +11,7 @@ import { HttpError } from "../../../utils/errors";
 
 const mocks = vi.hoisted(() => ({
   panel: vi.fn(),
-  projection: vi.fn(),
+  projections: vi.fn(),
   validateComponent: vi.fn(),
   framePanel: vi.fn(),
   pageSkill: vi.fn(),
@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../../services/product-panels/operations", () => ({ ownPanelSettings: vi.fn() }));
 vi.mock("../../../services/product-panels/current", () => ({
   readCurrentPanelRecord: mocks.panel,
-  readCurrentProjectionRecord: mocks.projection,
+  readCurrentProjectionRecords: mocks.projections,
 }));
 vi.mock("../../../services/product-panels/component-catalogue", () => ({
   validateProjectionComponent: mocks.validateComponent,
@@ -129,13 +129,15 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
     };
 
     mocks.panel.mockResolvedValue(panel);
-    mocks.projection.mockImplementation(async (_owner, _creds, id: string) => {
-      if (id === "proj-ready") return readyProjection;
-      if (id === "proj-domain-comp") return domainCompProjection;
-      if (id === "proj-forbidden") throw new HttpError(403, "No use grant", "FORBIDDEN");
-      if (id === "proj-missing") throw new HttpError(404, "Projection gone", "NOT_FOUND");
-      throw new Error(`Unexpected projection read: ${id}`);
-    });
+    mocks.projections.mockImplementation(async (_owner, _creds, ids: readonly string[]) => new Map<string, { ok: true; projection: ProductProjection } | { ok: false; error: unknown }>(
+      ids.map((id): [string, { ok: true; projection: ProductProjection } | { ok: false; error: unknown }] => {
+        if (id === "proj-ready") return [id, { ok: true, projection: readyProjection }];
+        if (id === "proj-domain-comp") return [id, { ok: true, projection: domainCompProjection }];
+        if (id === "proj-forbidden") return [id, { ok: false, error: new HttpError(403, "No use grant", "FORBIDDEN") }];
+        if (id === "proj-missing") return [id, { ok: false, error: new HttpError(404, "Projection gone", "NOT_FOUND") }];
+        throw new Error(`Unexpected projection read: ${id}`);
+      }),
+    ));
     mocks.validateComponent.mockImplementation(async (id: string) =>
       id === "proj-domain-comp" ? domainComponent : undefined,
     );
@@ -152,12 +154,10 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
       "proj-missing": { status: "unavailable", httpStatus: 404, message: "Projection gone" },
     });
 
-    // Deduplicated: proj-ready appears twice in manifest, read once; panelId and fromState members are skipped.
-    const readIds = mocks.projection.mock.calls.map(call => call[2]).sort();
+    // Deduplicated and batched in one call: proj-ready appears twice in manifest, panelId and fromState members skipped.
+    expect(mocks.projections).toHaveBeenCalledTimes(1);
+    const readIds = [...mocks.projections.mock.calls[0]![2]].sort();
     expect(readIds).toEqual(["proj-domain-comp", "proj-forbidden", "proj-missing", "proj-ready"]);
-    for (const call of mocks.projection.mock.calls) {
-      expect(call[3]).toBe(false);
-    }
   });
 
   it("omits a member whose component validation fails (400) without failing the whole panel", async () => {
@@ -170,7 +170,10 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
     const brokenProj = makeProjection("proj-broken", 1);
 
     mocks.panel.mockResolvedValue(panel);
-    mocks.projection.mockImplementation(async (_o, _c, id: string) => (id === "proj-ok" ? okProj : brokenProj));
+    mocks.projections.mockResolvedValue(new Map([
+      ["proj-ok", { ok: true, projection: okProj }],
+      ["proj-broken", { ok: true, projection: brokenProj }],
+    ]));
     mocks.validateComponent.mockImplementation(async (id: string) => {
       if (id === "proj-broken") throw new HttpError(400, "Unknown component", "INVALID_COMPONENT");
       return undefined;
@@ -193,7 +196,7 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
     const body = await response.json();
     expect(body).toEqual({ panel });
     expect("projections" in body).toBe(false);
-    expect(mocks.projection).not.toHaveBeenCalled();
+    expect(mocks.projections).not.toHaveBeenCalled();
   });
 
   it("supports includeProjections=1 with source=frame", async () => {
@@ -202,7 +205,7 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
     const navProj = makeProjection("proj-nav", 3);
 
     mocks.framePanel.mockResolvedValue({ panel: framePanel });
-    mocks.projection.mockResolvedValue(navProj);
+    mocks.projections.mockResolvedValue(new Map([["proj-nav", { ok: true, projection: navProj }]]));
     mocks.validateComponent.mockResolvedValue(undefined);
 
     const query = new URLSearchParams({
@@ -225,6 +228,6 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
     const response = await fetch(`${base}/panel-1?includeProjections=2`);
     expect(response.status).toBe(400);
     expect(mocks.panel).not.toHaveBeenCalled();
-    expect(mocks.projection).not.toHaveBeenCalled();
+    expect(mocks.projections).not.toHaveBeenCalled();
   });
 });
