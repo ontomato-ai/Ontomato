@@ -11,8 +11,14 @@
  * subpath deployments use the same image without a gateway config.js override.
  */
 
+type RuntimeConfigWindow = Window & {
+  __APP_CONFIG__?: {
+    API_BASE?: string;
+  };
+};
+
 function resolveApiBase(): string {
-  const raw = typeof window !== "undefined" ? window.__APP_CONFIG__?.API_BASE : undefined;
+  const raw = typeof window !== "undefined" ? (window as RuntimeConfigWindow).__APP_CONFIG__?.API_BASE : undefined;
   const base = raw && raw.trim() ? raw.trim() : "/api";
   // Strip trailing slashes to avoid double slashes when concatenating.
   return base.replace(/\/+$/, "");
