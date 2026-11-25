@@ -25,7 +25,7 @@ import { resolveDefaultAgent } from "../assistant/default-agents";
 import { panelSkillRef } from "./skill-identity";
 import { findPanelUsers, validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
-import { parseStoredDefinition } from "./definition-diagnostics";
+import { panelDefinition, projectionDefinition } from "./render-definitions";
 
 type CurrentDefinition = ProductPanelInput | ProductProjectionInput;
 
@@ -60,10 +60,11 @@ async function readCurrentRecord(
   const editable = row.domainId !== null && (await grantedProductIds("edit", credentials)).includes(id);
   if (managePanel && row.ownerId !== owner.userId && !editable)
     await requireProductGrant(id, "use", credentials);
-  return currentProductRecord(row, editable);
+  return { row, editable };
 }
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
-  return productProjectionSchema.parse(await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor));
+  const { row, editable } = await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor);
+  return projectionDefinition(row, editable);
 }
 
 export type CurrentProjectionBatchItem =
@@ -101,7 +102,7 @@ export async function readCurrentProjectionRecords(
     }
     try {
       const editable = row.domainId !== null && (editableIds?.has(id) ?? false);
-      results.set(id, { ok: true, projection: productProjectionSchema.parse(currentProductRecord(row, editable)) });
+      results.set(id, { ok: true, projection: projectionDefinition(row, editable) });
     } catch (error) {
       results.set(id, { ok: false, error });
     }
@@ -109,12 +110,13 @@ export async function readCurrentProjectionRecords(
   return results;
 }
 export async function readCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
-  const record = await readCurrentRecord(owner, credentials, "panel", id, reportMissingToAuthor);
-  return parseStoredDefinition(productPanelSchema, record, "Panel");
+  const { row, editable } = await readCurrentRecord(owner, credentials, "panel", id, reportMissingToAuthor);
+  return panelDefinition(row, editable);
 }
 
 export async function readCurrentPanelLabel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  const record = await readCurrentRecord(owner, credentials, "panel", id, true);
+  const { row, editable } = await readCurrentRecord(owner, credentials, "panel", id, true);
+  const record = currentProductRecord(row, editable);
   const parsed = productPanelInputSchema.pick({ name: true }).strip().safeParse(record);
   return parsed.success ? parsed.data.name : id;
 }

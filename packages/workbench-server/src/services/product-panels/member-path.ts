@@ -3,7 +3,7 @@ import {
   type PanelMember, type PanelMemberPath, type PanelMemberTarget, type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
-  productPanelSchema, productProjectionSchema,
+  productProjectionSchema,
   isApplicationPanelUse, type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
@@ -18,6 +18,7 @@ import { HttpError } from "../../utils/errors";
 import { productGrantAllowed, productGrantsAllowedBatch, requireProductGrant, type ProductOwner } from "../product-governance/grants";
 import { requirePanelEntry } from "./application-use";
 import { parseStoredDefinition } from "./definition-diagnostics";
+import { panelDefinition } from "./render-definitions";
 import { readPanelDomainComponents } from "./component-catalogue";
 import { findObjectDetailPanelId } from "./object-detail";
 import { panelStateKey, type PanelStatePathKey } from "./personal-state-key";
@@ -130,7 +131,7 @@ async function requireTarget(
     const kind = target.kind === "panel" ? "Panel" : "Projection";
     throw new HttpError(404, `${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
   }
-  return currentProductRecord(row, false);
+  return row;
 }
 
 export async function requireRegisteredPanelRoot(
@@ -142,8 +143,8 @@ export async function requireRegisteredPanelRoot(
   if (id === undefined || (expectedPanelId !== undefined && expectedPanelId !== id))
     throw new HttpError(404, "This entry does not use the requested application frame", "PANEL_FRAME_UNAVAILABLE");
 
-  const record = await requireTarget(owner, viewer, { kind: "panel", id }, client, batchCache);
-  return { panel: parseStoredDefinition(productPanelSchema, record, "Panel"), entry: isApplicationPanelUse(entry.use) ? entry.use : undefined, framePanelId: entry.framePanelId };
+  const row = await requireTarget(owner, viewer, { kind: "panel", id }, client, batchCache);
+  return { panel: panelDefinition(row, false), entry: isApplicationPanelUse(entry.use) ? entry.use : undefined, framePanelId: entry.framePanelId };
 }
 
 async function declaredTarget(
@@ -252,12 +253,12 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
     const target = await declaredTarget(owner, panel, member.target, placement ? undefined : segment.selection, entry, client);
     if (target.kind === "panel" && ancestors.has(target.id))
       throw new HttpError(409, `Panel member '${segment.member}' forms a cycle`, "PANEL_REFERENCE_CYCLE");
-    const record = await requireTarget(owner, viewer, target, client, batchCache);
+    const row = await requireTarget(owner, viewer, target, client, batchCache);
     if (target.kind === "projection") {
       if (!isFinal) unavailable();
       return {
         kind: "projection" as const,
-        projection: parseStoredDefinition(productProjectionSchema, record, "Projection"),
+        projection: parseStoredDefinition(productProjectionSchema, currentProductRecord(row, false), "Projection"),
         panel, member, keys, trail,
       };
     }
@@ -265,7 +266,7 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
       throw new HttpError(422, "Row itemKey is only allowed on a projection member", "ROW_OPERATION_MEMBER_INVALID");
     }
     ancestors.add(target.id);
-    const childPanel = parseStoredDefinition(productPanelSchema, record, "Panel");
+    const childPanel = panelDefinition(row, false);
     trail.push({ parentPanel: panel, childPanel, member, selection: placement ? undefined : segment.selection });
     panel = childPanel;
     controlled = Object.keys("fromPlatform" in member.target ? entry?.inputs ?? {} : member.inputs ?? {});

@@ -16,6 +16,7 @@ import { directReadDeclaration, type PanelRecord } from "@ontomato/contracts/pan
 import { panelReadResultIdSchema } from "@ontomato/contracts/panel-operations";
 import { SDK_COMPONENT } from "@ontomato/contracts/platform-object-types";
 import type { BuiltinProductProjectionInput, ProductProjectionInput } from "@ontomato/contracts/product-panels";
+import { runtimeRoot } from "../../content/layout";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
@@ -431,12 +432,15 @@ export async function readProjectionComponent(
     return row && domainComponentRecord(row, false).declaration;
   }
   const { components } = await readCatalogue();
-  const official = components.get(componentId);
-  if (official) return official;
+  return components.get(componentId) ?? (await readPackagedProjectionComponent(componentId))?.declaration;
+}
+
+async function readPackagedProjectionComponent(componentId: string) {
   const separator = componentId.lastIndexOf(":");
   if (separator < 1) return undefined;
   const release = await readComponentPackage(componentId.slice(0, separator));
-  return release?.components.find(component => component.componentId === componentId);
+  const declaration = release?.components.find(component => component.componentId === componentId);
+  if (release && declaration) return { digest: release.digest, declaration };
 }
 
 /**
@@ -467,16 +471,40 @@ export async function readPanelDomainComponents(
   return Object.keys(resolved).length ? resolved : undefined;
 }
 
+let renderCatalogue: { root: string; pending: ReturnType<typeof readPanelComponentCatalogue> } | undefined;
+
+async function shippedRenderCatalogue() {
+  const root = runtimeRoot();
+  if (renderCatalogue?.root === root) return renderCatalogue.pending;
+  // The SDK bundled with this process is immutable for the life of the deployed release.
+  const load = { root, pending: readPanelComponentCatalogue() };
+  renderCatalogue = load;
+  try {
+    return await load.pending;
+  } catch (error) {
+    if (renderCatalogue === load) renderCatalogue = undefined;
+    throw error;
+  }
+}
+
+const renderValidation = new WeakMap<object, { dependency: string; runtime: DomainComponentRuntime | undefined }>();
+
 export async function validateProjectionComponent(
   id: string, projection: ProductProjectionInput | BuiltinProductProjectionInput, readCatalogue = readPanelComponentCatalogue,
   scope?: { domainId: string | null; authorId?: string; client?: Pick<PoolClient, "query"> },
 ): Promise<DomainComponentRuntime | undefined> {
+  const rendering = "revision" in projection && scope?.authorId === undefined &&
+    scope?.client === undefined && readCatalogue === readPanelComponentCatalogue;
   let runtime: DomainComponentRuntime | undefined;
   let component;
+  let dependency: string | undefined;
   const { componentId } = projection;
   if (isDomainComponentId(componentId)) {
     const row = await domainComponentForProjection(scope?.domainId ?? null, componentId, scope?.client);
     if (row) {
+      dependency = JSON.stringify([row.domainId, componentId, row.revision, row.createdAt, row.updatedAt]);
+      const cached = rendering ? renderValidation.get(projection.data) : undefined;
+      if (cached?.dependency === dependency) return cached.runtime;
       const record = domainComponentRecord(row, false);
       if (scope?.authorId === undefined || record.ownerId === scope.authorId || record.visibility === "domain") {
         component = record.declaration;
@@ -484,7 +512,16 @@ export async function validateProjectionComponent(
       }
     }
   } else {
-    component = await readProjectionComponent(componentId, readCatalogue);
+    const catalogue = await (rendering ? shippedRenderCatalogue() : readCatalogue());
+    component = catalogue.components.get(componentId);
+    if (component) dependency = catalogue.digest;
+    else {
+      const packaged = await readPackagedProjectionComponent(componentId);
+      dependency = packaged?.digest;
+      component = packaged?.declaration;
+    }
+    const cached = rendering ? renderValidation.get(projection.data) : undefined;
+    if (cached && cached.dependency === dependency) return cached.runtime;
   }
   if (!component)
     throw new HttpError(400, `Projection '${id}', componentId '${componentId}' is unavailable to this projection`, "PANEL_COMPONENT_UNAVAILABLE");
@@ -508,5 +545,6 @@ export async function validateProjectionComponent(
     if (!results.includes(result))
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' returns '${result}'; component '${projection.componentId}' accepts ${results.join(", ")}`, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
   }
+  if (rendering && dependency !== undefined) renderValidation.set(projection.data, { dependency, runtime });
   return runtime;
 }

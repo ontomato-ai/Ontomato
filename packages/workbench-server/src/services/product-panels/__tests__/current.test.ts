@@ -235,3 +235,22 @@ it("batches grant checks, database reads, and edit-grant checks in readCurrentPr
   expect(results.get("denied")).toMatchObject({ ok: false, error: expect.objectContaining({ status: 403 }) });
   expect(results.get("missing")).toMatchObject({ ok: false, error: expect.objectContaining({ status: 404 }) });
 });
+
+
+it("reuses the current panel definition while checking the caller's grants and the stored revision on each read", async () => {
+  await seedProjection();
+  const { revision, ...input } = panel();
+  await saveCurrentPanel(owner, credentials, "p", input, revision);
+  const first = await readCurrentPanel(owner, credentials, "p");
+  expect(await readCurrentPanel(owner, credentials, "p")).toBe(first);
+
+  mocks.edits = [];
+  const readOnly = await readCurrentPanel(owner, credentials, "p");
+  expect(readOnly).toMatchObject({ revision: 1, editable: false });
+  expect(readOnly.manifest).toBe(first.manifest);
+
+  mocks.grant.mockRejectedValueOnce(new HttpError(403, "Use was revoked", "PRODUCT_FORBIDDEN"));
+  await expect(readCurrentPanel(owner, credentials, "p")).rejects.toMatchObject({ status: 403 });
+  await saveCurrentPanel(owner, credentials, "p", { ...input, name: "Updated tasks" }, first.revision);
+  expect(await readCurrentPanel(owner, credentials, "p")).toMatchObject({ name: "Updated tasks", revision: 2 });
+});
