@@ -33,11 +33,13 @@ export async function metricViewCommand(args, env = process.env, request = fetch
     headers: {
       "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest",
       "X-Correlation-Id": state?.runId ?? randomUUID(),
-      ...(state ? { "X-Ontomato-Run-Id": state.runId } : {}),
-      tk: env.ONTOMATO_TK ?? "",
-      ...(env.ONTOMATO_API_KEY ? { "X-API-Key": env.ONTOMATO_API_KEY } : {}),
-      ...(env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": env.ONTOMATO_RUN_ID } : {}),
-
+      ...(env.ONTOMATO_EXECUTION_CALLBACK
+        ? { "X-Ontomato-Callback-Credential": env.ONTOMATO_EXECUTION_CALLBACK }
+        : {
+          ...(state ? { "X-Ontomato-Run-Id": state.runId } : {}),
+          tk: env.ONTOMATO_TK ?? "",
+          ...(env.ONTOMATO_API_KEY ? { "X-API-Key": env.ONTOMATO_API_KEY } : {}),
+        }),
     },
     redirect: "error",
     body: body === undefined ? undefined : JSON.stringify(body),

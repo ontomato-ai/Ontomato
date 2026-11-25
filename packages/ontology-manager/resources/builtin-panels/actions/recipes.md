@@ -35,8 +35,8 @@ opening line; the reader sends the message. The action starts with you:
    by the owner's protocol).
 2. Run it in the owner's sandbox under `$ONTOMATO_AUTHORING_URL` (`GET /action/context`, `POST /action/prepare`,
    `POST /action/reset`, `POST /action/test`, optionally `POST /action/explain-draft`) with headers
-   `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID` until the
-   owner accepts the exact code and parameters with no `result.error`.
+   `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` until the owner accepts the exact code and
+   parameters with no `result.error`. The session bridge supplies the active run header.
 3. Open the detail entry in create mode via `present` at `/ontology/assets/actions/detail` with
    `{ state: { selected: null, creating: true, activeTab: "definition" } }`, read `form.createForm`, and fill the live
    `form` via `fill_form` using the individual field paths (`/name`, `/description`, `/status`, `/target`,

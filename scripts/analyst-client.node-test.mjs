@@ -52,7 +52,7 @@ test("the shared channel preserves references, streams snapshots and downloads o
   }
 });
 
-test("sendAgentCommand routes platform calls directly with callback secret and run ID", async () => {
+test("sendAgentCommand uses the session callback credential and leaves the run header to the host", async () => {
   const received = [];
   const server = createServer(async (req, res) => {
     let text = "";
@@ -69,19 +69,19 @@ test("sendAgentCommand routes platform calls directly with callback secret and r
     ONTOMATO_RUN_ID: process.env.ONTOMATO_RUN_ID,
     ONTOMATO_EXECUTION_CALLBACK: process.env.ONTOMATO_EXECUTION_CALLBACK,
   };
-  const runId = randomUUID();
+  const sessionId = randomUUID();
   process.env.ONTOMATO_SKILL_SCENARIO = "platform";
-  process.env.ONTOMATO_AGENT_COMMAND_URL = `http://127.0.0.1:${server.address().port}/v1/channel/hosts/h/domains/d/runs/${runId}/commands`;
-  process.env.ONTOMATO_AGENT_CALLBACK = "per-run-secret";
-  process.env.ONTOMATO_RUN_ID = runId;
+  process.env.ONTOMATO_AGENT_COMMAND_URL = `http://127.0.0.1:${server.address().port}/v1/channel/hosts/h/domains/d/sessions/${sessionId}/commands`;
+  process.env.ONTOMATO_AGENT_CALLBACK = "session-secret";
+  delete process.env.ONTOMATO_RUN_ID;
   process.env.ONTOMATO_EXECUTION_CALLBACK = "business-callback";
   try {
     const result = await sendAgentCommand({ op: "start", agent: { providerId: "ontology", agentId: "retriever" }, message: "Sales?" }, {
       headers: { "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test" }) },
     });
     assert.deepEqual(result, { taskId: "task-1", status: "starting" });
-    assert.equal(received[0].headers["x-ontomato-callback-credential"], "per-run-secret");
-    assert.equal(received[0].headers["x-ontomato-run-id"], runId);
+    assert.equal(received[0].headers["x-ontomato-callback-credential"], "session-secret");
+    assert.equal(received[0].headers["x-ontomato-run-id"], undefined);
     assert.equal(received[0].headers["x-ontomato-execution-context"], undefined);
   } finally {
     for (const [k, v] of Object.entries(saved)) {

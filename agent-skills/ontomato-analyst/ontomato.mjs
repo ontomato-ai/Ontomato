@@ -28,15 +28,18 @@ if (!platformAgent) for (const [env, key] of Object.entries({
   if (process.env[env] !== undefined) cfg[key] = process.env[env];
 const token = cfg.tk;
 const headers = platformAgent ? {} : {
-  ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
-  ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
-  ...(process.env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": process.env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
-  ...(token ? { tk: token } : {}),
-  ...(process.env.ONTOMATO_API_KEY ? { "X-API-Key": process.env.ONTOMATO_API_KEY } : {}),
   "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
-  ...(process.env.ONTOMATO_RUN_ID
-    ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID }
-    : {}),
+  ...(process.env.ONTOMATO_EXECUTION_CALLBACK
+    ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK }
+    : {
+      ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
+      ...(process.env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": process.env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
+      ...(token ? { tk: token } : {}),
+      ...(process.env.ONTOMATO_API_KEY ? { "X-API-Key": process.env.ONTOMATO_API_KEY } : {}),
+      ...(process.env.ONTOMATO_RUN_ID
+        ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID }
+        : {}),
+      }),
   ...(process.env.ONTOMATO_CORRELATION_ID
     ? { "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID }
     : {}),

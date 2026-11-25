@@ -5,20 +5,22 @@ if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
 const [command, arg] = process.argv.slice(2),
   platform = process.env.ONTOMATO_SKILL_SCENARIO === "platform",
   stateFile = platform ? "work/.governance-platform-window.json" : "work/.governance-run.json";
+const callback = process.env.ONTOMATO_EXECUTION_CALLBACK;
 const headers = {
-  ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
   "content-type": "application/json",
-  tk: process.env.ONTOMATO_GOVERNANCE_TK ?? process.env.ONTOMATO_TK ?? "",
-  "X-API-Key": process.env.ONTOMATO_API_KEY ?? "",
   "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
   "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID ?? randomUUID(),
+  ...(platform ? { "X-Ontomato-Callback-Credential": callback } : {
+    tk: process.env.ONTOMATO_GOVERNANCE_TK ?? process.env.ONTOMATO_TK ?? "",
+    "X-API-Key": process.env.ONTOMATO_API_KEY ?? "",
     ...(process.env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
     ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
+  }),
 };
 async function call(route, body, extra = {}) {
   const response = await fetch(base + "/ontology/ai/knowledge-governance" + route, {
     method: "POST",
-    headers: { ...headers, ...(state?.token ? { tk: state.token, "X-API-Key": "" } : {}), ...extra },
+    headers: { ...headers, ...(!platform && state?.token ? { tk: state.token, "X-API-Key": "" } : {}), ...extra },
     body: JSON.stringify(body),
     redirect: "error",
   });
@@ -79,19 +81,17 @@ try {
 }
 if (platform) {
   if (command === "close") throw new Error("Platform write windows close with the real run; close is only for external work");
-  if (!state || state.runId !== process.env.ONTOMATO_RUN_ID || command === "begin") {
-    const response = await fetch(process.env.ONTOMATO_GOVERNANCE_WINDOW_URL, {
-      method: "POST", redirect: "error",
-      headers: { "content-type": "application/json", tk: process.env.ONTOMATO_GOVERNANCE_CALLBACK,
-        "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID },
-      body: JSON.stringify((command === "begin" && args.id) ? { recordId: args.id } : {}),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(result)}`);
-    state = result;
-    await mkdir("work", { recursive: true });
-    await writeFile(stateFile, JSON.stringify(state));
-  }
+  const recordId = command === "begin" ? args.id : state?.id;
+  // The host reopens the same window within a run and binds a new window on the next run.
+  const response = await fetch(process.env.ONTOMATO_GOVERNANCE_WINDOW_URL, {
+    method: "POST", redirect: "error", headers,
+    body: JSON.stringify(recordId ? { recordId } : {}),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(result)}`);
+  state = result;
+  await mkdir("work", { recursive: true });
+  await writeFile(stateFile, JSON.stringify({ id: state.id }));
   if (command === "begin") {
     console.log(JSON.stringify({ id: state.id, sessionId: state.sessionId, runId: state.runId, expiresAt: state.expiresAt }));
     process.exit(0);
@@ -139,7 +139,7 @@ if (!actions[command])
 const result = await call(
   `/${state.id}/runs/${state.runId}/actions/${actions[command]}`,
   args,
-  {
+  platform ? {} : {
     "X-Ontomato-Session-Id": state.sessionId,
     "X-Ontomato-Run-Id": state.runId,
   },
