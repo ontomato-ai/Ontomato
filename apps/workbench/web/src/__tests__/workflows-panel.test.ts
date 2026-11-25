@@ -426,7 +426,7 @@ describe("workflows builtin panel effective grants modal", () => {
     expect(sections.every((section) => !isSectionVisible(section))).toBe(true);
   });
 
-  it("keeps the steps column on ObjectList native shrink behavior with full-text title tooltip", async () => {
+  it("bounds the steps cell with a definite max-width and full-text title without piercing ObjectList table classes", async () => {
     const longSteps =
       "Prepare statement [Human · Case-scoped] -> Reconcile differences [Human · Case-scoped] -> Department chair sign-off [Human · Case-scoped]";
     const route = mountWorkflowsRoute((body) => {
@@ -441,17 +441,16 @@ describe("workflows builtin panel effective grants modal", () => {
     });
 
     const root = await route.open();
-    const stepsHeader = await vi.waitFor(() => {
-      const ths = [...root.querySelectorAll<HTMLTableCellElement>(".sdk-object-list-table thead th")];
-      expect(ths.length).toBe(8);
-      return ths[3]!;
+    const stepsSpan = await vi.waitFor(() => {
+      const el = root.querySelector<HTMLSpanElement>(".wf-steps-summary");
+      expect(el).not.toBeNull();
+      return el!;
     });
-    const stepsCell = root.querySelectorAll<HTMLTableCellElement>(".sdk-object-list-table tbody tr:first-child td")[3]!;
 
-    expect(stepsHeader.classList.contains("sdk-object-list-col-shrink")).toBe(true);
-    expect(stepsCell.classList.contains("sdk-object-list-col-shrink")).toBe(true);
-    expect(stepsCell.getAttribute("title")).toBe(longSteps);
-    expect(html).not.toContain("#cell-stepsSummary");
-    expect(html).toContain(".sdk-object-list-col-shrink .sdk-object-list-cell-main");
+    expect(stepsSpan.textContent).toBe(longSteps);
+    expect(stepsSpan.getAttribute("title")).toBe(longSteps);
+    expect(html).not.toContain(".sdk-object-list-table");
+    expect(html).not.toMatch(/\.wf-steps-summary\s*\{[^}]*min\(/);
+    expect(html).toMatch(/\.wf-steps-summary\s*\{[^}]*max-width:\s*186px;/);
   });
 });
