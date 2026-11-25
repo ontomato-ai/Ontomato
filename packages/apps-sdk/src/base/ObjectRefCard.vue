@@ -65,6 +65,18 @@ const props = withDefaults(
     targetClassName?: string;
     /** Zero-based row index when reading from a bound metric `result` (`metricOutput`) table. Defaults to `0`. */
     rowIndex?: number;
+    /** Visual presentation: `"card"` (default bordered reference card) or `"button"` (action button navigating to the referenced object). */
+    appearance?: "card" | "button";
+    /** Button visual style when `appearance="button"`: `"default"`, `"primary"`, or `"text"`. */
+    buttonType?: "default" | "primary" | "text";
+    /** Button height scale when `appearance="button"`: `"default"`, `"small"`, or `"large"`. */
+    buttonSize?: "default" | "small" | "large";
+    /** Explicit label shown on the button when `appearance="button"` (falls back to the resolved object title). */
+    buttonLabel?: string;
+    /** Panel message key or platform i18n key for `buttonLabel`. */
+    buttonLabelKey?: string;
+    /** Locale-keyed map for `buttonLabel`. */
+    buttonLabels?: Readonly<Record<string, string>>;
     /** Whether clicking the card navigates when a target reference is present. Defaults to `true`. */
     clickable?: boolean;
     /** Tighter padding for dense relationship strips and inline cards. Defaults to `false`. */
@@ -93,6 +105,12 @@ const props = withDefaults(
     classNameField: undefined,
     targetClassName: undefined,
     rowIndex: 0,
+    appearance: "card",
+    buttonType: "default",
+    buttonSize: "default",
+    buttonLabel: undefined,
+    buttonLabelKey: undefined,
+    buttonLabels: undefined,
     clickable: true,
     compact: false,
     emptyText: "—",
@@ -347,6 +365,19 @@ const monogram = computed(() => {
   return title.slice(0, 1).toUpperCase();
 });
 
+const resolvedButtonLabel = computed(() => {
+  const custom = resolveLocalizedText({
+    key: props.buttonLabelKey,
+    map: props.buttonLabels,
+    fallback: props.buttonLabel,
+    locale: locale.value,
+    panelText: panel?.t,
+    t: translate,
+    te: hasTranslation,
+  });
+  return custom || resolved.value.title || resolvedEmptyText.value;
+});
+
 function handleClick() {
   if (!isInteractive.value || !resolved.value.ref) return;
   const reference = resolved.value.ref;
@@ -365,8 +396,29 @@ function handleClick() {
 </script>
 
 <template>
+  <button
+    v-if="appearance === 'button'"
+    type="button"
+    class="sdk-object-ref-button"
+    :class="[`is-${buttonType}`, `is-size-${buttonSize}`, { 'is-interactive': isInteractive }]"
+    :disabled="!isInteractive"
+    :data-state="resolved.state"
+    :title="resolved.notice || resolved.title || undefined"
+    :aria-busy="resolved.state === 'loading' ? 'true' : undefined"
+    @click="handleClick"
+  >
+    <span v-if="$slots.leading || knownIconComponent" class="sdk-object-ref-button-icon" aria-hidden="true">
+      <slot name="leading">
+        <component :is="knownIconComponent" v-if="knownIconComponent" :size="14" />
+      </slot>
+    </span>
+    <span class="sdk-object-ref-button-label">{{ resolved.state === 'loading' ? '…' : resolvedButtonLabel }}</span>
+    <slot name="trailing" />
+  </button>
+
   <component
     :is="isInteractive ? 'button' : 'div'"
+    v-else
     :type="isInteractive ? 'button' : undefined"
     class="sdk-object-ref-card"
     :class="{ 'is-interactive': isInteractive, 'is-compact': compact }"
@@ -424,6 +476,77 @@ function handleClick() {
 </template>
 
 <style scoped>
+.sdk-object-ref-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-height, 32px);
+  padding: 0 14px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm, 13px);
+  font-weight: var(--font-medium, 500);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.sdk-object-ref-button.is-size-small {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: var(--text-xs, 12px);
+}
+
+.sdk-object-ref-button.is-size-large {
+  min-height: 38px;
+  padding: 0 18px;
+  font-size: var(--text-base, 14px);
+}
+
+.sdk-object-ref-button.is-default:hover:not(:disabled) {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.sdk-object-ref-button.is-primary {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary);
+  color: #fff;
+}
+
+.sdk-object-ref-button.is-primary:hover:not(:disabled) {
+  border-color: var(--el-color-primary-light-3);
+  background: var(--el-color-primary-light-3);
+}
+
+.sdk-object-ref-button.is-text {
+  border-color: transparent;
+  background: transparent;
+  color: var(--el-color-primary);
+  padding: 0 6px;
+}
+
+.sdk-object-ref-button.is-text:hover:not(:disabled) {
+  background: var(--el-color-primary-light-9);
+}
+
+.sdk-object-ref-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sdk-object-ref-button-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
 .sdk-object-ref-card {
   container: sdk-object-ref-card / inline-size;
   display: flex;
