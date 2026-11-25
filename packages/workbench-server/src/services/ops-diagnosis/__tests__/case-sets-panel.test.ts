@@ -57,7 +57,7 @@ vi.mock("../../../platform/diagnosis/autotest/config", () => ({
 const objectWrite = (ref: string) =>
   panelServerOperation(ref) as Extract<PanelWriteServerOperation, { targetType: string }>;
 const globalWrite = (ref: string) =>
-  panelServerOperation(ref) as Exclude<PanelWriteServerOperation, { targetType: string }>;
+  panelServerOperation(ref) as Extract<PanelWriteServerOperation, { kind: "action"; targetInput?: undefined }>;
 
 function makeHost(domainId = "domain-a", locale = "en"): PanelOperationHost {
   const actor = { owner: { domainId, userId: "user-1" }, credentials: { token: "tok", locale } };
