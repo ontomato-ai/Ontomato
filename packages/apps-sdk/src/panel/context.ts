@@ -182,11 +182,12 @@ export function usePanelContext(): ResolvedPanelContext {
   if (context.refreshing && context.refreshObjects) {
     return context as ResolvedPanelContext;
   }
-  return {
-    ...context,
-    refreshing: context.refreshing ?? context.instance.refreshing,
-    refreshObjects: context.refreshObjects ?? (() => context.instance.refreshObjects()),
-  };
+  const refreshing = context.refreshing ?? context.instance.refreshing;
+  const refreshObjects = context.refreshObjects ?? (() => context.instance.refreshObjects());
+  return Object.create(context, {
+    refreshing: { value: refreshing, enumerable: true },
+    refreshObjects: { value: refreshObjects, enumerable: true },
+  }) as ResolvedPanelContext;
 }
 
 /**
