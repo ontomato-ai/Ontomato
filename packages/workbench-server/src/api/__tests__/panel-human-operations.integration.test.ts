@@ -32,6 +32,7 @@ const objectType = "platform:ScheduledTask";
 const use = { applicationId: "app-tasks", useId: "tasks", operationId: "run.runNow" };
 vi.mock("../../services/product-panels/current", () => ({
   readCurrentPanelRecord: async () => ({
+    id: "panel-tasks",
     manifest: {
       state: { task: { type: { kind: "object", objectType } } },
       members: { run: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } } },

@@ -82,7 +82,7 @@ function requireHumanSecretInput(locale: AssistantCredentials["locale"]): never 
 }
 
 async function declaredOperation(
-  owner: AssistantOwner, credentials: AssistantCredentials, panel: ProductPanel, use: ApplicationPanelUse | undefined,
+  owner: AssistantOwner, credentials: AssistantCredentials, panel: ProductPanel, rootPanelId: string, use: ApplicationPanelUse | undefined,
   ref: PanelOperationRef, target: PanelOperationCall["target"] | undefined,
   options?: DeclaredDirectOperationOptions,
 ) {
@@ -90,7 +90,7 @@ async function declaredOperation(
     ...options,
     ...(ref.root === "frame" && { isFrameRoot: true }),
   });
-  return { ...operation, rootPanelId: panel.id };
+  return { ...operation, rootPanelId };
 }
 
 async function operationForUse(
@@ -100,11 +100,11 @@ async function operationForUse(
   if (ref.root === "frame") {
     const { applicationId, useId } = ref;
     const { panel, entry, framePanelId } = await requireRegisteredPanelRoot(owner, credentials, { kind: ref.root, applicationId, useId });
-    return declaredOperation(owner, credentials, panel, entry, ref, target, { framePanelId, ...options });
+    return declaredOperation(owner, credentials, panel, panel.id, entry, ref, target, { framePanelId, ...options });
   }
   const { use, framePanelId } = await requirePanelUseEntry(credentials, ref, owner);
   const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
-  return declaredOperation(owner, credentials, panel, use, ref, target, { framePanelId, ...options });
+  return declaredOperation(owner, credentials, panel, use.panelId, use, ref, target, { framePanelId, ...options });
 }
 
 function invocationTarget(
@@ -209,7 +209,7 @@ export async function readPanelOperation(owner: AssistantOwner, credentials: Ass
     const { run } = await requireActivePageRun(owner, request.agentRun);
     const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, request);
     const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
-    current = await declaredOperation(owner, credentials, panel, use, request, request.call.target, { mode: "read", framePanelId });
+    current = await declaredOperation(owner, credentials, panel, use.panelId, use, request, request.call.target, { mode: "read", framePanelId });
   } else {
     current = await operationForUse(owner, credentials, request, request.call.target, { mode: "read" });
   }
@@ -495,7 +495,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
       throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
     const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, input);
     const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
-    const current = writeOperation(await declaredOperation(owner, credentials, panel, use, input, invocationTarget(input), {
+    const current = writeOperation(await declaredOperation(owner, credentials, panel, use.panelId, use, input, invocationTarget(input), {
       mode: "prepare",
       framePanelId,
     }));

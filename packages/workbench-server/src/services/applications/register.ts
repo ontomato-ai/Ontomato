@@ -20,10 +20,8 @@ export class ApplicationCatalogClient {
     registration.parse(await response.json());
   }
 }
-/** Java may still be starting. Each attempt and the entire registration wait have finite deadlines. */
-export async function registerWorkbenchApplications(
-  client: Pick<ApplicationCatalogClient, "register">, declaration: BuiltinApplication[], timeoutMs = 120_000,
-) {
+/** Validate built-in application panel/frame references against current built-in definitions before registration. */
+export async function validateBuiltinApplicationReferences(declaration: BuiltinApplication[]) {
   const parsed = z.array(builtinApplicationSchema).parse(declaration);
   for (const { declaration, framePanelId } of parsed) {
     const entries = declaration.panelUses ?? [];
@@ -37,6 +35,13 @@ export async function registerWorkbenchApplications(
       delivery: { panels: [], projections: [] },
     });
   }
+}
+
+/** Java may still be starting. Each attempt and the entire registration wait have finite deadlines. */
+export async function registerWorkbenchApplications(
+  client: Pick<ApplicationCatalogClient, "register">, declaration: BuiltinApplication[], timeoutMs = 120_000,
+) {
+  const parsed = z.array(builtinApplicationSchema).parse(declaration);
   const deadline = Date.now() + timeoutMs;
   let delay = 500;
   let lastError: unknown;
@@ -56,5 +61,6 @@ export async function registerWorkbenchApplications(
 
 
 export async function registerApplications() {
+  await validateBuiltinApplicationReferences(workbenchApplications);
   await registerWorkbenchApplications(new ApplicationCatalogClient(config.dataQuery.baseUrl, environment.agentRuntime().queryServiceToken), workbenchApplications);
 }

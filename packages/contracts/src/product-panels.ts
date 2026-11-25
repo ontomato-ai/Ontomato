@@ -335,7 +335,17 @@ export const frameConversationEntrySchema = builtinNativeEntrySchema.extend({
 });
 export type FrameConversationEntry = z.infer<typeof frameConversationEntrySchema>;
 
-export const panelApplicationEntryUseSchema = z.union([applicationPanelUseSchema, frameConversationEntrySchema]);
+export const panelApplicationEntryUseSchema =
+  z.unknown().transform((value, ctx): ApplicationPanelUse | FrameConversationEntry => {
+    const target = value && typeof value === "object" && !Array.isArray(value)
+      && "kind" in value && (value as { kind?: unknown }).kind === "frame-conversation"
+      ? frameConversationEntrySchema
+      : applicationPanelUseSchema;
+    const parsed = target.safeParse(value);
+    if (parsed.success) return parsed.data;
+    for (const issue of parsed.error.issues) ctx.addIssue(issue);
+    return z.NEVER;
+  });
 
 /** Entry table item exposed by the catalog and frame menu. */
 export const applicationMenuEntrySchema = z.union([applicationPanelUseSchema, frameConversationEntrySchema, builtinNativeEntrySchema]);

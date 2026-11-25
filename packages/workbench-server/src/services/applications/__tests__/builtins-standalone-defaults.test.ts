@@ -3,8 +3,6 @@ import { allowsStandalone, builtinApplicationSchema } from "@ontomato/contracts/
 import { workbenchApplications } from "../builtins";
 import { registerWorkbenchApplications } from "../register";
 
-vi.mock("../../product-panels/current", () => ({ validateApplicationPanelReferences: vi.fn() }));
-
 describe("workbench built-in application allowStandalone defaults", () => {
   it("disables standalone open for all workbench built-in applications", () => {
     const byId = new Map(workbenchApplications.map(app => [app.id, builtinApplicationSchema.parse(app)]));
