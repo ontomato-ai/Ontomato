@@ -582,4 +582,50 @@ describe("governance panel server operations", () => {
       expect(anyWriteOp(opRef)).toBeDefined();
     }
   });
+
+  it("includes concrete released position names and keeps-other-orgs notice in removeOrgMembership impact", async () => {
+    let inspectPositions: string[] = ["Engineering Lead", "Architecture Reviewer"];
+    const { host } = hostWith((path) => {
+      if (path.endsWith("/panel/governance/org-memberships/record")) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { primaryKey: "org-1:u-1", className: ORG_MEMBERSHIP, label: "Alice (alice)", fields: {} },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/panel/governance/org-memberships/remove/inspect")) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { available: true, positionCount: inspectPositions.length, positions: inspectPositions },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ success: true, data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const removeOp = targetedActionOp(REMOVE_ORG_MEMBERSHIP);
+    expect(removeOp.inspectImpact).toBeDefined();
+    const call = { target: { kind: "object" as const, objectType: ORG_MEMBERSHIP, primaryKey: "org-1:u-1" }, input: {} };
+
+    const withPositions = await removeOp.inspectImpact!.inspect(host, [call]);
+    expect(withPositions).not.toBeNull();
+    expect(withPositions!.objects).toEqual([
+      { target: { objectType: ORG_MEMBERSHIP, primaryKey: "org-1:u-1" }, label: "Alice (alice)" },
+    ]);
+    expect(withPositions!.summary).toContain("Engineering Lead, Architecture Reviewer");
+    expect(withPositions!.summary).toContain("other organizations are kept");
+
+    inspectPositions = [];
+    const withoutPositions = await removeOp.inspectImpact!.inspect(host, [call]);
+    expect(withoutPositions).not.toBeNull();
+    expect(withoutPositions!.summary).toContain("no positions held");
+    expect(withoutPositions!.summary).toContain("other organizations are kept");
+  });
 });
