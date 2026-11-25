@@ -20,15 +20,21 @@ description: 在 Ontomato 上从零创建一条业务流程：把业务描述拆
 ## 身份与工具
 
 - 客户端：`node <SKILL目录>/wf-client.mjs <子命令>`
-- 环境变量：`WF_BASE`（默认 `http://localhost:8080/api/data-query`）、`WF_AUTH`、`WF_DOMAIN`（必填）、`WF_CODE`/`WF_PASS`
+- 环境变量：
+  - 端点：`WF_BASE` 或平台注入的 `ONTOMATO_ONTOLOGY_URL`（默认 `http://localhost:8080/api/data-query`）；`WF_AUTH`（仅用户名+密码模式使用，默认 `http://localhost:8080/api/auth`）。
+  - 认证（按优先级三选一）：
+    1. 平台 token：`WF_TOKEN` / `ONTOMATO_TK`（无需 `WF_DOMAIN`）
+    2. Ontomato API Key：`WF_API_KEY` / `ONTOMATO_API_KEY`（无需 `WF_DOMAIN`）
+    3. 用户名+密码：`WF_CODE` / `WF_PASS` + `WF_DOMAIN`（或 `login <code> <password> <domainId>`）
 - 域管理员账号密码由用户提供，不要在对话里复述；客户端只在内存里用一次。
 - 平台两套响应外壳（`{success,message}` 与 `{success,code,data}`）客户端已统一处理。
 
 ## 第 0 步：确认环境活着，别在死栈上建东西
 
 ```bash
-export WF_DOMAIN=<域id>
-node wf-client.mjs login <loginCode> <password> <domainId>
+# 平台内运行通常已注入 ONTOMATO_ONTOLOGY_URL 与 ONTOMATO_TK / ONTOMATO_API_KEY；
+# 平台外使用账号密码时再传 WF_DOMAIN 与 login：
+node wf-client.mjs login [<loginCode> <password> <domainId>]
 node wf-client.mjs ping        # workflow 接口是否可达
 node wf-client.mjs me          # 当前账号与域
 ```

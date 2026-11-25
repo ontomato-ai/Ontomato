@@ -4,19 +4,24 @@
  *
  * 只管与平台对话，不含任何业务判断；业务判断在 SKILL.md 里。
  * 全部端点都走网关 data-query 前缀；可用环境变量覆盖：
- *   WF_BASE   默认 http://localhost:8080/api/data-query
- *   WF_AUTH   默认 http://localhost:8080/api/auth
- *   WF_DOMAIN 域 id（必须给，或用 login 子命令的第三参数）
- *   WF_CODE / WF_PASS 登录名与密码（默认 test / admin）
+ *   BASE：WF_BASE 或 ONTOMATO_ONTOLOGY_URL（平台注入），默认 http://localhost:8080/api/data-query
+ *   AUTH：WF_AUTH（用户名+密码模式），默认 http://localhost:8080/api/auth
+ *
+ * 认证优先级：
+ *   1) 平台 token：WF_TOKEN / ONTOMATO_TK（发 tk 头，无需 WF_DOMAIN）
+ *   2) Ontomato API Key：WF_API_KEY / ONTOMATO_API_KEY（发 x-api-key 头，无需 WF_DOMAIN）
+ *   3) 用户名+密码：WF_CODE / WF_PASS（默认 test / admin）+ WF_DOMAIN（或 login 子命令参数）
  */
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 
-const BASE = process.env.WF_BASE || 'http://localhost:8080/api/data-query';
-const AUTH = process.env.WF_AUTH || 'http://localhost:8080/api/auth';
-const DOMAIN = process.env.WF_DOMAIN || '';
-const CODE = process.env.WF_CODE || 'test';
-const PASS = process.env.WF_PASS || 'admin';
+const BASE = (process.env.WF_BASE || process.env.ONTOMATO_ONTOLOGY_URL || 'http://localhost:8080/api/data-query').replace(/\/+$/, '');
+const AUTH = (process.env.WF_AUTH || 'http://localhost:8080/api/auth').replace(/\/+$/, '');
+let DOMAIN = process.env.WF_DOMAIN || '';
+let CODE = process.env.WF_CODE || 'test';
+let PASS = process.env.WF_PASS || 'admin';
+const TOKEN = process.env.WF_TOKEN || process.env.ONTOMATO_TK || '';
+const API_KEY = process.env.WF_API_KEY || process.env.ONTOMATO_API_KEY || '';
 
 const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCsOA/mrmUxn+DSC3mDclnCTQQXqbbsXJcopSXYjHR4U9BW14/CaKLkezS+AdNLPrtF135Jn4zVhSCzRcVYNruutqzpPZEdgGB4vJw16+LsOjGSG0Np7CLZg1YRP2vfCKYEtyrY5/jfts7DRbPf5FJljhO3w79xxo0dd0Sb1n1fEwIDAQAB
@@ -56,9 +61,35 @@ function readJsonArg(arg) {
 }
 
 let cachedToken = null;
+let authMode = null;
+
+function configuredAuthMode() {
+  if (TOKEN) return 'token';
+  if (API_KEY) return 'apikey';
+  if (CODE && PASS) return 'password';
+  return null;
+}
+
+function authHeaders() {
+  if (authMode === 'apikey') return { 'x-api-key': API_KEY, 'Accept-Language': 'zh-CN' };
+  return { tk: cachedToken || TOKEN, 'Accept-Language': 'zh-CN' };
+}
 
 async function login() {
   if (cachedToken) return cachedToken;
+  const mode = configuredAuthMode();
+  if (!mode) {
+    die('缺少认证：设置 WF_TOKEN / ONTOMATO_TK、WF_API_KEY / ONTOMATO_API_KEY，或 WF_CODE / WF_PASS / WF_DOMAIN');
+  }
+  authMode = mode;
+  if (mode === 'token') {
+    cachedToken = TOKEN;
+    return cachedToken;
+  }
+  if (mode === 'apikey') {
+    cachedToken = API_KEY;
+    return cachedToken;
+  }
   if (!DOMAIN) die('缺少域 id：设置 WF_DOMAIN，或改用 `login <code> <password> <domainId>`');
   const r = await fetch(`${AUTH}/doLogin`, {
     method: 'POST',
@@ -72,10 +103,10 @@ async function login() {
 }
 
 async function post(backendPath, body) {
-  const tk = await login();
+  await login();
   const r = await fetch(`${BASE}${backendPath}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', tk, 'Accept-Language': 'zh-CN' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body === undefined ? {} : body),
   }).catch((e) => die(`连不上后端 ${BASE}（${e.cause ? e.cause.code || e.cause.message : e.message}）\n  这是环境问题，不是流程定义问题：先确认开发栈已起（企业版仓根目录 pnpm dev:up），再重试。`));
   const text = await r.text();
@@ -95,8 +126,8 @@ function unwrap(json, what) {
 }
 
 async function get(backendPath) {
-  const tk = await login();
-  const r = await fetch(`${BASE}${backendPath}`, { headers: { tk, 'Accept-Language': 'zh-CN' } });
+  await login();
+  const r = await fetch(`${BASE}${backendPath}`, { headers: authHeaders() });
   const text = await r.text();
   try {
     return JSON.parse(text);
@@ -107,13 +138,13 @@ async function get(backendPath) {
 
 /** Action 执行是 multipart；参数放 param 字段，且必须整体是字符串。 */
 async function executeAction(actionId, param) {
-  const tk = await login();
+  await login();
   const fd = new FormData();
   fd.append('id', actionId);
   fd.append('param', JSON.stringify(param || {}));
   const r = await fetch(`${BASE}/action/execute`, {
     method: 'POST',
-    headers: { tk, 'Accept-Language': 'zh-CN' },
+    headers: authHeaders(),
     body: fd,
   });
   const text = await r.text();
@@ -159,9 +190,16 @@ async function saveActions(jsonArg) {
 const [cmd, ...args] = process.argv.slice(2);
 
 if (cmd === 'login') {
-  if (args[2]) process.env.WF_DOMAIN = args[2];
+  if (args[0]) CODE = args[0];
+  if (args[1]) PASS = args[1];
+  if (args[2]) DOMAIN = args[2];
   const tk = await login();
-  console.log(JSON.stringify({ ok: true, tokenPrefix: tk.slice(0, 8), domain: process.env.WF_DOMAIN }));
+  if (authMode === 'password') {
+    console.log(JSON.stringify({ ok: true, authMode, tokenPrefix: tk.slice(0, 8), domain: DOMAIN }));
+  } else {
+    const user = unwrap(await get('/user/getCur'), 'getCur');
+    console.log(JSON.stringify({ ok: true, authMode, loginCode: user.loginCode, domainId: user.domainId, domainName: user.domainName }));
+  }
 } else if (cmd === 'me') {
   const j = await get('/user/getCur');
   console.log(JSON.stringify(unwrap(j, 'getCur'), null, 2));
@@ -271,9 +309,14 @@ if (cmd === 'login') {
 } else {
   console.log(`Ontomato 业务流程构建客户端
 
-环境变量：WF_BASE / WF_AUTH / WF_DOMAIN / WF_CODE / WF_PASS
+环境变量：
+  WF_BASE / ONTOMATO_ONTOLOGY_URL   后端基址（默认 http://localhost:8080/api/data-query）
+  WF_AUTH                           认证基址（默认 http://localhost:8080/api/auth）
+  WF_TOKEN / ONTOMATO_TK            平台 token（优先；无需 WF_DOMAIN）
+  WF_API_KEY / ONTOMATO_API_KEY     Ontomato API Key（次优；无需 WF_DOMAIN）
+  WF_CODE / WF_PASS / WF_DOMAIN     用户名+密码（默认 test/admin；此模式须给 WF_DOMAIN）
 
-  login <code> <pass> <domainId>   验证登录与域
+  login [<code> <pass> <domainId>] 验证登录与域
   me                               当前账号
   ping                             后端与 workflow 接口是否活着
   roles                            列出域内角色（roleName 就是流程步骤的 roleCode）

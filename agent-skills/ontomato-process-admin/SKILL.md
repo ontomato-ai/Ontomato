@@ -326,7 +326,7 @@ node client.mjs grant-save '{
 
 ```bash
 node client.mjs actions
-node client.mjs action-save @actions.json        # 1. 保存为 PENDING_REVIEW 草稿（新建省略 id，由服务端返回）
+node client.mjs action-save ./actions.json      # 1. 保存为 PENDING_REVIEW 草稿（新建省略 id，由服务端返回）
 node client.mjs action-reexplain '{"ids":["<actionId>"]}'  # 2. 如有需要，生成/重算解读
 node client.mjs action-publish <actionId>         # 3. 审阅确认后置为 PUBLISHED（POST /action/setStatus）
 node client.mjs action-get <actionId>
