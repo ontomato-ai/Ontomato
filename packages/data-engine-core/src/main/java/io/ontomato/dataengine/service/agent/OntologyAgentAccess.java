@@ -40,13 +40,6 @@ public class OntologyAgentAccess {
     }
   }
 
-  public Context governance(HttpServletRequest request) {
-    var context = authenticated(request);
-    if (!identity.hasKnowledgeGovernanceAccess())
-      throw new AgentHttpException(403, "FORBIDDEN", "Business knowledge permission is required");
-    return context;
-  }
-
   public Context authenticated(HttpServletRequest request) {
     if (request.getAttribute(QueryGrantService.ATTRIBUTE) != null)
       throw new AgentHttpException(403, "FORBIDDEN", "A current user credential is required");

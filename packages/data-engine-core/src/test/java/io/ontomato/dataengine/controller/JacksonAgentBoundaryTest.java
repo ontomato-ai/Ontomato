@@ -83,13 +83,10 @@ class JacksonAgentBoundaryTest {
         .andExpect(jsonPath(action).isNotEmpty())
         .andExpect(jsonPath(retriever).isNotEmpty());
 
-    when(identity.hasKnowledgeGovernanceAccess()).thenReturn(true);
     mvc.perform(get("/ontology/ai/agents"))
         .andExpect(status().isOk())
         .andExpect(jsonPath(action).isEmpty())
         .andExpect(jsonPath(retriever).isNotEmpty());
-    verify(identity, never()).hasKnowledgeGovernanceAccess();
-    verify(identity, never()).hasKnowledgeGovernanceAccess(anyString(), anyString());
   }
 
   @Test

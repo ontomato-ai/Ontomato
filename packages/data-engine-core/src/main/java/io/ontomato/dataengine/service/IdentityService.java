@@ -24,16 +24,6 @@ public interface IdentityService {
     /** Reuse the existing Action execution permission for an explicitly captured owner. */
     void requireActionExecutionAccess(String userId, String domainId);
 
-    /** The same business-knowledge capability that owns governance. */
-    boolean hasKnowledgeGovernanceAccess();
-
-    /** The same governance permission for a persisted background creator. */
-    default boolean hasKnowledgeGovernanceAccess(String userId, String domainId) {
-        User user = getCurrentUser();
-        return user != null && java.util.Objects.equals(userId, user.getId())
-            && java.util.Objects.equals(domainId, user.getDomainId()) && hasKnowledgeGovernanceAccess();
-    }
-
     /** Absolute expiry of the verified credential, or null when it has no expiry. */
     Long getCurrentCredentialExpiresAt();
 
