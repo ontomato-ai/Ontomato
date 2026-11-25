@@ -763,8 +763,20 @@ async function readParameters(
       if (!authoredReadParameterSource(data.params, name, member)) resolved.set(name, parsed);
     }
   }
+  const selectionInput = "object" in data.source && "input" in data.source.object ? data.source.object.input : undefined;
   const authored = new Set([...Object.keys(data.params), ...Object.keys(member.inputs ?? {}), ...Object.keys(member.outputs ?? {})]);
   for (const name of authored) {
+    // An input port consumed by `data.source.object` (such as `target` wired to panel state) selects the target
+    // object for `readSelection`, and declared projection ports unmapped in `data.params` are not implicit owner
+    // parameters.
+    if (
+      !Object.hasOwn(data.params, name)
+      && (name === selectionInput
+        || (declaration.parameterMode === "owner"
+          && (Object.hasOwn(projection.inputs, name) || Object.hasOwn(projection.outputs, name))))
+    ) {
+      continue;
+    }
     const source = authoredReadParameterSource(data.params, name, member);
     const parameter = panelReadParameterId(declaration, name);
     if (!source || !parameter) continue;
