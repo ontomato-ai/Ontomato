@@ -28,12 +28,20 @@
     align-items: center;
     gap: 4px;
   }
-  .wf-steps-summary {
-    display: block;
-    max-width: min(100%, 220px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .wf-catalog .sdk-object-list-table .sdk-object-list-col-shrink {
+    min-width: 150px;
+    max-width: 210px;
+  }
+  .wf-catalog .sdk-object-list-table .sdk-object-list-col-shrink .sdk-object-list-cell-main {
+    max-width: 186px;
+  }
+  @container wf-page (min-width: 1360px) {
+    .wf-catalog .sdk-object-list-table .sdk-object-list-col-shrink {
+      max-width: 28rem;
+    }
+    .wf-catalog .sdk-object-list-table .sdk-object-list-col-shrink .sdk-object-list-cell-main {
+      max-width: 26rem;
+    }
   }
   .wf-grant-link {
     display: inline-block;
@@ -140,9 +148,6 @@
                 {{ badge }}
               </sdk-tag>
             </span>
-          </template>
-          <template #cell-stepsSummary="{ displayText }">
-            <span class="wf-steps-summary" :title="displayText">{{ displayText }}</span>
           </template>
           <template #cell-grantsSummary="{ ref, displayText, tone }">
             <button

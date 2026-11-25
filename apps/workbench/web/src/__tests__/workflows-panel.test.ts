@@ -123,7 +123,7 @@ const workflowsPanel = {
 
 type DataReadRequest = Extract<ProductPanelReadRequest, { dataName: string }>;
 
-function workflowRow(id: string, name: string) {
+function workflowRow(id: string, name: string, stepsSummary = "Submit -> Approve") {
   return {
     primaryKey: id,
     label: name,
@@ -144,7 +144,7 @@ function workflowRow(id: string, name: string) {
       canActivate: false,
       canDeactivate: true,
       version: "v2",
-      stepsSummary: "Submit -> Approve",
+      stepsSummary,
       grantsSummary: "1 role grant in force",
       createdBy: "Alice",
       reviewedBy: "Bob",
@@ -424,5 +424,34 @@ describe("workflows builtin panel effective grants modal", () => {
     expect(grantsBody.textContent).toContain("Could not read authority.");
     const sections = [...grantsBody.querySelectorAll<HTMLElement>("section.wf-grants-group")];
     expect(sections.every((section) => !isSectionVisible(section))).toBe(true);
+  });
+
+  it("keeps the steps column on ObjectList native shrink behavior with full-text title tooltip", async () => {
+    const longSteps =
+      "Prepare statement [Human · Case-scoped] -> Reconcile differences [Human · Case-scoped] -> Department chair sign-off [Human · Case-scoped]";
+    const route = mountWorkflowsRoute((body) => {
+      const member = body.memberPath[0]?.member;
+      if (member === "catalog") {
+        return Response.json({
+          status: "ready",
+          value: { rows: [workflowRow("wf-long", "Workload audit", longSteps)], total: 1 },
+        });
+      }
+      return Response.json({ status: "empty" });
+    });
+
+    const root = await route.open();
+    const stepsHeader = await vi.waitFor(() => {
+      const ths = [...root.querySelectorAll<HTMLTableCellElement>(".sdk-object-list-table thead th")];
+      expect(ths.length).toBe(8);
+      return ths[3]!;
+    });
+    const stepsCell = root.querySelectorAll<HTMLTableCellElement>(".sdk-object-list-table tbody tr:first-child td")[3]!;
+
+    expect(stepsHeader.classList.contains("sdk-object-list-col-shrink")).toBe(true);
+    expect(stepsCell.classList.contains("sdk-object-list-col-shrink")).toBe(true);
+    expect(stepsCell.getAttribute("title")).toBe(longSteps);
+    expect(html).not.toContain("#cell-stepsSummary");
+    expect(html).toContain(".sdk-object-list-col-shrink .sdk-object-list-cell-main");
   });
 });
