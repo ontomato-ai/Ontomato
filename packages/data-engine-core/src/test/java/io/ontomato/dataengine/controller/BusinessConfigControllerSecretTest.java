@@ -19,8 +19,11 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.DataRagConfig;
+import io.ontomato.dataengine.config.multisource.DataSourceEntry;
+import io.ontomato.dataengine.config.multisource.MultiDataSourceDefinition;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dataAdapter.ConnectionSecretCodec;
+import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterConnection;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.dataAdapter.FakeDataAdapterProvider;
@@ -37,7 +40,18 @@ class BusinessConfigControllerSecretTest {
 	private final BusinessConfig businessConfig = new BusinessConfig();
 	private final BusinessConfigController controller = new BusinessConfigController();
 	private final FakeDataAdapterProvider postgres = new FakeDataAdapterProvider(
-			"postgresql", "PostgreSQL", List.of("url", "user", "password"), Map.of());
+			"postgresql", "PostgreSQL", List.of("url", "user", "password"), Map.of()) {
+		@Override
+		public DataAdapter create(DataAdapterConnection connection, DataRagConfig config, Map<String, Object> rule) {
+			var adapter = super.create(connection, config, rule);
+			try {
+				when(adapter.testConnection()).thenReturn(new JSONObject());
+			} catch (Exception error) {
+				throw new AssertionError(error);
+			}
+			return adapter;
+		}
+	};
 
 	@BeforeEach
 	void setUp() {
@@ -109,5 +123,29 @@ class BusinessConfigControllerSecretTest {
 				"{\"type\":\"postgresql\",\"url\":\"jdbc:postgresql://db\",\"user\":\"u\",\"password\":\"******\"}"));
 
 		assertEquals("old-secret", postgres.lastConnection.get("password"));
+	}
+
+	@Test
+	void testConnectionResolvesAMaskedPasswordFromTheSelectedSourceOfTheSameType() {
+		var primary = new DataSourceEntry();
+		primary.setId("primary");
+		primary.setAdapterType("postgresql");
+		primary.getConnection().put("password", "primary-secret");
+		var secondary = new DataSourceEntry();
+		secondary.setId("secondary");
+		secondary.setAdapterType("postgresql");
+		secondary.getConnection().put("password", "secondary-secret");
+		var multi = new MultiDataSourceDefinition();
+		multi.setDataSources(List.of(primary, secondary));
+		businessConfig.setDataAdapter("multi");
+		businessConfig.setMultiDataSource(multi);
+
+		var response = controller.testDataAdapter(JSONObject.of("type", "postgresql", "sourceId", "secondary",
+				"url", "jdbc:postgresql://test", "user", "u", "password", "******"));
+
+		assertTrue(response.getBooleanValue("success"), response.toJSONString());
+		assertEquals("secondary-secret", postgres.lastConnection.get("password"));
+		assertEquals("primary-secret", primary.getConnection().get("password"));
+		assertEquals("secondary-secret", secondary.getConnection().get("password"));
 	}
 }

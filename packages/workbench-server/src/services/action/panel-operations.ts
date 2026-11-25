@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
+import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS, TRIAL_ACTION } from "@ontomato/contracts/panel-client-requests";
 import { DATA_ADAPTER_CONFIG } from "@ontomato/contracts/platform-object-types";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormDescriptionSchema, panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
@@ -10,7 +10,7 @@ import { HttpError } from "../../utils/errors";
 import { checkSandboxPermission, sandboxPermissionResultSchema } from "../product-panels/sandbox-permission";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type {
-  PanelBatchCalls, PanelImpactInspector, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
+  PanelBatchCalls, PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import {
@@ -28,6 +28,37 @@ import { readRefusal } from "./object-actions";
  */
 
 const deletedSchema = z.object({}).strict();
+const emptyTrialSample = { objDatas: [], relDatas: [], vectorDatas: [] };
+const trialJsonInput = z.union([z.string(), runtimeJsonObjectSchema]);
+const trialInputSchema = z.object({
+  sample: trialJsonInput.default(emptyTrialSample),
+  parameters: trialJsonInput.default({}),
+}).strict();
+
+const trialReceiptSchema = z.object({
+  trialId: z.string(),
+  actionId: z.string(),
+  digest: z.string(),
+  status: z.enum(["PASSED", "FAILED"]),
+  passed: z.boolean(),
+  result: z.string().nullable(),
+  error: z.string().nullable(),
+  spendTime: z.number(),
+  testedAt: z.string(),
+  trialStatus: z.enum(["passed", "failed"]),
+  trialStatusLabel: z.string(),
+});
+
+function parseTrialObject(value: z.infer<typeof trialJsonInput>) {
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = runtimeJsonObjectSchema.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const statusInputSchema = z.object({
   status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]).describe(
     "Target publication status (PENDING_REVIEW, PUBLISHED, or UNUSED)",
@@ -136,6 +167,7 @@ const publishReviewSchema = z.object({
   name: z.string(),
   sandboxTrialLabel: z.string(),
   explanationMissingLabel: z.string().optional(),
+  publishBlockedReason: z.string().nullish(),
 });
 
 const publishActionImpact: PanelImpactInspector = {
@@ -228,6 +260,53 @@ export const m6ServerOperations = [
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected action");
       return remove(host, "/action/delete", target, "ACTION_DELETE_FAILED");
+    },
+  },
+  {
+    handlerRef: TRIAL_ACTION,
+    labelKey: "panels.action.operations.trial",
+    kind: "action",
+    effect: "write",
+    batch: false,
+    binding: { kind: "PlatformOperation", id: TRIAL_ACTION },
+    targetType: ACTION,
+    targetSchema: actionObjectTarget,
+    inputSchema: trialInputSchema,
+    resultSchema: trialReceiptSchema,
+    targetInput: "action",
+    targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/action/queryById", "ACTION_UNAVAILABLE"),
+    describeInputSchema(host: PanelOperationHost) {
+      const translate = (key: string) => tForLocale(host.locale, `panels.action.trial.${key}`);
+      return {
+        type: "object",
+        properties: {
+          sample: {
+            type: "string", format: "textarea", default: JSON.stringify(emptyTrialSample),
+            title: translate("sampleTitle"), description: translate("sampleHelp"),
+          },
+          parameters: {
+            type: "string", format: "textarea", default: "{}",
+            title: translate("parametersTitle"), description: translate("parametersHelp"),
+          },
+        },
+        additionalProperties: false,
+      };
+    },
+    async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      if (target.kind !== "object") throw new Error("The trial acts on a saved action");
+      const parsed = trialInputSchema.parse(input);
+      const sample = parseTrialObject(parsed.sample);
+      const parameters = parseTrialObject(parsed.parameters);
+      if (!sample || !parameters) {
+        return {
+          kind: "refusal",
+          code: "ACTION_TRIAL_INVALID",
+          message: tForLocale(host.locale, "panels.action.trial.invalidJson"),
+        };
+      }
+      const envelope = await ownerPost(host, "/action/trial", { id: target.primaryKey, sample, parameters }, ownerEnvelopeSchema);
+      if (!envelope.success) return ownerWriteFailure(envelope, "ACTION_TRIAL_FAILED", "The owner could not run the action trial");
+      return { kind: "success", data: trialReceiptSchema.parse(envelope.data), affected: affected(ACTION, target.primaryKey, [ACTION]) };
     },
   },
   {

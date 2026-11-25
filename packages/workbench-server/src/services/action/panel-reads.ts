@@ -8,7 +8,7 @@ import {
   annotatedCodeSchema, type AnnotatedCode, type AnnotatedCodeDetail, type AnnotatedCodeDetailPart,
   type AnnotatedCodeSegment, type AnnotatedCodeSummarySection, type AnnotatedCodeTone,
 } from "@ontomato/contracts/annotated-code";
-import { ACTION, DELETE_ACTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
+import { ACTION, DELETE_ACTION, SET_ACTION_STATUS, TRIAL_ACTION } from "@ontomato/contracts/panel-client-requests";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { UnavailableObjectAction } from "@ontomato/contracts/platform-type-table";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
@@ -44,6 +44,12 @@ const actionSchema = z.object({
   description: z.string().nullish(),
   status: z.string().nullish(),
   statusLabel: z.string().nullish(),
+  trialStatus: z.enum(["passed", "failed", "notRun"]).nullish(),
+  trialStatusLabel: z.string().nullish(),
+  lastTrialAt: z.string().nullish(),
+  lastTrialError: z.string().nullish(),
+  publishBlockedCode: z.enum(["ACTION_EXPLANATION_REQUIRED", "ACTION_TRIAL_REQUIRED", "ACTION_TRIAL_FAILED"]).nullish(),
+  publishBlockedReason: z.string().nullish(),
   origin: z.string().nullish(),
   originLabel: z.string().nullish(),
   createdByName: z.string().nullish(),
@@ -409,6 +415,18 @@ function mapAnnotatedSegment(
   };
 }
 
+function actionTrialOutputs(action: ActionAsset) {
+  return {
+    actionStatus: action.status ?? null,
+    trialStatus: action.trialStatus ?? "notRun",
+    trialStatusLabel: action.trialStatusLabel ?? null,
+    lastTrialAt: action.lastTrialAt ?? null,
+    lastTrialError: action.lastTrialError ?? null,
+    publishBlockedCode: action.publishBlockedCode ?? null,
+    publishBlockedReason: action.publishBlockedReason ?? null,
+  };
+}
+
 function actionRecord(action: ActionAsset, fieldLabels: Record<string, string>): PanelRecord {
   const statusTone = actionStatusTone(action.status);
   const description = action.description?.trim() ?? "";
@@ -426,6 +444,7 @@ function actionRecord(action: ActionAsset, fieldLabels: Record<string, string>):
       updatedAt: action.modifyTimestamp == null ? "" : new Date(action.modifyTimestamp).toISOString(),
     },
     ...(statusTone ? { tones: { status: statusTone } } : {}),
+    outputs: actionTrialOutputs(action),
   };
 }
 
@@ -540,6 +559,27 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       return actionRecord(await owner("action-record", "/action/queryById", { id: primaryKey }, actionSchema), fieldLabels());
+    },
+    async trialSummary(primaryKey: string): Promise<PanelRecord> {
+      const action = await owner("action-trial-summary", "/action/queryById", { id: primaryKey }, actionSchema);
+      const outputs = actionTrialOutputs(action);
+      const { actionStatus, trialStatus, trialStatusLabel, lastTrialAt, lastTrialError, publishBlockedCode, publishBlockedReason } = outputs;
+      const trialText = (key: string) => translate(`panels.action.trial.${key}`);
+      const publishedOrReady = actionStatus === "PUBLISHED" ? trialText("alreadyPublished")
+        : trialStatus === "passed" && !publishBlockedCode ? trialText("readyToPublish") : "";
+      const trialDetail = (trialStatus === "failed" ? lastTrialError : null) ?? publishBlockedReason ?? publishedOrReady;
+      return {
+        primaryKey: action.id,
+        label: action.name,
+        fieldLabels: {
+          trialStatus: trialText("fields.status"),
+          lastTrialAt: trialText("fields.testedAt"),
+          trialDetail: trialText("fields.detail"),
+        },
+        fields: { trialStatus: trialStatusLabel ?? trialText(trialStatus), lastTrialAt: lastTrialAt ?? "—", trialDetail },
+        tones: { trialStatus: trialStatus === "passed" ? "success" : trialStatus === "failed" ? "danger" : "warning" },
+        outputs,
+      };
     },
     async form(primaryKey: string, params: ActionFormParams): Promise<PanelFormDescription> {
       return definitionForm("action-form", { kind: "object", objectType: ACTION, primaryKey }, params);
@@ -806,6 +846,9 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
     objectActions: (objectType?: string) => readObjectActions(viewer, objectType),
     [`${SET_ACTION_STATUS}.describe`]() {
       return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), operationHost({ owner: reader, credentials: viewer }));
+    },
+    [`${TRIAL_ACTION}.describe`]() {
+      return describeServerOperation(panelServerOperation(TRIAL_ACTION), operationHost({ owner: reader, credentials: viewer }));
     },
     [`${DELETE_ACTION}.describe`]() {
       return describeServerOperation(panelServerOperation(DELETE_ACTION), operationHost({ owner: reader, credentials: viewer }));

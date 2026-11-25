@@ -30,6 +30,7 @@ public class GenerationOperations {
   private final QueryGrantService grants;
   private final DataPermissionLookup permissions;
   private final IdentityService identity;
+  private final ActionTrialService actionTrials;
 
   public GenerationOperations(
       OntologyAgentStore store,
@@ -37,7 +38,7 @@ public class GenerationOperations {
       DataSandboxService sandboxService,
       WriteFunctionOperationService writes,
       PythonExecuteService python,
-      QueryGrantService grants, @Lazy DataPermissionLookup permissions, ABCProgramService programs, @Lazy IdentityService identity) {
+      QueryGrantService grants, @Lazy DataPermissionLookup permissions, @Lazy IdentityService identity, ActionTrialService actionTrials) {
     this.store = store;
     this.schemas = schemas;
     this.sandboxService = sandboxService;
@@ -46,6 +47,7 @@ public class GenerationOperations {
     this.grants = grants;
     this.permissions = permissions;
     this.identity = identity;
+    this.actionTrials = actionTrials;
   }
 
   public void requireWriteAccess(Owner owner) {
@@ -245,26 +247,18 @@ public class GenerationOperations {
         });
   }
 
-  private static String testDigest(String kind, String code, JSONArray parameters) {
-    return AgentJson.hash(
-        JSONObject.of(
-            "kind", kind, "code", code, "parameterDefs", executedParameters(kind, parameters)));
-  }
-
   /**
    * A receipt binds only the executed input: the parameter name, type and value.
    * Descriptive fields such as description or sample never require another business test.
    */
-  private static JSONArray executedParameters(String kind, JSONArray parameters) {
+  private static JSONArray executedParameters(JSONArray parameters) {
     var executed = new JSONArray();
     if (parameters == null) return executed;
     for (int i = 0; i < parameters.size(); i++) {
       JSONObject parameter = parameters.getJSONObject(i), kept = new JSONObject();
       kept.put("name", parameter.get("name"));
       kept.put("type", parameter.get("type"));
-      kept.put("value", "action".equals(kind)
-          ? ParameterValues.normalize(parameter.getString("type"), parameter.get("value"))
-          : parameter.get("value"));
+      kept.put("value", parameter.get("value"));
       executed.add(kept);
     }
     return executed;
@@ -288,7 +282,7 @@ public class GenerationOperations {
         : actionParameters(window.owner().domainId(), defs));
     var parameters = MetricViewBindings.values(function);
     if (!legacy) MetricViewBindings.validateValues(function, parameters);
-    String digest = actionDigest(code, function.getParameters());
+    String digest = actionTrials.digest(window.owner().domainId(), code, null, function.getParameters());
     String execution = UUID.randomUUID().toString();
     var access = window.access();
     var authority = PythonAuthority.write(access.user().getId(), window.owner().domainId(), sandbox(row))
@@ -327,14 +321,8 @@ public class GenerationOperations {
   }
 
   String actionDigest(String domainId, String code, JSONArray defs) {
-    return actionDigest(code, defs == null || defs.isEmpty() ? List.of() : actionParameters(domainId, defs));
-  }
-
-  private static String actionDigest(String code, List<Parameter> parameters) {
-    var declared = parameters.stream().map(parameter -> JSONObject.of("name", parameter.getName(),
-        "type", parameter.getType(), "value", parameter.getValue(),
-        "classNames", parameter.getClassNames() == null ? List.of() : parameter.getClassNames())).toList();
-    return AgentJson.hash(JSONObject.of("kind", "action", "code", code, "parameterDefs", declared));
+    return actionTrials.digest(domainId, code, null,
+        defs == null || defs.isEmpty() ? List.of() : actionParameters(domainId, defs));
   }
 
   private String startTest(Window window, String execution, String digest) throws Exception {
@@ -362,6 +350,8 @@ public class GenerationOperations {
       window.gate().get();
       store.update("UPDATE ontology_generation_tests SET result=?::jsonb WHERE run_id=? AND execution_id=?",
           AgentJson.json(recorded), uuid(window.run()), uuid(execution));
+      if ("action".equals(window.kind()))
+        actionTrials.recordAuthoringTrial(window.owner().domainId(), digest, result, window.owner().userId());
       return new Receipt(execution, digest, recorded);
     });
   }
@@ -369,7 +359,7 @@ public class GenerationOperations {
   public static String packageTestDigest(String kind, JSONObject bundle) {
     var executable = QueryPackage.copy(QueryPackage.validate(bundle));
     var manifest = executable.getJSONObject("manifest");
-    manifest.put("parameterDefs", executedParameters(kind, manifest.getJSONArray("parameterDefs")));
+    manifest.put("parameterDefs", executedParameters(manifest.getJSONArray("parameterDefs")));
     return AgentJson.hash(JSONObject.of("kind", kind, "package", executable));
   }
 
@@ -417,22 +407,7 @@ public class GenerationOperations {
   }
 
   public String actionTrialStatus(Action action) {
-    Function function = action.getFunction();
-    if (function == null) return "notRun";
-    JSONArray parameters = function.getParameters() == null ? null : JSONArray.from(function.getParameters());
-    var rows = store.rows("""
-        SELECT t.result FROM ontology_generation_tests t
-        LEFT JOIN ontology_platform_authoring_runs a ON a.run_id=t.run_id
-        LEFT JOIN ontology_agent_runs r ON r.id=t.run_id
-        LEFT JOIN ontology_agent_sessions s ON s.id=r.session_id
-        WHERE t.kind='action' AND t.digest=? AND COALESCE(a.domain_id,s.domain_id)=?
-        ORDER BY t.created_at DESC,t.execution_id DESC LIMIT 1
-        """, actionDigest(action.getDomainId(), function.getCode(), parameters), action.getDomainId());
-    if (rows.isEmpty()) return "notRun";
-    JSONObject result = rows.getFirst().getJSONObject("result");
-    if (result == null) return "incomplete";
-    String error = result.getString("error");
-    return error == null || error.isBlank() ? "passed" : "failed";
+    return actionTrials.statusCode(actionTrials.latest(action));
   }
 
   private static Receipt receipt(JSONObject row) {
@@ -444,12 +419,7 @@ public class GenerationOperations {
   }
 
   public void requireActionTest(String run, String domain, String code, JSONArray parameters) {
-    var tests = store.rows(
-        "SELECT result FROM ontology_generation_tests WHERE run_id=? AND digest IN (?,?)"
-            + " ORDER BY created_at DESC,execution_id DESC LIMIT 1",
-        uuid(run), actionDigest(code, legacyActionParameters(domain, parameters)),
-        testDigest("action", code, parameters));
-    requirePassed(tests.isEmpty() ? null : tests.getFirst().getJSONObject("result"));
+    requireDigest(run, actionTrials.digest(domain, code, null, legacyActionParameters(domain, parameters)));
   }
 
   private void requireDigest(String run, String digest) {

@@ -28,7 +28,8 @@ dedicated detail entry `/ontology/assets/actions/detail`.
 - Put every checked target and one `input.status` in one intent. The owner answers each action on its own; report the
   successes, refusals and failures apart instead of a single "done".
 - Publishing (`PUBLISHED`) records the person who did it as the reviewer. The owner refuses a system action; pass its
-  words on to the reader.
+  words on to the reader. Publishing requires both a current code explanation and a passed latest sandbox trial
+  for the exact saved code, target and parameter schema.
 
 ## Creating an action: the only way
 
@@ -38,14 +39,23 @@ opening line; the reader sends the message. The action starts with you:
 1. Write the action: its target object type and key parameter (a `TYPE_STRING` parameter carrying the object's primary
    key), and its write function fields (`name`, typed `parameters`, `returnDef.classNames`, `logic`, and Python `code`
    by the owner's protocol).
-2. Offer a sandbox trial under `$ONTOMATO_AUTHORING_URL` to verify the exact code and parameters.
-   The publication review shows the trial status.
-3. Open the detail entry in create mode via `present` at `/ontology/assets/actions/detail` with
+2. Open the detail entry in create mode via `present` at `/ontology/assets/actions/detail` with
    `{ state: { selected: null, creating: true, activeTab: "definition" } }`, read `form.createForm`, and fill the live
    `form` via `fill_form` using the individual field paths (`/name`, `/description`, `/target`,
    `/function/name`, `/function/parameters`, `/function/returnDef/classNames`, `/function/logic`, `/function/code`).
    Do **not** pass a whole `function` object or `explanationRef`.
-4. Let the reader review and save in the header, or invoke `page_action` `form.save` when explicitly requested. The save creates a pending draft and generates its explanation in the background.
+3. Let the reader review and save in the header, or invoke `page_action` `form.save` when explicitly requested.
+
+## Saving, trialing and publishing
+
+1. Save the draft (`form.save` in action detail, or `POST /action/save`). Saving does not require a trial and
+   generates the code explanation in the background.
+2. Open the saved action's detail and call `page_action` `trial.trial` (`actions.trial`) with `sample` and
+   `parameters` as JSON objects. External callers send `{ id, sample, parameters }` to `POST /action/trial`.
+   This call opens the sandbox, loads the sample, runs the action, records the result, and closes the sandbox.
+3. Publish with `publish.setStatus` in detail or `setStatus.setStatus` in the catalog, using
+   `input.status: "PUBLISHED"`. The owner checks the current code explanation and the latest trial for the exact
+   saved code, target and parameter schema.
 
 ## Opening an action's detail
 

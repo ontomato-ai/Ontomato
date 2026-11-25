@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ZodNull } from "zod";
-import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
+import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS, TRIAL_ACTION } from "@ontomato/contracts/panel-client-requests";
 import { DATA_ADAPTER_CONFIG } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -55,6 +55,45 @@ const actionTarget = { kind: "object" as const, objectType: ACTION, primaryKey: 
 const secondAction = { kind: "object" as const, objectType: ACTION, primaryKey: "a2" };
 
 describe("action panel server operations", () => {
+  it("runs the same trial for textarea JSON and agent objects and preserves a failed trial receipt", async () => {
+    const sample = { objDatas: [{ className: "Order", rows: [{ id: "order-1" }] }] };
+    const parameters = { id: "order-1" };
+    const receipt = {
+      trialId: "84c443da-3f66-4a7c-ac39-0a0dce42ec1d", actionId: "a1", digest: "a".repeat(64),
+      status: "FAILED", passed: false, result: null, error: "Order is closed",
+      spendTime: 142, testedAt: "2026-11-25T13:00:00Z", trialStatus: "failed", trialStatusLabel: "Sandbox trial: failed",
+    };
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: receipt }));
+    const trial = action(TRIAL_ACTION);
+    for (const input of [{ sample: JSON.stringify(sample), parameters: JSON.stringify(parameters) }, { sample, parameters }]) {
+      await expect(trial.execute(host, actionTarget, trial.inputSchema.parse(input))).resolves.toEqual({
+        kind: "success", data: receipt, affected: {
+          objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION],
+        },
+      });
+    }
+    for (const { path, init } of sent) {
+      expect(path).toBe("/api/data-query/action/trial");
+      expect(JSON.parse(String(init.body))).toEqual({ id: "a1", sample, parameters });
+    }
+  });
+
+  it("refuses malformed trial JSON locally and preserves an explicit owner refusal", async () => {
+    const { host, sent } = hostWith(() => Response.json({
+      success: false, code: "ACTION_TRIAL_SANDBOX_UNAVAILABLE", message: "Sandbox unavailable",
+    }));
+    const trial = action(TRIAL_ACTION);
+    for (const input of [{ sample: "{" }, { parameters: "[]" }]) {
+      await expect(trial.execute(host, actionTarget, input)).resolves.toMatchObject({
+        kind: "refusal", code: "ACTION_TRIAL_INVALID",
+      });
+    }
+    expect(sent).toHaveLength(0);
+    await expect(trial.execute(host, actionTarget, {})).resolves.toEqual({
+      kind: "refusal", code: "ACTION_TRIAL_SANDBOX_UNAVAILABLE", message: "Sandbox unavailable",
+    });
+  });
+
   it("checks sandbox permission with an empty POST and invalidates both panels", async () => {
     const sandboxCapability = {
       status: "passed", supported: true, canCreateAndDrop: true, reason: "Allowed", probeNote: "Probe removed", details: {},
@@ -230,7 +269,7 @@ describe("action panel server operations", () => {
   it("deletes by id, keeps an explicit owner code as the refusal and an unclassified delete as a failure", async () => {
     const operation = action(DELETE_ACTION);
     const removed = hostWith(() => Response.json({ success: true }));
-    expect(await operation.execute(removed.host, actionTarget)).toEqual({
+    expect(await operation.execute(removed.host, actionTarget, {})).toEqual({
       kind: "success", data: {},
       affected: { objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION], removed: [{ objectType: ACTION, primaryKey: "a1" }] },
     });
@@ -239,12 +278,12 @@ describe("action panel server operations", () => {
 
     const refused = hostWith(() =>
       Response.json({ success: false, code: "ACTION_REFERENCED", message: "Action is referenced by a scheduled task" }));
-    expect(await operation.execute(refused.host, actionTarget))
+    expect(await operation.execute(refused.host, actionTarget, {}))
       .toEqual({ kind: "refusal", code: "ACTION_REFERENCED", message: "Action is referenced by a scheduled task" });
 
     const failed = hostWith(() =>
       Response.json({ success: false, message: "Action service unavailable" }));
-    expect(await operation.execute(failed.host, actionTarget))
+    expect(await operation.execute(failed.host, actionTarget, {}))
       .toEqual({ kind: "failure", code: "ACTION_DELETE_FAILED", message: "Action service unavailable" });
   });
 

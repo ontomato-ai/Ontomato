@@ -295,28 +295,33 @@ public class BusinessConfigController {
 	}
 
 	@PostMapping("/businessConfig/testDataAdapter")
-    @ResponseBody
-    public JSONObject testDataAdapter(@RequestBody JSONObject input) {
-    	JSONObject ret = new JSONObject();
-    	try {
-    		DataAdapterProvider provider = dataAdapterRegistry.provider(input.getString("type"));
-    		// A masked secret is resolved from the saved connection for this type; nothing is written.
-    		DataAdapterConnection candidate = connectionOf(provider, input);
-    		if (connectionSecretCodec != null) {
-    			BusinessConfig stored = businessConfigService.get(SystemUtils.getCurUser().getDomainId());
-    			connectionSecretCodec.keepMasked(provider.type(),
-    					stored.getDataAdapterConnections().get(provider.type()), candidate);
-    		}
-    		DataAdapter adapter = dataAdapterRegistry.createForTest(provider.type(), candidate);
-            JSONObject report = adapter.testConnection();
-            report.put("sandboxCapability", sandboxPermissions.test(SystemUtils.getCurUser().getDomainId(), provider.type(), candidate, adapter));
-            ret.put("data", report);
-    		ret.put("success", true);
-    	} catch (Exception e) {
-    		log.error(e.getMessage(), e);
-    		ret.put("success", false);
-    		ret.put("message", DataAdapterConnectionTester.failureMessage(e));
-    	}
+	@ResponseBody
+	public JSONObject testDataAdapter(@RequestBody JSONObject input) {
+		JSONObject ret = new JSONObject();
+		try {
+			DataAdapterProvider provider = dataAdapterRegistry.provider(input.getString("type"));
+			String sourceId = input.getString("sourceId");
+			DataAdapterConnection candidate = connectionOf(provider, input);
+			if (connectionSecretCodec != null) {
+				BusinessConfig stored = businessConfigService.get(SystemUtils.getCurUser().getDomainId());
+				DataAdapterConnection saved = stored.getDataAdapterConnections().get(provider.type());
+				var multiSource = stored.getMultiDataSource();
+				if (sourceId != null && !sourceId.isBlank() && multiSource != null) {
+					DataSourceEntry source = multiSource.source(sourceId);
+					if (source != null && provider.type().equals(source.getAdapterType())) saved = source.getConnection();
+				}
+				connectionSecretCodec.keepMasked(provider.type(), saved, candidate);
+			}
+			DataAdapter adapter = dataAdapterRegistry.createForTest(provider.type(), candidate);
+			JSONObject report = adapter.testConnection();
+			report.put("sandboxCapability", sandboxPermissions.test(SystemUtils.getCurUser().getDomainId(), provider.type(), candidate, adapter));
+			ret.put("data", report);
+			ret.put("success", true);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", DataAdapterConnectionTester.failureMessage(e));
+		}
 		return ret;
 	}
 

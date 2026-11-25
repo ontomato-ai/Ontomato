@@ -304,6 +304,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       count: async () => (await actions()).count(),
       list: async () => (await actions()).list(),
       record: async selection => (await actions()).record(selection.primaryKey!),
+      trialSummary: async selection => (await actions()).trialSummary(selection.primaryKey!),
       form: async (selection, params) => (await actions()).form(selection.primaryKey!, formParams(params)),
       createForm: async (_selection, params) => (await actions()).createForm(formParams(params)),
       definition: async selection => (await actions()).definition(selection.primaryKey!),

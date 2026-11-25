@@ -17,10 +17,10 @@ import io.ontomato.dataengine.bean.action.BusinessMeaning;
  * the action's code segments and business meaning are empty), so the explanation stored in the database is always valid, and the frontend and other consumers can trust it directly.
  * The rules correspond to the definition in the prompt action_code_explainer.md.
  */
-final class ActionCodeExplanationValidator {
+public final class ActionCodeExplanationValidator {
 
-    static boolean ready(Action action) {
-        return action.getCodeSegments() != null && !action.getCodeSegments().isEmpty()
+    public static boolean ready(Action action) {
+        return action.getFunction() != null && action.getCodeSegments() != null && !action.getCodeSegments().isEmpty()
             && Objects.equals(CodeHashUtil.sha256(action.getFunction().getCode()), action.getCodeHash())
             && Integer.valueOf(Action.EXPLANATION_VERSION).equals(action.getExplanationVersion());
     }

@@ -636,7 +636,7 @@ export const panelRecordSchema = z.object({
    * Owner-declared scalar read-only outputs for this record (for example permission conclusions or navigation paths).
    * The runtime publishes only keys explicitly declared in the read's `outputs` contract.
    */
-  outputs: z.record(panelRecordFieldScalarSchema).optional(),
+  outputs: z.record(panelRecordFieldScalarSchema.nullable()).optional(),
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);

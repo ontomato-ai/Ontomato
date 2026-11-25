@@ -95,6 +95,9 @@ class OntologyGenerationContractTest {
     var permission = new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission();
     permission.setFullData(true);
     when(permissionLookup.getDataPermission(anyString(), anyString())).thenReturn(permission);
+    var actionTrials = new io.ontomato.dataengine.service.ActionTrialService(
+        jdbc, admin, null, null, null, null, null, null, null);
+    actionTrials.initialize();
     operations =
         new GenerationOperations(
             store,
@@ -102,7 +105,7 @@ class OntologyGenerationContractTest {
             sandboxService,
             mock(WriteFunctionOperationService.class),
             python,
-            grants, permissionLookup, new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl(), identity);
+            grants, permissionLookup, identity, actionTrials);
     var ontology = mock(OntologyQueryService.class);
     when(ontology.rule(any())).thenReturn(Map.of("classDef", List.of()));
     org.springframework.test.util.ReflectionTestUtils.setField(operations, "ontology", ontology);
