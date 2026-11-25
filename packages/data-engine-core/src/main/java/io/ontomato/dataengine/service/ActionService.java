@@ -54,6 +54,9 @@ public interface ActionService {
 	public Action queryById(String id);
 	
 	public List<Action> queryList(String status, String functionId, String className, String domainId);
+
+	/** The number of Actions the same owner filters would list, counted without hydrating them. */
+	public long count(String status, String functionId, String className, String domainId);
 	
 	public List<Action> find(String question, String className, String domainId);
 

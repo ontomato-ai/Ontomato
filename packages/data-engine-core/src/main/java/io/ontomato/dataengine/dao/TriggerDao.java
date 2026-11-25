@@ -150,6 +150,13 @@ public class TriggerDao {
 				+ " WHERE domain_id=? AND status=? ORDER BY modify_timestamp DESC", this::map, domainId, status);
 	}
 
+	public long count(String domainId, String status) {
+		String sql = "SELECT COUNT(*) FROM " + TABLE_NAME + " WHERE domain_id=?";
+		if (status == null || status.isBlank())
+			return jdbcTemplate.queryForObject(sql, Long.class, domainId);
+		return jdbcTemplate.queryForObject(sql + " AND status=?", Long.class, domainId, status);
+	}
+
 	public void delete(String id, String domainId) {
 		jdbcTemplate.update("DELETE FROM " + TABLE_NAME + " WHERE id=? AND domain_id=?", id, domainId);
 	}

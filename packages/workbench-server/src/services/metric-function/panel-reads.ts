@@ -82,6 +82,7 @@ const metricSchema = z.object({
   function: z.object({ name: z.string().nullish() }).passthrough().nullish(),
   modifyTimestamp: z.number().nullish(),
 }).passthrough();
+const metricCountSchema = z.object({ total: z.number().int().nonnegative() }).strict();
 const functionSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -166,10 +167,14 @@ export function createMetricReadAdapter(_owner: ProductOwner, viewer: AssistantC
     return schema.parse(JSON.parse(response.text));
   }
   return {
+    async count(): Promise<PanelRecordQuery> {
+      const { total } = await owner("metric-count", "/metricView/queryList", { countOnly: true }, metricCountSchema);
+      return { rows: [], total };
+    },
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const { status, origin, ...paging } = metricCatalogueQuerySchema.parse(params);
-      const columns = labels();
       const body = { ...(status ? { status } : {}), ...(origin ? { origin } : {}) };
+      const columns = labels();
       const metrics = await owner("metric-list", "/metricView/queryList", body, z.array(metricSchema));
       return queried(metrics.map(metric => metricRecord(metric, columns)), paging);
     },

@@ -24,10 +24,10 @@ import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { z } from "zod";
 import {
-  applicationPanelReferencesRequestSchema, bundledPanelProjectionSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
+  applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
   PROJECTION_REUSE_PANEL_HEADER,
-  productCurrentIdParamsSchema, productPanelGetQuerySchema, productProjectionRenderResponseSchema, productPanelPageSkillContextQuerySchema, productPanelPageSkillContextResponseSchema,
-  productPanelReadQuerySchema, type BundledPanelProjection, type ProductPanel, type ProductPanelPageSkillContextQuery, type ProductPanelReadQuery,
+  productCurrentIdParamsSchema, productPanelGetQuerySchema, productPanelPageSkillContextQuerySchema, productPanelPageSkillContextResponseSchema,
+  productPanelReadQuerySchema, type BundledPanelProjection, type ProductPanel, type ProductPanelResponse, type ProductProjection, type ProductPanelPageSkillContextQuery, type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema,
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
@@ -45,6 +45,7 @@ import {
   validateApplicationPanelReferences,
 } from "../../services/product-panels/current";
 import { HttpError } from "../../utils/errors";
+import { fixedPanelProjectionIds, renderDefinitionJson } from "../../services/product-panels/render-definitions";
 import { tForLocale } from "../../i18n";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData, readProductPanelDataBatch } from "../../services/product-panels/data-reads";
@@ -85,15 +86,11 @@ function pageSkillContextFor(
 async function readBundledPanelProjections(
   caller: ReturnType<typeof context>,
   panel: Pick<ProductPanel, "manifest">,
-): Promise<Record<string, BundledPanelProjection>> {
-  const ids = [...new Set(
-    Object.values(panel.manifest.members).flatMap((member) =>
-      "projectionId" in member.target ? [member.target.projectionId] : [],
-    ),
-  )];
-  if (!ids.length) return {};
+): Promise<string> {
+  const ids = fixedPanelProjectionIds(panel);
+  if (!ids.length) return "{}";
   const loaded = await readCurrentProjectionRecords(caller.owner, caller.credentials, ids);
-  const entries = await Promise.all(ids.map(async (projectionId): Promise<[string, BundledPanelProjection] | null> => {
+  const entries = await Promise.all(ids.map(async (projectionId) => {
     const item = loaded.get(projectionId)!;
     try {
       if (!item.ok) throw item.error;
@@ -101,21 +98,37 @@ async function readBundledPanelProjections(
       const domainComponent = await validateProjectionComponent(
         projectionId, projection, undefined, { domainId: projection.domainId },
       );
-      return [projectionId, bundledPanelProjectionSchema.parse({
-        status: "ready",
-        projection,
-        ...(domainComponent && { domainComponent }),
-      })];
+      return `${JSON.stringify(projectionId)}:{"status":"ready",${renderProjectionFields(projection, domainComponent)}}`;
     } catch (error) {
       if (error instanceof HttpError && (error.status === 403 || error.status === 404)) {
-        return [projectionId, { status: "unavailable", httpStatus: error.status, message: error.message }];
+        const unavailable: BundledPanelProjection = { status: "unavailable", httpStatus: error.status, message: error.message };
+        return `${JSON.stringify(projectionId)}:${JSON.stringify(unavailable)}`;
       }
       // Omit a member whose component validation fails (400) so the panel still opens and only that member reports its error.
-      if (error instanceof HttpError && error.status === 400) return null;
+      if (error instanceof HttpError && error.status === 400) return undefined;
       throw error;
     }
   }));
-  return Object.fromEntries(entries.filter((entry): entry is [string, BundledPanelProjection] => entry !== null));
+  return `{${entries.filter(entry => entry !== undefined).join(",")}}`;
+}
+
+function renderProjectionFields(
+  projection: ProductProjection,
+  domainComponent: Awaited<ReturnType<typeof validateProjectionComponent>>,
+) {
+  const component = domainComponent === undefined ? "" : `,"domainComponent":${renderDefinitionJson(domainComponent)}`;
+  return `"projection":${renderDefinitionJson(projection)}${component}`;
+}
+
+function renderPanelJson(
+  panel: ProductPanel, projections: string | undefined,
+  domainComponents: ProductPanelResponse["domainComponents"], pageSkillContext?: ProductPanelResponse["pageSkillContext"],
+) {
+  const fields = [`"panel":${renderDefinitionJson(panel)}`];
+  if (pageSkillContext !== undefined) fields.push(`"pageSkillContext":${JSON.stringify(pageSkillContext)}`);
+  if (projections !== undefined) fields.push(`"projections":${projections}`);
+  if (domainComponents !== undefined) fields.push(`"domainComponents":${JSON.stringify(domainComponents)}`);
+  return `{${fields.join(",")}}`;
 }
 
 function registrationIssue(issue: z.ZodIssue, branch?: number): string {
@@ -212,7 +225,7 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
       bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
       panel.manifest?.components ? readPanelDomainComponents(panel.domainId, panel.manifest.components) : Promise.resolve(undefined),
     ]);
-    res.json({ panel, ...(projections && { projections }), ...(domainComponents && { domainComponents }) });
+    res.type("json").send(renderPanelJson(panel, projections, domainComponents));
     return;
   }
   const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, !("applicationId" in query));
@@ -221,12 +234,7 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
     bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
     panel.manifest?.components ? readPanelDomainComponents(panel.domainId, panel.manifest.components) : Promise.resolve(undefined),
   ]);
-  res.json({
-    panel,
-    ...(pageSkillContext && { pageSkillContext }),
-    ...(projections && { projections }),
-    ...(domainComponents && { domainComponents }),
-  });
+  res.type("json").send(renderPanelJson(panel, projections, domainComponents, pageSkillContext));
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);
@@ -276,7 +284,7 @@ productProjectionsRouter.get("/:id", wrap(async (req, res) => {
   const domainComponent = rendering
     ? await validateProjectionComponent(id, projection, undefined, { domainId: projection.domainId })
     : undefined;
-  res.json(productProjectionRenderResponseSchema.parse({ projection, ...(domainComponent && { domainComponent }) }));
+  res.type("json").send(`{${renderProjectionFields(projection, domainComponent)}}`);
 }));
 productProjectionsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);

@@ -8,6 +8,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -134,6 +136,24 @@ class TriggerPanelEndpointTest {
     assertEquals("Alice", row.getString("executorName"));
     assertEquals("2026-11-23T01:00:00Z", row.getString("nextRunAt"));
     assertEquals("2026-11-22T01:00:00Z", row.getString("lastFiredAt"));
+  }
+
+  @Test
+  void countsTheDomainWithoutReadingTheList() throws Exception {
+    when(triggers.count("domain", null)).thenReturn(2L);
+
+    String body = mvc.perform(post("/trigger/queryList")
+            .header("lang", "en")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"countOnly":true}"""))
+        .andExpect(status().isOk())
+        .andReturn().getResponse().getContentAsString();
+    JSONObject json = JSON.parseObject(body);
+    assertTrue(json.getBooleanValue("success"));
+    assertEquals(2, json.getJSONObject("data").getIntValue("total"));
+    verify(triggers).count("domain", null);
+    verify(triggers, never()).queryList(anyString(), any());
   }
 
   @Test

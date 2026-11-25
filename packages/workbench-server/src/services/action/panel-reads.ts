@@ -53,6 +53,8 @@ const actionSchema = z.object({
 }).passthrough();
 type ActionAsset = z.infer<typeof actionSchema>;
 
+const actionCountSchema = z.object({ total: z.number().int().nonnegative() }).strict();
+
 const logger = createLogger("action-panel-reads");
 const listedActionSchema = storedObjectActionSchema.pick({ id: true }).extend({
   target: z.unknown(),
@@ -533,7 +535,8 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
       return (await readActions()).map(action => actionRecord(action, labels));
     },
     async count() {
-      return { rows: [], total: (await readActions()).length };
+      const { total } = await owner("action-count", "/action/queryList", { countOnly: true }, actionCountSchema);
+      return { rows: [], total };
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       return actionRecord(await owner("action-record", "/action/queryById", { id: primaryKey }, actionSchema), fieldLabels());

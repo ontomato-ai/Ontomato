@@ -334,6 +334,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       grantDirect: async selection => (await workflows()).grantDirect(selection.primaryKey!),
     },
     [METRIC_VIEW]: {
+      count: () => metrics.count(),
       query: (_selection, params) => metrics.query(params),
       record: selection => metrics.record(selection.primaryKey!),
       form: (selection, params) => metrics.form(selection.primaryKey!, formParams(params)),
@@ -590,6 +591,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       homePanel: () => panelCatalogue.homePanel(),
     },
     [APPLICATION]: {
+      count: () => applications.count(),
       query: (_selection, params) => applications.query(params),
       available: (_selection, params) => applications.available({
         category: panelReadParameterSchemas.applicationGalleryCategory.optional().parse(params.category),

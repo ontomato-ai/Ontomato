@@ -216,8 +216,9 @@ let products: Map<string, CurrentProductRow>;
 let currentUse: ApplicationPanelUse;
 let currentFramePanelId: string | undefined;
 
+let storageVersion = 0;
 function setProduct({ kind, row }: FixtureProduct) {
-  products.set(`${kind}:${row.id}`, row);
+  products.set(`${kind}:${row.id}`, { ...row, storageVersion: String(++storageVersion) });
 }
 
 function registerMockOp(map: Record<string, serverOperations.PanelServerOperation>) {

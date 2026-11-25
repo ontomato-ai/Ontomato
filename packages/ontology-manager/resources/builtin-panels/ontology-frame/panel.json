@@ -65,14 +65,7 @@
         "component": "ObjectCount",
         "type": "platform:MetricView",
         "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "size": {
-                "literal": 1
-              }
-            }
-          }
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -199,14 +192,7 @@
         "component": "ObjectCount",
         "type": "platform:Application",
         "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "size": {
-                "literal": 1
-              }
-            }
-          }
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"

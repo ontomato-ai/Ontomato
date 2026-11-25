@@ -406,6 +406,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [METRIC_VIEW]: {
     ...describeType("metricView", "capability"),
     reads: {
+      count: countRead,
       query: {
         source: "type", parameterMode: "fixed",
         params: {
@@ -817,6 +818,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [APPLICATION]: {
     ...describeType("application", "product"),
     reads: {
+      count: countRead,
       query: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", scope: "applicationScope", sort: "applicationSort", cursor: "cursor", size: "size" },

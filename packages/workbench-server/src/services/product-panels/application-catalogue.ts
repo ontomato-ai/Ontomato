@@ -41,6 +41,7 @@ const querySchema = z.object({
   cursor: z.string().optional(),
   size: z.number().int().min(1).max(100).optional(),
 }).strict();
+const catalogueCountSchema = z.object({ total: z.number().int().nonnegative() }).strict();
 
 type ApplicationCatalogueRow = z.infer<typeof applicationCatalogueQueryResultSchema>["rows"][number];
 type ApplicationCatalogueDetail = z.infer<typeof applicationCatalogueRecordSchema>;
@@ -189,6 +190,11 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
       const response = await backendGet("application-catalogue", url(`${cataloguePath}?${query}`), options());
       return ownerData(response.text, applicationCatalogueQueryResultSchema);
     },
+    async count() {
+      const query = new URLSearchParams({ countOnly: "true" });
+      const response = await backendGet("application-catalogue-count", url(`${cataloguePath}?${query}`), options());
+      return ownerData(response.text, catalogueCountSchema);
+    },
     async record(primaryKey: string) {
       const response = await backendGet("application-catalogue-record", url(`${cataloguePath}/${encodeURIComponent(primaryKey)}`), options());
       return ownerData(response.text, applicationCatalogueRecordSchema);
@@ -249,7 +255,7 @@ async function withDefaultAgentChoices(description: PanelFormDescription, choice
 
 export function createApplicationReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const client = applicationCatalogueClient(viewer);
-  const { query, record } = client;
+  const { record } = client;
   const language = resolveLocale(viewer.locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.application.${key}`);
   const form = async (input: ApplicationCatalogueFormRequest) =>
@@ -395,8 +401,12 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
         ...(diagnostics && { diagnostics }),
       };
     },
+    async count() {
+      const { total } = await client.count();
+      return { rows: [], total };
+    },
     async query(params: Record<string, unknown>) {
-      const { rows, total, nextCursor } = await query(params);
+      const { rows, total, nextCursor } = await client.query(params);
       return {
         rows: rows.map(row => toApplicationPanelRecord(row, viewer.locale)),
         ...(total !== undefined && { total }),

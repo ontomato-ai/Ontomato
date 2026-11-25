@@ -645,6 +645,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk());
 
         panelGrants.put("panel-hidden", false);
+        http.perform(get(CATALOGUE).param("countOnly", "true"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(2))
+            .andExpect(jsonPath("$.data.rows").doesNotHaveJsonPath());
         http.perform(get(CATALOGUE).param("scope", "maintainable").param("size", "1"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.rows[0].id").value("app-catalogue"))
             .andExpect(jsonPath("$.data.rows[0].source").value("domain"))
@@ -676,6 +679,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             """)).andExpect(status().isOk());
         assertEquals(before, catalog.require("app-catalogue").getJSONArray("panelUses"));
         when(identity.getCurrentUser()).thenReturn(reader);
+        http.perform(get(CATALOGUE).param("countOnly", "true"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(3))
+            .andExpect(jsonPath("$.data.rows").doesNotHaveJsonPath());
         http.perform(get(CATALOGUE).param("search", "FIND ME")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.rows.length()").value(1))
             .andExpect(jsonPath("$.data.rows[0].names.en").value("Renamed demo"))

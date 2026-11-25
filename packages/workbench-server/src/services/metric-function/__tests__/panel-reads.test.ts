@@ -164,6 +164,26 @@ it("reads the metric catalogue as records with the owner's labels and this owner
   ]);
 });
 
+it("counts the metric catalogue through the same owner URL", async () => {
+  const sent = catalogueOwner((path, body) => ({
+    success: true,
+    data: body.countOnly ? { total: 2 } : [metricAsset],
+  }));
+
+  expect(await createMetricReadAdapter(owner, viewer).count()).toEqual({ rows: [], total: 2 });
+  expect(sent).toEqual([{ path: "/metricView/queryList", body: { countOnly: true } }]);
+});
+
+it("keeps a one-row metric catalogue query a row query", async () => {
+  const sent = catalogueOwner(() => ({ success: true, data: [metricAsset] }));
+
+  const result = await createMetricReadAdapter(owner, viewer).query({ size: 1 });
+
+  expect(result.rows.map(row => row.primaryKey)).toEqual(["m1"]);
+  expect(result.total).toBe(1);
+  expect(sent).toEqual([{ path: "/metricView/queryList", body: {} }]);
+});
+
 it("reads the function catalogue with the owner's operation label", async () => {
   const sent = catalogueOwner(path => ({ success: true, data: path.endsWith("/queryList") ? [functionAsset] : functionAsset }));
   const reads = createFunctionReadAdapter(owner, viewer);

@@ -48,15 +48,23 @@ function sdkComponentGroupRank(group: AppsSdkComponentGroup | undefined): number
   return group ? (SDK_COMPONENT_GROUP_ORDER.get(group) ?? APPS_SDK_COMPONENT_GROUPS.length) : APPS_SDK_COMPONENT_GROUPS.length;
 }
 
-export async function readPanelComponentCatalogue() {
+type PanelComponentCatalogue = { version: string; digest: string; components: Map<string, AppsSdkComponentCatalogEntry> };
+let loadedCatalogue: { raw: unknown; catalogue: PanelComponentCatalogue } | undefined;
+
+export async function readPanelComponentCatalogue(): Promise<PanelComponentCatalogue> {
   const { version, digest, catalogue: raw } = await readCurrentAppSdkComponents();
+  if (loadedCatalogue && loadedCatalogue.raw === raw &&
+      loadedCatalogue.catalogue.version === version && loadedCatalogue.catalogue.digest === digest)
+    return loadedCatalogue.catalogue;
   const catalogue = appsSdkComponentCatalogSchema.parse(raw);
   if (catalogue.version !== version) throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   const components = new Map(catalogue.components.map(component => {
     const packageName = component.module.split("/", component.module.startsWith("@") ? 2 : 1).join("/");
     return [`${packageName}:${component.componentId}`, component];
   }));
-  return { version, digest, components };
+  const parsed = { version, digest, components };
+  loadedCatalogue = { raw, catalogue: parsed };
+  return parsed;
 }
 
 export async function readAuthorComponentCatalogue(owner: ProductOwner) {
@@ -431,12 +439,15 @@ export async function readProjectionComponent(
     return row && domainComponentRecord(row, false).declaration;
   }
   const { components } = await readCatalogue();
-  const official = components.get(componentId);
-  if (official) return official;
+  return components.get(componentId) ?? (await readPackagedProjectionComponent(componentId))?.declaration;
+}
+
+async function readPackagedProjectionComponent(componentId: string) {
   const separator = componentId.lastIndexOf(":");
   if (separator < 1) return undefined;
   const release = await readComponentPackage(componentId.slice(0, separator));
-  return release?.components.find(component => component.componentId === componentId);
+  const declaration = release?.components.find(component => component.componentId === componentId);
+  if (release && declaration) return { digest: release.digest, declaration };
 }
 
 /**
@@ -467,16 +478,25 @@ export async function readPanelDomainComponents(
   return Object.keys(resolved).length ? resolved : undefined;
 }
 
+type RenderDependency = string | ComponentDeclaration;
+const renderValidation = new WeakMap<object, { dependency: RenderDependency; runtime: DomainComponentRuntime | undefined }>();
+
 export async function validateProjectionComponent(
   id: string, projection: ProductProjectionInput | BuiltinProductProjectionInput, readCatalogue = readPanelComponentCatalogue,
   scope?: { domainId: string | null; authorId?: string; client?: Pick<PoolClient, "query"> },
 ): Promise<DomainComponentRuntime | undefined> {
+  const rendering = "revision" in projection && scope?.authorId === undefined &&
+    scope?.client === undefined && readCatalogue === readPanelComponentCatalogue;
   let runtime: DomainComponentRuntime | undefined;
   let component;
+  let dependency: RenderDependency | undefined;
   const { componentId } = projection;
   if (isDomainComponentId(componentId)) {
     const row = await domainComponentForProjection(scope?.domainId ?? null, componentId, scope?.client);
     if (row) {
+      dependency = JSON.stringify([row.domainId, componentId, row.revision, row.createdAt, row.updatedAt]);
+      const cached = rendering ? renderValidation.get(projection.data) : undefined;
+      if (cached?.dependency === dependency) return cached.runtime;
       const record = domainComponentRecord(row, false);
       if (scope?.authorId === undefined || record.ownerId === scope.authorId || record.visibility === "domain") {
         component = record.declaration;
@@ -484,7 +504,16 @@ export async function validateProjectionComponent(
       }
     }
   } else {
-    component = await readProjectionComponent(componentId, readCatalogue);
+    const catalogue = await readCatalogue();
+    component = catalogue.components.get(componentId);
+    if (component) dependency = component;
+    else {
+      const packaged = await readPackagedProjectionComponent(componentId);
+      dependency = packaged?.digest;
+      component = packaged?.declaration;
+    }
+    const cached = rendering ? renderValidation.get(projection.data) : undefined;
+    if (cached && cached.dependency === dependency) return cached.runtime;
   }
   if (!component)
     throw new HttpError(400, `Projection '${id}', componentId '${componentId}' is unavailable to this projection`, "PANEL_COMPONENT_UNAVAILABLE");
@@ -508,5 +537,6 @@ export async function validateProjectionComponent(
     if (!results.includes(result))
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' returns '${result}'; component '${projection.componentId}' accepts ${results.join(", ")}`, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
   }
+  if (rendering && dependency !== undefined) renderValidation.set(projection.data, { dependency, runtime });
   return runtime;
 }

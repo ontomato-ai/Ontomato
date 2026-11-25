@@ -312,9 +312,13 @@ public class ActionController {
 			User user = SystemUtils.getCurUser();
 			String status = param.getString("status");
 			String className = param.getString("className");
-			List<Action> actions = actionService.queryList(status, null, className, user.getDomainId());
 			ret.put("success", true);
-			ret.put("data", withDisplay(actions, user.getDomainId(), lang));
+			if (param.getBooleanValue("countOnly")) {
+				ret.put("data", JSONObject.of("total", actionService.count(status, null, className, user.getDomainId())));
+			} else {
+				List<Action> actions = actionService.queryList(status, null, className, user.getDomainId());
+				ret.put("data", withDisplay(actions, user.getDomainId(), lang));
+			}
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);

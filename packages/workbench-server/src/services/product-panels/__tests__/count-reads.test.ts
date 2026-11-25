@@ -1,5 +1,6 @@
 import {
-  ACTION, AGENT_DEFINITION, ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP, SDK_COMPONENT, TRIGGER, WORKFLOW,
+  ACTION, AGENT_DEFINITION, APPLICATION, ATTRIBUTE, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SDK_COMPONENT, TRIGGER,
+  WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { applicationPanelUseSchema, productProjectionSchema } from "@ontomato/contracts/product-panels";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -79,6 +80,22 @@ function readCount(typeId: string, read = "count") {
   });
 }
 
+/** A normal catalogue query, including its one-row page, must keep returning rows. */
+function readQuery(typeId: string, params: Record<string, unknown>) {
+  const projection = productProjectionSchema.parse({
+    id: "builtin-product-test-query", domainId: null, ownerId: null, editable: false,
+    name: "Query", description: "", visibility: "platform", revision: 1,
+    createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
+    componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read: "query", params } },
+  });
+  mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection });
+  return readProductPanelData(owner, viewer, {
+    source: { kind: "frame", applicationId: "ontology", useId: "objects" },
+    memberPath: [{ member: "rows" }], dataName: "rows", inputs: {},
+  });
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.resolveRoot.mockResolvedValue({});
@@ -107,8 +124,6 @@ describe("platform count reads", () => {
     { type: OBJECT_TYPE, path: "/ontology/model/object-types", rows: [objectType, { ...objectType, className: "Site" }] },
     { type: ATTRIBUTE, path: "/ontology/model/attributes", rows: [attribute] },
     { type: RELATIONSHIP, path: "/ontology/model/relationships", rows: [relationship] },
-    { type: ACTION, path: "/action/queryList", rows: [{ id: "a", name: "Approve" }], post: true },
-    { type: TRIGGER, path: "/trigger/queryList", rows: [{ id: "t1", name: "Nightly", enabled: true }, { id: "t2", name: "Paused", enabled: false }], post: true },
     { type: WORKFLOW, path: "/workflow/query", rows: [{ id: "w", name: "Restock" }], post: true },
   ])("$type counts only the records returned to the current viewer", async ({ type, path, rows, post }) => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
@@ -123,22 +138,67 @@ describe("platform count reads", () => {
     await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total: rows.length } });
   });
 
-  it("counts armed triggers separately from the total trigger count", async () => {
+  it("counts actions through the same list URL without reading the list", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/action/queryList");
+      expect(init.method).toBe("POST");
+      expect(init.body).toBe(JSON.stringify({ countOnly: true }));
+      return Response.json({ success: true, data: { total: 4 } });
+    }));
+    await expect(readCount(ACTION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 4 } });
+  });
+
+  it("counts triggers without loading the list", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
       expect(new URL(url).pathname).toBe("/trigger/queryList");
       expect(init.method).toBe("POST");
-      expect(init.body).toBe("{}");
+      expect(init.body).toBe(JSON.stringify({ countOnly: true }));
+      return Response.json({ success: true, data: { total: 3 } });
+    }));
+    await expect(readCount(TRIGGER)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
+  });
+
+  it("counts metric views through the count read", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/metricView/queryList");
+      expect(init.method).toBe("POST");
+      expect(init.body).toBe(JSON.stringify({ countOnly: true }));
+      return Response.json({ success: true, data: { total: 2 } });
+    }));
+    await expect(readCount(METRIC_VIEW)).resolves.toEqual({ status: "ready", value: { rows: [], total: 2 } });
+  });
+
+  it("counts applications through the count read", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      const request = new URL(url);
+      expect(request.pathname).toBe("/platform/applications/catalogue");
+      expect(request.searchParams.get("countOnly")).toBe("true");
+      expect(init.method).toBe("GET");
+      return Response.json({ success: true, data: { total: 5 } });
+    }));
+    await expect(readCount(APPLICATION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 5 } });
+  });
+
+  it("keeps a one-row application catalogue query a row query", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      const request = new URL(url);
+      expect(request.pathname).toBe("/platform/applications/catalogue");
+      expect(request.searchParams.get("countOnly")).toBeNull();
+      expect(request.searchParams.get("size")).toBe("1");
+      expect(init.method).toBe("GET");
       return Response.json({
         success: true,
-        data: [
-          { id: "t1", name: "Nightly", enabled: true },
-          { id: "t2", name: "Paused", enabled: false },
-          { id: "t3", name: "Draft" },
-        ],
+        data: {
+          rows: [{
+            id: "app-1", names: { en: "App" }, descriptions: { en: "" }, icon: "app-window",
+            source: "builtin", canMaintain: false, canEditEntries: false, canGrant: false, entryCount: 0,
+          }],
+          total: 1,
+        },
       });
     }));
-    await expect(readCount(TRIGGER, "count")).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
-    await expect(readCount(TRIGGER, "armedCount")).resolves.toEqual({ status: "ready", value: { rows: [], total: 1 } });
+    const result = await readQuery(APPLICATION, { size: { literal: 1 } });
+    expect(result).toMatchObject({ status: "ready", value: { total: 1, rows: [{ primaryKey: "app-1" }] } });
   });
 
   it("projects a fixed object state key before reading the selected class's attributes", async () => {

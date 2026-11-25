@@ -113,6 +113,13 @@ describe("action catalog reads", () => {
     expect(records[2]?.tones).toEqual({ status: "info" });
   });
 
+  it("counts through the same list URL without reading the list", async () => {
+    const sent = ownerAnswering({ "/action/queryList": ok({ total: 3 }) });
+
+    expect(await createActionReadAdapter(owner, viewer).count()).toEqual({ rows: [], total: 3 });
+    expect(sent).toEqual([{ path: "/action/queryList", body: { countOnly: true } }]);
+  });
+
   it("reads one action as a record", async () => {
     const sent = ownerAnswering({ "/action/queryById": ok(approve) });
 

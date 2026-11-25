@@ -81,11 +81,14 @@ const ok = (data: unknown) => () => Response.json({ success: true, data });
 
 describe("trigger catalog reads", () => {
   it("lists and queries triggers with owner display fields, tones, and pagination", async () => {
+    const listed = ok([
+      nightly,
+      { ...nightly, id: "tr-2", name: "Weekly restock", description: "", status: "UNUSED", statusLabel: "Retired", enabled: false, effectLabel: "Workflow · Restock" },
+    ]);
     ownerAnswering({
-      "/trigger/queryList": ok([
-        nightly,
-        { ...nightly, id: "tr-2", name: "Weekly restock", description: "", status: "UNUSED", statusLabel: "Retired", enabled: false, effectLabel: "Workflow · Restock" },
-      ]),
+      "/trigger/queryList": body => body.countOnly === true
+        ? Response.json({ success: true, data: { total: 2 } })
+        : listed(),
     });
 
     const adapter = createTriggerReadAdapter(owner, viewer);
