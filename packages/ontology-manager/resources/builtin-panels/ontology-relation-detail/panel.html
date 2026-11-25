@@ -13,6 +13,12 @@
     padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     align-items: stretch;
   }
+  .relation-detail-error {
+    grid-column: 1 / -1;
+  }
+  .relation-error-state {
+    padding: var(--page-content-gap) var(--page-gutter);
+  }
   .relation-card {
     display: flex;
     flex-direction: column;
@@ -76,8 +82,6 @@
       padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
       gap: var(--page-content-gap);
     }
-  }
-  @container relation-detail-page (max-width: 540px) {
     .relation-ends {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -92,7 +96,7 @@
 <div id="app">
   <section class="relation-detail">
     <page-header
-      back-label="返回关系类型"
+      :back-label="t('rel.back')"
       :draft="detailDraft"
       @back="goBack"
     >
@@ -102,27 +106,37 @@
         </span>
         <h1 v-if="recordStatus !== 'ready'">{{ selectedKey }}</h1>
       </template>
-      <template v-if="recordStatus === 'ready'" #actions>
+      <template v-if="showDetailBody" #actions>
         <projection slot="remove" @done="onRemoveDone"></projection>
       </template>
     </page-header>
     <div v-if="!selectedKey" class="relation-missing">
-      <sdk-empty description="关系类型不存在或已删除"></sdk-empty>
+      <sdk-empty :description="t('rel.missing')"></sdk-empty>
     </div>
-    <p v-else-if="recordStatus === 'loading'" class="relation-note" role="status">正在读取这条关系类型…</p>
-    <p v-else-if="recordStatus === 'forbidden'" class="relation-note relation-failure">当前账号无权读取这条关系类型。</p>
-    <div v-else-if="recordStatus !== 'ready'" class="relation-missing">
-      <sdk-empty description="关系类型不存在或已删除"></sdk-empty>
+    <p v-else-if="recordStatus === 'forbidden'" class="relation-note relation-failure" role="alert">{{ t("rel.forbidden") }}</p>
+    <div v-else-if="recordStatus === 'empty' || recordStatus === 'missing'" class="relation-missing">
+      <sdk-empty :description="t('rel.missing')"></sdk-empty>
     </div>
+    <div v-else-if="!recordEverReady && recordStatus === 'error'" class="relation-error-state" role="alert">
+      <info-banner tone="danger" :text="recordErrorText"></info-banner>
+    </div>
+    <p v-else-if="!showDetailBody" class="relation-note" role="status">{{ t("rel.loading") }}</p>
     <div v-else class="relation-detail-body">
+      <info-banner
+        v-if="recordStatus === 'error'"
+        class="relation-detail-error"
+        tone="danger"
+        :text="recordErrorText"
+        role="alert"
+      ></info-banner>
       <section class="relation-card">
-        <h2>基本信息</h2>
+        <h2>{{ t("rel.basicInfo") }}</h2>
         <div class="relation-form-wrap">
           <projection slot="form"></projection>
         </div>
       </section>
       <section class="relation-card">
-        <h2>对象连接</h2>
+        <h2>{{ t("rel.connections") }}</h2>
         <div class="relation-ends">
           <projection slot="fromCard" @navigate="openObjectType"></projection>
           <span class="relation-arrow" aria-hidden="true">
@@ -133,7 +147,7 @@
         <info-banner
           class="relation-connection-note"
           tone="info"
-          text="关系连接来源对象和目标对象，可维护关系说明及关联字段。"
+          :text="t('rel.connectionNote')"
         ></info-banner>
       </section>
     </div>

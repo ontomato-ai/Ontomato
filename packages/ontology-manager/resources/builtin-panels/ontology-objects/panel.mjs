@@ -1,7 +1,8 @@
-import { computed, ref, watch } from "vue";
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, resolveComponent, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
+  useListRowSlot,
   usePanelBack,
   usePanelContext,
   usePanelFormDraft,
@@ -10,31 +11,194 @@ import {
 } from "@ontomato/sdk/panel";
 
 const OBJECT_TYPE = "platform:ObjectType";
-const ATTRIBUTE = "platform:Attribute";
 
-/** Extract the owning class API name from an attribute primary key (`["<className>","<name>"]`). */
-function attributeClass(reference) {
-  try {
-    const key = JSON.parse(reference?.primaryKey ?? "");
-    return Array.isArray(key) && typeof key[0] === "string" ? key[0] : null;
-  } catch {
-    return null;
+const CATALOG_COLUMNS_WIDE = [
+  { key: "label", subtitleKey: "className", labelKey: "ot.colType", minWidth: 200 },
+  { key: "classDesc", labelKey: "ot.colDescription", emptyKey: "ot.dash", minWidth: 200 },
+  { key: "attributeCount", labelKey: "ot.colAttributes", width: 88, align: "right" },
+  { key: "businessKeyCount", labelKey: "ot.colBusinessKeys", width: 88, align: "right" },
+];
+const CATALOG_COLUMNS_COMPACT = [
+  { key: "label", subtitleKey: "className", labelKey: "ot.colType", minWidth: 190 },
+  { key: "attributeCount", labelKey: "ot.colAttributes", width: 64, align: "right" },
+];
+
+const ATTRIBUTE_COLUMNS_WIDE = [
+  { key: "label", subtitleKey: "name", labelKey: "ot.colAttribute", minWidth: 150 },
+  { key: "type", labelKey: "ot.colDataType", width: 96 },
+  {
+    key: "businessKey",
+    labelKey: "ot.colBusinessKey",
+    width: 112,
+    valueMap: { true: { labelKey: "ot.yes", tone: "info" }, false: { labelKey: "ot.dash" } },
+  },
+  {
+    key: "primaryKey",
+    labelKey: "ot.colPrimaryKey",
+    width: 112,
+    valueMap: { true: { labelKey: "ot.yes", tone: "success" }, false: { labelKey: "ot.dash" } },
+  },
+  { key: "attrDesc", labelKey: "ot.colAttrDescription", emptyKey: "ot.dash", minWidth: 140 },
+];
+const ATTRIBUTE_COLUMNS_COMPACT = [
+  { key: "label", subtitleKey: "name", labelKey: "ot.colAttribute", minWidth: 150 },
+  { key: "type", labelKey: "ot.colDataType", width: 80 },
+];
+
+const RELATION_COLUMNS_WIDE = [
+  { key: "label", labelKey: "ot.colRelation", minWidth: 140 },
+  { key: "fromclassLabel", labelKey: "ot.colSource", minWidth: 110 },
+  { key: "toclassLabel", labelKey: "ot.colTarget", minWidth: 110 },
+  { key: "desc", labelKey: "ot.colAttrDescription", emptyKey: "ot.dash", minWidth: 140 },
+];
+const RELATION_COLUMNS_COMPACT = [
+  { key: "label", labelKey: "ot.colRelation", minWidth: 150 },
+  { key: "fromclassLabel", labelKey: "ot.colSource", minWidth: 80 },
+];
+
+/** Observe the panel's own container width via ResizeObserver (never window.innerWidth). */
+function useContainerWidth(targetRef) {
+  const width = ref(0);
+  let observer = null;
+  let currentEl = null;
+
+  function measure(el) {
+    const rect = el.getBoundingClientRect().width;
+    width.value = rect > 0 ? rect : el.clientWidth;
   }
+
+  function disconnect() {
+    observer?.disconnect();
+    observer = null;
+    currentEl = null;
+  }
+
+  function attach(el) {
+    if (el === currentEl) return;
+    disconnect();
+    if (!el) {
+      width.value = 0;
+      return;
+    }
+    currentEl = el;
+    measure(el);
+    if (typeof ResizeObserver === "function") {
+      observer = new ResizeObserver((entries) => {
+        const entry = entries[entries.length - 1];
+        if (!entry) return;
+        const next = entry.contentRect.width;
+        width.value = next > 0 ? next : el.clientWidth;
+      });
+      observer.observe(el);
+    }
+  }
+
+  onMounted(() => attach(targetRef.value));
+  watch(targetRef, (el) => attach(el));
+  onBeforeUnmount(disconnect);
+  return width;
 }
 
+/** Row-scoped Delete button rendered inside ObjectList #row-detail using the row's owner operation availability. */
+const RowDeleteButton = defineComponent({
+  name: "RowDeleteButton",
+  props: {
+    disabled: { type: Boolean, default: false },
+    label: { type: String, required: true },
+  },
+  setup(props) {
+    const rowSlot = useListRowSlot();
+    return () => {
+      const op = rowSlot?.operations.value?.delete;
+      if (!rowSlot || !op) return null;
+      const SdkButton = resolveComponent("sdk-button");
+      const icon = h(
+        "svg",
+        {
+          class: "ot-btn-icon",
+          viewBox: "0 0 24 24",
+          width: "14",
+          height: "14",
+          fill: "none",
+          stroke: "currentColor",
+          "stroke-width": "2",
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+          "aria-hidden": "true",
+        },
+        [
+          h("path", { d: "M3 6h18" }),
+          h("path", { d: "M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" }),
+          h("path", { d: "M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" }),
+          h("line", { x1: "10", x2: "10", y1: "11", y2: "17" }),
+          h("line", { x1: "14", x2: "14", y1: "11", y2: "17" }),
+        ],
+      );
+      const children = [
+        h(
+          SdkButton,
+          {
+            type: "danger",
+            plain: true,
+            loading: Boolean(op.running),
+            disabled: props.disabled || !op.available || Boolean(op.running),
+            title: op.unavailable?.reason || undefined,
+            onClick: () => void rowSlot.runOperation("delete"),
+          },
+          { default: () => [op.running ? null : icon, h("span", props.label)] },
+        ),
+      ];
+      if (op.unavailable?.reason) {
+        children.push(h("span", { class: "ot-attr-delete-reason" }, op.unavailable.reason));
+      }
+      return h("div", { class: "ot-attr-row-delete" }, children);
+    };
+  },
+});
+
+/** Syncs the currently expanded attribute row ref into non-URL `editingAttribute` panel state. */
+const RowTargetSync = defineComponent({
+  name: "RowTargetSync",
+  props: {
+    target: { type: Object, required: true },
+  },
+  setup(props, { slots }) {
+    const { instance } = usePanelContext();
+    const sync = (refValue) => {
+      if (!refValue?.primaryKey) return;
+      const current = instance.state.values.value.editingAttribute;
+      if (current?.primaryKey === refValue.primaryKey) return;
+      instance.state.set("editingAttribute", refValue);
+    };
+    sync(props.target);
+    watch(() => props.target, sync);
+    onBeforeUnmount(() => {
+      const current = instance.state.values.value.editingAttribute;
+      if (current?.primaryKey === props.target?.primaryKey) {
+        instance.state.set("editingAttribute", null);
+      }
+    });
+    return () => h("div", slots.default?.());
+  },
+});
+
 await mountPanel({
+  components: { RowDeleteButton, RowTargetSync },
   setup() {
     const { instance, t, navigate, notify } = usePanelContext();
     const rootRef = ref(null);
     const narrow = usePanelNarrow(rootRef);
-    const drawerSize = computed(() => (narrow.value ? "100%" : "520px"));
+    const containerWidth = useContainerWidth(rootRef);
+    const compact900 = computed(() => containerWidth.value > 0 && containerWidth.value <= 900);
     const dialogWidth = computed(() => (narrow.value ? "94%" : "520px"));
+
+    const catalogColumns = computed(() => (compact900.value ? CATALOG_COLUMNS_COMPACT : CATALOG_COLUMNS_WIDE));
+    const attributeColumns = computed(() => (compact900.value ? ATTRIBUTE_COLUMNS_COMPACT : ATTRIBUTE_COLUMNS_WIDE));
+    const relationColumns = computed(() => (compact900.value ? RELATION_COLUMNS_COMPACT : RELATION_COLUMNS_WIDE));
 
     const state = computed(() => instance.state.values.value);
     const selected = computed(() => state.value.selected ?? null);
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
-    const selectedAttribute = computed(() => state.value.selectedAttribute ?? null);
-    const selectedAttributeKey = computed(() => selectedAttribute.value?.primaryKey ?? "");
     const creating = computed(() => state.value.creating === true);
     const creatingAttribute = computed(() => state.value.creatingAttribute === true);
 
@@ -56,11 +220,6 @@ await mountPanel({
     const primaryKeyCount = usePanelOutput("detail", "primaryKeyCount");
     const attributeCount = usePanelOutput("attributes", "loadedCount");
     const relationCount = usePanelOutput("relations", "loadedCount");
-    const attributeDetailHeaderStatus = usePanelOutput("attributeDetail", "status");
-    const attributeDetailError = usePanelOutput("attributeDetail", "errorMessage");
-    const attributeDetailStatus = computed(() =>
-      selectedAttribute.value ? (attributeDetailHeaderStatus.value ?? "loading") : "empty",
-    );
 
     // Keep mounted edit forms alive across background re-read loading or error states once the target has loaded.
     const detailEverReady = ref(false);
@@ -73,32 +232,12 @@ await mountPanel({
       }
     }, { immediate: true });
 
-    const attributeDetailEverReady = ref(false);
-    watch(selectedAttributeKey, () => {
-      attributeDetailEverReady.value = false;
-    });
-    watch(attributeDetailStatus, status => {
-      if (selectedAttributeKey.value && status === "ready") {
-        attributeDetailEverReady.value = true;
-      }
-    }, { immediate: true });
-
-    const editAttributeDrawer = computed(() =>
-      Boolean(selectedKey.value && selectedAttribute.value && !creatingAttribute.value),
-    );
     const showDetailBody = computed(() =>
       Boolean(selectedKey.value)
       && detailEverReady.value
       && detailStatus.value !== "forbidden"
       && detailStatus.value !== "empty"
       && detailStatus.value !== "missing",
-    );
-    const showAttributeBody = computed(() =>
-      editAttributeDrawer.value
-      && attributeDetailEverReady.value
-      && attributeDetailStatus.value !== "forbidden"
-      && attributeDetailStatus.value !== "empty"
-      && attributeDetailStatus.value !== "missing",
     );
     const createObjectDialog = computed({
       get: () => creating.value && !selectedKey.value,
@@ -114,124 +253,85 @@ await mountPanel({
     });
 
     const objectDraft = usePanelFormDraft("objectForm", {
-      when: () => showDetailBody.value,
-    });
-    const attributeDraft = usePanelFormDraft("attributeForm", {
-      when: () => showAttributeBody.value,
+      when: () => showDetailBody.value && !creating.value,
     });
 
-    function openClass(target) {
-      const primaryKey = typeof target === "string" ? target : target?.primaryKey;
+    function openClass(reference) {
+      if (!reference) return;
+      const primaryKey = typeof reference === "string" ? reference : reference.primaryKey;
       if (!primaryKey) return;
       instance.state.setState({
+        selected: { className: OBJECT_TYPE, primaryKey },
         creating: false,
         creatingAttribute: false,
-        selected: { className: OBJECT_TYPE, primaryKey },
-        selectedAttribute: null,
+        editingAttribute: null,
       });
     }
 
     function backToCatalog() {
       instance.state.setState({
         selected: null,
-        selectedAttribute: null,
         creating: false,
         creatingAttribute: false,
+        editingAttribute: null,
       });
     }
 
     function startCreate() {
       instance.state.setState({
+        selected: null,
         creating: true,
         creatingAttribute: false,
-        selected: null,
-        selectedAttribute: null,
+        editingAttribute: null,
       });
     }
 
     function cancelCreate() {
-      instance.state.setState({
-        creating: false,
-        creatingAttribute: false,
-        selected: null,
-        selectedAttribute: null,
-      });
+      instance.state.set("creating", false);
     }
 
-    function closeAttribute() {
-      if (creatingAttribute.value || selectedAttribute.value) {
-        instance.state.setState({ creatingAttribute: false, selectedAttribute: null });
-      }
-    }
-
-    async function startCreateAttribute() {
-      if (editAttributeDrawer.value && !(await attributeBack.back())) return;
-      instance.state.setState({ selectedAttribute: null, creatingAttribute: true });
+    function startCreateAttribute() {
+      if (!selectedKey.value) return;
+      instance.state.set("creatingAttribute", true);
     }
 
     function cancelCreateAttribute() {
       instance.state.set("creatingAttribute", false);
     }
 
-    // Inner back layer: closing the attribute drawer guards only `attributeForm` and leaves `objectForm` untouched.
-    const attributeBack = usePanelBack(
-      () => editAttributeDrawer.value,
-      closeAttribute,
-      { pushHistory: false, forms: "attributeForm" },
-    );
-    // Outer back layer: returning to the catalog guards all dirty forms on this panel.
+    // Back navigation from detail view to catalog, guarding unsaved objectForm edits.
     const detailBack = usePanelBack(
       () => Boolean(selectedKey.value),
       backToCatalog,
-      { pushHistory: true },
+      { pushHistory: true, forms: "objectForm" },
     );
 
-    async function handleAttributeDrawerClose(done) {
-      if (await attributeBack.back()) done();
-    }
-
-    // Leaving detail clears `creatingAttribute`; entering detail keeps it so atomic present({ selected, creatingAttribute: true }) works.
-    watch(selected, value => {
-      const className = value?.primaryKey ?? null;
-      const patch = {};
-      if (selectedAttribute.value && attributeClass(selectedAttribute.value) !== className) {
-        patch.selectedAttribute = null;
+    // Clear create-attribute mode when no class is selected or when switching classes.
+    watch(selectedKey, (nextKey, previousKey) => {
+      if (!nextKey || (previousKey && nextKey !== previousKey)) {
+        if (creatingAttribute.value) instance.state.set("creatingAttribute", false);
       }
-      if (value && creating.value) patch.creating = false;
-      if (!value && creatingAttribute.value) patch.creatingAttribute = false;
-      if (Object.keys(patch).length) instance.state.setState(patch);
     }, { immediate: true });
 
     // Setting `creating: true` while viewing a class clears selection so the create dialog opens
     // instead of keeping `objectForm` bound to the previously selected object type.
     watch(creating, value => {
       if (!value || !creating.value) return;
-      if (selected.value || selectedAttribute.value || creatingAttribute.value) {
+      if (selected.value || creatingAttribute.value) {
         instance.state.setState({
           selected: null,
-          selectedAttribute: null,
           creatingAttribute: false,
         });
       }
     }, { immediate: true });
 
-    // Keep create-attribute mode mutually exclusive with edit-attribute mode and valid only inside a class detail.
+    // Keep create-attribute mode valid only inside a class detail.
     watch(creatingAttribute, value => {
       if (!value || !creatingAttribute.value) return;
       if (!selected.value) {
         instance.state.set("creatingAttribute", false);
-        return;
-      }
-      if (selectedAttribute.value) {
-        instance.state.set("selectedAttribute", null);
       }
     }, { immediate: true });
-
-    watch(selectedAttribute, value => {
-      if (value && selectedAttribute.value && creatingAttribute.value) {
-        instance.state.set("creatingAttribute", false);
-      }
-    });
 
     function objectSaved(object) {
       if (!creating.value) return;
@@ -246,23 +346,15 @@ await mountPanel({
       if (creating.value) cancelCreate();
     }
 
-    function attributeSaved(object) {
+    function attributeSaved() {
       if (creatingAttribute.value) {
-        instance.state.setState({
-          creatingAttribute: false,
-          selectedAttribute: object?.primaryKey ? { className: ATTRIBUTE, primaryKey: object.primaryKey } : null,
-        });
+        instance.state.set("creatingAttribute", false);
       }
     }
 
     function onDeleteObjectDone(outcome) {
       if (outcome?.kind !== "success") return;
       backToCatalog();
-    }
-
-    function onDeleteAttributeDone(outcome) {
-      if (outcome?.kind !== "success") return;
-      closeAttribute();
     }
 
     // Local UI toggle for the in-page presentation configuration dialog (never enters URL).
@@ -314,8 +406,10 @@ await mountPanel({
 
     return {
       rootRef,
-      drawerSize,
       dialogWidth,
+      catalogColumns,
+      attributeColumns,
+      relationColumns,
       t,
       search,
       creating,
@@ -332,17 +426,10 @@ await mountPanel({
       primaryKeyCount,
       attributeCount,
       relationCount,
-      attributeDetailStatus,
-      attributeDetailError,
-      attributeDetailEverReady,
-      showAttributeBody,
-      editAttributeDrawer,
       createObjectDialog,
       createAttributeDialog,
       configureViewDialog,
       objectDraft,
-      attributeDraft,
-      refresh: () => instance.refreshObjects(),
       startCreate,
       cancelCreate,
       openClass,
@@ -351,14 +438,11 @@ await mountPanel({
       formDiscarded,
       startCreateAttribute,
       cancelCreateAttribute,
-      closeAttribute,
-      handleAttributeDrawerClose,
-      handleConfigureViewClose,
       attributeSaved,
       onDeleteObjectDone,
-      onDeleteAttributeDone,
       onDetailPanelSaved,
       onDetailPanelCleared,
+      handleConfigureViewClose,
       configureView,
       openPanelsDirectory,
       browseData,

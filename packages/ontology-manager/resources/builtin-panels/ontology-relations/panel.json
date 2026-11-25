@@ -28,7 +28,14 @@
         "config": {
           "layout": "table",
           "showChevron": true,
+          "showFooter": false,
           "searchable": false,
+          "searchFields": [
+            "primaryKey",
+            "fromclass",
+            "toclass",
+            "desc"
+          ],
           "emptyText": "list.empty",
           "noMatchText": "list.empty",
           "columns": [
@@ -74,6 +81,11 @@
   "content": {
     "messages": {
       "en": {
+        "panel.name": "Relationship types",
+        "panel.description": "Define relationships between object types and their connected endpoints",
+        "rel.create": "New relationship type",
+        "rel.search": "Filter relationship types",
+        "rel.count": "{count} items",
         "list.empty": "No relationship types found",
         "col.relation": "Relationship type",
         "col.from": "Source object",
@@ -82,6 +94,11 @@
         "col.emptyDash": "-"
       },
       "zh-CN": {
+        "panel.name": "关系类型",
+        "panel.description": "定义对象类型之间的关系及其关联端点",
+        "rel.create": "新建关系类型",
+        "rel.search": "筛选关系类型",
+        "rel.count": "{count} 项",
         "list.empty": "未找到关系类型",
         "col.relation": "关系类型",
         "col.from": "来源对象",

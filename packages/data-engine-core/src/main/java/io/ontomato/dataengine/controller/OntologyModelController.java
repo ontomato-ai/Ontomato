@@ -68,7 +68,11 @@ public class OntologyModelController {
 	}
 
 	public record AttributeUpdateRequest(String className, String name, String showName, String attrDesc,
-			Boolean enable, Boolean businessKey) {
+			Boolean enable, Boolean businessKey, Boolean primaryKey) {
+		public AttributeUpdateRequest(String className, String name, String showName, String attrDesc,
+				Boolean enable, Boolean businessKey) {
+			this(className, name, showName, attrDesc, enable, businessKey, null);
+		}
 	}
 
 	public record AttributeDeleteRequest(String className, String name) {
@@ -255,7 +259,8 @@ public class OntologyModelController {
 	public AttributeView updateAttribute(@RequestBody AttributeUpdateRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.updateAttribute(body.className(), body.name(),
-				new AttributeUpdate(body.showName(), body.attrDesc(), body.enable(), body.businessKey()),
+				new AttributeUpdate(body.showName(), body.attrDesc(), body.enable(), body.businessKey(),
+						body.primaryKey()),
 				SystemUtils.getCurUser(), lang);
 	}
 

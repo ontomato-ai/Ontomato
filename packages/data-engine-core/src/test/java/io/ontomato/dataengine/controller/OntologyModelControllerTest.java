@@ -200,17 +200,17 @@ class OntologyModelControllerTest {
 	void anAttributeUpdateBodyIsBoundAsItsRecord() throws Exception {
 		when(service.updateAttribute(eq("Device"), eq("site_id"), any(), eq(user), eq("en")))
 				.thenReturn(new OntologyModelService.AttributeView("Device", "site_id", "Site", "varchar", "", true,
-						true, false));
+						true, true));
 
 		mvc().perform(post("/ontology/model/attribute/update")
 				.header("Accept-Language", "en")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"className\":\"Device\",\"name\":\"site_id\",\"showName\":\"Site\","
-						+ "\"attrDesc\":\"\",\"enable\":true,\"businessKey\":true}"))
+						+ "\"attrDesc\":\"\",\"enable\":true,\"businessKey\":true,\"primaryKey\":true}"))
 				.andExpect(status().isOk());
 
 		verify(service).updateAttribute(eq("Device"), eq("site_id"),
-				eq(new AttributeUpdate("Site", "", true, true)), eq(user), eq("en"));
+				eq(new AttributeUpdate("Site", "", true, true, true)), eq(user), eq("en"));
 	}
 
 	@Test
