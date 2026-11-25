@@ -2,8 +2,8 @@ import { computed, watch } from "vue";
 import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 /*
- * Built-in turn evidence panel: list-detail workspace browser for collecting, inspecting, retaining,
- * downloading, deleting, and diagnosing TurnEvidence packages and their artifact files.
+ * Built-in turn evidence panel: full-height frameless 280px list-detail workspace browser with
+ * inline retention and delete row actions, on-demand artifact file inspection, and diagnosis entry.
  */
 
 const TURN_EVIDENCE_TYPE = "platform:TurnEvidence";
@@ -24,13 +24,17 @@ await mountPanel({
       return typeof value === "string" && value.length > 0 ? value : null;
     });
 
+    const turnStatus = usePanelOutput("detailHeader", "status");
+    const isCollecting = computed(() => turnStatus.value === "collecting");
     const hasEvidence = usePanelOutput("detailHeader", "hasEvidence");
     const gapsCount = usePanelOutput("evidenceGaps", "loadedCount");
     const gapsStatus = usePanelOutput("evidenceGaps", "status");
-    const showGaps = computed(() => (typeof gapsCount.value === "number" && gapsCount.value > 0) || gapsStatus.value === "error");
+    const showGaps = computed(
+      () => !isCollecting.value && ((typeof gapsCount.value === "number" && gapsCount.value > 0) || gapsStatus.value === "error"),
+    );
 
-    // Clear file selection and tree filter when selection clears or switches to another turn without an explicit
-    // filePath/fileSearch in the same state patch; ObjectTree then selects the first file once files load.
+    // Clear file selection when selection clears or switches to another turn unless patched together;
+    // files load on demand when the user clicks a file node in the artifact tree.
     watch(
       selectedKey,
       (turnKey, previousTurnKey) => {
@@ -80,18 +84,29 @@ await mountPanel({
     function onDeleteDone(outcome) {
       if (outcome?.kind !== "success") return;
       instance.state.setState({ selected: null, filePath: null, fileSearch: null });
+      instance.refreshObjects();
+    }
+
+    function onTurnRowOperationDone(operationName, outcome, rowRef) {
+      if (outcome?.kind !== "success") return;
+      if (operationName === "delete" && rowRef?.primaryKey && rowRef.primaryKey === selectedKey.value) {
+        instance.state.setState({ selected: null, filePath: null, fileSearch: null });
+      }
+      instance.refreshObjects();
     }
 
     return {
       t,
       selectedKey,
       filePath,
+      isCollecting,
       hasEvidence,
       showGaps,
       refresh,
       clearSelection,
       onBuildDone,
       onDeleteDone,
+      onTurnRowOperationDone,
     };
   },
 });

@@ -40,6 +40,7 @@ import {
   resolveArtifactFilePath,
   resolveCaseArtifactDir,
 } from "../../platform/diagnosis/observe/workspaces/artifact-file";
+import { getCollectingTurnWorkspace, listCollectingTurnWorkspaces } from "../../platform/diagnosis/observe/workspaces/builder";
 import { listWorkspaces, loadManifest } from "../../platform/diagnosis/observe/workspaces/store";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
@@ -328,14 +329,15 @@ export function createOpsKnowledgeReadAdapter(owner: ProductOwner, viewer: Assis
 export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const locale = viewer.locale;
 
-  async function requireTurnManifest(turnKey: string): Promise<{ domainId: string; manifest: WorkspaceManifest }> {
+  async function requireTurnManifest(turnKey: string, includeCollecting = false): Promise<WorkspaceManifest> {
     const domainId = await requireObserveAccessDomain(owner, viewer);
     if (!parseTurnKey(turnKey)) throw new HttpError(400, "Invalid turnKey");
-    const manifest = loadManifest(turnKey);
+    const collecting = includeCollecting ? getCollectingTurnWorkspace(turnKey) : undefined;
+    const manifest = collecting ?? loadManifest(turnKey);
     if (!manifest || manifest.domainId !== domainId) {
       throw new HttpError(404, "Turn workspace not found");
     }
-    return { domainId, manifest };
+    return manifest;
   }
 
   return {
@@ -343,10 +345,11 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
       const domainId = await requireObserveAccessDomain(owner, viewer);
       const keptKeys = await getArtifactRetentionSnapshot();
       const keyword = (params.search ?? "").trim().toLowerCase();
-      const rows = listWorkspaces()
+      const workspaces = [...listWorkspaces(), ...listCollectingTurnWorkspaces()]
         .filter((item) => item.domainId === domainId)
-        .map((item) => {
-          const key = item.turnKey || item.workspaceId;
+        .map((item) => [item.turnKey || item.workspaceId, item] as const);
+      const rows = [...new Map(workspaces)]
+        .map(([key, item]) => {
           const kept = hasArtifactRetention(keptKeys, "turn-workspace", key);
           return { item, key, kept };
         })
@@ -355,6 +358,8 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
           return key.toLowerCase().includes(keyword) || (item.question ?? "").toLowerCase().includes(keyword);
         })
         .sort((a, b) => {
+          const collectingDiff = Number(b.item.status === "collecting") - Number(a.item.status === "collecting");
+          if (collectingDiff !== 0) return collectingDiff;
           const keptDiff = Number(b.kept) - Number(a.kept);
           if (keptDiff !== 0) return keptDiff;
           return (b.item.createdAt || "").localeCompare(a.item.createdAt || "");
@@ -363,6 +368,7 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
       return rows.map(({ item, key, kept }) => {
         const question = item.question?.replace(/\s+/g, " ").trim() || key;
         const status = item.status || "ready";
+        const tone = statusTone(status);
         return {
           className: TURN_EVIDENCE,
           primaryKey: key,
@@ -373,6 +379,7 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
             question,
             status,
             statusLabel: localizedStatusLabel(status, locale),
+            statusTone: tone,
             kept,
             keptLabel: kept ? tForLocale(locale, "panels.ops.kept") : "",
             createdAt: item.createdAt ?? "",
@@ -386,7 +393,7 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
             createdAt: tForLocale(locale, "panels.ops.fields.createdAt"),
           },
           tones: {
-            statusLabel: statusTone(status),
+            statusLabel: tone,
             ...(kept ? { keptLabel: "info" as const } : {}),
           },
         };
@@ -394,12 +401,13 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
     },
 
     async record(turnKey: string): Promise<PanelRecord> {
-      const { manifest } = await requireTurnManifest(turnKey);
+      const manifest = await requireTurnManifest(turnKey, true);
       const keptKeys = await getArtifactRetentionSnapshot();
       const key = manifest.turnKey || manifest.workspaceId;
       const kept = hasArtifactRetention(keptKeys, "turn-workspace", key);
       const hasEvidence = Boolean(manifest.evidence);
       const status = manifest.status || "ready";
+      const tone = statusTone(status);
       const question = manifest.question?.replace(/\s+/g, " ").trim() || key;
       return {
         className: TURN_EVIDENCE,
@@ -411,13 +419,15 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
           question,
           status,
           statusLabel: localizedStatusLabel(status, locale),
+          statusTone: tone,
           kept,
           keptLabel: kept ? tForLocale(locale, "panels.ops.kept") : "",
           createdAt: manifest.createdAt ?? "",
           hasEvidence,
-          evidenceHint: hasEvidence
-            ? tForLocale(locale, "panels.ops.evidence.referenceHint")
-            : tForLocale(locale, "panels.ops.evidence.legacyHint"),
+          evidenceHint: status === "collecting" ? "" : tForLocale(
+            locale,
+            hasEvidence ? "panels.ops.evidence.referenceHint" : "panels.ops.evidence.legacyHint",
+          ),
           evidenceJson: manifest.evidence ? JSON.stringify(manifest.evidence, null, 2) : "",
           runCount: manifest.evidence?.runs.length ?? 0,
           gapCount: manifest.evidence?.gaps.length ?? 0,
@@ -430,7 +440,7 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
           evidenceHint: tForLocale(locale, "panels.ops.fields.evidenceNote"),
         },
         tones: {
-          statusLabel: statusTone(status),
+          statusLabel: tone,
           ...(kept ? { keptLabel: "info" as const } : {}),
         },
         outputs: { status, kept, hasEvidence },
@@ -438,17 +448,18 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
     },
 
     async evidenceRuns(turnKey: string): Promise<PanelRecord[]> {
-      const { manifest } = await requireTurnManifest(turnKey);
+      const manifest = await requireTurnManifest(turnKey, true);
       return artifactEvidenceRuns(TURN_EVIDENCE, manifest, locale);
     },
 
     async evidenceGaps(turnKey: string): Promise<PanelRecord[]> {
-      const { manifest } = await requireTurnManifest(turnKey);
+      const manifest = await requireTurnManifest(turnKey, true);
       return artifactEvidenceGaps(TURN_EVIDENCE, manifest, locale);
     },
 
     async files(turnKey: string): Promise<PanelRecord[]> {
-      await requireTurnManifest(turnKey);
+      const manifest = await requireTurnManifest(turnKey, true);
+      if (manifest.status === "collecting") return [];
       const tree = getFileTree(turnKey);
       const nodes = tree ? (tree.children ?? [tree]) : [];
       return artifactFileRecords(TURN_EVIDENCE, nodes, locale);

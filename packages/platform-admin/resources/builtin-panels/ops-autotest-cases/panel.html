@@ -23,7 +23,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--spacing-md) var(--page-gutter);
     box-sizing: border-box;
   }
   .ops-cases-layout {
@@ -135,6 +135,41 @@
     color: var(--sdk-text-color-secondary);
     word-break: break-all;
   }
+  .ops-cases-footer {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--page-gutter);
+    border-top: 1px solid var(--sdk-border-color, var(--ui-border));
+    background: var(--sdk-bg-color);
+  }
+  .ops-cases-footer-left {
+    font-size: var(--text-xs);
+    line-height: var(--leading-sm);
+  }
+  .ops-cases-status-unsaved {
+    color: var(--sdk-color-warning);
+    font-weight: var(--font-medium);
+  }
+  .ops-cases-status-saved {
+    color: var(--sdk-text-color-placeholder, var(--sdk-text-color-secondary));
+  }
+  .ops-cases-footer-right {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .ops-cases-dock-room {
+    flex: none;
+    width: 100%;
+    height: var(--pane-dock-space, 0px);
+  }
+  .ops-cases-import-code {
+    width: 100%;
+    max-height: 360px;
+  }
   .ops-cases-import-footer {
     display: flex;
     flex: 0 0 auto;
@@ -143,13 +178,17 @@
   }
   @container ops-cases-page (max-width: 45rem) {
     .ops-cases-body {
-      padding: var(--spacing-sm) var(--spacing-md) calc(var(--page-content-gap) + 56px);
+      padding: var(--spacing-sm) var(--spacing-md);
+    }
+    .ops-cases-footer {
+      padding: var(--spacing-sm) var(--spacing-md);
     }
   }
 </style>
 
-<div id="app" v-cloak class="ops-cases-page">
-  <page-header :title="t('panel.title')" :draft="caseSetDraft">
+<div id="app" v-cloak>
+  <div ref="panelRootRef" class="ops-cases-page">
+  <page-header :title="t('panel.title')">
     <template #actions>
       <div class="ops-cases-page-actions">
         <projection slot="createCaseSet" @done="onCreateDone"></projection>
@@ -172,7 +211,7 @@
       @back="clearSelection"
     >
       <template #aside>
-        <div class="ops-cases-aside">
+        <div ref="caseSetListRef" class="ops-cases-aside">
           <projection slot="caseSets" class="ops-cases-fill"></projection>
         </div>
       </template>
@@ -213,6 +252,31 @@
       </template>
     </two-pane-layout>
   </div>
+
+  <footer v-if="selectedKey" class="ops-cases-footer" role="region" :aria-label="t('footer.aria')">
+    <div class="ops-cases-footer-left" role="status" aria-live="polite">
+      <span v-if="draftDirty" class="ops-cases-status-unsaved">
+        ● {{ t("footer.unsaved") }}
+      </span>
+      <span v-else class="ops-cases-status-saved">
+        {{ t("footer.saved") }}
+      </span>
+    </div>
+    <div class="ops-cases-footer-right">
+      <sdk-button :disabled="!draftDirty || draftSaving" @click="revertDraft">
+        {{ t("footer.revert") }}
+      </sdk-button>
+      <sdk-button
+        type="primary"
+        :loading="draftSaving"
+        :disabled="!draftCanSave || draftSaving"
+        @click="saveDraft"
+      >
+        {{ t("footer.save") }}
+      </sdk-button>
+    </div>
+  </footer>
+  <div class="ops-cases-dock-room" aria-hidden="true"></div>
 
   <sdk-dialog
     v-model="importOpen"
@@ -261,12 +325,13 @@
 
       <div class="ops-cases-import-field">
         <label class="ops-cases-import-label">{{ t("import.content") }}</label>
-        <sdk-input
+        <code-editor
           v-model="importContent"
-          type="textarea"
-          :rows="10"
+          class="ops-cases-import-code"
+          :language="importEditorLanguage"
+          :min-height="220"
           :placeholder="t('import.contentPlaceholder')"
-        ></sdk-input>
+        ></code-editor>
       </div>
 
       <sdk-alert
@@ -291,4 +356,5 @@
       </div>
     </template>
   </sdk-dialog>
+  </div>
 </div>

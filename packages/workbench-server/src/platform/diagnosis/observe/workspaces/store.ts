@@ -83,17 +83,21 @@ function manifestPath(workspaceId: string): string {
 /*  Manifest operations                                               */
 /* ================================================================== */
 
+function isErrnoCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
+}
+
 /**
  * Load a workspace manifest.
  */
 export function loadManifest(workspaceId: string): WorkspaceManifest | null {
   const mp = manifestPath(workspaceId);
-  if (!fs.existsSync(mp)) return null;
   try {
     const raw = fs.readFileSync(mp, "utf-8");
     return JSON.parse(raw) as WorkspaceManifest;
-  } catch {
-    return null;
+  } catch (error) {
+    if (isErrnoCode(error, "ENOENT")) return null;
+    throw error;
   }
 }
 
@@ -119,26 +123,30 @@ export interface WorkspaceStoreEntry {
 
 /** List workspace directory IDs with their manifests, newest first. */
 export function listWorkspaceEntries(): WorkspaceStoreEntry[] {
-  const root = workspacesRoot();
-  if (!fs.existsSync(root)) return [];
-
+  let entries: fs.Dirent[];
   try {
-    const entries = fs.readdirSync(root, { withFileTypes: true });
-    const workspaces: WorkspaceStoreEntry[] = [];
+    entries = fs.readdirSync(workspacesRoot(), { withFileTypes: true });
+  } catch (error) {
+    if (isErrnoCode(error, "ENOENT")) return [];
+    throw error;
+  }
 
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+  const workspaces: WorkspaceStoreEntry[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
       const manifest = loadManifest(entry.name);
       if (manifest) workspaces.push({ workspaceId: entry.name, manifest });
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        logger.warn("Skipping corrupted workspace manifest", { workspaceId: entry.name, error: error.message });
+        continue;
+      }
+      throw error;
     }
-
-    workspaces.sort((a, b) => b.manifest.createdAt.localeCompare(a.manifest.createdAt));
-    return workspaces;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logger.error("Failed to list workspaces", { error: msg });
-    return [];
   }
+
+  return workspaces.sort((a, b) => (b.manifest.createdAt ?? "").localeCompare(a.manifest.createdAt ?? ""));
 }
 
 /**

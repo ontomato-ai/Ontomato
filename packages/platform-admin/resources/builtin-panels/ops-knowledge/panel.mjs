@@ -1,6 +1,10 @@
 import { computed } from "vue";
 import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
+/*
+ * Built-in operations knowledge panel: two rounded cards with a fixed 320px knowledge tree
+ * (including header title and compact refresh icon) and a 980px-constrained Markdown reader.
+ */
 await mountPanel({
   setup() {
     const { instance, t } = usePanelContext();
@@ -13,15 +17,10 @@ await mountPanel({
       instance.refreshObjects();
     }
 
-    function clearSelection() {
-      instance.state.setState({ filePath: null });
-    }
-
     return {
       t,
       filePath,
       refresh,
-      clearSelection,
     };
   },
 });

@@ -117,7 +117,7 @@
       },
       "zh-CN": {
         "panel.title": "运维知识",
-        "panel.treeTitle": "知识库",
+        "panel.treeTitle": "知识文件",
         "panel.searchPlaceholder": "搜索文件或目录",
         "panel.emptyTree": "暂无知识文件",
         "panel.noMatch": "没有匹配的知识文件",
@@ -127,7 +127,7 @@
       },
       "zh-TW": {
         "panel.title": "維運知識",
-        "panel.treeTitle": "知識庫",
+        "panel.treeTitle": "知識檔案",
         "panel.searchPlaceholder": "搜尋檔案或目錄",
         "panel.emptyTree": "尚無知識檔案",
         "panel.noMatch": "沒有符合的知識檔案",
@@ -137,7 +137,7 @@
       },
       "ja": {
         "panel.title": "運用ナレッジ",
-        "panel.treeTitle": "ナレッジベース",
+        "panel.treeTitle": "ナレッジファイル",
         "panel.searchPlaceholder": "ファイルまたはフォルダを検索",
         "panel.emptyTree": "ナレッジファイルがありません",
         "panel.noMatch": "一致するナレッジファイルがありません",
