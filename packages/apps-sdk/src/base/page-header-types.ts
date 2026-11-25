@@ -9,10 +9,12 @@ export interface PageHeaderDraft {
   readonly saving?: boolean;
   /** Optional explicit save-enabled override; defaults to `dirty && !saving`. */
   readonly canSave?: boolean;
+  /** Whether clicking Discard asks for a confirmation dialog before invoking `discard` and emitting `discard`. */
+  readonly confirmDiscard?: boolean;
   /** Optional handler invoked when Save is clicked (alternative to listening for `@save`). */
   readonly save?: () => void;
-  /** Optional handler invoked when Discard is clicked (alternative to listening for `@discard`). */
-  readonly discard?: () => void;
+  /** Optional handler invoked when Discard is clicked (alternative to listening for `@discard`); returning `false` suppresses the `discard` event. */
+  readonly discard?: () => void | boolean | Promise<void | boolean>;
 }
 
 /** Localized wording for `<page-header>` draft controls; falls back to platform i18n (`platform.*`). */
@@ -20,4 +22,7 @@ export interface PageHeaderLabels {
   readonly save: string;
   readonly discard: string;
   readonly unsavedChanges: string;
+  readonly discardConfirmTitle?: string;
+  readonly discardConfirmMessage?: string;
+  readonly keepEditing?: string;
 }

@@ -168,7 +168,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         return JSON.stringify([object, requiredParams.map((param) => values[param] ?? null)]);
       };
       let lastTargetKey: string | null = null;
-      const reread = () => {
+      const reread = (): Promise<void> => {
         const reading = ++sequence;
         const nextTargetKey = datumTargetKeyOf();
         const targetChanged = hasTarget && nextTargetKey !== lastTargetKey;
@@ -182,7 +182,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         } else if (state.value.status !== "ready") {
           state.value = { status: "loading" };
         }
-        answer(name, inputs()).then(
+        return answer(name, inputs()).then(
           (result) => {
             if (reading !== sequence) return;
             loadedTargetKey.value = nextTargetKey;
@@ -207,7 +207,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       onScopeDispose(instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)
-          || ("type" in data.source && data.source.type.id === changed.objectType)) reread();
+          || ("type" in data.source && data.source.type.id === changed.objectType)) return reread();
       }));
       return computed<MemberDataState>(() => {
         if (hasTarget && state.value.status === "ready" && datumTargetKeyOf() !== loadedTargetKey.value) {

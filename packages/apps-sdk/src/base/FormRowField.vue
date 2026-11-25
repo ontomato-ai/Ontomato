@@ -21,6 +21,7 @@ const customSlot = computed(() => controls.resolveFieldSlot(props.field, absolut
   <form-field-slot-host
     v-if="customSlot"
     class="sdk-form-field"
+    :class="{ 'sdk-form-field-full-width': field.fullWidth === true }"
     :form-slot="controls.formSlot"
     :path="absolutePath"
     :field="props.field"
@@ -33,7 +34,12 @@ const customSlot = computed(() => controls.resolveFieldSlot(props.field, absolut
     </p>
     <form-field-control v-else :field="props.field" :path="absolutePath" :disabled="disabled"></form-field-control>
   </form-field-slot-host>
-  <p v-else-if="field.control.kind === 'reference'" role="alert" class="sdk-form-field-unavailable">
+  <p
+    v-else-if="field.control.kind === 'reference'"
+    role="alert"
+    class="sdk-form-field-unavailable"
+    :class="{ 'sdk-form-field-full-width': field.fullWidth === true }"
+  >
     {{ field.label }}: {{ t("platform.formControlUnavailable") }}
   </p>
   <form-field-control v-else :field="props.field" :path="absolutePath" :disabled="disabled"></form-field-control>
@@ -47,6 +53,9 @@ const customSlot = computed(() => controls.resolveFieldSlot(props.field, absolut
 .sdk-form-field-unavailable {
   flex: 1 1 12rem;
   min-width: min(100%, 12rem);
+}
+.sdk-form-field-full-width {
+  grid-column: 1 / -1;
 }
 .sdk-form-field-unavailable {
   color: var(--el-color-danger-text);

@@ -6,6 +6,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const moduleId = "apps-sdk:element-components";
 
 const SDK_UI_OVERRIDES = new Map([
+  ["SdkButton", { path: resolve(HERE, "src/ui/SdkButton.ts").replace(/\\/g, "/"), exportName: "SdkButton" }],
   ["SdkDialog", { path: resolve(HERE, "src/ui/SdkDialog.ts").replace(/\\/g, "/"), exportName: "SdkDialog" }],
   ["SdkDrawer", { path: resolve(HERE, "src/ui/SdkDrawer.ts").replace(/\\/g, "/"), exportName: "SdkDrawer" }],
 ]);

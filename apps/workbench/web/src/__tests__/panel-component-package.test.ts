@@ -80,7 +80,8 @@ it("draws an installed package's component from its release, with the platform's
 
 it("gives component packages @ontomato/sdk/ui with untouched primitive identity and rejects direct element-plus imports", async () => {
   const { packageComponent } = await import("../../../../../packages/apps-sdk/src/panel/component-packages");
-  const { ElButton } = await import("element-plus");
+  const { SdkButton } = await import("../../../../../packages/apps-sdk/src/ui/SdkButton");
+  const { ElTag } = await import("element-plus");
   const uiRoot = "/apps-sdk/component-packages/example-ui/1.0.0-def/";
   const uiRelease: ComponentPackageResponse = {
     name: "@example/ui-pkg", version: "1.0.0", author: "Example", digest: "b".repeat(64), artifactRoot: uiRoot,
@@ -92,7 +93,7 @@ it("gives component packages @ontomato/sdk/ui with untouched primitive identity 
     styles: [],
   };
   const pkgFiles: Record<string, string> = {
-    [`${uiRoot}dist/good.mjs`]: 'import { SdkButton, vSdkLoading } from "@ontomato/sdk/ui"; export const SdkBtn = { button: SdkButton, loading: vSdkLoading };',
+    [`${uiRoot}dist/good.mjs`]: 'import { SdkButton, SdkTag, vSdkLoading } from "@ontomato/sdk/ui"; export const SdkBtn = { button: SdkButton, tag: SdkTag, loading: vSdkLoading };',
     [`${uiRoot}dist/bad.mjs`]: 'import { ElButton } from "element-plus"; export const LegacyBtn = ElButton;',
   };
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
@@ -100,9 +101,11 @@ it("gives component packages @ontomato/sdk/ui with untouched primitive identity 
     return pkgFiles[path] === undefined ? new Response("missing", { status: 404 }) : new Response(pkgFiles[path], { headers: { "content-type": "text/javascript" } });
   }));
 
-  const loaded = await packageComponent("@example/ui-pkg:SdkBtn", async () => uiRelease) as unknown as { button: typeof ElButton; loading: unknown };
-  expect(loaded.button).toBe(ElButton);
-  expect(loaded.button.name).toBe("ElButton");
+  const loaded = await packageComponent("@example/ui-pkg:SdkBtn", async () => uiRelease) as unknown as { button: typeof SdkButton; tag: typeof ElTag; loading: unknown };
+  expect(loaded.tag).toBe(ElTag);
+  expect(loaded.tag.name).toBe("ElTag");
+  expect(loaded.button).toBe(SdkButton);
+  expect(loaded.button.name).toBe("SdkButton");
   expect(loaded.loading).toBeTruthy();
 
   await expect(packageComponent("@example/ui-pkg:LegacyBtn", async () => uiRelease))

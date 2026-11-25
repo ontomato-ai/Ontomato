@@ -143,15 +143,23 @@ export interface PlatformObjectQueryResult {
  * message for each form field the owner named — by the field's JSON Pointer path (`/executionUserId`). A refusal that names no field (somebody else changed
  * the object first, say) has none.
  */
+export interface PlatformObjectRefusalDetail {
+  readonly path: string;
+  readonly message: string;
+}
+
 export class PlatformObjectRefusal extends Error {
+  readonly details: readonly PlatformObjectRefusalDetail[];
   constructor(
     message: string,
     readonly fields: Readonly<Record<string, string>>,
     options?: { cause?: unknown },
     readonly savedFields: Readonly<Record<string, RuntimeJsonValue>> = {},
+    details?: readonly PlatformObjectRefusalDetail[],
   ) {
     super(message, options);
     this.name = "PlatformObjectRefusal";
+    this.details = details ?? Object.entries(fields).map(([path, detail]) => ({ path, message: detail }));
   }
 }
 
