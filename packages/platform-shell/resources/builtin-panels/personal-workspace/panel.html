@@ -151,6 +151,14 @@
     width: 100%;
     min-width: 0;
   }
+  .pw-grid-wrap .sdk-grouped-grid-item-header {
+    position: relative;
+  }
+  .pw-grid-wrap .sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item-handle {
+    position: absolute;
+    inset-inline-start: -22px;
+    top: 0;
+  }
   .pw-block-body {
     display: flex;
     flex-direction: column;
@@ -179,6 +187,9 @@
   .pw-apps-list .sdk-object-list-cards {
     grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
     gap: var(--spacing-sm, 12px);
+  }
+  .pw-apps-list .sdk-object-list-card {
+    min-height: 88px;
   }
   .pw-item-icon {
     color: var(--sdk-text-color-secondary);
@@ -368,9 +379,15 @@
     gap: var(--spacing-md, 16px);
     min-width: 0;
   }
+  .pw-drawer-chart {
+    min-height: 320px;
+  }
   @container pw-page (max-width: 720px) {
     .pw-scroll {
       padding: var(--spacing-md, 16px) var(--spacing-md, 16px) calc(var(--spacing-xl, 28px) + var(--pane-dock-space, 0px));
+    }
+    .pw-grid-wrap .sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item-handle {
+      position: static;
     }
   }
 </style>
@@ -755,7 +772,12 @@
   >
     <template #header>
       <div class="pw-drawer-header">
-        <h2 class="pw-drawer-title">{{ selectedObjectTitle || t("drawer.objectTitle") }}</h2>
+        <object-title
+          tag="h2"
+          class="pw-drawer-title"
+          :target="selectedObject"
+          fallback-key="drawer.objectTitle"
+        ></object-title>
         <div class="pw-drawer-actions">
           <projection slot="askObject"></projection>
           <sdk-button
@@ -782,7 +804,13 @@
   >
     <template #header>
       <div class="pw-drawer-header">
-        <h2 class="pw-drawer-title">{{ selectedCardTitle || t("drawer.cardTitle") }}</h2>
+        <object-title
+          tag="h2"
+          class="pw-drawer-title"
+          slot="cardMetricSource"
+          :target="selectedCardTarget"
+          fallback-key="drawer.cardTitle"
+        ></object-title>
         <div class="pw-drawer-actions">
           <projection slot="askCard"></projection>
           <projection slot="explainCard"></projection>
@@ -798,7 +826,8 @@
       </div>
     </template>
     <div v-if="hasSelectedCard" class="pw-drawer-content">
-      <projection slot="cardMetricPreview"></projection>
+      <projection v-if="selectedCardKind === 'chart'" slot="cardChartPreview" class="pw-drawer-chart"></projection>
+      <projection v-else slot="cardMetricPreview"></projection>
       <projection slot="cardMetricSource"></projection>
     </div>
   </sdk-drawer>
@@ -811,7 +840,13 @@
   >
     <template #header>
       <div class="pw-drawer-header">
-        <h2 class="pw-drawer-title">{{ selectedTaskTitle || t("drawer.taskTitle") }}</h2>
+        <object-title
+          tag="h2"
+          class="pw-drawer-title"
+          slot="taskSummary"
+          :target="selectedTaskTarget"
+          fallback-key="drawer.taskTitle"
+        ></object-title>
         <div class="pw-drawer-actions">
           <projection slot="askTask"></projection>
           <sdk-button

@@ -219,7 +219,7 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
                 className: AGENT_DEFINITION,
                 primaryKey: item.id,
                 title: available ? agent!.name : unavailableLabel,
-                icon: "sparkles",
+                icon: agent?.icon ?? "",
                 favorite: true,
                 canMoveUp,
                 canMoveDown,
