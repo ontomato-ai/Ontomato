@@ -175,8 +175,7 @@
       "en": {
         "panel.name": "Object detail",
         "panel.description": "Inspect one object record, manage its favorite state, and configure its type's detail presentation.",
-        "od.backBrowser": "Back to data browser",
-        "od.backWorkspace": "Back to workspace",
+        "od.back": "Back",
         "od.favoriteAdd": "Add to favorites",
         "od.favoriteRemove": "Remove from favorites",
         "od.refresh": "Refresh",
@@ -191,8 +190,7 @@
       "zh-CN": {
         "panel.name": "对象详情",
         "panel.description": "查看单个对象记录、收藏到个人工作台，并配置该对象类型的详情呈现方式。",
-        "od.backBrowser": "返回数据浏览",
-        "od.backWorkspace": "返回个人工作台",
+        "od.back": "返回",
         "od.favoriteAdd": "收藏对象",
         "od.favoriteRemove": "取消收藏",
         "od.refresh": "刷新",
@@ -207,8 +205,7 @@
       "zh-TW": {
         "panel.name": "物件詳情",
         "panel.description": "檢視單一物件記錄、收藏至個人工作台，並設定該物件類型的詳情呈現方式。",
-        "od.backBrowser": "返回資料瀏覽",
-        "od.backWorkspace": "返回個人工作台",
+        "od.back": "返回",
         "od.favoriteAdd": "收藏物件",
         "od.favoriteRemove": "取消收藏",
         "od.refresh": "重新整理",
@@ -223,8 +220,7 @@
       "ja": {
         "panel.name": "オブジェクト詳細",
         "panel.description": "単一オブジェクトの詳細を確認し、お気に入り管理と表示パネル設定を行います。",
-        "od.backBrowser": "データブラウザーに戻る",
-        "od.backWorkspace": "ワークスペースに戻る",
+        "od.back": "戻る",
         "od.favoriteAdd": "お気に入りに追加",
         "od.favoriteRemove": "お気に入りから削除",
         "od.refresh": "更新",
@@ -239,8 +235,7 @@
       "de": {
         "panel.name": "Objektdetail",
         "panel.description": "Einzelnen Objektdatensatz prüfen, Favoritenstatus verwalten und die Darstellung des Typs konfigurieren.",
-        "od.backBrowser": "Zurück zum Datenbrowser",
-        "od.backWorkspace": "Zurück zum Arbeitsbereich",
+        "od.back": "Zurück",
         "od.favoriteAdd": "Zu Favoriten hinzufügen",
         "od.favoriteRemove": "Aus Favoriten entfernen",
         "od.refresh": "Aktualisieren",
@@ -255,8 +250,7 @@
       "fr": {
         "panel.name": "Détail de l'objet",
         "panel.description": "Consultez un objet, gérez son statut de favori et configurez la présentation de son type.",
-        "od.backBrowser": "Retour à l'explorateur de données",
-        "od.backWorkspace": "Retour à l'espace de travail",
+        "od.back": "Retour",
         "od.favoriteAdd": "Ajouter aux favoris",
         "od.favoriteRemove": "Retirer des favoris",
         "od.refresh": "Actualiser",
@@ -271,8 +265,7 @@
       "it": {
         "panel.name": "Dettaglio oggetto",
         "panel.description": "Esamina un oggetto, gestisci i preferiti e configura la presentazione del relativo tipo.",
-        "od.backBrowser": "Torna al browser dati",
-        "od.backWorkspace": "Torna allo spazio di lavoro",
+        "od.back": "Indietro",
         "od.favoriteAdd": "Aggiungi ai preferiti",
         "od.favoriteRemove": "Rimuovi dai preferiti",
         "od.refresh": "Aggiorna",
@@ -287,8 +280,7 @@
       "ar": {
         "panel.name": "تفاصيل الكائن",
         "panel.description": "استعراض سجل كائن واحد وإدارة حالة التفضيل وتكوين عرض التفاصيل لنوع الكائن.",
-        "od.backBrowser": "العودة إلى متصفح البيانات",
-        "od.backWorkspace": "العودة إلى مساحة العمل",
+        "od.back": "رجوع",
         "od.favoriteAdd": "إضافة إلى المفضلة",
         "od.favoriteRemove": "إزالة من المفضلة",
         "od.refresh": "تحديث",

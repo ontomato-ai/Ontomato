@@ -45,9 +45,6 @@ await mountPanel({
     const fallbackHeading = computed(
       () => headerLabel.value || selected.value?.primaryKey || t("panel.name"),
     );
-    const backLabel = computed(() =>
-      returnTarget.value === "workspace" ? t("od.backWorkspace") : t("od.backBrowser"),
-    );
 
     const addFavoriteOp = usePanelOperation("addFavorite", "add", {
       available: () => Boolean(hasSelected.value && !favorited.value),
@@ -156,7 +153,6 @@ await mountPanel({
       selectedClassKey,
       headerStatus,
       fallbackHeading,
-      backLabel,
       canConfigure,
       favorited,
       favoriteBusy,
