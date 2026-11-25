@@ -1,3 +1,3 @@
 export { default as PathTree } from "./PathTree.vue";
-export { buildPathTree, filterPathTree, firstTreeFile } from "./types";
-export type { PathTreeFile, PathTreeItem, PathTreeNode } from "./types";
+export { buildParentTree, buildPathTree, filterHierarchyTree, filterPathTree, firstTreeFile, firstTreeNode } from "./types";
+export type { BuildPathTreeOptions, ParentTreeItem, PathTreeFile, PathTreeItem, PathTreeNode } from "./types";

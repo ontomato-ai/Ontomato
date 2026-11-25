@@ -298,6 +298,13 @@ export function expandPanelAuthoringMember(
   ) {
     fail("data.rows", "GroupedGrid requires 'data.rows' in record mode, or 'config.items' / 'state.layout' in fixed-member mode");
   }
+  if (
+    componentId === "@ontomato/sdk:ObjectTree"
+    && !Object.hasOwn(data, "files")
+    && !Object.hasOwn(data, "rows")
+  ) {
+    fail("data", "ObjectTree requires either 'data.files' or 'data.rows'");
+  }
 
   const owners = new Set(dataTypes.values());
   const bindingType = typeId ?? (owners.size === 1 ? [...owners][0] : undefined);
@@ -393,6 +400,10 @@ export function expandPanelAuthoringMember(
         }
       } else if (componentId === "@ontomato/sdk:GroupedGrid" && port === "layout" && actual.kind === "grid-layout") {
         offered = actual;
+      } else if (componentId === "@ontomato/sdk:ObjectTree" && port === "selected") {
+        offered = actual.kind === "object"
+          ? concretePort({ kind: "object", objectType: "@binding" }, path)
+          : { kind: "scalar", type: "string" };
       } else if (componentId === "@ontomato/sdk:ObjectRefCard" && port === "navigate") {
         const targetClassName = typeof member.config?.targetClassName === "string" ? member.config.targetClassName.trim() : "";
         if (targetClassName) {
