@@ -726,8 +726,27 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         label,
         icon: item.icon,
         iconOnly: item.iconOnly,
-        danger: Boolean(item.danger),
-        primary: Boolean(item.primary),
+        danger: Boolean(item.danger || item.tone === "danger"),
+        primary: Boolean(item.primary || item.tone === "primary"),
+        disabled: false,
+      });
+      continue;
+    }
+    if (item.kind === "conversation") {
+      if (!item.id) continue;
+      const label = item.labelKey ? panel.t(item.labelKey) : item.label ?? t("platform.conversationEntryOpen");
+      resolved.push({
+        key: `conv:${item.id}:${i}`,
+        kind: "conversation",
+        id: item.id,
+        prompt: item.prompt,
+        promptKey: item.promptKey,
+        agent: item.agent,
+        label,
+        icon: item.icon ?? "Sparkles",
+        iconOnly: item.iconOnly,
+        danger: Boolean(item.danger || item.tone === "danger"),
+        primary: Boolean(item.primary || item.tone === "primary"),
         disabled: false,
       });
       continue;
@@ -746,8 +765,8 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       label,
       icon: item.icon,
       iconOnly: item.iconOnly,
-      danger: Boolean(item.danger),
-      primary: Boolean(item.primary),
+      danger: Boolean(item.danger || item.tone === "danger"),
+      primary: Boolean(item.primary || item.tone === "primary"),
       prefill: item.prefill,
       disabled: unavailable,
       reason,
@@ -772,7 +791,7 @@ function configuredRowActionPrefill(operation: string): ObjectListRowActionPrefi
   const items = props.rowActions?.items;
   if (!items) return undefined;
   for (const item of items) {
-    if (item.kind !== "local" && item.operation === operation && item.prefill !== undefined) {
+    if (item.kind === "operation" && item.operation === operation && item.prefill !== undefined) {
       return item.prefill;
     }
   }

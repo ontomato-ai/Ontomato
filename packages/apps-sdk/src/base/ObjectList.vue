@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { Comment, Fragment, Text, computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, shallowRef, useSlots, watch, type Slot, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
+import { ElAlert } from "element-plus/es/components/alert/index";
+import { ElButton } from "element-plus/es/components/button/index";
+import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
+import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
 import type { PanelChildObjectIdentity, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
@@ -16,15 +20,15 @@ import {
   panelRecordObjectRef,
   panelRowOperationKey,
   type PanelRecordChildReferenceFieldValue,
+  type PanelRecordFieldValue,
   type PanelRecordQuery,
   type PanelRecordReferenceFieldValue,
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { ElButton } from "element-plus/es/components/button/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import AgentAvatar from "@ontomato/agent-shell-ui/agent-avatar";
-import { appIcon } from "@ontomato/platform-shell/icons";
+import { appIcon, curatedIcon } from "@ontomato/platform-shell/icons";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues } from "../panel/direct";
@@ -111,13 +115,23 @@ import {
   matchesLocalSearch,
   type ObjectListGroup,
 } from "./object-list-local";
+import {
+  acquireActionLock,
+  isActionLockGroupBusy,
+  releaseActionLock,
+  releaseActionLocksForInstance,
+} from "./object-list-action-locks";
 import type {
   ObjectListColumn,
   ObjectListRef,
   ObjectListRenameCancelPayload,
   ObjectListRenameCommitPayload,
+  ObjectListRowActionErrorEvent,
   ObjectListRowActionPrefill,
+  ObjectListRowActionResultEvent,
   ObjectListRowActions as ObjectListRowActionsConfig,
+  ObjectListSelectionRecord,
+  ObjectListStateSnapshot,
   ObjectListTabsVariant,
 } from "./object-list-types";
 import {
@@ -197,11 +211,23 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "rowActions",
   "leadingIconField",
   "leadingIconKind",
+  "leadingIconSize",
   "openOutput",
   "dynamicColumns",
   "showColumnToggle",
   "exportable",
   "exportFileName",
+  "skeletonCount",
+  "actionLockGroup",
+  "inlineActionError",
+  "preserveOnError",
+  "border",
+  "stripe",
+  "rowFieldOverrides",
+  "accordionCodeField",
+  "accordionDescriptionField",
+  "accordionDetailField",
+  "accordionDetailLabelKey",
   "showRowIndex",
   "pinPrimaryColumn",
   "rowActivation",
@@ -236,12 +262,14 @@ const props = withDefaults(
     /**
      * How records are arranged: `"auto"` (default) draws a table when `columns` is given and a compact list otherwise;
      * `"list"` forces the compact list, `"table"` draws the table when `columns` is given, `"cards"` draws a
-     * responsive card grid showing label, subtitle, status, tags and any configured `columns`, and `"tabs"` draws a
-     * single-row horizontal tab strip with overflow scroll buttons and compact per-tab row actions.
+     * responsive card grid showing label, subtitle, status, tags and any configured `columns`, `"tabs"` draws a
+     * single-row horizontal tab strip with overflow scroll buttons and compact per-tab row actions, and `"accordion"`
+     * draws a collapsible disclosure list with rotating chevron, title, monospace identifier, description and
+     * formatted structured detail block.
      * The compact list uses the object's `label` as its main title and has no `titleField` prop. To display a
      * different title field, use `"table"` with explicit `columns` or a row slot.
      */
-    layout?: "auto" | "list" | "table" | "cards" | "tabs";
+    layout?: "auto" | "list" | "table" | "cards" | "tabs" | "accordion";
     /**
      * The table's columns, each a field of the owner's records (`key`, its header `labelKey`, and how it is drawn); absent,
      * the list is compact: each item shows its label, then `statusField`, `subtitleField` and `tagsField` as configured.
@@ -327,8 +355,10 @@ const props = withDefaults(
     rowActions?: ObjectListRowActionsConfig;
     /** Optional field key holding a platform icon key or agent avatar token rendered before each card or compact list title. */
     leadingIconField?: string;
-    /** How `leadingIconField` is drawn: `"application"` (default) resolves a platform application icon; `"agent"` renders an agent avatar. */
-    leadingIconKind?: "application" | "agent";
+    /** How `leadingIconField` is drawn: `"application"` (default) resolves a platform application icon; `"agent"` renders an agent avatar; `"auto"` switches per row based on `className` (`platform:AgentDefinition` vs `platform:Application`). */
+    leadingIconKind?: "application" | "agent" | "auto";
+    /** Optional pixel size override for the leading icon/avatar; omitted, defaults to `16` for application icons and `22` for agent avatars. */
+    leadingIconSize?: number;
     /** Optional owner-declared string output key on each record (`row.outputs[openOutput]`) opened via host navigation when clicking a row or card. */
     openOutput?: string;
     /**
@@ -349,6 +379,28 @@ const props = withDefaults(
     exportable?: boolean;
     /** Optional base file name (`.csv` added if omitted) for current-page CSV export; defaults to `records-YYYY-MM-DD.csv`. */
     exportFileName?: string;
+    /** Number of card skeleton placeholders shown during initial loading in `"cards"` layout; defaults to `6`. */
+    skeletonCount?: number;
+    /** Optional shared mutex group name; while any row action runs in any `ObjectList` with the same group name, row action buttons across the group lock with wait cursor. */
+    actionLockGroup?: string;
+    /** Whether to render inline row-action error alerts inside this list; defaults to `true`. Set to `false` when the page renders a unified alert from `@row-action-error`. */
+    inlineActionError?: boolean;
+    /** When `true`, keeps the previous successful result visible and overlays an error retry alert above the list if a subsequent read fails. Defaults to `false`. */
+    preserveOnError?: boolean;
+    /** Draw vertical cell borders in `"table"` layout. Defaults to `false`. */
+    border?: boolean;
+    /** Draw alternating zebra-striped rows in `"table"` layout. Defaults to `false`. */
+    stripe?: boolean;
+    /** Optional per-row field overrides indexed by `primaryKey` or `${className}:${primaryKey}`, merged over row fields for derived status/probe display. */
+    rowFieldOverrides?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+    /** Field key shown as the monospace `<code>` identifier in `"accordion"` layout; defaults to `name` or `primaryKey`. */
+    accordionCodeField?: string;
+    /** Field key shown as the expanded description paragraph in `"accordion"` layout; defaults to `description` or `subtitle`. */
+    accordionDescriptionField?: string;
+    /** Field key shown as the formatted `<pre>` detail block in `"accordion"` layout; defaults to `inputSchema`, `schema`, or `details`. */
+    accordionDetailField?: string;
+    /** Optional panel message key for the muted label displayed above the `<pre>` detail block in `"accordion"` layout. */
+    accordionDetailLabelKey?: string;
     /** Show a 1-based leading row index column (`50px` wide) in table layout, offset by current page; defaults to `false`. */
     showRowIndex?: boolean;
     /** Pin the first visible table column to the left (`position: sticky; left: 0`) and style its text as a primary clickable link when rows are activatable; defaults to `false`. */
@@ -417,11 +469,23 @@ const props = withDefaults(
     rowActions: undefined,
     leadingIconField: undefined,
     leadingIconKind: "application",
+    leadingIconSize: undefined,
     openOutput: undefined,
     dynamicColumns: false,
     showColumnToggle: false,
     exportable: false,
     exportFileName: undefined,
+    skeletonCount: 6,
+    actionLockGroup: undefined,
+    inlineActionError: true,
+    preserveOnError: false,
+    border: false,
+    stripe: false,
+    rowFieldOverrides: undefined,
+    accordionCodeField: undefined,
+    accordionDescriptionField: undefined,
+    accordionDetailField: undefined,
+    accordionDetailLabelKey: undefined,
     showRowIndex: false,
     pinPrimaryColumn: false,
     rowActivation: "click",
@@ -438,6 +502,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** Emitted when the single viewing selection changes (including automatic fallback). */
   "update:selected": [value: ObjectListSelection | null];
+  /** Emitted when the single selection changes, carrying the selected row's display title and optional subtitle. */
+  "selection-record": [record: ObjectListSelectionRecord | null];
   /** Emitted only when the reader explicitly clicks or activates a row/card to select it. */
   choose: [value: ObjectListSelection | null];
   /** Emitted when the explicit multi-selection set changes. */
@@ -447,6 +513,8 @@ const emit = defineEmits<{
    * pages (`cursor` or `page`), or all matching rows when the read does not page; empty when no rows are shown.
    */
   "update:listed": [value: readonly ObjectListRef[]];
+  /** Emitted whenever paging, count, loading, refreshing, or error state changes. */
+  "state-change": [state: ObjectListStateSnapshot];
   /** Emitted when a reader clicks a reference cell carrying an owner-supplied object reference. */
   navigate: [reference: PlatformFieldReference, columnKey: string];
   /** Emitted when a reader clicks a parent-scoped child reference cell or inline child reference item. */
@@ -455,6 +523,10 @@ const emit = defineEmits<{
   "clear-filters": [];
   /** Emitted when the reader clicks a local button (`kind: "local"`) in the built-in row action column. */
   "row-action": [payload: { id: string; ref: ObjectListRef; index: number }];
+  /** Emitted when a row action fails or is refused. */
+  "row-action-error": [payload: ObjectListRowActionErrorEvent];
+  /** Emitted when a row operation or conversation action settles (read or write, success or failure). */
+  "row-action-result": [payload: ObjectListRowActionResultEvent];
   /** Emitted after a declared row operation dispatches and the owner answers. */
   "operation-done": [operation: string, outcome: OperationOutcome, ref: ObjectListRef];
   /** Emitted when an inline tab rename commits a changed non-empty label. */
@@ -505,14 +577,25 @@ defineSlots<{
   "item-leading"?(): unknown;
   /** Trailing inline controls placed at the end of the horizontal tab bar in `"tabs"` layout (for example a create button). */
   "tabs-extra"?(): unknown;
+  /** Status / scope summary strip rendered directly above the list or table. */
+  status?(props: ObjectListStateSnapshot): unknown;
+  /** Custom loading placeholder overriding the default skeleton or data-state loader. */
+  loading?(): unknown;
   /** Custom card renderer in `"cards"` layout; falls back to the default card when empty. */
   card?(
     props: RowActionsSlotScope & {
+      title: string;
+      subtitle: string;
+      description: string;
+      icon: string | null;
+      iconKind: "application" | "agent";
       selected: boolean;
       checked: boolean;
       toggleCheck: (next?: boolean) => void;
       expanded: boolean;
       toggleExpand: () => void;
+      rowActions: readonly ResolvedRowActionItem[];
+      triggerAction: (item: ResolvedRowActionItem) => void;
     },
   ): unknown;
 }>();
@@ -602,7 +685,13 @@ const hasChooseListener = Boolean(
 const hasUpdateSelectedListener = Boolean(
   vnodeProps && (typeof vnodeProps["onUpdate:selected"] === "function" || Array.isArray(vnodeProps["onUpdate:selected"])),
 );
-const rowSelectable = hasSelectedBinding || hasChooseListener || hasUpdateSelectedListener;
+const hasSelectionRecordListener = Boolean(
+  vnodeProps && (typeof vnodeProps.onSelectionRecord === "function" || Array.isArray(vnodeProps.onSelectionRecord)),
+);
+const hasRowActionResultListener = Boolean(
+  vnodeProps && (typeof vnodeProps.onRowActionResult === "function" || Array.isArray(vnodeProps.onRowActionResult)),
+);
+const rowSelectable = hasSelectedBinding || hasChooseListener || hasUpdateSelectedListener || hasSelectionRecordListener;
 const rowActivatable = computed(() => rowSelectable || Boolean(props.openOutput));
 const cardHeaderActions = computed(() => isCards.value && props.rowActions?.placement === "header");
 const usesCursorPages = computed(() => pageMode === "cursor" && props.pagination === "pages");
@@ -938,7 +1027,12 @@ const isCompleteList = computed<boolean>(() => {
   return datumState.value.status === "ready" ? Array.isArray(datumState.value.value) : true;
 });
 
-const parsedData = computed<ParsedListData>(() => {
+const lastGoodSnapshot = shallowRef<{
+  readonly parsed: ParsedListData;
+  readonly rowOperations?: PanelRowOperationsMap;
+} | null>(null);
+
+const liveParsedData = computed<ParsedListData>(() => {
   if (datumState.value.status !== "ready") {
     return { rows: [], total: null, hasTotal: false, diagnostics: [], status: "ok" };
   }
@@ -986,6 +1080,17 @@ const parsedData = computed<ParsedListData>(() => {
   };
 });
 
+const hasPreservedSnapshot = computed(() => props.preserveOnError === true && lastGoodSnapshot.value !== null);
+const isPreservingOnError = computed(() => hasPreservedSnapshot.value && datumState.value.status === "error");
+const isRefreshingWithPreserved = computed(() => hasPreservedSnapshot.value && datumState.value.status === "loading");
+
+const parsedData = computed<ParsedListData>(() => {
+  if ((isPreservingOnError.value || isRefreshingWithPreserved.value) && lastGoodSnapshot.value) {
+    return lastGoodSnapshot.value.parsed;
+  }
+  return liveParsedData.value;
+});
+
 const liveRows = computed<readonly PlatformObjectRecord[]>(() => {
   if (pageMode === "cursor" && !usesCursorPages.value && cursorBatches.value.length > 0) {
     const seen = new Set<string>();
@@ -1019,15 +1124,31 @@ const liveRowOperations = computed<PanelRowOperationsMap>(() => {
     : {};
 });
 
-// Keep accumulated cursor batches synced synchronously with datumState so `rows`, `listResult` and `listed` stay consistent.
+// Keep accumulated cursor batches and stale snapshots synced synchronously with datumState so `rows`, `listResult` and `listed` stay consistent.
 watch(
   datumState,
   (state) => {
     if (state.status === "loading") return;
-    if (state.status !== "ready" || parsedData.value.status !== "ok") {
+    if (state.status === "empty") {
+      lastGoodSnapshot.value = {
+        parsed: {
+          rows: [],
+          total: isCompleteList.value ? 0 : null,
+          hasTotal: isCompleteList.value,
+          diagnostics: [],
+          status: "ok",
+        },
+      };
+      clearStaleSnapshot();
+      cursorBatches.value = [];
+      loadingMore.value = false;
+      pendingAppendCursor = null;
+      return;
+    }
+    if (state.status !== "ready" || liveParsedData.value.status !== "ok") {
       if (state.status === "error") {
         loadingMore.value = false;
-        if (pendingAppendCursor !== null && cursorBatches.value.length > 0) return;
+        if (isPreservingOnError.value || (pendingAppendCursor !== null && cursorBatches.value.length > 0)) return;
         pendingAppendCursor = null;
         return;
       }
@@ -1037,11 +1158,12 @@ watch(
       pendingAppendCursor = null;
       return;
     }
-    lastKnownTotal.value = parsedData.value.total;
-    lastKnownHasTotal.value = parsedData.value.hasTotal;
+    lastGoodSnapshot.value = { parsed: liveParsedData.value, rowOperations: state.rowOperations };
+    lastKnownTotal.value = liveParsedData.value.total;
+    lastKnownHasTotal.value = liveParsedData.value.hasTotal;
     if (pageMode === "cursor") {
       const activeCursor = typeof currentParams.value.cursor === "string" ? currentParams.value.cursor : null;
-      const incoming = parsedData.value.rows;
+      const incoming = liveParsedData.value.rows;
       const incomingRowOps = state.rowOperations;
       if (activeCursor === null) {
         cursorBatches.value = [{ cursor: null, rows: incoming, rowOperations: incomingRowOps }];
@@ -1063,9 +1185,9 @@ watch(
     if (snapshotRows.length > 0) {
       lastValidRows.value = snapshotRows;
       lastValidRowOperations.value = liveRowOperations.value;
-      lastValidTotal.value = parsedData.value.total;
-      lastValidHasTotal.value = parsedData.value.hasTotal;
-      lastValidNextCursor.value = parsedData.value.nextCursor;
+      lastValidTotal.value = liveParsedData.value.total;
+      lastValidHasTotal.value = liveParsedData.value.hasTotal;
+      lastValidNextCursor.value = liveParsedData.value.nextCursor;
     } else {
       clearStaleSnapshot();
     }
@@ -1120,30 +1242,62 @@ const supplementLookup = computed<{
 
 const mergedRows = computed<readonly PlatformObjectRecord[]>(() => {
   const lookup = supplementLookup.value;
-  if (!lookup || rawRows.value.length === 0) return rawRows.value;
+  const overrides = props.rowFieldOverrides;
+  const hasOverrides = Boolean(overrides && Object.keys(overrides).length > 0);
+  if ((!lookup && !hasOverrides) || rawRows.value.length === 0) return rawRows.value;
   const primaryKeyCounts = new Map<string, number>();
   for (const row of rawRows.value) {
     primaryKeyCounts.set(row.primaryKey, (primaryKeyCounts.get(row.primaryKey) ?? 0) + 1);
   }
+  const fallbackClassName = activeType.value ?? rowObjectType;
   return rawRows.value.map((row) => {
-    const sup = lookup.byIdentity.get(rowIdentityKey(row))
-      ?? (primaryKeyCounts.get(row.primaryKey) === 1 ? lookup.byPrimaryKey.get(row.primaryKey) : undefined);
-    if (!sup) return row;
-    const fieldLabels = row.fieldLabels || sup.fieldLabels
-      ? { ...(row.fieldLabels ?? {}), ...(sup.fieldLabels ?? {}) }
-      : undefined;
-    const tones = row.tones || sup.tones
-      ? { ...(row.tones ?? {}), ...(sup.tones ?? {}) }
-      : undefined;
-    const tags = row.tags ?? sup.tags;
-    return {
-      ...row,
-      ...(row.subtitle === undefined && sup.subtitle !== undefined ? { subtitle: sup.subtitle } : {}),
-      fields: { ...(row.fields ?? {}), ...(sup.fields ?? {}) },
-      ...(fieldLabels ? { fieldLabels } : {}),
-      ...(tones ? { tones } : {}),
-      ...(tags ? { tags } : {}),
-    };
+    let current = row;
+    if (lookup) {
+      const sup = lookup.byIdentity.get(rowIdentityKey(row))
+        ?? (primaryKeyCounts.get(row.primaryKey) === 1 ? lookup.byPrimaryKey.get(row.primaryKey) : undefined);
+      if (sup) {
+        const fieldLabels = row.fieldLabels || sup.fieldLabels
+          ? { ...(row.fieldLabels ?? {}), ...(sup.fieldLabels ?? {}) }
+          : undefined;
+        const tones = row.tones || sup.tones
+          ? { ...(row.tones ?? {}), ...(sup.tones ?? {}) }
+          : undefined;
+        const tags = row.tags ?? sup.tags;
+        current = {
+          ...row,
+          ...(row.subtitle === undefined && sup.subtitle !== undefined ? { subtitle: sup.subtitle } : {}),
+          fields: { ...(row.fields ?? {}), ...(sup.fields ?? {}) },
+          ...(fieldLabels ? { fieldLabels } : {}),
+          ...(tones ? { tones } : {}),
+          ...(tags ? { tags } : {}),
+        };
+      }
+    }
+    if (hasOverrides && overrides) {
+      const compositeKey = `${current.className ?? fallbackClassName}:${current.primaryKey}`;
+      const byPrimaryKey = Object.hasOwn(overrides, current.primaryKey) ? overrides[current.primaryKey] : undefined;
+      const byComposite = Object.hasOwn(overrides, compositeKey) ? overrides[compositeKey] : undefined;
+      const patch = byPrimaryKey && byComposite
+        ? { ...byPrimaryKey, ...byComposite }
+        : (byComposite ?? byPrimaryKey);
+      if (patch && Object.keys(patch).length > 0) {
+        const nextFields: Record<string, PanelRecordFieldValue> = { ...current.fields };
+        let nextLabel = current.label;
+        let nextSubtitle = current.subtitle;
+        for (const [key, value] of Object.entries(patch)) {
+          if (key === "label" && typeof value === "string") nextLabel = value;
+          if (key === "subtitle" && typeof value === "string") nextSubtitle = value;
+          nextFields[key] = value as PanelRecordFieldValue;
+        }
+        current = {
+          ...current,
+          label: nextLabel,
+          ...(nextSubtitle !== undefined ? { subtitle: nextSubtitle } : {}),
+          fields: nextFields,
+        };
+      }
+    }
+    return current;
   });
 });
 
@@ -1367,15 +1521,20 @@ function closeColumnToggle() {
   columnToggleOpen.value = false;
 }
 
-const effectiveLayout = computed<"list" | "table" | "cards" | "tabs">(() => {
+const effectiveLayout = computed<"list" | "table" | "cards" | "tabs" | "accordion">(() => {
   if (props.layout === "tabs") return "tabs";
   if (props.layout === "cards") return "cards";
+  if (props.layout === "accordion") return "accordion";
   if (props.layout === "list") return "list";
   return props.columns?.length || props.dynamicColumns ? "table" : "list";
 });
 const isTable = computed(() => effectiveLayout.value === "table");
 const isCards = computed(() => effectiveLayout.value === "cards");
 const isTabs = computed(() => effectiveLayout.value === "tabs");
+const isAccordion = computed(() => effectiveLayout.value === "accordion");
+const isCompact = computed(() => !isTable.value && !isCards.value && !isTabs.value && !isAccordion.value);
+const resolvedSkeletonCount = computed(() => Math.max(1, Math.floor(props.skeletonCount ?? 6)));
+const effectiveCardSubtitleLines = computed(() => props.subtitleLines ?? 2);
 
 const tabsScrollerRef = ref<HTMLElement | null>(null);
 const tabsCanScrollLeft = ref(false);
@@ -1901,6 +2060,14 @@ const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(()
   if ((loadingMore.value || isShowingStaleData.value) && rows.value.length > 0) {
     return { status: "ready", value: rows.value };
   }
+  if (isPreservingOnError.value || isRefreshingWithPreserved.value) {
+    if (rows.value.length > 0) {
+      return { status: "ready", value: rows.value };
+    }
+    return narrowed.value
+      ? { status: "empty", narrowed: true, clearFilters }
+      : { status: "empty", ...(resolvedEmptyHint.value ? { emptyHint: resolvedEmptyHint.value } : {}) };
+  }
   const state = datumState.value;
   const empty = state.status === "empty" || (state.status === "ready" && rows.value.length === 0);
   if (empty) {
@@ -1915,6 +2082,50 @@ const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(()
   if (state.status !== "ready") return state as DataStateResult<readonly PlatformObjectRecord[]>;
   return { status: "ready", value: rows.value };
 });
+
+const currentErrorMessage = computed<string | null>(() => {
+  const state = datumState.value;
+  if (state.status !== "error") return null;
+  return state.message || t("platform.dataUnreachable");
+});
+
+function retryLoad() {
+  const state = datumState.value;
+  if (state.status === "error" && typeof state.retry === "function") {
+    state.retry();
+    return;
+  }
+  member.data.refresh?.();
+}
+
+const listStateSnapshot = computed<ObjectListStateSnapshot>(() => {
+  const status = datumState.value.status;
+  const isLoading = status === "loading";
+  const isRefreshing = isLoading && (initialLoadDone || lastGoodSnapshot.value !== null || rows.value.length > 0);
+  const resolvedTotal = footerTotal.value ?? total.value;
+  return {
+    page: currentPage.value,
+    pageSize: effectivePageSize.value,
+    total: resolvedTotal,
+    totalPages: totalPages.value,
+    count: rows.value.length,
+    loading: isLoading,
+    refreshing: isRefreshing,
+    error: currentErrorMessage.value,
+    retry: retryLoad,
+  };
+});
+
+watch(
+  () => {
+    const s = listStateSnapshot.value;
+    return [s.page, s.pageSize, s.total, s.totalPages, s.count, s.loading, s.refreshing, s.error] as const;
+  },
+  () => {
+    emit("state-change", listStateSnapshot.value);
+  },
+  { immediate: true },
+);
 
 const dataStateLabels = useDataStateLabels(
   () => (props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty")),
@@ -2307,7 +2518,7 @@ const linearVirtual = computed(() =>
 );
 
 const cardsColumns = computed(() =>
-  containerWidth.value > 0 ? Math.max(1, Math.floor((containerWidth.value + 12) / (260 + 12))) : 1,
+  containerWidth.value > 0 ? Math.max(1, Math.floor((containerWidth.value + 12) / (256 + 12))) : 1,
 );
 
 const cardVirtual = computed(() => {
@@ -2452,11 +2663,137 @@ function rowOpenPath(row: PlatformObjectRecord): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
+const showLeadingIcon = computed(() => Boolean(props.leadingIconField || props.leadingIconKind === "auto"));
+
 function rowLeadingIcon(row: PlatformObjectRecord): string | null {
-  if (!props.leadingIconField) return null;
-  const raw = rawRecordField(row, props.leadingIconField);
+  const field = props.leadingIconField ?? (props.leadingIconKind === "auto" ? "icon" : undefined);
+  if (!field) return null;
+  const raw = rawRecordField(row, field);
   return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
 }
+
+function resolvedLeadingIconKind(row: PlatformObjectRecord): "application" | "agent" {
+  if (props.leadingIconKind === "agent") return "agent";
+  if (props.leadingIconKind === "application") return "application";
+  const candidates = [
+    row.className,
+    typeof row.fields.targetClassName === "string" ? row.fields.targetClassName : undefined,
+    typeof row.fields.objectType === "string" ? row.fields.objectType : undefined,
+    rowClassName(row),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (candidate === "platform:AgentDefinition") return "agent";
+    if (candidate === "platform:Application") return "application";
+  }
+  return "application";
+}
+
+function resolvedLeadingIconSize(row: PlatformObjectRecord): number {
+  if (typeof props.leadingIconSize === "number" && Number.isFinite(props.leadingIconSize) && props.leadingIconSize > 0) {
+    return props.leadingIconSize;
+  }
+  return resolvedLeadingIconKind(row) === "agent" ? 22 : 16;
+}
+
+function cardDescription(row: PlatformObjectRecord): string {
+  return fieldValue(row, summaryKey.value);
+}
+
+function cardTooltip(row: PlatformObjectRecord): string {
+  const description = cardDescription(row);
+  return description ? `${row.label}\n${description}` : row.label;
+}
+
+function accordionCodeText(row: PlatformObjectRecord): string {
+  if (props.accordionCodeField) {
+    return props.accordionCodeField === "primaryKey"
+      ? row.primaryKey
+      : fieldValue(row, props.accordionCodeField);
+  }
+  const nameVal = fieldValue(row, "name");
+  const candidate = nameVal || row.primaryKey;
+  return candidate && candidate !== row.label ? candidate : "";
+}
+
+function accordionDescriptionText(row: PlatformObjectRecord): string {
+  if (props.accordionDescriptionField) {
+    return fieldValue(row, props.accordionDescriptionField);
+  }
+  return fieldValue(row, "description") || fieldValue(row, summaryKey.value);
+}
+
+function accordionDetailText(row: PlatformObjectRecord): string {
+  const keys = props.accordionDetailField ? [props.accordionDetailField] : ["inputSchema", "schema", "details"];
+  for (const key of keys) {
+    const rawField = rawRecordField(row, key);
+    const raw =
+      rawField !== null &&
+      typeof rawField === "object" &&
+      !Array.isArray(rawField) &&
+      (rawField as { kind?: unknown }).kind === "json" &&
+      "value" in rawField
+        ? (rawField as { value: unknown }).value
+        : rawField;
+    if (raw === undefined || raw === null || raw === "") continue;
+    if (typeof raw === "string") {
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+        try {
+          return JSON.stringify(JSON.parse(trimmed), null, 2);
+        } catch {
+          return raw;
+        }
+      }
+      return raw;
+    }
+    if (typeof raw === "object") {
+      try {
+        return JSON.stringify(raw, null, 2);
+      } catch {
+        return String(raw);
+      }
+    }
+    return String(raw);
+  }
+  return "";
+}
+
+function buildSelectionRecord(row: PlatformObjectRecord): ObjectListSelectionRecord {
+  const ref = rowObjectRef(row);
+  const subtitle = fieldValue(row, summaryKey.value) || row.subtitle;
+  return {
+    className: ref.className,
+    primaryKey: ref.primaryKey,
+    label: row.label || ref.primaryKey,
+    ...(subtitle ? { subtitle } : {}),
+  };
+}
+
+let lastEmittedSelectionRecordSig = "null";
+function emitSelectionRecord(record: ObjectListSelectionRecord | null) {
+  const sig = JSON.stringify(record);
+  if (sig === lastEmittedSelectionRecordSig) return;
+  lastEmittedSelectionRecordSig = sig;
+  emit("selection-record", record);
+}
+
+const selectedRecord = computed<ObjectListSelectionRecord | null>(() => {
+  const identity = chosenIdentity.value;
+  if (!identity) return null;
+  const match = mergedRows.value.find((row) => rowIdentityKey(row) === identity)
+    ?? rawRows.value.find((row) => rowIdentityKey(row) === identity);
+  return match ? buildSelectionRecord(match) : null;
+});
+
+watch(
+  selectedRecord,
+  (next) => {
+    emitSelectionRecord(next);
+  },
+  { immediate: true },
+);
 
 function choose(row: PlatformObjectRecord) {
   highlightedIdentity.value = rowIdentityKey(row);
@@ -2472,6 +2809,7 @@ function choose(row: PlatformObjectRecord) {
   if (hasSelectedBinding || hasUpdateSelectedListener) {
     setSelected(next);
   }
+  emitSelectionRecord(next ? buildSelectionRecord(row) : null);
   if (hasChooseListener) {
     activeRowLabel.value = next ? (row.label || row.primaryKey) : null;
     emit("choose", next);
@@ -2732,9 +3070,12 @@ watch(someVisibleChecked, () => {
 const memberOperationsState = useMemberOperations();
 const admittedOpMap = computed(() => admittedOperations(memberOperationsState.value));
 
-const mergedRowOperations = computed<PanelRowOperationsMap>(() =>
-  isShowingStaleData.value ? lastValidRowOperations.value : liveRowOperations.value,
-);
+const mergedRowOperations = computed<PanelRowOperationsMap>(() => {
+  if ((isPreservingOnError.value || isRefreshingWithPreserved.value) && lastGoodSnapshot.value?.rowOperations) {
+    return lastGoodSnapshot.value.rowOperations;
+  }
+  return isShowingStaleData.value ? lastValidRowOperations.value : liveRowOperations.value;
+});
 
 function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, ListRowSlotOperation>> {
   const fallbackClassName = activeType.value ?? rowObjectType;
@@ -2764,6 +3105,34 @@ function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, Li
   return result;
 }
 
+const busyRowActions = ref<ReadonlySet<string>>(new Set());
+const busyWriteRowActions = ref<ReadonlySet<string>>(new Set());
+const rowOpRunning = computed(() => busyRowActions.value.size > 0);
+const writeRowOpRunning = computed(() => busyWriteRowActions.value.size > 0);
+const isGroupLocked = computed(() => isActionLockGroupBusy(props.actionLockGroup));
+
+function rowActionBusyKey(row: PlatformObjectRecord, actionId: string): string {
+  const fallbackClassName = activeType.value ?? rowObjectType;
+  return `${panelRowOperationKey(row, fallbackClassName)}\0${actionId}`;
+}
+
+function isRowActionBusy(row: PlatformObjectRecord, actionId: string): boolean {
+  return busyRowActions.value.has(rowActionBusyKey(row, actionId));
+}
+
+function markRowActionBusy(busyKey: string, busy: boolean, isWrite = false) {
+  const next = new Set(busyRowActions.value);
+  if (busy) next.add(busyKey);
+  else next.delete(busyKey);
+  busyRowActions.value = next;
+  if (isWrite) {
+    const nextWrite = new Set(busyWriteRowActions.value);
+    if (busy) nextWrite.add(busyKey);
+    else nextWrite.delete(busyKey);
+    busyWriteRowActions.value = nextWrite;
+  }
+}
+
 function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowActionItem[] {
   const config = props.rowActions;
   if (!config || config.items.length === 0) return [];
@@ -2786,10 +3155,31 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         icon: item.icon,
         iconOnly: item.iconOnly,
         active: item.active,
-        danger: item.danger ?? op.danger,
-        primary: Boolean(item.primary),
+        busy: isRowActionBusy(row, opName),
+        danger: item.danger ?? (item.tone === "danger" ? true : op.danger),
+        primary: Boolean(item.primary || item.tone === "primary"),
         disabled: disabledByCondition || !op.available,
         reason: op.unavailable?.reason,
+      });
+      return;
+    }
+    if (item.kind === "conversation") {
+      const label = item.labelKey ? panel.t(item.labelKey) : item.label ?? t("platform.conversationEntryOpen");
+      resolved.push({
+        key: `conv:${item.id}:${index}`,
+        kind: "conversation",
+        id: item.id,
+        prompt: item.prompt,
+        promptKey: item.promptKey,
+        agent: item.agent,
+        label,
+        icon: item.icon ?? "Sparkles",
+        iconOnly: item.iconOnly,
+        active: item.active,
+        busy: isRowActionBusy(row, item.id),
+        danger: Boolean(item.danger || item.tone === "danger"),
+        primary: Boolean(item.primary || item.tone === "primary"),
+        disabled: disabledByCondition,
       });
       return;
     }
@@ -2803,15 +3193,15 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       icon: item.icon,
       iconOnly: item.iconOnly,
       active: item.active,
-      danger: Boolean(item.danger),
-      primary: Boolean(item.primary),
+      busy: isRowActionBusy(row, item.id),
+      danger: Boolean(item.danger || item.tone === "danger"),
+      primary: Boolean(item.primary || item.tone === "primary"),
       disabled: disabledByCondition,
     });
   });
   return resolved;
 }
 
-const rowOpRunning = ref(false);
 const rowOpFailure = shallowRef<Error | null>(null);
 const rowOpRead = shallowRef<PanelReadOperationResult | null>(null);
 const rowOpReceipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
@@ -2887,6 +3277,7 @@ function rowActionButtonState(
 let listUnmounted = false;
 onBeforeUnmount(() => {
   listUnmounted = true;
+  releaseActionLocksForInstance(listInstanceId.value);
 });
 
 /** Unique mounted list instance ID; rotates on remount, dynamic type switch, or parent/member input change. */
@@ -2998,7 +3389,6 @@ async function executeRowOperation(
   providedInput: Record<string, RuntimeJsonValue>,
   agentContext?: PanelAgentActionContext,
 ): Promise<"executed" | "cancelled" | "skipped"> {
-  if (rowOpRunning.value) return "skipped";
   const binding = member.projection.operations?.[operationName];
   if (!binding) return "skipped";
   const fallbackClassName = activeType.value ?? rowObjectType;
@@ -3006,6 +3396,14 @@ async function executeRowOperation(
   if (target === undefined) return "skipped";
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
   const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
+  const busyKey = `${capturedCompositeKey}\0${operationName}`;
+  const isWriteOp = descriptor.effect !== "read";
+  const lockGroup = props.actionLockGroup;
+  const lock = { instanceId: listInstanceId.value, rowKey: capturedCompositeKey, actionId: operationName };
+  if (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value)) return "skipped";
+  if (lockGroup && !acquireActionLock(lockGroup, lock)) return "skipped";
+  const ref = rowObjectRef(row);
+  const rowSummary = { className: ref.className, primaryKey: ref.primaryKey, label: row.label || ref.primaryKey };
   const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
     ? wrapActionOperationInput(descriptor.inputSchema, boundInput, providedInput)
     : { ...providedInput, ...boundInput };
@@ -3014,7 +3412,7 @@ async function executeRowOperation(
     if (listUnmounted || panel.instance.isDisposed()) {
       return { ok: false, message: "The list was closed or unmounted." };
     }
-    if (phase === "confirm" && rowOpRunning.value) {
+    if (phase === "confirm" && (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || (lockGroup && isActionLockGroupBusy(lockGroup)))) {
       return { ok: false, message: "Another row operation is currently running." };
     }
     const liveFallback = activeType.value ?? rowObjectType;
@@ -3055,13 +3453,27 @@ async function executeRowOperation(
     };
   };
 
-  rowOpRunning.value = true;
+  markRowActionBusy(busyKey, true, isWriteOp);
   rowOpFailure.value = null;
   rowOpRead.value = null;
   rowOpReceipt.value = null;
   try {
     if (descriptor.effect === "read") {
-      rowOpRead.value = await panel.instance.readOperation(operationId, { target, input }, agentContext?.agentRun);
+      const readResult = await panel.instance.readOperation(operationId, { target, input }, agentContext?.agentRun);
+      rowOpRead.value = readResult;
+      const data = readResult.kind === "json"
+        ? readResult.value
+        : readResult.kind === "markdown"
+          ? readResult.markdown
+          : readResult;
+      emit("row-action-result", {
+        actionId: operationName,
+        row: rowSummary,
+        ref,
+        ok: true,
+        outcome: readResult,
+        data,
+      });
       return "executed";
     }
     const applyRowAnswer = (
@@ -3070,9 +3482,42 @@ async function executeRowOperation(
       if (answer.decision === "cancel" || !answer.response) return undefined;
       rowOpNamed.value = answer.named;
       const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
-      if (answered?.kind === "success") panel.notify({ kind: "success", text: saidRowOp(answered) });
-      else rowOpReceipt.value = answer.response;
-      if (answered) emit("operation-done", operationName, answered, rowObjectRef(row));
+      if (answered?.kind === "success") {
+        const message = saidRowOp(answered);
+        panel.notify({ kind: "success", text: message });
+        emit("row-action-result", {
+          actionId: operationName,
+          row: rowSummary,
+          ref,
+          ok: true,
+          outcome: answered,
+          data: answered,
+          message,
+        });
+      } else {
+        rowOpReceipt.value = answer.response;
+        const message = answer.response.kind === "not-dispatched"
+          ? answer.response.message
+          : answered && answered.kind !== "batch"
+            ? saidRowOp(answered)
+            : t("platform.operationUnknown", { message: "" });
+        emit("row-action-error", {
+          actionId: operationName,
+          row: rowSummary,
+          ref,
+          message,
+        });
+        emit("row-action-result", {
+          actionId: operationName,
+          row: rowSummary,
+          ref,
+          ok: false,
+          outcome: answered ?? null,
+          message,
+          error: message,
+        });
+      }
+      if (answered) emit("operation-done", operationName, answered, ref);
       return answered;
     };
     let answer: PanelWriteResult;
@@ -3097,7 +3542,10 @@ async function executeRowOperation(
           isStillValid: deferred.isStillValid,
           cancel: deferred.cancelNow,
           async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
-            rowOpRunning.value = true;
+            if (writeRowOpRunning.value || (lockGroup && !acquireActionLock(lockGroup, lock))) {
+              return { ok: false, intentId: preparation.intentId, reason: "failed", message: "Another row action is currently running." };
+            }
+            markRowActionBusy(busyKey, true, true);
             rowOpFailure.value = null;
             rowOpReceipt.value = null;
             try {
@@ -3117,6 +3565,21 @@ async function executeRowOperation(
                 };
               }
               rowOpFailure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
+              emit("row-action-error", {
+                actionId: operationName,
+                row: rowSummary,
+                ref,
+                message: rowOpFailure.value.message,
+              });
+              emit("row-action-result", {
+                actionId: operationName,
+                row: rowSummary,
+                ref,
+                ok: false,
+                outcome: null,
+                message: rowOpFailure.value.message,
+                error: rowOpFailure.value.message,
+              });
               return {
                 ok: false,
                 intentId: preparation.intentId,
@@ -3124,7 +3587,8 @@ async function executeRowOperation(
                 message: rowOpFailure.value.message,
               };
             } finally {
-              rowOpRunning.value = false;
+              markRowActionBusy(busyKey, false, true);
+              if (lockGroup) releaseActionLock(lockGroup, lock);
             }
           },
         });
@@ -3137,10 +3601,27 @@ async function executeRowOperation(
     return "executed";
   } catch (reason) {
     if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
-    rowOpFailure.value = reason instanceof Error ? reason : new Error(String(reason));
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    rowOpFailure.value = error;
+    emit("row-action-error", {
+      actionId: operationName,
+      row: rowSummary,
+      ref,
+      message: error.message,
+    });
+    emit("row-action-result", {
+      actionId: operationName,
+      row: rowSummary,
+      ref,
+      ok: false,
+      outcome: null,
+      message: error.message,
+      error: error.message,
+    });
     return "executed";
   } finally {
-    rowOpRunning.value = false;
+    markRowActionBusy(busyKey, false, isWriteOp);
+    if (lockGroup) releaseActionLock(lockGroup, lock);
   }
 }
 
@@ -3157,10 +3638,11 @@ async function runRowOperation(
   extraInput?: Readonly<Record<string, RuntimeJsonValue>>,
   prefillOverride?: ObjectListRowActionPrefill,
 ): Promise<void> {
-  if (rowOpRunning.value) return;
+  if (isGroupLocked.value || isRowActionBusy(row, operationName)) return;
   const descriptor = admittedOpMap.value[operationName];
   const binding = member.projection.operations?.[operationName];
   if (!descriptor || !binding) return;
+  if (descriptor.effect !== "read" && writeRowOpRunning.value) return;
   const rowOp = rowOperationsFor(row)[operationName];
   if (!rowOp || !rowOp.available) return;
 
@@ -3272,16 +3754,16 @@ watch(
               };
             }
           }
-          if (rowOpRunning.value) {
+          const descriptor = admittedOpMap.value[operationName];
+          if (!descriptor) {
+            return missingOperationDescriptorResult(memberOperationsState.value, operationName);
+          }
+          if (isGroupLocked.value || isRowActionBusy(row, operationName) || (descriptor.effect !== "read" && writeRowOpRunning.value)) {
             return {
               ok: false,
               reason: "action_unavailable",
               message: `List is busy executing another row operation; cannot run '${operationName}' on row '${rowKey}'.`,
             };
-          }
-          const descriptor = admittedOpMap.value[operationName];
-          if (!descriptor) {
-            return missingOperationDescriptorResult(memberOperationsState.value, operationName);
           }
           const buttonState = rowActionButtonState(row, operationName);
           if (!buttonState.ok) {
@@ -3343,6 +3825,115 @@ watch(
 );
 onBeforeUnmount(clearRowActionHandlers);
 
+function resolveConversationTarget(item: ResolvedRowActionItem): PanelConversationEntry["target"] {
+  if (item.agent && typeof item.agent === "object" && "kind" in item.agent) {
+    return item.agent;
+  }
+  if (typeof item.agent === "string" && item.agent.trim() !== "" && item.agent !== "page-default") {
+    return { kind: "id", id: item.agent.trim() };
+  }
+  return slot.projection.conversationEntry?.target ?? { kind: "page-default" };
+}
+
+function resolveConversationPrompt(row: PlatformObjectRecord, item: ResolvedRowActionItem): string {
+  const ref = rowObjectRef(row);
+  const refJson = JSON.stringify({ className: ref.className, primaryKey: ref.primaryKey });
+  const rawTemplate = (() => {
+    if (item.promptKey) {
+      const translated = panel.t(item.promptKey, {
+        label: row.label,
+        primaryKey: ref.primaryKey,
+        className: ref.className,
+        ref: refJson,
+      });
+      if (translated !== item.promptKey) return translated;
+    }
+    if (item.prompt !== undefined) return item.prompt;
+    const declared = slot.projection.conversationEntry;
+    if (declared?.prefillKey !== undefined) {
+      const keyed = panel.t(declared.prefillKey, {
+        label: row.label,
+        primaryKey: ref.primaryKey,
+        className: ref.className,
+        ref: refJson,
+      });
+      if (keyed !== declared.prefillKey) return keyed;
+    }
+    return declared?.prefill;
+  })();
+  const interpolated = rawTemplate !== undefined
+    ? rawTemplate.replace(/\{([^{}]+)\}/g, (_match, rawKey: string) => {
+        const key = rawKey.trim();
+        if (key === "primaryKey") return ref.primaryKey;
+        if (key === "className") return ref.className;
+        if (key === "label") return row.label;
+        if (key === "ref") return refJson;
+        return fieldValue(row, key);
+      })
+    : "";
+  if (!interpolated.trim()) {
+    return `${row.label || ref.primaryKey} ${refJson}`;
+  }
+  if (!interpolated.includes(ref.primaryKey) || !interpolated.includes(ref.className)) {
+    return `${interpolated}\n${refJson}`;
+  }
+  return interpolated;
+}
+
+async function runConversationRowAction(row: PlatformObjectRecord, item: ResolvedRowActionItem): Promise<void> {
+  const actionId = item.id ?? "conversation";
+  const fallbackClassName = activeType.value ?? rowObjectType;
+  const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
+  const busyKey = `${capturedCompositeKey}\0${actionId}`;
+  const lockGroup = props.actionLockGroup;
+  const lock = { instanceId: listInstanceId.value, rowKey: capturedCompositeKey, actionId };
+  if (busyRowActions.value.has(busyKey)) return;
+  if (lockGroup && !acquireActionLock(lockGroup, lock)) return;
+
+  const ref = rowObjectRef(row);
+  const rowSummary = { className: ref.className, primaryKey: ref.primaryKey, label: row.label || ref.primaryKey };
+  const target = resolveConversationTarget(item);
+  const prefill = resolveConversationPrompt(row, item);
+
+  markRowActionBusy(busyKey, true);
+  rowOpFailure.value = null;
+  try {
+    await panel.expandPageComposer({
+      slot: slot.slot,
+      target,
+      prefill,
+    });
+    emit("row-action-result", {
+      actionId,
+      row: rowSummary,
+      ref,
+      ok: true,
+      data: { target, prefill, ref },
+    });
+  } catch (reason) {
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    rowOpFailure.value = error;
+    emit("row-action-error", {
+      actionId,
+      row: rowSummary,
+      ref,
+      message: error.message,
+    });
+    emit("row-action-result", {
+      actionId,
+      row: rowSummary,
+      ref,
+      ok: false,
+      outcome: null,
+      message: error.message,
+      error: error.message,
+    });
+  } finally {
+    markRowActionBusy(busyKey, false);
+    if (lockGroup) releaseActionLock(lockGroup, lock);
+  }
+}
+
 function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem) {
   activeRowLabel.value = row.label || row.primaryKey;
   if (item.kind === "operation" && item.operation) {
@@ -3353,6 +3944,10 @@ function triggerRowAction(row: PlatformObjectRecord, index: number, item: Resolv
     void runRowOperation(row, item.operation, undefined, item.prefill);
     return;
   }
+  if (item.kind === "conversation") {
+    void runConversationRowAction(row, item);
+    return;
+  }
   if (item.kind === "local" && item.id) {
     const ref = rowObjectRef(row);
     if (item.to) {
@@ -3361,6 +3956,25 @@ function triggerRowAction(row: PlatformObjectRecord, index: number, item: Resolv
     }
     emit("row-action", { id: item.id, ref, index });
   }
+}
+
+function cardSlotProps(row: PlatformObjectRecord, index: number, entryKey: string) {
+  const subtitle = fieldValue(row, summaryKey.value);
+  return {
+    ...rowActionsSlotProps(row, index),
+    title: row.label,
+    subtitle,
+    description: fieldValue(row, "description") || subtitle,
+    icon: rowLeadingIcon(row),
+    iconKind: resolvedLeadingIconKind(row),
+    selected: entryKey === chosenIdentity.value,
+    checked: checkedIdentityKeys.value.has(rowCheckKey(row)),
+    toggleCheck: (next?: boolean) => toggleChecked(row, next ?? !checkedIdentityKeys.value.has(rowCheckKey(row))),
+    expanded: isRowExpanded(row),
+    toggleExpand: () => toggleRowExpanded(row),
+    rowActions: resolvedRowActionsFor(row),
+    triggerAction: (item: ResolvedRowActionItem) => triggerRowAction(row, index, item),
+  };
 }
 
 function rowRefSlotProps(row: PlatformObjectRecord, index: number): RowRefSlotScope {
@@ -3436,7 +4050,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="sdk-object-list" :class="{ 'sdk-object-list-compact': !isTable && !isCards && !isTabs, 'sdk-object-list-tabs-mode': isTabs }">
+  <div class="sdk-object-list" :class="{ 'sdk-object-list-compact': isCompact, 'sdk-object-list-tabs-mode': isTabs }">
     <div v-if="showToolbar" class="sdk-object-list-toolbar" :class="{ 'sdk-object-list-toolbar-sticky': isStickyCheckBar }">
       <div v-if="canSearch" class="sdk-object-list-search-wrap">
         <svg class="sdk-object-list-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -3526,8 +4140,23 @@ defineExpose({
       <li v-for="note in diagnostics" :key="note">{{ note }}</li>
     </ul>
 
+    <div v-if="$slots.status" class="sdk-object-list-status-bar">
+      <slot name="status" v-bind="listStateSnapshot"></slot>
+    </div>
+
+    <el-alert
+      v-if="isPreservingOnError && currentErrorMessage"
+      class="sdk-object-list-preserved-error"
+      type="error"
+      :closable="false"
+      show-icon
+      :title="currentErrorMessage"
+    >
+      <el-button text size="small" @click="retryLoad">{{ dataStateLabels.retry }}</el-button>
+    </el-alert>
+
     <div
-      v-if="isShowingStaleData"
+      v-else-if="isShowingStaleData"
       class="sdk-object-list-stale-error"
       data-testid="object-list-stale-error"
       role="alert"
@@ -3567,6 +4196,26 @@ defineExpose({
       <span v-if="queryReason" class="sdk-object-list-status-reason">{{ queryReason }}</span>
     </p>
     <div
+      v-else-if="listResult.status === 'loading' && $slots.loading"
+      class="sdk-object-list-custom-loading"
+      aria-busy="true"
+    >
+      <slot name="loading"></slot>
+    </div>
+    <div
+      v-else-if="isCards && listResult.status === 'loading'"
+      class="sdk-object-list-cards sdk-object-list-cards-loading"
+      aria-busy="true"
+    >
+      <el-skeleton
+        v-for="idx in resolvedSkeletonCount"
+        :key="idx"
+        class="sdk-object-list-card-skeleton"
+        :rows="2"
+        animated
+      />
+    </div>
+    <div
       v-else-if="!isTable && listResult.status === 'empty' && $slots.empty"
       class="sdk-object-list-custom-empty"
     >
@@ -3590,7 +4239,12 @@ defineExpose({
         :data-virtualized="isVirtualized ? 'true' : undefined"
         @scroll="onContainerScroll"
       >
-        <table class="sdk-object-list-table">
+        <table
+          class="sdk-object-list-table"
+          :class="{ 'is-bordered': border, 'is-striped': stripe }"
+          :data-border="border ? 'true' : undefined"
+          :data-stripe="stripe ? 'true' : undefined"
+        >
           <thead v-if="showHeader !== false">
             <tr>
               <th v-if="hasRowDetailSlot" class="sdk-object-list-expand-col"></th>
@@ -3918,7 +4572,7 @@ defineExpose({
                       <ObjectListRowActions
                         :items="resolvedRowActionsFor(entry.row)"
                         :max-visible="rowActions?.maxVisible ?? 2"
-                        :busy="rowOpRunning"
+                        :locked="isGroupLocked"
                         :row-label="entry.row.label || entry.row.primaryKey"
                         @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                       />
@@ -3927,7 +4581,7 @@ defineExpose({
                       v-else
                       :items="resolvedRowActionsFor(entry.row)"
                       :max-visible="rowActions?.maxVisible ?? 2"
-                      :busy="rowOpRunning"
+                      :locked="isGroupLocked"
                       :row-label="entry.row.label || entry.row.primaryKey"
                       @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                     />
@@ -4050,7 +4704,7 @@ defineExpose({
                   v-else
                   :items="resolvedRowActionsFor(row)"
                   :max-visible="0"
-                  :busy="rowOpRunning"
+                  :locked="isGroupLocked"
                   :row-label="row.label || row.primaryKey"
                   @menu-open-change="(open) => onTabMenuOpenChange(rowIdentityKey(row), open)"
                   @trigger="(item) => triggerRowAction(row, rowIndex, item)"
@@ -4074,6 +4728,66 @@ defineExpose({
         <div v-if="$slots['tabs-extra']" class="sdk-object-list-tabs-extra">
           <slot name="tabs-extra"></slot>
         </div>
+      </div>
+
+      <div v-else-if="isAccordion" class="sdk-object-list-accordion">
+        <details
+          v-for="(row, rowIndex) in rows"
+          :key="rowIdentityKey(row)"
+          class="sdk-object-list-accordion-item"
+          :data-row-key="rowIdentityKey(row)"
+        >
+          <summary class="sdk-object-list-accordion-summary">
+            <span class="sdk-object-list-accordion-arrow" aria-hidden="true">
+              <component :is="curatedIcon('chevron-right')" :size="14" aria-hidden="true" />
+            </span>
+            <span class="sdk-object-list-accordion-heading">
+              <strong class="sdk-object-list-accordion-title">
+                <template v-for="(part, index) in textSegmentsFor(row, 'label', row.label)" :key="index">
+                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                </template>
+              </strong>
+              <code v-if="accordionCodeText(row)" class="sdk-object-list-accordion-code">{{ accordionCodeText(row) }}</code>
+            </span>
+            <span
+              v-if="statusField && fieldValue(row, statusField) !== ''"
+              class="sdk-object-list-tag"
+              :data-tone="row.tones?.[statusField] ?? 'default'"
+            >{{ fieldValue(row, statusField) }}</span>
+            <div v-if="hasActionColumn" class="sdk-object-list-accordion-actions" @click.stop.prevent>
+              <ObjectListRowActions
+                :items="resolvedRowActionsFor(row)"
+                :max-visible="rowActions?.maxVisible ?? 2"
+                :locked="isGroupLocked"
+                :row-label="row.label || row.primaryKey"
+                @trigger="(item) => triggerRowAction(row, rowIndex, item)"
+              />
+            </div>
+          </summary>
+          <div class="sdk-object-list-accordion-body">
+            <p v-if="accordionDescriptionText(row)" class="sdk-object-list-accordion-desc">
+              {{ accordionDescriptionText(row) }}
+            </p>
+            <template v-if="accordionDetailText(row)">
+              <div v-if="accordionDetailLabelKey" class="sdk-object-list-accordion-detail-label">
+                {{ panel.t(accordionDetailLabelKey) }}
+              </div>
+              <pre class="sdk-object-list-accordion-pre">{{ accordionDetailText(row) }}</pre>
+            </template>
+            <div v-if="hasRowDetailSlot" class="sdk-object-list-detail-host">
+              <list-row-slot-host
+                :list-slot="member.key"
+                :row-ref="rowObjectRef(row)"
+                :item-key="rowItemKey(row)"
+                :index="rowIndex"
+                :operations="rowOperationsFor(row)"
+                :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
+                :render-slot="slots['row-detail']!"
+                :slot-props="{ ...rowRefSlotProps(row, rowIndex), collapse: () => { expandedKey = null; } }"
+              />
+            </div>
+          </div>
+        </details>
       </div>
 
       <div
@@ -4128,14 +4842,7 @@ defineExpose({
               :operations="rowOperationsFor(entry.row)"
               :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
               :render-slot="slots.card!"
-              :slot-props="{
-                ...rowActionsSlotProps(entry.row, entry.rowIndex),
-                selected: entry.key === chosenIdentity,
-                checked: checkedIdentityKeys.has(rowCheckKey(entry.row)),
-                toggleCheck: (next?: boolean) => toggleChecked(entry.row, next ?? !checkedIdentityKeys.has(rowCheckKey(entry.row))),
-                expanded: isRowExpanded(entry.row),
-                toggleExpand: () => toggleRowExpanded(entry.row),
-              }"
+              :slot-props="cardSlotProps(entry.row, entry.rowIndex, entry.key)"
               :fallback-to-default="true"
             >
               <div class="sdk-object-list-card-head">
@@ -4172,8 +4879,8 @@ defineExpose({
               <p
                 v-if="fieldValue(entry.row, summaryKey) !== ''"
                 class="sdk-object-list-card-sub"
-                :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
-                :style="{ WebkitLineClamp: subtitleLines }"
+                :class="{ 'sdk-object-list-item-sub-clamped': effectiveCardSubtitleLines !== undefined }"
+                :style="{ WebkitLineClamp: effectiveCardSubtitleLines }"
               >
                 <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
@@ -4201,40 +4908,67 @@ defineExpose({
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
-                <span v-if="leadingIconField" class="sdk-object-list-card-leading" aria-hidden="true">
-                  <AgentAvatar v-if="leadingIconKind === 'agent'" :icon="rowLeadingIcon(entry.row)" :size="22" />
-                  <component :is="appIcon(rowLeadingIcon(entry.row) ?? 'app-window')" v-else :size="16" class="sdk-object-list-card-app-icon" />
-                </span>
-                <span class="sdk-object-list-card-title">
-                  <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
-                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                  </template>
-                </span>
-                <span
-                  v-if="statusField && fieldValue(entry.row, statusField) !== ''"
-                  class="sdk-object-list-tag"
-                  :data-tone="entry.row.tones?.[statusField] ?? 'default'"
-                >{{ fieldValue(entry.row, statusField) }}</span>
+                <component
+                  :is="rowActivatable ? 'button' : 'div'"
+                  :type="rowActivatable ? 'button' : undefined"
+                  :tabindex="rowActivatable ? -1 : undefined"
+                  class="sdk-object-list-card-main"
+                  :title="cardTooltip(entry.row)"
+                >
+                  <span
+                    v-if="showLeadingIcon"
+                    class="sdk-object-list-card-leading"
+                    :class="{ 'is-app-icon': resolvedLeadingIconKind(entry.row) === 'application' }"
+                    :data-icon-kind="resolvedLeadingIconKind(entry.row)"
+                    :data-icon-size="resolvedLeadingIconSize(entry.row)"
+                    aria-hidden="true"
+                  >
+                    <AgentAvatar
+                      v-if="resolvedLeadingIconKind(entry.row) === 'agent'"
+                      :icon="rowLeadingIcon(entry.row)"
+                      :size="resolvedLeadingIconSize(entry.row)"
+                    />
+                    <component
+                      :is="appIcon(rowLeadingIcon(entry.row) ?? 'app-window')"
+                      v-else
+                      :size="resolvedLeadingIconSize(entry.row)"
+                      class="sdk-object-list-card-app-icon"
+                    />
+                  </span>
+                  <span class="sdk-object-list-card-content">
+                    <span class="sdk-object-list-card-title-row">
+                      <span class="sdk-object-list-card-title">
+                        <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
+                          <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                        </template>
+                      </span>
+                      <span
+                        v-if="statusField && fieldValue(entry.row, statusField) !== ''"
+                        class="sdk-object-list-tag"
+                        :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                      >{{ fieldValue(entry.row, statusField) }}</span>
+                    </span>
+                    <span
+                      v-if="fieldValue(entry.row, summaryKey) !== ''"
+                      class="sdk-object-list-card-sub sdk-object-list-item-sub-clamped"
+                      :style="{ WebkitLineClamp: effectiveCardSubtitleLines }"
+                    >
+                      <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </span>
+                  </span>
+                </component>
                 <div v-if="hasActionColumn && cardHeaderActions" class="sdk-object-list-card-header-actions" @click.stop>
                   <ObjectListRowActions
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
-                    :busy="rowOpRunning"
+                    :locked="isGroupLocked"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
                 </div>
               </div>
-              <p
-                v-if="fieldValue(entry.row, summaryKey) !== ''"
-                class="sdk-object-list-card-sub"
-                :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
-                :style="{ WebkitLineClamp: subtitleLines }"
-              >
-                <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
-                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                </template>
-              </p>
               <dl v-if="visibleColumns.length" class="sdk-object-list-card-fields">
                 <template v-for="column in visibleColumns" :key="column.key">
                   <dt class="sdk-object-list-card-field-label">{{ columnLabel(column) }}</dt>
@@ -4381,7 +5115,7 @@ defineExpose({
                   <ObjectListRowActions
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
-                    :busy="rowOpRunning"
+                    :locked="isGroupLocked"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
@@ -4390,7 +5124,7 @@ defineExpose({
                   v-else
                   :items="resolvedRowActionsFor(entry.row)"
                   :max-visible="rowActions?.maxVisible ?? 2"
-                  :busy="rowOpRunning"
+                  :locked="isGroupLocked"
                   :row-label="entry.row.label || entry.row.primaryKey"
                   @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                 />
@@ -4493,7 +5227,7 @@ defineExpose({
                   chosen: entry.key === chosenIdentity,
                   'is-non-selectable': !rowSelectable,
                   'sdk-object-list-item-two-line': listHasTwoLines,
-                  'has-leading': Boolean($slots['item-leading']),
+                  'has-leading': Boolean($slots['item-leading'] || showLeadingIcon),
                   'has-chevron': showListChevron,
                 }"
                 @click="rowSelectable ? choose(entry.row) : undefined"
@@ -4501,6 +5235,26 @@ defineExpose({
               >
                 <span v-if="$slots['item-leading']" class="sdk-object-list-item-leading" aria-hidden="true">
                   <slot name="item-leading"></slot>
+                </span>
+                <span
+                  v-else-if="showLeadingIcon"
+                  class="sdk-object-list-item-leading"
+                  :class="{ 'is-app-icon': resolvedLeadingIconKind(entry.row) === 'application' }"
+                  :data-icon-kind="resolvedLeadingIconKind(entry.row)"
+                  :data-icon-size="resolvedLeadingIconSize(entry.row)"
+                  aria-hidden="true"
+                >
+                  <AgentAvatar
+                    v-if="resolvedLeadingIconKind(entry.row) === 'agent'"
+                    :icon="rowLeadingIcon(entry.row)"
+                    :size="resolvedLeadingIconSize(entry.row)"
+                  />
+                  <component
+                    :is="appIcon(rowLeadingIcon(entry.row) ?? 'app-window')"
+                    v-else
+                    :size="resolvedLeadingIconSize(entry.row)"
+                    class="sdk-object-list-card-app-icon"
+                  />
                 </span>
                 <span class="sdk-object-list-item-content">
                   <span class="sdk-object-list-item-head" :class="{ 'sdk-object-list-item-head-dot': statusStyle === 'dot' }">
@@ -4575,7 +5329,7 @@ defineExpose({
                   <ObjectListRowActions
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
-                    :busy="rowOpRunning"
+                    :locked="isGroupLocked"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
@@ -4584,7 +5338,7 @@ defineExpose({
                   v-else
                   :items="resolvedRowActionsFor(entry.row)"
                   :max-visible="rowActions?.maxVisible ?? 2"
-                  :busy="rowOpRunning"
+                  :locked="isGroupLocked"
                   :row-label="entry.row.label || entry.row.primaryKey"
                   @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                 />
@@ -4733,10 +5487,13 @@ defineExpose({
       @confirm="confirmRowOpInput"
     ></operation-input-dialog>
 
-    <div v-if="rowOpFailure || rowOpRead || rowOpReceipt" class="sdk-object-list-op-feedback">
-      <p v-if="rowOpFailure" class="sdk-object-list-op-alert" role="alert">{{ rowOpFailure.message }}</p>
-      <OperationResult v-if="rowOpRead" :result="rowOpRead" />
-      <template v-if="rowOpReceipt">
+    <div
+      v-if="(inlineActionError !== false && (rowOpFailure || rowOpReceipt)) || (rowOpRead && !hasRowActionResultListener)"
+      class="sdk-object-list-op-feedback"
+    >
+      <p v-if="inlineActionError !== false && rowOpFailure" class="sdk-object-list-op-alert" role="alert">{{ rowOpFailure.message }}</p>
+      <OperationResult v-if="rowOpRead && !hasRowActionResultListener" :result="rowOpRead" />
+      <template v-if="inlineActionError !== false && rowOpReceipt">
         <p v-if="rowOpReceipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ rowOpReceipt.message }}</p>
         <p v-else-if="rowOpOutcome === null" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
         <OperationBatchReceipt v-else-if="rowOpOutcome.kind === 'batch'" :items="rowOpOutcome.items" :named="rowOpNamed" />
@@ -4937,6 +5694,30 @@ defineExpose({
   vertical-align: middle;
   /* A value stays on its line: a short column is as wide as its text, never two characters over two lines. */
   white-space: nowrap;
+}
+.sdk-object-list-table.is-bordered th,
+.sdk-object-list-table.is-bordered td {
+  border-right: 1px solid var(--el-table-border-color, var(--ui-divider));
+}
+.sdk-object-list-table.is-bordered th:last-child,
+.sdk-object-list-table.is-bordered td:last-child {
+  border-right: 0;
+}
+.sdk-object-list-table.is-striped tbody tr:not(.sdk-object-list-group-header-row):not(.sdk-object-list-detail-row):not(.sdk-object-list-empty-row):not(.sdk-object-list-virtual-spacer-row):nth-child(even) {
+  background: var(--el-fill-color-lighter, #fafafa);
+}
+.sdk-object-list-table.is-striped tbody tr:not(.sdk-object-list-group-header-row):not(.sdk-object-list-detail-row):not(.sdk-object-list-empty-row):not(.sdk-object-list-virtual-spacer-row):nth-child(even):hover {
+  background: var(--ui-fill-tertiary);
+}
+.sdk-object-list-table.is-striped tbody tr.chosen {
+  background: var(--ui-fill-secondary);
+}
+.sdk-object-list-status-bar {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.sdk-object-list-preserved-error {
+  flex: 0 0 auto;
 }
 .sdk-object-list-table th:not(.sdk-object-list-col-wrap),
 .sdk-object-list-table td:not(.sdk-object-list-col-wrap) :is(.sdk-object-list-cell-main, .sdk-object-list-cell-sub, .sdk-object-ref-link) {
@@ -5419,24 +6200,41 @@ defineExpose({
   display: grid;
   flex: 1 1 auto;
   gap: var(--spacing-md);
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 256px), 1fr));
   min-height: 0;
   overflow-y: auto;
 }
+.sdk-object-list-card-skeleton {
+  box-sizing: border-box;
+  min-height: 108px;
+  padding: var(--spacing-lg);
+  border: 1px solid var(--el-border-color, var(--ui-border));
+  border-radius: var(--radius-lg);
+  background: var(--el-bg-color, var(--sdk-bg-color));
+}
+@media (prefers-reduced-motion: reduce) {
+  .sdk-object-list-card-skeleton :deep(.el-skeleton__item) {
+    animation: none;
+  }
+}
 .sdk-object-list-card {
-  background: var(--sdk-bg-color);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-md);
+  background: var(--el-fill-color-blank, var(--sdk-bg-color));
+  border: 1px solid var(--el-border-color-lighter, var(--ui-border));
+  border-radius: var(--radius-lg);
+  box-sizing: border-box;
   color: var(--sdk-text-color-primary);
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
-  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+  min-height: 106px;
+  padding: var(--spacing-lg);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
 }
 .sdk-object-list-card:hover {
-  background: var(--ui-fill-tertiary);
+  background: var(--el-bg-color, var(--sdk-bg-color));
+  border-color: var(--el-border-color-dark, var(--ui-border));
+  box-shadow: var(--elevation-panel);
 }
 .sdk-object-list-card.chosen {
   background: var(--ui-fill-secondary);
@@ -5447,15 +6245,49 @@ defineExpose({
   outline-offset: 2px;
 }
 .sdk-object-list-card-head {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   gap: var(--spacing-sm);
+  min-width: 0;
+}
+.sdk-object-list-card-main {
+  align-items: flex-start;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: inherit;
+  display: flex;
+  flex: 1 1 auto;
+  font: inherit;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  padding: 0;
+  text-align: start;
 }
 .sdk-object-list-card-leading {
   align-items: center;
   color: var(--sdk-text-color-secondary);
   display: inline-flex;
   flex: 0 0 auto;
+}
+.sdk-object-list-card-leading.is-app-icon,
+.sdk-object-list-item-leading.is-app-icon {
+  color: var(--el-color-primary);
+}
+.sdk-object-list-card-leading.is-app-icon {
+  margin-top: 3px;
+}
+.sdk-object-list-card-content {
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+.sdk-object-list-card-title-row {
+  align-items: center;
+  display: flex;
+  gap: var(--spacing-sm);
+  min-width: 0;
 }
 .sdk-object-list-card-header-actions {
   flex: 0 0 auto;
@@ -5466,17 +6298,104 @@ defineExpose({
 }
 .sdk-object-list-card-title {
   flex: 1 1 auto;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   line-height: var(--leading-sm);
   min-width: 0;
-  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sdk-object-list-card-sub {
-  color: var(--sdk-text-color-secondary);
+  color: var(--el-text-color-secondary, var(--sdk-text-color-secondary));
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   margin: 0;
+  overflow-wrap: anywhere;
+}
+.sdk-object-list-accordion {
+  background: var(--el-bg-color, var(--sdk-bg-color));
+  border: 1px solid var(--el-border-color, var(--ui-border));
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.sdk-object-list-accordion-item {
+  border-bottom: 1px solid var(--el-border-color-lighter, var(--ui-divider));
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+.sdk-object-list-accordion-item:last-child {
+  border-bottom: 0;
+}
+.sdk-object-list-accordion-summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: var(--spacing-sm);
+  line-height: 28px;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+.sdk-object-list-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+.sdk-object-list-accordion-summary:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.sdk-object-list-accordion-arrow {
+  color: var(--el-text-color-secondary);
+  display: inline-flex;
+  flex: 0 0 14px;
+  transition: transform var(--transition-fast);
+}
+.sdk-object-list-accordion-item[open] > .sdk-object-list-accordion-summary > .sdk-object-list-accordion-arrow {
+  transform: rotate(90deg);
+}
+.sdk-object-list-accordion-heading {
+  align-items: baseline;
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-md);
+  min-width: 0;
+}
+.sdk-object-list-accordion-title {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+.sdk-object-list-accordion-code {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin-left: 0;
+}
+.sdk-object-list-accordion-actions {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+.sdk-object-list-accordion-body {
+  padding-top: var(--spacing-xs);
+}
+.sdk-object-list-accordion-desc {
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.sdk-object-list-accordion-detail-label {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  margin-bottom: var(--spacing-xs);
+}
+.sdk-object-list-accordion-pre {
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  font-size: var(--text-mono, 12px);
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  white-space: pre-wrap;
 }
 .sdk-object-list-card-fields {
   display: grid;
