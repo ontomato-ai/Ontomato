@@ -71,7 +71,7 @@
         </ul>
         <div style="display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; padding-top: 8px;">
           <sdk-button @click="closeImport">{{ t("panel.cancel") }}</sdk-button>
-          <projection v-if="importDialog" slot="import" @uploaded="onImported"></projection>
+          <projection v-if="importDialog" slot="import" @uploaded="onImported" @refused="onImportRefused"></projection>
         </div>
       </div>
     </sdk-dialog>

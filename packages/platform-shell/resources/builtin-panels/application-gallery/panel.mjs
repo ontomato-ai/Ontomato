@@ -1,5 +1,5 @@
 import { computed } from "vue";
-import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+import { appIcon, mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 /*
  * Built-in application gallery panel: renders available applications (`platform:Application`) and
@@ -43,6 +43,7 @@ await mountPanel({
 
     return {
       t,
+      appIcon,
       categories: CATEGORIES,
       category,
       searchText,

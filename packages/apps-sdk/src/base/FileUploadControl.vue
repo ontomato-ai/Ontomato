@@ -12,9 +12,8 @@ import { formatOperationOutcome } from "./operation-dispatch";
  * The control of one operation that takes a file (its owner declares an `upload`), run as the reader the way an
  * `OperationButton` runs a write. It may first show the format rules, then opens the file picker limited to the declared
  * kinds, checks the picked file against the declared kinds and size, stages it, and writes once with the staged file as
- * the declared input. The host confirms where the owner asks, naming the file. When the owner refuses with
- * `overwrite-on` (such as `SKILL_EXISTS`), the same staged file is sent again with `overwrite: true`, and the host's
- * confirmation, naming what is replaced, is the one dialog the reader answers. The owner's receipt is shown beneath.
+ * the declared input. The host confirms where the owner asks, naming the file. The owner's receipt is shown beneath,
+ * and a refusal emits `refused` with the staged file receipt so the hosting panel can decide any domain-specific follow-up.
  */
 const props = withDefaults(
   defineProps<{
@@ -34,8 +33,6 @@ const props = withDefaults(
     rules?: readonly string[];
     /** Optional label for the choose-file button inside the dialog. */
     chooseLabel?: string;
-    /** The owner's refusal code that means the item exists and the call may be repeated with `overwrite: true`. */
-    overwriteOn?: string;
     /** Disables the upload trigger. */
     disabled?: boolean;
   }>(),
@@ -47,14 +44,15 @@ const props = withDefaults(
     intro: undefined,
     rules: undefined,
     chooseLabel: undefined,
-    overwriteOn: undefined,
     disabled: false,
   },
 );
 
 const emit = defineEmits<{
   /** Emitted with the host's receipt after the owner accepted the file. */
-  uploaded: [response: PanelHumanOperationDispatchResponse, meta: { readonly file: PanelUploadReceipt; readonly overwrite: boolean }];
+  uploaded: [response: PanelHumanOperationDispatchResponse, meta: { readonly file: PanelUploadReceipt }];
+  /** Emitted when the owner refuses the dispatched write, carrying the staged file receipt for optional panel follow-up. */
+  refused: [response: PanelHumanOperationDispatchResponse, meta: { readonly file: PanelUploadReceipt }];
   /** Emitted when the file is refused before it is sent, or staging or the write fails. */
   error: [error: Error];
 }>();
@@ -108,10 +106,10 @@ function fail(reason: unknown) {
   emit("error", error);
 }
 
-/** Writes once with the staged file; on the declared refusal, once more with `overwrite: true`. */
-async function write(file: PanelUploadReceipt, overwrite: boolean): Promise<void> {
+/** Writes once with the staged file. */
+async function write(file: PanelUploadReceipt): Promise<void> {
   const input = {
-    ...(props.params ?? {}), [declared.value!.input]: { kind: "upload", uploadId: file.uploadId }, ...(overwrite && { overwrite: true }),
+    ...(props.params ?? {}), [declared.value!.input]: { kind: "upload", uploadId: file.uploadId },
   };
   const answer = await panel.instance.writeOperation(operationId.value, { call: { target: null, input } });
   if (answer.decision === "cancel") return;
@@ -121,15 +119,17 @@ async function write(file: PanelUploadReceipt, overwrite: boolean): Promise<void
     return;
   }
   const outcome = response.outcome;
-  if (!overwrite && props.overwriteOn && outcome?.kind === "refusal" && outcome.code === props.overwriteOn) return write(file, true);
   if (outcome?.kind === "success") {
     receipt.value = { message: outcome.message ?? t("platform.operationDone"), ok: true, file };
-    emit("uploaded", response, { file, overwrite });
+    emit("uploaded", response, { file });
     return;
   }
   const message = outcome === null || outcome.kind === "batch" ? t("platform.operationUnknown", { message: "" })
     : formatOperationOutcome(outcome, t);
   receipt.value = { message, ok: false, file };
+  if (outcome?.kind === "refusal") {
+    emit("refused", response, { file });
+  }
 }
 
 async function onFileChange(event: Event) {
@@ -146,7 +146,7 @@ async function onFileChange(event: Event) {
   if (file.size > upload.maxBytes) return fail(new Error(t("platform.uploadTooLarge", { size: panelUploadSize(upload.maxBytes, locale.value) })));
   uploading.value = true;
   try {
-    await write(await panel.instance.uploadFile(operationId.value, file), false);
+    await write(await panel.instance.uploadFile(operationId.value, file));
   } catch (reason) {
     fail(reason);
   } finally {

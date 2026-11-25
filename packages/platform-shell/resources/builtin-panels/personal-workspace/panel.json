@@ -134,8 +134,7 @@
         "config": {
           "presentation": "inline",
           "placeholderKey": "hero.askPlaceholder",
-          "minLines": 4,
-          "agentPickerVariant": "home"
+          "minLines": 4
         },
         "name": "Quick ask composer",
         "description": "Inline conversation composer embedded in the personal workspace hero band.",
@@ -308,7 +307,6 @@
           "showHeader": false,
           "showFooter": false,
           "leadingIconField": "icon",
-          "leadingIconKind": "auto",
           "openOutput": "openPath",
           "subtitleLines": 2,
           "emptyText": "empty.apps",

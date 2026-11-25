@@ -315,7 +315,6 @@ describe("readBuiltinProducts", () => {
       expect(pwMemberProjection("favoriteApps")?.config).toMatchObject({
         layout: "cards",
         leadingIconField: "icon",
-        leadingIconKind: "auto",
       });
       expect(pwMemberProjection("pinnedObjects")?.config).toMatchObject({
         rowActions: {
@@ -358,7 +357,6 @@ describe("readBuiltinProducts", () => {
       expect(galleryProjection?.config).toMatchObject({
         layout: "cards",
         leadingIconField: "icon",
-        leadingIconKind: "auto",
         skeletonCount: 6,
         actionErrorPlacement: "top",
       });

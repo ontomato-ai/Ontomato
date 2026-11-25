@@ -37,8 +37,7 @@ node "$SKILL/scripts/ontomato.mjs" panel check ./my-app --sdk-dir "$SDK_RELEASE"
 ```
 
   Omitting `--type-table` checks `application.json` (including required `declaration.icon` — list valid icon names with
-  `node "$SKILL/scripts/ontomato.mjs" sdk icons`), `panel.json` / `projections/*.json` schemas (including `"data": {}`
-  on ordinary projections with no data reads such as `OperationButton`), allowed imports, CSS/UI guardrails, and
+  `node "$SKILL/scripts/ontomato.mjs" sdk icons`), `panel.json` / `projections/*.json` schemas, allowed imports, CSS/UI guardrails, and
   component ports, **but does not verify owner reads, parameters, operations, or customer `Action` IDs against a type
   table**. Check the output's `typeTableChecked` field (or pass `--type-table`) to confirm whether a type table was
   checked.

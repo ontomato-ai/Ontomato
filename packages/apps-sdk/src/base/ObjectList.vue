@@ -31,7 +31,6 @@ import {
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
-import AgentAvatar from "@ontomato/agent-shell-ui/agent-avatar";
 import { confirmDanger } from "@ontomato/platform-shell";
 import { appIcon, curatedIcon } from "@ontomato/platform-shell/icons";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
@@ -149,7 +148,6 @@ import type {
   ObjectListRowActions as ObjectListRowActionsConfig,
   ObjectListRowOperationState,
   ObjectListRowTone,
-  ObjectListSearchSubmit,
   ObjectListStateSnapshot,
   ObjectListTabsVariant,
 } from "./object-list-types";
@@ -230,7 +228,6 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "localFilters",
   "rowActions",
   "leadingIconField",
-  "leadingIconKind",
   "leadingIconSize",
   "openOutput",
   "dynamicColumns",
@@ -247,7 +244,6 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "showPageJumper",
   "showRangeBar",
   "tabsVariant",
-  "inlineRename",
   "inlineRenameOperation",
   "inlineRenameField",
   "renamingKey",
@@ -255,7 +251,6 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "rowExpandMode",
   "rowResultDisplay",
   "showDraftIndicator",
-  "searchSubmit",
   "rowToneField",
   "checkDisabledWhen",
   "rowActionIconVariant",
@@ -375,11 +370,9 @@ const props = withDefaults(
      * drawers or navigation), overflowing items beyond `maxVisible` (default 2) into a "More" dropdown menu.
      */
     rowActions?: ObjectListRowActionsConfig;
-    /** Optional field key holding a platform icon key or agent avatar token rendered before each card or compact list title. */
+    /** Optional field key holding a platform icon name rendered before each card or compact list title. */
     leadingIconField?: string;
-    /** How `leadingIconField` is drawn: `"application"` (default) resolves a platform application icon; `"agent"` renders an agent avatar; `"auto"` switches per row based on `className` (`platform:AgentDefinition` vs `platform:Application`). */
-    leadingIconKind?: "application" | "agent" | "auto";
-    /** Optional pixel size override for the leading icon/avatar; omitted, defaults to `16` for application icons and `22` for agent avatars. */
+    /** Optional pixel size override for the leading icon; defaults to `16`. */
     leadingIconSize?: number;
     /** Optional owner-declared string output key on each record (`row.outputs[openOutput]`) opened via host navigation when clicking a row or card. */
     openOutput?: string;
@@ -430,14 +423,8 @@ const props = withDefaults(
      */
     tabsVariant?: ObjectListTabsVariant;
     /**
-     * Enables in-place tab label editing when `layout` is `"tabs"`. Pair with `inlineRenameOperation` to automatically
-     * intercept that row action and dispatch the renamed label, or control active editing with `renamingKey` and listen
-     * to `rename-commit` / `rename-cancel`.
-     */
-    inlineRename?: boolean;
-    /**
      * Declared row operation name (for example `"rename"`) handled via in-place tab editing instead of opening the
-     * operation input dialog when `layout` is `"tabs"` and `inlineRename` is enabled.
+     * operation input dialog when `layout` is `"tabs"`. Binding this operation enables in-place tab renaming.
      */
     inlineRenameOperation?: string;
     /**
@@ -458,8 +445,6 @@ const props = withDefaults(
     rowResultDisplay?: "none" | "inline" | "expand";
     /** Show a 6px warning dot beside rows whose object has an unsaved local draft in this browser. */
     showDraftIndicator?: boolean;
-    /** Submit handler for pressing Enter in the top search box: selects an existing loaded row by `primaryKey`, or invokes the declared operation with `{ [inputField]: trimmed }`. */
-    searchSubmit?: ObjectListSearchSubmit;
     /** Optional field key in `row.fields` used to apply semantic whole-row background tinting in table mode (tone comes from the value or `row.tones[rowToneField]`). */
     rowToneField?: string;
     /** Optional per-row condition(s) disabling row selection checkboxes and excluding matching rows from select-all. */
@@ -495,7 +480,6 @@ const props = withDefaults(
     localFilters: undefined,
     rowActions: undefined,
     leadingIconField: undefined,
-    leadingIconKind: "application",
     leadingIconSize: undefined,
     openOutput: undefined,
     dynamicColumns: false,
@@ -512,7 +496,6 @@ const props = withDefaults(
     showPageJumper: true,
     showRangeBar: false,
     tabsVariant: "underline",
-    inlineRename: false,
     inlineRenameOperation: undefined,
     inlineRenameField: undefined,
     renamingKey: undefined,
@@ -520,7 +503,6 @@ const props = withDefaults(
     rowExpandMode: undefined,
     rowResultDisplay: undefined,
     showDraftIndicator: undefined,
-    searchSubmit: undefined,
     rowToneField: undefined,
     checkDisabledWhen: undefined,
     rowActionIconVariant: undefined,
@@ -604,8 +586,8 @@ defineSlots<{
       clearOperationResult: (operationName?: string) => void;
     },
   ): unknown;
-  /** Decorative leading badge or icon rendered before each compact list item's title and subtitle. */
-  "item-leading"?(): unknown;
+  /** Decorative leading badge, avatar, or icon rendered before each card or compact list item's title and subtitle. */
+  "item-leading"?(props: RowRefSlotScope & { readonly icon: string | null }): unknown;
   /** Trailing inline controls placed at the end of the horizontal tab bar in `"tabs"` layout (for example a create button). */
   "tabs-extra"?(): unknown;
   /** Status / scope summary strip rendered directly above the list or table. */
@@ -619,7 +601,6 @@ defineSlots<{
       subtitle: string;
       description: string;
       icon: string | null;
-      iconKind: "application" | "agent";
       selected: boolean;
       checked: boolean;
       toggleCheck: (next?: boolean) => void;
@@ -695,14 +676,6 @@ const effectiveRowResultDisplay = computed<"none" | "inline" | "expand">(() => {
 const effectiveShowDraftIndicator = computed<boolean>(() =>
   props.showDraftIndicator ?? Boolean(rawConfig.value?.showDraftIndicator),
 );
-const effectiveSearchSubmit = computed<ObjectListSearchSubmit | undefined>(() => {
-  const candidate = props.searchSubmit ?? rawConfig.value?.searchSubmit;
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
-  const record = candidate as Record<string, unknown>;
-  const operation = typeof record.operation === "string" ? record.operation.trim() : "";
-  const inputField = typeof record.inputField === "string" ? record.inputField.trim() : "";
-  return operation && inputField ? { operation, inputField } : undefined;
-});
 const effectiveRowToneField = computed<string | undefined>(() => {
   const raw = props.rowToneField ?? rawConfig.value?.rowToneField;
   if (typeof raw !== "string") return undefined;
@@ -787,7 +760,7 @@ const isLocalSearchActive = computed(
 const canSearch = computed(
   () =>
     props.searchable !== false
-    && (hasServerSearch || ((isLocalSearchActive.value || Boolean(effectiveSearchSubmit.value)) && isWritableParam("search"))),
+    && (hasServerSearch || (isLocalSearchActive.value && isWritableParam("search"))),
 );
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
 const selectedStateName = slotOutputState(panel.manifest, member.key, "selected")
@@ -2617,152 +2590,10 @@ if (pageMode === "none") {
   );
 }
 
-const searchSubmitRunning = ref(false);
-const searchSubmitError = ref<string | null>(null);
-const pendingSearchSelectPrimaryKey = ref<string | null>(null);
-
-function selectRowDirectly(row: PlatformObjectRecord) {
-  const next = rowSelectionValue(row);
-  const finish = () => {
-    if (hasChooseListener) {
-      activeRowLabel.value = row.label || row.primaryKey;
-      emit("choose", next);
-    }
-  };
-  if (hasSelectedBinding || hasUpdateSelectedListener) {
-    const applied = setSelected(next);
-    if (applied === true) finish();
-    else if (applied !== false) void applied.then((ok) => { if (ok) finish(); });
-  } else {
-    finish();
-  }
-}
-
-watch(
-  mergedRows,
-  (listed) => {
-    const targetKey = pendingSearchSelectPrimaryKey.value;
-    if (!targetKey) return;
-    const found = listed.find((row) => row.primaryKey === targetKey);
-    if (!found) return;
-    pendingSearchSelectPrimaryKey.value = null;
-    selectRowDirectly(found);
-  },
-);
-
 function onSearchInput(event: Event) {
   if (!searchParam || !isWritableParam("search")) return;
-  searchSubmitError.value = null;
   const next = (event.target as HTMLInputElement).value;
   searchParam.set(next === "" ? null : next);
-}
-
-async function submitSearch() {
-  const cfg = effectiveSearchSubmit.value;
-  if (!cfg || searchSubmitRunning.value) return;
-  const trimmed = searchText.value.trim();
-  if (!trimmed) return;
-  searchSubmitError.value = null;
-
-  const loadedMatch = mergedRows.value.find((row) => row.primaryKey === trimmed);
-  if (loadedMatch) {
-    selectRowDirectly(loadedMatch);
-    searchParam?.set(null);
-    return;
-  }
-
-  const descriptor = admittedOpMap.value[cfg.operation];
-  const binding = member.projection.operations?.[cfg.operation];
-  if (!descriptor || !binding) return;
-
-  const operationId = panel.instance.operationIdOf(slot.slot, cfg.operation);
-  const boundParams: Record<string, RuntimeJsonValue> = {};
-  for (const [paramKey, source] of Object.entries(binding.params ?? {})) {
-    if ("literal" in source) {
-      boundParams[paramKey] = source.literal as RuntimeJsonValue;
-    } else if ("input" in source) {
-      const value = member.inputs.value[source.input];
-      if (value !== undefined) boundParams[paramKey] = value as RuntimeJsonValue;
-    }
-  }
-  const providedInput: Record<string, RuntimeJsonValue> = { [cfg.inputField]: trimmed };
-  const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
-    ? wrapActionOperationInput(descriptor.inputSchema, boundParams, providedInput)
-    : { ...providedInput, ...boundParams };
-
-  let target: { kind: "object"; objectType: string; primaryKey: string } | null = null;
-  if (binding.target) {
-    if ("literal" in binding.target) {
-      target = {
-        kind: "object",
-        objectType: binding.target.literal.className,
-        primaryKey: binding.target.literal.primaryKey,
-      };
-    } else if ("input" in binding.target) {
-      const refObj = stateObject(member.inputs.value[binding.target.input] as PanelFieldValue);
-      if (!refObj) return;
-      target = { kind: "object", objectType: refObj.className, primaryKey: refObj.primaryKey };
-    }
-  }
-
-  searchSubmitRunning.value = true;
-  try {
-    if (descriptor.effect === "read") {
-      await panel.instance.readOperation(operationId, { target, input });
-      searchParam?.set(null);
-      const afterMatch = mergedRows.value.find((row) => row.primaryKey === trimmed);
-      if (afterMatch) selectRowDirectly(afterMatch);
-      else pendingSearchSelectPrimaryKey.value = trimmed;
-      return;
-    }
-    const answer = await panel.instance.writeOperation(operationId, { call: { target, input } });
-    if (answer.decision === "cancel" || !answer.response) return;
-    if (answer.response.kind !== "dispatched") {
-      searchSubmitError.value = answer.response.message;
-      return;
-    }
-    const outcome = answer.response.outcome;
-    if (outcome?.kind === "success") {
-      panel.notify({ kind: "success", text: saidRowOp(outcome) });
-      searchParam?.set(null);
-      if (outcome.created) {
-        const createdRef: ObjectListRef = {
-          className: outcome.created.objectType,
-          primaryKey: outcome.created.primaryKey,
-        };
-        const createdRow = mergedRows.value.find((row) => row.primaryKey === createdRef.primaryKey);
-        if (createdRow) {
-          selectRowDirectly(createdRow);
-        } else {
-          if (hasSelectedBinding || hasUpdateSelectedListener) {
-            setSelected(createdRef);
-          }
-          if (hasChooseListener) {
-            emit("choose", createdRef);
-          }
-          pendingSearchSelectPrimaryKey.value = createdRef.primaryKey;
-        }
-      } else {
-        const afterMatch = mergedRows.value.find((row) => row.primaryKey === trimmed);
-        if (afterMatch) selectRowDirectly(afterMatch);
-        else pendingSearchSelectPrimaryKey.value = trimmed;
-      }
-      return;
-    }
-    if (outcome && outcome.kind !== "batch") {
-      searchSubmitError.value = saidRowOp(outcome);
-    }
-  } catch (reason) {
-    searchSubmitError.value = reason instanceof Error ? reason.message : String(reason);
-  } finally {
-    searchSubmitRunning.value = false;
-  }
-}
-
-function onSearchKeydown(event: KeyboardEvent) {
-  if (event.key !== "Enter" || !effectiveSearchSubmit.value) return;
-  event.preventDefault();
-  void submitSearch();
 }
 
 function goPage(nextPage: number) {
@@ -3140,37 +2971,20 @@ function rowOpenPath(row: PlatformObjectRecord): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
-const showLeadingIcon = computed(() => Boolean(props.leadingIconField || props.leadingIconKind === "auto"));
+const showLeadingIcon = computed(() => Boolean(props.leadingIconField));
 
 function rowLeadingIcon(row: PlatformObjectRecord): string | null {
-  const field = props.leadingIconField ?? (props.leadingIconKind === "auto" ? "icon" : undefined);
+  const field = props.leadingIconField;
   if (!field) return null;
   const raw = rawRecordField(row, field);
   return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
 }
 
-function resolvedLeadingIconKind(row: PlatformObjectRecord): "application" | "agent" {
-  if (props.leadingIconKind === "agent") return "agent";
-  if (props.leadingIconKind === "application") return "application";
-  const candidates = [
-    row.className,
-    typeof row.fields.targetClassName === "string" ? row.fields.targetClassName : undefined,
-    typeof row.fields.objectType === "string" ? row.fields.objectType : undefined,
-    rowClassName(row),
-  ];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    if (candidate === "platform:AgentDefinition") return "agent";
-    if (candidate === "platform:Application") return "application";
-  }
-  return "application";
-}
-
-function resolvedLeadingIconSize(row: PlatformObjectRecord): number {
+function resolvedLeadingIconSize(): number {
   if (typeof props.leadingIconSize === "number" && Number.isFinite(props.leadingIconSize) && props.leadingIconSize > 0) {
     return props.leadingIconSize;
   }
-  return resolvedLeadingIconKind(row) === "agent" ? 22 : 16;
+  return 16;
 }
 
 function cardDescription(row: PlatformObjectRecord): string {
@@ -4776,7 +4590,7 @@ async function runConversationRowAction(
 function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem, event?: MouseEvent) {
   activeRowLabel.value = row.label || row.primaryKey;
   if (item.kind === "operation" && item.operation) {
-    if (isTabs.value && props.inlineRename && props.inlineRenameOperation === item.operation) {
+    if (isTabs.value && Boolean(props.inlineRenameOperation) && props.inlineRenameOperation === item.operation) {
       startTabInlineRename(row);
       return;
     }
@@ -4805,7 +4619,6 @@ function cardSlotProps(row: PlatformObjectRecord, index: number, entryKey: strin
     subtitle,
     description: fieldValue(row, "description") || subtitle,
     icon: rowLeadingIcon(row),
-    iconKind: resolvedLeadingIconKind(row),
     selected: entryKey === chosenIdentity.value,
     checked: checkedIdentityKeys.value.has(rowCheckKey(row)),
     toggleCheck: (next?: boolean) => toggleChecked(row, next ?? !checkedIdentityKeys.value.has(rowCheckKey(row))),
@@ -4913,10 +4726,8 @@ defineExpose({
           :placeholder="searchPlaceholderText"
           :aria-label="searchPlaceholderText"
           @input="onSearchInput"
-          @keydown="onSearchKeydown"
         />
       </div>
-      <p v-if="searchSubmitError" class="sdk-object-list-op-alert" role="alert">{{ searchSubmitError }}</p>
       <div v-if="$slots.filters" class="sdk-object-list-filters">
         <slot name="filters"></slot>
       </div>
@@ -5987,22 +5798,26 @@ defineExpose({
                   :title="cardTooltip(entry.row)"
                 >
                   <span
-                    v-if="showLeadingIcon"
+                    v-if="$slots['item-leading']"
                     class="sdk-object-list-card-leading"
-                    :class="{ 'is-app-icon': resolvedLeadingIconKind(entry.row) === 'application' }"
-                    :data-icon-kind="resolvedLeadingIconKind(entry.row)"
-                    :data-icon-size="resolvedLeadingIconSize(entry.row)"
                     aria-hidden="true"
                   >
-                    <AgentAvatar
-                      v-if="resolvedLeadingIconKind(entry.row) === 'agent'"
+                    <slot
+                      name="item-leading"
+                      :ref="rowSelectionValue(entry.row)"
+                      :index="entry.rowIndex"
                       :icon="rowLeadingIcon(entry.row)"
-                      :size="resolvedLeadingIconSize(entry.row)"
-                    />
+                    ></slot>
+                  </span>
+                  <span
+                    v-else-if="showLeadingIcon"
+                    class="sdk-object-list-card-leading is-app-icon"
+                    :data-icon-size="resolvedLeadingIconSize()"
+                    aria-hidden="true"
+                  >
                     <component
                       :is="appIcon(rowLeadingIcon(entry.row) ?? 'app-window')"
-                      v-else
-                      :size="resolvedLeadingIconSize(entry.row)"
+                      :size="resolvedLeadingIconSize()"
                       class="sdk-object-list-card-app-icon"
                     />
                   </span>
@@ -6399,25 +6214,22 @@ defineExpose({
                 @keydown="(rowSelectable || isRowExpandActivation) ? onListItemKeydown(entry.row, $event) : undefined"
               >
                 <span v-if="$slots['item-leading']" class="sdk-object-list-item-leading" aria-hidden="true">
-                  <slot name="item-leading"></slot>
+                  <slot
+                    name="item-leading"
+                    :ref="rowSelectionValue(entry.row)"
+                    :index="entry.rowIndex"
+                    :icon="rowLeadingIcon(entry.row)"
+                  ></slot>
                 </span>
                 <span
                   v-else-if="showLeadingIcon"
-                  class="sdk-object-list-item-leading"
-                  :class="{ 'is-app-icon': resolvedLeadingIconKind(entry.row) === 'application' }"
-                  :data-icon-kind="resolvedLeadingIconKind(entry.row)"
-                  :data-icon-size="resolvedLeadingIconSize(entry.row)"
+                  class="sdk-object-list-item-leading is-app-icon"
+                  :data-icon-size="resolvedLeadingIconSize()"
                   aria-hidden="true"
                 >
-                  <AgentAvatar
-                    v-if="resolvedLeadingIconKind(entry.row) === 'agent'"
-                    :icon="rowLeadingIcon(entry.row)"
-                    :size="resolvedLeadingIconSize(entry.row)"
-                  />
                   <component
                     :is="appIcon(rowLeadingIcon(entry.row) ?? 'app-window')"
-                    v-else
-                    :size="resolvedLeadingIconSize(entry.row)"
+                    :size="resolvedLeadingIconSize()"
                     class="sdk-object-list-card-app-icon"
                   />
                 </span>

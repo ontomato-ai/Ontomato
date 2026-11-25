@@ -119,7 +119,7 @@ it("suppresses the bottom PageComposer when pageComposer is none while an inline
       componentId: "@ontomato/sdk:ConversationEntry",
       inputs: {},
       outputs: {},
-      config: { presentation: "inline", minLines: 3, agentPickerVariant: "home" },
+      config: { presentation: "inline", minLines: 3 },
       data: {},
     },
   };

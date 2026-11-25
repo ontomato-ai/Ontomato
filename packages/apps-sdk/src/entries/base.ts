@@ -14,7 +14,6 @@ export type {
   ObjectListRowActions,
   ObjectListRowOperationState,
   ObjectListRowTone,
-  ObjectListSearchSubmit,
   ObjectListStateSnapshot,
   ObjectListTabsVariant,
 } from "../base/object-list-types";
@@ -37,6 +36,7 @@ export type {
   GroupedGridResizeAxis,
   GroupedGridRowSizing,
   GroupedGridSection,
+  GroupedGridSectionConfig,
   GroupedGridStaticGroupConfig,
   GroupedGridStaticItemConfig,
 } from "../base/grouped-grid-types";

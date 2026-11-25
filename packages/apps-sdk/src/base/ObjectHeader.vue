@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
 import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
-import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
+import { panelRecordObjectRef, type PanelRowActionTone } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelContextKey, projectionKey } from "../panel/context";
 import { classifyDispatchResponseForAction } from "../panel/instance";
@@ -34,8 +34,8 @@ import { displayFieldText, rawRecordField } from "./record-field";
 interface HeaderOperationItem {
   readonly name: string;
   readonly descriptor: PanelOwnerOperationDescriptor;
+  readonly tone: PanelRowActionTone;
   readonly danger: boolean;
-  readonly primary: boolean;
   readonly customLabel?: string;
   readonly label: string;
   readonly disabled: boolean;
@@ -45,8 +45,7 @@ export type ObjectHeaderOperationSpec =
   | string
   | {
       readonly name: string;
-      readonly danger?: boolean;
-      readonly primary?: boolean;
+      readonly tone?: PanelRowActionTone;
       readonly label?: string;
     };
 
@@ -76,12 +75,8 @@ const props = withDefaults(
     status?: string;
     /** Visual tone for the standalone status badge; ignored when reading tone from `record.tones`. */
     statusTone?: "info" | "success" | "warning" | "danger";
-    /** Optional ordered list of projection operation local names (or `{ name, danger, primary }` specs); defaults to all declared projection operations. */
+    /** Optional ordered list of projection operation local names (or `{ name, tone, label }` specs); defaults to all declared projection operations. */
     operations?: readonly ObjectHeaderOperationSpec[];
-    /** Projection operation local names explicitly styled as destructive. */
-    dangerOperations?: readonly string[];
-    /** Projection operation local name emphasized as the primary inline button when exposed inline. */
-    primaryOperation?: string;
     /** Maximum number of operations exposed inline before overflowing to "More" (default 2; no upper limit). */
     maxVisibleOperations?: number;
     /** Optional fallback title shown quietly while the bound record is loading, forbidden, or missing (suppresses the inline DataState box). */
@@ -180,13 +175,15 @@ const moreAriaLabel = computed(() => {
 });
 
 /**
- * Dangerous operations follow the owner's declaration (`inspectImpact`) or explicit caller designation
- * (`dangerOperations` / `{ danger: true }`), never name/handler regex guessing.
+ * Operation tone follows an explicit per-item `tone` or the owner's destructive declaration (`inspectImpact`),
+ * never name/handler regex guessing.
  */
-function isDangerOperation(name: string, descriptor: PanelOwnerOperationDescriptor, explicitDanger?: boolean): boolean {
-  if (explicitDanger) return true;
-  if (props.dangerOperations?.includes(name)) return true;
-  return Boolean(descriptor.inspectImpact);
+function resolveOperationTone(
+  descriptor: PanelOwnerOperationDescriptor,
+  explicitTone?: PanelRowActionTone,
+): PanelRowActionTone {
+  if (explicitTone) return explicitTone;
+  return descriptor.inspectImpact ? "danger" : "default";
 }
 
 const {
@@ -229,7 +226,7 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
   if (!currentMember || !slot) return [];
   const state = currentMember.operations.value;
   if (state.status !== "ready") return [];
-  const specs: readonly { name: string; danger?: boolean; primary?: boolean; label?: string }[] = props.operations
+  const specs: readonly { name: string; tone?: PanelRowActionTone; label?: string }[] = props.operations
     ? props.operations.map((entry) => (typeof entry === "string" ? { name: entry } : entry))
     : Object.keys(slot.projection.operations ?? {}).map((name) => ({ name }));
   const items: HeaderOperationItem[] = [];
@@ -239,11 +236,12 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
     const targetInfo = resolveOperationTarget(panel, slot, currentMember, descriptor, stateValues.value);
     const label = spec.label?.trim() || formatOperationLabel(descriptor, targetInfo, t);
     const ready = isOperationReady(descriptor, targetInfo, false, panel?.instance.forms);
+    const tone = resolveOperationTone(descriptor, spec.tone);
     items.push({
       name: spec.name,
       descriptor,
-      danger: isDangerOperation(spec.name, descriptor, spec.danger),
-      primary: Boolean(spec.primary) || spec.name === props.primaryOperation,
+      tone,
+      danger: tone === "danger" || Boolean(descriptor.inspectImpact),
       customLabel: spec.label,
       label,
       disabled: !ready,
@@ -432,8 +430,8 @@ onBeforeUnmount(clearHeaderActionHandlers);
             :key="item.name"
             :operation="item.name"
             :label="item.customLabel"
-            :type="item.danger ? 'danger' : item.primary ? 'primary' : 'default'"
-            :plain="item.danger"
+            :type="item.tone === 'danger' ? 'danger' : item.tone === 'primary' ? 'primary' : 'default'"
+            :plain="item.tone === 'danger'"
             @done="(outcome) => emit('done', item.name, outcome)"
           />
           <el-dropdown
@@ -463,6 +461,7 @@ onBeforeUnmount(clearHeaderActionHandlers);
                   :disabled="item.disabled || moreRunning"
                   :class="['sdk-object-header-more-item', { 'is-danger': item.danger }]"
                   :data-operation="item.name"
+                  :data-tone="item.tone !== 'default' ? item.tone : undefined"
                   :data-danger="item.danger ? 'true' : undefined"
                   :title="item.descriptor.unavailable?.reason"
                 >

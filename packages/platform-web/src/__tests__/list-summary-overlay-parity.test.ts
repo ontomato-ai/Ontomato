@@ -323,7 +323,6 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
         layout: "cards",
         subtitleField: "description",
         leadingIconField: "icon",
-        leadingIconKind: "application",
       },
     });
     await flushPromises();
@@ -341,7 +340,6 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
         layout: "cards",
         subtitleField: "description",
         leadingIconField: "icon",
-        leadingIconKind: "application",
       },
       slots: {
         card: (scope: unknown) => {
@@ -358,7 +356,6 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
       subtitle: "Explore live operational KPIs across departments",
       description: "Explore live operational KPIs across departments",
       icon: "bar-chart-3",
-      iconKind: "application",
     });
     expect(typeof capturedSlotProps[0].runOperation).toBe("function");
     expect(typeof capturedSlotProps[0].triggerAction).toBe("function");
@@ -525,7 +522,7 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     expect(listB.wrapper.find(".sdk-object-list-op-top-alert").exists()).toBe(false);
   });
 
-  it("G-09 & W-14: switches leading icon per row className in auto mode and applies default/custom leadingIconSize", async () => {
+  it("G-09 & W-14: renders generic leadingIconField with default/custom size and exposes #item-leading slot on cards", async () => {
     const mixedRows: PlatformObjectRecord[] = [
       makeRecord({
         primaryKey: "agent-1",
@@ -539,38 +536,27 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
         label: "Order Center",
         fields: { icon: "layers", description: "Manage orders" },
       }),
-      makeRecord({
-        primaryKey: "shortcut-agent",
-        className: "platform:WorkspaceShortcut",
-        label: "Pinned Copilot",
-        fields: { targetClassName: AGENT_TYPE, icon: "bot" },
-      }),
     ];
 
     const { wrapper } = mountObjectList({
       datumState: shallowRef<MemberDataState>({ status: "ready", value: mixedRows as never }),
       props: {
         layout: "cards",
-        leadingIconKind: "auto",
         leadingIconField: "icon",
       },
     });
     await flushPromises();
 
     const leadings = wrapper.findAll(".sdk-object-list-card-leading");
-    expect(leadings).toHaveLength(3);
-    expect(leadings[0].attributes("data-icon-kind")).toBe("agent");
-    expect(leadings[0].attributes("data-icon-size")).toBe("22");
-    expect(leadings[1].attributes("data-icon-kind")).toBe("application");
+    expect(leadings).toHaveLength(2);
+    expect(leadings[0].attributes("data-icon-size")).toBe("16");
     expect(leadings[1].attributes("data-icon-size")).toBe("16");
-    expect(leadings[2].attributes("data-icon-kind")).toBe("agent");
-    expect(leadings[2].attributes("data-icon-size")).toBe("22");
 
     const { wrapper: customSized } = mountObjectList({
-      datumState: shallowRef<MemberDataState>({ status: "ready", value: [mixedRows[0], mixedRows[1]] as never }),
+      datumState: shallowRef<MemberDataState>({ status: "ready", value: mixedRows as never }),
       props: {
         layout: "cards",
-        leadingIconKind: "auto",
+        leadingIconField: "icon",
         leadingIconSize: 28,
       },
     });
@@ -578,6 +564,23 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     const sizedLeadings = customSized.findAll(".sdk-object-list-card-leading");
     expect(sizedLeadings[0].attributes("data-icon-size")).toBe("28");
     expect(sizedLeadings[1].attributes("data-icon-size")).toBe("28");
+
+    const { wrapper: slotted } = mountObjectList({
+      datumState: shallowRef<MemberDataState>({ status: "ready", value: mixedRows as never }),
+      props: {
+        layout: "cards",
+        leadingIconField: "icon",
+      },
+      slots: {
+        "item-leading": (scope: unknown) => {
+          const s = scope as { ref: { className: string; primaryKey: string }; icon: string | null };
+          return h("span", { class: "custom-leading-probe" }, `${s.ref.className}:${s.icon}`);
+        },
+      },
+    });
+    await flushPromises();
+    const probes = slotted.findAll(".custom-leading-probe").map((el) => el.text());
+    expect(probes).toEqual([`${AGENT_TYPE}:bot`, `${APP_TYPE}:layers`]);
   });
 
   it("W-09: executes kind='conversation' row action with row object ref context via expandPageComposer", async () => {

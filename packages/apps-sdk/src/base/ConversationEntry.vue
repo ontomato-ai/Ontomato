@@ -32,8 +32,6 @@ const props = withDefaults(
     placeholderKey?: string;
     /** Minimum visible text rows for the inline composer. */
     minLines?: number;
-    /** Agent picker style in inline mode. */
-    agentPickerVariant?: "pill" | "home";
     /** When true in inline mode, passes the current page address to the counter so it stays docked beside the chat. */
     attachPage?: boolean;
     /** Button visual emphasis (used in `"button"` presentation). */
@@ -49,7 +47,6 @@ const props = withDefaults(
     labelKey: undefined,
     placeholderKey: undefined,
     minLines: 3,
-    agentPickerVariant: "pill",
     attachPage: false,
     type: "default",
     icon: undefined,
@@ -234,7 +231,7 @@ async function sendInline(text: string, submit = false) {
     >
       <template #agent>
         <AgentPicker
-          :variant="agentPickerVariant"
+          variant="pill"
           :agents="agents"
           :agent-id="activeAgentId"
           :label="inlineLabels.agent"

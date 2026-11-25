@@ -79,11 +79,5 @@ export interface ObjectListRowOperationState {
   readonly error?: string;
 }
 
-/** Configuration for submitting the `ObjectList` top search box on Enter. */
-export interface ObjectListSearchSubmit {
-  readonly operation: string;
-  readonly inputField: string;
-}
-
 /** Supported semantic tones for whole-row table highlighting (`rowToneField`). */
 export type ObjectListRowTone = "success" | "danger" | "warning" | "info";

@@ -378,8 +378,13 @@ describe("ObjectHeader", () => {
       config: {
         subtitleField: "code",
         statusField: "status",
-        primaryOperation: "publish",
-        dangerOperations: ["archive"],
+        operations: [
+          { name: "publish", tone: "primary" },
+          "removeTag",
+          "wipe",
+          "export",
+          { name: "archive", tone: "danger" },
+        ],
       },
       data: {
         record: {
@@ -427,7 +432,7 @@ describe("ObjectHeader", () => {
         kind: "action", handlerRef: EXPORT_SKILL, label: "Export", effect: "read",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
       },
-      // Explicitly designated via dangerOperations: ["archive"].
+      // Explicitly designated via per-item tone: "danger".
       archive: {
         kind: "action", handlerRef: "knowledge.archive", label: "Archive", effect: "write",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
@@ -519,9 +524,11 @@ describe("ObjectHeader", () => {
     await vi.waitFor(() => {
       expect(document.querySelectorAll(".sdk-object-header-actions .sdk-operation-button button").length).toBe(2);
     });
-    const inlineLabels = [...document.querySelectorAll(".sdk-object-header-actions .sdk-operation-button button")]
-      .map((btn) => btn.textContent?.trim());
+    const inlineButtons = [...document.querySelectorAll<HTMLButtonElement>(".sdk-object-header-actions .sdk-operation-button button")];
+    const inlineLabels = inlineButtons.map((btn) => btn.textContent?.trim());
     expect(inlineLabels).toEqual(["Publish", "Remove Tag"]);
+    expect(inlineButtons[0]?.className).toContain("el-button--primary");
+    expect(inlineButtons[1]?.className).not.toContain("el-button--danger");
 
     // More button accessible name automatically includes the record title.
     const moreBtn = document.querySelector<HTMLButtonElement>(".sdk-object-header-more-btn")!;

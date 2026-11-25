@@ -63,13 +63,8 @@
           "statusField": "statusLabel",
           "subtitleField": "turnKey",
           "subtitleLines": 1,
-          "searchable": true,
-          "searchSubmit": {
-            "operation": "build",
-            "inputField": "turnKey"
-          },
+          "searchable": false,
           "showFooter": false,
-          "searchPlaceholder": "panel.searchPlaceholder",
           "emptyText": "panel.emptyList",
           "emptyHint": "panel.emptyListHint",
           "noMatchText": "panel.noMatch",
@@ -111,7 +106,7 @@
           }
         },
         "name": "Turn evidence list",
-        "description": "Searchable compact list of collected turn evidence workspaces with Enter-to-select-or-collect searchSubmit and inline keep/unkeep and delete row actions.",
+        "description": "Compact list of collected turn evidence workspaces with inline keep/unkeep and delete row actions.",
         "id": "builtin-product-9d3e5b21-4c7a-4e8f-b120-7a9c3e5f1002"
       },
       "detailHeader": {

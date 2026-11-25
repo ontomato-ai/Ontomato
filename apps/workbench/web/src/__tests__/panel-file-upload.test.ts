@@ -15,18 +15,15 @@ import { noOperations } from "./panel-frame";
 
 /*
  * A file an operation takes (U11), from the panel's upload control: the control checks the picked file against the
- * owner's declared kinds and size, stages it once, and writes with the staged file as the declared input. When the owner
- * says the skill exists, the control sends that same staged file again with `overwrite`, whose preparation is the one
- * the host confirms, naming the file.
- *
- * The mistakes these catch: a file staged twice or posted to the owner's own route; an overwrite asked about twice, or
- * not asked about; a wrong file sent before the reader is told.
+ * owner's declared kinds and size, stages it once, and writes once with the staged file as the declared input. When the
+ * owner refuses the write, the control displays the refusal and emits `refused` with the host response and staged file
+ * receipt so the hosting panel can decide any domain-specific follow-up.
  */
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 const importer: ProductProjection = {
   ...record, id: "skill-import", name: "Import", componentId: "@ontomato/sdk:FileUploadControl", inputs: {}, outputs: {},
-  config: { operation: "import", overwriteOn: "SKILL_EXISTS" },
+  config: { operation: "import" },
   data: {},
   operations: { import: { operation: { kind: "PlatformOperation", id: IMPORT_SKILL } } },
 };
@@ -49,6 +46,7 @@ function open(exists: boolean) {
   const uploads: File[] = [];
   const prepared: unknown[] = [];
   const preparations: PanelHumanOperationPreparation[] = [];
+  const refused: unknown[] = [];
   const instance = createDirectPanelInstance(manifest, {
     readComponentPackage: noOperations.readComponentPackage,
     pageKey: "skills", url: () => "/skills", label: () => "Skills",
@@ -87,9 +85,15 @@ function open(exists: boolean) {
   });
   const element = document.createElement("div");
   document.body.append(element);
-  const app = createApp({ render: () => h(PanelMember, { instance, member: "importer" }) });
+  const app = createApp({
+    render: () => h(PanelMember, {
+      instance,
+      member: "importer",
+      onRefused: (response: unknown, meta: unknown) => refused.push([response, meta]),
+    }),
+  });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
-  return { instance, element, uploads, prepared, preparations, unmount: () => app.unmount() };
+  return { instance, element, uploads, prepared, preparations, refused, unmount: () => app.unmount() };
 }
 
 /** Picks a file, as the reader does in the browser's picker. */
@@ -122,14 +126,21 @@ it("stages the picked file once and writes with it as the declared input, with n
   unmount();
 });
 
-it("sends the same staged file again with overwrite when the skill exists, and only that write is confirmed", async () => {
-  const { element, uploads, prepared, preparations, unmount } = open(true);
+it("does not retry on owner refusal and emits refused with the staged file receipt for panel-owned follow-up", async () => {
+  const { element, uploads, prepared, preparations, refused, unmount } = open(true);
   await pick(element, zip());
-  await vi.waitFor(() => expect(element.querySelector(".sdk-file-upload-done")?.textContent).toContain("Imported skill alpha."));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-file-upload-error")?.textContent).toContain("A skill named alpha already exists."));
   expect(uploads).toHaveLength(1);
-  expect(prepared).toEqual([call({ file: { kind: "upload", uploadId } }), call({ file: { kind: "upload", uploadId }, overwrite: true })]);
-  // The host asks only where a preparation is to be confirmed: once, naming the file and the skill it replaces.
-  expect(preparations.map(({ confirmation }) => confirmation.kind)).toEqual(["none", "impact"]);
+  expect(prepared).toEqual([call({ file: { kind: "upload", uploadId } })]);
+  expect(preparations.map(({ confirmation }) => confirmation.kind)).toEqual(["none"]);
+  expect(refused).toHaveLength(1);
+  expect(refused[0]).toEqual([
+    expect.objectContaining({
+      kind: "dispatched",
+      outcome: expect.objectContaining({ kind: "refusal", code: "SKILL_EXISTS" }),
+    }),
+    { file: expect.objectContaining({ uploadId, name: "alpha.zip", size: 2048 }) },
+  ]);
   unmount();
 });
 

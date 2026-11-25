@@ -237,7 +237,7 @@ it("GroupedGrid renders groups (preserving empty groups), sections, slots, selec
         rowHeight: 160,
         gap: 16,
         sectionField: "kind",
-        sectionOrder: ["summary", "visual"],
+        sections: [{ key: "summary" }, { key: "visual" }],
       },
       inputs: {
         target: { kind: "object", objectType: DASHBOARD },

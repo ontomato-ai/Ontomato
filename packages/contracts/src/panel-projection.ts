@@ -259,7 +259,7 @@ export const directProjectionPortsSchema = z.object({
   componentId: componentIdSchema,
   inputs: z.record(readKey, directProjectionInputTypeSchema),
   outputs: z.record(readKey, directPanelPortTypeSchema),
-  data: z.record(readKey, directProjectionDataSchema),
+  data: z.record(readKey, directProjectionDataSchema).default({}),
   operations: z.record(panelLocalOperationNameSchema, projectionOperationBindingSchema).optional(),
   config: runtimeJsonObjectSchema,
   conversationEntry: panelConversationEntrySchema.optional(),
@@ -424,7 +424,7 @@ export function projectionReadReference(projection: DirectProjectionPorts, sourc
 /** The domain owner validates these identities at registration and resolves them again at use. */
 export function projectionReadReferences(projection: ProjectionReadFacts): readonly OntologyElementRef[] {
   const references = new Map<string, OntologyElementRef>();
-  for (const { source } of Object.values(projection.data)) {
+  for (const { source } of Object.values(projection.data ?? {})) {
     const ref = projectionReadReference(projection, source);
     if (ref) references.set(bindingKey(ref), ref);
   }
@@ -511,7 +511,7 @@ export function missingRequiredReadParameters(
 /** Match a declared read to its owner and check its authored parameter bindings. */
 export function validateDirectProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx): void {
   const issue = (path: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
-  for (const [name, data] of Object.entries(projection.data)) {
+  for (const [name, data] of Object.entries(projection.data ?? {})) {
     const { source, params } = data;
     const path = ["data", name];
     const declaration = directReadDeclaration(projection, data);
@@ -561,8 +561,9 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
 export function objectListDatumName(
   projection: Pick<DirectProjectionPorts, "data">,
 ): "objects" | "rows" | null {
-  if (Object.hasOwn(projection.data, "objects")) return "objects";
-  if (Object.hasOwn(projection.data, "rows")) return "rows";
+  const data = projection.data ?? {};
+  if (Object.hasOwn(data, "objects")) return "objects";
+  if (Object.hasOwn(data, "rows")) return "rows";
   return null;
 }
 

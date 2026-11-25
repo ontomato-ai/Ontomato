@@ -21,6 +21,7 @@
   .ops-turn-aside {
     display: flex;
     flex-direction: column;
+    gap: 6px;
     width: var(--pane-list-width);
     flex-shrink: 0;
     min-width: 0;
@@ -29,6 +30,44 @@
     border-inline-end: 1px solid var(--ui-divider);
     box-sizing: border-box;
     overflow: hidden;
+  }
+  .ops-turn-search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    min-width: 0;
+  }
+  .ops-turn-search-icon {
+    position: absolute;
+    inset-inline-start: 10px;
+    color: var(--sdk-text-color-secondary);
+    pointer-events: none;
+  }
+  .ops-turn-search {
+    width: 100%;
+    height: var(--control-height-sm, 30px);
+    padding: 0 10px 0 30px;
+    border: 1px solid var(--sdk-border-color);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--sdk-bg-color);
+    color: var(--sdk-text-color-primary);
+    font: inherit;
+    font-size: var(--text-xs, 12px);
+    box-sizing: border-box;
+  }
+  .ops-turn-search:focus {
+    outline: none;
+    border-color: var(--sdk-color-primary);
+  }
+  .ops-turn-search-error {
+    margin: 0;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm, 6px);
+    background: var(--sdk-color-danger-light-9, var(--sdk-fill-color-light));
+    color: var(--sdk-color-danger);
+    font-size: var(--text-xs, 12px);
+    line-height: var(--leading-xs, 16px);
   }
   .ops-turn-main {
     display: flex;
@@ -173,6 +212,22 @@
 <div id="app" v-cloak class="ops-turn-page">
   <div class="ops-turn-list-detail" :class="{ 'is-selected': Boolean(selectedKey) }">
     <aside class="ops-turn-aside">
+      <div class="ops-turn-search-wrap">
+        <svg class="ops-turn-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.3-4.3"></path>
+        </svg>
+        <input
+          type="search"
+          class="ops-turn-search"
+          :value="searchText"
+          :placeholder="t('panel.searchPlaceholder')"
+          :aria-label="t('panel.searchPlaceholder')"
+          @input="onSearchInput"
+          @keydown.enter.prevent="submitSearch"
+        />
+      </div>
+      <p v-if="searchError" class="ops-turn-search-error" role="alert">{{ searchError }}</p>
       <projection
         slot="turns"
         class="ops-turn-fill"

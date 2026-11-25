@@ -6,6 +6,20 @@ import type { ObjectListRef } from "./object-list-types";
 /** Resize axis constraint for one grid section or item. */
 export type GroupedGridResizeAxis = "both" | "horizontal" | "vertical" | "none";
 
+/** Ordered per-section grid track descriptor (matched against the value read from `sectionField`). */
+export interface GroupedGridSectionConfig {
+  /** Section value read from `sectionField`. */
+  readonly key: string;
+  /** Optional CSS grid column count override for this section track. */
+  readonly columns?: number;
+  /** Optional row track height override in pixels for this section track. */
+  readonly rowHeight?: number;
+  /** Optional minimum column span override when resizing items in this section track. */
+  readonly minColSpan?: number;
+  /** Optional resize axis constraint (`"both" | "horizontal" | "vertical" | "none"`) for this section track. */
+  readonly resizeAxis?: GroupedGridResizeAxis;
+}
+
 /** Outer surface style for each group container. */
 export type GroupedGridGroupSurface = "plain" | "card";
 

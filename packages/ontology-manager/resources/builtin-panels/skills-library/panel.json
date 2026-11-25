@@ -21,8 +21,7 @@
         "type": "platform:Skill",
         "operation": "skills.import",
         "config": {
-          "label": "panel.importChoose",
-          "overwriteOn": "SKILL_EXISTS"
+          "label": "panel.importChoose"
         },
         "id": "builtin-product-2a6e3f81-9b14-4d72-8c5a-1e7f4b2d9031"
       },

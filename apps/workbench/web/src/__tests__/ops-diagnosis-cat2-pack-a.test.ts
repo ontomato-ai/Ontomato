@@ -465,14 +465,14 @@ describe("E3-A Category 2 Pack A built-in panels", () => {
     });
 
     await vi.waitFor(() => {
-      expect(root.querySelector("input.sdk-object-list-search")).not.toBeNull();
+      expect(root.querySelector("input.ops-turn-search")).not.toBeNull();
       expect(root.textContent).toContain("Existing turn question");
     });
 
     // Temporary buildTurn toolbar has been removed.
     expect(root.querySelector(".ops-turn-toolbar")).toBeNull();
 
-    const searchInput = root.querySelector<HTMLInputElement>("input.sdk-object-list-search")!;
+    const searchInput = root.querySelector<HTMLInputElement>("input.ops-turn-search")!;
 
     // 1. Existing Turn Key on Enter selects directly without triggering turnEvidence.build.
     searchInput.value = "turn.threadA.1";

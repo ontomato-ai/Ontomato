@@ -205,10 +205,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     };
     export const productProjectionInputSchema = { safeParse: ok };
     export const registerProductProjectionRequestSchema = {
-      safeParse: value => value.data !== undefined ? ok(value) : invalid([{
+      safeParse: value => value.config !== undefined ? ok({ data: {}, ...value }) : invalid([{
         code: "invalid_union",
         unionErrors: [
-          { issues: [{ code: "invalid_type", received: "undefined", path: ["data"], message: "Required" }] },
+          { issues: [{ code: "invalid_type", received: "undefined", path: ["config"], message: "Required" }] },
           { issues: [{ code: "invalid_literal", path: ["componentId"], message: "Expected chart" }] },
         ],
       }]),
@@ -766,7 +766,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     };
     const registration = join(directory, "registration.json");
     const localMaterial = { projections: [{
-      id: "draft-list", mode: "create", input: { componentId: "@ontomato/sdk:ObjectList", data: {} },
+      id: "draft-list", mode: "create", input: { componentId: "@ontomato/sdk:ObjectList", config: {} },
     }] };
     await writeFile(registration, JSON.stringify(localMaterial));
     await reference("draft-list");
@@ -780,10 +780,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("projection hidden: 403") && error.stderr.includes("Product use Grant required"));
 
-    delete localMaterial.projections[0].input.data;
+    delete localMaterial.projections[0].input.config;
     await writeFile(registration, JSON.stringify(localMaterial));
     await assert.rejects(run("panel", "check", directory), error =>
-      error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
+      error.stderr.includes("projection draft-list: config: required field is missing") && !error.stderr.includes("Expected chart"));
 
     const authorProjection = { component: "PanelData", type: "platform:AgentDefinition", data: { agents: "list" } };
     manifest.members.tasks = authorProjection;
