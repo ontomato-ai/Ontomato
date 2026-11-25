@@ -12,10 +12,16 @@ import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-st
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberOutput, useMemberParam } from "../panel/member";
 import { useDataStateLabels } from "./data-state-labels";
+import {
+  highlightCodeLines,
+  normalizeCodeLanguage,
+  type CodeToken,
+} from "./annotated-code-highlight";
 
 interface CodeLine {
   readonly number: number;
   readonly text: string;
+  readonly tokens: readonly CodeToken[] | null;
 }
 
 interface FlattenedSegment {
@@ -54,6 +60,8 @@ const props = withDefaults(
     refActionLabel?: string;
     /** Optional panel message key or fallback label preceding the segment-kind legend. */
     legendLabel?: string;
+    /** Optional code language identifier (for example `"python"`, `"json"`, `"sql"`, `"typescript"`); syntax highlighting is always applied when a supported language is given. */
+    language?: string;
   }>(),
   {
     emptyText: undefined,
@@ -64,6 +72,7 @@ const props = withDefaults(
     emptySummaryText: undefined,
     refActionLabel: undefined,
     legendLabel: undefined,
+    language: undefined,
   },
 );
 
@@ -90,6 +99,7 @@ const contentData = useMemberData("content");
 
 const currentCodeParam = useMemberParam("currentCode");
 const activeSegmentParam = useMemberParam("activeSegmentId");
+const languageParam = useMemberParam("language");
 
 function resolveCopy(keyOrText: string | undefined, fallbackPlatformKey?: string): string {
   if (keyOrText !== undefined) {
@@ -148,10 +158,37 @@ const isStale = computed(() => {
   return typeof currentCode === "string" && typeof savedCode === "string" && currentCode !== savedCode;
 });
 
+const resolvedLanguage = computed<string | null>(() => {
+  if (typeof props.language === "string" && props.language.trim().length > 0) {
+    return props.language.trim();
+  }
+  const fromInput = member.inputs.value.language;
+  if (typeof fromInput === "string" && fromInput.trim().length > 0) {
+    return fromInput.trim();
+  }
+  const fromParam = languageParam.value.value;
+  if (typeof fromParam === "string" && fromParam.trim().length > 0) {
+    return fromParam.trim();
+  }
+  const fromDatum = (annotated.value as (AnnotatedCode & { language?: unknown }) | null)?.language;
+  if (typeof fromDatum === "string" && fromDatum.trim().length > 0) {
+    return fromDatum.trim();
+  }
+  return null;
+});
+
+const normalizedLanguage = computed(() => normalizeCodeLanguage(resolvedLanguage.value));
+
 const codeLines = computed<readonly CodeLine[]>(() => {
   const raw = annotated.value?.code;
   if (typeof raw !== "string" || raw.length === 0) return [];
-  return raw.split(/\r?\n/u).map((text, index) => ({ number: index + 1, text }));
+  const rawLines = raw.split(/\r?\n/u);
+  const highlighted = highlightCodeLines(rawLines, normalizedLanguage.value);
+  return rawLines.map((text, index) => ({
+    number: index + 1,
+    text,
+    tokens: highlighted ? highlighted[index] ?? [] : null,
+  }));
 });
 
 function flattenSegments(
@@ -384,7 +421,15 @@ function selectRef(refKey: string) {
               @click="pickLine(line.number)"
             >
               <span class="sdk-annotated-code-line-no" aria-hidden="true">{{ line.number }}</span>
-              <span class="sdk-annotated-code-line-text">{{ line.text }}</span>
+              <span class="sdk-annotated-code-line-text" :data-language="normalizedLanguage ?? undefined">
+                <template v-if="line.tokens">
+                  <template v-for="(token, tokenIndex) in line.tokens" :key="tokenIndex">
+                    <span v-if="token.kind" class="sdk-code-tok" :data-tok="token.kind">{{ token.text }}</span>
+                    <template v-else>{{ token.text }}</template>
+                  </template>
+                </template>
+                <template v-else>{{ line.text }}</template>
+              </span>
             </div>
           </div>
 
@@ -613,6 +658,88 @@ function selectRef(refKey: string) {
 .sdk-annotated-code-line-text {
   flex: 1 1 auto;
   color: var(--sdk-text-color-regular);
+}
+
+.sdk-code-tok[data-tok="keyword"] {
+  color: var(--sdk-code-tok-keyword, #7c3aed);
+  font-weight: var(--font-medium);
+}
+
+.sdk-code-tok[data-tok="string"] {
+  color: var(--sdk-code-tok-string, #15803d);
+}
+
+.sdk-code-tok[data-tok="comment"] {
+  color: var(--sdk-code-tok-comment, var(--sdk-text-color-placeholder, #6b7280));
+  font-style: italic;
+}
+
+.sdk-code-tok[data-tok="number"] {
+  color: var(--sdk-code-tok-number, #b45309);
+}
+
+.sdk-code-tok[data-tok="function"] {
+  color: var(--sdk-code-tok-function, #1d4ed8);
+}
+
+.sdk-code-tok[data-tok="operator"] {
+  color: var(--sdk-code-tok-operator, #0f766e);
+}
+
+.sdk-code-tok[data-tok="type"] {
+  color: var(--sdk-code-tok-type, #0369a1);
+}
+
+.sdk-code-tok[data-tok="builtin"] {
+  color: var(--sdk-code-tok-builtin, #be123c);
+}
+
+.sdk-code-tok[data-tok="property"] {
+  color: var(--sdk-code-tok-property, #0e7490);
+}
+
+.sdk-code-tok[data-tok="punctuation"] {
+  color: var(--sdk-code-tok-punctuation, var(--sdk-text-color-secondary, #64748b));
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="keyword"] {
+  color: var(--sdk-code-tok-keyword, #c4b5fd);
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="string"] {
+  color: var(--sdk-code-tok-string, #86efac);
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="comment"] {
+  color: var(--sdk-code-tok-comment, var(--sdk-text-color-placeholder, #9ca3af));
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="number"] {
+  color: var(--sdk-code-tok-number, #fcd34d);
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="function"] {
+  color: var(--sdk-code-tok-function, #93c5fd);
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="operator"] {
+  color: var(--sdk-code-tok-operator, #5eead4);
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="type"] {
+  color: var(--sdk-code-tok-type, #7dd3fc);
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="builtin"] {
+  color: var(--sdk-code-tok-builtin, #fda4af);
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="property"] {
+  color: var(--sdk-code-tok-property, #67e8f9);
+}
+
+:global(html.dark) .sdk-code-tok[data-tok="punctuation"] {
+  color: var(--sdk-code-tok-punctuation, var(--sdk-text-color-secondary, #94a3b8));
 }
 
 .sdk-annotated-code-seg-pane {

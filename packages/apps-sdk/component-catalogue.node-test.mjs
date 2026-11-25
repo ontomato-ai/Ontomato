@@ -214,11 +214,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     for (const param of declaredReadParameters()) assert.ok(panelData.data["*"].runtimeParams.includes(param), `PanelData takes ${param}`);
     // A placement binds a component's outputs to the panel's state by type; an object of the projection's own type is
     // `@binding`, which registration resolves, and a signal with no state stays an event.
+    assert.deepEqual(declared.get("ObjectList").inputs, {
+      expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
+    });
     assert.deepEqual(declared.get("ObjectList").outputs, {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
+      expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
     });
     assert.equal(declared.get("ObjectCount").outputs, undefined, "ObjectCount is presentation-only");
     assert.deepEqual(declared.get("ReferencePicker").outputs, {

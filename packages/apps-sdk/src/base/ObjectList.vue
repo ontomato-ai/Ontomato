@@ -32,9 +32,11 @@ import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platfo
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import AgentAvatar from "@ontomato/agent-shell-ui/agent-avatar";
+import { confirmDanger } from "@ontomato/platform-shell";
 import { appIcon, curatedIcon } from "@ontomato/platform-shell/icons";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
+import type { PanelFormAdapters } from "../panel/forms";
 import { useLocalDraftStore } from "../panel/local-drafts";
 import { paramValues, type MemberReadyData } from "../panel/direct";
 import {
@@ -65,6 +67,7 @@ import { savePanelFile } from "../panel/save-file";
 import type { ListRowSlotOperation } from "../panel/slot-context";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
 import { resolveValueMapEntry, type ResolvedValueMapEntry } from "./display-value";
+import { useContainerWidth } from "./container-width";
 import ListRowSlotHost from "./ListRowSlotHost.vue";
 import ObjectListBatchActions from "./ObjectListBatchActions.vue";
 import ObjectListColumnToggle from "./ObjectListColumnToggle.vue";
@@ -72,6 +75,7 @@ import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRo
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
+import RowDetailFormScope, { type RowDetailFormRegistration } from "./RowDetailFormScope";
 import TypedValue from "./TypedValue.vue";
 import {
   formatOperationOutcome,
@@ -120,6 +124,14 @@ import {
   matchesLocalSearch,
   type ObjectListGroup,
 } from "./object-list-local";
+import {
+  addExpandedRowKey,
+  isInteractiveRowClickTarget,
+  matchesRowExpandedKey,
+  normalizeExpandedKeys,
+  removeExpandedRowAliases,
+} from "./object-list-expand";
+import { filterResponsiveColumns } from "./object-list-responsive";
 import type {
   ObjectListColumn,
   ObjectListRef,
@@ -232,6 +244,7 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "inlineRenameOperation",
   "inlineRenameField",
   "renamingKey",
+  "expandedKeys",
   "rowExpandMode",
   "rowResultDisplay",
   "showDraftIndicator",
@@ -395,11 +408,12 @@ const props = withDefaults(
     /** Pin the first visible table column to the left (`position: sticky; left: 0`) and style its text as a primary clickable link when rows are activatable; defaults to `false`. */
     pinPrimaryColumn?: boolean;
     /**
-     * How table rows trigger activation (`choose` / `openOutput`): `"click"` (default) activates on single click;
+     * How rows trigger activation: `"click"` (default) activates (`choose` / `openOutput`) on single click;
      * `"dblclick"` highlights the row on single click (preserving text selection) and activates on double-click or
-     * primary-column link click.
+     * primary-column link click; `"expand"` toggles inline `#row-detail` (or accordion) expansion on whole-row click
+     * or `Enter`/`Space` with a trailing chevron indicator and dirty-form leave confirmation.
      */
-    rowActivation?: "click" | "dblclick";
+    rowActivation?: "click" | "dblclick" | "expand";
     /** Show a "Go to page" jumper input in the pagination footer when in numeric `page` mode with known total pages; defaults to `true`. */
     showPageJumper?: boolean;
     /** Show a compact range summary bar (`Showing X–Y of Z`) above the list or table when rows are loaded; defaults to `false`. */
@@ -430,6 +444,8 @@ const props = withDefaults(
      * rename input in `"tabs"` layout. Supports `v-model:renamingKey`.
      */
     renamingKey?: string | null;
+    /** Optional controlled list of expanded row keys (primary keys or composite row identities). Supports `v-model:expandedKeys` and panel `expandedKeys` state bindings. */
+    expandedKeys?: readonly string[];
     /** Row expansion mode: `"single"` (default) keeps at most one expanded row; `"multiple"` allows concurrent expanded rows. */
     rowExpandMode?: "single" | "multiple";
     /** How per-row operation results are displayed: `"none"` (default), `"inline"` (exposed to slots without auto-expand), or `"expand"` (auto-expand row and render result). */
@@ -496,6 +512,7 @@ const props = withDefaults(
     inlineRenameOperation: undefined,
     inlineRenameField: undefined,
     renamingKey: undefined,
+    expandedKeys: undefined,
     rowExpandMode: undefined,
     rowResultDisplay: undefined,
     showDraftIndicator: undefined,
@@ -536,6 +553,8 @@ const emit = defineEmits<{
   "rename-cancel": [payload: ObjectListRenameCancelPayload];
   /** Emitted when the active inline-renaming tab key changes. */
   "update:renamingKey": [key: string | null];
+  /** Emitted when the set of expanded row keys changes. */
+  "update:expandedKeys": [keys: string[]];
 }>();
 
 type RowRefSlotScope = {
@@ -811,6 +830,12 @@ const sizeParam = (pageMode === "cursor" || pageMode === "page") && "size" in si
 const pageParam = pageMode === "page" ? useMemberParam(paramNameOf("page")) : null;
 const selectedParam = useMemberParam("selected");
 const checkedParam = useMemberParam("checked");
+const canOutputExpandedKeys = Boolean(slotOutputState(panel.manifest, member.key, "expandedKeys"));
+const hasWritableExpandedKeysInput = Boolean(
+  placement.inputs?.expandedKeys && "state" in placement.inputs.expandedKeys,
+);
+const hasExpandedKeysSource = Boolean(canOutputExpandedKeys || placement.inputs?.expandedKeys);
+const expandedKeysParam = useMemberParam("expandedKeys");
 
 const datumMappedInputNames = new Set([
   ...("object" in datum.source && "input" in datum.source.object ? [datum.source.object.input] : []),
@@ -933,23 +958,54 @@ const showRowChevron = computed(
 const showListChevron = computed(
   () => Boolean(props.showChevron) && !isTable.value && !isCards.value && !hasActionColumn.value,
 );
+const isRowExpandActivation = computed(
+  () => props.rowActivation === "expand" && (hasRowDetailSlot.value || isAccordion.value),
+);
+const showLeadingExpandColumn = computed(
+  () => hasRowDetailSlot.value && props.rowActivation !== "expand",
+);
+const showTrailingExpandColumn = computed(
+  () => isTable.value && hasRowDetailSlot.value && props.rowActivation === "expand",
+);
 const showRowIndexColumn = computed(() => Boolean(props.showRowIndex) && isTable.value);
 const tableColumnCount = computed(
   () =>
-    (hasRowDetailSlot.value ? 1 : 0)
+    (showLeadingExpandColumn.value ? 1 : 0)
     + (canCheck ? 1 : 0)
     + (showRowIndexColumn.value ? 1 : 0)
     + visibleColumns.value.length
     + (hasActionColumn.value ? 1 : 0)
-    + (showRowChevron.value ? 1 : 0),
+    + (showRowChevron.value ? 1 : 0)
+    + (showTrailingExpandColumn.value ? 1 : 0),
 );
+const listRootRef = ref<HTMLElement | null>(null);
 const scrollContainerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const viewportHeight = ref(0);
 const containerWidth = ref(0);
+const { width: rootContainerWidth } = useContainerWidth(listRootRef, "--bp-object-list", 0);
+watch(
+  rootContainerWidth,
+  (next) => {
+    if (Number.isFinite(next) && next > 0) {
+      containerWidth.value = next;
+    }
+  },
+  { immediate: true },
+);
 const measuredHeights = new Map<string, number>();
 const measuredDetailHeights = new Map<string, number>();
 const measureTick = ref(0);
+
+function readObservedContainerWidth(el: HTMLElement, entry?: ResizeObserverEntry): number {
+  const entryWidth = entry?.contentRect?.width;
+  if (typeof entryWidth === "number" && Number.isFinite(entryWidth) && entryWidth > 0) {
+    return entryWidth;
+  }
+  const rectWidth = typeof el.getBoundingClientRect === "function" ? el.getBoundingClientRect().width : 0;
+  if (Number.isFinite(rectWidth) && rectWidth > 0) return rectWidth;
+  return el.clientWidth;
+}
 
 function recordMeasuredHeight(map: Map<string, number>, key: string, height: number) {
   if (height <= 0) return;
@@ -964,10 +1020,14 @@ function onContainerScroll(event: Event) {
   if (!el) return;
   scrollTop.value = el.scrollTop;
   if (el.clientHeight !== viewportHeight.value) viewportHeight.value = el.clientHeight;
-  if (el.clientWidth !== containerWidth.value) containerWidth.value = el.clientWidth;
+  const measuredWidth = readObservedContainerWidth(el);
+  if (measuredWidth > 0 && measuredWidth !== containerWidth.value) {
+    containerWidth.value = measuredWidth;
+  }
 }
 
 let containerResizeObserver: ResizeObserver | null = null;
+let componentUnmounted = false;
 watch(
   scrollContainerRef,
   (el) => {
@@ -975,11 +1035,15 @@ watch(
     containerResizeObserver = null;
     if (!el) return;
     viewportHeight.value = el.clientHeight;
-    containerWidth.value = el.clientWidth;
+    const initialWidth = readObservedContainerWidth(el);
+    if (initialWidth > 0) containerWidth.value = initialWidth;
     if (typeof ResizeObserver !== "undefined") {
-      containerResizeObserver = new ResizeObserver(() => {
-        viewportHeight.value = el.clientHeight;
-        containerWidth.value = el.clientWidth;
+      containerResizeObserver = new ResizeObserver((entries) => {
+        const entry = entries[entries.length - 1];
+        const nextHeight = entry?.contentRect?.height;
+        viewportHeight.value = typeof nextHeight === "number" && nextHeight > 0 ? nextHeight : el.clientHeight;
+        const nextWidth = readObservedContainerWidth(el, entry);
+        if (nextWidth > 0) containerWidth.value = nextWidth;
       });
       containerResizeObserver.observe(el);
     }
@@ -988,12 +1052,116 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  componentUnmounted = true;
   containerResizeObserver?.disconnect();
   containerResizeObserver = null;
 });
 
-const expandedKeys = ref<ReadonlySet<string>>(new Set());
+const isPropControlledExpandedKeys = computed(() => props.expandedKeys !== undefined);
+const hasControlledExpandedKeys = computed(() => isPropControlledExpandedKeys.value || hasExpandedKeysSource);
+const internalExpandedKeys = ref<readonly string[]>([]);
+const expandedKeyList = computed<readonly string[]>(() => {
+  const mode = effectiveRowExpandMode.value;
+  if (props.expandedKeys !== undefined) {
+    return normalizeExpandedKeys(props.expandedKeys, mode);
+  }
+  if (hasExpandedKeysSource) {
+    return normalizeExpandedKeys(expandedKeysParam.value.value, mode);
+  }
+  return normalizeExpandedKeys(internalExpandedKeys.value, mode);
+});
+const expandedKeys = computed<ReadonlySet<string>>(() => new Set(expandedKeyList.value));
 const detailElements = new Map<string, HTMLElement>();
+const rowDetailFormsByRowKey = new Map<string, Set<RowDetailFormRegistration>>();
+let expandGuardPending = false;
+
+function registerRowDetailForm(rowKey: string, entry: RowDetailFormRegistration): () => void {
+  let set = rowDetailFormsByRowKey.get(rowKey);
+  if (!set) {
+    set = new Set();
+    rowDetailFormsByRowKey.set(rowKey, set);
+  }
+  set.add(entry);
+  return () => {
+    const current = rowDetailFormsByRowKey.get(rowKey);
+    if (!current) return;
+    current.delete(entry);
+    if (current.size === 0) rowDetailFormsByRowKey.delete(rowKey);
+  };
+}
+
+function collectScopedRowDetailForms(rowKeys: readonly string[]): Map<PanelFormAdapters, string[]> {
+  const byRegistry = new Map<PanelFormAdapters, Set<string>>();
+  for (const rowKey of rowKeys) {
+    const entries = rowDetailFormsByRowKey.get(rowKey);
+    if (!entries) continue;
+    for (const entry of entries) {
+      const registry = entry.forms ?? panel.instance.forms;
+      if (!registry) continue;
+      let slotSet = byRegistry.get(registry);
+      if (!slotSet) {
+        slotSet = new Set<string>();
+        byRegistry.set(registry, slotSet);
+      }
+      slotSet.add(entry.slot);
+    }
+  }
+  const grouped = new Map<PanelFormAdapters, string[]>();
+  for (const [registry, slotSet] of byRegistry) {
+    if (slotSet.size > 0) grouped.set(registry, [...slotSet]);
+  }
+  return grouped;
+}
+
+function hasDirtyRowDetailForms(rowKeys: readonly string[]): boolean {
+  if (rowKeys.length === 0) return false;
+  for (const [registry, slotList] of collectScopedRowDetailForms(rowKeys)) {
+    if (registry.dirty(slotList)) return true;
+  }
+  return false;
+}
+
+function discardRowDetailForms(rowKeys: readonly string[]): void {
+  for (const [registry, slotList] of collectScopedRowDetailForms(rowKeys)) {
+    registry.discardAll(slotList);
+  }
+}
+
+function askLeaveUnsavedRowDetail(): Promise<boolean> {
+  if (panel.confirmLeaveUnsaved) {
+    return panel.confirmLeaveUnsaved();
+  }
+  return confirmDanger(
+    t("platform.formLeaveUnsaved"),
+    t("platform.unsavedChanges"),
+    {
+      confirmButtonText: t("platform.discard"),
+      cancelButtonText: t("platform.keepEditing"),
+    },
+  );
+}
+
+function guardAndApplyRowExpand(collapsingRowKeys: readonly string[], apply: () => void): void {
+  if (!hasDirtyRowDetailForms(collapsingRowKeys)) {
+    apply();
+    return;
+  }
+  if (expandGuardPending) return;
+  expandGuardPending = true;
+  void (async () => {
+    try {
+      const leave = await askLeaveUnsavedRowDetail();
+      if (componentUnmounted || !leave) return;
+      discardRowDetailForms(collapsingRowKeys);
+      apply();
+    } catch {
+      // Treat a rejected confirmation prompt as cancelling the collapse/switch.
+    } finally {
+      expandGuardPending = false;
+    }
+  })();
+}
+
 function setDetailElement(key: string, element: unknown) {
   if (element instanceof HTMLElement) {
     detailElements.set(key, element);
@@ -1002,38 +1170,110 @@ function setDetailElement(key: string, element: unknown) {
     detailElements.delete(key);
   }
 }
+
+function rowExpandAliases(row: PlatformObjectRecord): readonly string[] {
+  const identity = rowIdentityKey(row);
+  const itemKey = rowItemKey(row);
+  const itemKeyStr = typeof itemKey === "string" ? itemKey : `${itemKey.className}:${itemKey.primaryKey}`;
+  const aliases = [identity];
+  if (itemKeyStr && itemKeyStr !== identity) aliases.push(itemKeyStr);
+  if (row.primaryKey && !aliases.includes(row.primaryKey)) aliases.push(row.primaryKey);
+  return aliases;
+}
+
+const hasDuplicatePrimaryKeys = computed(() => {
+  const seen = new Set<string>();
+  for (const row of rows.value) {
+    if (seen.has(row.primaryKey)) return true;
+    seen.add(row.primaryKey);
+  }
+  return false;
+});
+
+function rowExpandCanonicalKey(row: PlatformObjectRecord): string {
+  if (hasDuplicatePrimaryKeys.value) return rowIdentityKey(row);
+  return row.primaryKey || rowIdentityKey(row);
+}
+
+function findRowByExpandKey(key: string): PlatformObjectRecord | undefined {
+  return rows.value.find((row) => rowExpandAliases(row).includes(key));
+}
+
+function setExpandedKeys(next: readonly string[]) {
+  const normalized = normalizeExpandedKeys(next, effectiveRowExpandMode.value);
+  if (!isPropControlledExpandedKeys.value && !hasExpandedKeysSource) {
+    internalExpandedKeys.value = normalized;
+  }
+  if (placement.outputs?.expandedKeys) {
+    void panel.instance.output(member.key, "expandedKeys", normalized as unknown as RuntimeJsonValue);
+  } else if (hasWritableExpandedKeysInput) {
+    expandedKeysParam.set(normalized as unknown as RuntimeJsonValue);
+  }
+  emit("update:expandedKeys", normalized);
+}
+
 function isRowExpanded(row: PlatformObjectRecord): boolean {
-  return expandedKeys.value.has(rowIdentityKey(row));
+  return matchesRowExpandedKey(expandedKeys.value, rowExpandAliases(row));
 }
+
+function expandRowKeyImmediate(key: string, knownRow?: PlatformObjectRecord) {
+  const row = knownRow ?? findRowByExpandKey(key);
+  const canonical = row ? rowExpandCanonicalKey(row) : key;
+  const aliases = row ? rowExpandAliases(row) : [key];
+  const current = expandedKeyList.value;
+  const next = addExpandedRowKey(current, canonical, aliases, effectiveRowExpandMode.value);
+  if (next.length === current.length && next.every((item, idx) => item === current[idx])) return;
+  setExpandedKeys(next);
+}
+
+function collapseRowKeyImmediate(key: string, knownRow?: PlatformObjectRecord) {
+  const row = knownRow ?? findRowByExpandKey(key);
+  const aliases = row ? rowExpandAliases(row) : [key];
+  const current = expandedKeyList.value;
+  const next = removeExpandedRowAliases(current, aliases);
+  if (next.length === current.length) return;
+  setExpandedKeys(next);
+}
+
 function expandRowKey(key: string) {
-  if (effectiveRowExpandMode.value === "multiple") {
-    if (expandedKeys.value.has(key)) return;
-    const next = new Set(expandedKeys.value);
-    next.add(key);
-    expandedKeys.value = next;
-  } else {
-    if (expandedKeys.value.size === 1 && expandedKeys.value.has(key)) return;
-    expandedKeys.value = new Set([key]);
-  }
+  expandRowKeyImmediate(key);
 }
+
 function collapseRowKey(key: string) {
-  if (!expandedKeys.value.has(key)) return;
-  const next = new Set(expandedKeys.value);
-  next.delete(key);
-  expandedKeys.value = next;
+  collapseRowKeyImmediate(key);
 }
+
+function requestCollapseRow(row: PlatformObjectRecord) {
+  const identity = rowIdentityKey(row);
+  guardAndApplyRowExpand([identity], () => collapseRowKeyImmediate(identity, row));
+}
+
 function toggleRowExpanded(row: PlatformObjectRecord) {
-  const key = rowIdentityKey(row);
-  if (expandedKeys.value.has(key)) {
-    collapseRowKey(key);
-  } else {
-    expandRowKey(key);
+  const identity = rowIdentityKey(row);
+  if (isRowExpanded(row)) {
+    guardAndApplyRowExpand([identity], () => collapseRowKeyImmediate(identity, row));
+    return;
   }
+  if (effectiveRowExpandMode.value === "single") {
+    const collapsingSet = new Set<string>();
+    for (const candidate of rows.value) {
+      const candidateIdentity = rowIdentityKey(candidate);
+      if (candidateIdentity !== identity && isRowExpanded(candidate)) {
+        collapsingSet.add(candidateIdentity);
+      }
+    }
+    for (const registeredKey of rowDetailFormsByRowKey.keys()) {
+      if (registeredKey !== identity) collapsingSet.add(registeredKey);
+    }
+    guardAndApplyRowExpand([...collapsingSet], () => expandRowKeyImmediate(identity, row));
+    return;
+  }
+  expandRowKeyImmediate(identity, row);
 }
+
 watch(effectiveRowExpandMode, (mode) => {
-  if (mode === "single" && expandedKeys.value.size > 1) {
-    const [first] = expandedKeys.value;
-    expandedKeys.value = first ? new Set([first]) : new Set();
+  if (mode === "single" && !hasControlledExpandedKeys.value && internalExpandedKeys.value.length > 1) {
+    internalExpandedKeys.value = [internalExpandedKeys.value[0]!];
   }
 });
 function rowExpandAriaLabel(row: PlatformObjectRecord): string {
@@ -1082,7 +1322,7 @@ if ("object" in datum.source) {
       if (next === prev) return;
       initialLoadDone = false;
       activeRowLabel.value = null;
-      expandedKeys.value = new Set();
+      if (expandedKeyList.value.length > 0) setExpandedKeys([]);
       rowOperationResults.value = {};
       lastNoneModeFeedback.value = null;
       resetPaging();
@@ -1547,12 +1787,16 @@ watch(
   { flush: "sync" },
 );
 
+const responsiveColumns = computed<readonly ObjectListColumn[]>(() =>
+  filterResponsiveColumns(allColumns.value, containerWidth.value),
+);
+
 const visibleColumns = computed<readonly ObjectListColumn[]>(() =>
-  filterVisibleColumns(allColumns.value, hiddenColumnKeys.value),
+  filterVisibleColumns(responsiveColumns.value, hiddenColumnKeys.value),
 );
 
 function setColumnVisible(key: string, visible: boolean) {
-  hiddenColumnKeys.value = toggleColumnKeyVisibility(allColumns.value, hiddenColumnKeys.value, key, visible);
+  hiddenColumnKeys.value = toggleColumnKeyVisibility(responsiveColumns.value, hiddenColumnKeys.value, key, visible);
 }
 
 function resetColumnVisibility() {
@@ -2189,7 +2433,7 @@ function columnLabel(column: ObjectListColumn): string {
 }
 
 const columnToggleItems = computed(() =>
-  allColumns.value.map((column) => ({ key: column.key, label: columnLabel(column) })),
+  responsiveColumns.value.map((column) => ({ key: column.key, label: columnLabel(column) })),
 );
 
 const exportColumns = computed<readonly ObjectListColumn[]>(() => {
@@ -2676,7 +2920,7 @@ function estimatedItemHeight(item: FlatListItem): number {
   }
   const baseDefault = isCards.value ? 160 : isTable.value ? 40 : (listHasTwoLines.value ? 64 : 48);
   const measured = measuredHeights.get(item.key);
-  const expanded = expandedKeys.value.has(item.key);
+  const expanded = isRowExpanded(item.row);
   if (isTable.value) {
     const rowHeight = measured ?? baseDefault;
     return expanded ? rowHeight + (measuredDetailHeights.get(item.key) ?? 200) : rowHeight;
@@ -2811,33 +3055,57 @@ watch(
   { immediate: true },
 );
 
-watch(expandedKeys, (next, prev) => {
-  const prevSet = prev ?? new Set<string>();
-  const added: string[] = [];
-  for (const key of next) {
-    if (!prevSet.has(key)) added.push(key);
-  }
-  const latestAdded = added[added.length - 1];
-  if (!latestAdded) return;
-  ensureRowInVirtualWindow(latestAdded);
-  void nextTick(() => {
-    const target = detailElements.get(latestAdded) ?? rowElements.get(latestAdded);
-    if (target && typeof target.scrollIntoView === "function") {
-      target.scrollIntoView({ block: "nearest" });
+const scrolledExpandedKeys = new Set<string>();
+watch(
+  [expandedKeyList, rows],
+  ([keys, listed]) => {
+    const activeKeySet = new Set(keys);
+    for (const seen of [...scrolledExpandedKeys]) {
+      if (!activeKeySet.has(seen)) scrolledExpandedKeys.delete(seen);
     }
-  });
-});
+    let targetRow: PlatformObjectRecord | undefined;
+    let targetKey: string | undefined;
+    for (let index = keys.length - 1; index >= 0; index -= 1) {
+      const key = keys[index]!;
+      if (scrolledExpandedKeys.has(key)) continue;
+      const matched = listed.find((row) => rowExpandAliases(row).includes(key));
+      if (matched) {
+        targetRow = matched;
+        targetKey = key;
+        break;
+      }
+    }
+    if (!targetRow || !targetKey) return;
+    scrolledExpandedKeys.add(targetKey);
+    const identity = rowIdentityKey(targetRow);
+    const containingGroup = rowGroupKeyByIdentity.value.get(identity);
+    if (containingGroup !== undefined && collapsedGroups.value.has(containingGroup)) {
+      const next = new Set(collapsedGroups.value);
+      next.delete(containingGroup);
+      collapsedGroups.value = next;
+    }
+    ensureRowInVirtualWindow(identity);
+    void nextTick(() => {
+      const target = detailElements.get(identity) ?? rowElements.get(identity);
+      if (target && typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({ block: "nearest" });
+      }
+    });
+  },
+  { immediate: true },
+);
 
 watch(rows, (listed) => {
-  if (datumState.value.status === "loading" || expandedKeys.value.size === 0) return;
-  const present = new Set(listed.map((row) => rowIdentityKey(row)));
-  let changed = false;
-  const next = new Set<string>();
-  for (const key of expandedKeys.value) {
-    if (present.has(key)) next.add(key);
-    else changed = true;
+  if (hasControlledExpandedKeys.value) return;
+  if (datumState.value.status === "loading" || internalExpandedKeys.value.length === 0) return;
+  const present = new Set<string>();
+  for (const row of listed) {
+    for (const alias of rowExpandAliases(row)) present.add(alias);
   }
-  if (changed) expandedKeys.value = next;
+  const next = internalExpandedKeys.value.filter((key) => present.has(key));
+  if (next.length !== internalExpandedKeys.value.length) {
+    internalExpandedKeys.value = next;
+  }
 });
 
 const activeRowLabel = ref<string | null>(null);
@@ -3003,7 +3271,14 @@ function isPinnedPrimaryColumn(columnIndex: number): boolean {
   return Boolean(props.pinPrimaryColumn) && columnIndex === 0;
 }
 
-function onTableRowClick(row: PlatformObjectRecord) {
+function onTableRowClick(row: PlatformObjectRecord, event?: MouseEvent) {
+  if (props.rowActivation === "expand") {
+    if (isRowExpandActivation.value) {
+      if (event && isInteractiveRowClickTarget(event.target, event.currentTarget)) return;
+      toggleRowExpanded(row);
+    }
+    return;
+  }
   if (props.rowActivation === "dblclick") {
     highlightedIdentity.value = rowIdentityKey(row);
     return;
@@ -3014,6 +3289,24 @@ function onTableRowClick(row: PlatformObjectRecord) {
 function onTableRowDblclick(row: PlatformObjectRecord) {
   if (props.rowActivation !== "dblclick") return;
   if (rowActivatable.value) choose(row);
+}
+
+function onCardClick(row: PlatformObjectRecord, event: MouseEvent) {
+  if (props.rowActivation === "expand" && isRowExpandActivation.value) {
+    if (isInteractiveRowClickTarget(event.target, event.currentTarget)) return;
+    toggleRowExpanded(row);
+    return;
+  }
+  if (rowActivatable.value) choose(row);
+}
+
+function onListItemClick(row: PlatformObjectRecord, event: MouseEvent) {
+  if (props.rowActivation === "expand" && isRowExpandActivation.value) {
+    if (isInteractiveRowClickTarget(event.target, event.currentTarget)) return;
+    toggleRowExpanded(row);
+    return;
+  }
+  if (rowSelectable) choose(row);
 }
 
 function focusRowByIdentity(identity: string, mode: "table" | "cards" | "list") {
@@ -3068,6 +3361,13 @@ function onRowKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
   if (event.target !== event.currentTarget) return;
   if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+    if (props.rowActivation === "expand") {
+      if (!isRowExpandActivation.value) return;
+      event.preventDefault();
+      toggleRowExpanded(row);
+      return;
+    }
+    if (!rowSelectable) return;
     event.preventDefault();
     choose(row);
     return;
@@ -3080,6 +3380,12 @@ function onCardKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
   if (event.target !== event.currentTarget) return;
   if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+    if (props.rowActivation === "expand" && isRowExpandActivation.value) {
+      event.preventDefault();
+      toggleRowExpanded(row);
+      return;
+    }
+    if (!rowActivatable.value) return;
     event.preventDefault();
     choose(row);
     return;
@@ -3091,6 +3397,15 @@ function onCardKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
 function onListItemKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
   if (event.target !== event.currentTarget) return;
   if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (
+    props.rowActivation === "expand"
+    && isRowExpandActivation.value
+    && (event.key === "Enter" || event.key === " " || event.key === "Spacebar")
+  ) {
+    event.preventDefault();
+    toggleRowExpanded(row);
+    return;
+  }
   navigateRowFocus(row, event, "list");
 }
 
@@ -4546,6 +4861,7 @@ defineExpose({
 
 <template>
   <div
+    ref="listRootRef"
     class="sdk-object-list"
     :class="{ 'sdk-object-list-compact': isCompact, 'sdk-object-list-tabs-mode': isTabs }"
     :data-refreshing="isRefreshingWithPrevious ? 'true' : undefined"
@@ -4746,7 +5062,7 @@ defineExpose({
         >
           <thead v-if="showHeader !== false">
             <tr>
-              <th v-if="hasRowDetailSlot" class="sdk-object-list-expand-col"></th>
+              <th v-if="showLeadingExpandColumn" class="sdk-object-list-expand-col"></th>
               <th v-if="canCheck" class="sdk-object-list-check-col">
                 <input
                   :ref="selectAllCheckboxRef"
@@ -4787,6 +5103,7 @@ defineExpose({
                 :style="actionColumnStyle"
               >{{ actionColumnHeader }}</th>
               <th v-if="showRowChevron" class="sdk-object-list-chevron-col" aria-hidden="true"></th>
+              <th v-if="showTrailingExpandColumn" class="sdk-object-list-expand-trailing-col" aria-hidden="true"></th>
             </tr>
           </thead>
           <tbody v-if="tablePreservesEmpty" class="sdk-object-list-empty-body">
@@ -4824,23 +5141,26 @@ defineExpose({
               <template v-else>
                 <tr
                   :ref="(el) => setRowElement(entry.key, el)"
-                  :tabindex="rowSelectable ? 0 : undefined"
+                  :tabindex="rowSelectable || isRowExpandActivation ? 0 : undefined"
                   data-row-item="true"
+                  :data-expanded="isRowExpanded(entry.row) ? 'true' : undefined"
                   :data-highlighted="rowActivation === 'dblclick' && entry.key === highlightedIdentity ? 'true' : undefined"
                   :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
+                  :aria-expanded="isRowExpandActivation ? isRowExpanded(entry.row) : undefined"
                   :class="[
                     {
                       chosen: entry.key === chosenIdentity,
+                      expanded: isRowExpandActivation && isRowExpanded(entry.row),
                       highlighted: rowActivation === 'dblclick' && entry.key === highlightedIdentity,
-                      'is-non-selectable': !rowActivatable || rowActivation === 'dblclick',
+                      'is-non-selectable': (!rowActivatable && !isRowExpandActivation) || rowActivation === 'dblclick',
                     },
                     rowToneClass(entry.row),
                   ]"
-                  @click="onTableRowClick(entry.row)"
+                  @click="onTableRowClick(entry.row, $event)"
                   @dblclick="onTableRowDblclick(entry.row)"
-                  @keydown="rowSelectable ? onRowKeydown(entry.row, $event) : undefined"
+                  @keydown="(rowSelectable || isRowExpandActivation) ? onRowKeydown(entry.row, $event) : undefined"
                 >
-                  <td v-if="hasRowDetailSlot" class="sdk-object-list-expand-col" @click.stop>
+                  <td v-if="showLeadingExpandColumn" class="sdk-object-list-expand-col" @click.stop>
                     <button
                       type="button"
                       class="sdk-object-list-expand-btn"
@@ -4978,7 +5298,7 @@ defineExpose({
                         </span>
                         <div class="sdk-object-list-cell-text">
                           <button
-                            v-if="isPinnedPrimaryColumn(colIndex) && rowActivatable"
+                            v-if="isPinnedPrimaryColumn(colIndex) && rowActivatable && !isRowExpandActivation"
                             type="button"
                             class="sdk-object-list-primary-link"
                             @click.stop="choose(entry.row)"
@@ -5090,7 +5410,7 @@ defineExpose({
                       </span>
                       <div class="sdk-object-list-cell-text">
                         <button
-                          v-if="isPinnedPrimaryColumn(colIndex) && rowActivatable"
+                          v-if="isPinnedPrimaryColumn(colIndex) && rowActivatable && !isRowExpandActivation"
                           type="button"
                           class="sdk-object-list-primary-link"
                           @click.stop="choose(entry.row)"
@@ -5157,6 +5477,23 @@ defineExpose({
                       <path d="M6 3.5 10.5 8 6 12.5" />
                     </svg>
                   </td>
+                  <td v-if="showTrailingExpandColumn" class="sdk-object-list-expand-trailing-col">
+                    <button
+                      type="button"
+                      class="sdk-object-list-expand-btn sdk-object-list-expand-trailing-btn"
+                      data-row-expand-indicator="true"
+                      :aria-expanded="isRowExpanded(entry.row)"
+                      :aria-label="rowExpandAriaLabel(entry.row)"
+                      @click.stop="toggleRowExpanded(entry.row)"
+                    >
+                      <component
+                        :is="curatedIcon(isRowExpanded(entry.row) ? 'chevron-up' : 'chevron-down')"
+                        :size="16"
+                        class="sdk-object-list-expand-chevron"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </td>
                 </tr>
                 <tr
                   v-if="shouldShowRowDetail(entry.row)"
@@ -5164,24 +5501,29 @@ defineExpose({
                   class="sdk-object-list-detail-row"
                 >
                   <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell sdk-object-list-detail-host">
-                    <list-row-slot-host
+                    <RowDetailFormScope
                       v-if="hasRowDetailSlot"
-                      :list-slot="member.key"
-                      :row-ref="rowObjectRef(entry.row)"
-                      :item-key="rowItemKey(entry.row)"
-                      :index="entry.rowIndex"
-                      :operations="rowOperationsFor(entry.row)"
-                      :operation-results="rowResultsFor(entry.row)"
-                      :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
-                      :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
-                      :render-slot="slots['row-detail']!"
-                      :slot-props="{
-                        ...rowRefSlotProps(entry.row, entry.rowIndex),
-                        collapse: () => collapseRowKey(entry.key),
-                        operationResults: rowResultsFor(entry.row),
-                        clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
-                      }"
-                    />
+                      :row-key="entry.key"
+                      :on-register="registerRowDetailForm"
+                    >
+                      <list-row-slot-host
+                        :list-slot="member.key"
+                        :row-ref="rowObjectRef(entry.row)"
+                        :item-key="rowItemKey(entry.row)"
+                        :index="entry.rowIndex"
+                        :operations="rowOperationsFor(entry.row)"
+                        :operation-results="rowResultsFor(entry.row)"
+                        :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                        :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
+                        :render-slot="slots['row-detail']!"
+                        :slot-props="{
+                          ...rowRefSlotProps(entry.row, entry.rowIndex),
+                          collapse: () => requestCollapseRow(entry.row),
+                          operationResults: rowResultsFor(entry.row),
+                          clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
+                        }"
+                      />
+                    </RowDetailFormScope>
                     <div v-else class="sdk-object-list-row-result-panel">
                       <div class="sdk-object-list-row-result-header">
                         <button
@@ -5350,6 +5692,7 @@ defineExpose({
         <div
           v-for="(row, rowIndex) in rows"
           :key="rowIdentityKey(row)"
+          :ref="(el) => setRowElement(rowIdentityKey(row), el)"
           class="sdk-object-list-accordion-item"
           :class="{ 'is-expanded': isRowExpanded(row) }"
           :data-row-key="rowIdentityKey(row)"
@@ -5362,7 +5705,7 @@ defineExpose({
               :aria-expanded="isRowExpanded(row)"
               @click="toggleRowExpanded(row)"
             >
-              <span class="sdk-object-list-accordion-arrow" aria-hidden="true">
+              <span v-if="!isRowExpandActivation" class="sdk-object-list-accordion-arrow" aria-hidden="true">
                 <component :is="curatedIcon('chevron-right')" :size="14" aria-hidden="true" />
               </span>
               <span class="sdk-object-list-accordion-heading">
@@ -5378,6 +5721,18 @@ defineExpose({
                 class="sdk-object-list-tag"
                 :data-tone="statusFieldTone(row, statusField)"
               >{{ fieldValue(row, statusField) }}</span>
+              <span
+                v-if="isRowExpandActivation"
+                class="sdk-object-list-expand-chevron"
+                data-row-expand-indicator="true"
+                aria-hidden="true"
+              >
+                <component
+                  :is="curatedIcon(isRowExpanded(row) ? 'chevron-up' : 'chevron-down')"
+                  :size="16"
+                  aria-hidden="true"
+                />
+              </span>
             </button>
             <div v-if="hasActionColumn" class="sdk-object-list-accordion-actions" @click.stop>
               <ObjectListRowActions
@@ -5391,23 +5746,25 @@ defineExpose({
           </div>
           <div v-if="isRowExpanded(row)" class="sdk-object-list-accordion-body">
             <div v-if="hasRowDetailSlot" class="sdk-object-list-detail-host">
-              <list-row-slot-host
-                :list-slot="member.key"
-                :row-ref="rowObjectRef(row)"
-                :item-key="rowItemKey(row)"
-                :index="rowIndex"
-                :operations="rowOperationsFor(row)"
-                :operation-results="rowResultsFor(row)"
-                :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
-                :clear-operation-result="(opName) => clearRowOperationResult(rowIdentityKey(row), opName)"
-                :render-slot="slots['row-detail']!"
-                :slot-props="{
-                  ...rowRefSlotProps(row, rowIndex),
-                  collapse: () => collapseRowKey(rowIdentityKey(row)),
-                  operationResults: rowResultsFor(row),
-                  clearOperationResult: (opName?: string) => clearRowOperationResult(rowIdentityKey(row), opName),
-                }"
-              />
+              <RowDetailFormScope :row-key="rowIdentityKey(row)" :on-register="registerRowDetailForm">
+                <list-row-slot-host
+                  :list-slot="member.key"
+                  :row-ref="rowObjectRef(row)"
+                  :item-key="rowItemKey(row)"
+                  :index="rowIndex"
+                  :operations="rowOperationsFor(row)"
+                  :operation-results="rowResultsFor(row)"
+                  :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
+                  :clear-operation-result="(opName) => clearRowOperationResult(rowIdentityKey(row), opName)"
+                  :render-slot="slots['row-detail']!"
+                  :slot-props="{
+                    ...rowRefSlotProps(row, rowIndex),
+                    collapse: () => requestCollapseRow(row),
+                    operationResults: rowResultsFor(row),
+                    clearOperationResult: (opName?: string) => clearRowOperationResult(rowIdentityKey(row), opName),
+                  }"
+                />
+              </RowDetailFormScope>
             </div>
             <template v-else>
               <template v-for="field in accordionBodyFields(row)" :key="field.key">
@@ -5494,13 +5851,15 @@ defineExpose({
           <article
             v-else
             :ref="(el) => setRowElement(entry.key, el)"
-            :role="rowSelectable ? 'option' : (rowActivatable ? 'button' : undefined)"
-            :tabindex="rowActivatable ? 0 : undefined"
+            :role="rowSelectable ? 'option' : ((rowActivatable || isRowExpandActivation) ? 'button' : undefined)"
+            :tabindex="rowActivatable || isRowExpandActivation ? 0 : undefined"
             class="sdk-object-list-card"
+            :data-expanded="isRowExpanded(entry.row) ? 'true' : undefined"
             :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
-            :class="{ chosen: entry.key === chosenIdentity, 'is-non-selectable': !rowActivatable }"
-            @click="rowActivatable ? choose(entry.row) : undefined"
-            @keydown="rowActivatable ? onCardKeydown(entry.row, $event) : undefined"
+            :aria-expanded="isRowExpandActivation ? isRowExpanded(entry.row) : undefined"
+            :class="{ chosen: entry.key === chosenIdentity, expanded: isRowExpandActivation && isRowExpanded(entry.row), 'is-non-selectable': !rowActivatable && !isRowExpandActivation }"
+            @click="(rowActivatable || isRowExpandActivation) ? onCardClick(entry.row, $event) : undefined"
+            @keydown="(rowActivatable || isRowExpandActivation) ? onCardKeydown(entry.row, $event) : undefined"
           >
             <list-row-slot-host
               v-if="slots.card"
@@ -5517,7 +5876,7 @@ defineExpose({
             >
               <div class="sdk-object-list-card-head">
                 <button
-                  v-if="hasRowDetailSlot"
+                  v-if="showLeadingExpandColumn"
                   type="button"
                   class="sdk-object-list-expand-btn"
                   :aria-expanded="isRowExpanded(entry.row)"
@@ -5567,7 +5926,7 @@ defineExpose({
             <template v-else>
               <div class="sdk-object-list-card-head">
                 <button
-                  v-if="hasRowDetailSlot"
+                  v-if="showLeadingExpandColumn"
                   type="button"
                   class="sdk-object-list-expand-btn"
                   :aria-expanded="isRowExpanded(entry.row)"
@@ -5859,24 +6218,29 @@ defineExpose({
               class="sdk-object-list-card-detail sdk-object-list-detail-host"
               @click.stop
             >
-              <list-row-slot-host
+              <RowDetailFormScope
                 v-if="hasRowDetailSlot"
-                :list-slot="member.key"
-                :row-ref="rowObjectRef(entry.row)"
-                :item-key="rowItemKey(entry.row)"
-                :index="entry.rowIndex"
-                :operations="rowOperationsFor(entry.row)"
-                :operation-results="rowResultsFor(entry.row)"
-                :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
-                :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
-                :render-slot="slots['row-detail']!"
-                :slot-props="{
-                  ...rowRefSlotProps(entry.row, entry.rowIndex),
-                  collapse: () => collapseRowKey(entry.key),
-                  operationResults: rowResultsFor(entry.row),
-                  clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
-                }"
-              />
+                :row-key="entry.key"
+                :on-register="registerRowDetailForm"
+              >
+                <list-row-slot-host
+                  :list-slot="member.key"
+                  :row-ref="rowObjectRef(entry.row)"
+                  :item-key="rowItemKey(entry.row)"
+                  :index="entry.rowIndex"
+                  :operations="rowOperationsFor(entry.row)"
+                  :operation-results="rowResultsFor(entry.row)"
+                  :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                  :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
+                  :render-slot="slots['row-detail']!"
+                  :slot-props="{
+                    ...rowRefSlotProps(entry.row, entry.rowIndex),
+                    collapse: () => requestCollapseRow(entry.row),
+                    operationResults: rowResultsFor(entry.row),
+                    clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
+                  }"
+                />
+              </RowDetailFormScope>
               <div v-else class="sdk-object-list-row-result-panel">
                 <div class="sdk-object-list-row-result-header">
                   <button
@@ -5959,11 +6323,12 @@ defineExpose({
             v-else
             :ref="(el) => setRowElement(entry.key, el)"
             class="sdk-object-list-row"
-            :class="{ chosen: entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
+            :data-expanded="isRowExpanded(entry.row) ? 'true' : undefined"
+            :class="{ chosen: entry.key === chosenIdentity, expanded: isRowExpandActivation && isRowExpanded(entry.row), 'is-non-selectable': !rowSelectable && !isRowExpandActivation }"
           >
             <div class="sdk-object-list-row-main">
               <button
-                v-if="hasRowDetailSlot"
+                v-if="showLeadingExpandColumn"
                 type="button"
                 class="sdk-object-list-expand-btn sdk-object-list-row-expand"
                 :aria-expanded="isRowExpanded(entry.row)"
@@ -5982,21 +6347,22 @@ defineExpose({
                 @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
               />
               <component
-                :is="rowSelectable ? 'button' : 'div'"
-                :type="rowSelectable ? 'button' : undefined"
+                :is="(rowSelectable || isRowExpandActivation) ? 'button' : 'div'"
+                :type="(rowSelectable || isRowExpandActivation) ? 'button' : undefined"
                 :role="rowSelectable ? 'option' : undefined"
                 class="sdk-object-list-item-btn"
                 :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
                 :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
+                :aria-expanded="isRowExpandActivation ? isRowExpanded(entry.row) : undefined"
                 :class="{
                   chosen: entry.key === chosenIdentity,
-                  'is-non-selectable': !rowSelectable,
+                  'is-non-selectable': !rowSelectable && !isRowExpandActivation,
                   'sdk-object-list-item-two-line': listHasTwoLines,
                   'has-leading': Boolean($slots['item-leading'] || showLeadingIcon),
                   'has-chevron': showListChevron,
                 }"
-                @click="rowSelectable ? choose(entry.row) : undefined"
-                @keydown="rowSelectable ? onListItemKeydown(entry.row, $event) : undefined"
+                @click="(rowSelectable || isRowExpandActivation) ? onListItemClick(entry.row, $event) : undefined"
+                @keydown="(rowSelectable || isRowExpandActivation) ? onListItemKeydown(entry.row, $event) : undefined"
               >
                 <span v-if="$slots['item-leading']" class="sdk-object-list-item-leading" aria-hidden="true">
                   <slot name="item-leading"></slot>
@@ -6118,6 +6484,18 @@ defineExpose({
                   </span>
                 </span>
                 <span v-if="showListChevron" class="sdk-object-list-item-chevron" aria-hidden="true">›</span>
+                <span
+                  v-else-if="isRowExpandActivation && hasRowDetailSlot"
+                  class="sdk-object-list-expand-chevron"
+                  data-row-expand-indicator="true"
+                  aria-hidden="true"
+                >
+                  <component
+                    :is="curatedIcon(isRowExpanded(entry.row) ? 'chevron-up' : 'chevron-down')"
+                    :size="16"
+                    aria-hidden="true"
+                  />
+                </span>
               </component>
               <div v-if="hasActionColumn" class="sdk-object-list-row-inline-actions" @click.stop>
                 <list-row-slot-host
@@ -6159,24 +6537,29 @@ defineExpose({
               class="sdk-object-list-row-detail sdk-object-list-detail-host"
               @click.stop
             >
-              <list-row-slot-host
+              <RowDetailFormScope
                 v-if="hasRowDetailSlot"
-                :list-slot="member.key"
-                :row-ref="rowObjectRef(entry.row)"
-                :item-key="rowItemKey(entry.row)"
-                :index="entry.rowIndex"
-                :operations="rowOperationsFor(entry.row)"
-                :operation-results="rowResultsFor(entry.row)"
-                :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
-                :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
-                :render-slot="slots['row-detail']!"
-                :slot-props="{
-                  ...rowRefSlotProps(entry.row, entry.rowIndex),
-                  collapse: () => collapseRowKey(entry.key),
-                  operationResults: rowResultsFor(entry.row),
-                  clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
-                }"
-              />
+                :row-key="entry.key"
+                :on-register="registerRowDetailForm"
+              >
+                <list-row-slot-host
+                  :list-slot="member.key"
+                  :row-ref="rowObjectRef(entry.row)"
+                  :item-key="rowItemKey(entry.row)"
+                  :index="entry.rowIndex"
+                  :operations="rowOperationsFor(entry.row)"
+                  :operation-results="rowResultsFor(entry.row)"
+                  :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                  :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
+                  :render-slot="slots['row-detail']!"
+                  :slot-props="{
+                    ...rowRefSlotProps(entry.row, entry.rowIndex),
+                    collapse: () => requestCollapseRow(entry.row),
+                    operationResults: rowResultsFor(entry.row),
+                    clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
+                  }"
+                />
+              </RowDetailFormScope>
               <div v-else class="sdk-object-list-row-result-panel">
                 <div class="sdk-object-list-row-result-header">
                   <button
@@ -6773,8 +7156,21 @@ defineExpose({
   outline-offset: -2px;
 }
 .sdk-object-list-check-col,
-.sdk-object-list-expand-col {
+.sdk-object-list-expand-col,
+.sdk-object-list-expand-trailing-col {
   width: var(--control-height);
+}
+.sdk-object-list-expand-trailing-col {
+  text-align: right;
+}
+.sdk-object-list-expand-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-text-color-secondary);
+}
+.sdk-object-list-table tbody tr.expanded {
+  background: var(--ui-fill-tertiary);
 }
 .sdk-object-list-index-col {
   width: 50px;
