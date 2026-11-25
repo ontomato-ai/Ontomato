@@ -757,6 +757,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         v-if="pilotPage"
         :key="display.page.value!.instance"
         v-bind="pilotPage.props"
+        :take-opened-entry="display.page.value?.takeOpenedEntry"
         :object-refresh="display.objectRefresh.value"
         :live-state="display.liveState.value"
         :register-page-controller="(controller: DisplayPageController) => display.registerPageController(display.page.value!.instance, controller)"

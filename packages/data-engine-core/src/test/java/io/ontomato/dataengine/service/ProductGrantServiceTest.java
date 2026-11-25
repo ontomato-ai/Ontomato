@@ -115,12 +115,27 @@ class ProductGrantServiceTest {
 
     @Test void repeatedImportsDoNotRestoreRevokedPrincipalOrDomainGrants() {
         var db=mock(JdbcTemplate.class);
-        when(db.queryForList("SELECT owner_id FROM product_resource WHERE domain_id=? AND id=?",String.class,"domain","profile")).thenReturn(java.util.List.of("author"));
         var service=new ProductGrantService(db,mock(IdentityService.class),mock(ProductPrincipalLookup.class));
-        service.register("domain","profile","author",true);
+        assertFalse(service.register("domain","profile","author",true));
         verify(db,never()).update(eq("INSERT INTO product_grant(domain_id,resource_id,principal_kind,principal_id,verb) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING"),any(),any(),any(),any(),any());
         verify(db,never()).update(eq("DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind='domain'"),any(),any());
     }
+
+    @Test void panelOwnershipDoesNotRestoreARevokedEditGrantOrCrossDomains() {
+        var db = mock(JdbcTemplate.class);
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("author", "domain"));
+        var principals = mock(ProductPrincipalLookup.class);
+        when(principals.productPrincipalId("author")).thenReturn("author");
+        var service = new ProductGrantService(db, identity, principals);
+        var facts = new ProductGrantService.OwnerFacts("author", "current");
+
+        assertEquals(new ProductGrantService.ManagementAccess(true, true, false), service.managementAccess(
+            new ProductGrantService.ObjectTarget("domain", "panel", "profile"), facts));
+        assertEquals(403, assertThrows(ResponseStatusException.class, () -> service.managementAccess(
+            new ProductGrantService.ObjectTarget("other", "panel", "profile"), facts)).getStatusCode().value());
+    }
+
     @Test void anUnauthenticatedSubjectCannotUseOrDelegateAProduct() {
         var db=mock(JdbcTemplate.class);
         var identity=mock(IdentityService.class);
@@ -142,18 +157,18 @@ class ProductGrantServiceTest {
         var db = mock(JdbcTemplate.class);
         var principals = mock(ProductPrincipalLookup.class);
         var service = new ProductGrantService(db, mock(IdentityService.class), principals);
-        String ownerQuery = "SELECT owner_id FROM product_resource WHERE domain_id=? AND id=?";
-        when(db.queryForList(ownerQuery, String.class, "domain", "retriever")).thenReturn(List.of(), List.of(""));
+        String register = "INSERT INTO product_resource(domain_id,id) VALUES(?,?) ON CONFLICT DO NOTHING";
+        when(db.update(register, "domain", "retriever")).thenReturn(1, 0);
         var verbs = List.of("use", "view", "edit");
         when(principals.defaultAdminGrants("domain", verbs)).thenReturn(
             verbs.stream().map(verb -> new ProductGrants.Grant("role", "admin", verb)).toList());
         when(principals.legacyMenuGrants("domain", "analysis-agent", verbs)).thenReturn(
             verbs.stream().map(verb -> new ProductGrants.Grant("role", "legacy-editor", verb)).toList());
 
-        service.register("domain", "retriever", null, true, verbs, true, "analysis-agent");
-        service.register("domain", "retriever", null, true, verbs, true, "analysis-agent");
+        assertTrue(service.register("domain", "retriever", null, true, verbs, true, "analysis-agent"));
+        assertFalse(service.register("domain", "retriever", null, true, verbs, true, "analysis-agent"));
 
-        verify(db).update("INSERT INTO product_resource(domain_id,id,owner_id) VALUES(?,?,?)", "domain", "retriever", "");
+        verify(db, times(2)).update(register, "domain", "retriever");
         for (String verb : verbs) {
             verify(db).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("role"), eq("admin"), eq(verb));
             verify(db).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("role"), eq("legacy-editor"), eq(verb));
@@ -162,8 +177,6 @@ class ProductGrantServiceTest {
         verify(db, never()).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("principal"), any(), any());
         verify(principals).defaultAdminGrants("domain", verbs);
         verify(principals).legacyMenuGrants("domain", "analysis-agent", verbs);
-        assertEquals(409, assertThrows(ResponseStatusException.class,
-            () -> service.register("domain", "retriever", "author", false)).getStatusCode().value());
     }
 
     @Test void grantSetLocksAndAuthorizesBeforeReplacingOnlyTheTargetSubject() {

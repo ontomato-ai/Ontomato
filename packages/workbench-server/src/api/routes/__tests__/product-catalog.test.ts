@@ -97,6 +97,16 @@ beforeAll(async () => {
   const app = express();
   app.use(express.json());
   app.post("/java/product-governance/check", (req, res) => {
+    if (req.body.target) {
+      expect(req.get("X-Ontomato-Query-Service-Token")).toBe("governance");
+      expect(req.body.target).toMatchObject({ domainId: "domain", kind: "panel" });
+      const { id } = req.body.target;
+      const caller = req.get("tk")!;
+      const authored = req.body.ownerFacts.ownerId === caller;
+      const editable = allowed(id, "edit", caller);
+      res.json({ allowed: authored || editable || allowed(id, "use", caller), authored, editable });
+      return;
+    }
     res.json({ allowed: allowed(req.body.id, req.body.verb, req.get("tk")!) });
   });
   app.post("/java/product-governance/resources", (req, res) => {
@@ -177,7 +187,7 @@ beforeEach(() => {
   legacyRevisions = new Set();
   deregistered = [];
   db.query.mockReset().mockImplementation((sql: string, values: unknown[] = []) => {
-    if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql) || sql.includes("pg_advisory_xact_lock") || sql.startsWith("UPDATE product_subscriptions"))
+    if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql) || sql.includes("pg_advisory_xact_lock"))
       return { rows: [] };
     if (sql.includes("FROM product_object_details")) return { rows: [] };
     const table = (sql.match(/(?:FROM|INTO) (product_panels|product_projections)/)?.[1]) as Table;

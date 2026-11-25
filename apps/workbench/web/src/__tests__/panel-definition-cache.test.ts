@@ -502,7 +502,7 @@ describe("panel definition cache & bundled projections", () => {
       expect(getCachedPanel(PANEL_ID)?.revision).toBe(2);
       const panelGets = sent.filter((r) => r.path === `/api/product-panels/${PANEL_ID}`);
       expect(panelGets).toHaveLength(1);
-      expect(panelGets[0]!.search).toBe("?includeProjections=1");
+      expect(panelGets[0]!.search).toBe("?includeProjections=1&view=1");
       expect(sent.filter((r) => r.path === `/api/product-panels/${PANEL_ID}/snapshot`)).toHaveLength(1);
     } finally {
       observer.disconnect();

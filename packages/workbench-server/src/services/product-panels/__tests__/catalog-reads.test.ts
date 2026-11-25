@@ -2,6 +2,7 @@ import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations
 import { PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { productGrantCheck } from "../../../__tests__/fixtures/product-grant-check";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -12,6 +13,8 @@ import type { PanelOperationHost } from "../server-operations";
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   grant: vi.fn(),
+  managementAccess: vi.fn(),
+  unregister: vi.fn(),
   panelUsers: vi.fn(),
   homePanelId: vi.fn(),
   readHomePanel: vi.fn(),
@@ -26,9 +29,11 @@ vi.mock("../../../infrastructure/postgres-transaction", () => ({
 }));
 vi.mock("../../product-governance/grants", async importOriginal => ({
   ...await importOriginal<typeof import("../../product-governance/grants")>(),
-  grantedProductIds: async (verb: string) => verb === "use" ? ["reader-panel"] : ["editor-panel"],
+  grantedProductIds: async (verb: "use" | "edit") => grantedIds[verb],
   requireProductGrant: mocks.grant,
   productGrantAllowed: async () => false,
+  productManagementAccess: mocks.managementAccess,
+  unregisterProductResource: mocks.unregister,
 }));
 vi.mock("../used-by", () => ({ panelUsers: mocks.panelUsers, panelsUsingProjection: vi.fn() }));
 vi.mock("../../platform-home/store", () => ({
@@ -43,6 +48,7 @@ import { createProductPanelReadAdapter } from "../catalog-reads";
 
 const owner = { domainId: "domain", userId: "author" };
 const credentials = { token: "reader-token", locale: "en" };
+const grantedIds = { use: ["reader-panel"], edit: ["editor-panel"] };
 const adapter = createProductPanelReadAdapter(owner, credentials);
 const actor = { owner, credentials };
 const unusedRequest = async () => { throw new Error("Unexpected operation request"); };
@@ -93,6 +99,13 @@ beforeEach(() => {
   mocks.grant.mockReset().mockImplementation(async (id: string) => {
     if (id !== "reader-panel") throw new HttpError(403, "Use Grant required", "PRODUCT_FORBIDDEN");
   });
+  mocks.managementAccess.mockReset().mockImplementation(async (target, ownerFacts, caller) => {
+    expect(caller).toEqual(credentials);
+    expect(target).toMatchObject({ domainId: owner.domainId, kind: "panel" });
+    expect(ownerFacts).toEqual({ ownerId: rows.get(target.id)?.ownerId, state: "current" });
+    return productGrantCheck({ target, ownerFacts }, owner.userId, (id, verb) => grantedIds[verb].includes(id));
+  });
+  mocks.unregister.mockReset();
   mocks.panelUsers.mockReset().mockResolvedValue({ panels: [], applicationEntries: [], classNames: [], hiddenCount: 0 });
   mocks.homePanelId.mockReset().mockResolvedValue(null);
   mocks.readHomePanel.mockReset().mockResolvedValue(null);
@@ -155,6 +168,7 @@ it("allows the author to confirm and delete a broken panel after its Grants are 
     kind: "success", data: { success: true },
     affected: { objects: [{ objectType: PRODUCT_PANEL, primaryKey: "author-panel" }] },
   });
+  expect(mocks.unregister).not.toHaveBeenCalled();
   await expect(adapter.record("author-panel")).rejects.toMatchObject({ status: 404 });
 });
 

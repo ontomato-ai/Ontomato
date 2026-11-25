@@ -1,69 +1,8 @@
 import express from "express";
 import type { Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { defaultPersonalWorkspace, personalWorkspaceSchema } from "@ontomato/contracts/personal-workspace";
 
 const database = vi.hoisted(() => ({ values: new Map<string, unknown>(), query: vi.fn() }));
-const homes=vi.hoisted(()=>new Map<string,{workspace:unknown;revision:number}>());
-const homePreferences = vi.hoisted(() => new Map<string, {
-  favorites: unknown[];
-  dashboardIds: string[];
-  dashboardCards: Record<string, string[]>;
-  pinnedSessions: string[];
-  pinnedObjects: unknown[];
-}>());
-vi.mock("../../../services/platform-home/store", () => ({
-  platformHomeStore: {
-    preferences: async (owner: { domainId: string; userId: string }) => {
-      const current = homePreferences.get(JSON.stringify(owner));
-      return { favorites: current?.favorites ?? [], dashboardIds: current?.dashboardIds ?? [] };
-    },
-    saveFavorites: async (owner: { domainId: string; userId: string }, favorites: unknown[]) => {
-      const key = JSON.stringify(owner);
-      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
-      homePreferences.set(key, { ...current, favorites: [...favorites] });
-    },
-    saveDashboards: async (owner: { domainId: string; userId: string }, dashboardIds: string[]) => {
-      const key = JSON.stringify(owner);
-      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
-      homePreferences.set(key, { ...current, dashboardIds: [...dashboardIds] });
-    },
-    dashboardCards: async (owner: { domainId: string; userId: string }) =>
-      homePreferences.get(JSON.stringify(owner))?.dashboardCards ?? {},
-    saveDashboardCards: async (owner: { domainId: string; userId: string }, dashboardCards: Record<string, string[]>) => {
-      const key = JSON.stringify(owner);
-      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
-      homePreferences.set(key, { ...current, dashboardCards: { ...dashboardCards } });
-    },
-    pinnedSessions: async (owner: { domainId: string; userId: string }) =>
-      homePreferences.get(JSON.stringify(owner))?.pinnedSessions ?? [],
-    savePinnedSessions: async (owner: { domainId: string; userId: string }, pinnedSessions: string[]) => {
-      const key = JSON.stringify(owner);
-      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
-      homePreferences.set(key, { ...current, pinnedSessions: [...pinnedSessions] });
-    },
-    pinnedObjects: async (owner: { domainId: string; userId: string }) =>
-      homePreferences.get(JSON.stringify(owner))?.pinnedObjects ?? [],
-    savePinnedObjects: async (owner: { domainId: string; userId: string }, pinnedObjects: unknown[]) => {
-      const key = JSON.stringify(owner);
-      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
-      homePreferences.set(key, { ...current, pinnedObjects: [...pinnedObjects] });
-    },
-  },
-}));
-vi.mock("../../../services/product-assets/validation",()=>({validateProduct:async()=>{},validatePageBindings:async()=>{}}));
-vi.mock('../../../services/product-assets/ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOntology:async()=>{}}));
-vi.mock("../../../services/product-assets/store",()=>({
-  readProductOverlay:async(owner:{domainId:string;userId:string})=>({revision:homes.get(JSON.stringify(owner))?.revision??0,workspace:homes.get(JSON.stringify(owner))?.workspace??null}),
-  personalHome:async(owner:{domainId:string;userId:string})=>{
-    const value=homes.get(JSON.stringify(owner));
-    return {id:"home",name:"Home",description:"",visibility:"private",revision:value?.revision??1,document:{kind:"page",workspace:value?.workspace??defaultPersonalWorkspace(),children:[]}};
-  },
-  saveHomeWorkspace:async(owner:{domainId:string;userId:string},workspace:unknown)=>{
-    const key=JSON.stringify(owner),revision=(homes.get(key)?.revision??1)+1;
-    homes.set(key,{workspace,revision});return{id:"home",revision};
-  },
-}));
 vi.mock("../../../infrastructure/postgres", () => ({
   qualifiedTable: () => "user_preferences",
   getPostgresPool: () => ({ query: database.query }),
@@ -100,23 +39,6 @@ afterAll(async () => {
 });
 
 describe("personal workspace HTTP persistence", () => {
-  it('requires an explicit edit revision instead of replacing concurrent preferences',async()=>{
-    const response=await fetch(base,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(defaultPersonalWorkspace())});
-    expect(response.status).toBe(428);
-    expect((await response.json()).error.code).toBe('REVISION_REQUIRED');
-  });
-  it("loads old preferences with side-panel defaults and preserves independent interaction choices", async () => {
-    const old = { schemaVersion: 1, layout: "assistant", dashboardIds: [], applicationIds: [] };
-    expect(personalWorkspaceSchema.parse(old).interactions).toEqual({ metrics: "drawer", tasks: "drawer" });
-    expect(personalWorkspaceSchema.parse(old).objectOpening).toBe("page");
-    expect(personalWorkspaceSchema.parse(old).sections).toBeUndefined();
-    const config = { ...defaultPersonalWorkspace(), objectOpening: "drawer", sections: { main: ["data", "apps"], sidebar: ["objects", "conversations", "tasks"], hidden: ["recent"] }, interactions: { metrics: "dialog", tasks: "conversation" } };
-    expect((await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match":"1", "test-user": "interaction-user" }, body: JSON.stringify(config) })).status).toBe(200);
-    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toMatchObject({ data: { ...config, interactions: { metrics: "drawer", tasks: "drawer" } } });
-    const pageConfig = { ...config, interactions: { metrics: "page", tasks: "drawer" } };
-    await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match":"2", "test-user": "interaction-user" }, body: JSON.stringify(pageConfig) });
-    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toMatchObject({ data: pageConfig });
-  });
   it("retains bounded recent work per user and domain and moves repeat visits to the front", async () => {
     for (let index = 0; index < 10; index++) {
       expect((await fetch(`${base}/recent`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appId: "agents", title: `Analysis ${index}`, path: `/agents/chat?sessionId=${index}` }) })).status).toBe(200);
@@ -131,32 +53,6 @@ describe("personal workspace HTTP persistence", () => {
     expect(await read({ "test-domain": "domain-b" })).toEqual([]);
     const calls = database.query.mock.calls.length;
     expect((await fetch(`${base}/recent`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appId: "agents", title: "Unsafe", path: "/agents/chat?apiKey=secret" }) })).status).toBe(400);
-    expect(database.query.mock.calls.length).toBe(calls);
-  });
-  it("saves ordered resource references and isolates both users and domains", async () => {
-    const config = { ...defaultPersonalWorkspace(), layout: "data", dashboardIds: ["second", "first"], dashboardCards: { second: ["chart-b", "metric-a"], first: [] }, applicationIds: ["app-a"], pinnedObjects: [{ className: "Person", primaryKey: "1", title: "Person one" }], pinnedAnalyses: [{ sessionId: "11111111-1111-4111-8111-111111111111", title: "Faculty analysis" }] };
-    const saved = await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match":"1" }, body: JSON.stringify(config) });
-    expect(saved.status).toBe(200);
-    expect(await (await fetch(base)).json()).toMatchObject({ data: config });
-    const otherOwners: Record<string, string>[] = [{ "test-user": "bob" }, { "test-domain": "domain-b" }];
-    for (const headers of otherOwners) {
-      expect(await (await fetch(base, { headers })).json()).toMatchObject({ data: defaultPersonalWorkspace() });
-    }
-  });
-  it.each([
-    { ...defaultPersonalWorkspace(), sections: { main: ["apps", "data"], sidebar: ["apps", "tasks"], hidden: [] } },
-    { ...defaultPersonalWorkspace(), objectOpening: "unsupported" },
-    { ...defaultPersonalWorkspace(), pinnedObjects: [{ className: "Person", primaryKey: "1", title: "" }] },
-    { ...defaultPersonalWorkspace(), pinnedObjects: Array.from({ length: 2 }, () => ({ className: "Person", primaryKey: "1", title: "Same" })) },
-    { ...defaultPersonalWorkspace(), pinnedAnalyses: [{ sessionId: "not-a-session", title: "Analysis" }] },
-    { ...defaultPersonalWorkspace(), pinnedAnalyses: Array.from({ length: 2 }, () => ({ sessionId: "11111111-1111-4111-8111-111111111111", title: "Duplicate" })) },
-    { ...defaultPersonalWorkspace(), dashboardIds: ["same", "same"] },
-    { ...defaultPersonalWorkspace(), layout: "unknown" },
-    { ...defaultPersonalWorkspace(), userId: "someone-else" },
-    { ...defaultPersonalWorkspace(), applicationIds: Array.from({ length: 101 }, (_, i) => `app-${i}`) },
-  ])("rejects invalid or caller-supplied ownership without writing", async config => {
-    const calls = database.query.mock.calls.length;
-    expect((await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) })).status).toBe(400);
     expect(database.query.mock.calls.length).toBe(calls);
   });
 });

@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service.impl;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,6 +16,7 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DBSchemaUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
@@ -31,7 +35,6 @@ import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.OntologyModelService;
 import io.ontomato.dataengine.service.BusinessConfigService;
-import io.ontomato.dataengine.util.FileUtil;
 import io.ontomato.dataengine.dataAdapter.DslExecutionMode;
 import io.ontomato.dataengine.util.HttpRequestUtil;
 
@@ -344,20 +347,24 @@ public class AdminServiceImpl implements AdminService {
 	}
 
 	@Override
+	public void initializeOntologyRule(String domainId) {
+		JSONObject rule;
+		try {
+			String content = new ClassPathResource("JSONRule.json").getContentAsString(StandardCharsets.UTF_8);
+			rule = JSON.parseObject(content);
+		} catch (IOException e) {
+			throw new UncheckedIOException("Cannot read the initial ontology rule", e);
+		}
+		if (rule == null) throw new IllegalStateException("The initial ontology rule is empty");
+		OntologyModelService.normalizeRuleAttributeTypes(rule, true);
+		validatePrimaryKey(rule);
+		jsonRuleDao.initialize(rule, domainId);
+	}
+
+	@Override
 	public Map<String, Object> getJSONRule(String domainId) {
 		Map<String, Object> jsonRule = jsonRuleDao.query(domainId);
-		if (jsonRule == null) {
-			try {
-				jsonRule = JSON.parseObject(FileUtil.getResourceFileLoadAll("JSONRule.json", "utf-8"));
-			} catch (Exception e) {
-				jsonRule = new JSONObject();
-				jsonRule.put("datasetdesc", "");
-				jsonRule.put("classlist", new JSONArray());
-				jsonRule.put("classDef", new JSONArray());
-				jsonRule.put("relationship_rule", new JSONObject());
-			}
-			writeJSONRule(jsonRule, domainId);
-		}
+		if (jsonRule == null) throw new IllegalStateException("Ontology rule is not initialized for domain " + domainId);
 		return jsonRule;
 	}
 

@@ -16,7 +16,7 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
 import type { ProductOwner } from "../product-governance/grants";
-import { grantedProductIds, productGrantsAllowedBatch, registerProductResource, requireProductGrant } from "../product-governance/grants";
+import { grantedProductIds, productGrantAllowed, productGrantsAllowedBatch, productManagementAccess, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
@@ -56,11 +56,24 @@ async function readCurrentRecord(
     throw new HttpError(404, `${kind === "panel" ? "Panel" : "Projection"} '${id}' does not exist`, "PRODUCT_UNAVAILABLE");
   }
   const managePanel = reportMissingToAuthor && kind === "panel";
-  if (reportMissingToAuthor && !managePanel) await requireProductGrant(id, "use", credentials);
+  if (managePanel) {
+    const access = await readPanelManagementAccess(owner, credentials, row);
+    if (!access.allowed) throw new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN");
+    return { row, editable: access.editable };
+  }
+  if (reportMissingToAuthor) await requireProductGrant(id, "use", credentials);
   const editable = row.domainId !== null && (await grantedProductIds("edit", credentials)).includes(id);
-  if (managePanel && row.ownerId !== owner.userId && !editable)
-    await requireProductGrant(id, "use", credentials);
   return { row, editable };
+}
+
+export async function readPanelManagementAccess(owner: ProductOwner, credentials: AssistantCredentials, row: CurrentProductRow) {
+  if (row.domainId === null)
+    return { allowed: await productGrantAllowed(row.id, "use", credentials), authored: false, editable: false };
+  return productManagementAccess(
+    { domainId: owner.domainId, kind: "panel", id: row.id },
+    { ownerId: row.ownerId, state: "current" },
+    credentials,
+  );
 }
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
   const { row, editable } = await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor);
@@ -155,7 +168,7 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
   if ("componentId" in input) await validateProjectionComponent(id, input, undefined, {
     domainId: owner.domainId, authorId: owner.userId, client,
   });
-  await registerProductResource(owner, id, input.visibility === "domain");
+  await registerProductResource(owner, id, input.visibility === "domain", { createOnly: true });
   await requireProductGrant(id, "edit", credentials);
   const result = await client.query(`INSERT INTO ${t(currentProductTables[kind])} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)]);
   if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");

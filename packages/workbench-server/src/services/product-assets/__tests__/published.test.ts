@@ -4,6 +4,7 @@ vi.mock('../grants',()=>({requireProductUse:mocks.use}));
 vi.mock('../store',()=>({getApplicationProduct:mocks.get}));
 vi.mock('../releases',()=>({readActiveProductBundle:mocks.active,readProductRelease:mocks.release,synchronizeBundlePublication:mocks.synchronize}));
 vi.mock('../../../utils/backend-client',()=>({backendGet:mocks.backend,buildBackendHeaders:()=>({})}));
+import {HttpError} from "../../../utils/errors";
 import {publishedApplication} from '../published';
 const owner={domainId:'domain',userId:'reader'};
 beforeEach(()=>{vi.resetAllMocks();});
@@ -25,12 +26,12 @@ it('rejects a hosted application absent from the current readable entry catalog 
   await expect(publishedApplication(owner,{},'app')).rejects.toMatchObject({code:'PRODUCT_FORBIDDEN'});
   expect(mocks.release).not.toHaveBeenCalled();
 });
-it('requires successful directory recovery before an editor can run a pending declaration',async()=>{
-  mocks.get.mockResolvedValue({editable:true,document:{kind:'application',navigationId:'nav'}});
-  mocks.synchronize.mockRejectedValueOnce(new Error('Directory unavailable'));
-  await expect(publishedApplication(owner,{token:'editor'},'app')).rejects.toThrow();
-  expect(mocks.active).not.toHaveBeenCalled();
+it('reports a pending declaration to its editor without publishing during reads',async()=>{
+  mocks.get.mockResolvedValue({id:'app',editable:true,document:{kind:'application',navigationId:'nav'}});
+  mocks.active.mockRejectedValueOnce(new HttpError(409, 'Publication pending', 'PRODUCT_PUBLICATION_PENDING'));
+  await expect(publishedApplication(owner,{token:'editor'},'app')).rejects.toMatchObject({code:'PRODUCT_PUBLICATION_PENDING'});
+  expect(mocks.synchronize).not.toHaveBeenCalled();
   mocks.active.mockResolvedValue({snapshot:{roots:['app'],assets:[]}});
   await expect(publishedApplication(owner,{token:'editor'},'app')).resolves.toEqual({roots:['app'],assets:[]});
-  expect(mocks.synchronize).toHaveBeenCalledWith(owner,'app',{token:'editor'});
+  expect(mocks.synchronize).not.toHaveBeenCalled();
 });

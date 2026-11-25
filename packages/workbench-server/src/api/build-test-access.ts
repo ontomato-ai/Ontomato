@@ -27,7 +27,7 @@ const ALLOWED: readonly Access[] = [
   ["GET", /^\/preferences$/],
   ["GET", /^\/platform\/home$/],
   ["GET", /^\/workbench-appearance$/],
-  ["GET", /^\/personal-workspace(?:\/recent)?$/],
+  ["GET", /^\/personal-workspace\/recent$/],
   // query-history.ts, feedback.ts, observe routes
   ["GET", /^\/query-history(?:\/.*)?$/],
   ["GET", /^\/feedback(?:\/.*)?$/],

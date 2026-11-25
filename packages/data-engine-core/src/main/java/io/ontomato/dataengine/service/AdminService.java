@@ -26,6 +26,8 @@ public interface AdminService {
 	/** Save the whole rule; the model-wide primary-key check runs before the store sees it. */
 	public void writeJSONRule(Map<String, Object> jsonRule, String domainId);
 
+	void initializeOntologyRule(String domainId);
+
 	public Map<String, Object> getJSONRule(String domainId);
 
 	public Map<String, String> getSchemaMarkdown(List<String> classNames, String domainId);

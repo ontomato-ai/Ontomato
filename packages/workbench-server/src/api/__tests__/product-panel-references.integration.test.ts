@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -25,6 +26,7 @@ import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { panelStateKey } from "../../services/product-panels/personal-state-key";
 import { errorHandler } from "../middleware/error-handler";
@@ -109,7 +111,8 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   app.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: granted(req.header("tk"), req.body.id, req.body.verb) });
+    const token = req.header("tk");
+    res.json(productGrantCheck(req.body, token, (id, verb) => granted(token, id, verb)));
   });
   app.post("/product-governance/resources", (req, res) => {
     res.json({ ids: [...grants.keys()].filter(id => granted(req.header("tk"), id, req.body.verb)) });
@@ -147,7 +150,7 @@ beforeAll(async () => {
     shared.delete(req.params.id);
     res.sendStatus(204);
   });
-  app.get("/platform/applications/resolve-entry", (req, res) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res) => {
     if (req.query.applicationId === "app-nested") {
       expect(req.query.useId).toBe("main");
       res.json({ success: true, data: {
@@ -321,13 +324,13 @@ it("reads a selected nested panel or projection and freezes its actual publisher
   const unreadable = await request("POST", "product-panels/read", "nested-reader", {
     ...unknownDatum, memberPath: [selectedPanel(alternate), { member: "components" }],
   });
-  expect(await unreadable.json()).toEqual({ status: "forbidden" });
+  expect(await unreadable.json()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
 
   await setDetail(alternate);
   const oldDetail = await request("POST", "product-panels/read", "nested-reader", {
     source, memberPath: [resolvedDetail, { member: "components" }], dataName: "rows", inputs: {},
   });
-  expect(await oldDetail.json()).toEqual({ status: "forbidden" });
+  expect(await oldDetail.json()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
 
   const outside = await request("POST", "product-panels/read", "nested-reader", { source, memberPath: [{
     ...componentChoice, selection: { stateValue: { className: PRODUCT_PROJECTION, primaryKey: remove }, target: { projectionId: remove } },

@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -322,7 +323,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("knowledge-reader");
     res.json({ ids: [...resourceIds] });
   });
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== "app-knowledge") { next(); return; }
     // Java admits the entry to the outsider too: what refuses them is the product's use Grant.
     expect(["knowledge-reader", "outsider"]).toContain(req.header("tk"));
@@ -660,7 +661,7 @@ it("rejects a forged member path, an undeclared operation and an unauthorized ta
     inputs: {},
   });
   expect(forgedRead.status).toBe(200);
-  expect(await forgedRead.json()).toEqual({ status: "forbidden" });
+  expect(await forgedRead.json()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
 
   const unlistedOperation = await intent("approve.unlisted");
   expect(unlistedOperation.status).toBe(422);

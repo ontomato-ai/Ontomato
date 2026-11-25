@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -11,6 +12,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
@@ -37,6 +39,9 @@ vi.mock("../../infrastructure/postgres", () => ({
 vi.mock("../../services/product-governance/grants", async original => ({
   ...await original<typeof import("../../services/product-governance/grants")>(),
   grantedProductIds: async (verb: "use" | "edit") => verb === "use" ? state.use : state.edit,
+  productGrantAllowed: async (id: string, verb: "use" | "edit") => (verb === "use" ? state.use : state.edit).includes(id),
+  productManagementAccess: async (target: { id: string; kind: string }, ownerFacts: { ownerId: string | null }) =>
+    productGrantCheck({ target, ownerFacts }, "viewer", (id, verb) => (verb === "use" ? state.use : state.edit).includes(id)),
   requireProductGrant: async (id: string, verb: "use" | "edit") => {
     if (!(verb === "use" ? state.use : state.edit).includes(id))
       throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
@@ -145,7 +150,7 @@ beforeAll(async () => {
   const { productPanelsRouter, panelOperationsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
-  app.get("/java/platform/applications/resolve-entry", (req, res) => {
+  mockApplicationEntry(app, "/java/platform/applications", (req, res) => {
     expect([viewer.token, "executor"]).toContain(req.header("tk"));
     expect(req.query).toMatchObject({ applicationId, useId: publicUse.id });
     res.json({ success: true, data: { applicationId, use: publicUse, menu: { singleEntry: true, groups: [], panelUses: [] } } });
@@ -506,7 +511,7 @@ it("checks partial application drafts against Java's current identity and entry 
 
 it("requires edit for grant reads and derives domain sharing from the owner Grants", async () => {
   expect(await readCatalogueResult("panelGrants", { panel: { className: PRODUCT_PANEL, primaryKey: "two" } }))
-    .toEqual({ status: "forbidden" });
+    .toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(await readCatalogue("panelGrants", { panel: { className: PRODUCT_PANEL, primaryKey: "one" } })).toEqual({
     grants: [{ principalKind: "principal", principalId: owner.userId, verb: "edit" },
       { principalKind: "domain", principalId: "*", verb: "use" }],

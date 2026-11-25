@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -40,6 +41,7 @@ import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -137,7 +139,8 @@ beforeAll(async () => {
     : (token === "host-reader" && grants.has(id)) ||
       (token === "domain-component-reader" && id === "domain-component-projection" && verb === "use");
   app.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: allowed(req.body.id, req.body.verb, req.header("tk")) });
+    const token = req.header("tk");
+    res.json(productGrantCheck(req.body, token === "host-reader" ? "reader" : undefined, (id, verb) => allowed(id, verb, token)));
   });
   app.post("/product-governance/check-batch", (req, res) => {
     res.json({ allowed: Object.fromEntries(req.body.ids.map((id: string) => [id, allowed(id, req.body.verb, req.header("tk"))])) });
@@ -195,10 +198,10 @@ beforeAll(async () => {
     const entrances = req.header("tk") === "host-reader" ? builtinUses.map(use => use.entrance) : [];
     res.json({ success: true, data: { pageSkills: entrances, admittedEntrances: entrances, registeredSkills: [] } });
   });
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId === "app-builtin-fixture") {
-      if (req.header("tk") === "host-no-entry") { res.sendStatus(403); return; }
-      expect(req.header("tk")).toBe("host-reader");
+      if (req.header("tk") === "host-no-entry" && req.path.endsWith("/resolve-entry")) { res.sendStatus(403); return; }
+      expect(["host-reader", "host-no-entry"]).toContain(req.header("tk"));
       res.json({ success: true, data: {
         applicationId: "app-builtin-fixture", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: "catalogue", pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
@@ -209,12 +212,12 @@ beforeAll(async () => {
     if (req.query.applicationId === "app-frame-host") {
       expect(req.header("tk")).toBe("host-reader");
       const useId = String(req.query.useId);
-      if (useId === "hidden") { res.sendStatus(403); return; }
+      if (useId === "hidden" && req.path.endsWith("/resolve-entry")) { res.sendStatus(403); return; }
       res.json({ success: true, data: {
         applicationId: "app-frame-host", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: useId, pageKey: useId, path: `/applications/app-frame-host/${useId}`,
           panelId: useId === "operable" ? frameOperationContentId : frameHostContentId, access: { kind: "domain-member" } },
-        ...(useId === "framed" && { framePanelId: frameHostPanelId }),
+        ...((useId === "framed" || useId === "hidden") && { framePanelId: frameHostPanelId }),
         ...(useId === "operable" && { framePanelId: state.operationFrameId }),
       } });
       return;
@@ -319,7 +322,7 @@ it("reconciles the released built-in authoring sources and exposes the same read
   const { readSkillView } = await import("../../services/skills/view");
   const skill = protectedSkillRef("product-panels", null, builtinPanelId);
   const useQuery = new URLSearchParams({
-    applicationId: builtinUse.applicationId, useId: builtinUse.useId, ...builtinUse.entrance,
+    applicationId: builtinUse.applicationId, useId: builtinUse.useId,
   });
   const packages = [];
   for (const domainId of ["pilot", "another-domain"]) {
@@ -347,11 +350,9 @@ it("reconciles the released built-in authoring sources and exposes the same read
     expect(await response.json()).toMatchObject({ status: "ready", value: expect.arrayContaining([
       expect.objectContaining({ primaryKey: "@ontomato/sdk:ObjectList" }),
     ]) });
-    const context = await read(`product-panels/${builtinPanelId}/snapshot?${useQuery}`);
+    const context = await read(`product-panels/application-entry?${useQuery}`);
     expect(context.status).toBe(200);
-    expect(panelDefinitionSnapshotSchema.parse(await context.json()).pageSkillContext).toMatchObject({
-      mode: "member", member: { ref: skill },
-    });
+    expect(await context.json()).toMatchObject({ pageSkillContext: { mode: "member", member: { ref: skill } } });
     const view = await readSkillView(domainId, { token: "host-reader" });
     const entry = view.requireSkillById(skill.name);
     expect(entry.skill).toEqual(skill);
@@ -378,13 +379,15 @@ it("reconciles the released built-in authoring sources and exposes the same read
   }
   const noEntry = await readSkillView("pilot", { token: "host-no-entry" });
   expect(noEntry.registry.getSkillByRef(skill)).toBeNull();
-  const inaccessible = await fetch(`${state.base}/api/product-panels/${builtinPanelId}/snapshot?${useQuery}`, {
+  const inaccessible = await fetch(`${state.base}/api/product-panels/application-entry?${useQuery}`, {
     headers: { "X-Test-Token": "host-no-entry" },
   });
-  expect(inaccessible.status).toBe(200);
-  expect(panelDefinitionSnapshotSchema.parse(await inaccessible.json()).pageSkillContext).toMatchObject({
-    mode: "member", member: null,
+  expect(inaccessible.status).toBe(403);
+  const ordinary = await fetch(`${state.base}/api/product-panels/${builtinPanelId}/snapshot`, {
+    headers: { "X-Test-Token": "host-no-entry" },
   });
+  expect(ordinary.status).toBe(200);
+  expect(await ordinary.json()).not.toHaveProperty("pageSkillContext");
   builtinUses = [];
   const blockedSave = await request("PUT", "product-panels/" + builtinPanelId, {
     name: "Shadow", description: "", visibility: "domain", revision: 0, content: { html, module }, manifest,
@@ -943,7 +946,7 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
   }) });
   expect((await getFrame(frameHostContentId)).status).toBe(404);
   expect((await getFrame(frameHostPanelId, "native")).status).toBe(404);
-  expect((await getFrame(frameHostPanelId, "hidden")).status).toBe(403);
+  expect((await getFrame(frameHostPanelId, "hidden")).status).toBe(200);
 
   const snapshot = await getSnapshot();
   expect(snapshot.status, await snapshot.clone().text()).toBe(200);
@@ -955,10 +958,9 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
     status: "ready", memberPath: [{ member: "components" }], target: { kind: "projection", id: projectionId }, revision: 1,
   });
   expect(payload.projections).toEqual(expect.arrayContaining([{ id: projectionId, revision: 1 }, { id: brokenId, revision: 1 }]));
-  expect(payload.pageSkillContext).toBeUndefined();
   expect((await getSnapshot(frameHostContentId)).status).toBe(404);
   expect((await getSnapshot(frameHostPanelId, "native")).status).toBe(404);
-  expect((await getSnapshot(frameHostPanelId, "hidden")).status).toBe(403);
+  expect((await getSnapshot(frameHostPanelId, "hidden")).status).toBe(200);
 
   await state.pool!.query(
     `UPDATE "${state.schema}".product_projections SET definition = definition || '{"obsolete":true}' WHERE id=$1`, [brokenId],
@@ -982,7 +984,7 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
   grants.delete(frameHostPanelId);
   expect((await getFrame()).status).toBe(403);
   expect((await getSnapshot()).status).toBe(403);
-  expect(await (await read("components")).json()).toEqual({ status: "forbidden" });
+  expect(await (await read("components")).json()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
 });
 
 it("freezes the frame of a human operation and rechecks it before dispatch", async () => {

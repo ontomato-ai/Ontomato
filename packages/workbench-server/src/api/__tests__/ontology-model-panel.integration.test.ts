@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -225,7 +226,7 @@ beforeAll(async () => {
   app.post("/product-governance/register", (req, res) => { resourceIds.add(req.body.id); res.json({ success: true }); });
   app.post("/product-governance/check", (req, res) => res.json({ allowed: resourceIds.has(req.body.id) }));
   app.post("/product-governance/resources", (_req, res) => res.json({ ids: [...resourceIds] }));
-  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== use.applicationId) { next(); return; }
     expect(req.header("tk")).toBe("model-reader");
     res.json({ success: true, data: {

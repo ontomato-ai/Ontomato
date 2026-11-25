@@ -278,7 +278,8 @@ beforeEach(() => {
     })),
   });
   mocks.backendGet.mockImplementation(async (_name: string, url: string) => {
-    if (url.includes("/platform/applications/resolve-entry")) {
+    const registered = url.includes("/platform/applications/registered-entry");
+    if (registered || url.includes("/platform/applications/resolve-entry")) {
       return {
         text: JSON.stringify({
           success: true,
@@ -286,7 +287,7 @@ beforeEach(() => {
             applicationId: "A",
             use: currentUse,
             ...(currentFramePanelId && { framePanelId: currentFramePanelId }),
-            menu: { singleEntry: true, groups: [], panelUses: [] },
+            ...(!registered && { menu: { singleEntry: true, groups: [], panelUses: [] } }),
           },
         }),
       };

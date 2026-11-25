@@ -15,7 +15,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import {
-  grantedProductIds, registerProductResource, requireProductGrant, unregisterProductResource, type ProductOwner,
+  grantedProductIds, productManagementAccess, registerProductResource, requireProductGrant, unregisterProductResource, type ProductOwner,
 } from "../product-governance/grants";
 import { declarationChanges, findComponentUsers } from "../product-panels/component-users";
 import { productReferenceKey } from "../product-panels/references";
@@ -33,9 +33,13 @@ export async function readDomainComponent(owner: ProductOwner, credentials: Assi
   await assertAppBuilderAccess(credentials);
   const row = await findDomainComponent(owner.domainId, id);
   if (!row) throw unavailable();
-  const editable = (await grantedProductIds("edit", credentials)).includes(id);
-  const record = domainComponentRecord(row, editable);
-  if (!editable && row.ownerId !== owner.userId && record.visibility !== "domain") throw unavailable();
+  const access = await productManagementAccess(
+    { domainId: owner.domainId, kind: "component", id },
+    { ownerId: row.ownerId, state: "current" },
+    credentials,
+  );
+  const record = domainComponentRecord(row, access.editable);
+  if (!access.allowed && record.visibility !== "domain") throw unavailable();
   return record;
 }
 
@@ -74,7 +78,7 @@ export async function registerDomainComponent(
       `INSERT INTO ${t("domain_components")} (domain_id,id,owner_id,definition)
        VALUES ($1,$2,$3,$4::jsonb) RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)],
     );
-    await registerProductResource(owner, id, false);
+    await registerProductResource(owner, id, false, { createOnly: true });
     return domainComponentRecord(rows[0]!, true);
   });
 }

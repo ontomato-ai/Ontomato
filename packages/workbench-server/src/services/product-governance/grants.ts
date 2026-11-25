@@ -22,6 +22,45 @@ function serviceHeaders() {
   return { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": token };
 }
 
+export function productDefinitionOwnerHeaders(credentials: AssistantCredentials) {
+  return buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, {
+    ...credentials.headers,
+    ...serviceHeaders(),
+  });
+}
+
+interface ObjectTarget {
+  domainId: string;
+  kind: "panel" | "component";
+  id: string;
+}
+
+interface OwnerFacts {
+  ownerId: string | null;
+  state: "current";
+}
+
+interface ManagementAccess {
+  allowed: boolean;
+  authored: boolean;
+  editable: boolean;
+}
+
+export async function productManagementAccess(
+  target: ObjectTarget, ownerFacts: OwnerFacts, credentials: AssistantCredentials,
+): Promise<ManagementAccess> {
+  const response = await backendPost(
+    "product-grant-check",
+    config.dataQuery.baseUrl + "/product-governance/check",
+    { target, ownerFacts },
+    { headers: productDefinitionOwnerHeaders(credentials) },
+  );
+  const access = JSON.parse(response.text);
+  if (typeof access.allowed !== "boolean" || typeof access.authored !== "boolean" || typeof access.editable !== "boolean")
+    throw new HttpError(503, "Invalid product Grant response", "PRODUCT_GOVERNANCE_UNAVAILABLE");
+  return access;
+}
+
 export async function unregisterProductResource(domainId: string, id: string) {
   const response = await backendPost("product-grant-unregister", config.dataQuery.baseUrl + "/product-governance/unregister",
     { domainId, id }, { headers: serviceHeaders(), retries: 1 });
@@ -31,6 +70,7 @@ export async function unregisterProductResource(domainId: string, id: string) {
 
 interface ProductRegistrationOptions {
   ownerId?: string | null;
+  createOnly?: boolean;
   verbs?: ProductGrantVerb[];
   grantAdmin?: boolean;
   legacyMenuPermission?: string;

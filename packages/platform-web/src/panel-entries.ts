@@ -1,12 +1,19 @@
 import type { NavigationGuard, RouteLocationNormalized, RouteRecordRaw, Router } from "vue-router";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { isPanelApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
-import { isNativeApplicationEntry } from "@ontomato/contracts/product-panels";
+import { isNativeApplicationEntry, type ApplicationEntryResolution } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { builtinApplicationForPath, firstVisiblePanelPath, useApplicationCatalog } from "./catalog";
 import { externalLinkTab } from "./external-link";
 import { resolveApplicationEntry } from "./panel-host";
 import { startPage } from "./shell";
+
+declare module "vue-router" {
+  interface RouteMeta {
+    /** Opening result from the initial standalone route match, consumed by the redirected panel route. */
+    openedPanelEntry?: ApplicationEntryResolution;
+  }
+}
 
 /** The paths one router has already opened an entry route for. */
 const servedEntries = new WeakMap<Router, Set<string>>();
@@ -45,7 +52,7 @@ function isStandaloneRequest(to?: Pick<RouteLocationNormalized, "query">): boole
 async function resolveBuiltInEntryOwner(
   router: Router,
   path: string,
-  options: { standalone?: boolean } = {},
+  options: { standalone?: boolean; opened?: (entry: ApplicationEntryResolution) => void } = {},
 ): Promise<CatalogApplication | null> {
   const catalog = useApplicationCatalog();
   let owner = builtinApplicationForPath(path);
@@ -55,6 +62,7 @@ async function resolveBuiltInEntryOwner(
       try {
         const resolved = await resolveApplicationEntry({ path });
         owner = await catalog.ensureApplication(resolved.applicationId);
+        options.opened?.(resolved);
       } catch {
         return null;
       }
@@ -113,7 +121,10 @@ export function panelEntryGuard(router: Router): NavigationGuard {
     servePanelEntries(router);
     if (!unknown(to.fullPath)) return to.fullPath;
     // A cold link, an unloaded built-in summary, or a newly granted entry loads its owning application on demand.
-    const owner = await resolveBuiltInEntryOwner(router, to.path, { standalone: isStandaloneRequest(to) });
+    const owner = await resolveBuiltInEntryOwner(router, to.path, {
+      standalone: isStandaloneRequest(to),
+      opened: entry => { to.meta.openedPanelEntry = entry; },
+    });
     if (!unknown(to.fullPath)) return to.fullPath;
     // Entering a built-in application's root prefix (e.g. `/settings`, `/permissions`, `/ops`) lands on its first visible entry.
     if (owner && to.path === owner.entry.path) {

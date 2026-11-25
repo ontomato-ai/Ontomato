@@ -511,7 +511,6 @@ public class ApplicationCatalog {
     public boolean canEnter(JSONObject app, User user) {
         return inDomain(app,user) && access.canEnter(app,user);
     }
-    public boolean canReconcileProducts(User user){return access.administrator(user)&&canEnter("app-builder",user);}
     public void updateIcon(String id, String icon, User user) {
         transactions.executeWithoutResult(tx -> {
             lockCatalog();
@@ -665,9 +664,13 @@ public class ApplicationCatalog {
         if (releaseId == null || !releaseId.matches("[a-zA-Z0-9_-]{1,128}")) throw bad("Invalid releaseId");
         return userApplication(id, "hosted", declaration, releaseId, user);
     }
-    public JSONObject publishProduct(String id,Declaration declaration,String releaseId,User user){
+    public JSONObject publishProduct(String id, Declaration declaration, String releaseId, User user,
+            io.ontomato.dataengine.service.ProductGrantService.OwnerFacts ownerFacts) {
         if(releaseId==null||!releaseId.matches("[a-zA-Z0-9_-]{1,128}"))throw bad("Invalid releaseId");
-        return userApplication(id,"product",declaration,releaseId,user);
+        if (ownerFacts == null || ownerFacts.ownerId() == null || ownerFacts.ownerId().isBlank()
+                || !"current".equals(ownerFacts.state()))
+            throw bad("Product publication requires current owner facts");
+        return userApplication(id, "product", declaration, releaseId, user, ownerFacts.ownerId());
     }
     public JSONObject connected(String id, Declaration declaration, String upstream, String upstreamPrefix, User user) {
         access.requireConnectedRegistration(user);
@@ -682,7 +685,12 @@ public class ApplicationCatalog {
             return result;
         });
     }
-    public JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user) {
+    private JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user) {
+        return userApplication(id, kind, declaration, releaseId, user, null);
+    }
+
+    private JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user,
+            String productAuthor) {
         validateId(id); validate(declaration);
         if (!declaration.pageSkills().isEmpty() || !declaration.panelUses().isEmpty()) throw bad("Use the panel application registration for panel relations");
         if(!List.of("hosted","connected","product").contains(kind))throw bad("Invalid user application kind");
@@ -697,6 +705,8 @@ public class ApplicationCatalog {
                 if (panelManaged(a)) throw bad("A panels application cannot use legacy publication");
                 if (!kind.equals(a.getString("kind")) || !Objects.equals(user.getDomainId(),a.getString("domainId")) ||
                     !access.canMaintain(a,user)) throw denied();
+            } else if ("product".equals(kind)) {
+                access.requireLegacyProductAuthor(user, productAuthor);
             }
             requireIconChange(old.orElse(null), declaration.icon(), user);
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
@@ -902,11 +912,23 @@ public class ApplicationCatalog {
             var app = require(apps, applicationId);
             if (!inDomain(app, user)) throw denied();
             var pageKeys = new BuiltinPageKeys(apps);
-            if (!hasAssignedPanelPaths(app) || pageKeys.activeUses(app).stream()
-                    .noneMatch(use -> !use.nativeEntry() && useId.equals(use.id())))
-                throw entryNotFound();
+            declaredPanelEntry(app, useId, pageKeys);
             return resolveDeclaredEntry(app, useId, user, pageKeys);
         });
+    }
+
+    public JSONObject registeredEntry(String applicationId, String useId, User user) {
+        var apps = applicationsInDomain(user.getDomainId());
+        var app = apps.stream().filter(item -> applicationId.equals(item.getString("id"))).findFirst()
+            .orElseThrow(ApplicationCatalog::entryNotFound);
+        var use = declaredPanelEntry(app, useId, new BuiltinPageKeys(apps));
+        return JSONObject.of("applicationId", applicationId, "use", use, "framePanelId", entryFramePanelId(app));
+    }
+
+    private static ApplicationPanelUse declaredPanelEntry(JSONObject app, String useId, BuiltinPageKeys pageKeys) {
+        if (!hasAssignedPanelPaths(app)) throw entryNotFound();
+        return pageKeys.activeUses(app).stream().filter(use -> !use.nativeEntry() && useId.equals(use.id()))
+            .findFirst().orElseThrow(ApplicationCatalog::entryNotFound);
     }
 
     private JSONObject resolveDeclaredEntry(JSONObject app, String useId, User user, BuiltinPageKeys pageKeys) {
@@ -923,24 +945,26 @@ public class ApplicationCatalog {
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed,
                                              BuiltinPageKeys pageKeys) {
-        boolean panels = panelManaged(app);
         var named = allowed.stream().filter(entry -> entry.names() != null).toList();
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
         var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
             .sorted(Comparator.comparingInt(Group::sort)).toList();
         var appNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
-        var result = JSONObject.of("applicationId", app.getString("id"), "use", use,
+        var result = JSONObject.of("applicationId", app.getString("id"), "use", use, "framePanelId", entryFramePanelId(app),
             "menu", new EntryMenu(appNames, groups, named, singleEntry(app, pageKeys)));
         var settings = app.getJSONObject("panelSettings");
-        String resolvedFrame = null;
+        if (panelManaged(app) && settings != null && settings.containsKey("theme"))
+            result.put("theme", settings.getJSONObject("theme"));
+        return result;
+    }
+
+    private static String entryFramePanelId(JSONObject app) {
+        var settings = app.getJSONObject("panelSettings");
         if (settings != null && settings.containsKey("framePanelId")) {
             var framePanelId = settings.getString("framePanelId");
-            if (panels || BuiltinProductIds.isValid(framePanelId)) resolvedFrame = framePanelId;
+            if (framePanelId != null && (panelManaged(app) || BuiltinProductIds.isValid(framePanelId))) return framePanelId;
         }
-        result.put("framePanelId", resolvedFrame != null ? resolvedFrame : DEFAULT_FRAME_PANEL_ID);
-        if (!panels) return result;
-        if (settings != null && settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
-        return result;
+        return DEFAULT_FRAME_PANEL_ID;
     }
 
     private static ResponseStatusException entryNotFound() {

@@ -263,9 +263,8 @@ it.each([
   try {
     expect(router.currentRoute.value.path).toBe(path);
     await vi.waitFor(() => expect(element.querySelector(".panel-host-coded")).not.toBeNull());
-    const query = new URLSearchParams(sent.find(request => request.path === `/api/product-panels/${panel.id}/page-skill-context`)?.search);
-    expect(query.get("applicationId")).toBe(applicationId);
-    expect(query.get("useId")).toBe(use?.id);
+    const query = new URLSearchParams(sent.find(request => request.path === "/api/product-panels/application-entry")?.search);
+    expect(query.get("path")).toBe(use?.path);
   } finally {
     app.unmount();
   }

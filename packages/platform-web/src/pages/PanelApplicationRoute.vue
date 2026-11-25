@@ -3,7 +3,7 @@ import { computed, inject, markRaw, onBeforeUnmount, reactive, ref, shallowRef, 
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElButton, ElSkeleton } from "element-plus";
-import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
+import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import {
   applicationPanelAddress,
@@ -22,7 +22,7 @@ import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { APPLICATION, FAVORITE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { HOME_PREFERENCES_CHANGED, readHomePanel, saveHomePanel } from "../features/home/api";
-import { onPanelReadDenied, panelHasInlineConversationEntry, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import { panelHasInlineConversationEntry, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import {
   applicationFrameHostKey,
   deepLinkDefaultsOf,
@@ -66,6 +66,7 @@ const props = defineProps<{
    * full, the router's address is the page's.
    */
   address?: string;
+  takeOpenedEntry?: () => ApplicationEntryResolution | undefined;
   objectRefresh?: DisplayObjectRefresh | null;
   liveState?: DisplayStateUpdate | null;
   registerPageController?: (controller: DisplayPageController) => () => void;
@@ -194,8 +195,6 @@ watch(() => props.objectRefresh?.seq, () => {
 const KEPT_PAGES = 6;
 /** How long the previous clean page stays visible during a same-application switch before showing the loading placeholder. */
 const TRANSITION_PLACEHOLDER_DELAY_MS = 150;
-/** Periodic silent refresh interval for the current application's entry table while the tab is visible. */
-const ENTRY_TABLE_REFRESH_MS = 5 * 60 * 1000;
 
 /** A page of this application whose instance is kept, shown or not. */
 interface KeptPage {
@@ -288,10 +287,6 @@ const entryPath = computed(() => {
   return first ? panelUsePath(first.path) : null;
 });
 
-function findEntryByPath(entries: readonly EntryUse[], path: string): EntryUse | null {
-  return entries.find((candidate) => panelUsePath(candidate.path) === path) ?? null;
-}
-
 function revokeEntry(path: string) {
   kept.value = kept.value.filter((page) => panelUsePath(page.use.path) !== path);
   if (retainedPage.value && panelUsePath(retainedPage.value.use.path) === path) {
@@ -309,11 +304,19 @@ async function requestEntryResolution(
 ) {
   const epoch = options.epoch ?? ++resolveEpoch;
   if (options.blocking) {
-    clearTransition();
+    const previous = kept.value.find(page => page.use.id === resolution.value?.use.id);
+    if (previous && !previous.dirty && previous.surfaceReady) {
+      retainedPage.value = previous;
+      ensureTransitionTimer();
+    }
     verifying.value = true;
   }
   try {
-    const answer = await resolveApplicationEntry({ path });
+    const initial = props.takeOpenedEntry?.() ?? route.meta.openedPanelEntry ?? route.redirectedFrom?.meta.openedPanelEntry;
+    delete route.meta.openedPanelEntry;
+    if (route.redirectedFrom) delete route.redirectedFrom.meta.openedPanelEntry;
+    const answer = initial?.applicationId === applicationId && panelUsePath(initial.use.path) === path
+      ? initial : await resolveApplicationEntry({ path });
     if (unmounted || epoch !== resolveEpoch || props.applicationId !== applicationId || entryPath.value !== path) return;
     if (answer.applicationId !== applicationId) {
       revokeEntry(path);
@@ -328,12 +331,11 @@ async function requestEntryResolution(
   }
 }
 
-function refreshEntryTable({ refreshApplication }: { refreshApplication: boolean }) {
+function refreshEntryTable() {
   if (unmounted || verifying.value) return Promise.resolve();
   if (refreshInFlight) return refreshInFlight;
   const applicationId = props.applicationId;
   const path = entryPath.value;
-  if (refreshApplication) void catalog.refreshApplication(applicationId).catch(() => undefined);
   if (!path) return Promise.resolve();
   const epoch = ++resolveEpoch;
   const task = requestEntryResolution(applicationId, path, { blocking: false, epoch }).finally(() => {
@@ -369,50 +371,24 @@ watch([() => props.applicationId, entryPath], ([applicationId, path]) => {
     resolution.value = null;
     return;
   }
-  const known = findEntryByPath(entryTable.value, path)
-    ?? kept.value.find((page) => panelUsePath(page.use.path) === path)?.use
-    ?? null;
-  if (known) {
-    verifying.value = false;
-    if (!currentResolution.value) {
-      void requestEntryResolution(applicationId, path, { blocking: false, epoch });
-    }
-    return;
-  }
   void requestEntryResolution(applicationId, path, { blocking: true, epoch });
 }, { immediate: true });
 
 const stopVisibility = onDocumentVisibility((visible) => {
-  if (visible) void refreshEntryTable({ refreshApplication: true });
+  if (visible) void refreshEntryTable();
 });
-const stopReadDenied = onPanelReadDenied(() => {
-  void refreshEntryTable({ refreshApplication: true });
-});
-const refreshTimer = setInterval(() => {
-  if (documentVisible()) void refreshEntryTable({ refreshApplication: true });
-}, ENTRY_TABLE_REFRESH_MS);
 
 onBeforeUnmount(() => {
   unmounted = true;
   clearTransition();
   stopVisibility();
-  stopReadDenied();
-  clearInterval(refreshTimer);
 });
 
-const listedUse = computed<EntryUse | null>(() =>
-  entryPath.value ? findEntryByPath(entryTable.value, entryPath.value) : null,
-);
 const resolvedUse = computed<EntryUse | null>(() => {
   const path = entryPath.value;
   const answer = currentResolution.value;
   if (!path || !answer) return null;
   return panelUsePath(answer.use.path) === path ? answer.use : null;
-});
-const keptUse = computed<ApplicationPanelUse | null>(() => {
-  const path = entryPath.value;
-  if (!path) return null;
-  return kept.value.find((page) => panelUsePath(page.use.path) === path)?.use ?? null;
 });
 /**
  * The base use relation the opened address names before any per-user home panel override.
@@ -420,7 +396,7 @@ const keptUse = computed<ApplicationPanelUse | null>(() => {
 const baseUse = computed<EntryUse | null>(() => {
   const path = entryPath.value;
   if (!path || verifying.value || deniedPath.value === path) return null;
-  return resolvedUse.value ?? listedUse.value ?? keptUse.value;
+  return resolvedUse.value;
 });
 
 const isHomeMainEntry = computed(() => props.applicationId === "home" && baseUse.value?.id === "home");
@@ -712,6 +688,14 @@ const shownPage = computed<KeptPage | null>(() =>
 watch(shownPage, (next) => {
   host.value = next?.controller ?? null;
 });
+watch(() => currentResolution.value?.pageSkillContext, context => {
+  const page = shownPage.value;
+  if (!page || page.use.id !== currentResolution.value?.use.id) return;
+  const next = context ?? null;
+  if (page.pageSkill === next) return;
+  page.pageSkill = next;
+  if (!page.rechecking && page.load.status === "ready") passSkill(next);
+}, { flush: "post" });
 function displayedPanel(): DisplayedPanel | null {
   const page = shownPage.value;
   return page ? {
@@ -770,7 +754,7 @@ const displayedPage = computed<KeptPage | null>(() => {
   const current = shownPage.value;
   if (current?.surfaceReady) return current;
   const retained = retainedPage.value;
-  if (current && retained && !transitionTimedOut.value && retained.surfaceReady) {
+  if ((current || verifying.value) && retained && !transitionTimedOut.value && retained.surfaceReady) {
     const alive = kept.value.find((page) => toRaw(page) === toRaw(retained));
     if (alive) return alive;
   }
@@ -797,7 +781,7 @@ watch(use, (next, previous) => {
   }
   shownSkill.value = null;
   if (!next) {
-    clearTransition();
+    if (!verifying.value) clearTransition();
     return;
   }
   performance.mark("ontomato:panel-page-opened", { detail: { applicationId: props.applicationId, useId: next.id } });
@@ -811,10 +795,8 @@ watch(use, (next, previous) => {
   if (!found) kept.value = [...kept.value, page];
 
   const wasTimedOut = transitionTimedOut.value;
-  clearTransitionTimer();
-  transitionTimedOut.value = false;
   if (found && found.surfaceReady) {
-    retainedPage.value = null;
+    clearTransition();
   } else {
     const candidate = left && !left.dirty && left.surfaceReady ? left : (!wasTimedOut ? retainedPage.value : null);
     const alive = candidate && toRaw(candidate) !== toRaw(page)
@@ -826,6 +808,7 @@ watch(use, (next, previous) => {
 
   // A kept page shown again is checked again, and its page skill with it; a new page tells it once its panel is read.
   if (found) found.rechecking = true;
+  page.pageSkill = currentResolution.value?.pageSkillContext ?? null;
   // Its bare address opens a kept page as it was left: the address takes the state the page is at.
   if (found && !opened.value.includes("?")) reportAddress({ kind: "state", address: found.reported });
   emit("context", page.context ?? { url: page.reported, label: pageName.value, selection: [] });
@@ -880,7 +863,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
       }
     : undefined;
   page.port = markRaw(platformPanelHost(
-    props.applicationId, use, changed, undefined, (context) => reportPageSkill(page, context),
+    props.applicationId, use, changed, undefined,
     // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
     props.navigate,
     pageCounter,
@@ -907,20 +890,6 @@ function reportSurfaceReady(page: KeptPage, ready: boolean) {
   if (!shownPage.value || toRaw(page) !== toRaw(shownPage.value)) return;
   if (ready) clearTransition();
   else ensureTransitionTimer();
-}
-
-/**
- * The page skill an instance's read answered: kept with the instance, and passed on when it changed, only while that
- * same instance is the shown page and not in the middle of being checked again — an answer that arrives after the reader
- * moved on, or for an instance since dropped, stays its own. A page shown again passes on what its checks confirmed.
- */
-function reportPageSkill(page: KeptPage, context: PageSkillContext | null) {
-  const changed = JSON.stringify(context) !== JSON.stringify(page.pageSkill);
-  page.pageSkill = context;
-  if (changed && shownPage.value && toRaw(shownPage.value) === page && !page.rechecking) {
-    passSkill(context);
-    reportLoad(shownPage.value, page.load);
-  }
 }
 
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
@@ -958,8 +927,9 @@ function setPageHost(page: KeptPage, controller: ShownInstance | null) {
 function reportLoad(page: KeptPage, load: DisplayLoad) {
   page.load = load;
   if (page !== shownPage.value) return;
-  // The panel can render while the conversation waits for its page-skill context.
-  emit("display-loaded", load.status === "ready" && page.pageSkill === undefined ? { status: "loading" } : load);
+  if (load.status === "ready" && !page.rechecking && page.pageSkill !== undefined && shownSkill.value !== page.pageSkill)
+    passSkill(page.pageSkill);
+  emit("display-loaded", load);
 }
 
 function reportContext(page: KeptPage, context: PageContext) {

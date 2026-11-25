@@ -46,6 +46,11 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   const source=await profileSourceForSession(owner,session.id,session.agent_id);
   mark("profile-source");
+  if (source && pageSkillContext?.mode === "member" && pageSkillContext.entry) {
+    const { validateApplicationPageSkillEntry } = await import("../skills/view");
+    await validateApplicationPageSkillEntry({ ...owner, initiatorCredentials: credentials },
+      { ...pageSkillContext, member: null });
+  }
   const prepared=source?null:await prepareAssistantSkills(owner.domainId,a,credentials,pageSkillContext,owner.userId);
   mark("skills");
   const skills=prepared?.skills??[];

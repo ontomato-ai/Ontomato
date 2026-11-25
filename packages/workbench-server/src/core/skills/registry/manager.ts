@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
@@ -193,7 +192,6 @@ export class DomainSkillRegistryManager {
   async publicSkills() { return this.publicScanner.scan(); }
   async forDomain(domainId: string, admit: AdmitSkills | undefined, reader: AssistantCredentials, userId?: string) {
     const root = this.getDomainSkillsRoot(domainId);
-    await fs.promises.mkdir(root, { recursive: true });
     const registry = new SkillRegistryManager(root, this.publicScanner, domainId, registeredSkillProviders(), reader, userId);
     await registry.initialize(admit);
     return registry;

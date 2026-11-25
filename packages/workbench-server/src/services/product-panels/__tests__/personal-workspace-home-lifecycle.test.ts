@@ -110,14 +110,16 @@ beforeEach(() => {
   state.panels.clear();
   const homeApp = workbenchApplications.find((app) => app.id === "home")!;
   const homeUse = homeApp.declaration.panelUses!.find((u) => u.id === "home")!;
-  vi.stubGlobal("fetch", vi.fn(async () =>
+  vi.stubGlobal("fetch", vi.fn(async (url: string | URL) =>
     Response.json({
       success: true,
       data: {
         applicationId: "home",
         use: homeUse,
         framePanelId: homeApp.framePanelId,
-        menu: { singleEntry: true, groups: [], panelUses: homeApp.declaration.panelUses },
+        ...(!String(url).includes("/registered-entry") && {
+          menu: { singleEntry: true, groups: [], panelUses: homeApp.declaration.panelUses },
+        }),
       },
     }),
   ));

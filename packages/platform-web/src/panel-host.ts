@@ -1,11 +1,11 @@
 import { loadDomainComponent } from "./domain-component";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
-  applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelPageSkillContextResponseSchema, productPanelResponseSchema, productPanelSchema,
+  applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelResponseSchema, productPanelSchema,
   isApplicationPanelUse,
   type FrameConversationEntry,
   type ApplicationEntryResolution, type ApplicationEntryResolutionQuery, type ApplicationPanelUse,
-  type BundledPanelProjection, type ProductPanel, type ProductPanelReadQuery,
+  type BundledPanelProjection, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema, appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import {
@@ -21,12 +21,10 @@ import {
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
-import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame, servePageComposer } from "./app-host";
-import { readHomePanel } from "./features/home/api";
 import { panelNavigator } from "./panel-navigate";
 import {
   adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, createPanelOverlayRoot, newPanelInstanceName, scopedPanelStyle,
@@ -83,8 +81,6 @@ export const panelHostPaths = {
     `/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`,
   panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
   snapshot: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/snapshot`,
-  /** Which page skill a message written beside a page reaches: read on its own, beside the panel's record. */
-  pageSkillContext: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/page-skill-context`,
   definitionStream: "/api/product-panels/definition-stream",
   /** What a panel's member shows: one named datum, read by the platform as the reader. */
   read: "/api/product-panels/read",
@@ -93,31 +89,8 @@ export const panelHostPaths = {
     `/api/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${new URLSearchParams({ ref })}`,
 };
 
-const panelReadDeniedListeners = new Set<() => void>();
-
-/**
- * Registers a listener notified whenever a panel record, projection, or data read is refused with HTTP 403.
- * Returns an unsubscribe function.
- */
-export function onPanelReadDenied(listener: () => void): () => void {
-  panelReadDeniedListeners.add(listener);
-  return () => { panelReadDeniedListeners.delete(listener); };
-}
-
-function notifyPanelReadDenied(failure: unknown) {
-  if (failure instanceof ApiRequestError && failure.status === 403) {
-    for (const listener of [...panelReadDeniedListeners]) listener();
-  }
-}
-
-async function json(path: string, init: RequestInit = {}, options: { notifyDenied?: boolean } = {}) {
-  let response: Response;
-  try {
-    response = await nodeApiRequest(path, init);
-  } catch (failure) {
-    if (options.notifyDenied !== false) notifyPanelReadDenied(failure);
-    throw failure;
-  }
+async function json(path: string, init: RequestInit = {}) {
+  const response = await nodeApiRequest(path, init);
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message ?? `Request failed: ${path}`);
   return body;
@@ -274,8 +247,6 @@ export function panelHasAgentChat(panel: ProductPanel, projections?: Record<stri
  */
 export function platformPanelHost(
   applicationId: string, use: ApplicationPanelUse, changed: (change: PanelObjectChange) => void, mode: PanelDefinitionMode = { kind: "view" },
-  /** Hears which page skill a message written beside this page reaches, as Node answers it with the panel. */
-  pageSkill?: (context: PageSkillContext | null) => void,
   /** Beside a conversation, the conversation's display, which opens an address the panel asks for; at full page, none. */
   beside?: (address: string) => void,
   /** Platform page counter provided by the outer layout, bridged into direct-mounted panel Vue apps for inline composers. */
@@ -289,16 +260,8 @@ export function platformPanelHost(
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const panelChatHost = createPanelChatHost(use.defaultAgent, { claimComposer, display });
   const shown: PanelUseRef = { applicationId, useId: use.id };
-  /** Whether Java's answer for an entry is this page's use relation, still bound to the same panel. */
-  const names = (answer: ApplicationEntryResolution) => isApplicationPanelUse(answer.use) && answer.use.id === use.id && answer.use.panelId === use.panelId;
-  // The page these reads are made for: the use relation it is shown for, and the entrance it is reached by — its menu
-  // code, or domain membership, with its page key. Node answers with them which page skill member the reader reaches
-  // here: null when it does not, never a public guess.
-  const read: ProductPanelReadQuery = "permissionCode" in use.access
-    ? { ...shown, pageKey: use.pageKey, permissionCode: use.access.permissionCode }
-    : { ...shown, pageKey: use.pageKey, access: "domain-member" };
-  const page = new URLSearchParams(read);
   const personalSource = { kind: "registered", ...shown } as const;
+  const bundleQuery = mode.kind === "view" ? "?includeProjections=1&view=1" : "?includeProjections=1";
   const controlled = new Set(Object.keys(use.inputs ?? {}));
   let pendingPersonalState: PersonalStateRead | undefined;
   let lastPanel: ProductPanel | undefined;
@@ -306,23 +269,12 @@ export function platformPanelHost(
   let panelDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
   let sourceReconciled = false;
   return {
-    // Opening reads the panel's record (bundled with its fixed projections on cache miss), and — beside it, not before
-    // it — which page skill this page reaches: the panel is drawn as soon as its record is here, and only the page's
-    // composer and conversation wait for the skill (a read of the record that also worked out the skill took 2.3 s on
-    // 128, the record alone 0.5 s).
+    // After entry admission, render the panel and its fixed projections under the reader's current use grants.
     async source() {
       warmTemplateCompiler();
       pendingPersonalState = undefined;
       sourceReconciled = false;
-      let sourceFailed = false;
-      void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`, {}, { notifyDenied: false })
-        .then(answer => productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext)
-        // A failed skill read leaves the composer closed and does not affect the panel record.
-        .then(
-          context => { if (!sourceFailed) pageSkill?.(context); },
-          () => { if (!sourceFailed) pageSkill?.(null); },
-        );
-      try {
+      {
         const cached = getCachedPanel(use.panelId);
         if (cached) {
           warmPanelProjectionComponents(cached.manifest);
@@ -333,8 +285,7 @@ export function platformPanelHost(
               response: readPersonalState({ source: personalSource, memberPath: [] }, fields),
             };
           }
-          // Verify panel access and definition revisions before mounting a cached record, using the lightweight
-          // snapshot (no page query so Node skips pageSkillContext — that runs in parallel above).
+          // Verify panel access and definition revisions before mounting a cached record.
           const scope = currentDefinitionCacheScope();
           let verified;
           try {
@@ -362,7 +313,7 @@ export function platformPanelHost(
           sourceReconciled = true;
         }
         const scope = currentDefinitionCacheScope();
-        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?includeProjections=1`));
+        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}${bundleQuery}`));
         setCachedPanel(use.panelId, answer.panel, scope);
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
         warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
@@ -371,9 +322,6 @@ export function platformPanelHost(
         sourceReconciled = true;
         onPanelLoaded?.(answer.panel, answer.projections);
         return { kind: "registered", applicationId, use, panel: answer.panel };
-      } catch (failure) {
-        sourceFailed = true;
-        throw failure;
       }
     },
     sourceReconciled: () => sourceReconciled,
@@ -382,7 +330,7 @@ export function platformPanelHost(
     async panel(panelId) {
       if (panelId === use.panelId) {
         const scope = currentDefinitionCacheScope();
-        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?includeProjections=1`));
+        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}${bundleQuery}`));
         setCachedPanel(panelId, answer.panel, scope);
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
         lastPanel = answer.panel;
@@ -409,28 +357,11 @@ export function platformPanelHost(
       return withPersonalState(personalSource, [], source.panel.manifest, run, mount,
         entryPanel ? controlled : new Set(), entryPanel ? pending : undefined);
     },
-    // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
-    // checked against Java's current relations before its frame may ask for anything.
-    async current() {
-      const answer = await resolveApplicationEntry(shown);
-      if (applicationId === "home" && use.id === "home") {
-        if (!isApplicationPanelUse(answer.use) || answer.use.id !== use.id) return false;
-        try {
-          const { panel: customHome } = await readHomePanel();
-          return (customHome?.id ?? answer.use.panelId) === use.panelId;
-        } catch {
-          return false;
-        }
-      }
-      return names(answer);
-    },
-    // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
-    // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.
     async snapshot(panelId) {
       const scope = currentDefinitionCacheScope();
       let answer;
       try {
-        answer = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(panelId)}?${page}`));
+        answer = panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(panelId)));
       } catch (failure) {
         invalidateCachedPanel(panelId);
         throw failure;
@@ -440,7 +371,6 @@ export function platformPanelHost(
         mountUnavailable.clear();
         for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
       }
-      pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
       return answer;
     },
     mode,
@@ -552,11 +482,6 @@ export function framePanelHost(
       }, frameSource, undefined, panelChatHost, chat?.feed),
       target, source.panel.content.module, undefined, panelChatHost, chat?.feed,
     ),
-    // The frame is the entry's: it stands while Java still names the same entry, bound to the same frame panel.
-    async current() {
-      const answer = await resolveApplicationEntry(shown);
-      return answer.use.id === use.id && answer.framePanelId === framePanelId;
-    },
     async snapshot(panelId) {
       const scope = currentDefinitionCacheScope();
       const targetKey = panelId === framePanelId ? cacheKey : panelId;
@@ -818,10 +743,7 @@ export function appCandidatePanelHost(
  * the bridge, sent here directly, Node's at `/api` and Java's under its data-query prefix.
  */
 const platformRequests: PlatformRequests = {
-  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init).catch((failure: unknown) => {
-    notifyPanelReadDenied(failure);
-    throw failure;
-  }),
+  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init),
 };
 
 /**
@@ -1144,9 +1066,8 @@ async function mountCoded(
  */
 export async function resolveApplicationEntry(query: ApplicationEntryResolutionQuery): Promise<ApplicationEntryResolution> {
   const search = new URLSearchParams(applicationEntryResolutionQuerySchema.parse(query) as Record<string, string>);
-  const answer = await json(`/api/data-query/platform/applications/resolve-entry?${search}`, {}, { notifyDenied: false });
-  if (answer.success === false) throw new Error(answer.message ?? "This entry cannot be opened");
-  return applicationEntryResolutionSchema.parse(answer.data ?? answer);
+  const answer = await json(`/api/product-panels/application-entry?${search}`);
+  return applicationEntryResolutionSchema.parse(answer);
 }
 
 /**

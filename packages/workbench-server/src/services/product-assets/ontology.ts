@@ -41,7 +41,12 @@ export async function synchronizeProductOntology(owner:ProductOwner){
 }
 export const ontologyProductGraphSchema=z.object({nodes:z.array(z.object({id:z.string(),kind:z.string(),name:z.string(),revision:z.number()})),edges:z.array(z.object({source:z.string(),relation:z.enum(['renders','embodies']),target_kind:z.string(),target_id:z.string(),is_default:z.boolean()}))});
 export async function readProductOntology(owner:ProductOwner){
-  await synchronizeProductOntology(owner);
+  const pending = await getPostgresPool().query(
+    `SELECT 1 FROM ${t("product_ontology_outbox")} WHERE domain_id=$1 LIMIT 1`, [owner.domainId],
+  );
+  if (pending.rows.length) {
+    throw new HttpError(409, "Product ontology registration is not current", "PRODUCT_ONTOLOGY_PENDING");
+  }
   return ontologyProductGraphSchema.parse(await request('graph',{domainId:owner.domainId,userId:owner.userId}));
 }
 export async function registeredProductGraph(owner:ProductOwner,assets:ProductAsset[],credentials?:AssistantCredentials){

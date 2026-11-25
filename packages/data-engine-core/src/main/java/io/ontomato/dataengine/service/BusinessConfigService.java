@@ -8,6 +8,8 @@ public interface BusinessConfigService {
 	/** Save domain business configuration. */
 	public void set(BusinessConfig businessConfig, String domainId);
 
+	void initializeBusinessConfig(String domainId);
+
 	public BusinessConfig get(String domainId);
 	
 	public JSONObject getRuntimeWholeConfig(String domainId);

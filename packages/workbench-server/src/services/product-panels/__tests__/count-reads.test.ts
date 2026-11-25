@@ -267,7 +267,7 @@ describe("platform count reads", () => {
 
   it("returns forbidden when Java denies the viewer", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "FORBIDDEN" } }, { status: 403 })));
-    await expect(readCount(OBJECT_TYPE)).resolves.toEqual({ status: "forbidden" });
+    await expect(readCount(OBJECT_TYPE)).resolves.toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   });
 
   it("returns an error when the workflow owner cannot read the count", async () => {

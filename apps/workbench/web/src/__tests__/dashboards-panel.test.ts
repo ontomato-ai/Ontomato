@@ -457,9 +457,11 @@ async function openDashboardsPanel(options: {
         }],
       });
     }
-    if (path === "/api/data-query/platform/applications/resolve-entry") {
+    if (path === "/api/product-panels/application-entry") {
       return Response.json({
-        data: { applicationId: appId, entry: { path: "/dashboards", renderer: "dashboards" }, use: dashboardsUse, menu: { singleEntry: true, groups: [], panelUses: [dashboardsUse] } },
+        applicationId: appId,
+        use: dashboardsUse,
+        menu: { singleEntry: true, groups: [], panelUses: [dashboardsUse] },
       });
     }
     if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {

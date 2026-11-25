@@ -1,3 +1,4 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -346,7 +347,7 @@ beforeAll(async () => {
   app.post("/product-governance/resources", (req, res) => {
     res.json({ ids: req.header("tk") === "m7-reader" ? [...resourceIds] : [] });
   });
-  app.get("/platform/applications/resolve-entry", (_req, res) => {
+  mockApplicationEntry(app, "/platform/applications", (_req, res) => {
     res.json({
       success: true,
       data: {
@@ -531,7 +532,7 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   })).toEqual({ status: "error", message: "Invalid feedback ID" });
 
   state.permissions.delete("user-feedback");
-  expect(await read("feedbackList", "rows", {})).toEqual({ status: "forbidden" });
+  expect(await read("feedbackList", "rows", {})).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   state.permissions.add("user-feedback");
 
   const csvCall = {

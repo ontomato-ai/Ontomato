@@ -152,14 +152,14 @@ it("opens registered panel entries, selects the regular assistant and installs t
   const credentials = { token: "editor", locale: "en" };
   const owner = { domainId: fixture.domainId, userId: "editor" };
   for (const { applicationId, useId, panelId, entrance, path: pagePath } of pages) {
-    const panelUrl = `${server.origin}/api/product-panels/${panelId}?${new URLSearchParams({ applicationId, useId, ...entrance })}`;
+    const panelUrl = `${server.origin}/api/product-panels/application-entry?${new URLSearchParams({ applicationId, useId })}`;
     const opened = await fetch(panelUrl);
     const page = await opened.json();
     expect(opened.status, JSON.stringify(page)).toBe(200);
     const context = pageSkillContextSchema.parse(page.pageSkillContext);
     const member = { source: { kind: "application-use", applicationId, useId }, memberPath: [],
       ref: protectedSkillRef("product-panels", owner.domainId, panelId) };
-    expect(context).toEqual({ mode: "member", locator: entrance, member });
+    expect(context).toEqual({ mode: "member", locator: entrance, entry: member.source, member });
     if (context.mode !== "member" || !context.member) throw new Error("Expected an admitted panel member");
 
     const locator = new URLSearchParams(context.locator);
@@ -191,7 +191,7 @@ it("opens registered panel entries, selects the regular assistant and installs t
     fixture.grants.delete("records");
     const denied = await fetch(panelUrl);
     expect(denied.status).toBe(200);
-    expect((await denied.json()).pageSkillContext).toEqual({ mode: "member", locator: entrance, member: null });
+    expect((await denied.json()).pageSkillContext).toEqual({ mode: "member", locator: entrance, entry: member.source, member: null });
     expect((await fetch(candidateUrl)).status).toBe(403);
     await expect(prepareAssistantSkills(owner.domainId, agent, credentials, context))
       .rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });

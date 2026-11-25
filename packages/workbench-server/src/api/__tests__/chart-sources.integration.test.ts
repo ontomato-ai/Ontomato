@@ -1,6 +1,8 @@
+import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { DASHBOARD_CARD } from "@ontomato/contracts/platform-object-types";
+import { readSseData } from "@ontomato/contracts/sse";
 import { randomUUID } from "node:crypto";
 import { chartProjectionSourcePath, CHART_PROJECTION_SOURCES_PATH } from "@ontomato/contracts/panel-client-requests";
 import { chartProjectionTemplateSchema, chartSourceInUseErrorSchema, registerChartProjectionResponseSchema } from "@ontomato/contracts/product-panels";
@@ -130,7 +132,7 @@ beforeAll(async () => {
     metricExecutions.push(req.body);
     res.json({ columns: [{ key: "name", label: null, type: null }], rows: [{ name: "north" }], truncation: null });
   });
-  app.get("/java/platform/applications/resolve-entry", (req, res, next) => {
+  mockApplicationEntry(app, "/java/platform/applications", (req, res, next) => {
     if (req.query.applicationId !== "chart-pilot") { next(); return; }
     expect(req.header("tk")).toBe("bob");
     res.json({ success: true, data: {
@@ -172,7 +174,7 @@ beforeEach(async () => {
   aliceUse = true;
   bobDeniedUse = undefined;
   bobEdit = false;
-  await state.pool!.query(`TRUNCATE ${table("dashboards")}, ${table("product_panels")}, ${table("product_projections")}, ${table("product_subscriptions")}`);
+  await state.pool!.query(`TRUNCATE ${table("dashboards")}, ${table("product_panels")}, ${table("product_projections")}`);
   await createDashboard({
     id: source.dashboardId, ownerId: "alice", domainId: "domain", name: "Board",
     groups: [
@@ -288,19 +290,29 @@ it("lets a delegated editor change only the source drawing with their own metric
   bobEdit = true;
   expect((await put({ chartFile: { content }, query: { metricId: "wrong" } })).status).toBe(400);
   const before = (await readBoard()).groups;
-  await state.pool!.query(
-    `INSERT INTO ${table("product_subscriptions")} (domain_id, principal_id, id, target, expires_at, state)
-     VALUES ('domain', 'bob', 'watcher', $1::jsonb, now() + interval '1 hour', '{"events":[]}')`,
-    [JSON.stringify({ kind: "product-definition", target: { kind: "projection", id } })],
-  );
-  const updated = await put({ chartFile: { content } });
-  expect(updated.status).toBe(200);
-  expect(await updated.json()).toEqual({ chartFile: { ...chartFile, content } });
-  before[0].charts[0].chartFile.content = content;
-  expect((await readBoard()).groups).toEqual(before);
-  expect(metricCallers.at(-1)).toBe("bob");
-  const { rows: [subscription] } = await state.pool!.query(`SELECT state FROM ${table("product_subscriptions")} WHERE id='watcher'`);
-  expect(subscription.state.events).toEqual([{ kind: "definition-changed", domainId: "domain", target: { kind: "projection", id } }]);
+  const stream = new AbortController();
+  try {
+    const response = await fetch(new URL("/api/product-panels/definition-stream", base), {
+      method: "POST", signal: stream.signal,
+      headers: { "Content-Type": "application/json", tk: "bob" },
+      body: JSON.stringify({ targets: [{ kind: "projection", id }] }),
+    });
+    expect(response.status).toBe(200);
+    const frames: unknown[] = [];
+    const completed = readSseData(response, frame => { frames.push(frame); return frames.length === 2; }, () => true);
+    await vi.waitFor(() => expect(frames[0]).toMatchObject({ kind: "snapshot", definitions: [{ kind: "projection", id }] }));
+
+    const updated = await put({ chartFile: { content } });
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toEqual({ chartFile: { ...chartFile, content } });
+    before[0].charts[0].chartFile.content = content;
+    expect((await readBoard()).groups).toEqual(before);
+    expect(metricCallers.at(-1)).toBe("bob");
+    await completed;
+    expect(frames[1]).toMatchObject({ kind: "definition-changed", definition: { kind: "projection", id } });
+  } finally {
+    stream.abort();
+  }
 });
 
 it.each([
@@ -404,8 +416,8 @@ it("returns only forbidden for a viewer without use on the chart projection", as
   const projection = await registerChartPanel(2028);
   bobDeniedUse = projection.id;
 
-  expect(await readChartMember("template")).toEqual({ status: "forbidden" });
-  expect(await readChartMember("result")).toEqual({ status: "forbidden" });
+  expect(await readChartMember("template")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
+  expect(await readChartMember("result")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(metricCallers).not.toContain("bob");
   expect(metricExecutions).toEqual([]);
 });

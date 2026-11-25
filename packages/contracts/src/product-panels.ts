@@ -385,6 +385,7 @@ export const applicationEntryResolutionSchema = z.object({
   framePanelId: id.optional(),
   theme: panelThemeOverridesSchema.optional(),
   menu: applicationEntryMenuSchema,
+  pageSkillContext: pageSkillContextSchema.optional(),
 }).strict();
 export type ApplicationEntryResolution = z.infer<typeof applicationEntryResolutionSchema>;
 
@@ -468,31 +469,19 @@ export const panelApplicationEntrySchema = z.object({
 }).strict();
 export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
 
-const [menuEntrance, domainMemberEntrance] = pageSkillEntranceSchema.options;
-export const productPanelPageSkillContextQuerySchema = z.union([
-  panelUseRefSchema.merge(menuEntrance),
-  panelUseRefSchema.merge(domainMemberEntrance),
-]);
-export type ProductPanelPageSkillContextQuery = z.infer<typeof productPanelPageSkillContextQuerySchema>;
-export const productPanelPageSkillContextResponseSchema = z.object({ pageSkillContext: pageSkillContextSchema }).strict();
-
 export const applicationFrameReadQuerySchema = panelUseRefSchema.extend({ source: applicationFrameSourceSchema.shape.kind });
-/** Record and snapshot reads accept the same content or frame entry. A frame has no content page-skill context. */
+/** Frame reads take a registered use as routing input; they do not read entrance skill context. */
 export const productPanelReadQuerySchema = z.union([
   z.object({}).strict(),
-  ...productPanelPageSkillContextQuerySchema.options,
   applicationFrameReadQuerySchema,
 ]);
 export const productPanelSnapshotQuerySchema = productPanelReadQuerySchema;
 export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
 const includeProjectionsQuery = { includeProjections: z.literal("1").optional() };
-const [menuPanelReadQuery, domainMemberPanelReadQuery] = productPanelPageSkillContextQuerySchema.options;
 /** Panel record GET accepts the standard read query plus optional `includeProjections=1` bundling of fixed members. */
 export const productPanelGetQuerySchema = z.union([
-  z.object(includeProjectionsQuery).strict(),
-  menuPanelReadQuery.extend(includeProjectionsQuery).strict(),
-  domainMemberPanelReadQuery.extend(includeProjectionsQuery).strict(),
+  z.object({ ...includeProjectionsQuery, view: z.literal("1").optional() }).strict(),
   applicationFrameReadQuerySchema.extend(includeProjectionsQuery).strict(),
 ]);
 export type ProductPanelGetQuery = z.infer<typeof productPanelGetQuerySchema>;
@@ -568,7 +557,6 @@ export type BundledPanelProjection = z.infer<typeof bundledPanelProjectionSchema
 
 export const productPanelResponseSchema = z.object({
   panel: currentPanelRecordSchema,
-  pageSkillContext: pageSkillContextSchema.optional(),
   projections: z.record(id, bundledPanelProjectionSchema).optional(),
   /** Author-registered components declared in `panel.manifest.components` for direct template/slot rendering. */
   domainComponents: z.record(domainComponentIdSchema, domainComponentRuntimeSchema).optional(),

@@ -19,7 +19,6 @@ export async function ensureProductAssetsSchema(client: QueryableClient) {
   await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_ontology_outbox')} (domain_id text NOT NULL,asset_id text NOT NULL,revision bigint NOT NULL,registration jsonb,PRIMARY KEY(domain_id,asset_id));
     CREATE TABLE IF NOT EXISTS ${t('product_object_view_heads')} (domain_id text NOT NULL,asset_id text NOT NULL,revision integer NOT NULL,PRIMARY KEY(domain_id,asset_id));
     CREATE TABLE IF NOT EXISTS ${t('product_publication_outbox')} (domain_id text NOT NULL,bundle_id text NOT NULL,release_id text NOT NULL,PRIMARY KEY(domain_id,bundle_id));
-    CREATE TABLE IF NOT EXISTS ${t('product_subscriptions')} (domain_id text NOT NULL,principal_id text NOT NULL,id text NOT NULL,target jsonb NOT NULL,expires_at timestamptz NOT NULL,state jsonb NOT NULL,PRIMARY KEY(domain_id,principal_id,id));
     ALTER TABLE ${t('product_assets')} ADD COLUMN IF NOT EXISTS ontology_registered_revision bigint NOT NULL DEFAULT 0`);
   // Preserve IDs and parent references while correcting legacy display-only panels.
   await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_asset_revisions')} (domain_id text NOT NULL,asset_id text NOT NULL,revision integer NOT NULL,asset jsonb NOT NULL,PRIMARY KEY(domain_id,asset_id,revision));

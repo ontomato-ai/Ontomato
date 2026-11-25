@@ -497,7 +497,7 @@ it("reads the registered owner descriptor for an admitted human panel use", asyn
     batch: true, inspectImpact: { handlerRef: "test.batch.impact" },
   });
   await expect(readPanelOperationDescriptor(owner, credentials, { ...input, useId: "other" }))
-    .rejects.toMatchObject({ code: "FORBIDDEN" });
+    .rejects.toMatchObject({ status: 404 });
   expect(mocks.pages).not.toHaveBeenCalled();
   expect(intents.size).toBe(0);
 });

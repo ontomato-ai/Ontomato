@@ -77,20 +77,22 @@ public class JSONRuleDao {
 				domainId, JSON.toJSONString(jsonRule, Feature.WriteMapNullValue));
 	}
 
+	public void initialize(Map<String, Object> jsonRule, String domainId) {
+		jdbcTemplate.update(
+				"INSERT INTO " + TABLE_NAME + " (id, content) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+				domainId, JSON.toJSONString(jsonRule, Feature.WriteMapNullValue));
+	}
+
 	public Map<String, Object> query(String domainId) {
-		Map<String, Object> jsonRule = null;
+		String content;
 		try {
-			String content = jdbcTemplate.queryForObject(
+			content = jdbcTemplate.queryForObject(
 					"SELECT content FROM " + TABLE_NAME + " WHERE id = ?",
 					String.class, domainId);
-			if (content != null) {
-				jsonRule = JSONObject.parseObject(content);
-			}
 		} catch (org.springframework.dao.EmptyResultDataAccessException e) {
 			return null;
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
 		}
+		Map<String, Object> jsonRule = JSONObject.parseObject(content);
 		if (jsonRule != null) OntologyModelService.normalizeRuleAttributeTypes(jsonRule, false);
 		return jsonRule;
 	}
