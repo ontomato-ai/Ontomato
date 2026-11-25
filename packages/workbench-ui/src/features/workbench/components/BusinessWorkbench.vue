@@ -49,7 +49,7 @@ const props = withDefaults(
     defaultLogo: string;
     defaultBrandName: string;
     splitNavigation?: boolean;
-    internalPages?: { dashboard: string; schedules: string; agents: string };
+    internalPages?: { dashboard: string; agents: string };
   }>(),
   { features: () => [] },
 );
@@ -111,7 +111,7 @@ function pilot(address: string) {
   if (path === props.internalPages.dashboard) {
     return resolvePilot(routes.dashboards.path + address.slice(path.length));
   }
-  if (path === props.internalPages.schedules || path === props.internalPages.agents) return resolvePilot(address);
+  if (path === props.internalPages.agents) return resolvePilot(address);
   return null;
 }
 /** An in-app address that names a page this assembly mounts beside a conversation; a host elsewhere is never one. */

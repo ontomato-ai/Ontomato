@@ -84,7 +84,6 @@ async function openChat(query: Record<string, string>, standalone = false) {
   await router.push({ path, query });
   const internalPages = standalone ? {
     dashboard: "/applications/app-data-agent-workbench/dashboards",
-    schedules: "/applications/app-data-agent-workbench/schedules",
     agents: "/applications/app-data-agent-workbench/agents",
   } : undefined;
   const wrapper = mount(BusinessWorkbench, {
