@@ -54,8 +54,13 @@ const detailUse = panelUse(
 
 const actionTargets: Record<string, { source: "input"; input: string } | { source: "none" }> = {
   [CLEAR_OBJECT_DETAIL_PANEL]: { source: "input", input: "objectType" },
-  [ADD_FAVORITE]: { source: "none" },
-  [REMOVE_FAVORITE]: { source: "none" },
+  [ADD_FAVORITE]: { source: "input", input: "target" },
+  [REMOVE_FAVORITE]: { source: "input", input: "target" },
+};
+
+const favoriteTargetTypes = {
+  platformTypes: ["platform:Application", "platform:AgentDefinition", "platform:Dashboard", "platform:DashboardCard", "platform:AgentSession"],
+  customerObjects: true,
 };
 
 const objectTypes = Object.fromEntries(
@@ -65,6 +70,7 @@ const objectTypes = Object.fromEntries(
       ...entry,
       operations: entry.operations?.map((id) => {
         const form = id.endsWith(".save") || id.endsWith(".create") || id === SAVE_OBJECT_DETAIL_PANEL;
+        const multiTarget = id === ADD_FAVORITE || id === REMOVE_FAVORITE;
         return {
           id,
           kind: form ? "form.save" : "action",
@@ -72,6 +78,7 @@ const objectTypes = Object.fromEntries(
           batch: false,
           inputSchema: {},
           target: form ? { source: "draft" } : (actionTargets[id] ?? { source: "input", input: "target" }),
+          ...(multiTarget ? { targetTypes: favoriteTargetTypes } : {}),
         };
       }),
     }),
@@ -196,7 +203,7 @@ function mountDetailRoute(options: HarnessOptions = {}) {
   let boundPanelId = panelStatus === "configured" ? customOrderPanel.id : "";
   const unavailableReason = options.unavailableReason ?? "";
   const canConfigure = options.canConfigure ?? true;
-  const intentCalls: Array<{ operationId: string; input: unknown }> = [];
+  const intentCalls: Array<{ operationId: string; target?: unknown; input: unknown }> = [];
 
   const router = createRouter({
     history: createMemoryHistory(),
@@ -209,7 +216,7 @@ function mountDetailRoute(options: HarnessOptions = {}) {
   });
 
   const intents = humanIntents((operationId, call) => {
-    intentCalls.push({ operationId, input: call.input });
+    intentCalls.push({ operationId, target: call.target, input: call.input });
     if (operationId === "addFavorite.add") {
       favorited = true;
       return {
@@ -296,8 +303,9 @@ function mountDetailRoute(options: HarnessOptions = {}) {
                 label: "Add to favorites",
                 effect: "write",
                 batch: false,
-                target: { source: "none" },
-                inputSchema: { type: "object", properties: { className: { type: "string" }, primaryKey: { type: "string" }, title: { type: "string" } } },
+                target: { source: "input", input: "target" },
+                targetTypes: favoriteTargetTypes,
+                inputSchema: { type: "object", properties: { title: { type: "string" } } },
                 resultSchema: {},
               },
             },
@@ -313,8 +321,9 @@ function mountDetailRoute(options: HarnessOptions = {}) {
                 label: "Remove from favorites",
                 effect: "write",
                 batch: false,
-                target: { source: "none" },
-                inputSchema: { type: "object", properties: { className: { type: "string" }, primaryKey: { type: "string" } } },
+                target: { source: "input", input: "target" },
+                targetTypes: favoriteTargetTypes,
+                inputSchema: { type: "object", properties: {} },
                 resultSchema: {},
               },
             },
@@ -549,7 +558,8 @@ describe("builtin object-detail and object-detail-body panels", () => {
       });
       expect(route.intentCalls.at(-1)).toMatchObject({
         operationId: "addFavorite.add",
-        input: { className: "Order", primaryKey: "ord-1", title: "Order #1" },
+        target: { kind: "object", objectType: "Order", primaryKey: "ord-1" },
+        input: { title: "Order #1" },
       });
 
       element.querySelector<HTMLButtonElement>('button[aria-label="Remove from favorites"]')!.click();
@@ -558,7 +568,8 @@ describe("builtin object-detail and object-detail-body panels", () => {
       });
       expect(route.intentCalls.at(-1)).toMatchObject({
         operationId: "removeFavorite.remove",
-        input: { className: "Order", primaryKey: "ord-1" },
+        target: { kind: "object", objectType: "Order", primaryKey: "ord-1" },
+        input: {},
       });
     } finally {
       app.unmount();

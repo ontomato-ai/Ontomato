@@ -6,7 +6,7 @@ import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { findPanelFormOption, formFieldErrorSchema, formValuesSchema, panelFormOptionSchema, panelFormOptionValueSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { directPanelPortTypeSchema, matchesObjectType, objectUnionTypes, panelFormTargetSchema, panelMessageKeySchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
@@ -251,6 +251,7 @@ export const panelReadParameterSchemas = {
   applicationScope: applicationCatalogueScopeSchema,
   applicationSort: applicationCatalogueSortSchema,
   applicationGalleryCategory: z.enum(["all", "business", "agents", "build", "admin"]),
+  favoriteTargetGroup: z.enum(["all", "apps", "applications", "agents", "dashboards", "dashboardCards", "sessions", "objects"]),
   favoritesOnly: z.boolean(),
   applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
   applicationEntryId: z.string().min(1),
@@ -325,6 +326,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "applicationScope":
     case "applicationSort":
     case "applicationGalleryCategory":
+    case "favoriteTargetGroup":
     case "applicationFormSection":
     case "applicationEntryId":
       return input?.kind === "scalar" && input.type === "string";
@@ -1267,26 +1269,81 @@ export const panelFormSaveInputSchema = panelFormDescriptionSchema.pick({ values
 });
 export type PanelFormSaveInput = z.infer<typeof panelFormSaveInputSchema>;
 
+/** Target object types an operation accepts when it acts across multiple real ontology types (e.g. platform:Favorite). */
+export const panelOperationTargetTypesSchema = z.object({
+  platformTypes: z.array(z.string().min(1)).optional(),
+  customerObjects: z.boolean().optional(),
+}).strict().refine(
+  value => (value.platformTypes?.length ?? 0) > 0 || value.customerObjects === true,
+  "Target types must allow at least one platform type or customer objects",
+);
+export type PanelOperationTargetTypes = z.infer<typeof panelOperationTargetTypesSchema>;
+
+/** Single source of truth for whether an operation accepts a concrete ontology object type. */
+export function operationAcceptsTargetType(
+  objectType: string,
+  ownerType: string | undefined,
+  targetTypes?: PanelOperationTargetTypes,
+): boolean {
+  if (!targetTypes) return ownerType !== undefined && objectType === ownerType;
+  return objectType.startsWith("platform:")
+    ? (targetTypes.platformTypes?.includes(objectType) ?? false)
+    : targetTypes.customerObjects === true;
+}
+
+/** Human-readable target type description for authoring and runtime diagnostics. */
+export function formatOperationTargetTypes(
+  ownerType: string | undefined,
+  targetTypes?: PanelOperationTargetTypes,
+): string | undefined {
+  if (!targetTypes) return ownerType;
+  const parts: string[] = [...(targetTypes.platformTypes ?? [])];
+  if (targetTypes.customerObjects) parts.push("customer objects");
+  return parts.join(", ");
+}
+
+function portItemMatchesOperation(
+  item: Extract<ReadInput, { kind: "object" | "object-union" }>,
+  ownerType: string | undefined,
+  targetTypes?: PanelOperationTargetTypes,
+): boolean {
+  if (item.kind === "object") {
+    if (item.objectType === "@any") return targetTypes?.customerObjects === true;
+    return operationAcceptsTargetType(item.objectType, ownerType, targetTypes);
+  }
+  return objectUnionTypes(item).some(type => operationAcceptsTargetType(type, ownerType, targetTypes));
+}
+
 /** An owner's only valid object, object-union or object-list port. Used by both author preflight and the server. */
-export function panelOperationTargetPort(port: ReadInput | undefined, objectType: string, batch: boolean) {
-  if ((port?.kind === "object" || port?.kind === "object-union") && matchesObjectType(port, objectType)) return port;
-  if (port?.kind === "list" && batch && port.items.kind === "object" && port.items.objectType === objectType) return port;
+export function panelOperationTargetPort(
+  port: ReadInput | undefined,
+  objectType: string | undefined,
+  batch: boolean,
+  targetTypes?: PanelOperationTargetTypes,
+) {
+  if (objectType === undefined && !targetTypes) return undefined;
+  if ((port?.kind === "object" || port?.kind === "object-union") && portItemMatchesOperation(port, objectType, targetTypes))
+    return port;
+  if (port?.kind === "list" && batch && (port.items.kind === "object" || port.items.kind === "object-union")
+    && portItemMatchesOperation(port.items, objectType, targetTypes))
+    return port;
+  return undefined;
 }
 
 /** Match a projection target to the selected owner declaration from the type table. */
 export function projectionOperationTargetMatches(
   projection: Pick<DirectProjectionPorts, "inputs">,
   binding: ProjectionOperationBinding,
-  declaration: Pick<PanelOperationDeclaration, "target" | "batch">,
+  declaration: Pick<PanelOperationDeclaration, "target" | "batch" | "targetTypes">,
   objectType?: string,
 ): boolean {
   const { target } = binding;
   if (declaration.target.source === "none") return target === undefined;
   if (!target) return declaration.target.source === "draft";
-  if (objectType === undefined) return false;
-  if ("literal" in target) return target.literal.className === objectType;
+  if (objectType === undefined && !declaration.targetTypes) return false;
+  if ("literal" in target) return operationAcceptsTargetType(target.literal.className, objectType, declaration.targetTypes);
   if ("row" in target || "rowField" in target) return declaration.target.source === "input";
-  return panelOperationTargetPort(projection.inputs[target.input], objectType, declaration.batch) !== undefined;
+  return panelOperationTargetPort(projection.inputs[target.input], objectType, declaration.batch, declaration.targetTypes) !== undefined;
 }
 
 export interface ProjectionPorts {

@@ -5,7 +5,13 @@ import { defaultPersonalWorkspace, personalWorkspaceSchema } from "@ontomato/con
 
 const database = vi.hoisted(() => ({ values: new Map<string, unknown>(), query: vi.fn() }));
 const homes=vi.hoisted(()=>new Map<string,{workspace:unknown;revision:number}>());
-const homePreferences = vi.hoisted(() => new Map<string, { favorites: unknown[]; dashboardIds: string[]; pinnedObjects: unknown[] }>());
+const homePreferences = vi.hoisted(() => new Map<string, {
+  favorites: unknown[];
+  dashboardIds: string[];
+  dashboardCards: Record<string, string[]>;
+  pinnedSessions: string[];
+  pinnedObjects: unknown[];
+}>());
 vi.mock("../../../services/platform-home/store", () => ({
   platformHomeStore: {
     preferences: async (owner: { domainId: string; userId: string }) => {
@@ -14,19 +20,33 @@ vi.mock("../../../services/platform-home/store", () => ({
     },
     saveFavorites: async (owner: { domainId: string; userId: string }, favorites: unknown[]) => {
       const key = JSON.stringify(owner);
-      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], pinnedObjects: [] };
+      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
       homePreferences.set(key, { ...current, favorites: [...favorites] });
     },
     saveDashboards: async (owner: { domainId: string; userId: string }, dashboardIds: string[]) => {
       const key = JSON.stringify(owner);
-      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], pinnedObjects: [] };
+      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
       homePreferences.set(key, { ...current, dashboardIds: [...dashboardIds] });
+    },
+    dashboardCards: async (owner: { domainId: string; userId: string }) =>
+      homePreferences.get(JSON.stringify(owner))?.dashboardCards ?? {},
+    saveDashboardCards: async (owner: { domainId: string; userId: string }, dashboardCards: Record<string, string[]>) => {
+      const key = JSON.stringify(owner);
+      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
+      homePreferences.set(key, { ...current, dashboardCards: { ...dashboardCards } });
+    },
+    pinnedSessions: async (owner: { domainId: string; userId: string }) =>
+      homePreferences.get(JSON.stringify(owner))?.pinnedSessions ?? [],
+    savePinnedSessions: async (owner: { domainId: string; userId: string }, pinnedSessions: string[]) => {
+      const key = JSON.stringify(owner);
+      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
+      homePreferences.set(key, { ...current, pinnedSessions: [...pinnedSessions] });
     },
     pinnedObjects: async (owner: { domainId: string; userId: string }) =>
       homePreferences.get(JSON.stringify(owner))?.pinnedObjects ?? [],
     savePinnedObjects: async (owner: { domainId: string; userId: string }, pinnedObjects: unknown[]) => {
       const key = JSON.stringify(owner);
-      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], pinnedObjects: [] };
+      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] };
       homePreferences.set(key, { ...current, pinnedObjects: [...pinnedObjects] });
     },
   },

@@ -54,7 +54,7 @@ const mocks = vi.hoisted(() => ({
 const objectWrite = (ref: string) =>
   panelServerOperation(ref) as Extract<PanelWriteServerOperation, { targetType: string }>;
 const globalWrite = (ref: string) =>
-  panelServerOperation(ref) as Exclude<PanelWriteServerOperation, { targetType: string }>;
+  panelServerOperation(ref) as Extract<PanelWriteServerOperation, { kind: "action"; targetInput?: undefined }>;
 const objectRead = (ref: string) =>
   panelServerOperation(ref) as PanelReadServerOperation;
 

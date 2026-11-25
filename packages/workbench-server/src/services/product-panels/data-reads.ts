@@ -10,8 +10,8 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
-  MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, TURN_EVIDENCE,
+  AGENT_SESSION, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
+  MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, RECENT_VISIT, TURN_EVIDENCE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
@@ -40,7 +40,9 @@ import { createDashboardCardOwnerReadAdapter, createDashboardReadAdapter } from 
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
 import { createInstanceGraphReadAdapter } from "../ontology-model/instance-graph-reads";
 import { createObjectDetailReadAdapter } from "./object-detail-reads";
+import { createAgentSessionReadAdapter } from "./agent-session-panel";
 import { createFavoriteReadAdapter } from "./favorite-panel";
+import { createRecentVisitReadAdapter } from "./recent-visit-panel";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import {
@@ -127,6 +129,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const graph = createInstanceGraphReadAdapter(viewer);
   const objectDetail = createObjectDetailReadAdapter(owner, viewer);
   const favorites = createFavoriteReadAdapter(owner, viewer);
+  const recentVisits = createRecentVisitReadAdapter(owner, viewer);
+  const agentSessions = createAgentSessionReadAdapter(owner, viewer);
   const actions = async () => {
     const { createActionReadAdapter } = await import("../action/panel-reads");
     return createActionReadAdapter(owner, viewer, callerUserName);
@@ -510,8 +514,26 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       resolve: (_selection, params) => model.resolveObjectTypes(panelReadParameterSchemas.optionValues.parse(params.values)),
     },
     [FAVORITE]: {
-      list: () => favorites.list(),
-      record: (_selection, params) => favorites.record(readParams.graphNode.parse(params.object)),
+      list: (_selection, params) => favorites.list({
+        targetGroup: readParams.favoriteTargetGroup.optional().parse(params.targetGroup),
+      }),
+      status: (_selection, params) => favorites.status({
+        object: readParams.graphNode.optional().parse(params.object),
+        objectType: readParams.keyword.optional().parse(params.objectType),
+        primaryKey: readParams.keyword.optional().parse(params.primaryKey),
+      }),
+    },
+    [RECENT_VISIT]: {
+      list: (_selection, params) => recentVisits.list({
+        limit: readParams.size.optional().parse(params.limit),
+      }),
+    },
+    [AGENT_SESSION]: {
+      list: (_selection, params) => agentSessions.list({
+        search: readParams.keyword.optional().parse(params.search),
+        limit: readParams.size.optional().parse(params.limit),
+      }),
+      record: selection => agentSessions.record(selection.primaryKey!),
     },
     [ATTRIBUTE]: modelReads,
     [RELATIONSHIP]: modelReads,
@@ -540,6 +562,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         selection.primaryKey!,
         panelReadParameterSchemas.skillFilePath.parse(params.path),
       ),
+      homePanel: () => panelCatalogue.homePanel(),
     },
     [APPLICATION]: {
       query: (_selection, params) => applications.query(params),
@@ -580,7 +603,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
-      counts: () => schedules.counts(),
+      counts: (_selection, params) => schedules.counts(panelReadParameterSchemas.keyword.optional().parse(params.by)),
       record: selection => schedules.record(selection.primaryKey!),
       runs: (selection, params) => schedules.runs(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
       run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),

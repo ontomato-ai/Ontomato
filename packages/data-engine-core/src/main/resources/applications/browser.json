@@ -13,6 +13,7 @@
     "data-browser"
   ],
   "scheduleAdapter": null,
+  "framePanelId": "builtin-product-platform-frame",
   "declaration": {
     "names": {
       "en": "Object browser",
@@ -25,12 +26,36 @@
     "icon": "objects",
     "groups": [],
     "permissions": [],
-    "panelUses": [{
-      "id": "browser-object-detail",
-      "pageKey": "browser-object-detail",
-      "panelId": "builtin-product-object-detail",
-      "path": "/browser/views",
-      "access": { "permissionCode": "data-browser" }
-    }]
+    "panelUses": [
+      {
+        "id": "browser-data",
+        "pageKey": "browser-data",
+        "panelId": "builtin-product-data-browser",
+        "path": "/browser/data",
+        "icon": "objects",
+        "access": { "permissionCode": "data-browser" },
+        "names": {
+          "en": "Object browser",
+          "zh-CN": "对象浏览器",
+          "zh-TW": "物件瀏覽器",
+          "ja": "オブジェクトブラウザー",
+          "de": "Objektbrowser",
+          "fr": "Explorateur d'objets",
+          "it": "Browser oggetti",
+          "ar": "متصفح الكائنات"
+        },
+        "descriptions": {
+          "en": "Browse object records and explore relationships between instances",
+          "zh-CN": "浏览对象记录，查看实例之间的关系"
+        }
+      },
+      {
+        "id": "browser-object-detail",
+        "pageKey": "browser-object-detail",
+        "panelId": "builtin-product-object-detail",
+        "path": "/browser/views",
+        "access": { "permissionCode": "data-browser" }
+      }
+    ]
   }
 }

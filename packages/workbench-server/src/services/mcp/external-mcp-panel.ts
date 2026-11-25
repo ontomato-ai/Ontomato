@@ -8,12 +8,13 @@ import {
 import { runtimeIdSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
-import type {
-  PanelFormDescription,
-  PanelFormField,
-  PanelFormRequest,
-  PanelOption,
-  PanelRecord,
+import {
+  panelFormSaveInputSchema,
+  type PanelFormDescription,
+  type PanelFormField,
+  type PanelFormRequest,
+  type PanelOption,
+  type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
 import {
   CREATE_EXTERNAL_MCP_SERVICE,
@@ -48,7 +49,7 @@ interface HeaderDraftRow {
 
 const SAVE_EXTERNAL_MCP_OP = `${EXTERNAL_MCP_SERVICE}.save`;
 const emptyInputSchema = z.object({}).strict();
-const saveInputSchema = z.object({ values: z.record(z.unknown()) }).strict();
+const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const savedIdSchema = z.object({ id: runtimeIdSchema }).strict();
 const objectTargetSchema = z.object({
   kind: z.literal("object"),
@@ -491,6 +492,23 @@ const deleteExternalMcpImpact: PanelImpactInspector = {
   },
 };
 
+function mergeSubmittedUpdate(
+  base: { name: string; url: string; headers: HeaderDraftRow[] },
+  values: Record<string, unknown>,
+  submittedFields?: readonly string[],
+): Record<string, unknown> {
+  if (submittedFields === undefined) {
+    return { ...base, ...values };
+  }
+  const merged: Record<string, unknown> = { ...base };
+  if (submittedFields.includes("/name")) merged.name = values.name;
+  if (submittedFields.includes("/url")) merged.url = values.url;
+  if (submittedFields.some((field) => field === "/headers" || field.startsWith("/headers/"))) {
+    merged.headers = values.headers;
+  }
+  return merged;
+}
+
 export const externalMcpServerOperations: readonly PanelServerOperation[] = [
   {
     handlerRef: CREATE_EXTERNAL_MCP_SERVICE,
@@ -566,9 +584,14 @@ export const externalMcpServerOperations: readonly PanelServerOperation[] = [
       } catch (error) {
         return mapSaveError(error, host.locale);
       }
-      const { values } = saveInputSchema.parse(input);
+      const { values, submittedFields } = saveInputSchema.parse(input);
       const base = toInitialFormValues(existing);
-      const evaluated = parseExternalMcpDraft({ ...base, ...values }, false, existing, host.locale);
+      const evaluated = parseExternalMcpDraft(
+        mergeSubmittedUpdate(base, values, submittedFields),
+        false,
+        existing,
+        host.locale,
+      );
       if (evaluated.errors.length > 0 || !evaluated.payload) {
         return {
           kind: "refusal",

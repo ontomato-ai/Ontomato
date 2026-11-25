@@ -1,5 +1,5 @@
 import type { PanelMember } from "@ontomato/contracts/panel-manifest";
-import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
+import { formatOperationTargetTypes, projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
 import { customerOntologyReads, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { platformTypeTableResponseSchema, type PlatformTypeTableOperation } from "@ontomato/contracts/platform-type-table";
@@ -84,10 +84,12 @@ function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof c
       }
       const type = "className" in operation ? (operation.className ?? undefined) : operation.targetType;
       const { target } = binding;
-      if (!projectionOperationTargetMatches(projection, binding, operation.declaration, type))
-        return type
-          ? `operation '${name}' takes a target of type '${type}'`
+      if (!projectionOperationTargetMatches(projection, binding, operation.declaration, type)) {
+        const expectedType = formatOperationTargetTypes(type, operation.declaration.targetTypes);
+        return expectedType
+          ? `operation '${name}' takes a target of type '${expectedType}'`
           : `operation '${name}' takes no target`;
+      }
       const hasDraftSlot = Boolean(wiring?.operationDrafts?.[name]?.slot);
       if (!target && platform?.handler.kind === "form.save" && !allowsOperationDraft(projection, platform.handler) && !(platform.handler.create === true && hasDraftSlot))
         return `operation '${name}' needs an edit target or the owner's create form`;

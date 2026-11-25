@@ -78,6 +78,7 @@ function saveOp() {
   const found = dataAdaptersServerOperations.find((entry) => entry.handlerRef === `${DATA_ADAPTER_CONFIG}.save`);
   if (!found || found.effect !== "write" || found.batch) throw new Error("Missing save op");
   return found as {
+    inputSchema: { parse(value: unknown): unknown };
     execute(
       host: PanelOperationHost,
       target: PanelOperationTarget,
@@ -506,7 +507,15 @@ describe("platform:DataAdapterConfig.save operation", () => {
           { relationship: "ORDER_DEVICE", edge: { mode: "readonly", realEdge: "" } },
         ],
       },
+      submittedFields: ["/adapterMode", "/dataSources", "/classRoutes", "/relationshipRoutes"],
     }, "intent-m1");
+    expect(op.inputSchema.parse({
+      values: { adapterMode: multiDataSourceType },
+      submittedFields: ["/adapterMode"],
+    })).toEqual({
+      values: { adapterMode: multiDataSourceType },
+      submittedFields: ["/adapterMode"],
+    });
     expect(ok.kind).toBe("success");
     expect(savedMultiBodies[0]).toEqual({
       dataSources: [

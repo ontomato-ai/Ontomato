@@ -47,6 +47,7 @@ export interface ScheduledTaskPanelText {
   panelManagement: { save: string; create: string; setEnabled: string; delete: string; deleteImpact: string; deleted: string; renewCredential: string };
   panelRunStarted: string;
   runStatus: { running: string; completed: string; failed: string; skipped: string };
+  attention: { issues: string; results: string; running: string };
 }
 
 /** Exposes the same owner messages in the Node locale pack's flat format. */
@@ -68,6 +69,7 @@ export function scheduledTaskPanelMessages(text: ScheduledTaskPanelText): Record
     ...Object.fromEntries(Object.entries(text.trigger).map(([key, value]) => [`platformSchedules.trigger.${key}`, value])),
     ...Object.fromEntries(Object.entries(text.runError).map(([key, value]) => [`platformSchedules.runError.${key}`, value])),
     ...Object.fromEntries(Object.entries(text.runStatus).map(([key, value]) => [`platformSchedules.runStatus.${key}`, value])),
+    ...Object.fromEntries(Object.entries(text.attention).map(([key, value]) => [`platformSchedules.attention.${key}`, value])),
   };
 }
 
@@ -152,6 +154,11 @@ export const scheduledTaskPanelTextEn = {
     failed: "Failed",
     skipped: "Skipped",
   },
+  attention: {
+    issues: "Needs attention",
+    results: "Recent results",
+    running: "Running",
+  },
 } satisfies ScheduledTaskPanelText;
 
 export const scheduledTaskPanelTextZhCn = {
@@ -234,6 +241,11 @@ export const scheduledTaskPanelTextZhCn = {
     completed: "完成",
     failed: "失败",
     skipped: "已跳过",
+  },
+  attention: {
+    issues: "需处理",
+    results: "最近完成",
+    running: "运行中",
   },
 } satisfies ScheduledTaskPanelText;
 

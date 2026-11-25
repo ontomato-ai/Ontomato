@@ -6,8 +6,8 @@ import {
 } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import {
-  declaredCustomerFormSaveName, panelRecordObjectRef, panelRowOperationKey, projectionOperationTargetMatches,
-  type PanelRecord, type ProjectionOperationBinding,
+  declaredCustomerFormSaveName, formatOperationTargetTypes, operationAcceptsTargetType, panelRecordObjectRef,
+  panelRowOperationKey, projectionOperationTargetMatches, type PanelRecord, type ProjectionOperationBinding,
 } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { tForLocale } from "../../i18n";
@@ -105,7 +105,8 @@ function resolveTarget(
 
   if ("row" in target || "rowField" in target) {
     const supplied = selection();
-    if (owner?.targetType && supplied?.kind === "object" && supplied.objectType !== owner.targetType) {
+    if (owner && supplied?.kind === "object"
+      && !operationAcceptsTargetType(supplied.objectType, owner.targetType, owner.declaration.targetTypes)) {
       throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
     }
     return { descriptor: { source: "row" as const }, fixed: undefined, selected: supplied };
@@ -124,8 +125,9 @@ function resolveTarget(
   const offered = "state" in wire ? panelStateInputType(wire, panel.manifest.state[wire.state].type) : undefined;
   if ((port?.kind !== "object" && port?.kind !== "object-union" && port?.kind !== "list") ||
     ("state" in wire && (offered === undefined || !panelPortAccepts(port, offered)))) {
-    const message = owner?.targetType
-      ? tForLocale(locale, "panels.operation.targetInputMismatch", { ...problem, input, objectType: owner.targetType })
+    const expectedType = owner ? formatOperationTargetTypes(owner.targetType, owner.declaration.targetTypes) : undefined;
+    const message = expectedType
+      ? tForLocale(locale, "panels.operation.targetInputMismatch", { ...problem, input, objectType: expectedType })
       : `Operation '${bound.name}' has an incompatible object input '${input}' on member '${slot}'`;
     throw new HttpError(422, message, "PANEL_OPERATION_TARGET_MISMATCH");
   }
@@ -144,8 +146,12 @@ function resolveTarget(
   const supplied = selection(input);
   requirePinnedObject(fixed, supplied);
   const selected = fixed === undefined ? supplied : fixed;
-  if ((port.kind === "object" || port.kind === "object-union") && selected?.kind === "object" && !matchesObjectType(port, selected.objectType))
-    throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
+  if ((port.kind === "object" || port.kind === "object-union") && selected?.kind === "object") {
+    const portMatches = (port.kind === "object" && port.objectType === "@any") || matchesObjectType(port, selected.objectType);
+    const ownerMatches = !owner || operationAcceptsTargetType(selected.objectType, owner.targetType, owner.declaration.targetTypes);
+    if (!portMatches || !ownerMatches)
+      throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
+  }
   return { descriptor: { source: "input" as const, input }, fixed, selected };
 }
 
@@ -400,25 +406,35 @@ export async function describeRowOperationsForRows(
       continue;
     }
 
-    const rowEntries = rows.map((row, index) => ({
-      rowKey: rowKeys[index]!,
-      target: rowTargetForBinding(bound.binding, row, fallbackClassName, inputs),
-    }));
+    const rowEntries = rows.map((row, index) => {
+      const target = rowTargetForBinding(bound.binding, row, fallbackClassName, inputs);
+      const compatible = target === undefined || target === null
+        || operationAcceptsTargetType(target.objectType, bound.owner!.targetType, bound.owner!.declaration.targetTypes);
+      return {
+        rowKey: rowKeys[index]!,
+        target,
+        compatible,
+      };
+    });
 
     if (!handler.unavailable && !handler.unavailableBatch) {
-      for (const { rowKey, target } of rowEntries) {
+      for (const { rowKey, target, compatible } of rowEntries) {
         if (target === undefined) continue;
-        (result[rowKey] ??= {})[bound.name] = { available: true };
+        (result[rowKey] ??= {})[bound.name] = { available: compatible };
       }
       continue;
     }
 
-    const validTargets = rowEntries.filter((entry): entry is { rowKey: string; target: PanelRecordTarget } =>
-      entry.target !== undefined && entry.target !== null);
+    const validTargets = rowEntries.filter((entry): entry is { rowKey: string; target: PanelRecordTarget; compatible: boolean } =>
+      entry.compatible && entry.target !== undefined && entry.target !== null);
 
     const reasonsByRowKey = await resolveBatchUnavailableReasons(host, handler, validTargets);
-    for (const { rowKey, target } of rowEntries) {
+    for (const { rowKey, target, compatible } of rowEntries) {
       if (target === undefined) continue;
+      if (!compatible) {
+        (result[rowKey] ??= {})[bound.name] = { available: false };
+        continue;
+      }
       const reason = target === null ? undefined : reasonsByRowKey.get(rowKey);
       (result[rowKey] ??= {})[bound.name] = reason
         ? { available: false, unavailable: panelOperationUnavailableSchema.parse(reason) }

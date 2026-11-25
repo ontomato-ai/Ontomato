@@ -170,6 +170,83 @@ it("renders non-Markdown files with a read-only CodeEditor and honors pathField"
   unmount();
 });
 
+it("renders unified diffs with file summary, per-file cards, line numbers, binary notices, and empty states", async () => {
+  const diffProjection: DirectProjection = {
+    ...base, id: "file-diff", name: "Diff", componentId: "@ontomato/sdk:ObjectTextReader",
+    inputs: { skill: { kind: "object", objectType: SKILL }, path: { kind: "scalar", type: "string" } }, outputs: {},
+    config: { format: "diff" },
+    data: { record: { source: recordOf("skill"), read: "file", params: { path: { input: "path" } } } },
+  };
+  const patch = [
+    "diff --git a/src/hello.ts b/src/hello.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/hello.ts",
+    "+++ b/src/hello.ts",
+    "@@ -1,2 +1,3 @@",
+    " const who = 'world';",
+    "-console.log('hi');",
+    "+console.log('hello');",
+    "+console.log(who);",
+    "\\ No newline at end of file",
+    "diff --git a/docs/new.md b/docs/new.md",
+    "new file mode 100644",
+    "--- /dev/null",
+    "+++ b/docs/new.md",
+    "@@ -0,0 +1 @@",
+    "+# New doc",
+    "diff --git a/old.txt b/old.txt",
+    "deleted file mode 100644",
+    "--- a/old.txt",
+    "+++ /dev/null",
+    "@@ -1 +0,0 @@",
+    "-retired",
+    "diff --git a/assets/icon.png b/assets/icon.png",
+    "Binary files a/assets/icon.png and b/assets/icon.png differ",
+  ].join("\n");
+
+  const populated = mount(diffProjection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "changes.diff" }, () =>
+    ({ status: "ready", value: { primaryKey: "diff-1", label: "Changes", fields: { content: patch } } as never }));
+  await vi.waitFor(() => {
+    expect(populated.element.querySelector(".sdk-object-text-reader-diff-summary")?.textContent).toContain("4 files");
+  });
+  const summaryText = populated.element.querySelector(".sdk-object-text-reader-diff-summary")?.textContent ?? "";
+  expect(summaryText).toContain("+3");
+  expect(summaryText).toContain("−2");
+
+  const cards = [...populated.element.querySelectorAll(".sdk-object-text-reader-diff-file")];
+  expect(cards).toHaveLength(4);
+  expect(cards[0]!.querySelector(".sdk-object-text-reader-diff-path")?.textContent).toBe("src/hello.ts");
+  expect(cards[0]!.querySelector(".sdk-object-text-reader-diff-kind")?.textContent?.trim()).toBe("Modified");
+  expect(cards[0]!.querySelector(".sdk-object-text-reader-diff-line-hunk .sdk-object-text-reader-diff-text")?.textContent).toBe("@@ -1,2 +1,3 @@");
+  const removeRow = cards[0]!.querySelector(".sdk-object-text-reader-diff-line-remove")!;
+  expect([...removeRow.querySelectorAll("td")].map((td) => td.textContent?.trim())).toEqual(["2", "", "−", "console.log('hi');"]);
+  const addRows = [...cards[0]!.querySelectorAll(".sdk-object-text-reader-diff-line-add")];
+  expect([...addRows[0]!.querySelectorAll("td")].map((td) => td.textContent?.trim())).toEqual(["", "2", "+", "console.log('hello');"]);
+  expect([...addRows[1]!.querySelectorAll("td")].map((td) => td.textContent?.trim())).toEqual(["", "3", "+", "console.log(who);"]);
+  expect(cards[0]!.querySelector(".sdk-object-text-reader-diff-line-note .sdk-object-text-reader-diff-text")?.textContent).toBe("\\ No newline at end of file");
+
+  expect(cards[1]!.querySelector(".sdk-object-text-reader-diff-kind")?.textContent?.trim()).toBe("New file");
+  expect(cards[2]!.querySelector(".sdk-object-text-reader-diff-kind")?.textContent?.trim()).toBe("Deleted");
+  expect(cards[3]!.querySelector(".sdk-object-text-reader-diff-binary")?.textContent?.trim()).toBe("Binary file changed");
+  expect(populated.element.querySelector(".sdk-object-text-reader-whole")).toBeNull();
+  populated.unmount();
+
+  const empty = mount(diffProjection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "empty.diff" }, () =>
+    ({ status: "ready", value: { primaryKey: "diff-2", label: "Changes", fields: { content: "" } } as never }));
+  await vi.waitFor(() => {
+    expect(empty.element.querySelector(".sdk-object-text-reader-diff-empty")?.textContent?.trim()).toBe("No file changed");
+  });
+  expect(empty.element.querySelectorAll(".sdk-object-text-reader-diff-file")).toHaveLength(0);
+  empty.unmount();
+
+  const unparseable = mount(diffProjection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "plain.diff" }, () =>
+    ({ status: "ready", value: { primaryKey: "diff-3", label: "Changes", fields: { content: "Just a note without diff headers" } } as never }));
+  await vi.waitFor(() => {
+    expect(unparseable.element.querySelector(".sdk-object-text-reader-diff-empty")?.textContent?.trim()).toBe("No file changed");
+  });
+  unparseable.unmount();
+});
+
 /*
  * Two readers on one page, each with its anchor, sharing the source open and the reader open through the panel's state
  * (M7's governance report: the sources an issue cites, and all of the record's): the page's code opens a source by

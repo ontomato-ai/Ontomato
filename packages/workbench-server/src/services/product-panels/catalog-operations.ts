@@ -19,8 +19,8 @@ import {
   deleteProductPanelQuerySchema, deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
-import { APPLICATION, APPLICATION_PANEL_USE, FAVORITE_APPLICATION, OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, UNFAVORITE_APPLICATION } from "@ontomato/contracts/platform-object-types";
-import { addHomeFavorite, removeHomeFavorite } from "../platform-home/service";
+import { APPLICATION, APPLICATION_PANEL_USE, OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RESET_HOME_PANEL, SET_HOME_PANEL } from "@ontomato/contracts/platform-object-types";
+import { saveHomePanel } from "../platform-home/service";
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { createLogger } from "../../logging/logger";
@@ -506,57 +506,67 @@ async function editEntries(
   await java.saveEntries(id, values);
 }
 
-const GALLERY_EXCLUDED_APP_IDS = new Set(["home", "personal-workspace", "workplace", "application-gallery"]);
+const panelHomeTarget = z.object({
+  kind: z.literal("object"),
+  objectType: z.literal(PRODUCT_PANEL),
+  primaryKey: z.string().min(1),
+}).strict();
 
-function applicationFavoriteOperation(mode: "favorite" | "unfavorite"): PanelWriteServerOperation {
-  const handlerRef = mode === "favorite" ? FAVORITE_APPLICATION : UNFAVORITE_APPLICATION;
-  return {
-    handlerRef,
-    binding: { kind: "PlatformOperation", id: handlerRef },
-    labelKey: `panels.productCatalog.${mode}`,
+const panelHomeOperations: readonly PanelWriteServerOperation[] = [
+  {
+    handlerRef: SET_HOME_PANEL,
+    binding: { kind: "PlatformOperation", id: SET_HOME_PANEL },
+    labelKey: "panels.productCatalog.panel.setAsHome",
     kind: "action",
     effect: "write",
     batch: false,
-    targetType: APPLICATION,
-    targetInput: "application",
-    targetSchema: applicationTarget,
+    targetType: PRODUCT_PANEL,
+    targetInput: "panel",
+    targetSchema: panelHomeTarget,
     inputSchema: noData,
-    resultSchema: noData,
+    resultSchema: z.object({ homePanelId: z.string().min(1) }).strict(),
     async targetLabel(host, { primaryKey }) {
-      const locale = host.locale ?? host.initiator.credentials.locale ?? "en";
       try {
-        const apps = await applicationCatalogueClient(host.initiator.credentials).navigation();
-        const found = apps.find(app => app.id === primaryKey);
-        return found ? (localizedApplicationText(found.names, locale) ?? found.id) : primaryKey;
+        const panel = await readCurrentPanel(host.initiator.owner, host.initiator.credentials, primaryKey);
+        return panel.name || panel.id;
       } catch {
         return primaryKey;
       }
     },
+    done(host, name) {
+      return tForLocale(host.locale, "panels.productCatalog.panel.setAsHomeDone", { name });
+    },
     async execute({ locale, executor }, target) {
-      return write(APPLICATION, async () => {
-        const { primaryKey } = writeInput(applicationTarget, target);
-        if (mode === "favorite") {
-          if (GALLERY_EXCLUDED_APP_IDS.has(primaryKey)) {
-            throw new HttpError(422, "This application cannot be pinned", "APPLICATION_FAVORITE_UNSUPPORTED");
-          }
-          const visible = await applicationCatalogueClient(executor.credentials).navigation();
-          if (!visible.some(app => app.id === primaryKey)) {
-            throw new HttpError(403, "Application is unavailable", "APPLICATION_UNAVAILABLE");
-          }
-          await addHomeFavorite(executor.owner, { kind: "application", id: primaryKey });
-        } else {
-          await removeHomeFavorite(executor.owner, { kind: "application", id: primaryKey });
-        }
-        return { primaryKey, data: {} };
+      return write(PRODUCT_PANEL, async () => {
+        const { primaryKey } = writeInput(panelHomeTarget, target);
+        await saveHomePanel(executor.owner, executor.credentials, primaryKey);
+        return { primaryKey, data: { homePanelId: primaryKey } };
       }, locale ?? executor.credentials.locale);
     },
-  };
-}
+  },
+  {
+    handlerRef: RESET_HOME_PANEL,
+    binding: { kind: "PlatformOperation", id: RESET_HOME_PANEL },
+    labelKey: "panels.productCatalog.panel.resetHome",
+    kind: "action",
+    effect: "write",
+    batch: false,
+    targetType: PRODUCT_PANEL,
+    targetSchema: z.null(),
+    inputSchema: noData,
+    resultSchema: z.object({ homePanelId: z.null() }).strict(),
+    async execute(host: PanelOperationHost) {
+      const { locale, executor } = host;
+      return write(PRODUCT_PANEL, async () => {
+        await saveHomePanel(executor.owner, executor.credentials, null);
+        return { primaryKey: "default", data: { homePanelId: null } };
+      }, locale ?? executor.credentials.locale);
+    },
+  },
+];
 
 const applicationOperations: readonly PanelWriteServerOperation[] = [
   applicationSave,
-  applicationFavoriteOperation("favorite"),
-  applicationFavoriteOperation("unfavorite"),
   applicationAction(
     "delete",
     noData,
@@ -593,5 +603,6 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
 export const productCatalogServerOperations: readonly PanelWriteServerOperation[] = [
   ...productOperations("projection", PRODUCT_PROJECTION, "productProjections"),
   ...productOperations("panel", PRODUCT_PANEL, "productPanels"),
+  ...panelHomeOperations,
   ...applicationOperations,
 ];

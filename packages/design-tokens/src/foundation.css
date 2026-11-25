@@ -174,20 +174,12 @@
 }
 
 /* Manager pages keep breathing room around dense controls and tables. */
-.ontology-manager,
-.object-browser-layout {
-  --page-gutter: var(--spacing-lg);
-  --manager-module-gap: var(--spacing-lg);
-  --manager-content-gap: var(--spacing-md);
-  --manager-control-gap: var(--spacing-sm);
-  --manager-label-gap: var(--spacing-xs);
-  --manager-module-padding: var(--spacing-lg);
-}
-
 .ontology-manager {
   --page-gutter: var(--spacing-lg-xl);
   --manager-module-gap: var(--spacing-lg-xl);
   --manager-content-gap: var(--spacing-lg);
+  --manager-control-gap: var(--spacing-sm);
+  --manager-label-gap: var(--spacing-xs);
   --manager-module-padding: var(--spacing-lg-xl);
 }
 
