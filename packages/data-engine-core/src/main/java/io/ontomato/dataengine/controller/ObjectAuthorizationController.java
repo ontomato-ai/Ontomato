@@ -8,6 +8,7 @@ import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -35,9 +36,7 @@ public final class ObjectAuthorizationController {
     public record DecisionInput(ObjectTarget target, Verb verb, OwnerFacts ownerFacts, Kind create) {}
     public record BatchInput(List<DecisionInput> requests) {}
     public record BatchResult(List<Decision> decisions) {}
-    public enum AccessKind { domain, policy }
-    public record PublicationAccess(AccessKind kind, String policyId) {}
-    public record PublicationInput(ObjectTarget target, OwnerFacts ownerFacts, PublicationAccess access) {}
+    public record PublicationInput(ObjectTarget target, OwnerFacts ownerFacts, Selection access) {}
     public record PublicationResult(AuthorizationPolicies.PublicationStatus status) {}
     public record AgentInput(ObjectTarget target, OwnerFacts ownerFacts) {}
     public record AgentLevelInput(ObjectTarget target, OwnerFacts ownerFacts, String policyId,
@@ -71,10 +70,7 @@ public final class ObjectAuthorizationController {
         var actor = actor(request);
         requireFacts(actor, input.target(), input.ownerFacts());
         var access = input.access();
-        if (access == null || access.kind() == null
-                || (access.kind() == AccessKind.domain ? access.policyId() != null : blank(access.policyId()))) {
-            throw badRequest("Select domain access or supply an object policy ID.");
-        }
+        if (access == null) throw badRequest("Select domain access or supply an object policy ID.");
         return new PublicationResult(policies.firstPublication(authorization.resolveSubject(actor),
                 input.target(), input.ownerFacts(), access.policyId()));
     }

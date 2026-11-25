@@ -980,7 +980,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           domainShared: { kind: "scalar", type: "boolean" },
         },
       },
-      grants: { ...catalogueRecord, result: "productCatalogueGrants" },
+      grants: { ...catalogueRecord, result: "agentObjectAccess" },
       grantRows: { ...catalogueRecord, result: "panelRecordList" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },

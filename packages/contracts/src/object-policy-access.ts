@@ -18,3 +18,8 @@ export const productObjectAccessSchema = z.object({
   grants: z.array(productObjectGrantSchema),
   shared: z.boolean(),
 }).strict();
+
+export const agentObjectAccessSchema = z.object({
+  shared: z.boolean(),
+  grants: z.array(productObjectGrantSchema.omit({ verb: true }).extend({ level: z.enum(["USE", "VIEW", "EDIT"]) })),
+}).strict();

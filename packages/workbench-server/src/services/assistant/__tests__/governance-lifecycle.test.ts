@@ -44,7 +44,7 @@ beforeEach(()=>{
   mocks.create.mockResolvedValue({row:session});mocks.reserve.mockResolvedValue({row:turn});
   mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue({skills:[{skill,digest}],pageControl:false});mocks.overview.mockResolvedValue("overview");
   mocks.status.mockResolvedValue({resolvedSkills:[{skill}]});mocks.open.mockResolvedValue({id:runId});mocks.links.mockResolvedValue([]);mocks.record.mockResolvedValue(null);
-  mocks.callback.mockReturnValue({value:"wbc1.callback"});
+  mocks.callback.mockReturnValue({value:"wbc2.callback"});
   mocks.close.mockResolvedValue(undefined);mocks.admitted.mockResolvedValue(undefined);mocks.settled.mockResolvedValue(undefined);
 });
 function preparation(): AgentPrepareRequest {return {mode:"run",agent:{providerId:"workbench",agentId},sessionId,runId,inputId:runId,input:{role:"user",content:"Review knowledge",timestamp:1},language:"en",authority:{classNames:[],executionKind:"live"},requestedBy:null,root:{session:{providerId:"workbench",sessionId},runId},actor:{id:runId,domainId:"domain"}};}
@@ -54,10 +54,13 @@ it("governance-only preparation registers caller bounds without query preparatio
   expect(prepared.definition).toMatchObject({agentId,modelId:"provider/model",skills:[{skill,digest}]});
   expect(prepared).not.toHaveProperty("environment");
   expect(prepared.businessCallbacks).toMatchObject({
-    ontology:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(`http://workbench/api/assistant/executions/${runId}/ontology`).pathname, baseUrl:`http://workbench/api/assistant/executions/${runId}/ontology`,credential:"wbc1.callback"},
-    governance:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(`http://workbench/api/assistant/sessions/${sessionId}/governance-window`).pathname, baseUrl:`http://workbench/api/assistant/sessions/${sessionId}/governance-window`,credential:"wbc1.callback"},
+    ontology:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(`http://workbench/api/assistant/executions/${runId}/ontology`).pathname, baseUrl:`http://workbench/api/assistant/executions/${runId}/ontology`,credential:"wbc2.callback"},
+    governance:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(`http://workbench/api/assistant/sessions/${sessionId}/governance-window`).pathname, baseUrl:`http://workbench/api/assistant/sessions/${sessionId}/governance-window`,credential:"wbc2.callback"},
   });
-  expect(mocks.callback.mock.calls.find(([claim])=>claim.pathPrefix.endsWith("/governance-window"))![0].expiresAt).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
+  expect(mocks.callback).toHaveBeenCalledWith(expect.objectContaining({
+    scope: { purpose: "governance", sessionId },
+    expiresAt: new Date((await mocks.turn()).created_at).getTime()+900_000,
+  }));
   expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({continuationIds:[],recentUserMessages:[],executionUserId:null}),{token:"user"});expect(mocks.recordWindow).not.toHaveBeenCalled();
 });
 it("carries the displayed member into human preparation and prompts with the checked canonical placement", async () => {

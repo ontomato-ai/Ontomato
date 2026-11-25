@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { productObjectAccessSchema, type ChangeProductObjectGrant } from "@ontomato/contracts/object-policy-access";
+import type { ObjectPublicationAccess } from "@ontomato/contracts/object-publication";
+import { agentObjectAccessSchema, productObjectAccessSchema, type ChangeProductObjectGrant } from "@ontomato/contracts/object-policy-access";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost } from "../../utils/backend-client";
@@ -52,18 +53,15 @@ export async function requireObject(request: ObjectDecisionRequest, credentials:
   requireAllowed(await decideObject(request, credentials));
 }
 
-export type PublicationAccess = { kind: "domain" } | { kind: "policy"; policyId: string };
 export async function writeFirstPublication(
-  definition: ObjectDefinition, access: PublicationAccess, credentials: AssistantCredentials,
+  definition: ObjectDefinition, access: ObjectPublicationAccess, credentials: AssistantCredentials,
 ) {
   return z.object({ status: z.enum(["granted", "pending"]) })
     .parse(await post("first-publication", { ...definition, access }, credentials));
 }
 
-const agentPolicyGrantSchema = z.object({ policyId: z.string(), name: z.string(), level: z.enum(["USE", "VIEW", "EDIT"]) });
 export async function readAgentAccess(definition: ObjectDefinition, credentials: AssistantCredentials) {
-  return z.object({ shared: z.boolean(), grants: z.array(agentPolicyGrantSchema) })
-    .parse(await post("agent-access", definition, credentials));
+  return agentObjectAccessSchema.parse(await post("agent-access", definition, credentials));
 }
 
 export async function replaceAgentLevel(
