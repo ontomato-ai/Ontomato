@@ -216,11 +216,17 @@ const removeOrgMembershipImpact: PanelImpactInspector = {
     const target = calls[0]!.target as PanelRecordTarget;
     const label = await governanceTargetLabel(host, target, "/panel/governance/org-memberships/record", "ORG_MEMBERSHIP_UNAVAILABLE");
     const envelope = await ownerPost(host, "/panel/governance/org-memberships/remove/inspect", { id: target.primaryKey }, ownerEnvelopeSchema);
-    const positionCount = envelope.success && typeof (envelope.data as { positionCount?: unknown })?.positionCount === "number"
-      ? (envelope.data as { positionCount: number }).positionCount
-      : 0;
+    const rawPositions = envelope.success && Array.isArray((envelope.data as { positions?: unknown })?.positions)
+      ? ((envelope.data as { positions: unknown[] }).positions)
+          .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          .map((item) => item.trim())
+      : [];
+    const separator = host.locale === "zh-CN" || host.locale === "zh-TW" || host.locale === "ja" ? "、" : ", ";
+    const summary = rawPositions.length > 0
+      ? tForLocale(host.locale, "panels.confirmation.removeOrgMembershipImpact", { positions: rawPositions.join(separator) })
+      : tForLocale(host.locale, "panels.confirmation.removeOrgMembershipImpactNoPositions");
     return {
-      summary: tForLocale(host.locale, "panels.confirmation.removeOrgMembershipImpact", { positionCount }),
+      summary,
       objects: [{ target: { objectType: target.objectType, primaryKey: target.primaryKey }, label }],
       total: 1,
     };
