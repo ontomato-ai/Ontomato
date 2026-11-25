@@ -31,7 +31,7 @@ import {
 } from "@ontomato/platform-shell";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import {
-  panelModuleFor, PanelMemberUnavailable, preloadCatalogueComponents, readProjectionForRender,
+  memberComponentId, panelModuleFor, PanelMemberUnavailable, preloadCatalogueComponents, readProjectionForRender,
   type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
 } from "@ontomato/apps-sdk/direct";
 import {
@@ -212,10 +212,10 @@ function panelProjectionComponentIds(
   for (const member of Object.values(manifest.members)) {
     if (!("projectionId" in member.target)) continue;
     const entry = bundled?.[member.target.projectionId];
-    const componentId = entry?.status === "ready"
-      ? entry.projection.componentId
-      : getCachedProjection(member.target.projectionId)?.projection.componentId;
-    if (componentId) ids.add(componentId);
+    const projection = entry?.status === "ready"
+      ? entry.projection
+      : getCachedProjection(member.target.projectionId)?.projection;
+    if (projection) ids.add(memberComponentId(projection));
   }
   return [...ids];
 }

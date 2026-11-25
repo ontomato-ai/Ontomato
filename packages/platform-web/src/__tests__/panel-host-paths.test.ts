@@ -1569,4 +1569,72 @@ describe("dynamic and nested member projection access verification", () => {
       unsubscribe();
     }
   });
+
+  it("strips @ontomato/sdk: prefix via memberComponentId before preloading bundled projection components", async () => {
+    const appsSdkDirect = await import("@ontomato/apps-sdk/direct");
+    const preloadSpy = vi.spyOn(appsSdkDirect, "preloadCatalogueComponents").mockResolvedValue(undefined);
+    clearPanelDefinitionCache();
+    const use: ApplicationPanelUse = {
+      id: "use-preload",
+      pageKey: "preload-page",
+      panelId: "panel-preload",
+      path: "/applications/app-a/preload",
+      access: { kind: "domain-member" },
+    };
+    const panel = {
+      id: "panel-preload",
+      name: "Preload Panel",
+      description: "",
+      revision: 1,
+      domainId: "domain-1",
+      ownerId: "user-1",
+      editable: false,
+      visibility: "domain",
+      createdAt: "2026-11-25T00:00:00.000Z",
+      updatedAt: "2026-11-25T00:00:00.000Z",
+      content: { html: "<div></div>" },
+      manifest: {
+        state: {},
+        members: {
+          count: { target: { projectionId: "proj-count" } },
+          list: { target: { projectionId: "proj-list" } },
+        },
+      },
+    };
+    const makeProj = (id: string, componentId: string) => ({
+      id,
+      name: id,
+      description: "",
+      revision: 1,
+      domainId: "domain-1",
+      ownerId: "user-1",
+      editable: false,
+      visibility: "domain",
+      createdAt: "2026-11-25T00:00:00.000Z",
+      updatedAt: "2026-11-25T00:00:00.000Z",
+      componentId,
+      inputs: {},
+      outputs: {},
+      data: {},
+      config: {},
+    });
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/page-skill-context")) return Response.json({ pageSkillContext: null });
+      return Response.json({
+        panel,
+        projections: {
+          "proj-count": { status: "ready", projection: makeProj("proj-count", "@ontomato/sdk:ObjectCount") },
+          "proj-list": { status: "ready", projection: makeProj("proj-list", "@ontomato/sdk:ObjectList") },
+        },
+      });
+    });
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      await port.source();
+      expect(preloadSpy).toHaveBeenCalledWith(["ObjectCount", "ObjectList"]);
+    } finally {
+      preloadSpy.mockRestore();
+    }
+  });
 });

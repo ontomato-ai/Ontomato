@@ -11,6 +11,7 @@ export {
 } from "./panel/direct";
 export { panelModuleFor, type DirectPanelComponentPort, type DirectPanelModuleExports } from "./panel/direct-run";
 export { preloadCatalogueComponents } from "./catalogue-components";
+export { memberComponentId } from "./panel/projection-element";
 export { panelHumanOperations, type ConfirmPanelOperation, type PanelHumanOperations } from "./panel/human-operations";
 export type { PlatformRequests } from "./panel/platform-objects";
 export { readProjectionForRender } from "./panel/platform-requests";
