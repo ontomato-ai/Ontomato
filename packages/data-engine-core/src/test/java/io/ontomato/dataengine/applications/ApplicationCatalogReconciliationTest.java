@@ -151,13 +151,15 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/knowledge"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.use.id").value("knowledge-use"));
+        var knowledgeEntry = "[?(@.applicationId == 'ontology' && @.entryKey == 'knowledge-use')]";
+        var knowledgeMapping = "$.data.pageSkills" + knowledgeEntry;
         http.perform(get("/platform/page-skills")).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.pageSkills.length()").value(1))
-            .andExpect(jsonPath("$.data.pageSkills[0].skill.name").value("knowledge-governance"))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults.length()").value(1))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].pageKey").value("knowledge"))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].defaultAgent.id").value("knowledge-agent"))
-            .andExpect(jsonPath("$.data.admittedEntrances[0].pageKey").value("knowledge"))
+            .andExpect(jsonPath(knowledgeMapping).value(org.hamcrest.Matchers.hasSize(1)))
+            .andExpect(jsonPath(knowledgeMapping + ".skill.name").value(org.hamcrest.Matchers.contains("knowledge-governance")))
+            .andExpect(jsonPath(knowledgeMapping + ".defaults[*].pageKey").value(org.hamcrest.Matchers.contains("knowledge")))
+            .andExpect(jsonPath(knowledgeMapping + ".defaults[*].defaultAgent.id").value(org.hamcrest.Matchers.contains("knowledge-agent")))
+            .andExpect(jsonPath("$.data.admittedEntrances" + knowledgeEntry + ".pageKey")
+                .value(org.hamcrest.Matchers.contains("knowledge")))
             .andExpect(jsonPath("$.data.registeredSkills[0].name").value("knowledge-governance"));
     }
 

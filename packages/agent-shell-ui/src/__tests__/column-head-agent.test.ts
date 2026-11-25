@@ -296,7 +296,9 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   await settle();
   expect(display.pageSkill.value).toBeNull();
   expect((await head(root)).listed).toEqual(["Assistant"]);
-  expect(requests.some((url) => url.includes("pageKey=dashboard&access=domain-member"))).toBe(true);
+  expect(requests.map(url => Object.fromEntries(new URL(url, "http://host.test").searchParams))).toContainEqual({
+    applicationId: "dashboards", entryKey: "dashboards-main", pageKey: "dashboard",
+  });
 
   // Closing the page lists every agent again.
   await display.close();
