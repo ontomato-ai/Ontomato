@@ -202,8 +202,8 @@ it("derives the same standard domain ref as the three-field identity contract", 
 
 it("admits protected packages only through the initiator's exact entrance and every dependency", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
-  const entrance = { permissionCode: "panel-menu", pageKey: "real-use" };
-  const privateEntrance = { permissionCode: "panel-menu", pageKey: "private-use" };
+  const entrance = { applicationId: "app-test", entryKey: "primary", pageKey: "real-use" };
+  const privateEntrance = { ...entrance, entryKey: "private", pageKey: "private-use" };
   const entrances = [entrance, privateEntrance];
   const source = { kind: "application-use", applicationId: "app-test", useId: "primary" } as const;
   const old = panelReference("panel-menu-panel-menu-123456789012345678901234");
@@ -217,7 +217,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
     kind: "protected", sourceKey: "panel-a", entrances,
     resourceIds: ["panel-a", "projection-a"], readManifest, provide,
   }];
-  let admittedEntrance = { ...entrance, pageKey: "sibling-use" };
+  let admittedEntrance = { ...entrance, entryKey: "sibling" };
   let ids = ["panel-a", "projection-a"];
   storedSkillResources(domain, { panel: ["panel-a"], projection: ["projection-a"] }, [
     { id: "readable", name: "Readable agent" }, { id: "hidden", name: "Hidden agent" },
@@ -232,7 +232,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
   const upstream = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (url.endsWith("/platform/page-skills"))
       return Response.json({ success: true, data: {
-        pageSkills: [{ permissionCode: entrance.permissionCode }], registeredSkills: [], admittedEntrances: [admittedEntrance],
+        pageSkills: [entrance], registeredSkills: [], admittedEntrances: [admittedEntrance],
       } });
     if (url.includes("/platform/applications/resolve-entry?")) {
       if (new URL(url, "http://owner.test").searchParams.get("useId") !== source.useId)
@@ -240,7 +240,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
       return Response.json({ success: true, data: {
         applicationId: source.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: source.useId, pageKey: entrance.pageKey, panelId: "panel-a",
-          path: "/applications/app-test/panel", access: { permissionCode: entrance.permissionCode } },
+          path: "/applications/app-test/panel" },
       } });
     }
     return Response.json({ skill: protectedRef, digest: "b".repeat(64), description: "Protected member" });
@@ -320,10 +320,10 @@ it("admits protected packages only through the initiator's exact entrance and ev
   expect(upstream).not.toHaveBeenCalled();
 });
 
-it("publishes one member across admitted entrances alongside the native permission-group skill", async () => {
+it("publishes one member across admitted entrances alongside the native entry skill", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const native = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" } as const;
-  const entrances = ["knowledge", "alternate"].map(pageKey => ({ permissionCode: "business-knowledge", pageKey }));
+  const entrances = ["knowledge", "alternate"].map(pageKey => ({ applicationId: "ontology", entryKey: pageKey, pageKey }));
   const ref = protectedSkillRef("product-panels", domain, "knowledge-panel");
   const sourceFor = (pageKey: string) => ({ kind: "application-use" as const, applicationId: "ontology", useId: pageKey });
   const offer = offering(ref.name);
@@ -334,16 +334,19 @@ it("publishes one member across admitted entrances alongside the native permissi
   const uses = vi.fn((useId: string | null) => {
     const entrance = entrances.find(entry => entry.pageKey === useId);
     if (!entrance) return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
-    const { permissionCode, pageKey } = entrance;
+    const { pageKey } = entrance;
     return Response.json({ success: true, data: {
       applicationId: "ontology", menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: pageKey, pageKey, path: `/ontology/${pageKey}`, access: { permissionCode }, panelId: "knowledge-panel" },
+      use: { id: pageKey, pageKey, path: `/ontology/${pageKey}`, panelId: "knowledge-panel" },
     } });
   });
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: {
-      admittedEntrances: entrances, registeredSkills: [native], pageSkills: [{ permissionCode: "business-knowledge", skill: native,
-        defaults: [{ pageKey: "governance-report", defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] }],
+      admittedEntrances: entrances, registeredSkills: [native], pageSkills: [
+        { ...entrances[0], skill: native,
+          defaults: [{ pageKey: entrances[0].pageKey, defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] },
+        entrances[1],
+      ],
     } });
     if (url.includes("/platform/applications/resolve-entry?")) {
       expect(new Headers(init.headers).get("tk")).toBe(credentials.token);
@@ -361,7 +364,8 @@ it("publishes one member across admitted entrances alongside the native permissi
   const member = { source: sourceFor(second.pageKey), ref, memberPath: [] };
   const view = await readAssistantSkillView(domain, credentials);
   expect(view.pageSkills[0]).toMatchObject({ skills: [native, ref],
-    defaults: [{ pageKey: "governance-report", defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] });
+    defaults: [{ pageKey: first.pageKey, defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] });
+  expect(view.pageSkills[1].skills).toEqual([ref]);
   await expect(resolveCurrentPageSkillMember(view, first, member)).resolves.toBeNull();
   await expect(resolveCurrentPageSkillMember(view, first, { ...member, source: sourceFor(first.pageKey) }))
     .resolves.toMatchObject({ member: { ref }, path: "/ontology/knowledge" });
@@ -396,14 +400,15 @@ it("fails the whole catalogue when a provider cannot list, and all preparation w
 it("fails a page-mapped skill that no source supplies instead of reusing its runtime package", async () => {
   const missing = { namespace: { kind: "provider" as const, provider: "panel-test" }, name: "missing-panel-skill" };
   const published: unknown[] = [];
+  const locator = { applicationId: "ontology", entryKey: "knowledge", pageKey: "business-knowledge" };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { body?: string }) => {
     if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: {
-      pageSkills: [{ permissionCode: "business-knowledge", skill: missing }], registeredSkills: [missing] } });
+      pageSkills: [{ ...locator, skill: missing }], registeredSkills: [missing] } });
     published.push(JSON.parse(String(init?.body)));
     return Response.json({ skill: missing, digest: "a".repeat(64), description: "Missing" }, { status: 201 });
   }));
   const agent = { kind: "regular", skills: [] };
-  const context = { mode: "public", locator: { permissionCode: "business-knowledge", pageKey: "business-knowledge" } } as const;
+  const context = { mode: "public", locator } as const;
   await expect(prepareAssistantSkills(domain, agent, {}, context))
     .rejects.toMatchObject({ status: 422, code: "SKILL_NOT_FOUND" });
   await expect(prepareAssistantSkills(domain, agent, {})).resolves.toMatchObject({

@@ -562,11 +562,6 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
         if (!found) return key;
         return panelRecordFieldText({ kind: "localized", values: found.names }, language, "en") || key;
       };
-      const accessLabel = (access: ApplicationCatalogueDetail["panelUses"][number]["access"]) => {
-        if (!access) return "—";
-        if ("kind" in access && access.kind === "domain-member") return word("accessDomainMember");
-        return "permissionCode" in access ? access.permissionCode || "—" : "—";
-      };
       const agentLabel = (agent: ApplicationPanelUse["defaultAgent"]) => {
         if (!agent) return word("defaultAgentFallback");
         if (agent.kind === "id") return agents.get(`id:${agent.id}`) ?? agent.id;
@@ -590,7 +585,6 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
               ? { kind: "reference", className: PRODUCT_PANEL, primaryKey: use.panelId, label: panelLabel }
               : "—",
             group: groupName(use.groupKey),
-            access: accessLabel(use.access),
             defaultAgent: panelEntry ? agentLabel(use.defaultAgent) : "—",
             canEdit: detail.canEditEntries,
           },
@@ -598,7 +592,6 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
             path: word("entryPath"),
             panel: word("entryPanel"),
             group: word("entryGroup"),
-            access: word("entryAccess"),
             defaultAgent: word("entryAgent"),
           },
         };

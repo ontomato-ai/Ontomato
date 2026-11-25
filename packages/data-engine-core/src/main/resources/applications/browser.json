@@ -5,13 +5,11 @@
   "category": "business",
   "sort": 40,
   "entry": {
+    "entryKey": "browser",
     "path": "/browser",
     "renderer": "browser",
     "home": "/browser/data"
   },
-  "entryAccess": [
-    "data-browser"
-  ],
   "scheduleAdapter": null,
   "framePanelId": "builtin-product-platform-frame",
   "allowStandalone": false,
@@ -26,7 +24,6 @@
     },
     "icon": "objects",
     "groups": [],
-    "permissions": [],
     "panelUses": [
       {
         "id": "browser-data",
@@ -34,7 +31,6 @@
         "panelId": "builtin-product-data-browser",
         "path": "/browser/data",
         "icon": "objects",
-        "access": { "permissionCode": "data-browser" },
         "names": {
           "en": "Object browser",
           "zh-CN": "对象浏览器",
@@ -54,8 +50,7 @@
         "id": "browser-object-detail",
         "pageKey": "browser-object-detail",
         "panelId": "builtin-product-object-detail",
-        "path": "/browser/views",
-        "access": { "permissionCode": "data-browser" }
+        "path": "/browser/views"
       }
     ]
   }

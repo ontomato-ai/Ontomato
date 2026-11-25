@@ -64,8 +64,8 @@ it("governance-only preparation registers caller bounds without query preparatio
   expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({continuationIds:[],recentUserMessages:[],executionUserId:null}),{token:"user"});expect(mocks.recordWindow).not.toHaveBeenCalled();
 });
 it("carries the displayed member into human preparation and prompts with the checked canonical placement", async () => {
-  const locator = { permissionCode: "business-knowledge", pageKey: "knowledge" };
   const source = { kind: "application-use" as const, applicationId: "ontology", useId: "knowledge-use" };
+  const locator = { applicationId: source.applicationId, entryKey: source.useId, pageKey: "knowledge" };
   const member = { source, memberPath: [], ref: { namespace: { kind: "domain" as const, domainId: owner.domainId }, name: "panel-a" } };
   const pageSkillContext = { mode: "member" as const, locator, member };
   const currentPage = { entrance: locator, member, path: "/ontology/knowledge" };

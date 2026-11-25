@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   profile: vi.fn<[{ domainId: string; userId: string }, string[]], Promise<Map<string, string>>>(),
   findByUse: vi.fn(),
   observeAccess: vi.fn<[], Promise<void>>(),
+  homePanelId: vi.fn<[], Promise<string | null>>(),
 }));
 
 vi.mock("../../../infrastructure/product-current", () => ({
@@ -50,6 +51,7 @@ vi.mock("../../product-assets/agent-profile", () => ({ agentsWithProductProfiles
 vi.mock("../../product-panels/skill-provider", () => ({
   panelSkillProvider: { findByUse: mocks.findByUse },
 }));
+vi.mock("../../platform-home/store", () => ({ platformHomeStore: { homePanelId: mocks.homePanelId } }));
 
 configureI18n({
   defaultLocale: "en",
@@ -87,8 +89,10 @@ const legacyOrderRef: RuntimeSkillRef = {
 const panelOrderRef = protectedSkillRef("product-panels", domain, "panel-order");
 const panelInvoiceRef = protectedSkillRef("product-panels", domain, "panel-invoice");
 
-const menuEntrance: PageSkillEntrance = { permissionCode: "orders-menu", pageKey: "orders-page" };
-const dataBrowserEntrance: PageSkillEntrance = { access: "domain-member", pageKey: "data-browser" };
+const ordersEntrance: PageSkillEntrance = { applicationId: "app-orders", entryKey: "use-order", pageKey: "orders-page" };
+const observerEntrance: PageSkillEntrance = { applicationId: "operations", entryKey: "ops-turn-evidence", pageKey: "ops-turn-evidence" };
+const dataBrowserEntrance: PageSkillEntrance = { applicationId: "data-browser", entryKey: "browse", pageKey: "data-browser" };
+const homeEntrance: PageSkillEntrance = { applicationId: "home", entryKey: "home", pageKey: "home" };
 
 const agentIds = {
   regular: "11111111-1111-4111-8111-111111111111",
@@ -182,11 +186,11 @@ beforeEach(() => {
   pageSkillsFetches = 0;
   offerings = [
     protectedOffering("panel-order", {
-      entrances: [menuEntrance],
+      entrances: [ordersEntrance],
       resourceIds: ["panel-order", "proj-order"],
     }),
     protectedOffering("panel-invoice", {
-      entrances: [menuEntrance],
+      entrances: [ordersEntrance],
       resourceIds: ["panel-invoice", "proj-invoice"],
     }),
   ];
@@ -212,17 +216,16 @@ beforeEach(() => {
   projection = {
     pageSkills: [
       {
-        access: "domain-member",
-        pageKey: "data-browser",
+        ...dataBrowserEntrance,
         skill: publicDataBrowserSkill,
       },
       {
-        permissionCode: "orders-menu",
+        ...ordersEntrance,
         defaults: [{ pageKey: "orders-page", defaultAgent: { kind: "id", id: agentIds.orderCustom } }],
       },
     ],
     registeredSkills: [publicDataBrowserSkill],
-    admittedEntrances: [menuEntrance],
+    admittedEntrances: [ordersEntrance],
   };
   grantedIds = ["panel-order", "proj-order", "panel-invoice", "proj-invoice"];
   panelUsesHandler = () => {
@@ -235,7 +238,7 @@ beforeEach(() => {
           pageKey: "orders-page",
           panelId: "panel-order",
           path: "/applications/orders/list",
-          access: { permissionCode: "orders-menu" },
+
         },
       ],
     };
@@ -250,6 +253,7 @@ beforeEach(() => {
   ));
   mocks.opsDiagnosis.mockResolvedValue(undefined);
   mocks.observeAccess.mockResolvedValue(undefined);
+  mocks.homePanelId.mockResolvedValue(null);
   mocks.agents.mockResolvedValue([
     agentRow(agentIds.regular, "regular", [], { sortOrder: 0 }),
     agentRow(agentIds.publicOnly, "custom-public", [publicDataBrowserSkill], { sortOrder: 1 }),
@@ -265,7 +269,17 @@ beforeEach(() => {
     vi.fn(async (input: string | URL, init?: Parameters<typeof fetch>[1]) => {
       const url = String(input);
       if (url.includes("/platform/page-skills?")) {
-        expect(new URL(url, "http://owner.test").searchParams.get("pageKey")).toBeTruthy();
+        const params = new URL(url, "http://owner.test").searchParams;
+        const entrance = [ordersEntrance, dataBrowserEntrance, observerEntrance, homeEntrance]
+          .find(entry => entry.entryKey === params.get("entryKey"));
+        expect(entrance).toBeDefined();
+        const panelIds: Record<string, string> = {
+          "use-order": "panel-order", "ops-turn-evidence": "builtin-product-ops-turn-evidence", home: "builtin-home",
+        };
+        expect(Object.fromEntries(params)).toEqual({
+          ...entrance,
+          ...(params.has("panelId") && { panelId: panelIds[entrance!.entryKey] }),
+        });
         pageSkillsFetches += 1;
         return Response.json({ success: true, data: projection });
       }
@@ -298,11 +312,11 @@ it("omits preset IDs from the unfiltered directory", async () => {
   expect(mocks.profile).not.toHaveBeenCalled();
 });
 
-it("resolves public queries through view.publicPageSkill even when a group also holds protected members", async () => {
+it("returns only agents that carry the requested public skill", async () => {
   const result = await listAssistantAgents(
     owner,
     credentials,
-    queryFromSearch({ pageKey: "data-browser", access: "domain-member" }),
+    queryFromSearch({ ...dataBrowserEntrance }),
   );
 
   expect(pageSkillsFetches).toBe(1);
@@ -312,7 +326,7 @@ it("resolves public queries through view.publicPageSkill even when a group also 
 
   // A dynamic-only group without a public skill rejects public queries instead of taking skills[0].
   await expect(
-    listAssistantAgents(owner, credentials, queryFromSearch({ pageKey: "orders-page", permissionCode: "orders-menu" })),
+    listAssistantAgents(owner, credentials, queryFromSearch({ ...ordersEntrance })),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
 });
 
@@ -322,8 +336,7 @@ it("resolves application-use member queries through one view, filters by effecti
     owner,
     credentials,
     queryFromSearch({
-      pageKey: "orders-page",
-      permissionCode: "orders-menu",
+      ...ordersEntrance,
       member: JSON.stringify({ source: source, memberPath: [], ref: panelOrderRef }),
     }),
   );
@@ -338,23 +351,40 @@ it("resolves application-use member queries through one view, filters by effecti
   ]);
   expect(result.defaultAgentId).toBe(agentIds.orderCustom);
   expect(result.presetAgentIds).toEqual({ regular: agentIds.regular });
+  expect(fetch).toHaveBeenCalledWith(expect.stringContaining("panelId=panel-order"), expect.anything());
   expect(mocks.agents).toHaveBeenCalledTimes(1);
 
   // Without a matching pageKey default in the group, default falls back to regular.
-  projection.pageSkills[1] = { permissionCode: "orders-menu", defaults: [{ pageKey: "other-page", defaultAgent: { kind: "id", id: agentIds.orderCustom } }] };
+  projection.pageSkills[1] = { ...ordersEntrance, defaults: [{ pageKey: "other-page", defaultAgent: { kind: "id", id: agentIds.orderCustom } }] };
   const fallbackDefault = await listAssistantAgents(
     owner,
     credentials,
     queryFromSearch({
-      pageKey: "orders-page",
-      permissionCode: "orders-menu",
+      ...ordersEntrance,
       member: JSON.stringify({ source: source, memberPath: [], ref: panelOrderRef }),
     }),
   );
   expect(fallbackDefault.defaultAgentId).toBe(agentIds.regular);
 });
 
-it("resolves dynamic-owner member queries on a multi-member group to the exact protected member", async () => {
+it("uses the registered home root in Java and admits the member of the user's actual home panel", async () => {
+  const source = { kind: "application-use", applicationId: "home", useId: "home" };
+  mocks.homePanelId.mockResolvedValue("panel-order");
+  mocks.findByUse.mockResolvedValue(protectedOffering("panel-order", {
+    entrances: [homeEntrance], resourceIds: ["panel-order", "proj-order"],
+  }));
+  panelUsesHandler = () => Response.json({ success: true, data: {
+    applicationId: "home", panelUses: [{ id: "home", pageKey: "home", panelId: "builtin-home", path: "/home" }],
+  } });
+  projection = { pageSkills: [homeEntrance], admittedEntrances: [homeEntrance], registeredSkills: [] };
+  const result = await listAssistantAgents(owner, credentials, queryFromSearch({
+    ...homeEntrance, member: JSON.stringify({ source, memberPath: [], ref: panelOrderRef }),
+  }));
+  expect(result.agents).toContainEqual(expect.objectContaining({ id: agentIds.orderCustom }));
+  expect(fetch).toHaveBeenCalledWith(expect.stringContaining("panelId=builtin-home"), expect.anything());
+});
+
+it("resolves dynamic-owner member queries on a shared entry to the exact protected member", async () => {
   const orderSource: PageSkillSource = {
     kind: "object-detail",
     useId: "use-detail",
@@ -364,8 +394,7 @@ it("resolves dynamic-owner member queries on a multi-member group to the exact p
     owner,
     credentials,
     queryFromSearch({
-      pageKey: "data-browser",
-      access: "domain-member",
+      ...dataBrowserEntrance,
       member: JSON.stringify({ source: orderSource, memberPath: [], ref: panelOrderRef }),
     }),
   );
@@ -386,8 +415,7 @@ it("resolves dynamic-owner member queries on a multi-member group to the exact p
     owner,
     credentials,
     queryFromSearch({
-      pageKey: "data-browser",
-      access: "domain-member",
+      ...dataBrowserEntrance,
       member: JSON.stringify({ source: invoiceSource, memberPath: [], ref: panelInvoiceRef }),
     }),
   );
@@ -407,8 +435,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       owner,
       credentials,
       queryFromSearch({
-        pageKey: "data-browser",
-        access: "domain-member",
+        ...dataBrowserEntrance,
         member: JSON.stringify({ source: detailSource, memberPath: [], ref: panelInvoiceRef }),
       }),
     ),
@@ -421,8 +448,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       owner,
       credentials,
       queryFromSearch({
-        pageKey: "data-browser",
-        access: "domain-member",
+        ...dataBrowserEntrance,
         member: JSON.stringify({ source: detailSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
@@ -442,7 +468,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
             pageKey: "orders-page",
             panelId: "panel-invoice",
             path: "/applications/orders/list",
-            access: { permissionCode: "orders-menu" },
+
           },
         ],
       },
@@ -452,15 +478,17 @@ it("rejects member queries with 403 and never falls back to the group's public m
       owner,
       credentials,
       queryFromSearch({
-        pageKey: "orders-page",
-        permissionCode: "orders-menu",
+        ...ordersEntrance,
         member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
 
-  // Sibling entrance only in admittedEntrances (exact entrance not admitted).
-  projection.admittedEntrances = [{ permissionCode: "orders-menu", pageKey: "sibling-page" }];
+  // An admitted sibling shares the pageKey and panel but does not authorize this use.
+  const siblingEntrance = { ...ordersEntrance, entryKey: "sibling-use" };
+  projection.admittedEntrances = [siblingEntrance];
+  projection.pageSkills.push(siblingEntrance);
+  offerings[0] = { ...offerings[0]!, entrances: [ordersEntrance, siblingEntrance] };
   panelUsesHandler = () =>
     Response.json({
       success: true,
@@ -473,7 +501,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
             pageKey: "orders-page",
             panelId: "panel-order",
             path: "/applications/orders/list",
-            access: { permissionCode: "orders-menu" },
+
           },
         ],
       },
@@ -483,23 +511,21 @@ it("rejects member queries with 403 and never falls back to the group's public m
       owner,
       credentials,
       queryFromSearch({
-        pageKey: "orders-page",
-        permissionCode: "orders-menu",
+        ...ordersEntrance,
         member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
 
   // Missing dependency "use" grant on proj-order.
-  projection.admittedEntrances = [menuEntrance];
+  projection.admittedEntrances = [ordersEntrance];
   grantedIds = ["panel-order"];
   await expect(
     listAssistantAgents(
       owner,
       credentials,
       queryFromSearch({
-        pageKey: "orders-page",
-        permissionCode: "orders-menu",
+        ...ordersEntrance,
         member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
@@ -513,8 +539,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       owner,
       credentials,
       queryFromSearch({
-        pageKey: "orders-page",
-        permissionCode: "orders-menu",
+        ...ordersEntrance,
         member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
@@ -529,8 +554,7 @@ it("propagates source resolution errors instead of treating them as null", async
       owner,
       credentials,
       queryFromSearch({
-        pageKey: "orders-page",
-        permissionCode: "orders-menu",
+        ...ordersEntrance,
         member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
@@ -549,8 +573,7 @@ it("propagates source resolution errors instead of treating them as null", async
       owner,
       credentials,
       queryFromSearch({
-        pageKey: "data-browser",
-        access: "domain-member",
+        ...dataBrowserEntrance,
         member: JSON.stringify({ source: detailSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
@@ -562,7 +585,6 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
   const opsId = "88888888-8888-4888-8888-888888888888";
   const builderId = "99999999-9999-4999-8999-999999999999";
   const opsTurnRef = protectedSkillRef("product-panels", domain, "builtin-product-ops-turn-evidence");
-  const observerEntrance: PageSkillEntrance = { permissionCode: "observer", pageKey: "ops-turn-evidence" };
 
   mocks.agents.mockResolvedValue([
     agentRow(agentIds.regular, "regular", [], { sortOrder: 0 }),
@@ -580,12 +602,12 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
     pageSkills: [
       ...projection.pageSkills,
       {
-        permissionCode: "observer",
+        ...observerEntrance,
         defaults: [{ pageKey: "ops-turn-evidence", defaultAgent: { kind: "preset", agentKind: "ops-diagnosis" } }],
       },
     ],
     registeredSkills: [publicDataBrowserSkill],
-    admittedEntrances: [menuEntrance, observerEntrance],
+    admittedEntrances: [ordersEntrance, observerEntrance],
   };
   panelUsesHandler = () =>
     Response.json({
@@ -599,7 +621,7 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
             pageKey: "ops-turn-evidence",
             panelId: "builtin-product-ops-turn-evidence",
             path: "/ops/turn",
-            access: { permissionCode: "observer" },
+
             defaultAgent: { kind: "preset", agentKind: "ops-diagnosis" },
           },
         ],
@@ -618,8 +640,7 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
     owner,
     credentials,
     queryFromSearch({
-      pageKey: "ops-turn-evidence",
-      permissionCode: "observer",
+      ...observerEntrance,
       member: JSON.stringify({ source: opsSource, memberPath: [], ref: opsTurnRef }),
     }),
   );
@@ -631,7 +652,7 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
   const nonOpsPage = await listAssistantAgents(
     owner,
     credentials,
-    queryFromSearch({ pageKey: "data-browser", access: "domain-member" }),
+    queryFromSearch({ ...dataBrowserEntrance }),
   );
   expect(nonOpsPage.agents.map((a) => a.id)).toEqual([agentIds.regular]);
   expect(nonOpsPage.presetAgentIds).toEqual({ regular: agentIds.regular });
@@ -643,8 +664,7 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
     owner,
     credentials,
     queryFromSearch({
-      pageKey: "ops-turn-evidence",
-      permissionCode: "observer",
+      ...observerEntrance,
       member: JSON.stringify({ source: opsSource, memberPath: [], ref: opsTurnRef }),
     }),
   );

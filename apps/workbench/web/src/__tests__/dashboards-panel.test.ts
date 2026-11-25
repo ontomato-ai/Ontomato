@@ -634,7 +634,6 @@ async function openDashboardsPanel(options: {
     category: "business",
     sort: 20,
     entry: { path: "/dashboards", renderer: "dashboards" },
-    entryAccess: ["domain-member"],
     scheduleAdapter: null,
     releaseId: null,
     names: { en: "Dashboards" },

@@ -41,9 +41,7 @@ const trial = await import(definitions) as {
 
 const uses: PanelSkillSource[] = trial.applications.flatMap(application => application.panelUses.map(use => ({
   applicationId: application.applicationId, useId: use.id, panelId: use.panelId, path: use.path,
-  entrance: "permissionCode" in use.access
-    ? { pageKey: use.pageKey, permissionCode: use.access.permissionCode }
-    : { pageKey: use.pageKey, access: use.access.kind },
+  entrance: { applicationId: application.applicationId, entryKey: use.id, pageKey: use.pageKey },
 })));
 const skill = (name: string) => ({ namespace: { kind: "domain" as const, domainId }, name });
 const taskRef = skill("captured-task-skill");

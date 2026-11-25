@@ -117,7 +117,6 @@ const use = (id, pageKey, panelId, path, names) => ({
   pageKey,
   panelId,
   path,
-  access: { kind: "domain-member" },
   names,
 });
 
@@ -125,26 +124,24 @@ export const applications = [
   {
     applicationId: "app-panels-trial-a",
     entry: { path: "/applications/app-panels-trial-a", renderer: "panels" },
-    entryAccess: ["domain-member"],
+    initialOpenEntryIds: ["use-trial-a-tasks"],
     declaration: {
       names: { en: "Panels trial A", "zh-CN": "面板试点 A" },
       descriptions: { en: "The scheduled tasks panel, as the first trial application.", "zh-CN": "定时任务面板，第一个试点应用。" },
       icon: "calendar",
       groups: [],
-      permissions: [],
     },
     panelUses: [use("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", "/applications/app-panels-trial-a/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" })],
   },
   {
     applicationId: "app-panels-trial-b",
     entry: { path: "/applications/app-panels-trial-b", renderer: "panels" },
-    entryAccess: ["domain-member"],
+    initialOpenEntryIds: ["use-trial-b-tasks", "use-trial-b-summary"],
     declaration: {
       names: { en: "Panels trial B", "zh-CN": "面板试点 B" },
       descriptions: { en: "The same scheduled tasks panel, and a second panel that shows one task.", "zh-CN": "同一个定时任务面板，另加一个只显示一个任务的面板。" },
       icon: "calendar",
       groups: [],
-      permissions: [],
     },
     panelUses: [
       use("use-trial-b-tasks", "panels-trial-b-tasks", "panel-schedules-trial", "/applications/app-panels-trial-b/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" }),

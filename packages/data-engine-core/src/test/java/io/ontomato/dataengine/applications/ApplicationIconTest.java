@@ -23,10 +23,11 @@ class ApplicationIconTest {
             return null;
         }).when(tx).executeWithoutResult(any());
         var access = mock(ApplicationAccess.class);
+        var authorization = EntryAuthorizationFixture.allowEntries();
         var panels = mock(PanelResources.class);
         var user = mock(User.class);
         when(user.getDomainId()).thenReturn("domain");
-        var catalog = spy(new ApplicationCatalog(db, tx, access, "{}", panels, mock(ProductGrantService.class)));
+        var catalog = spy(new ApplicationCatalog(db, tx, access, "{}", panels, mock(ProductGrantService.class), authorization));
         var app = JSONObject.of("id", "app-example", "domainId", "domain", "releaseId", "release", "icon", "ontology");
         doReturn(app).when(catalog).require("app-example");
 

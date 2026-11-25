@@ -303,7 +303,7 @@ describe("customer Action boundParams materialization into input.values", () => 
       panelId: "panel-students",
       pageKey: "students",
       path: "/applications/app-1/students",
-      access: { kind: "domain-member" },
+
       inputs: {
         pinnedTerm: { literal: "2026-fall" },
       },

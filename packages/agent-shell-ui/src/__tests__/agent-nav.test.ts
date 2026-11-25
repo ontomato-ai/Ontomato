@@ -136,7 +136,7 @@ describe("promoting a conversation", () => {
 });
 
 describe("reading the agents for a page", () => {
-  const dashboard: PageSkillContext = { mode: "public", locator: { pageKey: "dashboard", access: "domain-member" } };
+  const dashboard: PageSkillContext = { mode: "public", locator: { pageKey: "dashboard", applicationId: "dashboards", entryKey: "dashboards-main" } };
 
   it("is failed when the page's candidates cannot be read, and ready once a read returns them", async () => {
     const listPageAgents = vi.fn()

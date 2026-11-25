@@ -140,8 +140,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("bob");
     res.json({ success: true, data: {
       applicationId: "chart-pilot", menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: "chart", pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot",
-        access: { kind: "domain-member" } },
+      use: { id: "chart", pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot" },
     } });
   });
   app.use("/api", (req, _res, next) => {

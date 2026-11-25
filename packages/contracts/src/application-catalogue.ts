@@ -30,6 +30,7 @@ const applicationCatalogueEntrySchema = z.object({
   path: panelUseEntry.path,
   renderer: panelUseEntry.renderer.optional(),
   home: panelUseEntry.home,
+  entryKey: panelUseEntry.entryKey,
 }).strict();
 
 export const applicationCatalogueEntriesSchema = applicationPanelUsesResponseSchema.extend({
@@ -40,7 +41,7 @@ export const applicationCatalogueEntriesSchema = applicationPanelUsesResponseSch
 export const applicationCatalogueRecordSchema = summary
   .merge(applicationCatalogueEntriesSchema.pick({ entry: true, panelUses: true }))
   .merge(applicationPanelUsesManagementSchema.pick({
-    entryAccess: true, framePanelId: true, theme: true, delivery: true,
+    framePanelId: true, theme: true, delivery: true,
   }).partial())
   .extend({ groups: applicationMetadataSchema.shape.groups })
   .strict();
@@ -55,8 +56,18 @@ export const applicationIdentityUpdateSchema = applicationMetadataSchema.pick({ 
   allowStandalone: z.boolean().optional(),
 });
 export const applicationCatalogueCreateSchema = registerApplicationPanelUsesRequestSchema.required({
-  declaration: true, entryAccess: true,
+  declaration: true, initialOpenEntryIds: true,
 });
 export const applicationEntriesUpdateSchema = registerApplicationPanelUsesRequestSchema.omit({
-  declaration: true, entryAccess: true, allowStandalone: true,
+  declaration: true, initialOpenEntryIds: true, allowStandalone: true,
 });
+
+const sourcePath = z.string().regex(/^\/(?!\/)/);
+export const applicationSourceManifestSchema = registerApplicationPanelUsesRequestSchema.omit({ shared: true }).extend({
+  declaration: applicationMetadataSchema,
+  entry: registerApplicationPanelUsesRequestSchema.shape.entry.extend({
+    path: sourcePath,
+    home: sourcePath.optional(),
+  }),
+});
+export type ApplicationSourceManifest = z.infer<typeof applicationSourceManifestSchema>;

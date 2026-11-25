@@ -66,12 +66,13 @@ let base: string;
 const applicationId = "app-catalogue";
 const entry = { path: `/applications/${applicationId}`, renderer: "panels" };
 const publicUse = { id: "shown", pageKey: "shown", path: `${entry.path}/shown`,
-  panelId: "catalogue-panel", access: { kind: "domain-member" } };
+  panelId: "catalogue-panel" };
+const admittedEntry = { ...entry, home: publicUse.path, entryKey: publicUse.id };
 const hiddenUse = { ...publicUse, id: "hidden", pageKey: "hidden", path: `${entry.path}/hidden`, panelId: "hidden" };
 const draftId = "app-14d40829-d7d4-4b14-94bf-11c4c8b12e1b";
-const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pages", groups: [], permissions: [] };
+const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pages", groups: [] };
 const initialCreateValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },
-  entryAccess: ["domain-member"], panelUses: [] };
+  initialOpenEntryIds: [], panelUses: [], shared: false, allowStandalone: true };
 const entryValues = { entry, panelUses: [publicUse, hiddenUse], framePanelId: "catalogue-panel" };
 const identityValues = { names: { en: "Application", fr: "Application française" }, descriptions: { en: "Kept description" }, icon: "pages" };
 const writes: { path: string; actor?: string; body: unknown }[] = [];
@@ -159,7 +160,8 @@ beforeAll(async () => {
   mockApplicationEntry(app, "/java/platform/applications", (req, res) => {
     expect([viewer.token, "executor"]).toContain(req.header("tk"));
     expect(req.query).toMatchObject({ applicationId, useId: publicUse.id });
-    res.json({ success: true, data: { applicationId, use: publicUse, menu: { singleEntry: true, groups: [], panelUses: [] } } });
+    res.json({ success: true, data: { applicationId, use: publicUse, framePanelId: entryValues.framePanelId,
+      menu: { singleEntry: true, names: declaration.names, groups: [], panelUses: [] } } });
   });
   const summary = { id: applicationId, names: declaration.names, descriptions: {}, icon: "pages",
     source: "domain", canMaintain: false, canGrant: false, canEditEntries: false, entryCount: 1 };
@@ -170,7 +172,8 @@ beforeAll(async () => {
   });
   app.get(`/java/platform/applications/catalogue/${applicationId}`, (req, res) => {
     expect(req.header("tk")).toBe(viewer.token);
-    res.json({ success: true, data: { ...summary, entry, panelUses: [publicUse], groups: [] } });
+    res.json({ success: true, data: { ...summary, entry: admittedEntry, panelUses: [publicUse], groups: [],
+      framePanelId: entryValues.framePanelId } });
   });
   mountCurrentProductDecisions(app, {
     prefix: "/java", token: "governance", domain: owner.domainId,
@@ -362,7 +365,9 @@ it("dispatches application reads from current PostgreSQL records and preserves t
   expect(await readCatalogue("appRecord")).toMatchObject({
     primaryKey: applicationId, className: APPLICATION, fields: { canMaintain: false, path: entry.path },
   });
-  expect(await readCatalogue("appEntries")).toMatchObject({ applicationId, entry, panelUses: [publicUse], groups: [] });
+  expect(await readCatalogue("appEntries")).toMatchObject({
+    applicationId, entry: admittedEntry, panelUses: [publicUse], groups: [],
+  });
 
   const actor = { owner, credentials: viewer };
   const executor = { owner, credentials: { token: "executor" } };
@@ -455,7 +460,7 @@ it("reuses the allocated draft ID and dispatches a create-only application save 
   expect(formReads.at(-1)).not.toHaveProperty("target.id");
   expect(initial.values.id).toBe(draftId);
 
-  const values = { ...initial.values, entry: { ...initialCreateValues.entry, path: `${entry.path}/edited` } };
+  const values = { ...initial.values, entry: { ...initialCreateValues.entry, path: `${initialCreateValues.entry.path}/edited` } };
   const refreshed = panelReadResultSchemas.panelFormDescription.parse(
     await readCatalogue("appDraft", { values, changedField: "/entry/path" }),
   );

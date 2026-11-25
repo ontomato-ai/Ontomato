@@ -19,10 +19,10 @@ export function generatedNavigation(): PlatformNavigation {
       { key: "knowledge", titleKey: "nav.groupKnowledge" },
     ],
     pages: [
-      { path: "/ontology/playground", titleKey: "nav.ontologyGraph", icon: Network, permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
-      { path: "/ontology/objects", titleKey: "nav.objectTypes", icon: Network, permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
-      { path: "/browser/data", titleKey: "nav.dataBrowser", icon: Table2, permissions: ["data-browser"], group: "ontology", ownHeader: true },
-      { path: "/ontology/knowledge", titleKey: "nav.businessKnowledge", icon: BookOpen, permissions: ["business-knowledge"], group: "knowledge", ownHeader: true },
+      { path: "/ontology/playground", titleKey: "nav.ontologyGraph", icon: Network, group: "ontology", ownHeader: true },
+      { path: "/ontology/objects", titleKey: "nav.objectTypes", icon: Network, group: "ontology", ownHeader: true },
+      { path: "/browser/data", titleKey: "nav.dataBrowser", icon: Table2, group: "ontology", ownHeader: true },
+      { path: "/ontology/knowledge", titleKey: "nav.businessKnowledge", icon: BookOpen, group: "knowledge", ownHeader: true },
     ],
   };
 }
@@ -54,9 +54,17 @@ export function partitionOf(): readonly AppPartition[] {
   ];
 }
 
-/** An access check that grants exactly the codes it is given. */
+/** A fake catalogue response for the audience in each fixture. */
 export function closedAccess(granted: readonly string[]): PlatformAccess {
-  return { ready: true, error: null, can: (code) => granted.includes(code), load: () => Promise.resolve() };
+  const entries = {
+    "ontology-modeling": ["/ontology/playground", "/ontology/objects"],
+    "data-browser": ["/browser/data"],
+    "business-knowledge": ["/ontology/knowledge"],
+    "feedback": ["/ops/feedback"],
+  };
+  const paths = granted.flatMap(value => entries[value as keyof typeof entries] ?? []);
+  const canEnter = (path: string) => paths.includes(path);
+  return { ready: true, error: null, canEnter, verifyEntry: async path => canEnter(path) ? "allowed" : "denied", load: async () => {} };
 }
 
 /** A navigation as the host computes it, so a factory argument matches the production shape. */
@@ -72,10 +80,33 @@ export function readApplicationDeclarations(directory: string): BuiltinApplicati
 export function catalogFixture(additional: BuiltinApplication[] = []) {
   const java = readApplicationDeclarations(join(__dirname, "../../../data-engine-core/src/main/resources/applications"));
   return applicationCatalogSchema.parse([...workbenchApplications, ...java, ...additional]
-    .map(({ declaration, ...app }) => ({ ...app, ...declaration, releaseId: null }))
+    .map(({ declaration, ...app }) => {
+      const panelUses = [...(declaration.panelUses ?? [])];
+      const { entryKey, home, path } = app.entry;
+      if (entryKey && (!panelUses.length || home && !panelUses.some(use => use.id === entryKey || use.path === home))) {
+        panelUses.push({ id: entryKey, pageKey: entryKey, path: home ?? path, kind: "native" });
+      }
+      return { ...app, ...declaration, releaseId: null, panelUses,
+        ownerService: workbenchApplications.some(registered => registered.id === app.id) ? "workbench" : "data-engine",
+        entryPaths: panelUses.map(use => use.path) };
+    })
     .sort((a,b) => ["top","apps","bottom"].indexOf(a.rail) - ["top","apps","bottom"].indexOf(b.rail) || a.sort-b.sort || a.id.localeCompare(b.id)));
 }
 export function catalogPartitionFixture() { return catalogPartition(catalogFixture(), "en"); }
+
+export function catalogEntryFixture(url: URL): Response {
+  const path = url.searchParams.get("path");
+  for (const app of catalogFixture()) {
+    const uses = app.panelUses ?? [];
+    const use = uses.find(entry => entry.path === path);
+    if (use) return Response.json({
+      applicationId: app.id, use, framePanelId: app.framePanelId,
+      menu: { singleEntry: uses.length <= 1, names: app.names, groups: app.groups ?? [], panelUses: uses },
+    });
+  }
+  return Response.json({ error: { message: "Entry not found" } }, { status: 404 });
+}
+
 
 /** The built-in applications this repository ships, as Java declares them. */
 export function builtinApplications(): BuiltinApplication[] {

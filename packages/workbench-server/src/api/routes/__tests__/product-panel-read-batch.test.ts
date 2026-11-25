@@ -75,7 +75,7 @@ beforeEach(() => {
     if (useId === "denied-entry") throw new HttpError(403, "Denied");
     return { text: JSON.stringify({ success: true, data: {
       applicationId: source.applicationId, framePanelId: root,
-      use: { id: useId, pageKey: "list", panelId: "panel-content", path: "/ontology/list", access: { kind: "domain-member" } },
+      use: { id: useId, pageKey: "list", panelId: "panel-content", path: "/ontology/list" },
     } }) };
   });
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture");

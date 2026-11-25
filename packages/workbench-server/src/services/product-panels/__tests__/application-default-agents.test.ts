@@ -22,7 +22,7 @@ const save = productCatalogServerOperations.find(operation => operation.handlerR
 const owner = { domainId: "domain", userId: "reader" };
 const analyst = { kind: "id", id: "agent-analyst" };
 const entry = (defaultAgent?: unknown) => ({
-  id: "use-one", pageKey: "one", panelId: "panel-one", path: "/one", access: { kind: "domain-member" },
+  id: "use-one", pageKey: "one", panelId: "panel-one", path: "/one",
   ...(defaultAgent === undefined ? {} : { defaultAgent }),
 });
 const values = (defaultAgent?: unknown) => ({ entry: { path: "/applications/app-one", renderer: "panels" }, panelUses: [entry(defaultAgent)] });

@@ -22,7 +22,7 @@ export function firstVisiblePanelPath(app: CatalogApplication): string | null {
   const first = ordered.find((use) => Boolean(use.names)) ?? ordered[0];
   return first ? panelUsePath(first.path) : null;
 }
-export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
+export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "home" | "homePage" | "entryHome" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
   { renderer: "personal-workspace", sections: [] },
   // The platform's home draws its own page: no column, no header of the shell's.
@@ -84,7 +84,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     // Operations diagnosis runs inside the shared platform frame: one menu lists remaining native pages and migrated
     // panel entries together. Observers open on turn evidence; readers with user feedback alone open on feedback.
     home: platformRoutes.turn.path,
-    homePermission: "observer",
     entryHome: platformRoutes.feedback.path,
     sections: [
       {
@@ -132,6 +131,9 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
     const firstPanelPath = firstVisiblePanelPath(app);
+    const declaredHome = app.entry.home ?? layout.home;
+    const admittedHome = app.entry.home ?? (layout.home && app.entryPaths?.some(path => panelUsePath(path) === layout.home)
+      ? declaredHome : undefined);
     const entryHome = layout.entryHome
       ? (app.panelUses === undefined
         ? app.entry.path
@@ -143,6 +145,6 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       ...(app.singleEntry !== undefined ? { singleEntry: app.singleEntry } : {}),
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
-      home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home ?? (firstPanelPath ?? undefined) };
+      home: applicationRoute ? applicationRootPath(app.id) : app.kind === "product" ? app.entry.path : admittedHome ?? firstPanelPath ?? undefined };
   });
 }

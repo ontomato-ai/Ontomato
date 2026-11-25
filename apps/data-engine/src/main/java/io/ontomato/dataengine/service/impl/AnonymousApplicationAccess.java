@@ -3,6 +3,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.applications.*;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 @Component
 public class AnonymousApplicationAccess implements ApplicationAccess {
@@ -12,9 +13,7 @@ public class AnonymousApplicationAccess implements ApplicationAccess {
     public boolean administrator(User user) { return true; }
     public void requireConnectedRegistration(User user) {}
     public boolean canMaintain(JSONObject application, User user) { return true; }
-    public boolean canEnter(JSONObject application, User user) { return true; }
-    public java.util.List<PageSkills.Mapping> pageSkills(java.util.List<PageSkills.Mapping> mappings, User user) { return mappings; }
-    public java.util.List<ApplicationPanelUse> panelUses(java.util.List<ApplicationPanelUse> uses, User user) { return uses; }
-    public void declare(JSONObject application, ApplicationCatalog.Declaration declaration, boolean created) {}
-    public void retire(JSONObject application) {}
+    public void initialOpenEntries(User user, Set<String> targetKeys) {}
+    public void requestDomainEntryOpening(User user, String targetKey, boolean open) {}
+    public void retireEntries(String domainId, Set<String> targetKeys) {}
 }

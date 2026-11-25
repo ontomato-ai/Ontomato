@@ -4,12 +4,12 @@ import type { Router } from "vue-router";
 import en from "element-plus/es/locale/lang/en";
 import { managerRoutes, managerStandaloneRoutes } from "@ontomato/ontology-manager";
 import {
-  createPlatformClient, installPlatformPages, openAccess, ossPlatformPages, platformApi,
+  createPlatformClient, installPlatformPages, ossPlatformPages, platformApi,
   platformGroups, sharedPageRoutes,
 } from "@ontomato/platform-admin";
 import platformEn from "@ontomato/platform-admin/locales/en";
 import {
-  createServiceManager, installAppHost, installServiceMessages, readRuntimeConfig, serviceNavigation,
+  catalogueEntryAccess, createServiceManager, installAppHost, installServiceMessages, readRuntimeConfig, serviceNavigation,
   startPage, startShellPreferences, stopPage,
 } from "@ontomato/platform-web";
 import { ossProfile as profile } from "./profile";
@@ -30,7 +30,7 @@ export function ossServicePages(app: App, router: Router) {
   const area = installPlatformPages(app, router, {
     navigation, routes: [...managerRoutes(), ...sharedPageRoutes()], home: startPage(),
     themeProperties: profile.presentation.themeProperties,
-    host: { access: openAccess, api: platformApi(client), preferences, navigation: computed(() => navigation),
+    host: { access: catalogueEntryAccess(), api: platformApi(client), preferences, navigation: computed(() => navigation),
       account: null, links: [], navigationHidden: computed(() => false), systemConfig: ossSystemConfig, separators: { detail: ": " } },
   });
   return [...area, ...managerStandaloneRoutes()];

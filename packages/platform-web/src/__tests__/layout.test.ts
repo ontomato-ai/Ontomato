@@ -115,7 +115,7 @@ describe("the platform layout", () => {
     const panel = {
       ...product, id: "app-panel", names: { en: "Operations panel" }, releaseId: null,
       entry: { path: "/operations-panel", renderer: "panels" },
-      panelUses: ["tasks", "summary"].map(id => ({ id, pageKey: id, panelId: id, path: `/applications/app-panel/${id}`, access: { kind: "domain-member" as const }, names: { en: id } })),
+      panelUses: ["tasks", "summary"].map(id => ({ id, pageKey: id, panelId: id, path: `/applications/app-panel/${id}`, names: { en: id } })),
     };
     const applications = appDeclarations(generatedNavigation(), closedAccess([]), catalogPartition([...catalog, product, panel], "en"), t);
     await wrapper.setProps({ apps: applications, dynamicAppIds: [product.id, panel.id], pinnedAppIds: [] });
@@ -297,12 +297,12 @@ describe("the platform layout", () => {
       ...catalog[0]!, id: "app-open", names: { en: "Open panel" }, kind: "product" as const,
       category: "business" as const, releaseId: null, allowStandalone: true,
       entry: { path: "/applications/app-open", renderer: "panels" },
-      panelUses: [{ id: "tasks", pageKey: "tasks", panelId: "tasks", path: "/applications/app-open/tasks", access: { kind: "domain-member" as const }, names: { en: "Tasks" } }],
+      panelUses: [{ id: "tasks", pageKey: "tasks", panelId: "tasks", path: "/applications/app-open/tasks", names: { en: "Tasks" } }],
     };
     const lockedPanel = {
       ...openPanel, id: "app-locked", names: { en: "Locked panel" }, allowStandalone: false,
       entry: { path: "/applications/app-locked", renderer: "panels" },
-      panelUses: [{ id: "tasks", pageKey: "locked-tasks", panelId: "tasks", path: "/applications/app-locked/tasks", access: { kind: "domain-member" as const }, names: { en: "Tasks" } }],
+      panelUses: [{ id: "tasks", pageKey: "locked-tasks", panelId: "tasks", path: "/applications/app-locked/tasks", names: { en: "Tasks" } }],
     };
     const applications = appDeclarations(generatedNavigation(), closedAccess([]), catalogPartition([...catalog, openPanel, lockedPanel], "en"), t);
     await wrapper.setProps({ apps: applications, dynamicAppIds: [openPanel.id, lockedPanel.id], pinnedAppIds: [] });

@@ -5,7 +5,7 @@ import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import {
-  builtinApplications, catalogFixture, catalogPartitionFixture as appPartition, nativeEntryConflicts,
+  builtinApplications, catalogEntryFixture, catalogFixture, catalogPartitionFixture as appPartition, nativeEntryConflicts,
 } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 
 /*
@@ -58,6 +58,7 @@ function answer(input: FetchInput, init?: FetchInit): Response {
   const request = input instanceof Request ? input : null;
   const url = new URL(request ? request.url : String(input), window.location.origin);
   const key = `${init?.method ?? request?.method ?? "GET"} ${url.pathname.replace(/^\/custom-base\/api/, "")}`;
+  if (key === "GET /product-panels/application-entry") return catalogEntryFixture(url);
   // An application's entries, as Java answers them for a page the panel route opens: the ones its declaration holds.
   const entriesOf = /\/platform\/applications\/([^/]+)\/panel-uses$/.exec(url.pathname)?.[1];
   const declared = entriesOf && catalogFixture().find((app) => app.id === decodeURIComponent(entriesOf));

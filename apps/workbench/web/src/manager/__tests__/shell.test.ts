@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
-import { catalogFixture } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
+import { catalogEntryFixture, catalogFixture } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 
 // The heavy Manager pages (graph libraries, Markdown) are doubled; the router, layout, catalogs and requests are real.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
@@ -61,6 +61,9 @@ describe("open-source Ontology Service page", () => {
     window.__APP_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
     vi.stubGlobal("fetch", async (url: string, init: { headers?: unknown } = {}) => {
       requests.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
+      const parsed = new URL(url, window.location.origin);
+      if (parsed.pathname.endsWith("/product-panels/application-entry") && statusFor(url) === 200)
+        return catalogEntryFixture(parsed);
       // The platform's own answers: the catalog and the agent platform's agent list, which the
       // pages' composer reads (a page at its own address shows it).
       const body = url.includes("/assistant/agents") ? { agents: [] }

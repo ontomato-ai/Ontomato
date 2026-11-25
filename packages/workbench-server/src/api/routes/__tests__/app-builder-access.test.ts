@@ -36,7 +36,7 @@ let runtimeRoot: string;
 const builder: CatalogApplication = {
   id: "app-builder", kind: "native", names: { en: "App Builder" }, descriptions: {},
   icon: "Hammer", rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder" },
-  entryAccess: ["app-builder"], scheduleAdapter: null, releaseId: null,
+  scheduleAdapter: null, releaseId: null,
 };
 
 beforeAll(async () => {

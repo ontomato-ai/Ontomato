@@ -121,7 +121,6 @@ export async function readLiveApplicationSnapshot(
           descriptions: record.descriptions,
           icon: record.icon,
           groups: record.groups,
-          permissions: [],
         },
         ...(record.allowStandalone !== undefined && { allowStandalone: record.allowStandalone }),
         entryPath: record.entry.path,

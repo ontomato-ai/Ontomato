@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
-import { applicationEntryResolutionSchema, isApplicationPanelUse, type ApplicationEntryResolution, type ApplicationEntryResolutionQuery } from "@ontomato/contracts/product-panels";
+import {
+  applicationEntryResolutionSchema, isApplicationPanelUse, panelApplicationEntryUseSchema,
+  type ApplicationEntryResolution, type ApplicationEntryResolutionQuery,
+} from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -11,7 +14,8 @@ import { platformHomeStore, type PlatformHomeOwner } from "../platform-home/stor
 const responseSchema = z.object({ success: z.literal(true), data: applicationEntryResolutionSchema });
 const registeredResponseSchema = z.object({
   success: z.literal(true),
-  data: applicationEntryResolutionSchema.pick({ applicationId: true, use: true, framePanelId: true }),
+  data: applicationEntryResolutionSchema.pick({ applicationId: true, framePanelId: true })
+    .extend({ use: panelApplicationEntryUseSchema }),
 });
 
 export async function personalEntry<T extends Pick<ApplicationEntryResolution, "applicationId" | "use">>(entry: T, owner?: PlatformHomeOwner): Promise<T> {

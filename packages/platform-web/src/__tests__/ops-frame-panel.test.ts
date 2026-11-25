@@ -24,7 +24,7 @@ function opsMenu(granted: readonly string[]): ApplicationEntryMenu {
     names: opsApp.declaration.names,
     groups: opsApp.declaration.groups ?? [],
     panelUses: (opsApp.declaration.panelUses ?? []).filter(
-      (use) => !("permissionCode" in use.access) || granted.includes(use.access.permissionCode),
+      use => granted.includes(use.id === "user-feedback" ? "user-feedback" : "observer"),
     ),
   };
 }

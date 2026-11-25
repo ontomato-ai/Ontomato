@@ -3,7 +3,6 @@ export {
   availableGroups,
   availablePages,
   fallbackPage,
-  openAccess,
   type PlatformAccess,
   type PlatformGroup,
   type PlatformLink,

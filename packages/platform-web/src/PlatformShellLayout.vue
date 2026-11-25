@@ -15,7 +15,7 @@ import {
   providePageHeading,
   provideUnsavedChanges,
 } from "@ontomato/platform-shell";
-import { availablePages, usePlatformHost, type PlatformPage } from "@ontomato/platform-admin";
+import { usePlatformHost, type PlatformPage } from "@ontomato/platform-admin";
 import PlatformLayout from "./PlatformLayout.vue";
 import { localeAutonyms } from "./locale-names";
 import type { PlatformShownPage } from "./PlatformLayout.vue";
@@ -109,23 +109,23 @@ watch(
 // permissions entries shown under ontology governance) has its entry table loaded on demand.
 watch(
   [() => route.path, () => partition.value],
-  ([path, parts]) => {
+  async ([path, parts]) => {
     const active = appAt(declarations.value, path);
     const activePart = active ? parts.find((part) => part.id === active.id) : null;
-    if (!activePart) return;
-    for (const section of activePart.sections) {
-      if (!("paths" in section)) continue;
-      for (const sectionPath of section.paths) {
-        const owner = builtinApplicationForPath(sectionPath);
-        if (owner && owner.panelUses === undefined) {
-          void catalog.ensureApplication(owner.id).catch(() => undefined);
-        }
-      }
-    }
+    const sectionPaths = activePart?.sections.flatMap(section => "paths" in section ? section.paths : []) ?? [];
+    const owners = new Set(sectionPaths.flatMap(entryPath => {
+      const owner = builtinApplicationForPath(entryPath);
+      return owner && owner.panelUses === undefined ? [owner.id] : [];
+    }));
+    await Promise.all([...owners].map(id => catalog.ensureApplication(id)));
   },
   { immediate: true },
 );
-const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, host.access.can("analysis-agent"), t("platform.agentBuilder")));
+const agentBuilder = computed(() => agentBuilderShortcut(
+  declarations.value,
+  host.access.canEnter(platformRoutes.agents.path),
+  t("platform.agentBuilder"),
+));
 const railDeclarations = computed(() => agentBuilder.value ? [...declarations.value, agentBuilder.value] : declarations.value);
 
 /** The page the navigation names for this address; a screen of a page (a detail) names the page it belongs to. */
@@ -278,10 +278,11 @@ onBeforeUnmount(() => {
  * Whether the account may open a page of the navigation: the applications whose column is their own (the agent
  * platform, knowledge governance) list an entry from it, by the same rule the guard and the menus read.
  */
-const hasPageAccess = (path: string) =>
-  Boolean(panelEntryApplication(path)) ||
-  (path === platformRoutes.dashboards.path && Boolean(catalog.applicationById("dashboards"))) ||
-  availablePages(host.navigation.value, host.access).some((page) => page.path === path);
+function authorizedPath(path: string) {
+  const { meta } = router.resolve(path);
+  return typeof meta.entryPath === "string" ? meta.entryPath : typeof meta.page === "string" ? meta.page : path;
+}
+const hasPageAccess = (path: string) => host.access.canEnter(authorizedPath(path));
 
 provide(platformPageAccessKey, hasPageAccess);
 provide(pageAdmissionKey, async (address: string) => {
@@ -289,38 +290,27 @@ provide(pageAdmissionKey, async (address: string) => {
   if (!path.startsWith("/") || path.startsWith("//")) {
     return { ok: false, reason: "unsupported_target", error: { code: "UNSUPPORTED_TARGET", message: "Expected a site-relative path" } };
   }
-  if (path === platformRoutes.dashboards.path) {
-    return hasPageAccess(path)
-      ? { ok: true }
-      : { ok: false, reason: "forbidden", error: { code: "FORBIDDEN", message: t("platform.pageAccessDenied") } };
-  }
-  if (path.startsWith("/applications/") || panelEntryApplication(path) !== null || !hasPageAccess(path)) {
-    try {
-      const resolved = await resolveApplicationEntry({ path });
-      if (!panelEntryApplication(path)) await catalog.ensureApplication(resolved.applicationId).catch(() => undefined);
-      return { ok: true, openedEntry: resolved };
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 403) {
-        return { ok: false, reason: "forbidden", error: { code: "FORBIDDEN", message: error.message } };
-      }
-      if (host.navigation.value.pages.some((page) => page.path === path) && !hasPageAccess(path)) {
-        return { ok: false, reason: "forbidden", error: { code: "FORBIDDEN", message: t("platform.pageAccessDenied") } };
-      }
-      if (error instanceof ApiRequestError && error.status === 404) {
-        return {
-          ok: false,
-          reason: path.startsWith("/applications/") ? "not_found" : "unsupported_target",
-          error: { code: "NOT_FOUND", message: error.message },
-        };
-      }
+  try {
+    const resolved = await resolveApplicationEntry({ path: authorizedPath(path) });
+    if (!panelEntryApplication(path)) await catalog.ensureApplication(resolved.applicationId);
+    return { ok: true, openedEntry: resolved };
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 403) {
+      return { ok: false, reason: "forbidden", error: { code: "FORBIDDEN", message: error.message } };
+    }
+    if (error instanceof ApiRequestError && error.status === 404) {
       return {
         ok: false,
-        reason: "forbidden",
-        error: { code: "ACCESS_CHECK_FAILED", message: error instanceof Error ? error.message : String(error) },
+        reason: path.startsWith("/applications/") ? "not_found" : "unsupported_target",
+        error: { code: "NOT_FOUND", message: error.message },
       };
     }
+    return {
+      ok: false,
+      reason: "forbidden",
+      error: { code: "ACCESS_CHECK_FAILED", message: error instanceof Error ? error.message : String(error) },
+    };
   }
-  return { ok: true };
 });
 provide(platformApplicationNameKey, (id: string) => declarations.value.find((app) => app.id === id)?.label ?? id);
 

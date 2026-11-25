@@ -192,7 +192,7 @@ beforeAll(async () => {
       res.json({ success: true, data: {
         applicationId: "app-nested", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: "main", pageKey: "main", path: "/applications/app-nested/main",
-          panelId: nestedRootId, access: { kind: "domain-member" } },
+          panelId: nestedRootId },
       } });
       return;
     }
@@ -200,7 +200,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: "app-personal", menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: "main", pageKey: "main", path: "/applications/app-personal/main",
-        panelId: personalPanelId, access: { kind: "domain-member" } },
+        panelId: personalPanelId },
     } });
   });
   app.use("/api", (req, _res, next) => {

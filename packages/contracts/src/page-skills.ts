@@ -4,20 +4,20 @@ import { defaultAgentSchema } from "./default-agent";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 
 const pageKeySchema = z.string().min(1);
-const permissionCodeSchema = z.string().min(1);
-const domainMemberLocator = z.object({ access: z.literal("domain-member"), pageKey: pageKeySchema }).strict();
-
-export const pageSkillLocatorSchema = z.union([
-  z.object({ permissionCode: permissionCodeSchema }).strict(),
-  domainMemberLocator,
-]);
+export const pageSkillLocatorSchema = z.object({
+  applicationId: z.string().min(1),
+  entryKey: z.string().min(1),
+  pageKey: pageKeySchema,
+}).strict();
 export type PageSkillLocator = z.infer<typeof pageSkillLocatorSchema>;
 
-export const pageSkillEntranceSchema = z.union([
-  z.object({ permissionCode: permissionCodeSchema, pageKey: pageKeySchema }).strict(),
-  domainMemberLocator,
-]);
-export type PageSkillEntrance = z.infer<typeof pageSkillEntranceSchema>;
+export const pageSkillEntranceSchema = pageSkillLocatorSchema;
+export type PageSkillEntrance = PageSkillLocator;
+
+/** Compare an entry's identity and its current page location. */
+export function pageSkillPlacementKey({ applicationId, entryKey, pageKey }: PageSkillEntrance): string {
+  return JSON.stringify([applicationId, entryKey, pageKey]);
+}
 
 export const pageSkillDefaultSchema = z.object({
   pageKey: pageKeySchema,
@@ -66,20 +66,13 @@ const pageSkillFields = {
   defaults: z.array(pageSkillDefaultSchema).optional(),
 };
 
-/** The application owns the mapping; leaf pages retain their existing menu codes. */
-const pageSkillMappings = [
-  z.object({ permissionCode: z.string().min(1), ...pageSkillFields }).strict(),
-  z.object({ access: z.literal("domain-member"), pageKey: z.string().min(1), ...pageSkillFields }).strict(),
-] as const;
-export const pageSkillSchema = z.union(pageSkillMappings);
+/** An application declaration already supplies the enclosing application ID. */
+export const pageSkillSchema = pageSkillEntranceSchema.omit({ applicationId: true }).extend(pageSkillFields);
 export type PageSkill = z.infer<typeof pageSkillSchema>;
 
-/** Java's initiator projection carries a public skill only when the admitted group has one. */
+/** Java's initiator projection carries a public skill only when the admitted entry has one. */
 export const pageSkillsProjectionSchema = z.object({
-  pageSkills: z.array(z.union([
-    pageSkillMappings[0].partial({ skill: true }),
-    pageSkillMappings[1].partial({ skill: true }),
-  ])),
+  pageSkills: z.array(pageSkillEntranceSchema.extend(pageSkillFields).partial({ skill: true })),
   registeredSkills: z.array(runtimeSkillRefSchema),
   admittedEntrances: z.array(pageSkillEntranceSchema).optional(),
 }).strict();
@@ -97,9 +90,6 @@ const queryPageSkillMemberSchema = z.string().transform((value, ctx) => {
 /** A member query carries the complete snapshot member in one URL parameter. */
 export const assistantAgentsQuerySchema = z.union([
   z.object({}).strict(),
-  z.object({ pageKey: pageKeySchema, permissionCode: permissionCodeSchema }).strict(),
-  domainMemberLocator,
-  z.object({ pageKey: pageKeySchema, permissionCode: permissionCodeSchema, member: queryPageSkillMemberSchema }).strict(),
-  z.object({ access: z.literal("domain-member"), pageKey: pageKeySchema, member: queryPageSkillMemberSchema }).strict(),
+  pageSkillEntranceSchema.extend({ member: queryPageSkillMemberSchema.optional() }),
 ]);
 export type AssistantAgentsQuery = z.infer<typeof assistantAgentsQuerySchema>;

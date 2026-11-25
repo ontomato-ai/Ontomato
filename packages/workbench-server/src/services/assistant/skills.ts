@@ -1,4 +1,4 @@
-import { configuredAssistantSkills, isAppBuilderEntrance } from "./skill-selection";
+import { configuredAssistantSkills } from "./skill-selection";
 import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL, isAppBuilderKind } from "../app-builder/definition";
@@ -14,7 +14,7 @@ import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
 import { decideDomainSkills } from "../skills/authorization";
 import { requireAllowed } from "../product-governance/authorization";
-import { isStoredProtectedSkillRef, readSkillView, resolveCurrentPageSkillMember, validateApplicationPageSkillEntry, type AuthorizedPageSkillMember } from "../skills/view";
+import { isStoredProtectedSkillRef, pageSkillDefaultAgent, readSkillView, resolveCurrentPageSkillMember, validateApplicationPageSkillEntry, type AuthorizedPageSkillMember } from "../skills/view";
 import {
   publishOntologyAssistantSkill, publishSkill, publishSkillPackage, workbenchBuiltinSkillRoot,
 } from "../agent-runtime/skills";
@@ -123,15 +123,17 @@ export function effectiveAssistantSkills(
   agent: { kind: string; skills: readonly RuntimeSkillRef[] },
   view: Pick<AssistantSkillView, "pageSkills" | "hasSkill">,
 ): RuntimeSkillRef[] {
+  const presetPageSkills = (kind: string) => view.pageSkills.flatMap(group => {
+    const target = pageSkillDefaultAgent(group);
+    return target?.kind === "preset" && target.agentKind === kind ? group.skills : [];
+  });
   const pageSkills = isOpsDiagnosisKind(agent.kind)
-    ? view.pageSkills
-        .filter(group => "permissionCode" in group.locator && group.locator.permissionCode === "observer")
-        .flatMap(group => group.skills)
+    ? presetPageSkills(agent.kind)
     : view.pageSkills.flatMap(group => group.skills);
   return configuredAssistantSkills(
     { kind: agent.kind, skills: agent.skills.filter(view.hasSkill) },
     pageSkills,
-    view.pageSkills.filter(group => isAppBuilderEntrance(group.locator)).flatMap(group => group.skills),
+    isAppBuilderKind(agent.kind) ? presetPageSkills(agent.kind) : [],
   );
 }
 

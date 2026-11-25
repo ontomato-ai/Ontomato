@@ -7,7 +7,6 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import { restoreAgentCaller } from "../agent-host/caller";
 import { sessionBuildTestWorkspace, WorkspaceBuildTests } from "../app-builder/build-tests";
-import type { PageSkillEntrance, PageSkillSource } from "@ontomato/contracts/page-skills";
 import { authoringAdoptionResponseSchema, type AuthoringKind, type AuthoringHostRun, type AuthoringHistoricalRun, type authoringOperations } from "@ontomato/contracts/authoring";
 import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource } from "./skills";
 import { agentExecutionCredentials, ownedRun } from "./execution";
@@ -39,29 +38,11 @@ function java(path: string, domainId: string, body: unknown, credentials: Assist
   });
 }
 
-// Authoring follows these product-owned uses (catalog and detail entries), including when a locator has several members.
-const authoringSources = {
-  action: [
-    {
-      entrance: { permissionCode: "action-management", pageKey: "actions" },
-      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-actions" },
-    },
-    {
-      entrance: { permissionCode: "action-management", pageKey: "action-detail" },
-      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-action-detail" },
-    },
-  ],
-  "metric-view": [
-    {
-      entrance: { permissionCode: "ontology-modeling", pageKey: "metric-views" },
-      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-metric-views" },
-    },
-    {
-      entrance: { permissionCode: "ontology-modeling", pageKey: "metric-view-detail" },
-      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-metric-view-detail" },
-    },
-  ],
-} satisfies Record<AuthoringKind, readonly { entrance: PageSkillEntrance; source: PageSkillSource }[]>;
+// Authoring follows the registered catalogue and detail uses.
+const authoringUses = {
+  action: ["ontology-actions", "ontology-action-detail"],
+  "metric-view": ["ontology-metric-views", "ontology-metric-view-detail"],
+} satisfies Record<AuthoringKind, readonly string[]>;
 
 async function authoringRun(
   owner: AssistantOwner,
@@ -81,8 +62,12 @@ async function authoringRun(
     if (appBuilderOnly) throw new HttpError(403, "The App Builder skill is required", "FORBIDDEN");
     const view = await readAssistantSkillView(owner.domainId, credentials, owner.userId);
     let admitted = false;
-    for (const { entrance, source } of authoringSources[kind]) {
-      const ref = await resolvePageSkillSource(view, entrance, source, []);
+    for (const useId of authoringUses[kind]) {
+      const applicationId = "ontology";
+      const group = view.pageSkills.find(({ locator }) =>
+        locator.applicationId === applicationId && locator.entryKey === useId);
+      if (!group) continue;
+      const ref = await resolvePageSkillSource(view, group.locator, { kind: "application-use", applicationId, useId }, []);
       if (ref && loadedPageSkillVersion(ref, run.resolvedSkills)) {
         admitted = true;
         break;

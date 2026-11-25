@@ -22,12 +22,12 @@ vi.mock("../../assistant/skills", () => ({
 }));
 vi.mock("../../product-panels/application-use", () => ({
   requirePanelUseEntry: async () => ({
+    applicationId: "ontology",
     use: {
       id: "use-bk",
       panelId: "panel-bk",
       pageKey: "business-knowledge",
       path: "/ontology/knowledge",
-      access: { access: "domain-member" as const },
       inputs: {},
     },
     framePanelId: undefined,

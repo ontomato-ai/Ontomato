@@ -168,7 +168,7 @@ it("omits unprovided detail fields and preserves a frame panel as a typed refere
 
   const panels = applicationCatalogueRecordSchema.parse({
     ...legacy, source: "domain", canMaintain: true, canEditEntries: true, canGrant: true,
-    entry: { ...legacy.entry, renderer: "panels", home: "/applications/app-public/start" },
+    entry: { ...legacy.entry, renderer: "panels", home: "/applications/app-public/start", entryKey: "start" },
     framePanelId: "frame-panel",
   });
   expect(panelRecordSchema.parse(toApplicationPanelRecord(panels, "en"))).toMatchObject({

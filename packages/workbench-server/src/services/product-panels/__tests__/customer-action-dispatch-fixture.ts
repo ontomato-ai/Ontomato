@@ -71,13 +71,13 @@ vi.mock("../current", () => ({
   },
 }));
 vi.mock("../application-use", () => ({
-  requirePanelUseEntry: async () => ({
+  requirePanelUseEntry: async (...[, ref]: Parameters<typeof import("../application-use").requirePanelUseEntry>) => ({
+    applicationId: ref.applicationId,
     use: {
       id: "orders-use",
       panelId: "panel-orders",
       pageKey: "orders",
       path: "/applications/app-1/orders",
-      access: { kind: "domain-member" as const },
     },
     framePanelId: undefined,
   }),
@@ -170,7 +170,6 @@ export const use = {
   panelId: "panel-orders",
   pageKey: "orders",
   path: "/applications/app-1/orders",
-  access: { kind: "domain-member" as const },
 };
 
 afterEach(() => {

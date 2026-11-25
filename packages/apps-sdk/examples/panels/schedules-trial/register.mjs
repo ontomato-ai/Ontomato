@@ -52,10 +52,10 @@ async function main() {
   await client.register({
     projections: projections.map(({ id, input }) => ({ id, mode, revision: expected[id], input: productProjectionInputSchema.parse(input) })),
     panels: panelItems,
-    applications: applications.map(({ applicationId: id, entry, panelUses, declaration, entryAccess }) => ({
+    applications: applications.map(({ applicationId: id, entry, panelUses, declaration, initialOpenEntryIds }) => ({
       id, mode,
       input: registerApplicationPanelUsesRequestSchema.parse({
-        entry, panelUses, ...(creating ? { declaration, entryAccess } : {}),
+        entry, panelUses, ...(creating ? { declaration, initialOpenEntryIds } : {}),
       }),
     })),
   }, (kind, id) => console.log(`${kind} ${id}`));

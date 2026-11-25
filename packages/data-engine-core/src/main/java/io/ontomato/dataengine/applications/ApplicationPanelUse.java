@@ -18,7 +18,7 @@ import org.springframework.web.util.UriUtils;
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApplicationPanelUse(String id, String pageKey, String panelId, String path,
-                                  Access access, DefaultAgentTarget defaultAgent, Map<String, String> names,
+                                  DefaultAgentTarget defaultAgent, Map<String, String> names,
                                   @JsonDeserialize(using = DescriptionsDeserializer.class) Map<String, String> descriptions,
                                   Map<String, Map<String, Object>> inputs, String groupKey, String icon, String kind,
                                   String pageComposer) {
@@ -27,32 +27,32 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     public static final String PAGE_COMPOSER_BOTTOM = "bottom";
     public static final String PAGE_COMPOSER_NONE = "none";
 
-    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                DefaultAgentTarget defaultAgent, Map<String, String> names) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null, null, null, null, null);
+        this(id, pageKey, panelId, path, defaultAgent, names, null, null, null, null, null, null);
     }
-    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                DefaultAgentTarget defaultAgent, Map<String, String> names,
                                Map<String, Map<String, Object>> inputs, String groupKey) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, inputs, groupKey, null, null, null);
+        this(id, pageKey, panelId, path, defaultAgent, names, null, inputs, groupKey, null, null, null);
     }
-    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                DefaultAgentTarget defaultAgent, Map<String, String> names,
                                Map<String, String> descriptions,
                                Map<String, Map<String, Object>> inputs, String groupKey) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, inputs, groupKey, null, null, null);
+        this(id, pageKey, panelId, path, defaultAgent, names, descriptions, inputs, groupKey, null, null, null);
     }
-    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                DefaultAgentTarget defaultAgent, Map<String, String> names,
                                Map<String, String> descriptions,
                                Map<String, Map<String, Object>> inputs, String groupKey, String icon) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, inputs, groupKey, icon, null, null);
+        this(id, pageKey, panelId, path, defaultAgent, names, descriptions, inputs, groupKey, icon, null, null);
     }
-    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                DefaultAgentTarget defaultAgent, Map<String, String> names,
                                Map<String, String> descriptions,
                                Map<String, Map<String, Object>> inputs, String groupKey, String icon, String kind) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, inputs, groupKey, icon, kind, null);
+        this(id, pageKey, panelId, path, defaultAgent, names, descriptions, inputs, groupKey, icon, kind, null);
     }
 
     /** True when this entry points to a built-in native page rather than a product panel. */
@@ -94,18 +94,13 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
         }
     }
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Access(String permissionCode, String kind) {}
-
-    public String locator() { return PageSkills.locator(access.permissionCode(), access.kind(), pageKey); }
-
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses) {
         return canonical(uses, false);
     }
 
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses, boolean allowNative) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
-            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs,
+            canonicalPath(use.path), use.defaultAgent, use.names, use.descriptions, use.inputs,
             use.groupKey, use.icon, use.kind, use.pageComposer)).toList();
         validate(normalized, allowNative);
         return normalized;
@@ -148,12 +143,9 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
         var pages = new HashSet<String>();
         var paths = new HashSet<String>();
         for (var use : uses) {
-            if (use.id() == null || use.id().isBlank() || !ids.add(use.id())
+            if (!ApplicationCatalog.validEntryKey(use.id()) || !ids.add(use.id())
                 || use.pageKey() == null || use.pageKey().isBlank() || !pages.add(use.pageKey())
-                || !paths.add(use.path())
-                || use.access() == null || (use.access().permissionCode() == null) == (use.access().kind() == null)
-                || use.access().permissionCode() != null && use.access().permissionCode().isBlank()
-                || use.access().kind() != null && !use.access().kind().equals("domain-member"))
+                || !paths.add(use.path()))
                 throw ApplicationCatalog.bad("Invalid or duplicate panel use");
             if (use.kind() != null) {
                 if (use.nativeEntry() && !allowNative)

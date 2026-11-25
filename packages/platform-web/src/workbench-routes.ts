@@ -25,7 +25,7 @@ function agentBuilderRedirect(to: { params: RouteParamsGeneric; query: LocationQ
 }
 
 export function legacyAgentSettingsTab(to: { path: string; query: LocationQuery }): RouteLocationRaw | undefined {
-  return to.path === routes.agents.path ? capabilityTabLink(to) : undefined;
+  return to.path === routes.agents.path || to.path === "/agents" ? capabilityTabLink(to) : undefined;
 }
 
 /** Native workbench pages and legacy addresses. Both agent settings entries are mounted by the panel entry guard. */
@@ -41,13 +41,11 @@ export function workbenchPages(
     ...[routes.ontologyMcp, routes.agentSettingsMcp].map(
       (location) => ({ ...location, redirect: routes.externalMcp.path }),
     ),
-    { ...routes.chat, component, meta: { workbench: true } },
+    { ...routes.chat, component, meta: { workbench: true, entryPath: routes.chat.path } },
     // The builder's old top-level entry turns to the agent platform's settings.
     ...([{ path: "/agent-builder" }, { path: "/agent-builder/:agentId" }] as const).map(
       (location): RouteRecordRaw => ({ ...location, redirect: (to) => agentBuilderRedirect(to) }),
     ),
-    // The application's prefix is no page: the old tab link lands on the skills, and anything else opens the conversation.
-    { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
     // The old agent platform models direct link forwards to the model usage page.
     { path: "/agents/settings/models", redirect: routes.usage.path },
     { path: "/settings/model-config/agents", redirect: routes.usage.path },
@@ -68,14 +66,14 @@ export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
     path: "/app-builder/:workspaceId/hosted-preview",
     component: () => import("./pages/HostedPreviewRoute.vue"),
     props: true,
-    meta: { workbench: true, ...meta },
+    meta: { workbench: true, ...meta, entryPath: "/app-builder" },
   },
   {
     name: "PanelCandidatePreview",
     path: "/app-builder/:workspaceId/panel-preview/:ref/:pageKey",
     component: () => import("./pages/PanelCandidateRoute.vue"),
     props: (route) => ({ workspaceId: route.params.workspaceId, revision: route.params.ref, pageKey: route.params.pageKey }),
-    meta: { workbench: true, ...meta },
+    meta: { workbench: true, ...meta, entryPath: "/app-builder" },
   },
   {
     path: "/app-builder/:appId",

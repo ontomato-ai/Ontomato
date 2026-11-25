@@ -1,7 +1,7 @@
 import type { Component } from "vue";
 
 /**
- * One page of the Ontology Service navigation: its route path (hash), the capability that grants access and how its
+ * One page of the Ontology Service navigation: its route path (hash) and how its
  * navigation row looks. Ontology, asset and knowledge pages (the Manager's) and platform administration pages are all
  * entries of the same navigation.
  */
@@ -16,18 +16,12 @@ export interface PlatformPage {
   icon?: Component;
   /** The page draws its own page header (the Manager pages); otherwise the layout draws title and description. */
   ownHeader?: boolean;
-  /**
-   * Permission codes that grant this page: the page is enterable with any one of them.
-   * An empty list means no permission is required (open source runs no permission logic).
-   */
-  permissions: readonly string[];
   /** Menu group this page belongs to; pages whose group is not visible are not listed. */
   group: string;
   /**
-   * The page can be entered without its permissions (it is still listed only with them). The license page is the
-   * landing for a failed license check, when the account's permissions cannot be read.
+   * The license page can display the recovery form when the service requires license activation.
    */
-  enterableWithoutPermission?: boolean;
+  licenseRecovery?: boolean;
 }
 
 /**
@@ -59,33 +53,24 @@ export interface PlatformGroup {
   titleKey: string;
 }
 
-/** The access check: `can` answers whether the signed-in account holds a permission code. Open source always allows. */
+export type EntryAdmission = "allowed" | "denied" | "license-required";
+
+/** Entry projections for navigation and a fresh admission check when a page opens. */
 export interface PlatformAccess {
   readonly ready: boolean;
   /** Why the permissions could not be read; null when they were read (or need no reading). */
   readonly error: string | null;
-  can(permission: string): boolean;
+  canEnter(path: string): boolean;
+  verifyEntry(path: string): Promise<EntryAdmission>;
   /** Resolves once the permissions are read (or failed to be read); the router guard waits for it. */
   load(): Promise<void>;
 }
 
-/** Open source runs no permission logic: every page is available. */
-export const openAccess: PlatformAccess = {
-  ready: true,
-  error: null,
-  can: () => true,
-  load: () => Promise.resolve(),
-};
-
 /**
- * Pages available to the current account, in navigation order: a page with no required permissions is always
- * available. This is the single rule the menu, the router guard and the first-available-page redirect all read, so they
- * cannot disagree.
+ * Pages available to the current account, in navigation order, as projected by the application catalogue.
  */
 export function availablePages(navigation: PlatformNavigation, access: PlatformAccess): PlatformPage[] {
-  return navigation.pages.filter(
-    (page) => page.permissions.length === 0 || page.permissions.some((permission) => access.can(permission))
-  );
+  return navigation.pages.filter(page => access.canEnter(page.path));
 }
 
 /** Groups that have at least one available page, in navigation order. */

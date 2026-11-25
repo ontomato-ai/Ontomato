@@ -75,15 +75,14 @@ function application(appId: string): ApplicationSourceManifest {
       descriptions: { en: "Track supplies", "zh-CN": "跟踪物料" },
       icon: "builder",
       groups: [{ key: "main", names: { en: "Main" }, sort: 0 }],
-      permissions: [{ code: `${appId}.entry`, names: { en: "Open" }, groupKey: "main", sort: 0 }],
     },
     entry: { path: `/applications/${appId}`, renderer: "panels" },
-    entryAccess: [`${appId}.entry`], allowStandalone: false,
+    initialOpenEntryIds: [], allowStandalone: false,
     framePanelId: "builtin-product-platform-frame",
     theme: { light: { "--color-text-primary": "#223344" }, dark: { "--color-text-primary": "#eee" } },
     panelUses: [{
       id: "main", pageKey: "inventory", path: `/applications/${appId}/main`, panelId,
-      access: { permissionCode: `${appId}.entry` }, groupKey: "main", pageComposer: "none",
+      groupKey: "main", pageComposer: "none",
       inputs: { account: { literal: "school" } }, defaultAgent: { kind: "preset", agentKind: "app-builder" },
       icon: "builder", names: { en: "Inventory", "zh-CN": "库存" },
       descriptions: { en: "Stock", "zh-CN": "存货" },
@@ -227,7 +226,8 @@ beforeEach(() => {
     if (id === "panel-uses") {
       expect(searchParams.get("purpose")).toBe("management");
       const appId = pathname.split("/").at(-2)!;
-      return answer({ success: true, data: { applicationId: appId, ...apps.get(appId)! } });
+      const { initialOpenEntryIds: _opening, ...app } = apps.get(appId)!;
+      return answer({ success: true, data: { applicationId: appId, ...app } });
     }
     const app = apps.get(id);
     if (!app) throw new HttpError(404, "No application", "NOT_FOUND");
@@ -326,13 +326,14 @@ it("publishes a derived source with identical application payload, panel, projec
   const context = await ensureMaterializedWorkspace(owner, credentials, "app-roundtrip");
   const baseline = context.lastSyncedFingerprint;
   const parsed = parseApplicationSource(workspaces.get(context.workspaceId)!.working);
+  const { initialOpenEntryIds: _opening, ...storedApplication } = original;
   expect(parsed).toEqual({
-    kind: "panel-app", application: original,
+    kind: "panel-app", application: storedApplication,
     panels: [{ id: panelId, input: originalPanel }], projections: [{ id: projectionId, input: projection }],
   });
   await publishApplicationBuilderSource(owner, credentials, "app-roundtrip", { commit: context.lastSyncedCommit! });
-  expect(backendPut).toHaveBeenCalledWith("application-catalogue-publish-source", expect.stringContaining("/panel-uses"), original, expect.anything());
-  expect(apps.get("app-roundtrip")).toEqual(original);
+  expect(backendPut).toHaveBeenCalledWith("application-catalogue-publish-source", expect.stringContaining("/panel-uses"), storedApplication, expect.anything());
+  expect(apps.get("app-roundtrip")).toEqual(storedApplication);
   expect(context.lastSyncedFingerprint).toEqual(baseline);
   expect(saveCurrentPanel).not.toHaveBeenCalled();
   expect(saveCurrentProjection).not.toHaveBeenCalled();

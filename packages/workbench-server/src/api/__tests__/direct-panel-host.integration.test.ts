@@ -93,7 +93,7 @@ const builtinProjectionId = "builtin-product-components-fixture";
 const builtinUse = {
   applicationId: "app-builtin-fixture", useId: "catalogue", panelId: builtinPanelId,
   path: "/applications/app-builtin-fixture/catalogue",
-  entrance: { access: "domain-member" as const, pageKey: "catalogue" },
+  entrance: { applicationId: "app-builtin-fixture", entryKey: "catalogue", pageKey: "catalogue" },
 };
 let builtinUses: (typeof builtinUse)[] = [];
 let framedEntryRegistered = false;
@@ -208,8 +208,8 @@ beforeAll(async () => {
     expect(req.query.purpose).toBe("navigation");
     res.json({ success: true, data: req.header("tk") !== "host-reader" ? [] : [{
       id: "app-builder", kind: "native", names: { en: "App Builder" }, descriptions: {}, icon: "Hammer",
-      rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder" },
-      entryAccess: ["app-builder"], scheduleAdapter: null, releaseId: null,
+      rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder", renderer: "app-builder", entryKey: "app-builder" },
+      scheduleAdapter: null, releaseId: null,
     }] });
   });
   app.get("/ontology/model/object-types", (req, res) => {
@@ -255,7 +255,7 @@ beforeAll(async () => {
       res.json({ success: true, data: {
         applicationId: "app-builtin-fixture", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: "catalogue", pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
-          panelId: builtinPanelId, access: { kind: "domain-member" } },
+          panelId: builtinPanelId },
       } });
       return;
     }
@@ -266,7 +266,7 @@ beforeAll(async () => {
       res.json({ success: true, data: {
         applicationId: "app-frame-host", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: useId, pageKey: useId, path: `/applications/app-frame-host/${useId}`,
-          panelId: useId === "operable" ? frameOperationContentId : frameHostContentId, access: { kind: "domain-member" } },
+          panelId: useId === "operable" ? frameOperationContentId : frameHostContentId },
         ...((useId === "framed" || useId === "hidden") && { framePanelId: frameHostPanelId }),
         ...(useId === "operable" && { framePanelId: state.operationFrameId }),
       } });
@@ -277,7 +277,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: "app-mixed", menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: "mixed", pageKey: "mixed", path: "/applications/app-mixed/mixed",
-        panelId: codePanelId, access: { kind: "domain-member" } },
+        panelId: codePanelId },
     } });
   });
   app.post("/platform/scheduled-tasks/:taskId/runs", (req, res) => {

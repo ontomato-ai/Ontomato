@@ -19,7 +19,7 @@ const catalogue = {
   data: examples.applicationsEnglish.response.applications.map(({ id }) => ({
     id, kind: "native", names: { en: id === "operations" ? "Operations center" : id },
     descriptions: {}, icon: "apps", rail: "apps", category: "business", sort: 0,
-    entry: { path: `/${id}` }, entryAccess: ["domain-member"], scheduleAdapter: `java:${id}`, releaseId: null,
+    entry: { path: `/${id}`, entryKey: id }, scheduleAdapter: `java:${id}`, releaseId: null,
   })),
 };
 

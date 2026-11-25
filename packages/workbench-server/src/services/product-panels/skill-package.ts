@@ -7,7 +7,7 @@ import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/c
 import {
   panelManifestSchema, panelOperationId,
 } from "@ontomato/contracts/panel-manifest";
-import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
+import { pageSkillPlacementKey } from "@ontomato/contracts/page-skills";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import { declaredCustomerFormSaveName, directReadDeclaration, projectionOperationIsRowScoped, projectionReadReference } from "@ontomato/contracts/panel-projection";
 import {
@@ -33,10 +33,6 @@ const verbs = new Intl.ListFormat("en", { type: "conjunction" });
 
 function fingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function entranceKey(entrance: PageSkillEntrance): string {
-  return JSON.stringify(["permissionCode" in entrance ? entrance.permissionCode : null, entrance.pageKey]);
 }
 
 function panelSkillManifest(skill: RuntimeSkillRef, panel: PanelDescription, sourceFingerprint: string): StandardSkillFrontmatter {
@@ -120,7 +116,7 @@ export async function panelSkillSources(
   return Promise.all([...panels].map(async ([id, panelSources]): Promise<ProtectedSkillOffering | SkillSourceFailure> => {
     const scope = panelSkillScope(id);
     const row = await findCurrentProduct(domainId, "panel", id);
-    const entrances = [...new Map(panelSources.map(({ entrance }) => [entranceKey(entrance), entrance])).values()];
+    const entrances = [...new Map(panelSources.map(({ entrance }) => [pageSkillPlacementKey(entrance), entrance])).values()];
     let dependencies: z.infer<typeof panelDependencies>;
     try {
       dependencies = parseDefinition(panelDependencies, row, id);
@@ -177,8 +173,8 @@ export async function panelSkillSources(
       async provide(skill, context) {
         const { description, locale, fingerprint: sourceFingerprint } = await read();
         const fixedKeys = (context?.entryInputKeys ?? []).filter(key => Object.hasOwn(description.state, key));
-        const admitted = context?.admittedEntrances && new Set(context.admittedEntrances.map(entranceKey));
-        const available = panelSources.filter(({ entrance }) => !admitted || admitted.has(entranceKey(entrance)))
+        const admitted = context?.admittedEntrances && new Set(context.admittedEntrances.map(pageSkillPlacementKey));
+        const available = panelSources.filter(({ entrance }) => !admitted || admitted.has(pageSkillPlacementKey(entrance)))
           .sort((a, b) => a.path.localeCompare(b.path, "en") || a.applicationId.localeCompare(b.applicationId, "en")
             || a.useId.localeCompare(b.useId, "en"));
         const fixed = new Set(fixedKeys);

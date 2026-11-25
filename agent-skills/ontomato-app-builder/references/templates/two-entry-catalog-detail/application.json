@@ -3,8 +3,9 @@
     "path": "/applications/app-template-two-entry/catalog",
     "renderer": "panels"
   },
-  "entryAccess": [
-    "domain-member"
+  "initialOpenEntryIds": [
+    "template-two-entry-catalog-use",
+    "template-two-entry-detail-use"
   ],
   "declaration": {
     "descriptions": {
@@ -12,7 +13,6 @@
       "zh-CN": "两入口目录与详情模板"
     },
     "groups": [],
-    "permissions": [],
     "names": {
       "en": "Agent Definitions",
       "zh-CN": "智能体定义"
@@ -25,9 +25,6 @@
       "pageKey": "app-template-two-entry-catalog",
       "panelId": "template-two-entry-catalog",
       "path": "/applications/app-template-two-entry/catalog",
-      "access": {
-        "kind": "domain-member"
-      },
       "names": {
         "en": "Agent Definitions",
         "zh-CN": "智能体定义"
@@ -37,10 +34,7 @@
       "id": "template-two-entry-detail-use",
       "pageKey": "app-template-two-entry-detail",
       "panelId": "template-two-entry-detail",
-      "path": "/applications/app-template-two-entry/detail",
-      "access": {
-        "kind": "domain-member"
-      }
+      "path": "/applications/app-template-two-entry/detail"
     }
   ]
 }

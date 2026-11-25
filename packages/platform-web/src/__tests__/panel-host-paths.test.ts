@@ -234,7 +234,7 @@ describe("the panel host's addresses", () => {
 
   it("sends each read to the address its owner serves", async () => {
     const { candidatePanelHost, panelAuthorDefinitions, platformPanelHost, resolveApplicationEntry } = await import("../panel-host");
-    const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", access: { kind: "domain-member" as const } };
+    const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", };
     const port = platformPanelHost("app-a", use, () => {});
     // Java resolves the entry an address opens; what it answers is the stand-in's business here.
     await resolveApplicationEntry({ path: "/applications/app-a/tasks" }).catch(() => {});
@@ -266,7 +266,7 @@ describe("the panel host's addresses", () => {
 });
 
 it("refreshes a cached frame default for an entry opened beside a conversation", async () => {
-  const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", access: { kind: "domain-member" as const } };
+  const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", };
   const framePanelId = "term-frame";
   const frameManifest = (term: string) => definePanel({
     state: { term: { type: { kind: "scalar", type: "string" }, external: true, deepLink: true, default: term } },
@@ -384,7 +384,6 @@ describe("controlled personal state fields", () => {
     pageKey: "personal-ext-wired",
     panelId: "panel-personal-ext",
     path: "/applications/app-a/personal-ext-wired",
-    access: { kind: "domain-member" as const },
     inputs: { term: { frameState: "term" } },
   };
   const unwiredUse = {
@@ -392,7 +391,6 @@ describe("controlled personal state fields", () => {
     pageKey: "personal-ext-unwired",
     panelId: "panel-personal-ext",
     path: "/applications/app-a/personal-ext-unwired",
-    access: { kind: "domain-member" as const },
   };
   const termAndDensityManifest = definePanel({
     state: {
@@ -792,7 +790,6 @@ describe("controlled personal state fields", () => {
       pageKey: "nested-outer",
       panelId: "panel-nested-outer",
       path: "/applications/app-a/nested-outer",
-      access: { kind: "domain-member" as const },
     };
     const storage: Record<string, unknown> = { term: "summer", density: "comfortable" };
     const reads: { memberPath: unknown[]; fields: string[] }[] = [];
@@ -884,7 +881,6 @@ describe("controlled personal state fields", () => {
       pageKey: "personal-prefs",
       panelId: "panel-personal-prefs",
       path: "/applications/app-a/personal-prefs",
-      access: { kind: "domain-member" as const },
     };
     const prefsManifest = definePanel({
       state: {
@@ -948,7 +944,6 @@ describe("controlled personal state fields", () => {
       pageKey: "personal-revert",
       panelId: "panel-personal-revert",
       path: "/applications/app-a/personal-revert",
-      access: { kind: "domain-member" as const },
     };
     const prefsManifest = definePanel({
       state: {
@@ -1064,7 +1059,6 @@ describe("dynamic and nested member projection access verification", () => {
       pageKey: "proj-catalog",
       panelId: "panel-proj-catalog",
       path: "/applications/app-a/proj-catalog",
-      access: { kind: "domain-member" as const },
     };
     const projP = makeProjection("proj-dynamic-p", "Cached Projection P");
     // Pre-populate the client cache within the same login session.
@@ -1127,7 +1121,6 @@ describe("dynamic and nested member projection access verification", () => {
       pageKey: "proj-switch",
       panelId: "panel-proj-switch",
       path: "/applications/app-a/proj-switch",
-      access: { kind: "domain-member" as const },
     };
     const proj1 = makeProjection("proj-switch-1", "Projection One");
     const proj2 = makeProjection("proj-switch-2", "Projection Two");
@@ -1208,7 +1201,6 @@ describe("dynamic and nested member projection access verification", () => {
       pageKey: "panel-catalog",
       panelId: "panel-catalog-outer",
       path: "/applications/app-a/panel-catalog",
-      access: { kind: "domain-member" as const },
     };
     const projP = makeProjection("proj-nested-p", "Nested Cached Projection P");
     // Pre-populate the client cache within the same login session.
@@ -1283,7 +1275,6 @@ describe("dynamic and nested member projection access verification", () => {
       pageKey: "fixed-fast",
       panelId: "panel-fixed-fast",
       path: "/applications/app-a/fixed-fast",
-      access: { kind: "domain-member" as const },
     };
     const projFixed = makeProjection("proj-fixed-fast", "Fixed Projection Fast");
     const fixedManifest = definePanel({
@@ -1364,7 +1355,6 @@ describe("dynamic and nested member projection access verification", () => {
       pageKey: "cold-reconcile",
       panelId: "panel-cold-page",
       path: "/applications/app-a/cold-reconcile",
-      access: { kind: "domain-member" as const },
     };
     const cases = [
       {
@@ -1481,7 +1471,7 @@ describe("dynamic and nested member projection access verification", () => {
     clearPanelDefinitionCache();
     const deniedUse: ApplicationPanelUse = {
       id: "use-denied", pageKey: "denied-page", panelId: "panel-denied",
-      path: "/applications/app-a/denied", access: { kind: "domain-member" },
+      path: "/applications/app-a/denied",
     };
     const port = platformPanelHost("app-a", deniedUse, () => {});
     await expect(port.source()).rejects.toMatchObject({ status });
@@ -1497,7 +1487,6 @@ describe("dynamic and nested member projection access verification", () => {
       pageKey: "preload-page",
       panelId: "panel-preload",
       path: "/applications/app-a/preload",
-      access: { kind: "domain-member" },
     };
     const panel = {
       id: "panel-preload",

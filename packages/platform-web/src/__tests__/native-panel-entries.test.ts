@@ -32,7 +32,7 @@ it("stands a built-in application's named entry where its menu table lists the a
     // Added to the entries the application already declares.
     panelUses: [...app.panelUses ?? [], {
       id: "use-knowledge", pageKey: "ontology-knowledge", panelId: "builtin-knowledge", path: "/ontology/knowledge",
-      access: { permissionCode: "business-knowledge" }, names: { en: "Business knowledge" },
+      names: { en: "Business knowledge" },
     }],
   });
   const after = ontologyPages(catalog);
@@ -47,7 +47,7 @@ it("draws an entry's row with the look of the native page it replaced: the liste
     ...app,
     panelUses: [...app.panelUses ?? [], {
       id: "use-knowledge", pageKey: "ontology-knowledge", panelId: "builtin-knowledge", path: "/ontology/knowledge",
-      access: { permissionCode: "business-knowledge" }, names: { en: "Business knowledge" },
+      names: { en: "Business knowledge" },
     }],
   });
   const row = (navigation: ReturnType<typeof generatedNavigation>) => appDeclarations(navigation, access, catalogPartition(catalog, "en"), t)
@@ -67,13 +67,13 @@ it("lists a permissions panel entry in both the owning menu and ontology governa
   const path = "/permissions/organization";
   const catalog = catalogFixture([{
     id: "permissions", kind: "native", rail: "bottom", category: "admin", sort: 10,
-    entry: { path: "/permissions", renderer: "permissions" },
-    entryAccess: ["user-management"], scheduleAdapter: null, allowStandalone: false,
+    entry: { path: "/permissions", renderer: "permissions", entryKey: "organization" },
+    scheduleAdapter: null, allowStandalone: false,
     declaration: {
-      names: { en: "Permissions" }, descriptions: {}, icon: "permissions", groups: [], permissions: [],
+      names: { en: "Permissions" }, descriptions: {}, icon: "permissions", groups: [],
       panelUses: [{
         id: "organization", pageKey: "organization", panelId: "builtin-organization", path,
-        access: { permissionCode: "user-management" }, names: { en: "Organization" },
+        names: { en: "Organization" },
       }],
     },
   }]);

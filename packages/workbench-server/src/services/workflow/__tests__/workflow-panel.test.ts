@@ -135,7 +135,6 @@ describe("built-in workflows panel validation", () => {
       panelId: string;
       path: string;
       groupKey?: string;
-      access?: { permissionCode?: string };
     }>;
     const actionsIndex = uses.findIndex((entry) => entry.id === "ontology-actions");
     const workflowsIndex = uses.findIndex((entry) => entry.id === "ontology-workflows");
@@ -148,7 +147,6 @@ describe("built-in workflows panel validation", () => {
       panelId: "builtin-product-ontology-workflows",
       path: "/ontology/assets/workflows",
       groupKey: "capabilities",
-      access: { permissionCode: "action-management" },
     });
   }, 30_000);
 });

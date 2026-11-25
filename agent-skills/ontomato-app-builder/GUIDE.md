@@ -118,8 +118,8 @@ projections/
 ```
 
 - `application.json` contains the complete application definition. `declaration` contains localized `names`
-  and `descriptions`, `icon`, `groups` and `permissions`. `entry` contains `path`, `renderer: "panels"`
-  and optional `home`. Keep `panelUses`, and preserve `entryAccess`, `allowStandalone`, `framePanelId`,
+  and `descriptions`, `icon` and `groups`. `entry` contains `path`, `renderer: "panels"`
+  and optional `home`. Keep `panelUses`, and preserve `allowStandalone`, `framePanelId`,
   `theme` (theme overrides) and `delivery` whenever present. The host supplies the application ID from the
   project identity. Retain all declared values, including translations, so a source round trip preserves the definition.
 - A panel's directory name is its ID. `panel.json` contains `name`, `description`, `visibility` and
@@ -134,10 +134,11 @@ projections/
   panel's ID in `panelUses`. A panel that consumes a shared projection uses its registered projection ID.
   Keep shared source files in the owner application's tree so its commits govern changes.
 
-Each panel use has `id`, `pageKey`, `panelId`, `path` and `access`. Keep the page key unique in the
-domain. Include localized `names` to display a use in the application menu. Detail uses opened through
-navigation or a deep link can omit `names`. Use `{ "kind": "domain-member" }` for domain members or
-`{ "permissionCode": "…" }` with a permission declared by the application. Choose the icon with `sdk icons`.
+Each panel use has `id`, `pageKey`, `panelId` and `path`. Keep `id` stable when renaming or moving an entry
+and keep the page key unique in the domain. Include localized `names` to display a use in the application menu.
+Detail uses opened through navigation or a deep link can omit `names`. On first publication, set
+`initialOpenEntryIds` to the IDs that domain members should be able to enter. An empty array starts the application
+with restricted entries. Choose the icon with `sdk icons`.
 
 ### Check, preview, and publish
 

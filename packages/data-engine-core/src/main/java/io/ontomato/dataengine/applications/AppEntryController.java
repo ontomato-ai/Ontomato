@@ -27,16 +27,15 @@ public class AppEntryController {
         String decoded = URLDecoder.decode(tail.replace("+", "%2B"), StandardCharsets.UTF_8);
         if (java.util.Arrays.stream(decoded.split("/")).anyMatch(s -> s.equals(".") || s.equals("..")))
             return ResponseEntity.status(403).build();
-        var app = catalog.all().stream().filter(a -> id.equals(a.getString("id"))).findFirst();
-        if (app.isEmpty() || !catalog.inDomain(app.get(),user) || !access.canEnter(app.get(),user)) return ResponseEntity.status(403).build();
-        String kind = app.get().getString("kind");
+        var app = catalog.proxyApplication(id, user);
+        String kind = app.getString("kind");
         String target;
         var response = ResponseEntity.noContent().header("X-App-Route-Kind",kind);
         if (kind.equals("hosted")) {
-            if (app.get().getString("releaseId") == null) return ResponseEntity.status(403).build();
-            target = "/internal/hosted-apps/" + id + "/" + app.get().getString("releaseId") + "/" + tail;
+            if (app.getString("releaseId") == null) return ResponseEntity.status(403).build();
+            target = "/internal/hosted-apps/" + id + "/" + app.getString("releaseId") + "/" + tail;
         } else if (kind.equals("connected")) {
-            var entry = app.get().getJSONObject("entry");
+            var entry = app.getJSONObject("entry");
             response.header("X-App-Upstream", entry.getString("upstream"));
             target = entry.getString("upstreamPrefix") + tail;
         } else return ResponseEntity.status(403).build();
