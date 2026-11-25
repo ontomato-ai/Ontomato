@@ -228,11 +228,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       ? ok(id) : invalid([{ message: "Expected a platform product ID with prefix builtin-product-" }]) };
     export const appsSdkComponentCatalogSchema = { parse };
     export const domainApplicationIconKeys = ["app-window", "folder", "calendar"];
-    const applicationDeclaration = { extend: () => applicationDeclaration, passthrough: () => applicationDeclaration };
-    export const applicationCatalogueRecordSchema = {
-      parse, shape: {}, pick: () => ({ extend: () => ({ safeParse: ok }) }),
-    };
-    export const applicationIdentityUpdateSchema = { parse, omit: () => applicationDeclaration, partial: () => ({ strict: () => ({ parse }) }) };
+    export const applicationCatalogueRecordSchema = { parse };
+    export const applicationSourceManifestSchema = { safeParse: ok };
+    export const applicationIdentityUpdateSchema = { parse, partial: () => ({ strict: () => ({ parse }) }) };
     export async function panelModuleImports(source) {
       if (source.includes("element-plus")) throw new Error("A panel's module imports element-plus, which the platform does not give it");
     }

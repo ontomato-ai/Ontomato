@@ -479,17 +479,9 @@ async function sourceEntries(directory) {
 
 async function readApplicationWorkspace(directory, checks) {
   const file = resolve(directory, "application.json");
-  const application = await readJson(file);
-  if (application?.entry?.renderer !== "panels" || !application.declaration?.names) {
-    throw new Error(`${file}: expected an application declaration and a panels entry`);
-  }
-  const { shape } = checks.applicationCatalogueRecordSchema;
-  const result = checks.applicationCatalogueRecordSchema.pick({
-    entry: true, panelUses: true, initialOpenEntryIds: true, allowStandalone: true, framePanelId: true, theme: true, delivery: true,
-  }).extend({
-    declaration: checks.applicationIdentityUpdateSchema.omit({ allowStandalone: true }).extend({ groups: shape.groups }).passthrough(),
-  }).safeParse(application);
+  const result = checks.applicationSourceManifestSchema.safeParse(await readJson(file));
   if (!result.success) throw new Error(`${file}: ${result.error.message}`);
+  const application = result.data;
 
   const panelsDir = resolve(directory, "panels");
   const workspaces = [];
