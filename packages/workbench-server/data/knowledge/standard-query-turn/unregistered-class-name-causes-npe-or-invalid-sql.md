@@ -1,6 +1,6 @@
 # Unregistered Class Names Cause Execution NPE or Illegal SQL
 
-- **Scope**: any DSL entering the query backend query execution layer — standard ABC sub-queries, Harness inline DSL, direct DSL execution; when the target class name or field is not registered in `jsonRule.classDef`.
+- **Scope**: DSL queries where the target class name or field is missing from `jsonRule.classDef`.
 - **Mechanism source**: the query backend `util/DslUtil.java` (`splitToVector`'s classDefMap only loads `jsonRule.classDef`), `util/HttpRequestUtil.java` (`addVectorAndRowPermission`), each `dataAdapter/*Adapter.java`'s `toSql` (classAttrTypeMap from the same source).
 - **Last verified**: 2026-08-26.
 

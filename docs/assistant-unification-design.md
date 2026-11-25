@@ -75,8 +75,7 @@ active run blocks the next message (409 SESSION_BUSY), with no predecessor check
 
 Both presets are ordinary editable definitions. Keep one prompt, one standard
 skill list and model role, plus name/description/icon/enabled, related classNames,
-graphScope and enabledMcpServiceIds. Remove execution/dimension/report/summary/
-hot-report configuration. Management uses the existing analysis-agent permission.
+graphScope and enabledMcpServiceIds. Remove the former execution, dimension, report, summary and precomputed report settings. Management uses the existing analysis-agent permission.
 classNames is captured on the parent run and passed to retrieval. The prior graph
 scope expansion and schema reader supply initial context; graph scope does not
 narrow formal retrieval beyond classNames. Existing definition columns are not read

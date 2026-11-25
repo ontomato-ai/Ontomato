@@ -198,6 +198,7 @@
                                 <include>**/OntologyGenerationContractTest.java</include>
                                 <include>**/QueryRuntimeBoundaryTest.java</include>
                                 <include>**/BusinessConfigControllerModelKeyWriteOnlyTest.java</include>
+                                <include>**/BusinessConfigDaoTest.java</include>
                                 <include>**/MetadataPostgresBoundaryTest.java</include>
                                 <include>**/PlatformScheduleTest.java</include>
                                 <include>**/PageSkillsContractTest.java</include>

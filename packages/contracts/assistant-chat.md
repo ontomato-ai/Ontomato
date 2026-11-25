@@ -44,8 +44,8 @@ Validation reads the real old definition and prepares no Key. Saves validate all
 settings before preparing a selected user credential; Node stores only its ID. Both presets are ordinary
 editable definitions. The common `/agents` endpoint exposes only selector metadata,
 never the prompt or these business settings. Deleted definitions do not delete
-history, and cannot admit new runs. Old executor/dimension/report/summary/hot-report
-fields are rejected and are not read from legacy definition rows.
+history, and cannot admit new runs. The former executor, dimension, report, summary and precomputed report fields
+are rejected and are not read from legacy definition rows.
 
 Each run fixes its nullable executionUserId. Self mode keeps the initiator's original credentials;
 a selected user uses their current shared Key through the existing internal resolver. Runtime/provider
