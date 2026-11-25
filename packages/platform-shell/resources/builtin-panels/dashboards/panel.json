@@ -112,6 +112,10 @@
         "config": {
           "columns": 12,
           "rowHeight": 160,
+          "sectionRowHeights": {
+            "metric": 150,
+            "chart": 340
+          },
           "gap": 16,
           "groupsField": "groups",
           "groupKeyField": "groupId",
