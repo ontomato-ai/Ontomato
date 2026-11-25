@@ -2,6 +2,8 @@ import { loadDomainComponent } from "./domain-component";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
   applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelPageSkillContextResponseSchema, productPanelResponseSchema, productPanelSchema,
+  isApplicationPanelUse,
+  type FrameConversationEntry,
   type ApplicationEntryResolution, type ApplicationEntryResolutionQuery, type ApplicationPanelUse,
   type BundledPanelProjection, type ProductPanel, type ProductPanelReadQuery,
 } from "@ontomato/contracts/product-panels";
@@ -47,9 +49,10 @@ import { provideGlobalConfig } from "element-plus";
 import { runPanelModule, useTemplateCompiler } from "./panel-module";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import {
-  pageCounterKey, panelChatHostKey, servePageComposerKey,
+  pageCounterKey, panelChatHostKey, pageSessionStream, servePageComposerKey, sessionRunNotices,
   type DisplayObjectChange, type PageCounter, type PanelChatHost,
 } from "@ontomato/agent-shell-ui";
+import type { PanelSessionFeed } from "./panel-session-runs";
 import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
 
 /*
@@ -254,6 +257,12 @@ export function panelHasInlineConversationEntry(
   return /<(?:projection|conversation-entry)\b[^>]*\bpresentation\s*=\s*["']inline["']/i.test(html);
 }
 
+/** Frame composer ownership follows the frame's fixed projections. */
+export function panelHasAgentChat(panel: ProductPanel, projections?: Record<string, BundledPanelProjection>) {
+  return panelProjectionComponentIds(panel.manifest, projections)
+    .some(id => id === "@ontomato/sdk:AgentChat" || id === "AgentChat");
+}
+
 /**
  * The platform's panel host for one use relation of the application whose page is showing it. `changed` is that page's:
  * a change its frame's operations report reaches the page through it.
@@ -270,11 +279,13 @@ export function platformPanelHost(
   claimComposer?: () => () => void,
   /** Notified whenever the entry panel (and any bundled projections) is loaded so the route can inspect composer metadata. */
   onPanelLoaded?: (loaded: ProductPanel, projections?: Readonly<Record<string, BundledPanelProjection>>) => void,
+  display?: PanelChatHost["display"],
+  feed?: PanelSessionFeed,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
-  const panelChatHost = createPanelChatHost(use.defaultAgent, claimComposer);
+  const panelChatHost = createPanelChatHost(use.defaultAgent, { claimComposer, display });
   const shown: PanelUseRef = { applicationId, useId: use.id };
   /** Whether Java's answer for an entry is this page's use relation, still bound to the same panel. */
-  const names = (answer: ApplicationEntryResolution) => answer.use.id === use.id && answer.use.panelId === use.panelId;
+  const names = (answer: ApplicationEntryResolution) => isApplicationPanelUse(answer.use) && answer.use.id === use.id && answer.use.panelId === use.panelId;
   // The page these reads are made for: the use relation it is shown for, and the entrance it is reached by — its menu
   // code, or domain membership, with its page key. Node answers with them which page skill member the reader reaches
   // here: null when it does not, never a public guess.
@@ -388,7 +399,7 @@ export function platformPanelHost(
       const mount = (opened: DirectPanelRun) => mountCoded(withNested({
         ...directOptions(source, opened, shown, changed, beside, undefined, undefined, mountUnavailable),
         ...(panelDomainComponents ? { panelDomainComponents } : {}),
-      }, personalSource, pageCounter, panelChatHost), target, source.panel.content.module, pageCounter, panelChatHost);
+      }, personalSource, pageCounter, panelChatHost, feed), target, source.panel.content.module, pageCounter, panelChatHost, feed);
       return withPersonalState(personalSource, [], source.panel.manifest, run, mount,
         entryPanel ? controlled : new Set(), entryPanel ? pending : undefined);
     },
@@ -397,7 +408,7 @@ export function platformPanelHost(
     async current() {
       const answer = await resolveApplicationEntry(shown);
       if (applicationId === "home" && use.id === "home") {
-        if (answer.use.id !== use.id) return false;
+        if (!isApplicationPanelUse(answer.use) || answer.use.id !== use.id) return false;
         try {
           const { panel: customHome } = await readHomePanel();
           return (customHome?.id ?? answer.use.panelId) === use.panelId;
@@ -447,6 +458,21 @@ async function reconcileCachedApplicationFrame(
   return { panel: verified.panel.revision === cached.revision ? cached : undefined, forbidden };
 }
 
+export interface FrameChatOptions {
+  display: NonNullable<PanelChatHost["display"]>;
+  claimComposer: NonNullable<PanelChatHost["claimComposer"]>;
+  feed: PanelSessionFeed;
+  onPanelLoaded(ownsComposer: boolean): void;
+}
+
+function reportFrameComposer(
+  chat: FrameChatOptions | undefined,
+  loaded: ProductPanel,
+  projections?: Record<string, BundledPanelProjection>,
+) {
+  chat?.onPanelLoaded(panelHasAgentChat(loaded, projections) || panelHasInlineConversationEntry(loaded, projections));
+}
+
 /**
  * An application's own frame for the entry the reader opened (product-layer standard, part one; design §三): the panel
  * \`resolve-entry\` named as the application's \`framePanelId\`, read for that entry (\`source=frame\`) and run in this
@@ -455,13 +481,15 @@ async function reconcileCachedApplicationFrame(
  * page is the run's \`currentEntry\`, which the route gives it.
  */
 export function framePanelHost(
-  applicationId: string, use: ApplicationPanelUse, framePanelId: string, changed: (change: PanelObjectChange) => void,
+  applicationId: string, use: ApplicationPanelUse | FrameConversationEntry, framePanelId: string, changed: (change: PanelObjectChange) => void,
   router?: Router,
+  chat?: FrameChatOptions,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const shown: PanelUseRef = { applicationId, useId: use.id };
   const frameSource: PanelReadSource = { kind: "frame", applicationId, useId: use.id } as PanelReadSource;
   const query = new URLSearchParams({ applicationId, useId: use.id, source: "frame" });
   const sourceQuery = new URLSearchParams({ applicationId, useId: use.id, source: "frame", includeProjections: "1" });
+  const panelChatHost = createPanelChatHost(isApplicationPanelUse(use) ? use.defaultAgent : undefined, chat);
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
   let lastPanel: ProductPanel | undefined;
   let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
@@ -477,6 +505,7 @@ export function framePanelHost(
         if (reconciled.panel) {
           lastPanel = reconciled.panel;
           mountUnavailable = reconciled.forbidden;
+          reportFrameComposer(chat, reconciled.panel);
           return { kind: "registered", applicationId, use, panel: reconciled.panel };
         }
       }
@@ -488,6 +517,7 @@ export function framePanelHost(
       warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
       frameDomainComponents = answer.domainComponents;
       lastPanel = answer.panel;
+      reportFrameComposer(chat, answer.panel, answer.projections);
       sourceReconciled = true;
       return { kind: "registered", applicationId, use, panel: answer.panel };
     },
@@ -502,6 +532,7 @@ export function framePanelHost(
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
         frameDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
+        reportFrameComposer(chat, answer.panel, answer.projections);
         return answer.panel;
       }
       return panel(panelId);
@@ -512,8 +543,8 @@ export function framePanelHost(
       withNested({
         ...directOptions(source, run, shown, changed, undefined, frameSource, "frame", mountUnavailable, router),
         ...(frameDomainComponents ? { panelDomainComponents: frameDomainComponents } : {}),
-      }, frameSource),
-      target, source.panel.content.module,
+      }, frameSource, undefined, panelChatHost, chat?.feed),
+      target, source.panel.content.module, undefined, panelChatHost, chat?.feed,
     ),
     // The frame is the entry's: it stands while Java still names the same entry, bound to the same frame panel.
     async current() {
@@ -550,6 +581,7 @@ export function builtinFramePanelHost(
   applicationId: string,
   framePanelId: string,
   router?: Router,
+  chat?: FrameChatOptions,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const placeholderUse: ApplicationPanelUse = {
     id: applicationId,
@@ -558,6 +590,7 @@ export function builtinFramePanelHost(
     path: `/${applicationId}`,
     access: { kind: "domain-member" },
   };
+  const panelChatHost = createPanelChatHost(undefined, chat);
   const shown: PanelUseRef = { applicationId, useId: placeholderUse.id };
   const sourceQuery = new URLSearchParams({ includeProjections: "1" });
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
@@ -581,6 +614,7 @@ export function builtinFramePanelHost(
         const forbidden = reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
         if (verified.panel.revision === cached.revision) {
           lastPanel = cached;
+          reportFrameComposer(chat, cached);
           mountUnavailable = forbidden;
           sourceReconciled = true;
           return { kind: "registered", applicationId, use: placeholderUse, panel: cached };
@@ -594,6 +628,7 @@ export function builtinFramePanelHost(
       mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
       warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
       lastPanel = answer.panel;
+      reportFrameComposer(chat, answer.panel, answer.projections);
       sourceReconciled = true;
       return { kind: "registered", applicationId, use: placeholderUse, panel: answer.panel };
     },
@@ -607,6 +642,7 @@ export function builtinFramePanelHost(
         setCachedPanel(cacheKey, answer.panel, scope);
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
         lastPanel = answer.panel;
+        reportFrameComposer(chat, answer.panel, answer.projections);
         return answer.panel;
       }
       return panel(panelId);
@@ -636,7 +672,7 @@ export function builtinFramePanelHost(
         defaultLocale: String(global.fallbackLocale.value),
         translate: (key, params) => global.t(key, params ?? {}),
         nested: () => { throw new Error("A native frame does not mount nested panels"); },
-      }, target, source.panel.content.module);
+      }, target, source.panel.content.module, undefined, panelChatHost, chat?.feed);
     },
     async current() {
       return true;
@@ -787,8 +823,9 @@ function withNested(
   source: PanelReadSource,
   pageCounter?: PageCounter | null,
   panelChatHost?: PanelChatHost,
+  feed?: PanelSessionFeed,
 ): DirectPanelMountOptions {
-  return { ...options, nested: (memberPath, run) => mountNested(options, source, memberPath, run, pageCounter, panelChatHost) };
+  return { ...options, nested: (memberPath, run) => mountNested(options, source, memberPath, run, pageCounter, panelChatHost, feed) };
 }
 
 /**
@@ -802,6 +839,7 @@ async function mountNested(
   outer: OwnPanelOptions, source: PanelReadSource, memberPath: ProductPanelNestedReadRequest["memberPath"], run: DirectPanelRun,
   pageCounter?: PageCounter | null,
   panelChatHost?: PanelChatHost,
+  feed?: PanelSessionFeed,
 ): Promise<{ element: HTMLElement; mount: PanelRunMount }> {
   const path: ProductPanelNestedReadRequest["memberPath"] = [...(outer.memberPath ?? []), ...memberPath] as ProductPanelNestedReadRequest["memberPath"];
   // A placement the reader may not use, or one whose record is gone or not among its candidates, is that block's own
@@ -838,8 +876,8 @@ async function mountNested(
         run: { ...opened, overlayRoot: overlay.element, shown },
         memberPath: placedAt,
         panelDomainComponents: domainComponents,
-      }, source, pageCounter, panelChatHost),
-      { element, template }, panel.content.module, pageCounter, panelChatHost,
+      }, source, pageCounter, panelChatHost, feed),
+      { element, template }, panel.content.module, pageCounter, panelChatHost, feed,
     ), new Set(Object.keys(last ? outer.manifest.members[last.member]?.inputs ?? {} : {})));
     return {
       element,
@@ -957,13 +995,14 @@ function warmTemplateCompiler() {
 
 function createPanelChatHost(
   defaultAgent?: ApplicationPanelUse["defaultAgent"],
-  claimComposer?: () => () => void,
+  options?: Pick<PanelChatHost, "claimComposer" | "display">,
 ): PanelChatHost {
   let client: ReturnType<typeof createAssistantClient> | null = null;
   return {
     client: () => (client ??= createAssistantClient()),
     ...(defaultAgent ? { defaultAgent } : {}),
-    ...(claimComposer ? { claimComposer } : {}),
+    claimComposer: options?.claimComposer,
+    display: options?.display,
   };
 }
 
@@ -978,12 +1017,13 @@ async function mountCoded(
   module?: string,
   pageCounter?: PageCounter | null,
   panelChatHost?: PanelChatHost,
+  feed?: PanelSessionFeed,
 ): Promise<PanelRunMount> {
   const { global } = workbenchI18n();
   const language = workbenchLanguage();
   await useTemplateCompiler();
   let mounted: PanelRunMount | undefined;
-  const chatHost = panelChatHost ?? createPanelChatHost();
+  const chatHost = { ...(panelChatHost ?? createPanelChatHost()), shown: options.run.shown };
   const panelSdk = panelModuleFor({
     ...options,
     loadDomainComponent,
@@ -994,6 +1034,8 @@ async function mountCoded(
       provideGlobalConfig(Vue.computed(() => ({ locale: language.elementLocale(global.locale.value) })), app, true);
       app.provide(servePageComposerKey, servePageComposer);
       app.provide(panelChatHostKey, chatHost);
+      if (feed?.stream) app.provide(pageSessionStream, feed.stream);
+      if (feed) app.provide(sessionRunNotices, feed.notices);
       if (pageCounter) app.provide(pageCounterKey, pageCounter);
     },
     mounted: mount => (mounted = mount),

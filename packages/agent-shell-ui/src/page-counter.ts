@@ -27,7 +27,10 @@ export interface PageCounter {
    * Sends the page's message to the counter, optionally carrying the page's address so the same page opens beside the
    * conversation. Omitting `page` opens the conversation directly without docking a side page.
    */
-  ask(agentId: string, text: string, page?: string): void;
+  ask(
+    agentId: string, text: string, page?: string,
+    entry?: { submit: true; newSession?: boolean; pageSkill?: PageSkillContext },
+  ): void | Promise<void>;
 }
 
 export const pageCounterKey: InjectionKey<PageCounter> = Symbol("page-counter");

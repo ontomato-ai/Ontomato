@@ -134,6 +134,8 @@ describe("platform:AgentSession and platform:RecentVisit panel reads and rename"
       },
     ]);
 
+    expect((await adapter.record(rows[0]!.primaryKey)).fields.running).toBe(true);
+
     const renameOp = agentSessionServerOperations.find(op => op.handlerRef === RENAME_AGENT_SESSION)!;
     const target: PanelRecordTarget = { kind: "object", objectType: AGENT_SESSION, primaryKey: "11111111-1111-4111-8111-111111111111" };
     const result = await renameOp.execute(host, target as never, { title: "Q4 Board Review" }, "i-1");

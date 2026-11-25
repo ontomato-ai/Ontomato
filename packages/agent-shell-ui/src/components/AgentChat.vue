@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, provide, ref, toRef, watch } from "vue";
+import { computed, inject, onBeforeUnmount, provide, ref, toRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
-import { conversationQuestions, shellContextKey } from "../context";
+import { conversationQuestions, displayQuestions, shellContextKey } from "../context";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { displayLink, type ConversationDisplay } from "../conversation-display";
+import { conversationStreamShell, pageSessionStream, sessionRunNotices } from "../session-run-notices";
+import type { ComposerEntry } from "../page-composer-entry";
 import type { ConversationItem } from "../view";
 import type {
   ArtifactRendererOverride,
@@ -25,6 +29,12 @@ const props = withDefaults(
     agent: AgentHostAgent | null;
     labels: ShellLabels;
     sessionId?: string | null;
+    sessionContext?: Record<string, RuntimeJsonValue>;
+    display?: () => ConversationDisplay | null;
+    collapsed?: boolean;
+    greeting?: string;
+    description?: string;
+    entry?: ComposerEntry | null;
     feedback?: ShellFeedbackPort;
   }>(),
   { sessionId: null },
@@ -32,11 +42,31 @@ const props = withDefaults(
 const emit = defineEmits<{
   "update:sessionId": [id: string | null];
   /** A run produced its final state; the host may now consume the run's files. */
-  runComplete: [payload: { sessionId: string; runId: string; ok: boolean }];
+  runComplete: [payload: { sessionId: string; runId: string; ok: boolean; outcome?: RuntimeJsonValue }];
   error: [message: string];
+  expand: [];
 }>();
 
-const conversation = useAgentConversation(() => props.client, () => props.agentId);
+const stream = inject(pageSessionStream, null);
+const notice = inject(sessionRunNotices, null);
+const display = () => props.display?.() ?? null;
+const conversation = useAgentConversation(
+  () => props.client,
+  () => props.agentId,
+  () => display() ? stream?.binding ?? null : null,
+  () => display()?.pageSkill.value ?? null,
+  () => props.sessionContext,
+);
+let detach: (() => void) | undefined;
+watch(display, (current) => {
+  detach?.();
+  detach = current ? stream?.attach(conversationStreamShell(current, () => conversation.state.sessionId)) : undefined;
+}, { immediate: true });
+onBeforeUnmount(() => detach?.());
+if (notice) watch(notice, (frame) => {
+  if (frame?.type === "run_started" && frame.sessionId === conversation.state.sessionId)
+    void conversation.followRun(frame.runId).catch(report);
+});
 
 /** Host paths are execution details, never user-facing content. */
 function redact(value: string): string {
@@ -102,65 +132,52 @@ provide(shellContextKey, {
       .catch((error) => emit("error", error instanceof Error ? error.message : String(error)));
   },
   openArtifactKey: noOpenArtifact,
-  pageLink: () => null,
-  questions: conversationQuestions(conversation),
+  pageLink: (href) => {
+    const current = display();
+    return current ? displayLink(current)(href) : null;
+  },
+  questions: displayQuestions(conversationQuestions(conversation), display, () => conversation.state.sessionId),
 });
 
 watch(
   () => props.sessionId,
   (id) => {
-    void conversation.open(id ?? null);
+    if (id !== conversation.state.sessionId) void conversation.open(id);
   },
   { immediate: true },
 );
 
-let lastRunId: string | null = null;
+const lastRunId = ref<string | null>(null);
 let reportedRunId: string | null = null;
 
-function emitRunComplete(sessionId: string, runId: string, ok: boolean) {
+function emitRunComplete(sessionId: string, runId: string, ok: boolean, outcome?: RuntimeJsonValue) {
   if (reportedRunId === runId) return;
   reportedRunId = runId;
-  emit("runComplete", { sessionId, runId, ok });
+  emit("runComplete", { sessionId, runId, ok, ...(outcome === undefined ? {} : { outcome }) });
 }
 
+watch(conversation.activeRunId, (id) => {
+  if (id) lastRunId.value = id;
+});
+
 watch(
-  () => conversation.activeRunId.value,
-  (id) => {
-    if (id) lastRunId = id;
-  },
-);
-// The one completion exit: the run's state in the conversation reaches "stopped", whichever way the conversation
-// learned it (the start response, the stream's final frame, or the snapshot read after a reconnect or reset).
-// Watching `busy` also fires when opening a freshly created session resets the conversation, which used to ask
-// for a draft while the run was still starting.
-watch(
-  () => (lastRunId ? conversation.state.runs[lastRunId]?.status : undefined),
-  (status) => {
-    if (!lastRunId || status !== "stopped" || reportedRunId === lastRunId) return;
-    const run = conversation.state.runs[lastRunId];
+  [lastRunId, () => lastRunId.value ? conversation.state.runs[lastRunId.value]?.status : undefined],
+  ([runId, status]) => {
     const sessionId = conversation.state.sessionId;
-    if (!run || !sessionId) return;
-    emitRunComplete(sessionId, lastRunId, run.stopReason !== "aborted" && !run.errorMessage);
+    if (!runId || !sessionId || status !== "stopped") return;
+    const run = conversation.state.runs[runId];
+    emitRunComplete(sessionId, runId, run.stopReason !== "aborted" && !run.errorMessage, run.outcome);
   },
 );
 
 async function send(text: string) {
-  const result = await conversation.send(props.agentId, text);
-  if (!result) return;
-  if (!result.delivery) {
-    // The session was created but its run refused: it is still the host's, so sending again goes on in it.
-    emit("update:sessionId", result.createdSession.id);
-    return;
-  }
-  // Track the run before the host opens the newly created session; opening resets the projection
-  // and must not be mistaken for a finished run.
-  lastRunId = result.delivery.runId;
-  if (result.createdSession) emit("update:sessionId", result.createdSession.id);
-  const sessionId =
-    result.delivery.sessionRef.sessionId;
-  const run = result.snapshot?.run;
-  if (sessionId && run?.status === "stopped")
-    emitRunComplete(sessionId, run.id, run.stopReason !== "aborted" && !run.errorMessage);
+  const observed = display()?.snapshot();
+  const initialPage = observed?.known && observed.target?.kind === "page" ? observed.target : undefined;
+  const result = await conversation.send(props.agentId, text, { initialPage });
+  const sessionId = conversation.state.sessionId;
+  if (result?.createdSession && result.createdSession.id === sessionId) emit("update:sessionId", sessionId);
+  if (result?.delivery?.sessionRef.sessionId === sessionId) lastRunId.value = result.delivery.runId;
+  return sessionId;
 }
 
 function report(error: unknown) {
@@ -189,7 +206,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="agent-chat">
+  <div class="agent-chat" :class="{ collapsed }">
     <ShellConversation
       :items="safeItems"
       :session-id="conversation.state.sessionId"
@@ -205,11 +222,21 @@ defineExpose({
       :busy="conversation.busy.value"
       :sending="conversation.sending.value"
       :feedback="feedback"
+      :collapsed="collapsed"
+      :greeting="greeting"
+      :description="description"
+      :entry="entry"
+      @expand="emit('expand')"
       @send="send"
       @stop="conversation.cancel"
       @retry="conversation.open(conversation.state.sessionId)"
       @load-older="conversation.loadOlder"
-    />
+    >
+      <template v-if="$slots['composer-context']" #composer-context><slot name="composer-context" /></template>
+      <template v-if="$slots['message-actions']" #message-actions="{ item, runId }">
+        <slot name="message-actions" :item="item" :run-id="runId" :outcome="conversation.state.runs[runId]?.outcome" />
+      </template>
+    </ShellConversation>
   </div>
 </template>
 
@@ -220,4 +247,5 @@ defineExpose({
   height: 100%;
   min-height: 0;
 }
+.agent-chat.collapsed { height: auto; }
 </style>

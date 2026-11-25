@@ -3,12 +3,16 @@ import { computed, inject, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   AgentChat as ShellAgentChat,
+  servePageComposerKey,
   usePanelChatHost,
+  type ComposerEntry,
+  type PageComposerExpand,
   type AgentHostAgent,
   type AgentHostClient,
   type ShellFeedbackPort,
   type ShellLabels,
 } from "@ontomato/agent-shell-ui";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { useShellLabels } from "@ontomato/workbench-ui/composables/useShellLabels";
 import { panelContextKey, projectionKey } from "../panel/context";
@@ -31,6 +35,12 @@ const props = withDefaults(
     placeholderKey?: string;
     /** Active conversation session ID; bind via `state: { sessionId: "..." }` to persist or deep-link a session. */
     sessionId?: string | null;
+    sessionContext?: Record<string, RuntimeJsonValue>;
+    collapsed?: boolean;
+    greeting?: string;
+    greetingKey?: string;
+    description?: string;
+    descriptionKey?: string;
     /** Standalone mode only: authenticated `AgentHostClient` from `createAssistantClient(context)`. */
     client?: AgentHostClient;
     /** Standalone mode only: explicit agent ID. */
@@ -44,6 +54,7 @@ const props = withDefaults(
   }>(),
   {
     showHeader: true,
+    collapsed: false,
     placeholderKey: undefined,
     sessionId: null,
     client: undefined,
@@ -58,9 +69,11 @@ const emit = defineEmits<{
   /** Emitted when a session is created, opened, or reset to `null`. */
   "update:sessionId": [id: string | null];
   /** Emitted when a run settles in the conversation. */
-  runComplete: [payload: { sessionId: string; runId: string; ok: boolean }];
+  runComplete: [payload: { sessionId: string; runId: string; ok: boolean; outcome?: RuntimeJsonValue }];
   /** Emitted when loading the agent or running a turn fails. */
   error: [message: string];
+  expand: [];
+  entryTriggered: [payload: { slot?: string; submit?: boolean; newSession?: boolean; sessionId?: string | null }];
 }>();
 
 const standalone = computed(() => props.client !== undefined);
@@ -70,6 +83,7 @@ const panel = inject(panelContextKey, null);
 const slot = inject(projectionKey, null);
 const chatHost = usePanelChatHost();
 const defaultLabels = useShellLabels();
+const serve = inject(servePageComposerKey, null);
 
 type PanelChatStatus = "loading" | "ready" | "forbidden" | "error";
 const status = ref<PanelChatStatus>(standalone.value ? "ready" : "loading");
@@ -84,25 +98,28 @@ watch(
   },
 );
 
-const innerRef = ref<{
-  reset?: () => void;
-  cancel?: () => void;
-  send?: (text: string) => Promise<void>;
-  busy?: boolean;
-} | null>(null);
+const innerRef = ref<InstanceType<typeof ShellAgentChat> | null>(null);
 
 const activeClient = computed<AgentHostClient | null>(() => {
   if (props.client) return props.client;
   return chatHost ? chatHost.client() : null;
 });
 
+function translated(key: string | undefined) {
+  if (!key || !panel) return undefined;
+  const value = panel.t(key);
+  return value === key ? undefined : value;
+}
+
 const effectiveLabels = computed<ShellLabels>(() => {
   const base = props.labels ?? defaultLabels.value;
-  if (!props.placeholderKey || !panel) return base;
-  const translated = panel.t(props.placeholderKey);
-  if (!translated || translated === props.placeholderKey) return base;
-  return { ...base, placeholder: translated };
+  return { ...base, placeholder: translated(props.placeholderKey) ?? base.placeholder };
 });
+const greeting = computed(() => translated(props.greetingKey) ?? props.greeting);
+const description = computed(() => translated(props.descriptionKey) ?? props.description);
+const activeAgent = computed(() => standalone.value ? props.agent : resolvedAgent.value);
+const activeAgentId = computed(() => standalone.value ? props.agentId : resolvedAgent.value?.id);
+const entry = shallowRef<ComposerEntry | null>(null);
 
 function matchDeclaredAgent(
   target: PanelConversationEntry["target"],
@@ -192,7 +209,8 @@ function handleSessionUpdate(next: string | null) {
 
 function startNewChat() {
   handleSessionUpdate(null);
-  innerRef.value?.reset?.();
+  void innerRef.value?.reset();
+  entry.value = { text: "", seq: (entry.value?.seq ?? 0) + 1 };
 }
 
 const innerBusy = computed(() => Boolean(innerRef.value?.busy));
@@ -203,29 +221,55 @@ if (slot && inject(panelMemberKey, null)) {
   useMemberOutput("busy", () => innerBusy.value);
 }
 
+const expandEntry: PageComposerExpand = async (request) => {
+  const chat = innerRef.value!;
+  const target = request.target;
+  if (
+    (target.kind === "id" && target.id !== activeAgentId.value)
+    || (target.kind === "preset" && target.agentKind !== activeAgent.value?.kind)
+  ) {
+    if (props.collapsed) emit("expand");
+    return;
+  }
+
+  const text = request.prefill?.trim();
+  const submit = request.submit && Boolean(text);
+  if (request.newSession) {
+    if (submit) {
+      await chat.reset();
+      entry.value = { text: "", seq: (entry.value?.seq ?? 0) + 1 };
+    }
+    else startNewChat();
+  }
+  if (props.collapsed) emit("expand");
+  if (submit) {
+    const id = await chat.send(text!);
+    if (request.newSession && id === null) handleSessionUpdate(null);
+  } else if (request.prefill !== undefined) {
+    entry.value = { text: request.prefill, seq: (entry.value?.seq ?? 0) + 1 };
+  }
+  emit("entryTriggered", {
+    slot: request.slot,
+    submit: request.submit,
+    newSession: request.newSession,
+    sessionId: currentSessionId.value,
+  });
+};
+watch(
+  () => !standalone.value && Boolean(slot && innerRef.value) && (chatHost?.shown?.() ?? true),
+  (serving, _, onCleanup) => {
+    if (serving && serve) onCleanup(serve(expandEntry));
+  },
+);
+
 defineExpose({
-  reset: startNewChat,
-  cancel: () => innerRef.value?.cancel?.(),
-  send: (text: string) => innerRef.value?.send?.(text),
+  cancel: () => innerRef.value?.cancel(),
   busy: innerBusy,
 });
 </script>
 
 <template>
-  <ShellAgentChat
-    v-if="standalone && client && agentId"
-    ref="innerRef"
-    :client="client"
-    :agent-id="agentId"
-    :agent="agent"
-    :labels="effectiveLabels"
-    :session-id="currentSessionId"
-    :feedback="feedback"
-    @update:session-id="handleSessionUpdate"
-    @run-complete="emit('runComplete', $event)"
-    @error="emit('error', $event)"
-  />
-  <div v-else class="sdk-agent-chat">
+  <div class="sdk-agent-chat" :class="{ standalone, collapsed }">
     <div v-if="status === 'loading'" class="sdk-agent-chat-state" role="status" aria-busy="true">
       {{ t("common.loading") }}
     </div>
@@ -238,9 +282,9 @@ defineExpose({
         {{ t("assistant.retry") }}
       </button>
     </div>
-    <template v-else-if="activeClient && resolvedAgent">
-      <header v-if="showHeader" class="sdk-agent-chat-header">
-        <span class="sdk-agent-chat-title">{{ resolvedAgent.name }}</span>
+    <template v-else-if="activeClient && activeAgentId">
+      <header v-if="!standalone && showHeader && !collapsed" class="sdk-agent-chat-header">
+        <span class="sdk-agent-chat-title">{{ activeAgent?.name }}</span>
         <button
           type="button"
           class="sdk-agent-chat-btn"
@@ -253,17 +297,27 @@ defineExpose({
       <div class="sdk-agent-chat-body">
         <ShellAgentChat
           ref="innerRef"
-          :key="resolvedAgent.id"
+          :key="activeAgentId"
           :client="activeClient"
-          :agent-id="resolvedAgent.id"
-          :agent="resolvedAgent"
+          :agent-id="activeAgentId"
+          :agent="activeAgent"
           :labels="effectiveLabels"
           :session-id="currentSessionId"
+          :session-context="sessionContext"
+          :display="chatHost?.display"
+          :collapsed="collapsed"
+          :greeting="greeting"
+          :description="description"
+          :entry="entry"
           :feedback="feedback"
+          @expand="emit('expand')"
           @update:session-id="handleSessionUpdate"
           @run-complete="emit('runComplete', $event)"
           @error="emit('error', $event)"
-        />
+        >
+          <template v-if="$slots['composer-context']" #composer-context><slot name="composer-context" /></template>
+          <template v-if="$slots['message-actions']" #message-actions="scope"><slot name="message-actions" v-bind="scope" /></template>
+        </ShellAgentChat>
       </div>
     </template>
   </div>
@@ -280,6 +334,15 @@ defineExpose({
   border: 1px solid var(--sdk-border-color, var(--el-border-color-lighter, #e4e7ed));
   border-radius: var(--el-border-radius-base, 6px);
   overflow: hidden;
+}
+
+.sdk-agent-chat.collapsed {
+  min-height: 0;
+  height: auto;
+}
+.sdk-agent-chat.standalone,
+.sdk-agent-chat.standalone > .sdk-agent-chat-body {
+  display: contents;
 }
 
 .sdk-agent-chat-header {

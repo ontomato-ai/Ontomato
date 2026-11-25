@@ -1,10 +1,10 @@
+import type { PageComposerRequest } from "@ontomato/agent-shell-ui";
 import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type Component, type ComputedRef, type EffectScope, type Ref } from "vue";
 import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import { OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { AppMenuGroup, DirectPanelRun } from "@ontomato/platform-shell";
-import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas, type PanelCompletedOperation } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { ApplicationEntryMenu, CurrentApplicationEntry, DirectProjection } from "@ontomato/contracts/product-panels";
@@ -75,9 +75,9 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
   readProjection(id: string, options?: DirectProjectionReadOptions): Promise<DirectProjection>;
   /**
    * Expands the page's composer with a conversation entry a member's projection declares: its agent and its opening
-   * sentence. The record is the platform's own read, so the entry needs no check against it; nothing is sent.
+   * sentence, with the official entry control applying the declared click behavior.
    */
-  expandPageComposer(entry: PanelConversationEntry): void;
+  expandPageComposer(entry: PageComposerRequest): unknown;
   /**
    * Opens one of the platform's addresses. When it cannot (not the platform's address, a page the reader may not open, a
    * guard that stopped it), the host says why on the page and rejects with the same reason.
@@ -172,7 +172,7 @@ export interface DirectPanelInstance extends PanelInstance {
   /** Current application frame state, when running inside a framed application entry. */
   frameState(): Readonly<Record<string, RuntimeJsonValue>> | undefined;
   /** The page's composer, expanded with a member's declared conversation entry. */
-  expandPageComposer(entry: PanelConversationEntry): void;
+  expandPageComposer(entry: PageComposerRequest, click?: MouseEvent): void | Promise<void>;
   /** Opens one of the platform's addresses, or says on the page why it cannot (see the options). */
   navigate(address: string): Promise<void>;
   /** The member's projection, read once for this instance: its fixed one, or the one the panel's state chose. */
@@ -580,7 +580,19 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     loadDomainComponent: options.loadDomainComponent,
     text: options.text,
     frameState: () => options.frameState?.(),
-    expandPageComposer: options.expandPageComposer,
+    async expandPageComposer(entry: PageComposerRequest, click?: MouseEvent) {
+      if (entry.submit || entry.newSession) {
+        if (!click?.isTrusted || !click.currentTarget || !entry.slot) {
+          throw new Error("This conversation entry requires a reader click");
+        }
+        const declared = (await directInstance.projectionOf(entry.slot)).conversationEntry;
+        if (!declared || JSON.stringify(declared.target) !== JSON.stringify(entry.target)
+          || declared.submit !== entry.submit || declared.newSession !== entry.newSession) {
+          throw new Error("This conversation entry is not declared by the panel");
+        }
+      }
+      await options.expandPageComposer(entry);
+    },
     navigate: options.navigate,
     projectionOf(member: string) {
       let found = projections.get(member);
@@ -961,7 +973,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     t: instance.text,
     resources: () => Promise.resolve(),
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
-    expandPageComposer: async ({ slot: _member, ...entry }) => instance.expandPageComposer(entry),
+    expandPageComposer: async (entry, click) => instance.expandPageComposer(entry, click),
     navigate: (address) => instance.navigate(address),
     notify: ({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); },
     // A member here reads through the instance's own port; nothing asks the context for it.

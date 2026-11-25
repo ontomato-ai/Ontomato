@@ -115,9 +115,10 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
     },
 
     async record(sessionId: string): Promise<PanelRecord> {
-      const [session, favorited] = await Promise.all([
+      const [session, favorited, statuses] = await Promise.all([
         assistantStore.session(sessionId, owner),
         isFavoriteTarget(owner, AGENT_SESSION, sessionId),
+        new RuntimeClient(owner.domainId, undefined, owner.userId).sessionStatuses([sessionId]),
       ]);
       const displayTitle = cleanSessionDisplayTitle(session.title, untitled);
       const openPath = sessionOpenPath(session.agent_id, session.id);
@@ -130,6 +131,7 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
           agentId: session.agent_id,
           updatedAt: session.updated_at.toISOString(),
           favorite: favorited,
+          running: statuses[0]?.latestRun?.status === "running",
         },
         fieldLabels,
         outputs: {

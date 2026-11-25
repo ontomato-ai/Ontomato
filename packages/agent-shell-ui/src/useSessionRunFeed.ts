@@ -1,5 +1,5 @@
 import { onBeforeUnmount, onMounted, watch, provide, shallowRef, readonly } from "vue";
-import { pageSessionStream, sessionRunNotices, type SessionStreamShell } from "./session-run-notices";
+import { pageSessionStream, sessionRunNotices, type PageSessionStream, type SessionStreamShell } from "./session-run-notices";
 import { randomId } from "@ontomato/contracts/random-id";
 import type { PresentationBinding, PresentationFrame, PresentationReceipt } from "@ontomato/contracts/agent-presentation";
 import type {
@@ -14,7 +14,8 @@ import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/v
 
 export interface SessionRunFeedOptions {
   /** The host's passive notice port of the same prefix every list on this page reads from. */
-  port: SessionRunPort;
+  port: SessionRunPort | (() => SessionRunPort);
+  enabled?: () => boolean;
   /** Every loaded row of the page's lists; a change of members or of row objects reads their state again. */
   sessions(): readonly AgentHostSession[];
   /** Every frame, also for a conversation no list shows, so the page can refresh its own facts. */
@@ -40,7 +41,9 @@ export interface SessionRunFeedOptions {
  */
 export function useSessionRunFeed(options: SessionRunFeedOptions) {
   const notice = shallowRef<AgentHostSessionRunFrame | null>(null);
-  provide(sessionRunNotices, readonly(notice));
+  const notices = readonly(notice);
+  provide(sessionRunNotices, notices);
+  const port = () => typeof options.port === "function" ? options.port() : options.port;
   const ids = () => [...new Set(options.sessions().map((row) => row.id))];
   let detach: (() => void) | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -59,8 +62,8 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
   /** The connection now serving the view, once ready; a request is answered on the connection it came on. */
   let connection: string | null = null;
   let shell: SessionStreamShell | null = null;
-  if (view) {
-    provide(pageSessionStream, {
+  const stream: PageSessionStream | null = view
+    ? {
       binding: view,
       attach(next) {
         shell = next;
@@ -68,8 +71,9 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
           if (shell === next) shell = null;
         };
       },
-    });
-  }
+    }
+    : null;
+  if (stream) provide(pageSessionStream, stream);
 
   /**
    * One request, one answer. The shell checks it still shows the conversation and lets its display decide; with no
@@ -81,7 +85,7 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
       ? await shell.present(frame)
       : { status: "not_opened", reason: "not_viewing_session", current: { known: false, reason: "not_viewing_session" } };
     if (stopped || connection !== own) return;
-    await options.port
+    await port()
       .presentationResult(frame.sessionId, frame.runId, { connectionId: own, toolCallId: frame.toolCallId, result })
       .catch(options.onError);
   }
@@ -103,7 +107,7 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
     queue = queue
       .then(async () => {
         if (stopped) return;
-        apply(await options.port.read(sessionIds));
+        apply(await port().read(sessionIds));
       })
       .catch(options.onError);
     return queue;
@@ -120,9 +124,9 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
   }
 
   function connect() {
-    if (stopped || !documentVisible()) return;
+    if (stopped || !documentVisible() || options.enabled?.() === false) return;
     const current = ++generation;
-    detach = options.port.subscribe({
+    detach = port().subscribe({
       async frame(frame) {
         if (stopped || current !== generation) return;
         notice.value = frame;
@@ -177,11 +181,15 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
   // where it stands changes what is listed; writing a row's own run state does not.
   watch(() => options.sessions().slice(), () => void read(ids()));
 
-  onMounted(connect);
+  onMounted(() => {
+    if (options.enabled) watch(options.enabled, (ready) => ready ? connect() : disconnect(), { immediate: true });
+    else connect();
+  });
   const stopVisibility = onDocumentVisibility((visible) => (visible ? connect() : disconnect()));
   onBeforeUnmount(() => {
     stopped = true;
     disconnect();
     stopVisibility();
   });
+  return { stream, notices };
 }

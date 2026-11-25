@@ -1,3 +1,4 @@
+import type { ConversationDisplay } from "./conversation-display";
 import { inject, type InjectionKey } from "vue";
 import type { DefaultAgent } from "@ontomato/contracts/default-agent";
 import type { AgentHostClient } from "./host";
@@ -10,6 +11,8 @@ import type { AgentHostClient } from "./host";
 export interface PanelChatHost {
   /** Returns the authenticated AgentHostClient sharing the platform's own agent sessions and history. */
   client(): AgentHostClient;
+  display?: () => ConversationDisplay | null;
+  shown?: () => boolean;
   /** Optional application entry default agent used when a projection declares `agent: "page-default"`. */
   defaultAgent?: DefaultAgent;
   /**
