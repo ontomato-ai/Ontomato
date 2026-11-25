@@ -274,6 +274,7 @@ describe("readBuiltinProducts", () => {
       expect(dashboardsPanel!.manifest.members).toHaveProperty("metricCard");
       expect(dashboardsPanel!.manifest.members).toHaveProperty("cardParamForm");
       expect(dashboardsPanel!.manifest.members).toHaveProperty("cardMetricSource");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("cardMetricOpen");
       expect(dashboardsPanel!.content.html).not.toMatch(/<el-|--el-|:deep\(/);
       expect(dashboardsPanel!.content.module).not.toContain("usePanelData");
 

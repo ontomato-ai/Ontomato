@@ -1,12 +1,14 @@
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
 import {
   mountPanel,
+  panelAddress,
   usePanelContext,
   usePanelOperation,
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
 const DASHBOARD = "platform:Dashboard";
+const METRIC_DETAIL_PATH = "/ontology/assets/metrics/detail";
 const LAYOUT_DEBOUNCE_MS = 400;
 const LAYOUT_WARN_THROTTLE_MS = 4000;
 
@@ -83,7 +85,7 @@ function scrollGroupIntoView(groupId) {
 
 await mountPanel({
   setup() {
-    const { instance, notify, t } = usePanelContext();
+    const { instance, navigate, notify, t } = usePanelContext();
     const values = instance.state.values;
 
     const dashboardRef = computed(() => values.value.dashboardId ?? null);
@@ -122,13 +124,17 @@ await mountPanel({
       }
     });
 
-    // Clear selected card, dialog, and stale pending layout edits when switching boards.
+    // Clear selected card, dialog, per-card UI states, and stale pending layout edits when switching boards.
     watch(dashboardPrimaryKey, (nextBoardId, prevBoardId) => {
       if (nextBoardId === prevBoardId) return;
       clearPendingLayoutTimer();
       if (pendingLayoutBoardId !== nextBoardId) {
         pendingLayoutPayload = null;
         pendingLayoutBoardId = null;
+      }
+      resetBoardLocalUiState();
+      if (instance.forms.handle("boardGrid")?.dirty.value) {
+        void instance.forms.handle("boardGrid")?.reset({ confirm: false });
       }
       if (cardPrimaryKey.value && !cardBelongsToBoard(cardPrimaryKey.value, nextBoardId)) {
         instance.state.setState({ cardId: null, cardDialog: null });
@@ -137,9 +143,64 @@ await mountPanel({
       }
     });
 
-    // Per-card member refs for targeted single-card refresh after saving parameters, plus title cache for dialog headers.
+    // Per-card member refs, view/zoom/truncation UI state, title cache, and latest layout snapshot for draft saves.
     const cardRefs = new Map();
+    const cardSnapshots = new Map();
+    const groupSnapshots = new Map();
     const cardTitles = ref({});
+    const cardViewModes = reactive({});
+    const cardZoomed = reactive({});
+    const cardTruncations = reactive({});
+
+    function clearReactiveMap(map) {
+      for (const key of Object.keys(map)) {
+        delete map[key];
+      }
+    }
+
+    function resetBoardLocalUiState() {
+      cardSnapshots.clear();
+      groupSnapshots.clear();
+      clearReactiveMap(cardViewModes);
+      clearReactiveMap(cardZoomed);
+      clearReactiveMap(cardTruncations);
+    }
+
+    function getCardViewMode(primaryKey) {
+      return cardViewModes[primaryKey] === "table" ? "table" : "chart";
+    }
+
+    function setCardViewMode(primaryKey, mode) {
+      if (!primaryKey) return;
+      cardViewModes[primaryKey] = mode === "table" ? "table" : "chart";
+    }
+
+    function toggleCardViewMode(primaryKey) {
+      setCardViewMode(primaryKey, getCardViewMode(primaryKey) === "table" ? "chart" : "table");
+    }
+
+    function isCardZoomed(primaryKey) {
+      return Boolean(cardZoomed[primaryKey]);
+    }
+
+    function setCardZoomed(primaryKey, open) {
+      if (!primaryKey) return;
+      if (open) cardZoomed[primaryKey] = true;
+      else delete cardZoomed[primaryKey];
+    }
+
+    function getCardTruncation(primaryKey) {
+      return cardTruncations[primaryKey] ?? null;
+    }
+
+    function setCardTruncation(primaryKey, hint) {
+      if (!primaryKey) return;
+      if (typeof hint === "string" && hint.trim()) {
+        cardTruncations[primaryKey] = hint.trim();
+      } else {
+        delete cardTruncations[primaryKey];
+      }
+    }
 
     function rememberCardTitle(primaryKey, title) {
       if (!primaryKey || typeof title !== "string") return;
@@ -148,13 +209,44 @@ await mountPanel({
       cardTitles.value = { ...cardTitles.value, [primaryKey]: trimmed };
     }
 
-    function setCardRef(primaryKey, el, title) {
+    function readChartFileName(row) {
+      const raw = row?.fields?.chartFile;
+      const val = raw && typeof raw === "object" && raw.kind === "json" ? raw.value : raw;
+      return typeof val?.name === "string" && val.name.endsWith(".chart.json") ? val.name : null;
+    }
+
+    function trackGroup(group) {
+      if (group?.id) {
+        groupSnapshots.set(group.id, {
+          id: group.id,
+          title: group.title ?? "",
+          order: typeof group.order === "number" ? group.order : groupSnapshots.size,
+        });
+      }
+      return undefined;
+    }
+
+    function setCardRef(primaryKey, el, title, meta) {
       if (!primaryKey) return;
       if (title) rememberCardTitle(primaryKey, title);
+      if (meta?.group?.id) trackGroup(meta.group);
       if (el && typeof el.refresh === "function") {
         cardRefs.set(primaryKey, el);
+        if (meta?.group?.id) {
+          cardSnapshots.set(primaryKey, {
+            primaryKey,
+            id: cardIdFromPrimaryKey(primaryKey),
+            groupId: meta.group.id,
+            section: meta.section === "metric" ? "metric" : "chart",
+            colSpan: meta.colSpan,
+            rowSpan: meta.rowSpan,
+            name: title || meta.row?.label || "",
+            chartFileName: readChartFileName(meta.row),
+          });
+        }
       } else {
         cardRefs.delete(primaryKey);
+        cardSnapshots.delete(primaryKey);
       }
     }
 
@@ -242,6 +334,12 @@ await mountPanel({
       notify({ kind: "success", text: t("notice.parametersSaved") });
     }
 
+    function onNavigateMetric(reference) {
+      if (!reference?.primaryKey) return;
+      closeCardDialog();
+      void navigate(panelAddress(METRIC_DETAIL_PATH, { selected: reference.primaryKey })).catch(() => undefined);
+    }
+
     // ---------- Board & group operations ----------
     function notifyFailure(outcome) {
       if (outcome.kind === "cancel") return;
@@ -275,15 +373,19 @@ await mountPanel({
       }
     }
 
+    const boardDraftSaving = ref(false);
+
     const opSaveLayout = usePanelOperation("boardGrid", "saveLayout", {
       available: hasBoard,
       onSettled(receipt) {
+        if (boardDraftSaving.value) return;
         const outcome = outcomeOf(receipt);
         if (outcome.kind !== "success" && outcome.kind !== "cancel") {
           warnLayoutSaveFailed();
         }
       },
       onError() {
+        if (boardDraftSaving.value) return;
         warnLayoutSaveFailed();
       },
     });
@@ -324,7 +426,105 @@ await mountPanel({
         void flushPendingLayout();
       }
       cardRefs.clear();
+      cardSnapshots.clear();
+      groupSnapshots.clear();
     });
+
+    // ---------- Whole-board draft preview save & discard (D-26) ----------
+
+    function normalizeChartFileOverride(override, card) {
+      if (!override || typeof override !== "object" || Array.isArray(override)) return undefined;
+      if (typeof override.name === "string" && override.name.endsWith(".chart.json") && override.content && typeof override.content === "object") {
+        return { name: override.name, content: override.content };
+      }
+      const fallbackName = card.chartFileName || `${card.id}.chart.json`;
+      return { name: fallbackName, content: override };
+    }
+
+    function buildDraftSavePayload(draft) {
+      if (!draft || typeof draft !== "object") return null;
+      const boardName = typeof draft.name === "string" && draft.name.trim() ? draft.name.trim() : undefined;
+      if (Array.isArray(draft.groups)) {
+        return {
+          ...(boardName ? { name: boardName } : {}),
+          groups: draft.groups,
+        };
+      }
+      const groupRenames = draft.groupRenames && typeof draft.groupRenames === "object" ? draft.groupRenames : {};
+      const itemRenames = draft.itemRenames && typeof draft.itemRenames === "object" ? draft.itemRenames : {};
+      const itemOverrides = draft.itemOverrides && typeof draft.itemOverrides === "object" ? draft.itemOverrides : {};
+      const orderedGroups = [...groupSnapshots.values()].sort((a, b) => a.order - b.order);
+      if (orderedGroups.length === 0) return null;
+
+      const groups = orderedGroups.map((group) => {
+        const metrics = [];
+        const charts = [];
+        for (const card of cardSnapshots.values()) {
+          if (card.groupId !== group.id) continue;
+          const override = itemOverrides[card.primaryKey] ?? itemOverrides[card.id];
+          const nextName = itemRenames[card.primaryKey] ?? itemRenames[card.id] ?? override?.title;
+          const entry = {
+            id: card.id,
+            layout: { colSpan: card.colSpan, rowSpan: card.rowSpan },
+            ...(typeof nextName === "string" && nextName.trim() ? { name: nextName.trim() } : {}),
+          };
+          if (card.section === "metric") {
+            metrics.push(entry);
+          } else {
+            const chartFile = normalizeChartFileOverride(override?.fileOverride, card);
+            if (chartFile) entry.chartFile = chartFile;
+            charts.push(entry);
+          }
+        }
+        return {
+          id: group.id,
+          title: typeof groupRenames[group.id] === "string" ? groupRenames[group.id] : group.title,
+          metrics,
+          charts,
+        };
+      });
+      return {
+        ...(boardName ? { name: boardName } : {}),
+        groups,
+      };
+    }
+
+    async function onDraftSave(draft) {
+      if (boardDraftSaving.value || !hasBoard.value) return;
+      const payload = buildDraftSavePayload(draft);
+      if (!payload) return;
+      boardDraftSaving.value = true;
+      try {
+        const receipt = await opSaveLayout.run(payload);
+        const outcome = outcomeOf(receipt);
+        if (outcome.kind === "success") {
+          await instance.forms.handle("boardGrid")?.reset({ confirm: false });
+          const overridden = draft?.itemOverrides && typeof draft.itemOverrides === "object"
+            ? Object.keys(draft.itemOverrides)
+            : [];
+          for (const key of overridden) {
+            if (cardRefs.has(key)) {
+              refreshCard(key);
+            } else {
+              for (const [pk, snap] of cardSnapshots.entries()) {
+                if (snap.id === key) refreshCard(pk);
+              }
+            }
+          }
+          notify({ kind: "success", text: t("notice.draftSaved") });
+        } else if (outcome.kind !== "cancel") {
+          notifyFailure(outcome);
+        }
+      } catch (error) {
+        notifyError(error);
+      } finally {
+        boardDraftSaving.value = false;
+      }
+    }
+
+    function onDraftDiscard() {
+      // GroupedGrid already cleared its internal draft state and unlocked manual layout editing.
+    }
 
     const opCreateGroup = usePanelOperation("boardGrid", "createGroup", {
       available: hasBoard,
@@ -461,8 +661,16 @@ await mountPanel({
       hasCard,
       noBoards,
       setCardRef,
+      trackGroup,
       cardFieldString,
       cardFormats,
+      getCardViewMode,
+      setCardViewMode,
+      toggleCardViewMode,
+      isCardZoomed,
+      setCardZoomed,
+      getCardTruncation,
+      setCardTruncation,
       paramDialogOpen,
       sourceDialogOpen,
       paramDialogTitle,
@@ -471,8 +679,12 @@ await mountPanel({
       onCardRowAction,
       closeCardDialog,
       onCardParametersSaved,
+      onNavigateMetric,
       onBoardCreated,
       onLayoutChange,
+      boardDraftSaving,
+      onDraftSave,
+      onDraftDiscard,
       groupDialogOpen,
       groupDialogTitle,
       groupTitleDraft,

@@ -24,11 +24,13 @@ This panel (`builtin-product-dashboards`) renders user dashboards at `/dashboard
    - Rename group: call `page_action` on `boardGrid.renameGroup` (`dashboards.renameGroup`) with `{ groupId, title }`.
    - Delete group: call `page_action` on `boardGrid.deleteGroup` (`dashboards.deleteGroup`) with `{ groupId }`.
    - Save layout (group order, card placement, spans, names, or updated `chartFile`): call `page_action` on `boardGrid.saveLayout` (`dashboards.saveLayout`) with `{ groups: [{ id, title, metrics: [...], charts: [...] }] }`.
+   - Preview whole-board edits before saving: call `fill_form` on `boardGrid` (supports `groups`, `name`, `groupRenames`, `itemRenames`, `itemOverrides` with chart `fileOverride`, `highlightedIds`, and `summary`); the grid shows an unsaved preview banner, highlights changed cards, locks manual layout edits until saved or discarded, and persists through `boardGrid.saveLayout`.
 
 4. **Edit card parameters**:
    - Select the target card in `cardId` and set `cardDialog` to `"parameters"`.
    - Use `fill_form` on `cardParamForm` to update editable MetricView parameter fields, then save via `platform:DashboardCard.save`. Only that card refreshes after saving.
 
-5. **Inspect metric source or rename/delete a card**:
-   - Set `cardDialog` to `"metricSource"` with `cardId` selected to display `cardMetricSource` (backing `MetricView` link, status, and parameters).
+5. **Inspect chart data, zoom, metric source, or rename/delete a card**:
+   - Chart card headers provide hover controls to expand the chart/table into a fullscreen zoom modal, toggle between the drawn chart and the formatted data table (with a "View metric" footer action), edit parameters, or open rename/delete actions; truncated results show a warning icon beside the card title.
+   - Set `cardDialog` to `"metricSource"` with `cardId` selected to display `cardMetricSource` (backing `MetricView` link, status, and parameters) and the footer `cardMetricOpen` (`ObjectRefCard`) button to navigate directly to the metric detail page.
    - Rename or delete a card via `boardGrid` row actions (`dashboardCards.rename`, `dashboardCards.delete`).

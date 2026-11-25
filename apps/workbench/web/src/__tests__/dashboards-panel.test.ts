@@ -374,10 +374,13 @@ async function openDashboardsPanel(options: {
   state?: MockBoardState;
   onRead?: (request: ProductPanelReadRequest) => void;
   onOperation?: (operationId: string, call: PanelOperationCall) => Record<string, unknown> | undefined;
+  chartTruncation?: { truncated: true; rowLimit: number; truncationHint: string } | null;
+  metricTruncation?: { truncated: true; rowLimit: number; truncationHint: string } | null;
 } = {}) {
   const state = options.state ?? initialBoardState();
   const dispatched: Array<{ operationId: string; call: PanelOperationCall }> = [];
   const reads: ProductPanelReadRequest[] = [];
+  let pageController: { fillForm?: (req: Record<string, unknown>) => Promise<unknown> } | null = null;
 
   const opsHandler = humanIntents(
     (operationId, call) => {
@@ -414,7 +417,20 @@ async function openDashboardsPanel(options: {
         path: "/",
         component: { render: () => h(RouterView) },
         children: [
-          { path: dashboardsUse.path, component: PanelApplicationRoute, props: { applicationId: appId } },
+          {
+            path: dashboardsUse.path,
+            component: PanelApplicationRoute,
+            props: {
+              applicationId: appId,
+              registerPageController: (controller: { fillForm?: (req: Record<string, unknown>) => Promise<unknown> }) => {
+                pageController = controller;
+                return () => {
+                  if (pageController === controller) pageController = null;
+                };
+              },
+            },
+          },
+          { path: "/ontology/assets/metrics/detail", component: { render: () => h("div", { "data-testid": "metric-detail-route" }, "Metric detail") } },
         ],
       },
     ],
@@ -541,7 +557,7 @@ async function openDashboardsPanel(options: {
                 { key: "revenue", label: "Revenue", type: "number" },
               ],
               rows: [{ region: "East", revenue: 120 }],
-              truncation: null,
+              truncation: options.chartTruncation ?? null,
             },
           });
         }
@@ -552,7 +568,7 @@ async function openDashboardsPanel(options: {
           value: {
             columns: [{ key: "total", label: "Total", type: "number" }],
             rows: [{ total: 4200 }],
-            truncation: null,
+            truncation: options.metricTruncation ?? null,
           },
         });
       }
@@ -577,7 +593,7 @@ async function openDashboardsPanel(options: {
           },
         });
       }
-      if (member === "cardMetricSource" && dataName === "record") {
+      if ((member === "cardMetricSource" || member === "cardMetricOpen") && dataName === "record") {
         const pk = (req.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey ?? "d1/c1";
         return Response.json({
           status: "ready",
@@ -626,7 +642,7 @@ async function openDashboardsPanel(options: {
     mounted.app.unmount();
     mounted.element.remove();
   };
-  return { router, element: mounted.element, reads, dispatched, state };
+  return { router, element: mounted.element, reads, dispatched, state, getPageController: () => pageController };
 }
 
 describe("builtin-product-dashboards panel", () => {
@@ -854,6 +870,144 @@ describe("builtin-product-dashboards panel", () => {
       expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
       expect(router.currentRoute.value.fullPath).toContain("dashboardId=d2");
       expect(router.currentRoute.value.fullPath).not.toContain("cardId=");
+    });
+  });
+
+  it("wires pack-1 canvas surfaces, 12/24 section tracks, bare KPI card, chart table/zoom, truncation icon, and Open metric button", async () => {
+    const state = initialBoardState();
+    state.groupsByBoard.d1[1]!.title = "";
+    const { element, router } = await openDashboardsPanel({
+      state,
+      chartTruncation: { truncated: true, rowLimit: 500, truncationHint: "Showing first 500 rows" },
+      metricTruncation: { truncated: true, rowLimit: 500, truncationHint: "Truncated metric sample" },
+    });
+
+    await vi.waitFor(() => {
+      expect(element.querySelector(".sdk-grouped-grid.is-group-surface-card.is-controls-hover")).not.toBeNull();
+      expect(element.querySelector(".sdk-metric-card-group.is-surface-bare.is-value-large")).not.toBeNull();
+      expect(element.querySelectorAll('[data-testid="card-truncation-warning"]').length).toBe(2);
+    });
+
+    // D-07 / D-10 / D-12 / D-18: section columns, row heights, resize axes, dividers, localized empty group title, keyboard focus
+    const tracks = [...element.querySelectorAll<HTMLElement>(".sdk-grouped-grid-track")];
+    expect(tracks[0]?.style.getPropertyValue("--gg-columns")).toBe("12");
+    expect(tracks[0]?.style.getPropertyValue("--gg-row-height")).toBe("102px");
+    expect(tracks[1]?.style.getPropertyValue("--gg-columns")).toBe("24");
+    expect(tracks[1]?.style.getPropertyValue("--gg-row-height")).toBe("360px");
+
+    const groupTitles = [...element.querySelectorAll<HTMLElement>(".sdk-grouped-grid-group-title")].map((el) => el.textContent?.trim());
+    expect(groupTitles).toEqual(["Revenue", "Untitled group"]);
+
+    const metricCardEl = element.querySelector<HTMLElement>('[data-primary-key="d1/m1"]')!;
+    const chartCardEl = element.querySelector<HTMLElement>('[data-primary-key="d1/c1"]')!;
+    expect(metricCardEl.getAttribute("tabindex")).toBe("0");
+    expect(metricCardEl.querySelector(".sdk-grouped-grid-item-header")?.classList.contains("is-divider-none")).toBe(true);
+    expect(metricCardEl.querySelector('[data-testid="grouped-grid-resize-handle"]')?.classList.contains("is-axis-horizontal")).toBe(true);
+    expect(metricCardEl.querySelector(".sdk-metric-card-label")).toBeNull();
+    expect(chartCardEl.querySelector(".sdk-grouped-grid-item-header")?.classList.contains("is-divider-line")).toBe(true);
+    expect(chartCardEl.querySelector('[data-testid="grouped-grid-resize-handle"]')?.classList.contains("is-axis-both")).toBe(true);
+
+    // D-14 / D-15: toggle chart to formatted data table, open Metric Source from table footer, and open fullscreen zoom modal
+    chartCardEl.querySelector<HTMLButtonElement>('[data-action="card-toggle-view"]')!.click();
+    await vi.waitFor(() => {
+      expect(chartCardEl.querySelector('[data-testid="metric-chart-data-overlay"]')).not.toBeNull();
+      expect(chartCardEl.querySelector('[data-action="table-metric-source"]')).not.toBeNull();
+    });
+
+    chartCardEl.querySelector<HTMLButtonElement>('[data-action="card-zoom"]')!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="metric-chart-zoom-modal"]')).not.toBeNull();
+    });
+    document.querySelector<HTMLButtonElement>('[data-testid="metric-chart-zoom-close"]')!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="metric-chart-zoom-modal"]')).toBeNull();
+    });
+
+    // D-25: open Metric Source from table footer and click ObjectRefCard primary "Open metric" button
+    chartCardEl.querySelector<HTMLButtonElement>('[data-action="table-metric-source"]')!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector(".sdk-object-ref-button.is-primary")).not.toBeNull();
+    });
+    const openMetricBtn = document.querySelector<HTMLButtonElement>(".sdk-object-ref-button.is-primary")!;
+    expect(openMetricBtn.textContent?.trim()).toBe("Open metric");
+    openMetricBtn.click();
+    await vi.waitFor(() => {
+      expect(router.currentRoute.value.fullPath).toBe("/ontology/assets/metrics/detail?selected=mv-rev");
+    });
+  });
+
+  it("supports whole-board unsaved draft preview with edit lock, chart fileOverride, and saveLayout persistence (D-26)", async () => {
+    const { element, dispatched, getPageController } = await openDashboardsPanel();
+
+    await vi.waitFor(() => {
+      expect(element.querySelector('[data-primary-key="d1/c1"]')).not.toBeNull();
+      expect(element.querySelector(".mock-echart")).not.toBeNull();
+      expect(getPageController()?.fillForm).toBeDefined();
+    });
+
+    expect(element.querySelector('[data-testid="grouped-grid-draft-bar"]')).toBeNull();
+
+    const lineChartContent = {
+      ...sampleChartFile.content,
+      series: [{ id: "s0", type: "line", datasetId: "metric", encode: { x: "region", y: "revenue" } }],
+    };
+
+    const fillResult = await getPageController()!.fillForm!({
+      member: "boardGrid",
+      values: {
+        summary: "Previewing 1 chart update",
+        groupRenames: { g1: "Revenue Q4" },
+        itemRenames: { "d1/c1": "Regional Sales" },
+        itemOverrides: {
+          "d1/c1": {
+            fileOverride: lineChartContent,
+          },
+        },
+      },
+    });
+    expect(fillResult).toMatchObject({ ok: true });
+
+    await vi.waitFor(() => {
+      expect(element.querySelector('[data-testid="grouped-grid-draft-bar"]')?.textContent).toContain("Previewing 1 chart update");
+      expect(element.querySelector(".sdk-grouped-grid.is-locked")).not.toBeNull();
+      expect(element.querySelector<HTMLButtonElement>('[data-action="group-menu"]')?.disabled).toBe(true);
+      expect(element.querySelector<HTMLButtonElement>('[data-action="card-parameters"]')?.disabled).toBe(true);
+      expect(element.querySelector('[data-primary-key="d1/c1"]')?.classList.contains("is-draft-modified")).toBe(true);
+      expect(element.querySelector<HTMLElement>(".mock-echart")?.dataset.seriesType).toBe("line");
+    });
+
+    element.querySelector<HTMLButtonElement>('[data-testid="grouped-grid-draft-save"]')!.click();
+    await vi.waitFor(() => {
+      expect(dispatched.some((item) => item.operationId.endsWith("boardGrid.saveLayout"))).toBe(true);
+      expect(element.querySelector('[data-testid="grouped-grid-draft-bar"]')).toBeNull();
+    });
+
+    const saveCall = dispatched.find((item) => item.operationId.endsWith("boardGrid.saveLayout"))!.call;
+    expect(saveCall.input).toEqual({
+      groups: [
+        {
+          id: "g1",
+          title: "Revenue Q4",
+          metrics: [{ id: "m1", layout: { colSpan: 3, rowSpan: 1 } }],
+          charts: [
+            {
+              id: "c1",
+              name: "Regional Sales",
+              layout: { colSpan: 6, rowSpan: 2 },
+              chartFile: {
+                name: "c1.chart.json",
+                content: lineChartContent,
+              },
+            },
+          ],
+        },
+        {
+          id: "g2",
+          title: "Pipeline",
+          metrics: [],
+          charts: [],
+        },
+      ],
     });
   });
 });
