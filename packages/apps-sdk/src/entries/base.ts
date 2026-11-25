@@ -6,6 +6,11 @@ export { default as ObjectList } from "../base/ObjectList.vue";
 export type {
   ObjectListColumn,
   ObjectListRef,
+  ObjectListRowActionErrorEvent,
+  ObjectListRowActionResultEvent,
+  ObjectListRowActionRowSummary,
+  ObjectListSelectionRecord,
+  ObjectListStateSnapshot,
 } from "../base/object-list-types";
 export { default as GroupedGrid } from "../base/GroupedGrid.vue";
 export type {
@@ -26,6 +31,8 @@ export { default as ObjectCount } from "../base/ObjectCount.vue";
 export type { ObjectCountItem } from "../base/object-count-types";
 export { default as ObjectRelations } from "../base/ObjectRelations.vue";
 export { default as ObjectSummary } from "../base/ObjectSummary.vue";
+export { default as ObjectTitle } from "../base/ObjectTitle.vue";
+export type { ObjectTitleTarget } from "../base/object-title-types";
 export { default as ObjectHeader } from "../base/ObjectHeader.vue";
 export { default as PageHeader } from "../base/PageHeader.vue";
 export type { PageHeaderDraft, PageHeaderLabels } from "../base/page-header-types";

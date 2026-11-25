@@ -16,7 +16,7 @@ import { findPanelFormOption, formFieldErrorSchema, formValuesSchema, panelFormO
 import { bindingKey } from "./panel-client-requests";
 import { directPanelPortTypeSchema, matchesObjectType, objectUnionTypes, panelFormTargetSchema, panelMessageKeySchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
-import { panelConversationEntrySchema } from "./panel-conversation-entry";
+import { pageComposerAgentTargetSchema, panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
   platformOntologyNeighborsRequestSchema, platformOntologyNeighborsResponseSchema,
   platformOntologyObjectsRequestSchema, platformOntologyRelationStatusSchema,
@@ -104,6 +104,7 @@ const rowActionBaseFields = {
   icon: z.string().min(1).optional(),
   iconOnly: z.boolean().optional(),
   active: z.boolean().optional(),
+  tone: z.enum(["default", "primary", "danger"]).optional(),
   danger: z.boolean().optional(),
   primary: z.boolean().optional(),
   when: rowActionWhenSchema,
@@ -121,6 +122,14 @@ export const panelObjectListRowActionItemSchema = z.discriminatedUnion("kind", [
     kind: z.literal("local"),
     id: z.string().min(1),
     to: z.string().min(1).optional(),
+    ...rowActionBaseFields,
+  }).strict(),
+  z.object({
+    kind: z.literal("conversation"),
+    id: z.string().min(1),
+    prompt: z.string().optional(),
+    promptKey: panelMessageKeySchema.optional(),
+    agent: z.union([z.string().min(1), pageComposerAgentTargetSchema]).optional(),
     ...rowActionBaseFields,
   }).strict(),
 ]);

@@ -18,6 +18,7 @@ import {
   ChartNoAxesCombined,
   Check,
   CheckCircle2,
+  ChevronRight,
   Circle,
   CircleDot,
   ClipboardList,
@@ -49,10 +50,12 @@ import {
   Package,
   PanelsTopLeft,
   PauseCircle,
+  Pencil,
   PlayCircle,
   Plug,
   Presentation,
   Puzzle,
+  RefreshCw,
   ScanEye,
   ScrollText,
   Server,
@@ -68,6 +71,7 @@ import {
   Star,
   Table2,
   Tags,
+  Trash2,
   Unlock,
   UserCog,
   Users,
@@ -178,19 +182,35 @@ const appIcons: Record<string, Component> = {
   "play-circle": PlayCircle,
   sparkles: Sparkles,
   "circle-dot": CircleDot,
+  "chevron-right": ChevronRight,
+  pencil: Pencil,
+  "refresh-cw": RefreshCw,
+  "trash-2": Trash2,
 };
 
+function normalizeCuratedIconName(name: string): string {
+  if (Object.hasOwn(appIcons, name)) return name;
+  return name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/([a-zA-Z])([0-9])/g, "$1-$2")
+    .toLowerCase();
+}
+
 export function hasAppIcon(name: string): boolean {
-  return Object.hasOwn(appIcons, name);
+  return Object.hasOwn(appIcons, normalizeCuratedIconName(name));
 }
 
 export function appIcon(name: string): Component {
-  return appIcons[name] ?? Circle;
+  return appIcons[normalizeCuratedIconName(name)] ?? Circle;
 }
+
+/** Curated icon lookup shared across shell controls and SDK base components. */
+export const curatedIcon = appIcon;
 
 /** An icon the shell was given: a component stays as it is, a name resolves through the curated set. */
 export function resolveIcon(icon: string | Component): Component {
   return typeof icon === "string" ? appIcon(icon) : icon;
 }
 
-export { ExternalLink };
+export { ExternalLink, Pencil, Plug, RefreshCw, Trash2 };

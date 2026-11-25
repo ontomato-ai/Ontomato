@@ -4,6 +4,7 @@ export const baseComponents = {
   ObjectCount: () => import("./base/ObjectCount.vue").then(module => module.default),
   ObjectRelations: () => import("./base/ObjectRelations.vue").then(module => module.default),
   ObjectSummary: () => import("./base/ObjectSummary.vue").then(module => module.default),
+  ObjectTitle: () => import("./base/ObjectTitle.vue").then(module => module.default),
   ObjectHeader: () => import("./base/ObjectHeader.vue").then(module => module.default),
   PageHeader: () => import("./base/PageHeader.vue").then(module => module.default),
   AppMenu: () => import("./base/AppMenu.vue").then(module => module.default),

@@ -427,8 +427,27 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         label,
         icon: item.icon,
         iconOnly: item.iconOnly,
-        danger: Boolean(item.danger),
-        primary: Boolean(item.primary),
+        danger: Boolean(item.danger || item.tone === "danger"),
+        primary: Boolean(item.primary || item.tone === "primary"),
+        disabled: false,
+      });
+      continue;
+    }
+    if (item.kind === "conversation") {
+      if (!item.id) continue;
+      const label = item.labelKey ? panel.t(item.labelKey) : item.label ?? t("platform.conversationEntryOpen");
+      resolved.push({
+        key: `conv:${item.id}:${i}`,
+        kind: "conversation",
+        id: item.id,
+        prompt: item.prompt,
+        promptKey: item.promptKey,
+        agent: item.agent,
+        label,
+        icon: item.icon ?? "Sparkles",
+        iconOnly: item.iconOnly,
+        danger: Boolean(item.danger || item.tone === "danger"),
+        primary: Boolean(item.primary || item.tone === "primary"),
         disabled: false,
       });
       continue;
@@ -447,8 +466,8 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       label,
       icon: item.icon,
       iconOnly: item.iconOnly,
-      danger: Boolean(item.danger),
-      primary: Boolean(item.primary),
+      danger: Boolean(item.danger || item.tone === "danger"),
+      primary: Boolean(item.primary || item.tone === "primary"),
       disabled: unavailable,
       reason,
     });

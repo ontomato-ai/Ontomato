@@ -44,6 +44,7 @@ const DECLARED_DATA = {
   GroupedGrid: { record: ["panelRecord"], rows: ["panelRecordList"] },
   ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
+  ObjectTitle: { record: ["panelRecord"] },
   ObjectHeader: { record: ["panelRecord"] },
   TypedValue: { record: ["panelRecord"], result: ["metricOutput"] },
   RecordTemplate: { record: ["panelRecord"], result: ["metricOutput"] },
@@ -372,6 +373,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     });
     assert.deepEqual(Object.keys(declared.get("ObjectForm").readOnlyOutputs ?? {}).sort(), ["dirty", "draft", "label"]);
     assert.deepEqual(Object.keys(declared.get("ObjectSummary").readOnlyOutputs ?? {}).sort(), ["label", "status"]);
+    assert.deepEqual(Object.keys(declared.get("ObjectTitle").readOnlyOutputs ?? {}).sort(), ["label"]);
     assert.deepEqual(Object.keys(declared.get("ObjectHeader").readOnlyOutputs ?? {}).sort(), [
       "errorMessage", "label", "status",
     ]);

@@ -11,7 +11,7 @@ export { default as PanelHost } from "./PanelHost.vue";
 export { default as PlatformPageHeader } from "./PlatformPageHeader.vue";
 export { default as PlatformTabs } from "./PlatformTabs.vue";
 export { default as PlatformBrandMark } from "./PlatformBrandMark.vue";
-export { appIcon, hasAppIcon, resolveIcon } from "./icons";
+export { appIcon, curatedIcon, hasAppIcon, resolveIcon } from "./icons";
 export {default as ApplicationIconPicker} from './ApplicationIconPicker.vue';
 export { platformPath, platformRoutes } from "./routes";
 export { openApplicationKey } from './application-opening';

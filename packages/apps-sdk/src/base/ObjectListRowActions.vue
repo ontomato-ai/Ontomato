@@ -2,18 +2,23 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
-import { appIcon } from "@ontomato/platform-shell";
+import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
+import { curatedIcon } from "@ontomato/platform-shell";
 
 export interface ResolvedRowActionItem {
   readonly key: string;
-  readonly kind: "operation" | "local";
+  readonly kind: "operation" | "local" | "conversation";
   readonly operation?: string;
   readonly id?: string;
   readonly to?: string;
+  readonly prompt?: string;
+  readonly promptKey?: string;
+  readonly agent?: string | PanelConversationEntry["target"];
   readonly label: string;
   readonly icon?: string;
   readonly iconOnly?: boolean;
   readonly active?: boolean;
+  readonly busy?: boolean;
   readonly danger: boolean;
   readonly primary: boolean;
   readonly disabled: boolean;
@@ -25,11 +30,13 @@ const props = withDefaults(
     items: readonly ResolvedRowActionItem[];
     maxVisible?: number;
     busy?: boolean;
+    locked?: boolean;
     rowLabel?: string;
   }>(),
   {
     maxVisible: 2,
     busy: false,
+    locked: false,
     rowLabel: "",
   },
 );
@@ -57,9 +64,9 @@ const moreAriaLabel = computed(() => {
 });
 
 function handleOverflowCommand(command: string | number | Record<string, unknown>) {
-  if (typeof command !== "string" || props.busy) return;
+  if (typeof command !== "string" || props.busy || props.locked) return;
   const found = overflowItems.value.find((item) => item.key === command);
-  if (!found || found.disabled) return;
+  if (!found || found.disabled || found.busy) return;
   emit("trigger", found);
 }
 </script>
@@ -76,8 +83,12 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
         'is-primary': item.primary,
         'is-icon-only': item.iconOnly,
         'is-active': item.active,
+        'is-busy': item.busy,
+        'is-locked': locked,
       }"
-      :disabled="item.disabled || busy"
+      :disabled="item.disabled || item.busy || locked || busy"
+      :aria-busy="item.busy ? 'true' : undefined"
+      :aria-disabled="(locked || busy || item.disabled || item.busy) ? 'true' : undefined"
       :aria-label="item.iconOnly ? item.label : undefined"
       :aria-pressed="item.active !== undefined ? item.active : undefined"
       :title="item.reason ?? (item.iconOnly ? item.label : undefined)"
@@ -86,8 +97,13 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
       :data-local-action="item.id"
       @click.stop="emit('trigger', item)"
     >
+      <span
+        v-if="item.busy && !item.iconOnly"
+        class="sdk-object-list-action-spinner"
+        aria-hidden="true"
+      />
       <svg
-        v-if="item.icon === 'star' || item.icon === 'star-filled'"
+        v-else-if="item.icon === 'star' || item.icon === 'star-filled'"
         class="sdk-object-list-action-icon"
         viewBox="0 0 24 24"
         width="14"
@@ -102,7 +118,7 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
       </svg>
       <component
-        :is="appIcon(item.icon)"
+        :is="curatedIcon(item.icon)"
         v-else-if="item.icon"
         class="sdk-object-list-action-icon"
         :size="14"
@@ -115,7 +131,7 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
       trigger="click"
       placement="bottom-end"
       class="sdk-object-list-action-more"
-      :disabled="busy"
+      :disabled="busy || locked"
       @command="handleOverflowCommand"
     >
       <button
@@ -123,7 +139,7 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
         class="sdk-object-list-action-more-btn"
         :aria-label="moreAriaLabel"
         :title="moreAriaLabel"
-        :disabled="busy"
+        :disabled="busy || locked"
         @click.stop
       >
         <span aria-hidden="true">···</span>
@@ -135,7 +151,7 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
             :key="item.key"
             :command="item.key"
             :divided="item.danger && index > 0 && !overflowItems[index - 1]?.danger"
-            :disabled="item.disabled || busy"
+            :disabled="item.disabled || item.busy || busy || locked"
             :class="['sdk-object-list-more-item', { 'is-danger': item.danger }]"
             :data-action-kind="item.kind"
             :data-operation="item.operation"
@@ -186,11 +202,47 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
   background: var(--el-fill-color);
   color: var(--el-text-color-primary);
 }
+.sdk-object-list-action-btn.is-icon-only.is-danger {
+  color: var(--el-color-danger);
+}
+.sdk-object-list-action-btn.is-icon-only.is-danger:hover:not(:disabled) {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
 .sdk-object-list-action-btn.is-active {
   color: var(--el-color-warning);
 }
 .sdk-object-list-action-btn.is-active:hover:not(:disabled) {
   color: var(--el-color-warning);
+}
+.sdk-object-list-action-btn.is-locked,
+.sdk-object-list-action-btn.is-busy {
+  cursor: wait;
+}
+.sdk-object-list-action-btn.is-icon-only.is-busy,
+.sdk-object-list-action-btn.is-icon-only[aria-busy="true"] {
+  opacity: 0.55;
+  cursor: wait;
+}
+.sdk-object-list-action-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: sdk-object-list-spin 0.75s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes sdk-object-list-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sdk-object-list-action-spinner {
+    animation: none;
+  }
 }
 .sdk-object-list-action-icon {
   flex: 0 0 auto;

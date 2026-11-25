@@ -22,3 +22,51 @@ export interface ObjectListRef {
   readonly className: string;
   readonly primaryKey: string;
 }
+
+/** Selected row summary emitted by `ObjectList`'s `selection-record` event. */
+export interface ObjectListSelectionRecord {
+  readonly className: string;
+  readonly primaryKey: string;
+  readonly label: string;
+  readonly subtitle?: string;
+}
+
+/** Pagination and loading snapshot exposed by `ObjectList`'s `state-change` event and `#status` slot. */
+export interface ObjectListStateSnapshot {
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number | null;
+  readonly totalPages: number;
+  readonly count: number;
+  readonly loading: boolean;
+  readonly refreshing: boolean;
+  readonly error: string | null;
+  readonly retry: (() => void) | null;
+}
+
+/** Safe row summary carried by `row-action-error` and `row-action-result` events. */
+export interface ObjectListRowActionRowSummary {
+  readonly className: string;
+  readonly primaryKey: string;
+  readonly label: string;
+}
+
+/** Payload emitted by `ObjectList`'s `row-action-error` event. */
+export interface ObjectListRowActionErrorEvent {
+  readonly actionId: string;
+  readonly row: ObjectListRowActionRowSummary;
+  readonly ref: ObjectListRef;
+  readonly message: string;
+}
+
+/** Payload emitted by `ObjectList`'s `row-action-result` event. */
+export interface ObjectListRowActionResultEvent {
+  readonly actionId: string;
+  readonly row: ObjectListRowActionRowSummary;
+  readonly ref: ObjectListRef;
+  readonly ok: boolean;
+  readonly outcome?: unknown;
+  readonly data?: unknown;
+  readonly message?: string;
+  readonly error?: string;
+}

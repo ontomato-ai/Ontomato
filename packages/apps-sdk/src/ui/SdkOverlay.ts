@@ -6,6 +6,7 @@ import {
   onBeforeUnmount,
   provide,
   ref,
+  watch,
   type Component,
   type PropType,
   type Slots,
@@ -41,6 +42,16 @@ function forwardSlots(slots: Slots): Record<string, (...args: unknown[]) => unkn
   return forwarded;
 }
 
+function invokeForwardedListener(listener: unknown, args: unknown[]): void {
+  if (typeof listener === "function") {
+    listener(...args);
+  } else if (Array.isArray(listener)) {
+    for (const item of listener) {
+      if (typeof item === "function") item(...args);
+    }
+  }
+}
+
 /**
  * Wraps an Element Plus overlay (`ElDialog` or `ElDrawer`) with an overlay-scoped unsaved-changes guard.
  *
@@ -74,6 +85,34 @@ export function createSdkOverlay<T extends Component>(options: {
       const entries = new Set<RegisteredFormEntry>();
       let unmounted = false;
       let guardPending = false;
+      let previousActiveElement: HTMLElement | null = null;
+
+      function captureTriggerFocus(): void {
+        if (typeof document === "undefined") return;
+        const active = document.activeElement;
+        previousActiveElement = active instanceof HTMLElement && active !== document.body && active.isConnected
+          ? active
+          : null;
+      }
+
+      function restoreTriggerFocus(): void {
+        const trigger = previousActiveElement;
+        previousActiveElement = null;
+        if (trigger && trigger.isConnected && typeof trigger.focus === "function") {
+          trigger.focus();
+        }
+      }
+
+      const isOpen = computed(() => Boolean(attrs.modelValue ?? attrs["model-value"]));
+      watch(
+        isOpen,
+        (open, prev) => {
+          if (open && !prev) {
+            captureTriggerFocus();
+          }
+        },
+        { immediate: true, flush: "sync" },
+      );
 
       const i18n = (() => {
         try {
@@ -106,6 +145,7 @@ export function createSdkOverlay<T extends Component>(options: {
 
       onBeforeUnmount(() => {
         unmounted = true;
+        previousActiveElement = null;
       });
 
       function collectScopedForms(): Map<PanelFormAdapters, string[]> {
@@ -214,6 +254,11 @@ export function createSdkOverlay<T extends Component>(options: {
           delete forwarded["close-on-press-escape"];
           forwarded.closeOnPressEscape = false;
         }
+        const userOnClosed = forwarded.onClosed;
+        forwarded.onClosed = (...args: unknown[]) => {
+          invokeForwardedListener(userOnClosed, args);
+          restoreTriggerFocus();
+        };
         return h(
           options.target,
           {

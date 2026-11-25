@@ -58,6 +58,14 @@ const props = withDefaults(
     missingText?: string;
     /** Field keys that show a one-click copy button beside their displayed value; hash routes (`#/...`) resolve to the full browser URL. */
     copyableFields?: readonly string[];
+    /**
+     * Presentation mode: `"fields"` (default) renders structured fields or article layout; `"pre"` renders a single
+     * focusable scrollable `<pre tabindex="0">` block capped at `55dvh` showing the full text of `textField` (or the
+     * first text field when omitted).
+     */
+    presentation?: "fields" | "pre";
+    /** Field key displayed in `presentation="pre"` mode; omitted, uses the first text field on the record. */
+    textField?: string;
   }>(),
   {
     showTitle: true,
@@ -68,6 +76,8 @@ const props = withDefaults(
     emptyText: undefined,
     missingText: undefined,
     copyableFields: undefined,
+    presentation: "fields",
+    textField: undefined,
   },
 );
 
@@ -99,12 +109,36 @@ const shown = computed(() => {
   return keys.filter(present);
 });
 
-const isArticle = computed(() => props.layout === "article");
+const isPre = computed(() => props.presentation === "pre");
+const isArticle = computed(() => !isPre.value && props.layout === "article");
 const articleExtraFields = computed(() => {
   if (!isArticle.value) return shown.value;
   const reserved = new Set([props.statusField, props.tagsField, props.bodyField].filter(Boolean));
   return shown.value.filter((name) => !reserved.has(name));
 });
+
+function resolvePreFieldKey(current: PlatformObjectRecord): string | null {
+  if (props.textField) return props.textField;
+  const candidates = props.fields ? [...props.fields] : Object.keys(current.fields);
+  const firstNonEmptyString = candidates.find((key) => typeof current.fields[key] === "string" && current.fields[key].trim() !== "");
+  if (firstNonEmptyString) return firstNonEmptyString;
+  const firstString = candidates.find((key) => typeof current.fields[key] === "string");
+  if (firstString) return firstString;
+  const firstText = candidates.find((key) => fieldText(current, key) !== "");
+  return firstText ?? candidates[0] ?? null;
+}
+
+function preText(current: PlatformObjectRecord): string {
+  const key = resolvePreFieldKey(current);
+  if (key && key in current.fields) return fieldText(current, key);
+  if (current.subtitle) return current.subtitle;
+  return current.label;
+}
+
+function preAriaLabel(current: PlatformObjectRecord): string {
+  const key = resolvePreFieldKey(current);
+  return (key && current.fieldLabels?.[key]) || current.label || t("common.detail");
+}
 
 const result = computed(() => recordData.value as DataStateResult<PlatformObjectRecord>);
 const labels = useDataStateLabels();
@@ -199,7 +233,7 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
 </script>
 
 <template>
-  <div class="sdk-object-summary" :class="{ 'sdk-object-summary-article': isArticle, 'sdk-object-summary-centered': showArticleEmpty || showArticleMissing }">
+  <div class="sdk-object-summary" :class="{ 'sdk-object-summary-article': isArticle, 'sdk-object-summary-pre-mode': isPre, 'sdk-object-summary-centered': showArticleEmpty || showArticleMissing }">
     <div v-if="showArticleEmpty || showArticleMissing" class="sdk-object-summary-empty" role="status">
       <svg
         class="sdk-object-summary-empty-icon"
@@ -220,7 +254,14 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
     </div>
     <data-state v-else :result="result" :labels="labels">
       <template #default="{ value: current }">
-        <template v-if="isArticle">
+        <pre
+          v-if="isPre"
+          class="sdk-object-summary-pre"
+          tabindex="0"
+          role="region"
+          :aria-label="preAriaLabel(current)"
+        >{{ preText(current) }}</pre>
+        <template v-else-if="isArticle">
           <div class="sdk-object-summary-article-head">
             <h2 v-if="showTitle" class="sdk-object-summary-article-title">
               <template v-for="(part, index) in textHighlightSegments(current.label, current.highlights?.label)" :key="index">
@@ -391,10 +432,25 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
   min-height: 0;
   overflow-y: auto;
 }
-.sdk-object-summary-article {
+.sdk-object-summary-article,
+.sdk-object-summary-pre-mode {
   flex: 0 0 auto;
   height: auto;
   overflow: visible;
+}
+.sdk-object-summary-pre {
+  margin: 0;
+  max-block-size: 55dvh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  line-height: var(--leading-relaxed, 1.6);
+}
+.sdk-object-summary-pre:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
 }
 .sdk-object-summary-centered {
   align-items: center;
