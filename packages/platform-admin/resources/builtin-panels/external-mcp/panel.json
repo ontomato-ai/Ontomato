@@ -86,7 +86,7 @@
                 "kind": "operation",
                 "operation": "delete",
                 "labelKey": "action.delete",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }

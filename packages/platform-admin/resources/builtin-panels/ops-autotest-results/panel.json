@@ -111,7 +111,7 @@
                 "labelKey": "runs.delete",
                 "icon": "x",
                 "iconOnly": true,
-                "danger": true,
+                "tone": "danger",
                 "disabledWhen": {
                   "field": "active",
                   "equals": true

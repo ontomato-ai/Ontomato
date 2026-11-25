@@ -43,15 +43,7 @@ export interface ObjectListRef {
   readonly primaryKey: string;
 }
 
-/** Selected row summary emitted by `ObjectList`'s `selection-record` event. */
-export interface ObjectListSelectionRecord {
-  readonly className: string;
-  readonly primaryKey: string;
-  readonly label: string;
-  readonly subtitle?: string;
-}
-
-/** Pagination and loading snapshot exposed by `ObjectList`'s `state-change` event and `#status` slot. */
+/** Pagination and loading snapshot exposed by `ObjectList`'s `#status` slot. */
 export interface ObjectListStateSnapshot {
   readonly page: number;
   readonly pageSize: number;
@@ -62,33 +54,6 @@ export interface ObjectListStateSnapshot {
   readonly refreshing: boolean;
   readonly error: string | null;
   readonly retry: (() => void) | null;
-}
-
-/** Safe row summary carried by `row-action-error` and `row-action-result` events. */
-export interface ObjectListRowActionRowSummary {
-  readonly className: string;
-  readonly primaryKey: string;
-  readonly label: string;
-}
-
-/** Payload emitted by `ObjectList`'s `row-action-error` event. */
-export interface ObjectListRowActionErrorEvent {
-  readonly actionId: string;
-  readonly row: ObjectListRowActionRowSummary;
-  readonly ref: ObjectListRef;
-  readonly message: string;
-}
-
-/** Payload emitted by `ObjectList`'s `row-action-result` event. */
-export interface ObjectListRowActionResultEvent {
-  readonly actionId: string;
-  readonly row: ObjectListRowActionRowSummary;
-  readonly ref: ObjectListRef;
-  readonly ok: boolean;
-  readonly outcome?: unknown;
-  readonly data?: unknown;
-  readonly message?: string;
-  readonly error?: string;
 }
 
 /** Event payload emitted when an inline tab rename commits a changed label. */

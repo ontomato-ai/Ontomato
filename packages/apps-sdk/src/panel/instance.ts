@@ -79,6 +79,8 @@ export interface PanelInstanceOptions {
   operations: PanelHumanOperations;
   /** The host's confirmation and single dispatch of a prepared write. */
   confirmOperation: ConfirmPanelOperation;
+  /** Platform toast channel for notifying the reader of operation messages (shared by read and write operations). */
+  notify?: (message: { kind: "success" | "info" | "warning" | "error"; text: string }) => void;
   /**
    * Where this instance sits in the panel the reader opened (a panel placed from another's state), or nothing for the
    * opened panel itself: every member path, operation ID and page-context selection of this instance starts with it.
@@ -86,6 +88,12 @@ export interface PanelInstanceOptions {
   memberPath?: PanelMemberPath;
   /** A member's segment of a path: its key, with the selection that placed it where the panel's state chose it. */
   segmentOf?: (member: string) => PanelMemberPath[number];
+}
+
+/** Per-invocation options for read operations. */
+export interface PanelReadOperationOptions {
+  /** When `false`, suppresses automatic platform toast notification of `result.message`. Defaults to `true`. */
+  readonly notifySuccess?: boolean;
 }
 
 /** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
@@ -100,9 +108,11 @@ export interface PanelAgentActionContext {
   };
 }
 
-/** Explicit overrides for write operations (`memberPath`, lifecycle hooks, and per-call agent context). */
+/** Explicit overrides for write operations (`memberPath`, lifecycle hooks, handler identity, and per-call agent context). */
 export interface PanelWriteOperationOptions {
   memberPath?: PanelMemberPath;
+  /** Optional operation handler reference (for example `applications.toggleFavorite`) used for same-object in-flight deduplication. */
+  handlerRef?: string;
   /** Called right after confirmation passes (or immediately when no confirmation is required), before dispatch begins. */
   onConfirmed?: () => void;
   /** Present only when this write was initiated by an agent `page_action` call. */
@@ -340,7 +350,12 @@ export interface PanelInstance {
   /** Stages a file the reader picked for one of this panel's operations that declares an upload (see `PanelHumanOperations.upload`). */
   uploadFile(operationId: string, file: File): Promise<PanelUploadReceipt>;
   /** Runs a read-only operation as the reader: what it read, with nothing written and nothing reported changed. */
-  readOperation(operationId: string, call: PanelReadCall, agentRun?: PanelAgentRunRef): Promise<PanelReadOperationResult>;
+  readOperation(
+    operationId: string,
+    call: PanelReadCall,
+    agentRun?: PanelAgentRunRef,
+    readOptions?: PanelReadOperationOptions,
+  ): Promise<PanelReadOperationResult>;
   /**
    * Runs a write as the reader, the way an agent's runs: one intent freezes the calls, the host confirms it where the
    * owner or a batch asks and dispatches it once. What the owner reports changed comes back through the host's refresh
@@ -352,6 +367,11 @@ export interface PanelInstance {
     invocation: PanelWriteInvocation,
     writeOptions?: PanelWriteOperationOptions,
   ): Promise<PanelWriteResult>;
+  /** Reactive query reporting whether a write operation for `(target.objectType, target.primaryKey, handlerRef)` is currently in flight on this panel instance. */
+  isObjectWriteInFlight(
+    target: { readonly objectType: string; readonly primaryKey: string },
+    handlerRef: string,
+  ): boolean;
   objectChanged(object: PanelObjectIdentity): void;
   /**
    * Lets go of objects a write removed: dirty forms targeting them (or bound to state fields being cleared) are
@@ -520,6 +540,40 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     };
   }
 
+  const inFlightObjectWrites = reactive(new Set<string>());
+
+  function objectWriteKey(
+    target: { readonly objectType: string; readonly primaryKey: string },
+    handlerRef: string,
+  ): string {
+    return `${target.objectType}\0${target.primaryKey}\0${handlerRef}`;
+  }
+
+  function resolveWriteHandlerRef(operationId: string, explicitHandlerRef?: string): string {
+    if (explicitHandlerRef) return explicitHandlerRef;
+    return operations.value.find((operation) => operation.id === operationId)?.handlerRef ?? operationId;
+  }
+
+  function objectWriteTargets(invocation: PanelWriteInvocation): readonly { readonly objectType: string; readonly primaryKey: string }[] {
+    if ("call" in invocation) {
+      const target = invocation.call.target;
+      return target?.kind === "object"
+        ? [{ objectType: target.objectType, primaryKey: target.primaryKey }]
+        : [];
+    }
+    return invocation.calls.map((entry) => ({
+      objectType: entry.target.objectType,
+      primaryKey: entry.target.primaryKey,
+    }));
+  }
+
+  function isObjectWriteInFlight(
+    target: { readonly objectType: string; readonly primaryKey: string },
+    handlerRef: string,
+  ): boolean {
+    return inFlightObjectWrites.has(objectWriteKey(target, handlerRef));
+  }
+
   async function writeOperation(
     operationId: string,
     invocation: PanelWriteInvocation,
@@ -527,80 +581,144 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   ) {
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
-    const path = writeOptions?.memberPath ?? operationPath(operationId);
-    const agentScope = writeOptions?.agentContext;
-    const evaluator = writeOptions?.evaluateSubmission;
-    const frozen = agentScope && evaluator ? evaluator("prepare") : null;
-    if (frozen && !frozen.ok) {
-      throw new PanelSubmissionStaleError(frozen.message);
+    const resolvedHandlerRef = resolveWriteHandlerRef(operationId, writeOptions?.handlerRef);
+    const writeKeys = [...new Set(
+      objectWriteTargets(invocation).map((target) => objectWriteKey(target, resolvedHandlerRef)),
+    )];
+    if (writeKeys.some((key) => inFlightObjectWrites.has(key))) {
+      return {
+        decision: "confirm" as const,
+        response: {
+          kind: "not-dispatched" as const,
+          intentId: "",
+          code: "OPERATION_IN_FLIGHT",
+          message: "This operation is already in flight for the target object.",
+        },
+        named: [],
+      };
     }
-    const preparation = agentScope?.agentRun
-      ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
-      : await options.operations.prepare(operationId, invocation, path);
-    function receive(answer: AppBridgeConfirmPanelOperationResult): AppBridgeConfirmPanelOperationResult {
-      if (answer.decision !== "confirm" || answer.response.kind !== "dispatched" || !answer.response.outcome) return answer;
-      const { outcome } = answer.response;
-      const items = outcome.kind === "batch" ? outcome.items.map(item => item.outcome) : [outcome];
-      const deliveries = items.flatMap(item => item.kind === "success" && item.secret ? [item.secret] : []);
-      if (!deliveries.length) return answer;
-      secretDeliveries.value = [...secretDeliveries.value, ...deliveries];
-      return { ...answer, response: { ...answer.response, outcome: withoutPanelSecretDelivery(outcome) } };
-    }
-    const named = namedTargets(preparation.confirmation);
-    const verifyOrCancel = async (phase: "auto-dispatch" | "confirm") => {
-      if (!frozen?.ok || !evaluator) return;
-      const check = verifySubmissionUnchanged(frozen, evaluator, phase);
-      if (!check.ok) {
-        await options.operations.cancel?.(preparation.intentId, {
-          code: "ACTION_CONFIRMATION_STALE",
-          message: check.message,
-        }).catch(() => undefined);
-        throw new PanelSubmissionStaleError(check.message, preparation.intentId);
+    for (const key of writeKeys) inFlightObjectWrites.add(key);
+    try {
+      const path = writeOptions?.memberPath ?? operationPath(operationId);
+      const agentScope = writeOptions?.agentContext;
+      const evaluator = writeOptions?.evaluateSubmission;
+      const frozen = agentScope && evaluator ? evaluator("prepare") : null;
+      if (frozen && !frozen.ok) {
+        throw new PanelSubmissionStaleError(frozen.message);
       }
-    };
-    if (agentScope && preparation.autoMode === false && preparation.questionId) {
-      await verifyOrCancel("auto-dispatch");
-      const isStillValid: () => SubmissionCheckResult = frozen?.ok && evaluator
-        ? () => verifySubmissionUnchanged(frozen, evaluator, "confirm")
-        : () => ({ ok: true as const });
-      throw new PanelOperationDeferred({
-        preparation,
-        named,
-        isStillValid,
-        dispatchNow: async () => receive(await options.confirmOperation(preparation, {
-          ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
-          skipDialog: true,
-          beforeDispatch: () => verifyOrCancel("confirm"),
-        })),
-        cancelNow: (reason) => options.operations.cancel?.(preparation.intentId, reason) ?? Promise.resolve(),
-      });
-    }
-    if (agentScope && preparation.autoMode === true) {
-      // Full-auto skips only the conversation question — never the universal 4-tuple verification before dispatch.
-      await verifyOrCancel("auto-dispatch");
-    }
-    const skipDialog = Boolean(agentScope && preparation.autoMode === true);
-    const confirmHooks = writeOptions?.onConfirmed || skipDialog
-      ? {
-          ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
-          ...(skipDialog ? { skipDialog: true } : {}),
-          ...(skipDialog ? { beforeDispatch: () => verifyOrCancel("auto-dispatch") } : {}),
+      const preparation = agentScope?.agentRun
+        ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
+        : await options.operations.prepare(operationId, invocation, path);
+      function receive(answer: AppBridgeConfirmPanelOperationResult): AppBridgeConfirmPanelOperationResult {
+        if (answer.decision !== "confirm" || answer.response.kind !== "dispatched" || !answer.response.outcome) return answer;
+        const { outcome } = answer.response;
+        const items = outcome.kind === "batch" ? outcome.items.map(item => item.outcome) : [outcome];
+        const deliveries = items.flatMap(item => item.kind === "success" && item.secret ? [item.secret] : []);
+        if (!deliveries.length) return answer;
+        secretDeliveries.value = [...secretDeliveries.value, ...deliveries];
+        return { ...answer, response: { ...answer.response, outcome: withoutPanelSecretDelivery(outcome) } };
+      }
+      const named = namedTargets(preparation.confirmation);
+      const verifyOrCancel = async (phase: "auto-dispatch" | "confirm") => {
+        if (!frozen?.ok || !evaluator) return;
+        const check = verifySubmissionUnchanged(frozen, evaluator, phase);
+        if (!check.ok) {
+          await options.operations.cancel?.(preparation.intentId, {
+            code: "ACTION_CONFIRMATION_STALE",
+            message: check.message,
+          }).catch(() => undefined);
+          throw new PanelSubmissionStaleError(check.message, preparation.intentId);
         }
-      : undefined;
-    const confirmed = receive(confirmHooks
-      ? await options.confirmOperation(preparation, confirmHooks)
-      : await options.confirmOperation(preparation));
-    if (confirmed.decision === "cancel" && preparation.hasSecretInput) {
-      await options.operations.cancel?.(preparation.intentId, { code: "OPERATION_CANCELLED", message: "Operation was cancelled." });
+      };
+      if (agentScope && preparation.autoMode === false && preparation.questionId) {
+        await verifyOrCancel("auto-dispatch");
+        const isStillValid: () => SubmissionCheckResult = frozen?.ok && evaluator
+          ? () => verifySubmissionUnchanged(frozen, evaluator, "confirm")
+          : () => ({ ok: true as const });
+        throw new PanelOperationDeferred({
+          preparation,
+          named,
+          isStillValid,
+          dispatchNow: async () => {
+            if (writeKeys.some((key) => inFlightObjectWrites.has(key))) {
+              return {
+                decision: "confirm" as const,
+                response: {
+                  kind: "not-dispatched" as const,
+                  intentId: preparation.intentId,
+                  code: "OPERATION_IN_FLIGHT",
+                  message: "This operation is already in flight for the target object.",
+                },
+              };
+            }
+            for (const key of writeKeys) inFlightObjectWrites.add(key);
+            try {
+              return receive(await options.confirmOperation(preparation, {
+                ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
+                skipDialog: true,
+                beforeDispatch: () => verifyOrCancel("confirm"),
+              }));
+            } finally {
+              for (const key of writeKeys) inFlightObjectWrites.delete(key);
+            }
+          },
+          cancelNow: (reason) => options.operations.cancel?.(preparation.intentId, reason) ?? Promise.resolve(),
+        });
+      }
+      if (agentScope && preparation.autoMode === true) {
+        // Full-auto skips only the conversation question — never the universal 4-tuple verification before dispatch.
+        await verifyOrCancel("auto-dispatch");
+      }
+      const skipDialog = Boolean(agentScope && preparation.autoMode === true);
+      const confirmHooks = writeOptions?.onConfirmed || skipDialog
+        ? {
+            ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
+            ...(skipDialog ? { skipDialog: true } : {}),
+            ...(skipDialog ? { beforeDispatch: () => verifyOrCancel("auto-dispatch") } : {}),
+          }
+        : undefined;
+      const confirmed = receive(confirmHooks
+        ? await options.confirmOperation(preparation, confirmHooks)
+        : await options.confirmOperation(preparation));
+      if (confirmed.decision === "cancel" && preparation.hasSecretInput) {
+        await options.operations.cancel?.(preparation.intentId, { code: "OPERATION_CANCELLED", message: "Operation was cancelled." });
+      }
+      if (agentScope && confirmed.decision === "confirm") {
+        agentScope.completed = { intentId: preparation.intentId, response: confirmed.response };
+      }
+      return { ...confirmed, named };
+    } finally {
+      for (const key of writeKeys) inFlightObjectWrites.delete(key);
     }
-    if (agentScope && confirmed.decision === "confirm") {
-      agentScope.completed = { intentId: preparation.intentId, response: confirmed.response };
+  }
+  function notifyReadResult(
+    result: PanelReadOperationResult,
+    readOptions?: PanelReadOperationOptions,
+  ): PanelReadOperationResult {
+    if (
+      readOptions?.notifySuccess !== false
+      && result.kind !== "file"
+      && typeof result.message === "string"
+      && result.message.trim() !== ""
+    ) {
+      options.notify?.({ kind: "success", text: result.message });
     }
-    return { ...confirmed, named };
+    return result;
+  }
+  async function readOperation(
+    operationId: string,
+    call: PanelReadCall,
+    agentRun?: PanelAgentRunRef,
+    readOptions?: PanelReadOperationOptions,
+  ): Promise<PanelReadOperationResult> {
+    const result = await options.operations.read(operationId, call, operationPath(operationId), agentRun);
+    return notifyReadResult(result, readOptions);
   }
   const operations = computed<PanelOperationBinding[]>(() => [
     ...panelOperations(instance, registrations.value, forms, writeOperation,
-      (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
+      async (operationId, call) => notifyReadResult(
+        await options.operations.read(operationId, call, operationPath(operationId)),
+      ),
       (member, name) => ({ id: operationIdOf(member, name), memberPath: publisherPath(member) })),
     // A placed panel's operations are published under their own full paths and run by that panel.
     ...[...publishers.values()].flatMap((publisher) => publisher.value.operations),
@@ -1146,9 +1264,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       return result;
     },
     describeOperation: (operationId) => options.operations.describe(operationId, operationPath(operationId)),
-    readOperation: (operationId, call, agentRun) => options.operations.read(operationId, call, operationPath(operationId), agentRun),
+    readOperation,
     uploadFile: (operationId, file) => options.operations.upload(operationId, file, operationPath(operationId)),
     writeOperation,
+    isObjectWriteInFlight,
     objectChanged,
     letGo(removed) {
       if (!removed.length) return;

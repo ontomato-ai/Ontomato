@@ -4189,3 +4189,108 @@ test("value-carried tag field values, form option tones, and ObjectList column t
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "dark" }).success, false);
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", headerTooltipKey: "" }).success, false);
 });
+
+test("ObjectList rowActions align conversation fields with PanelConversationEntry and unify 5-level tone", async () => {
+  const { panelObjectListRowActionItemSchema, panelObjectListColumnSchema } = await import("./panel-projection");
+  const { panelReadOperationJsonResultSchema } = await import("./panel-operations");
+
+  // Conversation action accepts PanelConversationEntry-aligned fields and semantic tone.
+  const validConv = panelObjectListRowActionItemSchema.parse({
+    kind: "conversation",
+    id: "ask",
+    target: { kind: "id", id: "analyst-agent" },
+    prefillKey: "gallery.askPrompt",
+    submit: false,
+    newSession: true,
+    tone: "primary",
+  });
+  assert.equal(validConv.kind, "conversation");
+  assert.deepEqual(validConv.target, { kind: "id", id: "analyst-agent" });
+  assert.equal(validConv.prefillKey, "gallery.askPrompt");
+  assert.equal(validConv.submit, false);
+  assert.equal(validConv.newSession, true);
+  assert.equal(validConv.tone, "primary");
+
+  // All 5 semantic tones are accepted on row actions.
+  for (const tone of ["default", "primary", "success", "warning", "danger"] as const) {
+    const parsed = panelObjectListRowActionItemSchema.parse({
+      kind: "operation",
+      operation: "act",
+      tone,
+    });
+    assert.equal(parsed.tone, tone);
+  }
+
+  // Mutual exclusion between prefill and prefillKey.
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "conversation",
+      id: "ask",
+      prefill: "Hello",
+      prefillKey: "gallery.askPrompt",
+    }).success,
+    false,
+  );
+
+  // Legacy prompt/promptKey/agent and removed danger/primary booleans are rejected.
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "conversation",
+      id: "ask",
+      prompt: "Legacy",
+    }).success,
+    false,
+  );
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "operation",
+      operation: "remove",
+      danger: true,
+    }).success,
+    false,
+  );
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "local",
+      id: "open",
+      primary: true,
+    }).success,
+    false,
+  );
+
+  // ObjectListColumn.resultFrom accepts { operation, field? } and rejects toneField.
+  const col = panelObjectListColumnSchema.parse({
+    key: "status",
+    resultFrom: { operation: "probe", field: "status" },
+  });
+  assert.deepEqual(col.resultFrom, { operation: "probe", field: "status" });
+  assert.equal(
+    panelObjectListColumnSchema.safeParse({
+      key: "status",
+      resultFrom: { operation: "probe", field: "status", toneField: "tone" },
+    }).success,
+    false,
+  );
+
+  // Read operation JSON results accept optional top-level `message` on all 3 variants and reject `summary`.
+  assert.equal(
+    panelReadOperationJsonResultSchema.parse({ kind: "json", value: { ok: true }, message: "Connected" }).message,
+    "Connected",
+  );
+  assert.equal(
+    panelReadOperationJsonResultSchema.parse({ kind: "markdown", markdown: "# OK", message: "Loaded report" }).message,
+    "Loaded report",
+  );
+  assert.equal(
+    panelReadOperationJsonResultSchema.parse({
+      kind: "sections",
+      sections: [{ id: "s1", label: "Overview", kind: "json", value: { ok: true } }],
+      message: "Generated sections",
+    }).message,
+    "Generated sections",
+  );
+  assert.equal(
+    panelReadOperationJsonResultSchema.safeParse({ kind: "json", value: { ok: true }, summary: "Legacy" }).success,
+    false,
+  );
+});

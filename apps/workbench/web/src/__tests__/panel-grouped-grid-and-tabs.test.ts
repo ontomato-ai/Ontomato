@@ -124,7 +124,7 @@ it("ObjectList layout='tabs' renders selectable horizontal tabs, #tabs-extra slo
         rowActions: {
           items: [
             { kind: "local", id: "rename", label: "Rename" },
-            { kind: "local", id: "delete", label: "Delete", danger: true },
+            { kind: "local", id: "delete", label: "Delete", tone: "danger" },
           ],
         },
       },

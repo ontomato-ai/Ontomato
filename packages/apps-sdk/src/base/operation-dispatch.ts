@@ -334,7 +334,10 @@ export function useOperationRunner(options: {
         const input = owned.source === "draft" || hasDeclaredReadInputs
           ? readOperationInput(panel.instance, slot.slot, operationName, draftValues)
           : effectiveInput;
-        const result = await panel.instance.readOperation(operationId, { target: targetInfo.target, input }, agentContext?.agentRun);
+        const readOptions = options.notifySuccess?.() === false ? { notifySuccess: false } : undefined;
+        const result = readOptions
+          ? await panel.instance.readOperation(operationId, { target: targetInfo.target, input }, agentContext?.agentRun, readOptions)
+          : await panel.instance.readOperation(operationId, { target: targetInfo.target, input }, agentContext?.agentRun);
         read.value = result;
         options.onRead?.(operationName, result);
         return "executed";

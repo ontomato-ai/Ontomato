@@ -244,6 +244,8 @@ export interface DirectPanelInstance extends PanelInstance {
   projectionVersion(member: string): number;
   /** True while any declared projection or nested panel member is still resolving asynchronously. */
   isLoading(): boolean;
+  /** Platform toast channel shared by read and write operations on this direct panel instance. */
+  readonly notify: NonNullable<PanelInstanceOptions["notify"]>;
   /** Registers a panel-local back/close step (LIFO) with the enclosing host. */
   readonly registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
@@ -449,8 +451,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       ? { member, selection: { stateValue: stateObject(stateValue as PanelFieldValue)! } }
       : segmentOf(member);
   };
+  const notify: NonNullable<PanelInstanceOptions["notify"]> =
+    options.notify ?? (({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); });
   const instance = createPanelInstance(direct, {
     ...options,
+    notify,
     segmentOf,
     // The shared machinery reads no projection of a direct panel; its members are read here.
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
@@ -635,9 +640,27 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         if (!click?.isTrusted || !click.currentTarget || !entry.slot) {
           throw new Error("This conversation entry requires a reader click");
         }
-        const declared = (await directInstance.projectionOf(entry.slot)).conversationEntry;
-        if (!declared || JSON.stringify(declared.target) !== JSON.stringify(entry.target)
-          || declared.submit !== entry.submit || declared.newSession !== entry.newSession) {
+        const projection = await directInstance.projectionOf(entry.slot);
+        const matchesEntry = (candidate: { target: unknown; submit?: boolean; newSession?: boolean } | undefined) =>
+          Boolean(
+            candidate
+            && JSON.stringify(candidate.target) === JSON.stringify(entry.target)
+            && candidate.submit === entry.submit
+            && candidate.newSession === entry.newSession,
+          );
+        const declared = projection.conversationEntry;
+        const rowActionItems = (projection.config as { rowActions?: { items?: readonly unknown[] } } | undefined)?.rowActions?.items;
+        const matchedRowAction = Array.isArray(rowActionItems) && rowActionItems.some((raw) => {
+          if (!raw || typeof raw !== "object") return false;
+          const item = raw as { kind?: unknown; target?: unknown; submit?: boolean; newSession?: boolean };
+          if (item.kind !== "conversation") return false;
+          return matchesEntry({
+            target: item.target ?? declared?.target ?? { kind: "page-default" },
+            submit: item.submit ?? declared?.submit,
+            newSession: item.newSession ?? declared?.newSession,
+          });
+        });
+        if (!matchesEntry(declared) && !matchedRowAction) {
           throw new Error("This conversation entry is not declared by the panel");
         }
       }
@@ -1068,6 +1091,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     },
     projectionVersion: (member: string) => versions.get(member) ?? 0,
     isLoading: () => pendingPlacings > 0 || [...nestedMounts].some((mount) => mount.isLoading?.() ?? false),
+    notify,
     ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
     ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
   });
@@ -1114,7 +1138,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async (entry, click) => instance.expandPageComposer(entry, click),
     navigate: (address) => instance.navigate(address),
-    notify: ({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); },
+    notify: (message) => instance.notify(message),
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
     ...(instance.registerBackHandler ? { registerBackHandler: instance.registerBackHandler } : {}),
