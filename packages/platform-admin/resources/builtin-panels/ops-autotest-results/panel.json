@@ -274,36 +274,36 @@
             {
               "key": "caseId",
               "labelKey": "results.colCaseId",
-              "width": 110
+              "width": 78
             },
             {
               "key": "question",
               "labelKey": "results.colQuestion",
-              "minWidth": 240,
+              "minWidth": 170,
               "emptyKey": "common.dash"
             },
             {
               "key": "statusLabel",
               "labelKey": "results.colStatus",
               "kind": "tag",
-              "width": 116
+              "width": 78
             },
             {
               "key": "verdictLabel",
               "labelKey": "results.colVerdict",
               "kind": "tag",
-              "width": 104
+              "width": 76
             },
             {
               "key": "durationText",
               "labelKey": "results.colDuration",
-              "width": 96,
+              "width": 74,
               "align": "right"
             },
             {
               "key": "reason",
               "labelKey": "results.colReason",
-              "minWidth": 180,
+              "minWidth": 130,
               "emptyKey": "common.dash"
             }
           ],
