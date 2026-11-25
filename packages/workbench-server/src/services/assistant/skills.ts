@@ -110,10 +110,8 @@ export function hasHiddenAssistantSkillRefs(refs: readonly RuntimeSkillRef[], vi
 
 export function effectiveAssistantSkills(
   agent: { kind: string; skills: readonly RuntimeSkillRef[] },
-  view: AssistantSkillView,
-  productProfile = false,
+  view: Pick<AssistantSkillView, "pageSkills" | "hasSkill">,
 ): RuntimeSkillRef[] {
-  if (productProfile) return [];
   const pageSkills = isOpsDiagnosisKind(agent.kind)
     ? view.pageSkills
         .filter(group => "permissionCode" in group.locator && group.locator.permissionCode === "observer")

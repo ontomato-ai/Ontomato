@@ -88,9 +88,7 @@ export type AssistantAgentDefinition = z.infer<
   typeof assistantAgentDefinitionSchema
 >;
 export type AssistantAgentInput = z.infer<typeof assistantAgentInputSchema>;
-export const assistantAgentOptionSchema = agentHostAgentSchema.extend({
-  effectiveSkills: z.array(runtimeSkillRefSchema),
-}).strict();
+export const assistantAgentOptionSchema = agentHostAgentSchema;
 export const assistantAgentListSchema = z.object({
   agents: z.array(assistantAgentOptionSchema),
   /** Present only for a page-filtered directory. */

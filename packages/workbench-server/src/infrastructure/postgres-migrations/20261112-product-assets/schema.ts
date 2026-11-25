@@ -16,7 +16,6 @@ export async function ensureProductAssetsSchema(client: QueryableClient) {
     CREATE TABLE IF NOT EXISTS ${t("product_home")} (
     domain_id text NOT NULL, user_id text NOT NULL, asset_id text NOT NULL,
     PRIMARY KEY(domain_id,user_id));`);
-  await client.query(`ALTER TABLE ${t('product_assets')} ADD COLUMN IF NOT EXISTS governance_registered boolean NOT NULL DEFAULT false`);
   await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_ontology_outbox')} (domain_id text NOT NULL,asset_id text NOT NULL,revision bigint NOT NULL,registration jsonb,PRIMARY KEY(domain_id,asset_id));
     CREATE TABLE IF NOT EXISTS ${t('product_object_view_heads')} (domain_id text NOT NULL,asset_id text NOT NULL,revision integer NOT NULL,PRIMARY KEY(domain_id,asset_id));
     CREATE TABLE IF NOT EXISTS ${t('product_publication_outbox')} (domain_id text NOT NULL,bundle_id text NOT NULL,release_id text NOT NULL,PRIMARY KEY(domain_id,bundle_id));

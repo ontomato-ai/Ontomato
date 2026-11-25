@@ -12,6 +12,7 @@ import java.text.Collator;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.stream.Stream;
 import java.util.*;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -151,36 +152,59 @@ public class ApplicationCatalog {
             });
     }
     public PageSkills.Projection pageSkills(User user) {
-        return access.withPageSkillAuthorization(user, () -> projectPageSkills(user));
+        return pageSkills(user, null, null);
     }
 
-    private PageSkills.Projection projectPageSkills(User user) {
+    public PageSkills.Projection pageSkills(User user, PageSkills.Entrance entrance, String panelId) {
+        return access.withPageSkillAuthorization(user, () -> projectPageSkills(user, entrance, panelId));
+    }
+
+    private PageSkills.Projection projectPageSkills(User user, PageSkills.Entrance entrance, String panelId) {
         var domainId = user.getDomainId();
         var applications = applicationsInDomain(domainId);
         var pageKeys = new BuiltinPageKeys(applications);
         validateLocators(applications, pageKeys);
         var nativeMappings = applications.stream()
             .flatMap(app -> app.getList("pageSkills", PageSkills.Mapping.class).stream()).toList();
+        String locator = entrance == null ? null : PageSkills.locator(entrance.permissionCode(), entrance.access(), entrance.pageKey());
+        var currentPublicSkills = nativeMappings.stream()
+            .filter(mapping -> mapping.locator().equals(locator)).map(PageSkills.Mapping::skill).toList();
+        var selectedMappings = locator == null ? nativeMappings : nativeMappings.stream()
+            .filter(mapping -> currentPublicSkills.contains(mapping.skill())).toList();
         var admittedUses = domainId == null ? List.<ApplicationPanelUse>of() : applications.stream()
-            .filter(app -> isPanelSkillApplication(app) && canEnter(app, user))
-            .flatMap(app -> entryAdmittedPanelUses(app, user, pageKeys).stream())
+            .filter(ApplicationCatalog::isPanelSkillApplication)
+            .flatMap(app -> {
+                if (entrance == null)
+                    return canEnter(app, user) ? entryAdmittedPanelUses(app, user, pageKeys).stream() : Stream.<ApplicationPanelUse>empty();
+                var relevant = pageKeys.activeUses(app).stream().filter(ApplicationPanelUse::panelEntry)
+                    .filter(use -> use.locator().equals(locator) && use.pageKey().equals(entrance.pageKey())
+                        || panelId != null && panelId.equals(use.panelId())).toList();
+                return relevant.isEmpty() || !canEnter(app, user) ? Stream.<ApplicationPanelUse>empty()
+                    : access.panelUses(relevant, user).stream();
+            })
             .filter(ApplicationPanelUse::panelEntry).toList();
         var mappings = new LinkedHashMap<String, PageSkills.Mapping>();
-        for (var mapping : access.pageSkills(nativeMappings, user)) mappings.put(mapping.locator(), mapping);
+        for (var mapping : access.pageSkills(selectedMappings, user)) mappings.put(mapping.locator(), mapping);
         for (var group : PanelSkills.groups(admittedUses))
             mappings.merge(group.locator(), group, PageSkills::withPanelDefaults);
-        return new PageSkills.Projection(List.copyOf(mappings.values()), nativeMappings.stream().map(PageSkills.Mapping::skill).distinct().toList(),
+        return new PageSkills.Projection(List.copyOf(mappings.values()), selectedMappings.stream().map(PageSkills.Mapping::skill).distinct().toList(),
             admittedUses.stream().map(PanelSkills::entrance).toList());
     }
 
     public List<PanelSkills.Use> panelSkillSources(String domainId) {
+        return panelSkillSources(domainId, null, null);
+    }
+
+    public List<PanelSkills.Use> panelSkillSources(String domainId, String applicationId, String useId) {
         var apps = applicationsInDomain(domainId);
         var pageKeys = new BuiltinPageKeys(apps);
         return apps.stream().filter(ApplicationCatalog::isPanelSkillApplication)
+            .filter(app -> applicationId == null || applicationId.equals(app.getString("id")))
             .flatMap(app -> {
                 var applicationNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
                 return pageKeys.activeUses(app).stream()
                     .filter(ApplicationPanelUse::panelEntry)
+                    .filter(use -> useId == null || useId.equals(use.id()))
                     .map(use -> PanelSkills.source(app.getString("id"), use, applicationNames));
             })
             .toList();

@@ -7,7 +7,7 @@ import {productGraph} from '@ontomato/contracts/product-graph';
 import {installObjectViewHost} from './object-view-host';
 
 const AGENTS=[
-  {id:'11111111-1111-4111-8111-111111111111',name:'Assistant',description:'Answers business questions',icon:null,enabled:true,effectiveSkills:[]},
+  {id:'11111111-1111-4111-8111-111111111111',name:'Assistant',description:'Answers business questions',icon:null,enabled:true},
 ];
 let app:App|undefined;
 afterEach(()=>{app?.unmount();app=undefined;document.body.innerHTML='';vi.unstubAllGlobals();});

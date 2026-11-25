@@ -10,8 +10,8 @@ import { PANEL_SKILL_PROVIDER_ID } from "./skill-identity";
 
 const sourceResponse = z.object({ success: z.literal(true), data: panelSkillSourcesResponseSchema });
 
-export async function readPanelSkillSources(domainId: string) {
-  const query = new URLSearchParams(panelSkillSourcesQuerySchema.parse({ domainId }));
+export async function readPanelSkillSources(domainId: string, use?: PanelUseRef) {
+  const query = new URLSearchParams(panelSkillSourcesQuerySchema.parse({ domainId, ...use }));
   const response = await backendGet("panel-skill-sources",
     `${config.dataQuery.baseUrl}/platform/applications/panel-skill-sources?${query}`,
     { headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken }, retries: 1 });
@@ -46,8 +46,10 @@ export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
     }
     return offerings;
   },
-  async findByUse(domainId, { applicationId, useId }, reader, userId) {
-    const source = (await readPanelSkillSources(domainId)).find(entry => entry.applicationId === applicationId && entry.useId === useId);
+  async findByUse(domainId, use, reader, userId) {
+    const { applicationId, useId } = use;
+    const source = (await readPanelSkillSources(domainId, { applicationId, useId }))
+      .find(entry => entry.applicationId === applicationId && entry.useId === useId);
     if (!source) return null;
     const homePanelId = applicationId === "home" && useId === "home" && userId
       ? await platformHomeStore.homePanelId({ domainId, userId })

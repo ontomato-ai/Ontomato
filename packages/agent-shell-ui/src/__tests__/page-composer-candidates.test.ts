@@ -220,7 +220,7 @@ it("encodes public and member queries through the real host client and skips net
     requestedUrls.push(path);
     return new Response(
       JSON.stringify({
-        agents: [{ ...agent("11111111-1111-4111-8111-111111111111", "Assistant"), effectiveSkills: [] }],
+        agents: [agent("11111111-1111-4111-8111-111111111111", "Assistant")],
         defaultAgentId: "11111111-1111-4111-8111-111111111111",
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },

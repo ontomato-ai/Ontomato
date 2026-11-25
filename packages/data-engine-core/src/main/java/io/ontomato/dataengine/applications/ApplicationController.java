@@ -131,7 +131,17 @@ public class ApplicationController {
 
     @GetMapping("/platform/page-skills")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
-    public R<PageSkills.Projection> pageSkills() { return R.of(catalog.pageSkills(current())); }
+    public R<PageSkills.Projection> pageSkills(@RequestParam(required = false) String pageKey,
+        @RequestParam(required = false) String permissionCode, @RequestParam(required = false) String panelId) {
+        if (pageKey == null) {
+            if (permissionCode != null || panelId != null) throw ApplicationCatalog.bad("A page key is required");
+            return R.of(catalog.pageSkills(current()));
+        }
+        if (pageKey.isBlank() || permissionCode != null && permissionCode.isBlank() || panelId != null && panelId.isBlank())
+            throw ApplicationCatalog.bad("Invalid page skill lookup");
+        var entrance = new PageSkills.Entrance(permissionCode, permissionCode == null ? "domain-member" : null, pageKey);
+        return R.of(catalog.pageSkills(current(), entrance, panelId));
+    }
     @PostMapping("/platform/applications/connected")
     public R<JSONObject> connected(@RequestBody Connected body) {
         return R.of(catalog.connected(body.id(), body.declaration(), body.upstream(), body.upstreamPrefix(), current()));
@@ -143,10 +153,13 @@ public class ApplicationController {
         return R.of(Map.of("serviceId", service, "applicationIds", batch.applications().stream().map(ApplicationCatalog.Builtin::id).toList()));
     }
     @GetMapping(PANEL_SKILL_SOURCES)
-    public R<List<PanelSkills.Use>> panelSkillSources(HttpServletRequest request, @RequestParam String domainId) {
+    public R<List<PanelSkills.Use>> panelSkillSources(HttpServletRequest request, @RequestParam String domainId,
+        @RequestParam(required = false) String applicationId, @RequestParam(required = false) String useId) {
         authentication.authenticate(request);
         if (domainId.isBlank()) throw ApplicationCatalog.bad("A domain is required");
-        return R.of(catalog.panelSkillSources(domainId));
+        if ((applicationId == null) != (useId == null) || applicationId != null && (applicationId.isBlank() || useId.isBlank()))
+            throw ApplicationCatalog.bad("Both application and use are required");
+        return R.of(catalog.panelSkillSources(domainId, applicationId, useId));
     }
     @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping(value = "/platform/applications", params = "purpose=navigation")

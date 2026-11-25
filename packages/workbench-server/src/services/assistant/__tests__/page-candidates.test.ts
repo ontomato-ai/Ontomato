@@ -20,8 +20,8 @@ import type { AgentRow } from "../store";
 const mocks = vi.hoisted(() => ({
   agents: vi.fn<[], Promise<AgentRow[]>>(),
   opsDiagnosis: vi.fn<[], Promise<AgentRow | undefined>>(),
-  native: vi.fn<[string, string], Promise<string | undefined>>(),
-  profile: vi.fn<[unknown, string], Promise<string | null>>(),
+  profile: vi.fn<[string, string[], ReadonlySet<string>], Promise<Map<string, string>>>(),
+  findByUse: vi.fn(),
   observeAccess: vi.fn<[], Promise<void>>(),
 }));
 
@@ -29,10 +29,9 @@ vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents, opsDiagnosi
 vi.mock("../../../identity/installed", () => ({
   workbenchIdentity: () => ({ assertObserveAccess: mocks.observeAccess }),
 }));
-vi.mock("../../product-assets/platform-assets", () => ({ nativeProfileId: mocks.native }));
-vi.mock("../../product-assets/agent-profile", () => ({ profileIdForAgent: mocks.profile }));
-vi.mock("../../product-assets/grants", () => ({
-  withProductGrants: (_owner: unknown, action: () => unknown) => action(),
+vi.mock("../../product-assets/agent-profile", () => ({ agentsWithProductProfiles: mocks.profile }));
+vi.mock("../../product-panels/skill-provider", () => ({
+  panelSkillProvider: { findByUse: mocks.findByUse },
 }));
 
 configureI18n({
@@ -132,7 +131,8 @@ let offerings: ProtectedSkillOffering[] = [];
 registerSkillProvider({
   id: "product-panels",
   name: "Product panels",
-  list: async () => offerings,
+  list: async () => { throw new Error("Candidate reads must not enumerate skills"); },
+  findProtectedSource: async key => offerings.find(offering => offering.sourceKey === key) ?? null,
 });
 
 let dynamicAssociations: { entrance: PageSkillEntrance; identity: SkillSourceIdentity }[] = [];
@@ -225,8 +225,12 @@ beforeEach(() => {
     return Response.json({ success: true, data: body });
   };
 
-  mocks.native.mockResolvedValue(undefined);
-  mocks.profile.mockImplementation(async (_owner, id) => (id === agentIds.productProfile ? "profile-1" : null));
+  mocks.findByUse.mockImplementation(async (_domain, { useId }) => offerings.find(offering =>
+    offering.sourceKey === (useId === "ops-turn-evidence" ? "builtin-product-ops-turn-evidence" : "panel-order"),
+  ) ?? null);
+  mocks.profile.mockImplementation(async (_domain, ids) => new Map(
+    ids.includes(agentIds.productProfile) ? [[agentIds.productProfile, "profile-1"]] : [],
+  ));
   mocks.opsDiagnosis.mockResolvedValue(undefined);
   mocks.observeAccess.mockResolvedValue(undefined);
   mocks.agents.mockResolvedValue([
@@ -243,7 +247,8 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (input: string | URL, init?: Parameters<typeof fetch>[1]) => {
       const url = String(input);
-      if (url.endsWith("/platform/page-skills")) {
+      if (url.includes("/platform/page-skills?")) {
+        expect(new URL(url, "http://owner.test").searchParams.get("pageKey")).toBeTruthy();
         pageSkillsFetches += 1;
         return Response.json({ success: true, data: projection });
       }
@@ -279,6 +284,8 @@ it("omits preset IDs from the unfiltered directory", async () => {
 
   expect(result.agents).toContainEqual(expect.objectContaining({ id: agentIds.regular, enabled: true }));
   expect(result).not.toHaveProperty("presetAgentIds");
+  expect(pageSkillsFetches).toBe(0);
+  expect(mocks.profile).not.toHaveBeenCalled();
 });
 
 it("resolves public queries through view.publicPageSkill even when a group also holds protected members", async () => {

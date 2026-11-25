@@ -143,16 +143,23 @@ export async function startPanelSkillEntryServer(options: {
   app.get("/platform/applications/panel-skill-sources", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");
     expect(req.query.domainId).toBe(domainId);
-    res.json({ success: true, data: entries });
+    const { applicationId, useId } = req.query;
+    const sources = useId === undefined ? entries : entries.filter(use => use.applicationId === applicationId && use.useId === useId);
+    res.json({ success: true, data: sources });
   });
   app.get("/platform/page-skills", (req, res) => {
     expect(req.header("tk")).toBe("editor");
     const native = options.nativeMapping?.();
+    const { pageKey, permissionCode, panelId } = req.query;
+    const current = entries.filter(use => pageKey === undefined || panelId === use.panelId
+      || (use.entrance.pageKey === pageKey && ("permissionCode" in use.entrance ? use.entrance.permissionCode : undefined) === permissionCode));
+    const useEntrances = current.map(use => use.entrance);
+    const admitted = options.admittedEntrances?.() ?? useEntrances;
     res.json({ success: true, data: {
-      pageSkills: entries.map(({ entrance }) => "permissionCode" in entrance
+      pageSkills: current.map(({ entrance }) => "permissionCode" in entrance
         ? (native && "permissionCode" in native && native.permissionCode === entrance.permissionCode ? native : { permissionCode: entrance.permissionCode })
         : { ...entrance, defaults: [{ pageKey: entrance.pageKey, defaultAgent: { kind: "preset", agentKind: "regular" } }] }),
-      registeredSkills: native ? [native.skill] : [], admittedEntrances: options.admittedEntrances?.() ?? entries.map(use => use.entrance),
+      registeredSkills: native ? [native.skill] : [], admittedEntrances: admitted.filter(entrance => useEntrances.some(use => JSON.stringify(use) === JSON.stringify(entrance))),
     } });
   });
   app.get("/platform/applications", (req, res, next) => {
@@ -201,6 +208,9 @@ export async function startPanelSkillEntryServer(options: {
   app.post("/product-governance/grants", (req, res) => {
     expect(req.header("tk")).toBe("editor");
     res.json({ grants: [] });
+  });
+  app.post("/product-governance/check-batch", (req, res) => {
+    res.json({ allowed: Object.fromEntries(req.body.ids.map((id: string) => [id, req.header("tk") === "editor" && grants.has(id)])) });
   });
   app.post("/product-governance/check", (req, res) => res.json({ allowed: req.header("tk") === "editor" && grants.has(req.body.id) }));
   app.post("/product-governance/resources", (req, res) => {

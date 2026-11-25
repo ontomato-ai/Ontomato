@@ -8,9 +8,9 @@ import type { AgentRow } from "../store";
 type PageSkillRegistry = Pick<SkillRegistryManager, "getSkillByRef" | "failedManifests">;
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(), post: vi.fn(), agents: vi.fn(), appBuilder: vi.fn(), builderAccess: vi.fn(), native: vi.fn(), profile: vi.fn(),
+  get: vi.fn(), post: vi.fn(), agents: vi.fn(), appBuilder: vi.fn(), builderAccess: vi.fn(), profile: vi.fn(),
   publishGovernance: vi.fn(), managed: [] as { skill: RuntimeSkillRef; title: string; description: string }[],
-  grants: new Set<string>(), usableIds: [] as string[],
+  usableIds: [] as string[],
   allowed: true,
 }));
 vi.mock("../../../utils/backend-client", () => ({ backendGet: mocks.get, backendPost: mocks.post,
@@ -38,11 +38,7 @@ vi.mock("../governance", () => ({ publishGovernanceSkill: mocks.publishGovernanc
 vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents, appBuilder: mocks.appBuilder } }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: mocks.builderAccess }));
 vi.mock("../labels", () => ({ assistantName: (a: AgentRow) => a.name, assistantDescription: (a: AgentRow) => a.description }));
-vi.mock("../../product-assets/platform-assets", () => ({ nativeProfileId: mocks.native }));
-vi.mock("../../product-assets/agent-profile", () => ({ profileIdForAgent: mocks.profile }));
-vi.mock("../../product-assets/grants", () => ({
-  withProductGrants: (_owner: unknown, action: () => unknown) => action(), currentProductGrants: () => ({ use: mocks.grants }),
-}));
+vi.mock("../../product-assets/agent-profile", () => ({ agentsWithProductProfiles: mocks.profile }));
 import { assistantSkillCatalog, effectiveAssistantSkills, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills } from "../skills";
 import { listAssistantAgents } from "../agents";
 import { HttpError } from "../../../utils/errors";
@@ -63,7 +59,7 @@ function projection(allowed = true): PageSkillsProjection {
 }
 let current: PageSkillsProjection;
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.grants.clear(); current = projection();
+  vi.clearAllMocks(); current = projection();
   mocks.managed.length = 0;
   mocks.usableIds = ids.slice();
   mocks.allowed = true;
@@ -74,7 +70,7 @@ beforeEach(() => {
   mocks.post.mockImplementation(async (operation: string) => ({
     text: JSON.stringify(operation === "product-grant-resources" ? { ids: mocks.usableIds } : { allowed: mocks.allowed }),
   }));
-  mocks.native.mockResolvedValue(undefined); mocks.profile.mockResolvedValue(null);
+  mocks.profile.mockResolvedValue(new Map());
   mocks.agents.mockResolvedValue([definition(0, "regular", [report]), definition(1, "custom")]);
 });
 
@@ -90,14 +86,14 @@ it("removes denied page identities while preserving non-page skills, including t
   expect(effectiveAssistantSkills({ kind: "custom", skills: [report] }, allowed)).toEqual([report]);
 });
 
-it("projects and admits the same skills, and rereads revocation on the next request", async () => {
+it("adheres to the latest page grant on each run while the directory returns agent metadata", async () => {
   const rows = [definition(0, "regular", [report]), definition(1, "custom")]; mocks.agents.mockResolvedValue(rows);
   for (const allowed of [true, false]) {
     current = projection(allowed);
     const directory = await listAssistantAgents(owner, credentials);
     for (const row of rows) {
       const admitted = (await prepareAssistantSkills(owner.domainId, row, credentials)).skills.map(({ skill }) => skill);
-      expect(directory.agents.find(a => a.id === row.id)?.effectiveSkills).toEqual(admitted);
+      expect(directory.agents.find(a => a.id === row.id)).toMatchObject({ id: row.id, enabled: true });
       expect(admitted.some(skill => skill.name === page.name)).toBe(allowed);
     }
   }
@@ -116,20 +112,16 @@ it("filters the configuration skill catalog and rejects a denied page skill on s
 it("keeps ordinary native skills and excludes true product Profile skills from page candidates", async () => {
   const native = definition(0, "regular", [report]);
   mocks.agents.mockResolvedValue([native, definition(1, "custom"), definition(2, "product"), { ...definition(3, "disabled"), enabled: false }]);
-  mocks.native.mockImplementation(async (_domain: string, id: string) => id === native.id ? "native-profile" : undefined);
-  mocks.grants.add("native-profile"); mocks.grants.add(native.id);
-  mocks.profile.mockImplementation(async (_owner: unknown, id: string) => id === ids[2] ? "product-profile" : null);
+  mocks.profile.mockResolvedValue(new Map([[ids[2], "product-profile"]]));
   const directory = await listAssistantAgents(owner, credentials, query);
   expect(directory.agents.map(a => a.id)).toEqual([ids[0], ids[1]]);
   expect(directory.defaultAgentId).toBe(native.id);
-  expect((await listAssistantAgents(owner, credentials)).agents.find(a => a.id === ids[2])?.effectiveSkills).toEqual([]);
+  expect((await listAssistantAgents(owner, credentials)).agents.find(a => a.id === ids[2])).toMatchObject({ id: ids[2], enabled: true });
   mocks.allowed = false;
   expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
   mocks.allowed = true;
   mocks.appBuilder.mockResolvedValue(undefined);
   mocks.builderAccess.mockResolvedValue([]);
-  mocks.grants.delete(native.id);
-  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
 });
 
 it("returns the directory without a default when a preset is missing, disabled or unusable", async () => {
@@ -173,7 +165,8 @@ it("locates each domain-member page by pageKey and keeps dashboard's own skill a
 
 it("exposes projection failures instead of continuing with stale authorization", async () => {
   mocks.get.mockRejectedValue(new Error("Java unavailable"));
-  await expect(listAssistantAgents(owner, credentials)).rejects.toThrow("Java unavailable");
+  await expect(listAssistantAgents(owner, credentials, query)).rejects.toThrow("Java unavailable");
+  await expect(listAssistantAgents(owner, credentials)).resolves.toMatchObject({ agents: [{ id: ids[0] }, { id: ids[1] }] });
   await expect(prepareAssistantSkills(owner.domainId, definition(0, "regular"), credentials)).rejects.toThrow("Java unavailable");
 });
 
@@ -211,5 +204,5 @@ it.each<PageSkillEntrance>([
   const result = await listAssistantAgents(owner, credentials, assistantAgentsQuerySchema.parse(entrance));
   expect(result.defaultAgentId).toBe(builder.id);
   expect(result.presetAgentIds?.["app-builder"]).toBe(builder.id);
-  expect(result.agents.find(agent => agent.id === builder.id)?.effectiveSkills).toEqual([ref]);
+  expect(result.agents.find(agent => agent.id === builder.id)).toMatchObject({ id: builder.id, workspaceBound: true });
 });

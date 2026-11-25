@@ -209,7 +209,6 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
     locator: { pageKey: "home", access: "domain-member" },
     member: null,
   };
-  const wire = (items: typeof every) => items.map((item) => ({ ...item, effectiveSkills: [] }));
   const request = vi.fn(async (path: string) => {
     requests.push(path);
     const url = new URL(path, "http://host.test");
@@ -218,15 +217,15 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
     }
     const memberKey = (JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null)?.ref.name ?? null;
     if (memberKey === "pvt-home-panel") {
-      return new Response(JSON.stringify({ agents: wire([every[0]]), defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ agents: [every[0]], defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (memberKey === "pvt-drawer-panel") {
-      return new Response(JSON.stringify({ agents: wire([every[2]]), defaultAgentId: governance }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ agents: [every[2]], defaultAgentId: governance }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.searchParams.get("pageKey") === "dashboard") {
-      return new Response(JSON.stringify({ agents: wire([every[0]]), defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ agents: [every[0]], defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    return new Response(JSON.stringify({ agents: wire(every) }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ agents: every }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   const host = createAgentHostClient({ request });
   const display = testDisplay(workbench, {
@@ -328,7 +327,6 @@ it("keeps an active conversation on its own agent when new page candidates exclu
     updatedAt: new Date(0).toISOString(),
     latestRun: null,
   };
-  const wire = (items: typeof every) => items.map((item) => ({ ...item, effectiveSkills: [] }));
   const request = vi.fn(async (path: string, init?: RequestInit) => {
     const url = new URL(path, "http://host.test");
     if (url.pathname.endsWith("/history")) {
@@ -388,15 +386,15 @@ it("keeps an active conversation on its own agent when new page candidates exclu
     }
     const memberKey = (JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null)?.ref.name ?? null;
     if (memberKey === "pvt-home-panel") {
-      return new Response(JSON.stringify({ agents: wire([every[0]]), defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ agents: [every[0]], defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (memberKey === "pvt-drawer-panel") {
-      return new Response(JSON.stringify({ agents: wire([every[2]]), defaultAgentId: governance }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ agents: [every[2]], defaultAgentId: governance }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.searchParams.get("pageKey") === "dashboard") {
-      return new Response(JSON.stringify({ agents: wire([every[1]]), defaultAgentId: analyst }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ agents: [every[1]], defaultAgentId: analyst }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    return new Response(JSON.stringify({ agents: wire(every) }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ agents: every }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   const host = createAgentHostClient({ request });
   const display = testDisplay(workbench, {
@@ -543,7 +541,6 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
     createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), latestRun: null,
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
-  const wire = (items: typeof every) => items.map((item) => ({ ...item, effectiveSkills: [] }));
   const request = vi.fn(async (path: string) => {
     const url = new URL(path, "http://host.test");
     if (url.pathname.endsWith("/history"))
@@ -551,8 +548,8 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
     if (url.pathname.endsWith("/sessions")) return json({ sessions: [session], nextCursor: null });
     const member = JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null;
     if (member?.ref.name === "pvt-drawer-panel")
-      return json({ agents: wire([every[0]!, every[2]!]), defaultAgentId: governance, presetAgentIds: { regular: assistant, "knowledge-governance": governance } });
-    return json({ agents: wire(every) });
+      return json({ agents: [every[0]!, every[2]!], defaultAgentId: governance, presetAgentIds: { regular: assistant, "knowledge-governance": governance } });
+    return json({ agents: every });
   });
   const host = createAgentHostClient({ request });
   const display = testDisplay(workbench, {

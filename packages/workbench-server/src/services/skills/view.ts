@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillKey, standardSkillFrontmatterSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import {
   pageSkillsProjectionSchema, type PageSkillContext, type PageSkillEntrance, type PageSkillGroup,
   type PageSkillLocator, type PageSkillMember, type PageSkillSource,
@@ -9,7 +9,7 @@ import { isApplicationPanelUse, type PanelUseRef } from "@ontomato/contracts/pro
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
 import {
-  isProtectedSkillName, protectedSourceSkillRef, SkillSourceRecordError,
+  isProtectedSkillName, protectedSourceSkillRef, registeredSkillProviders, SkillSourceRecordError,
   type ProtectedSkillOffering, type SkillPackageContext, type SkillSourceFailure,
 } from "../../core/skills/providers";
 import { skillRegistryManager, type ListedProtectedSkill, type ListedSourceFailure } from "../../core/skills/registry/manager";
@@ -18,7 +18,8 @@ import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requirePanelEntry } from "../product-panels/application-use";
 import { PANEL_SKILL_PROVIDER_ID } from "../product-panels/skill-identity";
-import { grantedProductIds, productGrantAllowed } from "../product-governance/grants";
+import { panelSkillProvider } from "../product-panels/skill-provider";
+import { grantedProductIds, productGrantsAllowedBatch } from "../product-governance/grants";
 
 const javaPageSkills = z.object({
   success: z.literal(true),
@@ -73,8 +74,13 @@ function callerHeaders({ token, locale, apiKey }: AssistantCredentials) {
   return buildBackendHeaders(token, undefined, locale, apiKey);
 }
 
-async function javaPageSkillProjection(credentials: AssistantCredentials) {
-  const response = await backendGet("page-skills", `${config.dataQuery.baseUrl}/platform/page-skills`,
+async function javaPageSkillProjection(credentials: AssistantCredentials, entrance?: PageSkillEntrance, panelId?: string) {
+  const query = entrance && new URLSearchParams({
+    pageKey: entrance.pageKey,
+    ...("permissionCode" in entrance && { permissionCode: entrance.permissionCode }),
+    ...(panelId !== undefined && { panelId }),
+  });
+  const response = await backendGet("page-skills", `${config.dataQuery.baseUrl}/platform/page-skills${query ? `?${query}` : ""}`,
     { headers: callerHeaders(credentials), retries: 1 });
   return javaPageSkills.parse(JSON.parse(response.text)).data;
 }
@@ -109,15 +115,16 @@ function requiredResources(source: ListedPageSkill) {
   return "resourceIds" in source ? source.resourceIds : source.knownRequiredResourceIds;
 }
 
-async function grantedSkillResources(sources: readonly ListedPageSkill[], credentials: AssistantCredentials) {
+async function grantedSkillResources(sources: readonly ListedPageSkill[], credentials: AssistantCredentials,
+  usableIds?: ReadonlySet<string>,
+) {
   const required = new Set(sources.flatMap(requiredResources));
   const platformIds = [...required].filter(isBuiltinProductId);
-  // Java lists recorded domain Grants and checks platform product use for each requested ID.
   const [domainIds, platformGrants] = await Promise.all([
-    required.size > platformIds.length ? grantedProductIds("use", credentials) : [],
-    Promise.all(platformIds.map(async id => ({ id, allowed: await productGrantAllowed(id, "use", credentials) }))),
+    required.size > platformIds.length ? usableIds ?? grantedProductIds("use", credentials) : [],
+    productGrantsAllowedBatch(platformIds, "use", credentials),
   ]);
-  return new Set([...domainIds, ...platformGrants.filter(({ allowed }) => allowed).map(({ id }) => id)]);
+  return new Set([...domainIds, ...platformIds.filter(id => platformGrants[id])]);
 }
 
 function sourceIdentityKey({ providerId, sourceKey }: SkillSourceIdentity) {
@@ -190,6 +197,73 @@ function unreadableManifest(item: SkillCatalogDiagnostics["items"][number]) {
   return new HttpError(502, "The selected skill source is unavailable", "SKILL_SOURCE_UNAVAILABLE", item);
 }
 
+function candidatePageSkill(entrance: PageSkillEntrance, skill: RuntimeSkillRef, groups: ReadonlyMap<string, PageSkillGroup>) {
+  return {
+    skill,
+    pageSkills: [...groups.values()],
+    defaultAgent: groups.get(locatorKey(entrance))?.defaults.find(entry => entry.pageKey === entrance.pageKey)?.defaultAgent,
+  };
+}
+
+/** Read one page's skill and the admitted placements of that same skill. */
+export async function readPageCandidateSkill(caller: PageSkillViewCaller, entrance: PageSkillEntrance,
+  usableIds: ReadonlySet<string>, member?: PageSkillMember,
+) {
+  const { domainId, initiatorCredentials, userId } = caller;
+  if (!member) {
+    const java = await javaPageSkillProjection(initiatorCredentials, entrance);
+    const { groups, publicSkills } = pageAuthorization(java, [], new Set(), []);
+    const skill = publicSkills.get(locatorKey(entrance));
+    return skill ? candidatePageSkill(entrance, skill, groups) : null;
+  }
+  if (member.memberPath.length) return null;
+
+  const { source } = member;
+  let identity: SkillSourceIdentity;
+  let panelId: string | undefined;
+  let fact: ProtectedSkillOffering | SkillSourceFailure | null;
+  if (source.kind === "application-use") {
+    const actual = await currentApplicationPanel(caller, entrance, source);
+    if (!actual) return null;
+    panelId = actual.use.panelId;
+    identity = { providerId: PANEL_SKILL_PROVIDER_ID, sourceKey: panelId };
+    fact = await panelSkillProvider.findByUse(domainId, { applicationId: actual.applicationId, useId: actual.use.id },
+      initiatorCredentials, userId);
+  } else {
+    const resolved = await sourceOwners.get(source.kind)?.resolve({ ...caller, entrance, source });
+    if (!resolved) return null;
+    identity = resolved;
+    const provider = registeredSkillProviders().find(entry => entry.id === identity.providerId);
+    if (!provider?.findProtectedSource) throw anonymousFailure();
+    fact = await provider.findProtectedSource(identity.sourceKey, { domainId, userId, reader: initiatorCredentials });
+  }
+  if (!fact || fact.sourceKey !== identity.sourceKey) return null;
+  const skill = protectedSourceSkillRef(identity.providerId, domainId, fact);
+  const key = runtimeSkillKey(skill);
+  if (key !== runtimeSkillKey(member.ref)) return null;
+
+  const listed = { ...fact, ...identity, skill };
+  const [java, grants] = await Promise.all([
+    javaPageSkillProjection(initiatorCredentials, entrance, panelId),
+    grantedSkillResources([listed], initiatorCredentials, usableIds),
+  ]);
+  const associations = source.kind === "application-use" ? [] : [{ entrance, identity }];
+  const pages = pageAuthorization(java,
+    [panelId === undefined ? listed : { ...listed, entrances: java.admittedEntrances ?? [] }], grants, associations);
+  if (!pages.byEntrance.get(entranceKey(entrance))?.has(key)) return null;
+  if ("knownRequiredResourceIds" in fact) throw anonymousFailure();
+  try {
+    const manifest = standardSkillFrontmatterSchema.safeParse(await fact.readManifest(skill));
+    if (!manifest.success || manifest.data.name !== skill.name)
+      throw new SkillSourceRecordError({ resourceId: fact.sourceKey,
+        field: manifest.success ? "name" : "manifest", reason: "invalid_definition" });
+  } catch (error) {
+    if (!(error instanceof SkillSourceRecordError)) throw error;
+    throw unreadableManifest({ skill, ...error.detail });
+  }
+  return candidatePageSkill(entrance, skill, pages.groups);
+}
+
 /** Resolve the skill of this registered entry without loading the domain's skill catalogue. */
 export async function readRegisteredPanelPageSkillContext(
   caller: PageSkillViewCaller,
@@ -209,7 +283,7 @@ export async function readRegisteredPanelPageSkillContext(
   const ref = protectedSourceSkillRef(provider.id, caller.domainId, sourceFact);
   const listed = { ...sourceFact, providerId: provider.id, skill: ref };
   const [java, grants] = await Promise.all([
-    javaPageSkillProjection(caller.initiatorCredentials),
+    javaPageSkillProjection(caller.initiatorCredentials, actual.entrance),
     grantedSkillResources([listed], caller.initiatorCredentials),
   ]);
   const pages = pageAuthorization(java, [listed], grants, []);

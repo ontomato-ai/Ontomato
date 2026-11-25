@@ -93,6 +93,9 @@ export interface SkillProvider<Offering extends SkillOffering | ProtectedSkillOf
   /** Name that management shows as who provides the skill. */
   name: string;
   list(context: SkillSourceContext): Promise<readonly Offering[]>;
+  findProtectedSource?(
+    sourceKey: string, context: Omit<SkillSourceContext, "reportSourceFailure">,
+  ): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
 }
 
 export type RegisteredSkillProvider = SkillProvider<SkillOffering | ProtectedSkillOffering>;

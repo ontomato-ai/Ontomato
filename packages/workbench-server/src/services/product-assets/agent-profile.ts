@@ -126,14 +126,41 @@ async function authorizedProfileForAgent(owner:ProductOwner,credentials:Assistan
   const issues=await productReleaseIssues(owner,snapshot,executionCredentials);
   return {...await assembleAgentProfile(owner,credentials,id,snapshot.assets,issues,executionCredentials),releaseId};
 }
-/** Directory projection needs the execution surface, without assembling instructions or tools. */
-export async function profileIdForAgent(owner:ProductOwner,agentId:string):Promise<string|null>{
- return withProductGrants(owner,async()=>{
-  const access=currentProductGrants(owner);
-  const result=await getPostgresPool().query(`SELECT asset.id FROM ${t('product_bundle_heads')} head JOIN ${t('product_releases')} release ON release.domain_id=head.domain_id AND release.release_id=head.release_id JOIN ${t('product_assets')} asset ON asset.domain_id=head.domain_id AND asset.id=head.bundle_id WHERE head.domain_id=$1 AND asset.id=ANY($3::text[]) AND EXISTS(SELECT 1 FROM jsonb_array_elements(release.snapshot->'assets') frozen WHERE frozen->>'id'=head.bundle_id AND frozen->'document'->>'kind'='agent-profile' AND frozen->'document'->>'agentId'=$2) ORDER BY asset.id LIMIT 2`,[owner.domainId,agentId,[...access.use]]);
-  if(result.rows.length>1)throw new HttpError(409,'Agent has multiple active Profiles; select one explicitly','AGENT_PROFILE_AMBIGUOUS');
-  return result.rows[0]?.id??null;
- });
+async function activeProfileIds(domainId: string, agentIds: readonly string[], use: ReadonlySet<string>, excludeNative: boolean) {
+  const { rows } = await getPostgresPool().query<{ agent_id: string; id: string }>(
+    `SELECT frozen->'document'->>'agentId' AS agent_id, asset.id
+     FROM ${t('product_bundle_heads')} head
+     JOIN ${t('product_releases')} release ON release.domain_id=head.domain_id AND release.release_id=head.release_id
+     JOIN ${t('product_assets')} asset ON asset.domain_id=head.domain_id AND asset.id=head.bundle_id
+     CROSS JOIN LATERAL jsonb_array_elements(release.snapshot->'assets') frozen
+     WHERE head.domain_id=$1 AND asset.id=ANY($3::text[]) AND frozen->>'id'=head.bundle_id
+       AND frozen->'document'->>'kind'='agent-profile' AND frozen->'document'->>'agentId'=ANY($2::text[])
+       AND (NOT $4::boolean OR NOT EXISTS (
+         SELECT 1 FROM ${t('product_native_agent_bindings')} native
+         WHERE native.domain_id=head.domain_id AND native.agent_id=frozen->'document'->>'agentId'
+       ))
+     GROUP BY agent_id, asset.id`,
+    [domainId, agentIds, [...use], excludeNative],
+  );
+  const profiles = new Map<string, string>();
+  for (const row of rows) {
+    if (profiles.has(row.agent_id))
+      throw new HttpError(409, 'Agent has multiple active Profiles; select one explicitly', 'AGENT_PROFILE_AMBIGUOUS');
+    profiles.set(row.agent_id, row.id);
+  }
+  return profiles;
+}
+
+async function profileIdForAgent(owner: ProductOwner, agentId: string): Promise<string | null> {
+  return withProductGrants(owner, async () => {
+    const profiles = await activeProfileIds(owner.domainId, [agentId], currentProductGrants(owner).use, false);
+    return profiles.get(agentId) ?? null;
+  });
+}
+
+/** Native bindings take precedence when selecting agents that can use a page skill. */
+export async function agentsWithProductProfiles(domainId: string, agentIds: readonly string[], use: ReadonlySet<string>) {
+  return agentIds.length ? activeProfileIds(domainId, agentIds, use, true) : new Map<string, string>();
 }
 export async function executeProfileTool(owner:ProductOwner,credentials:AssistantCredentials,profileId:string,assetId:string,parameters:Record<string,unknown>,releaseId?:string,sessionId?:string,executionCredentials?:AssistantCredentials){
   await requireProductUse(owner,profileId);

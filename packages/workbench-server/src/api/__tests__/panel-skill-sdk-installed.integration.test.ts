@@ -245,10 +245,10 @@ it("catalogue diagnostics isolate an admitted broken projection across list, poi
   const files = await fetch(`${server.origin}/api/skills/${member.ref.name}/files`);
   expect(files.status).toBe(502);
   expect(await files.json()).toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE", details: { resourceId: projection } });
-  const candidates = await (await fetch(base + "/agents")).json();
-  const regular = candidates.agents.find((agent: { id: string }) => agent.id === server.regularAgentId);
-  expect(regular.effectiveSkills).toContainEqual(goodRef);
-  expect(regular.effectiveSkills).not.toContainEqual(member.ref);
+  const goodQuery = new URLSearchParams({ ...good.entrance, member: JSON.stringify(currentMember(good)) });
+  const candidates = await fetch(base + "/agents?" + goodQuery);
+  expect(candidates.status).toBe(200);
+  expect((await candidates.json()).agents).toContainEqual(expect.objectContaining({ id: server.regularAgentId }));
   const query = new URLSearchParams({ ...broken.entrance, member: JSON.stringify(member) });
   expect((await fetch(base + "/agents?" + query)).status).toBe(502);
   query.set("member", JSON.stringify({ ...member, ref: goodRef }));

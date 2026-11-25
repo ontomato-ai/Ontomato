@@ -150,11 +150,10 @@ async function expectReadOnlyAgentLists(domainId: string) {
   expect(await upgradeRecordCount(domainId)).toBe(upgrades);
 }
 
-async function governanceEffectiveSkills(domainId: string, agentId: string) {
-  const response = await api(domainId, "GET", "assistant/agents");
+async function governanceSettingsSkills(domainId: string, agentId: string) {
+  const response = await api(domainId, "GET", `assistant/agent-definitions/${agentId}`);
   expect(response.status, await response.clone().text()).toBe(200);
-  const { agents } = await response.json() as { agents: { id: string; effectiveSkills: unknown[] }[] };
-  return agents.find(agent => agent.id === agentId)!.effectiveSkills;
+  return (await response.json() as { skills: unknown[] }).skills;
 }
 
 beforeAll(async () => {
@@ -213,6 +212,9 @@ beforeAll(async () => {
   });
   app.post("/product-governance/service-resources", (_req, res) => {
     res.json({ ids: [] });
+  });
+  app.post("/product-governance/check-batch", (req, res) => {
+    res.json({ allowed: Object.fromEntries(req.body.ids.map((id: string) => [id, true])) });
   });
   app.post("/product-governance/check", (_req, res) => {
     res.json({ allowed: true });
@@ -357,7 +359,7 @@ it("only creates agents through the service-token initialization endpoint and ne
   expect(presets.map(agent => agent.kind).sort()).toEqual([...presetKinds, "app-builder", "ops-diagnosis"].sort());
   const stored = (await storedGovernanceRow(domainId))!;
   expect(stored.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
-  expect(await governanceEffectiveSkills(domainId, stored.id)).toContainEqual(panelRef);
+  expect(await governanceSettingsSkills(domainId, stored.id)).toContainEqual(panelRef);
   expect(await upgradeRecordCount(domainId)).toBe(1);
   expect((await initialize()).status).toBe(204);
   expect(await assistantStore.channelAgents(domainId)).toEqual(presets);
@@ -375,6 +377,6 @@ it("only creates agents through the service-token initialization endpoint and ne
 
   expect((await initialize()).status).toBe(204);
   expect(await storedGovernanceRow(domainId)).toEqual({ id: stored.id, skills: [GOVERNANCE_SKILL] });
-  expect(await governanceEffectiveSkills(domainId, stored.id)).not.toContainEqual(panelRef);
+  expect(await governanceSettingsSkills(domainId, stored.id)).not.toContainEqual(panelRef);
   expect(await upgradeRecordCount(domainId)).toBe(1);
 });

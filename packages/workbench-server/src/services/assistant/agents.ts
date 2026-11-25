@@ -1,6 +1,5 @@
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
-import type { DefaultAgent } from "@ontomato/contracts/default-agent";
-import type { AssistantAgentsQuery, PageSkillEntrance, PageSkillLocator } from "@ontomato/contracts/page-skills";
+import type { AssistantAgentsQuery, PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { workbenchIdentity } from "../../identity/installed";
@@ -10,49 +9,21 @@ import { HttpError } from "../../utils/errors";
 import { isAppBuilderKind } from "../app-builder/definition";
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import { grantedProductIds } from "../product-governance/grants";
-import { withProductGrants } from "../product-assets/grants";
-import { nativeProfileId } from "../product-assets/platform-assets";
-import { profileIdForAgent } from "../product-assets/agent-profile";
+import { agentsWithProductProfiles } from "../product-assets/agent-profile";
 import { assistantStore, type AgentRow, type AssistantOwner } from "./store";
 import { isPresetAgentKind } from "./preset-definitions";
 import { assistantDescription, assistantName } from "./labels";
-import { effectiveAssistantSkills, readAssistantSkillView, resolveCurrentPageSkillMember } from "./skills";
-
-function locatorOf(entrance: PageSkillEntrance): PageSkillLocator {
-  return "permissionCode" in entrance
-    ? { permissionCode: entrance.permissionCode }
-    : { access: entrance.access, pageKey: entrance.pageKey };
-}
-
-function sameLocator(a: PageSkillLocator, b: PageSkillLocator): boolean {
-  return "permissionCode" in a
-    ? "permissionCode" in b && a.permissionCode === b.permissionCode
-    : "access" in b && a.access === b.access && a.pageKey === b.pageKey;
-}
+import { effectiveAssistantSkills } from "./skills";
 
 export async function listAssistantAgents(owner: AssistantOwner, credentials: AssistantCredentials, query: AssistantAgentsQuery = {}, excludePreset?: string) {
-  const view = await readAssistantSkillView(owner.domainId, credentials, owner.userId);
-  let pageFilter: { skillKey: string; defaultAgent: DefaultAgent } | null = null;
-  if ("pageKey" in query) {
-    const entrance: PageSkillEntrance = "permissionCode" in query
-      ? { permissionCode: query.permissionCode, pageKey: query.pageKey }
-      : { access: query.access, pageKey: query.pageKey };
-    const locator = locatorOf(entrance);
-    // A member query names the page's actual member; the skill system checks its source, path and ref again for this
-    // initiator, so another entrance's admission never stands in for this one.
-    const skill = "member" in query
-      ? (await resolveCurrentPageSkillMember(view, entrance, query.member))?.member.ref ?? null
-      : view.publicPageSkill(locator);
-    if (!skill) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
-    const group = view.pageSkills.find(entry => sameLocator(entry.locator, locator));
-    pageFilter = {
-      skillKey: runtimeSkillKey(skill),
-      defaultAgent: group?.defaults.find(entry => entry.pageKey === query.pageKey)?.defaultAgent ?? {
-        kind: "preset", agentKind: isAppBuilderEntrance(entrance) ? "app-builder" : "regular",
-      },
-    };
-  }
   const usableIds = new Set(await grantedProductIds("use", credentials));
+  const entrance: PageSkillEntrance | null = "pageKey" in query
+    ? "permissionCode" in query ? { pageKey: query.pageKey, permissionCode: query.permissionCode }
+      : { pageKey: query.pageKey, access: query.access }
+    : null;
+  const page = entrance && await (await import("../skills/view")).readPageCandidateSkill({ ...owner, initiatorCredentials: credentials },
+    entrance, usableIds, "member" in query ? query.member : undefined);
+  if (entrance && !page) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
   const stored = await assistantStore.agents(owner.domainId);
   const diagnosisRow = stored.some(agent => isOpsDiagnosisKind(agent.kind))
     ? undefined
@@ -93,39 +64,42 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       if (!(error instanceof HttpError)) throw error;
     }
   }
-  return withProductGrants(owner, async () => {
-    const agents = [];
-    for (const agent of definitions) {
-      const native = await nativeProfileId(owner.domainId, agent.id);
-      const profile = native ? null : await profileIdForAgent(owner, agent.id);
-      agents.push({
-        id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
-        icon: agent.icon, enabled: agent.enabled,
-        ...(isPresetAgentKind(agent.kind) || isOpsDiagnosisKind(agent.kind) ? { kind: agent.kind } : {}),
-        ...(isAppBuilderKind(agent.kind) && { workspaceBound: true }),
-        // Only what this initiator's view holds: a page skill whose source could not be read is no agent's skill here.
-        effectiveSkills: effectiveAssistantSkills(agent, view, profile !== null).filter(view.hasSkill),
-      });
-    }
-    if (!pageFilter) return assistantAgentListSchema.parse({ agents,
-      ...(builder && agents.some(agent => agent.id === builder.id && agent.enabled) && { presetAgentIds: { "app-builder": builder.id } }),
-    });
-    const { skillKey, defaultAgent } = pageFilter;
-    const candidates = agents.filter(agent => agent.enabled && agent.effectiveSkills.some(skill => runtimeSkillKey(skill) === skillKey));
-    const selected = defaultAgent.kind === "id"
-      ? candidates.find(agent => agent.id === defaultAgent.id)
-      : candidates.find(agent => definitions.some(row => row.id === agent.id && row.kind === defaultAgent.agentKind));
-    if (!selected && defaultAgent.kind === "id")
-      throw new HttpError(409, "The page's default agent is unavailable", "PAGE_DEFAULT_AGENT_UNAVAILABLE");
+  const summary = (agent: AgentRow) => ({
+    id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
+    icon: agent.icon, enabled: agent.enabled,
+    ...(isPresetAgentKind(agent.kind) || isOpsDiagnosisKind(agent.kind) ? { kind: agent.kind } : {}),
+    ...(isAppBuilderKind(agent.kind) && { workspaceBound: true }),
+  });
+  if (!entrance || !page) return assistantAgentListSchema.parse({
+    agents: definitions.map(summary),
+    ...(builder && definitions.some(agent => agent.id === builder.id && agent.enabled)
+      && { presetAgentIds: { "app-builder": builder.id } }),
+  });
 
-    const candidateIds = new Set(candidates.map(agent => agent.id));
-    const presetAgentIds = Object.fromEntries(definitions
-      .filter(agent => (isPresetAgentKind(agent.kind) || isOpsDiagnosisKind(agent.kind) || isAppBuilderKind(agent.kind)) && candidateIds.has(agent.id))
-      .map(agent => [agent.kind, agent.id]));
-    return assistantAgentListSchema.parse({
-      agents: candidates,
-      presetAgentIds,
-      ...(selected ? { defaultAgentId: selected.id } : {}),
-    });
+  const skillKey = runtimeSkillKey(page.skill);
+  const view = {
+    hasSkill: (ref: typeof page.skill) => runtimeSkillKey(ref) === skillKey,
+    pageSkills: page.pageSkills,
+  };
+  const matching = definitions.filter(agent => agent.enabled && effectiveAssistantSkills(agent, view).some(view.hasSkill));
+  const profiles = await agentsWithProductProfiles(owner.domainId, matching.map(agent => agent.id), usableIds);
+  const candidates = matching.filter(agent => !profiles.has(agent.id));
+  const defaultAgent = page.defaultAgent ?? {
+    kind: "preset",
+    agentKind: isAppBuilderEntrance(entrance) ? "app-builder" : "regular",
+  };
+  const selected = defaultAgent.kind === "id"
+    ? candidates.find(agent => agent.id === defaultAgent.id)
+    : candidates.find(agent => agent.kind === defaultAgent.agentKind);
+  if (!selected && defaultAgent.kind === "id")
+    throw new HttpError(409, "The page's default agent is unavailable", "PAGE_DEFAULT_AGENT_UNAVAILABLE");
+
+  const presetAgentIds = Object.fromEntries(candidates
+    .filter(agent => isPresetAgentKind(agent.kind) || isOpsDiagnosisKind(agent.kind) || isAppBuilderKind(agent.kind))
+    .map(agent => [agent.kind, agent.id]));
+  return assistantAgentListSchema.parse({
+    agents: candidates.map(summary),
+    presetAgentIds,
+    ...(selected ? { defaultAgentId: selected.id } : {}),
   });
 }
