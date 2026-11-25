@@ -14,7 +14,7 @@ import { readerDataState, type PanelMemberContext } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import type { PanelText } from "../panel/text";
 import { resolveLocalizedText } from "./localized-text";
-import { isRecordChildReference, isRecordReference } from "./record-field";
+import { isRecordChildReference, isRecordReference, isRecordTag } from "./record-field";
 
 /** Supported display modes for `TypedValue` and `RecordTemplate` field formatting. */
 export type TypedValueKind =
@@ -281,6 +281,7 @@ export function inferValueKind(
   if (isRecordReference(value as PanelRecordFieldValue | undefined) || isRecordChildReference(value as PanelRecordFieldValue | undefined)) {
     return "reference";
   }
+  if (isRecordTag(value as PanelRecordFieldValue | undefined)) return "tag";
   if (isLocalizedField(value)) return "localized";
   if (Array.isArray(value)) return "list";
   if (typeof value === "boolean") return "boolean";

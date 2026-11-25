@@ -78,6 +78,12 @@ export const panelObjectListColumnSchema = z.object({
   width: columnWidthSchema.describe("Optional fixed column width in pixels (number) or CSS length string (for example '160px' or '20%')."),
   minWidth: columnWidthSchema.describe("Optional minimum column width in pixels (number) or CSS length string."),
   align: z.enum(["left", "center", "right"]).optional().describe("Optional text alignment for header and cells in this column."),
+  headerTooltipKey: panelMessageKeySchema.optional().describe(
+    "Optional panel message key shown in a tooltip beside the table column header.",
+  ),
+  tagEffect: z.enum(["light", "plain"]).optional().describe(
+    "Visual fill style for tag pills in this column ('light' filled by default, or 'plain' outlined).",
+  ),
 }).strict();
 export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
 
@@ -594,11 +600,21 @@ export const panelRecordJsonFieldValueSchema = z.object({
 }).strict();
 export type PanelRecordJsonFieldValue = z.infer<typeof panelRecordJsonFieldValueSchema>;
 
+/** Tagged display value carrying its own semantic tone (and optional platform icon), usable as a field value or array item. */
+export const panelRecordTagFieldValueSchema = z.object({
+  kind: z.literal("tag"),
+  label: z.string(),
+  tone: panelFieldToneSchema.optional(),
+  icon: z.string().min(1).optional(),
+}).strict();
+export type PanelRecordTagFieldValue = z.infer<typeof panelRecordTagFieldValueSchema>;
+
 /** Allowed element types inside an array-valued record field. */
 export const panelRecordFieldArrayItemSchema = z.union([
   panelRecordFieldScalarSchema,
   panelRecordReferenceFieldValueSchema,
   panelRecordChildReferenceFieldValueSchema,
+  panelRecordTagFieldValueSchema,
 ]);
 export type PanelRecordFieldArrayItem = z.infer<typeof panelRecordFieldArrayItemSchema>;
 
@@ -612,6 +628,7 @@ export const panelRecordFieldValueSchema = z.union([
   panelRecordReferenceFieldValueSchema,
   panelRecordChildReferenceFieldValueSchema,
   panelRecordJsonFieldValueSchema,
+  panelRecordTagFieldValueSchema,
   z.array(panelRecordFieldArrayItemSchema),
 ]);
 export type PanelRecordFieldValue = z.infer<typeof panelRecordFieldValueSchema>;
@@ -735,7 +752,8 @@ function lookupLocalizedValue(values: Readonly<Record<string, string>>, tag: str
 /**
  * Extract plain display/search text from any `PanelRecordFieldValue`:
  * - `localized`: resolves `locale` (for example `zh-CN` -> `zh`) -> `fallbackLocale` -> first non-empty entry in `values`.
- * - `reference`: returns `label || primaryKey`.
+ * - `reference` / `child-reference`: returns `label || primaryKey`.
+ * - `tag`: returns `label`.
  * - `json`: scalar converts to string (`null` -> `""`), object/array serializes with `JSON.stringify`.
  * - array: joins non-empty element texts with `", "`.
  * - boolean: returns `"true"` / `"false"` for search and plain-text fallback; UI layers such as `ObjectList` and
@@ -756,6 +774,7 @@ export function panelRecordFieldText(
       .join(", ");
   }
   if (value.kind === "reference" || value.kind === "child-reference") return value.label || value.primaryKey;
+  if (value.kind === "tag") return value.label;
   if (value.kind === "localized") {
     for (const tag of [...localeFallbackChain(locale), ...localeFallbackChain(fallbackLocale)]) {
       const matched = lookupLocalizedValue(value.values, tag);
