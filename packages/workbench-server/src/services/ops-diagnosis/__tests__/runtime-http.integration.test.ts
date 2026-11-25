@@ -164,7 +164,15 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
       if (req.method === "POST" && req.url === "/product-governance/check") {
         const domainId = String(req.headers.tk).split(":")[1];
         const { id, verb } = JSON.parse(raw);
-        if (revokeDiagnosisUse && id === DIAGNOSIS_AGENT_ID && verb === "use") return json(200, { allowed: false });
+        if (revokeDiagnosisUse && verb === "use") {
+          const { rows } = await pool.query<{ id: string }>(
+            `SELECT id FROM "${schema}".assistant_agents WHERE domain_id=$1 AND kind='ops-diagnosis'`,
+            [domainId],
+          );
+          if (id === DIAGNOSIS_AGENT_ID || rows.some((row) => row.id === id)) {
+            return json(200, { allowed: false });
+          }
+        }
         return json(200, { allowed: assistantResources.get(domainId)?.has(id) ?? false });
       }
       if (req.method === "POST" && req.url === "/product-governance/service-resources") {

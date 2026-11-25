@@ -26,7 +26,17 @@ import { callbackCredential } from "../agent-runtime/callback-credential";
 import { HttpError } from "../../utils/errors";
 import type { AgentHostOwner, AgentHostService } from "../agent-host/types";
 import { productGrantAllowed, requireProductGrant } from "../product-governance/grants";
+import { assistantStore } from "../assistant/store";
 import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
+
+/**
+ * Resolves the product-governance resource ID for legacy `/api/observe/agent/*` compatibility routes.
+ * Uses the domain's unified `ops-diagnosis` agent row in `assistant_agents` so one grant controls both surfaces,
+ * falling back to `DIAGNOSIS_AGENT_ID` only when the domain has not been initialized yet.
+ */
+export async function diagnosisGrantResourceId(domainId: string): Promise<string> {
+  return (await assistantStore.opsDiagnosis(domainId))?.id ?? DIAGNOSIS_AGENT_ID;
+}
 
 type Session = { id: string; domain_id: string; owner_id: string; title: string; target: DiagnosisTarget | null; created_at: Date; updated_at: Date };
 const db = getPostgresPool;
@@ -50,7 +60,7 @@ const view = (s: Session, latest: LatestRun | null) => ({
   latestRun: latest ? runStatusView(latest) : null,
 });
 export async function createDiagnosis(id: string, owner: AgentHostOwner, credentials: AssistantCredentials, target: DiagnosisTarget | null = null, fromChannel = false) {
-  await requireProductGrant(DIAGNOSIS_AGENT_ID, "use", credentials);
+  await requireProductGrant(await diagnosisGrantResourceId(owner.domainId), "use", credentials);
   if (target) target = diagnosisTargetSchema.parse(target);
   const inserted = await transaction(async (tx) => {
     await lockSessionClaim(tx, id);
@@ -73,8 +83,8 @@ function canonical(value: unknown): string {
 
 export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agents(owner: AgentHostOwner, credentials: AssistantCredentials): Promise<AgentHostAgentList> } = {
   presentationHost: "observe",
-  async agents(_owner, credentials) {
-    if (!await productGrantAllowed(DIAGNOSIS_AGENT_ID, "use", credentials)) return { agents: [] };
+  async agents(owner, credentials) {
+    if (!await productGrantAllowed(await diagnosisGrantResourceId(owner.domainId), "use", credentials)) return { agents: [] };
     const zh = credentials.locale?.startsWith("zh");
     return { agents: [{ id: DIAGNOSIS_AGENT_ID, name: zh ? "运维诊断" : "Operations diagnosis", description: zh ? "只读取证与故障诊断" : "Read evidence and diagnose faults", icon: "wrench", enabled: true }] };
   },
@@ -126,7 +136,7 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
     return snapshot;
   },
   async send(session, run, input, owner, credentials, entry) {
-    await requireProductGrant(DIAGNOSIS_AGENT_ID, "use", credentials);
+    await requireProductGrant(await diagnosisGrantResourceId(owner.domainId), "use", credentials);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
@@ -176,7 +186,7 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
 };
 
 export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials, reader?: AgentVisibilityReader): Promise<RuntimeStartRunRequest> {
-  await requireProductGrant(DIAGNOSIS_AGENT_ID, "use", credentials);
+  await requireProductGrant(await diagnosisGrantResourceId(owner.domainId), "use", credentials);
   const message = input.content;
   const row = await diagnosisSession(session, owner);
   const language = credentials.locale ?? "en";

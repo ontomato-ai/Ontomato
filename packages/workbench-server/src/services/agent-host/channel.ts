@@ -12,7 +12,7 @@ import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { assistantService } from "../assistant/service";
 import { assistantName,assistantDescription } from "../assistant/labels";
 import { assistantStore } from "../assistant/store";
-import { diagnosisService, createDiagnosis, prepareDiagnosis } from "../ops-diagnosis/service";
+import { diagnosisService, createDiagnosis, diagnosisGrantResourceId, prepareDiagnosis } from "../ops-diagnosis/service";
 import { requireProductGrant } from "../product-governance/grants";
 import { restoreAgentCaller } from "./caller";
 import { workbenchIdentity } from "../../identity/installed";
@@ -60,7 +60,7 @@ export const agentChannelService = {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
       if (provider === "observe") {
-        await requireProductGrant(DIAGNOSIS_AGENT_ID, "use", credentials);
+        await requireProductGrant(await diagnosisGrantResourceId(domain), "use", credentials);
       } else {
         const session = await assistantStore.session(body.sessionId, owner);
         if (body.authority.executionKind === "build-test") await assertAppBuilderAccess(credentials);

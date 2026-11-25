@@ -354,7 +354,7 @@ it("only creates agents through the service-token initialization endpoint and ne
   const initialize = () => initializeViaService(domainId, "fixture-service");
   expect((await initialize()).status).toBe(204);
   const presets = await assistantStore.channelAgents(domainId);
-  expect(presets.map(agent => agent.kind).sort()).toEqual([...presetKinds, "app-builder"].sort());
+  expect(presets.map(agent => agent.kind).sort()).toEqual([...presetKinds, "app-builder", "ops-diagnosis"].sort());
   const stored = (await storedGovernanceRow(domainId))!;
   expect(stored.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
   expect(await governanceEffectiveSkills(domainId, stored.id)).toContainEqual(panelRef);
