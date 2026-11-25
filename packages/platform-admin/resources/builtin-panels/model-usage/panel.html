@@ -11,35 +11,13 @@
   .mu-body {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-lg);
-    max-width: 960px;
+    gap: var(--spacing-xl);
+    max-width: 800px;
     width: 100%;
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
+    margin: 0 auto;
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     box-sizing: border-box;
     min-width: 0;
-  }
-  .mu-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
-    padding: var(--page-section-padding, var(--spacing-lg));
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-    min-width: 0;
-  }
-  .mu-card-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
-  }
-  .mu-section-title {
-    margin: 0;
-    font-size: var(--text-base, var(--text-sm));
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
   }
   .mu-form-wrap {
     width: 100%;
@@ -51,6 +29,25 @@
   }
   .mu-form-wrap .sdk-owner-form-body {
     overflow: visible;
+  }
+  .mu-vector-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--sdk-border-color, var(--ui-border));
+    min-width: 0;
+  }
+  .mu-vector-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .mu-vector-state {
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-secondary);
   }
   .mu-vector-actions {
     display: flex;
@@ -66,26 +63,24 @@
       :title="t('panel.name')"
       :description="t('panel.description')"
       :draft="usageDraft"
-    >
-      <template #actions>
-        <sdk-button @click="openConnections">{{ t('action.openConnections') }}</sdk-button>
-      </template>
-    </page-header>
+    ></page-header>
 
     <div class="mu-body">
-      <section class="mu-card">
-        <div class="mu-form-wrap">
-          <projection slot="usageForm" @saved="onUsageSaved"></projection>
-        </div>
-      </section>
+      <div class="mu-form-wrap">
+        <projection slot="usageForm" @saved="onUsageSaved"></projection>
+      </div>
 
-      <section class="mu-card">
-        <div class="mu-card-head">
-          <h2 class="mu-section-title">{{ t('vector.title') }}</h2>
+      <section v-show="vectorConfigured" class="mu-vector-section" :aria-label="t('vector.title')">
+        <div v-show="showVectorBanner">
+          <projection slot="vectorStatus"></projection>
+        </div>
+        <div class="mu-vector-row">
+          <span v-if="vectorStateLabel" class="mu-vector-state">{{ vectorStateLabel }}</span>
           <div class="mu-vector-actions">
             <projection
               v-if="rebuildAlive"
               slot="pauseVectorRebuild"
+              size="small"
               :disabled="!canPause"
               :label="t('vector.pause')"
               @done="onRebuildPaused"
@@ -93,12 +88,12 @@
             <projection
               v-else-if="canRebuild || canResume"
               slot="rebuildVectors"
+              size="small"
               :label="canResume ? t('vector.resume') : t('vector.rebuild')"
               @done="onRebuildStarted"
             ></projection>
           </div>
         </div>
-        <projection slot="vectorStatus"></projection>
       </section>
     </div>
   </section>

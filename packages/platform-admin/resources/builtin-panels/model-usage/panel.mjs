@@ -7,21 +7,31 @@ import {
 } from "@ontomato/sdk/panel";
 
 const REBUILD_POLL_MS = 3000;
-const CONNECTIONS_PATH = "/settings/model-config/providers";
 
 await mountPanel({
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const { instance, notify, t } = usePanelContext();
     if (!instance.state.values.value.domain) {
       instance.state.set("domain", { className: "platform:ModelUsage", primaryKey: "domain" });
     }
     const usageDraft = usePanelFormDraft("usageForm");
 
+    const configuredOutput = usePanelOutput("vectorStatus", "configured");
+    const stateOutput = usePanelOutput("vectorStatus", "state");
     const aliveOutput = usePanelOutput("vectorStatus", "alive");
     const canRebuildOutput = usePanelOutput("vectorStatus", "canRebuild");
     const canResumeOutput = usePanelOutput("vectorStatus", "canResume");
     const canPauseOutput = usePanelOutput("vectorStatus", "canPause");
 
+    const vectorConfigured = computed(() => configuredOutput.value === true);
+    const vectorState = computed(() => (typeof stateOutput.value === "string" ? stateOutput.value : ""));
+    const showVectorBanner = computed(() => vectorConfigured.value && Boolean(vectorState.value) && vectorState.value !== "READY");
+    const vectorStateLabel = computed(() => {
+      if (!vectorConfigured.value || !vectorState.value) return "";
+      const key = `vector.states.${vectorState.value}`;
+      const translated = t(key);
+      return translated === key ? "" : translated;
+    });
     const rebuildAlive = computed(() => aliveOutput.value === true);
     const canRebuild = computed(() => canRebuildOutput.value === true);
     const canResume = computed(() => canResumeOutput.value === true);
@@ -67,13 +77,12 @@ await mountPanel({
       notify({ kind: "info", text: t("vector.paused") });
     }
 
-    function openConnections() {
-      void navigate(CONNECTIONS_PATH).catch(() => undefined);
-    }
-
     return {
       t,
       usageDraft,
+      vectorConfigured,
+      showVectorBanner,
+      vectorStateLabel,
       rebuildAlive,
       canRebuild,
       canResume,
@@ -81,7 +90,6 @@ await mountPanel({
       onUsageSaved,
       onRebuildStarted,
       onRebuildPaused,
-      openConnections,
     };
   },
 });

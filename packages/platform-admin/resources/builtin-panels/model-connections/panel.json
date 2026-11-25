@@ -45,9 +45,18 @@
         },
         "config": {
           "layout": "list",
-          "searchable": false,
+          "searchable": true,
+          "searchFields": [
+            "label",
+            "providerLabel"
+          ],
+          "searchPlaceholder": "connections.search",
+          "statusStyle": "dot",
+          "statusField": "statusLabel",
+          "subtitleField": "summary",
           "fallbackToFirst": true,
-          "emptyText": "connections.empty"
+          "emptyText": "connections.empty",
+          "noMatchText": "connections.noMatch"
         },
         "name": "Model providers",
         "description": "Model providers configured in the current domain",
@@ -73,7 +82,8 @@
         },
         "operation": "platform:ModelConnection.save",
         "config": {
-          "actions": "none"
+          "actions": "none",
+          "columns": 2
         },
         "name": "Provider settings form",
         "description": "Edit provider type, API base URL, API key, and extra headers of the selected provider",
@@ -87,7 +97,8 @@
         },
         "operation": "platform:ModelConnection.save",
         "config": {
-          "actions": "footer"
+          "actions": "footer",
+          "columns": 2
         },
         "name": "New provider form",
         "description": "Create a new model provider in this domain",
@@ -100,7 +111,7 @@
         "operation": "modelConnections.delete",
         "config": {
           "type": "danger",
-          "plain": true
+          "icon": "trash-2"
         },
         "name": "Delete provider",
         "description": "Delete the selected provider and its models after confirming impact",
@@ -114,6 +125,15 @@
           "rows": "models"
         },
         "operations": {
+          "testModel": {
+            "operation": "modelConnections.test",
+            "type": "platform:ModelConnection",
+            "params": {
+              "modelName": {
+                "row": "primaryKey"
+              }
+            }
+          },
           "deleteModel": {
             "operation": "modelEntries.delete",
             "type": "platform:ModelEntry",
@@ -124,38 +144,27 @@
           "layout": "table",
           "searchable": false,
           "fallbackToFirst": false,
+          "groupBy": "typeLabel",
           "emptyText": "models.empty",
           "columns": [
             {
-              "key": "label",
+              "key": "nameParts",
               "labelKey": "models.colName",
-              "subtitleKey": "upstreamModel",
               "minWidth": 180
-            },
-            {
-              "key": "typeLabel",
-              "labelKey": "models.colType",
-              "kind": "tag",
-              "width": 110
             },
             {
               "key": "specs",
               "labelKey": "models.colSpecs",
-              "minWidth": 160
-            },
-            {
-              "key": "defaultTag",
-              "labelKey": "models.colDefault",
-              "kind": "tag",
-              "width": 130
+              "minWidth": 120,
+              "wrap": true
             }
           ],
           "rowActions": {
             "maxVisible": 3,
             "items": [
               {
-                "kind": "local",
-                "id": "test",
+                "kind": "operation",
+                "operation": "testModel",
                 "labelKey": "models.test"
               },
               {
@@ -186,7 +195,8 @@
         },
         "operation": "modelConnections.addModel",
         "config": {
-          "actions": "footer"
+          "actions": "footer",
+          "columns": 2
         },
         "name": "Add model form",
         "description": "Add a chat or embedding model under the selected provider",
@@ -201,7 +211,8 @@
         },
         "operation": "platform:ModelEntry.save",
         "config": {
-          "actions": "footer"
+          "actions": "footer",
+          "columns": 2
         },
         "name": "Edit model form",
         "description": "Edit a model's public name, upstream ID, type, and parameters",
@@ -215,13 +226,34 @@
         "description": "Fetch candidate model IDs using the current provider form draft",
         "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000009"
       },
-      "testModel": {
-        "component": "PanelData",
+      "usagesList": {
+        "component": "ObjectList",
         "type": "platform:ModelConnection",
-        "operation": "modelConnections.test",
-        "name": "Test model connection",
-        "description": "Send a minimal chat or embedding request using the current provider form draft",
-        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-10000000000a"
+        "target": "selected",
+        "data": {
+          "rows": "usages"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "usages.empty",
+          "columns": [
+            {
+              "key": "where",
+              "labelKey": "usages.colWhere",
+              "minWidth": 180
+            },
+            {
+              "key": "model",
+              "labelKey": "usages.colModel",
+              "minWidth": 160
+            }
+          ]
+        },
+        "name": "Provider references",
+        "description": "Domain defaults, system background tasks, and ontology agents using models under the selected provider",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-10000000000b"
       }
     }
   },
@@ -231,6 +263,8 @@
         "panel.name": "Providers & models",
         "panel.description": "Manage domain model providers and public chat or embedding models routed through the gateway.",
         "connections.title": "Providers",
+        "connections.search": "Search providers",
+        "connections.noMatch": "No matching providers.",
         "connections.add": "Add provider",
         "connections.addTitle": "Add provider",
         "connections.empty": "No providers configured yet.",
@@ -246,14 +280,11 @@
         "models.addTitle": "Add model",
         "models.editTitle": "Edit model",
         "models.colName": "Public name",
-        "models.colType": "Type",
         "models.colSpecs": "Specifications",
-        "models.colDefault": "Default",
         "models.test": "Test",
         "models.edit": "Edit",
         "models.delete": "Delete",
         "models.saved": "Model saved.",
-        "models.testing": "Testing {name}…",
         "models.testChatOk": "{name}: connected ({reply})",
         "models.testEmbeddingOk": "{name}: connected ({dimensions} dimensions)",
         "models.testFailed": "{name}: test failed — {message}",
@@ -265,13 +296,22 @@
         "discover.failed": "Unable to fetch model list: {message}",
         "discover.retry": "Retry",
         "discover.manual": "Add manually",
-        "discover.add": "Add",
-        "discover.close": "Close"
+        "discover.added": "Added",
+        "discover.addNamed": "Add {id}",
+        "discover.apiBaseRequired": "Enter the API base URL first.",
+        "discover.invalidConnection": "Fix the provider settings errors before fetching models.",
+        "discover.close": "Close",
+        "usages.title": "Where this provider is used",
+        "usages.empty": "No references yet.",
+        "usages.colWhere": "Used by",
+        "usages.colModel": "Model"
       },
       "zh-CN": {
         "panel.name": "服务商和模型",
         "panel.description": "维护域内模型服务商及经网关路由的公开对话、向量模型。",
         "connections.title": "服务商",
+        "connections.search": "搜索服务商",
+        "connections.noMatch": "没有匹配的服务商。",
         "connections.add": "新建服务商",
         "connections.addTitle": "新建服务商",
         "connections.empty": "还没有配置服务商。",
@@ -280,21 +320,18 @@
         "connections.saved": "服务商已保存。",
         "connections.created": "服务商已创建。",
         "connections.deleted": "服务商已删除。",
-        "models.title": "模型列表",
+        "models.title": "模型",
         "models.empty": "该服务商下还没有模型。",
         "models.discover": "拉取模型列表",
         "models.add": "添加模型",
         "models.addTitle": "添加模型",
         "models.editTitle": "编辑模型",
         "models.colName": "公开名",
-        "models.colType": "类型",
         "models.colSpecs": "规格",
-        "models.colDefault": "默认用途",
         "models.test": "测试连接",
         "models.edit": "编辑",
         "models.delete": "删除",
         "models.saved": "模型已保存。",
-        "models.testing": "正在测试 {name}…",
         "models.testChatOk": "{name}：连接正常（{reply}）",
         "models.testEmbeddingOk": "{name}：连接正常（{dimensions} 维）",
         "models.testFailed": "{name}：测试失败 — {message}",
@@ -306,13 +343,22 @@
         "discover.failed": "无法拉取模型列表：{message}",
         "discover.retry": "重试",
         "discover.manual": "手动添加",
-        "discover.add": "添加",
-        "discover.close": "关闭"
+        "discover.added": "已添加",
+        "discover.addNamed": "添加 {id}",
+        "discover.apiBaseRequired": "请先填写 API 地址。",
+        "discover.invalidConnection": "请先修正服务商配置中的错误后再拉取模型列表。",
+        "discover.close": "关闭",
+        "usages.title": "引用此服务商",
+        "usages.empty": "暂无引用",
+        "usages.colWhere": "使用方",
+        "usages.colModel": "模型"
       },
       "zh-TW": {
         "panel.name": "服務商與模型",
         "panel.description": "維護域內模型服務商及經閘道路由的公開對話與向量模型。",
         "connections.title": "服務商",
+        "connections.search": "搜尋服務商",
+        "connections.noMatch": "沒有符合的服務商。",
         "connections.add": "新增服務商",
         "connections.addTitle": "新增服務商",
         "connections.empty": "尚未設定任何服務商。",
@@ -321,21 +367,18 @@
         "connections.saved": "服務商已儲存。",
         "connections.created": "服務商已建立。",
         "connections.deleted": "服務商已刪除。",
-        "models.title": "模型清單",
+        "models.title": "模型",
         "models.empty": "此服務商下尚無模型。",
         "models.discover": "取得模型清單",
         "models.add": "新增模型",
         "models.addTitle": "新增模型",
         "models.editTitle": "編輯模型",
         "models.colName": "公開名稱",
-        "models.colType": "類型",
         "models.colSpecs": "規格",
-        "models.colDefault": "預設用途",
         "models.test": "測試連線",
         "models.edit": "編輯",
         "models.delete": "刪除",
         "models.saved": "模型已儲存。",
-        "models.testing": "正在測試 {name}…",
         "models.testChatOk": "{name}：連線正常（{reply}）",
         "models.testEmbeddingOk": "{name}：連線正常（{dimensions} 維）",
         "models.testFailed": "{name}：測試失敗 — {message}",
@@ -347,8 +390,15 @@
         "discover.failed": "無法取得模型清單：{message}",
         "discover.retry": "重試",
         "discover.manual": "手動新增",
-        "discover.add": "新增",
-        "discover.close": "關閉"
+        "discover.added": "已新增",
+        "discover.addNamed": "新增 {id}",
+        "discover.apiBaseRequired": "請先填寫 API 位址。",
+        "discover.invalidConnection": "請先修正服務商設定中的錯誤後再取得模型清單。",
+        "discover.close": "關閉",
+        "usages.title": "引用此服務商",
+        "usages.empty": "暫無引用",
+        "usages.colWhere": "使用方",
+        "usages.colModel": "模型"
       }
     }
   }

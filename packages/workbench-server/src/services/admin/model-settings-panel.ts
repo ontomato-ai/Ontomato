@@ -90,6 +90,25 @@ const SAVE_USAGE_OP = `${MODEL_USAGE}.save`;
 const BACKGROUND_TASK_KINDS = ["quality", "describe", "explain", "metric"] as const;
 type BackgroundTaskKind = (typeof BACKGROUND_TASK_KINDS)[number];
 const FOLLOW_DOMAIN_DEFAULT = "@default";
+const NO_MODEL_SELECTED = "@none";
+
+function isBackgroundTaskKind(kind: string): kind is BackgroundTaskKind {
+  return (BACKGROUND_TASK_KINDS as readonly string[]).includes(kind);
+}
+
+function ontologyAgentDisplayName(agent: OntologyAgentModel, locale?: string): string {
+  if (isBackgroundTaskKind(agent.kind)) {
+    return tForLocale(locale, `panels.modelSettings.usage.tasks.${agent.kind}.label`);
+  }
+  if (agent.kind === "retrieval") {
+    return tForLocale(locale, "panels.agentDefinition.retrievalName");
+  }
+  return agent.name;
+}
+
+function decodeOptionalModelSelection(value: unknown): unknown {
+  return value === null || value === undefined || value === "" || value === NO_MODEL_SELECTED ? null : value;
+}
 
 /** Per-provider UI labels and default base URL placeholders. Validation rules live in `@ontomato/contracts/model-settings`. */
 export const PROVIDER_SPECS: Record<ModelProvider, {
@@ -169,8 +188,8 @@ const taskModelsValuesSchema = z.object({
 }).strict();
 
 const usageFormValuesSchema = z.object({
-  defaultModel: z.string().optional(),
-  embeddingModel: z.string().optional(),
+  defaultModel: z.string().nullable().optional(),
+  embeddingModel: z.string().nullable().optional(),
   taskModels: taskModelsValuesSchema.optional(),
 }).strict();
 
@@ -199,13 +218,18 @@ const discoverInputSchema = z.object({
   draft: panelFormValuesSchema,
   parameters: runtimeJsonObjectSchema.optional(),
 }).strict();
-const testInputSchema = z.object({
+const draftTestInputSchema = z.object({
   draft: panelFormValuesSchema,
   parameters: z.object({
     modelName: modelNameSchema,
     prompt: z.string().optional(),
   }).strict(),
 }).strict();
+const rowTestInputSchema = z.object({
+  modelName: modelNameSchema,
+  prompt: z.string().optional(),
+}).strict();
+const testInputSchema = z.union([draftTestInputSchema, rowTestInputSchema]);
 
 async function requestOwnerEnvelope(
   host: DataQueryOperationHost,
@@ -473,6 +497,15 @@ function buildConnectionForm(
   const parsedProvider = modelProviderSchema.safeParse(evaluated.values.provider);
   const apiBaseRequired = parsedProvider.success ? requiresApiBase(parsedProvider.data) : false;
   const apiBasePlaceholder = parsedProvider.success ? PROVIDER_SPECS[parsedProvider.data].apiBasePlaceholder : undefined;
+  const hasExistingEmbedding = !creating
+    && existingName !== null
+    && modelsForConnection(settings, existingName).some(([, entry]) => entry.type === "embedding");
+  const embeddingProviderMismatch = hasExistingEmbedding
+    && parsedProvider.success
+    && !supportsEmbeddings(parsedProvider.data);
+  const hasSavedHeaders = !creating
+    && existingName !== null
+    && Object.keys(settings.connections[existingName]?.extraHeaders ?? {}).length > 0;
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
 
   const fields: PanelFormField[] = [
@@ -489,6 +522,9 @@ function buildConnectionForm(
       path: "/provider",
       label: t("panels.modelSettings.fields.provider"),
       help: t("panels.modelSettings.fields.providerHelp"),
+      ...(embeddingProviderMismatch
+        ? { warning: t("panels.modelSettings.errors.providerNoEmbeddings") }
+        : {}),
       required: true,
       readOnly: false,
       refreshOnChange: true,
@@ -512,6 +548,7 @@ function buildConnectionForm(
         : t("panels.modelSettings.fields.apiBaseHelpOptional"),
       required: apiBaseRequired,
       readOnly: false,
+      fullWidth: true,
       valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
       control: { kind: "text", ...(apiBasePlaceholder ? { placeholder: apiBasePlaceholder } : {}) },
     },
@@ -523,6 +560,7 @@ function buildConnectionForm(
         : t("panels.modelSettings.fields.apiKeyHelpEdit"),
       required: creating,
       readOnly: false,
+      fullWidth: true,
       valueSchema: cachedZodToRuntimeJsonSchema(creating ? z.string().min(1) : z.string()),
       control: { kind: "text", secret: true, placeholder: "sk-..." },
     },
@@ -532,10 +570,13 @@ function buildConnectionForm(
       help: t("panels.modelSettings.fields.extraHeadersHelp"),
       required: false,
       readOnly: false,
-      advanced: true,
+      fullWidth: true,
+      ...(hasSavedHeaders ? {} : { advanced: true as const }),
       valueSchema: cachedZodToRuntimeJsonSchema(z.array(headerRowSchema)),
       control: {
         kind: "object-array",
+        presentation: "inline",
+        addLabel: t("panels.modelSettings.fields.addHeader"),
         itemFields: [
           {
             path: "/name",
@@ -714,6 +755,7 @@ function buildModelForm(
       required: true,
       readOnly: false,
       refreshOnChange: true,
+      fullWidth: true,
       valueSchema: cachedZodToRuntimeJsonSchema(z.enum(["chat", "embedding"])),
       control: {
         kind: "select",
@@ -755,8 +797,9 @@ function buildModelForm(
         help: t("panels.modelSettings.fields.dimensionsHelp"),
         required: true,
         readOnly: false,
+        fullWidth: true,
         valueSchema: cachedZodToRuntimeJsonSchema(z.number().int().positive()),
-        control: { kind: "number" as const },
+        control: { kind: "number" as const, presentation: "stepper" as const, min: 1, precision: 0 },
       }]
       : [
         {
@@ -766,7 +809,7 @@ function buildModelForm(
           required: false,
           readOnly: false,
           valueSchema: cachedZodToRuntimeJsonSchema(z.number().int().positive().nullable()),
-          control: { kind: "number" as const },
+          control: { kind: "number" as const, presentation: "stepper" as const, min: 1, precision: 0 },
         },
         {
           path: "/maxOutputTokens",
@@ -775,7 +818,7 @@ function buildModelForm(
           required: false,
           readOnly: false,
           valueSchema: cachedZodToRuntimeJsonSchema(z.number().int().positive().nullable()),
-          control: { kind: "number" as const },
+          control: { kind: "number" as const, presentation: "stepper" as const, min: 1, precision: 0 },
         },
         {
           path: "/supportsReasoning",
@@ -801,7 +844,7 @@ function buildModelForm(
           readOnly: false,
           advanced: true as const,
           valueSchema: cachedZodToRuntimeJsonSchema(z.number().min(0).max(2).nullable()),
-          control: { kind: "number" as const },
+          control: { kind: "number" as const, presentation: "stepper" as const, min: 0, max: 2, step: 0.1 },
         },
         {
           path: "/topP",
@@ -811,7 +854,7 @@ function buildModelForm(
           readOnly: false,
           advanced: true as const,
           valueSchema: cachedZodToRuntimeJsonSchema(z.number().min(0).max(1).nullable()),
-          control: { kind: "number" as const },
+          control: { kind: "number" as const, presentation: "stepper" as const, min: 0, max: 1, step: 0.1 },
         },
       ]),
     {
@@ -822,7 +865,7 @@ function buildModelForm(
       readOnly: false,
       advanced: true as const,
       valueSchema: cachedZodToRuntimeJsonSchema(z.number().int().positive().nullable()),
-      control: { kind: "number" },
+      control: { kind: "number", presentation: "stepper", min: 1, step: 10, precision: 0 },
     },
     {
       path: "/maxRetries",
@@ -832,7 +875,7 @@ function buildModelForm(
       readOnly: false,
       advanced: true as const,
       valueSchema: cachedZodToRuntimeJsonSchema(z.number().int().nonnegative().nullable()),
-      control: { kind: "number" },
+      control: { kind: "number", presentation: "stepper", min: 0, precision: 0 },
     },
   ];
 
@@ -883,29 +926,49 @@ function vectorRebuildTone(status: VectorRebuildStatus): "info" | "warning" | "d
   return "warning";
 }
 
+function connectionState(connection: ModelConnection, modelCount: number): "ready" | "incomplete" | "draft" {
+  const hasKey = Boolean(connection.apiKey && connection.apiKey.trim() !== "");
+  if (!hasKey) return "draft";
+  const hasBase = !requiresApiBase(connection.provider) || Boolean(connection.apiBase && connection.apiBase.trim() !== "");
+  return hasBase && modelCount > 0 ? "ready" : "incomplete";
+}
+
 function connectionRecord(name: string, connection: ModelConnection, settings: ModelSettingsData, locale?: string): PanelRecord {
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
-  const count = modelsForConnection(settings, name).length;
+  const connectionModels = modelsForConnection(settings, name);
+  const count = connectionModels.length;
   const providerText = providerLabel(connection.provider, locale);
+  const summary = `${providerText} · ${t("panels.modelSettings.modelCount", { count })}`;
+  const state = connectionState(connection, count);
+  const statusTone = state === "ready" ? "success" : state === "incomplete" ? "warning" : "default";
+  const existingModelIds = [...new Set(connectionModels.flatMap(([modelName, entry]) => [modelName, entry.model]))];
   return {
     primaryKey: name,
     label: name,
-    subtitle: `${providerText} · ${t("panels.modelSettings.modelCount", { count })}`,
+    subtitle: summary,
     fields: {
       provider: connection.provider,
       providerLabel: providerText,
       apiBase: connection.apiBase ?? "",
       modelCount: String(count),
+      summary,
+      status: state,
+      statusLabel: t(`panels.modelSettings.connectionStates.${state}`),
     },
     fieldLabels: {
       providerLabel: t("panels.modelSettings.fields.provider"),
       apiBase: t("panels.modelSettings.fields.apiBase"),
       modelCount: t("panels.modelSettings.fields.models"),
+      statusLabel: t("panels.modelSettings.fields.status"),
+    },
+    tones: {
+      statusLabel: statusTone,
     },
     outputs: {
       provider: connection.provider,
       supportsEmbeddings: supportsEmbeddings(connection.provider),
       modelCount: count,
+      existingModelIds: JSON.stringify(existingModelIds),
     },
   };
 }
@@ -960,6 +1023,7 @@ export function createModelConnectionReads(actor: PanelOperationActor) {
           label: modelName,
           subtitle: entry.model,
           fields: {
+            nameParts: [modelName, entry.model, defaultTag],
             upstreamModel: entry.model,
             type: entry.type,
             typeLabel: t(`panels.modelSettings.types.${entry.type}`),
@@ -967,6 +1031,7 @@ export function createModelConnectionReads(actor: PanelOperationActor) {
             defaultTag,
           },
           fieldLabels: {
+            nameParts: t("panels.modelSettings.fields.modelName"),
             upstreamModel: t("panels.modelSettings.fields.upstreamModel"),
             typeLabel: t("panels.modelSettings.fields.modelType"),
             specs: t("panels.modelSettings.fields.specs"),
@@ -974,6 +1039,51 @@ export function createModelConnectionReads(actor: PanelOperationActor) {
           },
         };
       });
+    },
+
+    async usages(primaryKey: string): Promise<PanelRecord[]> {
+      const [settings, agents] = await Promise.all([
+        readSettings(host, actor.credentials),
+        readOntologyAgents(host, actor.credentials),
+      ]);
+      if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
+      const names = new Set(modelsForConnection(settings, primaryKey).map(([modelName]) => modelName));
+      const rows: PanelRecord[] = [];
+      const fieldLabels = {
+        where: t("panels.modelSettings.usages.where"),
+        model: t("panels.modelSettings.usages.model"),
+      };
+      if (settings.defaultModel && names.has(settings.defaultModel)) {
+        const where = t("panels.modelSettings.fields.defaultModel");
+        rows.push({
+          primaryKey: `default:${settings.defaultModel}`,
+          label: where,
+          fields: { where, model: settings.defaultModel },
+          fieldLabels,
+        });
+      }
+      if (settings.embeddingModel && names.has(settings.embeddingModel)) {
+        const where = t("panels.modelSettings.fields.embeddingModel");
+        rows.push({
+          primaryKey: `embedding:${settings.embeddingModel}`,
+          label: where,
+          fields: { where, model: settings.embeddingModel },
+          fieldLabels,
+        });
+      }
+      for (const agent of agents) {
+        const ref = agent.modelSelection.modelId;
+        if (ref && names.has(ref)) {
+          const where = ontologyAgentDisplayName(agent, locale);
+          rows.push({
+            primaryKey: `agent:${agent.id}`,
+            label: where,
+            fields: { where, model: ref },
+            fieldLabels,
+          });
+        }
+      }
+      return rows;
     },
   };
 }
@@ -1039,8 +1149,8 @@ function usageFormValues(
     if (agent) taskModels[kind] = agent.modelSelection.modelId ?? FOLLOW_DOMAIN_DEFAULT;
   }
   return {
-    ...(settings.defaultModel === null ? {} : { defaultModel: settings.defaultModel }),
-    ...(settings.embeddingModel === null ? {} : { embeddingModel: settings.embeddingModel }),
+    defaultModel: settings.defaultModel ?? NO_MODEL_SELECTED,
+    embeddingModel: settings.embeddingModel ?? NO_MODEL_SELECTED,
     ...(Object.keys(taskModels).length > 0 ? { taskModels } : {}),
   };
 }
@@ -1063,10 +1173,10 @@ function parseUsageDraft(
   const checked = modelSettingsWriteSchema.safeParse({
     ...settingsWriteFromData(settings),
     defaultModel: submittedFields === undefined || submittedFields.includes("/defaultModel")
-      ? raw.defaultModel ?? null
+      ? decodeOptionalModelSelection(raw.defaultModel)
       : settings.defaultModel,
     embeddingModel: submittedFields === undefined || submittedFields.includes("/embeddingModel")
-      ? raw.embeddingModel ?? null
+      ? decodeOptionalModelSelection(raw.embeddingModel)
       : settings.embeddingModel,
   });
   const errors: FormFieldError[] = checked.success
@@ -1155,8 +1265,10 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         }
         : baseValues;
 
-      const defaultModel = typeof values.defaultModel === "string" ? values.defaultModel : undefined;
-      const embeddingModel = typeof values.embeddingModel === "string" ? values.embeddingModel : undefined;
+      const rawDefault = decodeOptionalModelSelection(values.defaultModel);
+      const defaultModel = typeof rawDefault === "string" ? rawDefault : undefined;
+      const rawEmbedding = decodeOptionalModelSelection(values.embeddingModel);
+      const embeddingModel = typeof rawEmbedding === "string" ? rawEmbedding : undefined;
 
       const baseChatOptions: PanelFormOption[] = chatModels
         .map(([name, entry]) => ({
@@ -1166,7 +1278,16 @@ export function createModelUsageReads(actor: PanelOperationActor) {
           disabled: false,
           disabledReason: null,
         }));
-      const defaultChatOptions: PanelFormOption[] = [...baseChatOptions];
+      const defaultChatOptions: PanelFormOption[] = [
+        {
+          value: NO_MODEL_SELECTED,
+          label: t("panels.modelSettings.usage.noDefaultChat"),
+          description: null,
+          disabled: false,
+          disabledReason: null,
+        },
+        ...baseChatOptions,
+      ];
       const chatMissing = !!defaultModel && !chatModels.some(([name]) => name === defaultModel);
       if (chatMissing) {
         defaultChatOptions.push({
@@ -1178,14 +1299,22 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         });
       }
 
-      const embeddingOptions: PanelFormOption[] = embeddingModels
-        .map(([name, entry]) => ({
+      const embeddingOptions: PanelFormOption[] = [
+        {
+          value: NO_MODEL_SELECTED,
+          label: t("panels.modelSettings.usage.noEmbedding"),
+          description: null,
+          disabled: false,
+          disabledReason: null,
+        },
+        ...embeddingModels.map(([name, entry]) => ({
           value: name,
           label: `${name} · ${t("panels.modelSettings.specs.dimensions", { n: entry.type === "embedding" ? entry.dimensions : 0 })}`,
           description: `${entry.connection} · ${entry.model}`,
           disabled: false,
           disabledReason: null,
-        }));
+        })),
+      ];
       const embeddingMissing = !!embeddingModel && !embeddingModels.some(([name]) => name === embeddingModel);
       if (embeddingMissing) {
         embeddingOptions.push({
@@ -1202,6 +1331,9 @@ export function createModelUsageReads(actor: PanelOperationActor) {
       const followDefaultLabel = defaultModel
         ? t("panels.modelSettings.usage.followDefaultNamed", { name: defaultModel })
         : t("panels.modelSettings.usage.followDefault");
+      const embeddingHelp = embeddingModel && !embeddingMissing
+        ? `${t("panels.modelSettings.fields.embeddingModelHelp")} ${t("panels.modelSettings.fields.embeddingRebuildHint")}`
+        : t("panels.modelSettings.fields.embeddingModelHelp");
 
       const fields: PanelFormField[] = [
         {
@@ -1224,9 +1356,10 @@ export function createModelUsageReads(actor: PanelOperationActor) {
           path: "/embeddingModel",
           section: "defaults",
           label: t("panels.modelSettings.fields.embeddingModel"),
-          help: t("panels.modelSettings.fields.embeddingModelHelp"),
+          help: embeddingHelp,
           required: false,
           readOnly: false,
+          refreshOnChange: true,
           ...(embeddingMissing ? { warning: t("panels.modelSettings.usage.missingWarning", { name: embeddingModel }) } : {}),
           valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
           control: { kind: "select", options: embeddingOptions, placeholder: t("panels.modelSettings.usage.noEmbedding") },
@@ -1377,7 +1510,7 @@ const deleteConnectionImpact: PanelImpactInspector = {
     }
     const affectedAgents = agents.filter((agent) => agent.modelSelection.modelId && removedSet.has(agent.modelSelection.modelId));
     if (affectedAgents.length > 0) {
-      notes.push(tForLocale(host.locale, "panels.modelSettings.impact.affectedAgents", { names: affectedAgents.map((a) => a.name).join(", ") }));
+      notes.push(tForLocale(host.locale, "panels.modelSettings.impact.affectedAgents", { names: affectedAgents.map((a) => ontologyAgentDisplayName(a, host.locale)).join(", ") }));
     }
     const base = tForLocale(host.locale, "panels.modelSettings.impact.deleteConnection", { name: target.primaryKey });
     return {
@@ -1405,7 +1538,7 @@ const deleteModelImpact: PanelImpactInspector = {
     }
     const affectedAgents = agents.filter((agent) => agent.modelSelection.modelId === target.primaryKey);
     if (affectedAgents.length > 0) {
-      notes.push(tForLocale(host.locale, "panels.modelSettings.impact.affectedAgents", { names: affectedAgents.map((a) => a.name).join(", ") }));
+      notes.push(tForLocale(host.locale, "panels.modelSettings.impact.affectedAgents", { names: affectedAgents.map((a) => ontologyAgentDisplayName(a, host.locale)).join(", ") }));
     }
     const base = tForLocale(host.locale, "panels.modelSettings.impact.deleteModel", { name: target.primaryKey });
     return {
@@ -1462,7 +1595,7 @@ const saveModelImpact: PanelImpactInspector = {
         notes.push(tForLocale(host.locale, "panels.modelSettings.impact.renameAffectsAgents", {
           from: currentName,
           to: nextName,
-          names: affectedAgents.map((a) => a.name).join(", "),
+          names: affectedAgents.map((a) => ontologyAgentDisplayName(a, host.locale)).join(", "),
         }));
       }
     }
@@ -1655,15 +1788,34 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     resultSchema: z.object({ kind: z.literal("json"), value: runtimeModelTestResponseSchema }).strict(),
     async execute(host: PanelOperationHost, call) {
       const settings = await readSettings(host, host.executor.credentials);
-      const { draft, parameters } = testInputSchema.parse(call.input);
-      const { connectionName, connection } = buildConnectionDraftFromForm(draft, settings, host.locale);
-      const existing = settings.models[parameters.modelName];
-      if (!existing) throw new HttpError(404, `Model '${parameters.modelName}' not found`, "NOT_FOUND");
+      const parsed = testInputSchema.parse(call.input);
+      let connectionName: string;
+      let connection: ModelConnectionWrite;
+      let modelName: string;
+      let prompt: string | undefined;
+      if ("draft" in parsed) {
+        const built = buildConnectionDraftFromForm(parsed.draft, settings, host.locale);
+        connectionName = built.connectionName;
+        connection = built.connection;
+        modelName = parsed.parameters.modelName;
+        prompt = parsed.parameters.prompt;
+      } else {
+        modelName = parsed.modelName;
+        prompt = parsed.prompt;
+        const targetModel = settings.models[modelName];
+        if (!targetModel) throw new HttpError(404, `Model '${modelName}' not found`, "NOT_FOUND");
+        const savedConnection = settings.connections[targetModel.connection];
+        if (!savedConnection) throw new HttpError(404, `Connection '${targetModel.connection}' not found`, "NOT_FOUND");
+        connectionName = targetModel.connection;
+        connection = savedConnection;
+      }
+      const existing = settings.models[modelName];
+      if (!existing) throw new HttpError(404, `Model '${modelName}' not found`, "NOT_FOUND");
       const request = runtimeModelTestRequestSchema.parse({
         connectionName,
         connection,
         model: { ...existing, connection: connectionName },
-        ...(parameters.prompt ? { prompt: parameters.prompt } : {}),
+        ...(prompt ? { prompt } : {}),
       });
       const value = await ownerData(host, "/model-settings/test", runtimeModelTestResponseSchema, request);
       return { kind: "json", value };
