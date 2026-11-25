@@ -23,6 +23,7 @@ import auditSource from "../../../../../packages/platform-admin/resources/builti
 import auditHtml from "../../../../../packages/platform-admin/resources/builtin-panels/audit-log/panel.html?raw";
 import auditModule from "../../../../../packages/platform-admin/resources/builtin-panels/audit-log/panel.mjs?raw";
 import {
+  confirmDiscard,
   humanIntents,
   installPlatform,
   leaveFrame,
@@ -315,7 +316,7 @@ describe("built-in general settings and audit log panels", () => {
                   required: true,
                   readOnly: false,
                   valueSchema: { type: "integer", minimum: 1 },
-                  control: { kind: "number" },
+                  control: { kind: "number", min: 1, step: 1, presentation: "stepper" },
                 },
                 {
                   path: "/dslCookerTimeoutSeconds",
@@ -324,7 +325,7 @@ describe("built-in general settings and audit log panels", () => {
                   required: true,
                   readOnly: false,
                   valueSchema: { type: "integer", minimum: 1 },
-                  control: { kind: "number" },
+                  control: { kind: "number", min: 1, step: 10, presentation: "stepper" },
                 },
                 {
                   path: "/lang",
@@ -358,9 +359,73 @@ describe("built-in general settings and audit log panels", () => {
       expect(document.body.textContent).toContain("Backend Language");
     }, { timeout: 3000 });
 
-    const numberInputs = [...document.querySelectorAll<HTMLInputElement>("input[type='number'], .el-input-number input")];
-    expect(numberInputs.length).toBeGreaterThanOrEqual(2);
+    // GS-02: rows layout hides required '*' markers when showRequiredMark is false.
+    const rowLabels = [...document.querySelectorAll<HTMLElement>(".sdk-form-row-label")];
+    expect(rowLabels).toHaveLength(3);
+    expect(rowLabels.every((label) => !label.classList.contains("is-required"))).toBe(true);
+    expect(document.querySelectorAll(".sdk-form-row-control-item.is-required")).toHaveLength(0);
+
+    // GS-03: numeric fields render stepper controls (.sdk-form-field-number-stepper) and lang renders select.
+    const steppers = [...document.querySelectorAll<HTMLElement>(".sdk-form-field-number-stepper")];
+    expect(steppers).toHaveLength(2);
+    expect(document.querySelector(".sdk-form-select-choices")).not.toBeNull();
+
+    const numberInputs = [...document.querySelectorAll<HTMLInputElement>(".sdk-form-field-number-stepper input")];
+    expect(numberInputs).toHaveLength(2);
     const firstInput = numberInputs[0]!;
+    const secondInput = numberInputs[1]!;
+    expect(firstInput.getAttribute("aria-valuemin")).toBe("1");
+    expect(secondInput.getAttribute("aria-valuemin")).toBe("1");
+    // Incrementing steppers steps by 1 for knowledgeMaxResult and 10 for dslCookerTimeoutSeconds.
+    const triggerStepper = (stepper: HTMLElement) => {
+      const btn = stepper.querySelector<HTMLElement>(".el-input-number__increase")!;
+      btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    };
+    triggerStepper(steppers[0]!);
+    triggerStepper(steppers[1]!);
+    await vi.waitFor(() => {
+      expect(firstInput.value).toBe("11");
+      expect(secondInput.value).toBe("310");
+    }, { timeout: 3000 });
+    firstInput.value = "25";
+    firstInput.dispatchEvent(new Event("input", { bubbles: true }));
+    firstInput.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // GS-04: clicking header Discard asks for confirmation; cancelling keeps draft, confirming resets baseline.
+    const discardBtn = await vi.waitFor(() => {
+      const btn = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "Discard",
+      );
+      expect(btn).toBeDefined();
+      return btn!;
+    }, { timeout: 3000 });
+    discardBtn.click();
+
+    const cancelBox = await vi.waitFor(() => {
+      const open = [...document.querySelectorAll<HTMLElement>(".el-message-box")].filter(
+        (item) => item.closest<HTMLElement>(".el-overlay")?.style.display !== "none",
+      );
+      expect(open.length).toBeGreaterThan(0);
+      return open.at(-1)!;
+    }, { timeout: 3000 });
+    const keepEditingBtn = [...cancelBox.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Keep editing",
+    );
+    expect(keepEditingBtn).toBeDefined();
+    keepEditingBtn!.click();
+    await vi.waitFor(() => {
+      expect(cancelBox.closest<HTMLElement>(".el-overlay")?.style.display).toBe("none");
+    }, { timeout: 3000 });
+    expect(firstInput.value).toBe("25");
+
+    discardBtn.click();
+    await confirmDiscard();
+    await vi.waitFor(() => {
+      expect(firstInput.value).toBe("10");
+    }, { timeout: 3000 });
+
+    // Edit again and save via header draft button.
     firstInput.value = "25";
     firstInput.dispatchEvent(new Event("input", { bubbles: true }));
     firstInput.dispatchEvent(new Event("change", { bubbles: true }));
@@ -427,6 +492,7 @@ describe("built-in general settings and audit log panels", () => {
       },
     };
 
+    let failLogList = false;
     const { readCalls } = await openBuiltPanel(auditUse, builtAudit, {
       read(request) {
         const slot = request.memberPath.at(-1)!.member;
@@ -434,6 +500,9 @@ describe("built-in general settings and audit log panels", () => {
           return Response.json({ status: "ready", value: {} });
         }
         if (slot === "logList") {
+          if (failLogList) {
+            return Response.json({ message: "Audit query timed out" }, { status: 500 });
+          }
           return Response.json({
             status: "ready",
             value: {
@@ -461,21 +530,42 @@ describe("built-in general settings and audit log panels", () => {
       expect(document.body.textContent).toContain("Line 1: Added policy");
     }, { timeout: 3000 });
 
+    // AL-07: table renders vertical borders and zebra striping.
+    const table = document.querySelector<HTMLTableElement>("table.sdk-object-list-table");
+    expect(table).not.toBeNull();
+    expect(table!.classList.contains("is-bordered")).toBe(true);
+    expect(table!.classList.contains("is-striped")).toBe(true);
+    expect(table!.getAttribute("data-border")).toBe("true");
+    expect(table!.getAttribute("data-stripe")).toBe("true");
+
+    // AL-06: status bar above the table shows active page & applied filter scope.
+    const statusScope = document.querySelector<HTMLElement>(".al-result-scope");
+    expect(statusScope).not.toBeNull();
+    expect(statusScope!.textContent?.trim()).toBe("Page 1 · Business type: All · Operation: All");
+
     // Column headers come from explicit labelKeys.
     const headers = [...document.querySelectorAll("th")].map((th) => th.textContent?.trim());
     expect(headers).toEqual(expect.arrayContaining(["Time", "User", "Biz Type", "Operation Type", "Detail"]));
 
-    // Click the local row action "Detail" button to open the read-only detail drawer.
+    // AL-08: focus the trigger button, click Detail to render <pre tabindex="0"> with full description (not 8-field dl),
+    // and verify focus returns to the trigger button after closing.
     const detailBtn = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "Detail",
     );
     expect(detailBtn).toBeDefined();
+    detailBtn!.focus();
+    expect(document.activeElement).toBe(detailBtn);
     detailBtn!.click();
 
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain("Audit log detail");
-      expect(document.body.textContent).toContain('{"id":"k-1","title":"Refund Policy"}');
+    const pre = await vi.waitFor(() => {
+      const node = document.querySelector<HTMLPreElement>("pre.sdk-object-summary-pre");
+      expect(node).not.toBeNull();
+      expect(node!.textContent).toContain("Line 1: Added policy\nLine 2: Approved by Alice");
+      return node!;
     }, { timeout: 3000 });
+    expect(pre.getAttribute("tabindex")).toBe("0");
+    expect(document.querySelector(".al-dialog-body dl")).toBeNull();
+    expect(document.body.textContent).not.toContain('{"id":"k-1","title":"Refund Policy"}');
 
     // Confirm logDetail read was issued with the selected platform:AuditLog target.
     expect(
@@ -487,7 +577,7 @@ describe("built-in general settings and audit log panels", () => {
       ),
     ).toBe(true);
 
-    // Close the drawer via the Close button and verify selectedLog is cleared (drawer unmounts).
+    // Close the dialog via the Close button and verify selectedLog is cleared and focus returns to detailBtn.
     const closeBtn = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "Close",
     );
@@ -495,19 +585,74 @@ describe("built-in general settings and audit log panels", () => {
     closeBtn!.click();
 
     await vi.waitFor(() => {
-      expect(document.body.textContent).not.toContain('{"id":"k-1","title":"Refund Policy"}');
+      expect(document.querySelector("pre.sdk-object-summary-pre")).toBeNull();
+    }, { timeout: 3000 });
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(detailBtn);
     }, { timeout: 3000 });
 
-    // Selecting filters via deep-link / router query binds business & operation params to the query read.
+    // AL-06: reread failure preserves previous rows and displays top error alert with working Retry button.
     const beforeRefreshReads = readCalls.filter((req) => req.memberPath.at(-1)?.member === "logList").length;
     const refreshBtn = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "Refresh",
     );
     expect(refreshBtn).toBeDefined();
+    failLogList = true;
     refreshBtn!.click();
+
     await vi.waitFor(() => {
       expect(readCalls.filter((req) => req.memberPath.at(-1)?.member === "logList").length).toBeGreaterThan(
         beforeRefreshReads,
+      );
+      expect(document.querySelector('[data-testid="object-list-stale-error"]')).not.toBeNull();
+    }, { timeout: 3000 });
+    expect(document.body.textContent).toContain("Alice");
+    expect(document.querySelector(".al-result-scope")?.textContent?.trim()).toBe(
+      "Page 1 · Business type: All · Operation: All",
+    );
+
+    failLogList = false;
+    const retryBtn = document.querySelector<HTMLButtonElement>('[data-testid="object-list-stale-retry"]');
+    expect(retryBtn).not.toBeNull();
+    retryBtn!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="object-list-stale-error"]')).toBeNull();
+    }, { timeout: 3000 });
+
+    // AL-06: selecting a filter option without clicking Query does not alter the active status scope until Query is clicked.
+    const filterSelect = document.querySelector<HTMLElement>(".al-filter-select");
+    expect(filterSelect).not.toBeNull();
+    filterSelect!.click();
+    const knowledgeOption = await vi.waitFor(() => {
+      const opt = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find(
+        (el) => el.textContent?.trim() === "Knowledge Base",
+      );
+      expect(opt).toBeDefined();
+      return opt!;
+    }, { timeout: 3000 });
+    knowledgeOption.click();
+
+    await vi.waitFor(() => {
+      expect(filterSelect!.textContent).toContain("Knowledge Base");
+    }, { timeout: 3000 });
+    expect(document.querySelector(".al-result-scope")?.textContent?.trim()).toBe(
+      "Page 1 · Business type: All · Operation: All",
+    );
+
+    const queryBtn = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Query",
+    );
+    expect(queryBtn).toBeDefined();
+    queryBtn!.click();
+
+    await vi.waitFor(() => {
+      expect(
+        readCalls.some(
+          (req) => req.memberPath.at(-1)?.member === "logList" && req.inputs?.business === "BKNOWLEDGE",
+        ),
+      ).toBe(true);
+      expect(document.querySelector(".al-result-scope")?.textContent?.trim()).toBe(
+        "Page 1 · Business type: Knowledge Base · Operation: All",
       );
     }, { timeout: 3000 });
   });
@@ -540,6 +685,12 @@ describe("built-in general settings and audit log panels", () => {
           && req.inputs?.operation === "ADD",
       );
       expect(filteredRead).toBeDefined();
+    }, { timeout: 3000 });
+
+    await vi.waitFor(() => {
+      expect(document.querySelector(".al-result-scope")?.textContent?.trim()).toBe(
+        "Page 1 · Business type: Knowledge Base · Operation: Add",
+      );
     }, { timeout: 3000 });
   });
 });
