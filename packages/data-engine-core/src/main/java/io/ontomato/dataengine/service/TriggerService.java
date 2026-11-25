@@ -382,7 +382,6 @@ public class TriggerService {
 	 */
 	private JSONObject fireWorkflow(Trigger trigger, Instant slot, String key, String executor, JSONObject result) {
 		String workflowId = trigger.getEffect().getString("workflowId");
-		String base = System.getenv().getOrDefault("ONTOPRAXIS_BASE_URL", "http://127.0.0.1:18600");
 		var body = new JSONObject();
 		body.put("workflowId", workflowId);
 		// The execution plane addresses subjects by login code, not by the platform's internal id. Resolving here keeps
@@ -404,11 +403,7 @@ public class TriggerService {
 			// The execution plane requires a credential for every mutating call. It is the executor's background
 			// credential, the one the platform's scheduled tasks already hold: an internal key is a single slot per
 			// member, so issuing a second one here would revoke the key those tasks run with.
-			var request = HttpRequest.newBuilder(URI.create(base.replaceAll("/+$", "") + "/runs"))
-					.header("content-type", "application/json")
-					.header("authorization", "Bearer " + credentials.forOwner(trigger.getDomainId(), executor))
-					.timeout(Duration.ofSeconds(60));
-			var prepared = request.POST(HttpRequest.BodyPublishers.ofString(body.toJSONString())).build();
+			var prepared = praxisRunRequest(trigger, executor, body.toJSONString());
 			var response = http.send(prepared, HttpResponse.BodyHandlers.ofString());
 			result.put("status", response.statusCode() >= 200 && response.statusCode() < 300 ? "succeeded" : "failed");
 			result.put("httpStatus", response.statusCode());
@@ -429,5 +424,16 @@ public class TriggerService {
 			result.put("error", error.getMessage());
 		}
 		return result;
+	}
+
+	/** A Run request is always bound to the trigger's domain and the executor's stored credential. */
+	HttpRequest praxisRunRequest(Trigger trigger, String executor, String body) {
+		String base = System.getenv().getOrDefault("ONTOPRAXIS_BASE_URL", "http://127.0.0.1:18600");
+		var request = HttpRequest.newBuilder(URI.create(base.replaceAll("/+$", "") + "/runs"))
+				.header("content-type", "application/json")
+				.header("x-ontomato-domain-id", trigger.getDomainId())
+				.header("authorization", "Bearer " + credentials.forOwner(trigger.getDomainId(), executor))
+				.timeout(Duration.ofSeconds(60));
+		return request.POST(HttpRequest.BodyPublishers.ofString(body)).build();
 	}
 }
