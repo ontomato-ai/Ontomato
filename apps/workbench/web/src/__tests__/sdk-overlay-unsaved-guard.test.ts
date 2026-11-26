@@ -84,7 +84,10 @@ const save = {
   batch: false,
 };
 
+const overlayDisposals: Array<() => void> = [];
+
 afterEach(() => {
+  for (const dispose of overlayDisposals.splice(0)) dispose();
   document.body.innerHTML = "";
 });
 
@@ -104,6 +107,12 @@ function createPanelHarness(options?: {
       nestedApp: { className: FUNCTION, primaryKey: "nested-1" },
     },
   });
+  const overlayContainer = document.createElement("section");
+  document.body.append(overlayContainer);
+  const overlay = createPanelOverlayRoot(`overlay-guard-${overlayDisposals.length}`, () => true, () => overlayContainer);
+  overlayDisposals.push(overlay.dispose);
+  run.overlayRoot = overlay.element;
+  run.windowOverlayRoot = overlay.windowElement;
   if (withHostConfirm) {
     run.confirmLeaveUnsaved = confirmSpy;
   }
@@ -138,6 +147,8 @@ function createPanelHarness(options?: {
   const panelContext = {
     instance: mount.instance,
     manifest,
+    overlayRoot: overlay.element,
+    windowOverlayRoot: overlay.windowElement,
     t: (key: string) => key,
     navigate: noOperations.navigate,
     notify: () => {},
@@ -146,7 +157,7 @@ function createPanelHarness(options?: {
       : {}),
   } as unknown as PanelContext;
 
-  return { mount, panelContext, confirmSpy };
+  return { mount, panelContext, confirmSpy, overlay };
 }
 
 function setInputValue(input: HTMLInputElement, value: string) {
@@ -426,7 +437,7 @@ describe.each([
   });
 
   it("falls back to confirmDanger when panel.confirmLeaveUnsaved is absent", async () => {
-    const { mount, panelContext } = createPanelHarness({ withHostConfirm: false });
+    const { mount, panelContext, overlay } = createPanelHarness({ withHostConfirm: false });
     const overlayRef = ref<{ handleClose?: () => void } | null>(null);
     const open = ref(true);
 
@@ -462,6 +473,7 @@ describe.each([
     overlayRef.value!.handleClose!();
     const messageBox = () => document.querySelector<HTMLElement>(".el-message-box");
     await vi.waitFor(() => expect(messageBox()?.textContent).toContain("Unsaved changes"));
+    expect(messageBox()?.closest("[data-panel-overlay-root]")).toBe(overlay.element);
 
     // Keep editing -> stays open and dirty.
     [...messageBox()!.querySelectorAll<HTMLButtonElement>("button")]

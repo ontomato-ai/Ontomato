@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { h } from "vue";
+import { h, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { panelAddress } from "@ontomato/contracts/panel-host";
@@ -87,8 +87,14 @@ function answer(request: Sent) {
 
 const nestedReads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/nested").map(request => request.body as NestedRead);
 const placedSheets = () => document.adoptedStyleSheets.map(sheet => [...sheet.cssRules].map(rule => rule.cssText).join("\n"));
-const overlayRootFor = (instance: string) =>
-  document.body.querySelector<HTMLElement>(`[data-panel-overlay-root][data-panel-instance="${instance}"]`)!;
+const overlayRootsFor = (instance: string) =>
+  [...document.querySelectorAll<HTMLElement>(`[data-panel-overlay-root][data-panel-instance="${instance}"]`)];
+const overlayRootFor = (instance: string) => {
+  const roots = overlayRootsFor(instance);
+  return roots.find((root) => root.parentElement !== document.body) ?? roots[0]!;
+};
+const windowOverlayRootFor = (instance: string) =>
+  overlayRootsFor(instance).find((root) => root.parentElement === document.body) ?? overlayRootFor(instance);
 
 afterEach(leaveFrame);
 
@@ -141,7 +147,8 @@ it("styles each instance's overlays and hides both page and nested overlays when
   }] });
   const firstAddress = panelAddress(use.path, chosen("panel-a"));
   await router.push(firstAddress);
-  const { app, element } = mountPlatformPage(() => h(RouterView), router);
+  const overlayContainer = ref<HTMLElement | null>(null);
+  const { app, element } = mountPlatformPage(() => h(RouterView), router, undefined, overlayContainer);
   try {
     const nested = await vi.waitFor(() => {
       const panel = element.querySelector<HTMLElement>('[data-member="detail"] [data-panel-instance]')!;
@@ -150,10 +157,16 @@ it("styles each instance's overlays and hides both page and nested overlays when
     });
     const inline = element.querySelector<HTMLElement>(".panel-host-direct")!;
     const first = overlayRootFor(inline.dataset.panelInstance!);
+    const firstWindow = windowOverlayRootFor(inline.dataset.panelInstance!);
     const nestedRoot = overlayRootFor(nested.dataset.panelInstance!);
-    for (const selector of [".outer-drawer", ".outer-dialog", ".outer-popover"]) {
+    const nestedWindow = windowOverlayRootFor(nested.dataset.panelInstance!);
+    expect(first.parentElement).not.toBe(document.body);
+    expect(nestedRoot.parentElement).toBe(first.parentElement);
+    expect(nested.contains(nestedRoot)).toBe(false);
+    for (const selector of [".outer-drawer", ".outer-dialog"]) {
       expect(getComputedStyle(first.querySelector(selector)!).color).toBe("red");
     }
+    expect(getComputedStyle(firstWindow.querySelector(".outer-popover")!).color).toBe("red");
     expect(getComputedStyle(nested.querySelector(".previewed")!).color).not.toBe("red");
     expect(getComputedStyle(nestedRoot.querySelector(".nested-overlay")!).color).not.toBe("red");
 
@@ -162,12 +175,12 @@ it("styles each instance's overlays and hides both page and nested overlays when
     const second = await vi.waitFor(() => {
       const host = [...element.querySelectorAll<HTMLElement>(".panel-host-direct")].find(candidate => candidate !== inline)!;
       const root = overlayRootFor(host.dataset.panelInstance!);
-      expect(root.querySelector(".outer-popover")).not.toBeNull();
+      expect(windowOverlayRootFor(host.dataset.panelInstance!).querySelector(".outer-popover")).not.toBeNull();
       return root;
     });
     expect(second.dataset.panelInstance).not.toBe(first.dataset.panelInstance);
-    expect(getComputedStyle(second.querySelector(".outer-popover")!).color).toBe("red");
-    for (const root of [first, nestedRoot]) {
+    expect(getComputedStyle(windowOverlayRootFor(second.dataset.panelInstance!).querySelector(".outer-popover")!).color).toBe("red");
+    for (const root of [first, firstWindow, nestedRoot, nestedWindow]) {
       expect(root.hidden).toBe(true);
       expect(root.inert).toBe(true);
       expect(root.style.display).toBe("none");

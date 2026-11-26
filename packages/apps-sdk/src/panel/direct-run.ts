@@ -77,7 +77,9 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
     port.preloadComponentIds?.length ? preloadCatalogueComponents(port.preloadComponentIds) : Promise.resolve(),
   ]);
   const overlayRoot = port.run.overlayRoot;
+  const popperRoot = port.run.windowOverlayRoot ?? port.run.overlayRoot;
   if (overlayRoot && !overlayRoot.isConnected) throw new Error("The panel was removed before its component mounted");
+  if (popperRoot && !popperRoot.isConnected) throw new Error("The panel was removed before its component mounted");
   const mount = mountDirectPanel(port);
   const context = directPanelContext(mount.instance);
   const app = createApp({
@@ -109,11 +111,11 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
   installTemplateComponents(app);
   port.install(app);
   let popperContainer: HTMLElement | undefined;
-  if (overlayRoot) {
+  if (popperRoot) {
     const prefix = nextPopperPrefix++;
-    popperContainer = overlayRoot.ownerDocument.createElement("div");
+    popperContainer = popperRoot.ownerDocument.createElement("div");
     popperContainer.id = `el-popper-container-${prefix}`;
-    overlayRoot.append(popperContainer);
+    popperRoot.append(popperContainer);
     app.provide(ID_INJECTION_KEY, { prefix, current: 0 });
   }
   app.mount(port.element);

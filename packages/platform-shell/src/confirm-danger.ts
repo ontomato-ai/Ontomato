@@ -57,7 +57,7 @@ export type UnsavedSwitchDecision = "save" | "discard" | "cancel";
 export function confirmUnsavedSwitch(
   message: string | VNode,
   title: string,
-  options: { saveButtonText: string; discardButtonText: string },
+  options: { saveButtonText: string; discardButtonText: string; appendTo?: ElMessageBoxOptions["appendTo"] },
 ): Promise<UnsavedSwitchDecision> {
   return ElMessageBox.confirm(message, title, {
     type: "warning",
@@ -65,6 +65,7 @@ export function confirmUnsavedSwitch(
     closeOnHashChange: false,
     confirmButtonText: options.saveButtonText,
     cancelButtonText: options.discardButtonText,
+    ...(options.appendTo ? { appendTo: options.appendTo } : {}),
   }).then(
     () => "save" as const,
     (action: unknown) => (action === "cancel" ? "discard" as const : "cancel" as const),

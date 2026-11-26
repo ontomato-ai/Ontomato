@@ -218,8 +218,11 @@ describe("a person's confirmation of a panel the platform draws itself", () => {
     const sent = installPlatform(answer);
     const changed = vi.fn();
     dispatchAnswer = { kind: "dispatched", intentId, outcome: { kind: "success", data: {}, affected } };
-    const decided = confirmPanelIntent({ applicationId: "app-agents", useId: "use-agents" }, intentId, changed);
+    const overlayRoot = document.createElement("section");
+    document.body.append(overlayRoot);
+    const decided = confirmPanelIntent({ applicationId: "app-agents", useId: "use-agents" }, intentId, changed, undefined, { appendTo: overlayRoot });
     const box = await dialog();
+    expect(overlayRoot.contains(box)).toBe(true);
     expect(box.querySelector(".el-message-box__title")?.textContent).toContain("Delete");
     button(box, "Delete").click();
     await expect(decided).resolves.toEqual({ decision: "confirm", response: dispatchAnswer });

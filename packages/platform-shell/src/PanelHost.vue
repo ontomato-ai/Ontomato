@@ -4,7 +4,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import type { PanelCurrentUser } from "@ontomato/contracts/panel-host";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
-import { platformCurrentUserKey, usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
+import { panelOverlayContainerKey, platformCurrentUserKey, usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { confirmDanger } from "./confirm-danger";
 import { createPanelBackController } from "./panel-back";
 import { useOptionalLeaveConfirmation } from "./unsaved-changes";
@@ -125,8 +125,11 @@ function confirmLeaveUnsaved(): Promise<boolean> {
   return localLeavePending;
 }
 
+const hostElement = ref<HTMLElement | null>(null);
+const overlayContainer = inject(panelOverlayContainerKey, null);
 const backController = createPanelBackController({
   active: () => props.shown,
+  scopeElement: () => hostElement.value,
   allowHistory: () => props.historyBack,
   isDirty: () => view.dirty.value,
   confirmLeaveUnsaved,
@@ -158,6 +161,7 @@ const view = usePanelInstance(props.port, {
   withdrawn: () => emit("withdrawn"),
   currentEntry: props.currentEntry,
   frameState: () => props.frameState as Readonly<Record<string, import("@ontomato/contracts/agent-runtime-values").RuntimeJsonValue>> | undefined,
+  ...(overlayContainer ? { overlayContainer: () => overlayContainer.value } : {}),
   registerBackHandler: backController.register,
   confirmLeaveUnsaved,
   ...(hasCurrentUserSource ? { currentUser: readCurrentUser } : {}),
@@ -196,7 +200,7 @@ defineExpose({ ...view, operations });
 </script>
 
 <template>
-  <section class="panel-host">
+  <section ref="hostElement" class="panel-host">
     <header v-if="title" class="panel-host-title">{{ title }}</header>
     <p v-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
     <!-- A host notice stands above the content box so the box height adjusts around it and never scrolls the notice. -->
@@ -274,6 +278,28 @@ defineExpose({ ...view, operations });
 </style>
 
 <style>
+.panel-host-overlay-root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+}
+[data-panel-overlay-root] .el-dialog:not(.is-fullscreen) {
+  max-width: calc(100% - 32px);
+}
+[data-panel-overlay-root] .el-drawer:is(.ltr, .rtl) {
+  max-width: 100%;
+}
+[data-panel-overlay-root] .el-drawer:is(.ttb, .btt) {
+  max-height: 100%;
+}
+[data-panel-overlay-root] .el-message {
+  max-width: calc(100% - 32px);
+}
+[data-panel-overlay-root] .el-message-box {
+  max-width: min(var(--el-messagebox-width, 420px), calc(100% - 32px));
+}
 /*
  * A bare `#app` mount wrapper (carrying neither class nor style) is transparent to layout so the panel's own root
  * element sits directly inside the definite-height content box. Direct flex items of `.panel-host-direct` default to

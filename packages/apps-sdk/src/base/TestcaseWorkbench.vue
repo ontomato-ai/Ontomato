@@ -707,6 +707,7 @@ async function confirmDiscard(): Promise<boolean> {
     {
       confirmButtonText: tr("platform.discard", "Discard"),
       cancelButtonText: tr("platform.keepEditing", "Keep editing"),
+      ...(panel?.overlayRoot?.isConnected ? { appendTo: panel.overlayRoot } : {}),
     },
   );
   if (confirmed) discard();

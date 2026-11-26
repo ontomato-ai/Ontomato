@@ -53,6 +53,7 @@ export interface DirectProjectionReadOptions {
 
 export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "readProjection"> {
   overlayRoot?: DirectPanelRun["overlayRoot"];
+  windowOverlayRoot?: DirectPanelRun["windowOverlayRoot"];
   shown?: DirectPanelRun["shown"];
   /** Only for an application's frame: the entry the platform resolved, its menu, and where its content goes. */
   currentEntry?: DirectPanelRun["currentEntry"];
@@ -164,6 +165,7 @@ export interface MemberData {
 
 export interface DirectPanelInstance extends PanelInstance {
   readonly overlayRoot?: PanelContext["overlayRoot"];
+  readonly windowOverlayRoot?: PanelContext["windowOverlayRoot"];
   readonly overlayShown?: PanelContext["overlayShown"];
   readonly direct: PanelManifest;
   /** In an application's frame, the entry shown now; null elsewhere. It follows the reader to another entry. */
@@ -484,9 +486,17 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       : segmentOf(member);
   };
   const notify: NonNullable<PanelInstanceOptions["notify"]> =
-    options.notify ?? (({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); });
+    options.notify ?? (({ kind, text }) => {
+      ElMessage({
+        type: kind,
+        message: text,
+        grouping: true,
+        ...(options.overlayRoot?.isConnected ? { appendTo: options.overlayRoot } : {}),
+      });
+    });
   const instance = createPanelInstance(direct, {
     ...options,
+    overlayRoot: options.overlayRoot,
     notify,
     segmentOf,
     // The shared machinery reads no projection of a direct panel; its members are read here.
@@ -652,6 +662,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   const notifyOperationCompleted = instance.operationCompleted;
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     overlayRoot: options.overlayRoot,
+    windowOverlayRoot: options.windowOverlayRoot,
     overlayShown: computed(() => options.shown?.() ?? true),
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
     entryMenu: computed(() => options.currentEntry?.menu.value ?? null),
@@ -1154,6 +1165,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
   const frameOnly = (what: string) => () => { throw new Error(`${what} is a panel frame's; a directly rendered panel has none`); };
   return {
     overlayRoot: instance.overlayRoot,
+    windowOverlayRoot: instance.windowOverlayRoot,
     overlayShown: instance.overlayShown,
     get panel(): never { return frameOnly("The handed-over definition")(); },
     manifest: instance.manifest,
