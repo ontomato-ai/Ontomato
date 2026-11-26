@@ -1,7 +1,10 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 const mocks=vi.hoisted(()=>({dashboard:vi.fn(),post:vi.fn()}));
-vi.mock('../ontology',()=>({registeredProductGraph:async()=>({nodes:[],edges:[]})}));
+vi.mock('../ontology',()=>({addAuthorizationEdges:async({graph}: {graph: unknown})=>graph}));
+vi.mock('../../product-panels/asset-graph-read',()=>({
+  readProductAssetGraph:async()=>({graph:{nodes:[],edges:[]},grantableApplicationIds:new Set()}),
+}));
 vi.mock('../../dashboard/access',()=>({getOwnedDashboard:mocks.dashboard}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,buildBackendHeaders:()=>({tk:'caller'})}));
 import {expandedProductDependencies} from '../dependencies';

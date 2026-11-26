@@ -27,8 +27,8 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
-import { registeredProductGraph } from "../product-assets/ontology";
-import { listProducts } from "../product-assets/store";
+import { addAuthorizationEdges } from "../product-assets/ontology";
+import { readProductAssetGraph } from "./asset-graph-read";
 
 import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createDataAdapterConfigReads } from "../admin/data-adapters-panel";
@@ -535,7 +535,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       detailPanelForm: (selection, params) => objectDetail.form(selection.primaryKey!, formParams(params).values),
       inlineForm: (selection, params) => model.inlineForm(selection.typeId, selection.primaryKey!, formParams(params)),
       productGraph: async () => {
-        const graph = await registeredProductGraph(owner, await listProducts(owner), viewer);
+        const graph = await addAuthorizationEdges(await readProductAssetGraph(owner, viewer), owner, viewer);
         return {
           className: OBJECT_TYPE,
           primaryKey: "product-graph",
