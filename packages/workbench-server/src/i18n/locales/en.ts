@@ -769,6 +769,7 @@ export const en = {
   "panels.governance.policy.operations.previewEntryGrant": "Preview entry grants",
   "panels.governance.policy.operations.grantEntries": "Grant access to entries",
   "panels.governance.policy.operations.listPending": "List pending grants",
+  "panels.governance.policy.operations.listPendingSummary": "List pending grants by policy",
   "panels.governance.policy.operations.resolvePending": "Resolve pending grants",
   "panels.governance.policy.operations.inspectAccess": "Inspect access",
   "panels.governance.policy.deleted": "Permission policy “{name}” deleted",
