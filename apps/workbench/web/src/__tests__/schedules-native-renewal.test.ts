@@ -215,7 +215,8 @@ it.each([
   { scenario: "keeps the schedule panel open when renewal is refused", credentialStatus: "renewal-required", refused: true },
   { scenario: "opens without renewing a valid credential", credentialStatus: "valid", refused: false },
   { scenario: "opens without renewing when there are no remote tasks", credentialStatus: "no-remote-tasks", refused: false },
-])("$scenario", async ({ credentialStatus, refused }) => {
+  { scenario: "shows the selected task, its history and editing inline in the agent workspace", credentialStatus: "valid", refused: false, inline: true },
+])("$scenario", async ({ credentialStatus, refused, inline }) => {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
   ] });
@@ -314,7 +315,11 @@ it.each([
       if (member === "tasks" && body.dataName === "rows") {
         const app = typeof body.inputs.scope === "string" ? body.inputs.scope : "";
         const search = typeof body.inputs.search === "string" ? body.inputs.search.trim().toLowerCase() : "";
+        const selected = body.inputs.workspace === "agent" && typeof body.inputs.selectedTask === "object"
+          ? (body.inputs.selectedTask as { primaryKey?: string } | null)?.primaryKey
+          : undefined;
         const filtered = allTaskRows.filter((item) => {
+          if (selected && item.primaryKey !== selected) return false;
           if (app && item.fields.application !== app) return false;
           if (search && !item.label.toLowerCase().includes(search)) return false;
           return true;
@@ -368,13 +373,28 @@ it.each([
     return nothingAt(request);
   }, router);
   useApplicationCatalog().applications.value = catalogFixture();
-  await router.push(shouldRenew && !refused ? `/schedules?app=agents&taskId=${taskId}&runId=${runId}` : "/schedules");
+  await router.push(inline
+    ? `/schedules?workspace=agent&app=agents&selectedTask=${taskId}`
+    : shouldRenew && !refused ? `/schedules?app=agents&taskId=${taskId}&runId=${runId}` : "/schedules");
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {
     const noticeReads = () => sentPanelReadItems(sent).filter(({ body }) => {
       const read = body as ProductPanelReadRequest;
       return read.memberPath[0].member === "pageNotice" && "dataName" in read && read.dataName === "record";
     });
+    if (inline) {
+      await vi.waitFor(() => {
+        expect(element.querySelectorAll(".schedules-list-col .sdk-sts-card")).toHaveLength(1);
+        expect(element.querySelector(".schedules-inline-section .schedules-runs .sdk-object-list-card")).not.toBeNull();
+      });
+      expect(document.querySelector(".el-drawer")).toBeNull();
+      expect(element.querySelector(".schedules-toolbar")).toBeNull();
+
+      await router.push(`/schedules?workspace=agent&app=agents&selectedTask=${taskId}&workspaceCompose=edit`);
+      await vi.waitFor(() => expect(element.querySelector('.schedules-inline-section [data-form="edit"]')).not.toBeNull());
+      expect(document.querySelector(".el-dialog")).toBeNull();
+      return;
+    }
     if (!shouldRenew) {
       await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-sts-card")?.textContent).toContain("Finished"));
       expect(noticeReads()).toHaveLength(1);

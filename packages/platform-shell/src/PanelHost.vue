@@ -294,7 +294,8 @@ defineExpose({ ...view, operations });
 [data-panel-overlay-root] .el-drawer:is(.ttb, .btt) {
   max-height: 100%;
 }
-[data-panel-overlay-root] .el-message {
+[data-panel-overlay-root] .el-message,
+:has(> [data-panel-overlay-root]) > .el-message {
   max-width: calc(100% - 32px);
 }
 [data-panel-overlay-root] .el-message-box {

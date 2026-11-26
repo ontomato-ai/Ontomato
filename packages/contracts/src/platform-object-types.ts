@@ -293,7 +293,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         outputs: triggerRowOutputs,
       },
       catalogue: {
-        source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword", status: "keyword" }, result: "panelRecordList",
+        source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword", status: "keyword", workspace: "keyword", workspaceAgent: "keyword", selectedTask: "triggerRef" }, result: "panelRecordList",
         outputs: triggerRowOutputs,
       },
       counts: { source: "type", parameterMode: "fixed", params: { by: "keyword" }, result: "panelGroupCounts" },
@@ -309,7 +309,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         outputs: triggerRowOutputs,
       },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
-      createForm: { source: "type", parameterMode: "fixed", params: { ...definitionFormParams, defaultAppId: "keyword" }, result: "panelFormDescription" },
+      createForm: { source: "type", parameterMode: "fixed", params: { ...definitionFormParams, defaultAppId: "keyword", defaultAgentId: "keyword" }, result: "panelFormDescription" },
       memberOptions: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       memberResolve: { source: "type", parameterMode: "fixed", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
       runs: { source: "object", parameterMode: "fixed", params: { cursor: "cursor" }, result: "scheduledTaskRunPage" },

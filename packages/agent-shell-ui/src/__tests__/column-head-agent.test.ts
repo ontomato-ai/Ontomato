@@ -69,7 +69,7 @@ function client(): AgentHostClient {
 }
 
 /** The agent platform's shell, opened at an address that may already carry a page beside the conversation. */
-function render(options: { page: string | null; agentPicker?: boolean; title?: string }) {
+function render(options: { page: string | null; agentPicker?: boolean; title?: string; historyPageSelected?: boolean }) {
   const display = testDisplay(workbench, {
     initial: options.page ? { page: { featureId: options.page, address: `/${options.page}`, instance: options.page }, view: "side" } : undefined,
   });
@@ -91,6 +91,7 @@ function render(options: { page: string | null; agentPicker?: boolean; title?: s
         h(AgentShell, {
           workbench: { ...workbench, label: options.title ?? workbench.label }, client: host, labels, nav,
           agentPicker: options.agentPicker ?? true, title: options.title ?? workbench.label,
+          historyPageSelected: options.historyPageSelected,
           agentId: agentId.value, "onUpdate:agentId": (id: string | null) => (agentId.value = id),
           display,
         });
@@ -160,6 +161,16 @@ it("heads an application that runs on one agent with its own name", async () => 
   const shown = await head(root);
   expect(shown.chooser).toBe(false);
   expect(shown.title).toBe("Operations diagnosis");
+});
+
+it("keeps the current agent and allows switching agents when a history page replaces the conversation", async () => {
+  const { root, agentId } = render({ page: "dashboards", historyPageSelected: true });
+  await settle();
+
+  const shown = await head(root);
+  expect(agentId.value).toBe(analyst);
+  expect(shown.shown).toBe("Analyst");
+  expect(shown.listed).toContain("Knowledge governance");
 });
 
 it("floats the composer over a page open full beside the conversation, in the page's shape", async () => {

@@ -44,6 +44,7 @@ interface TaskFormParams {
 
 interface TaskCreateFormParams extends TaskFormParams {
   defaultAppId?: string;
+  defaultAgentId?: string;
 }
 
 function runStatusTone(status: PlatformTaskRun["status"]): PanelFieldTone {
@@ -403,7 +404,10 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     const stored = sameApp ? task.content : {};
     const parameters: FormValues = draft.success ? draft.data.parameters : {};
     const form = isApp && selected && !selected.disabled ? await api.form(settings.appId, {
-      values: resetContent ? {} : { ...stored, ...parameters },
+      values: resetContent ? {} : {
+         ...(!task && settings.appId === "agents" && params.defaultAgentId ? { agentId: params.defaultAgentId } : {}),
+         ...stored, ...parameters,
+       },
       changedField: changed != null && !changed.startsWith("/task/") ? formFieldKey(changed, "/") : null,
       taskId: sameApp ? task.id : null,
       timeZone: settings.timeZone,
@@ -441,13 +445,15 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
   }
 
   return {
-    async list(params?: { scope?: string; search?: string; status?: PlatformTask["status"] }) {
+    async list(params?: { scope?: string; search?: string; status?: PlatformTask["status"]; agentId?: string; taskId?: string }) {
       const { tasks } = await api.list();
       const scope = params?.scope?.trim();
       const status = params?.status;
       const query = params?.search?.trim().toLowerCase();
       const rows = await describeRows(tasks.filter(task => (!status || task.status === status)
-        && (!scope || task.targetKind === scope || task.appId === scope)));
+        && (!scope || task.targetKind === scope || task.appId === scope)
+        && (!params?.taskId || task.id === params.taskId)
+        && (!params?.agentId || (task.targetKind === "application" && task.appId === "agents" && task.content.agentId === params.agentId))));
       return query ? rows.filter(row => [row.label, row.fields.targetName, row.fields.settings, row.fields.frequency]
         .some(value => String(value).toLowerCase().includes(query))) : rows;
     },

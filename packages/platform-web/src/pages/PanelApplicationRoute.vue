@@ -76,6 +76,7 @@ const emit = defineEmits<{
   /** What the reader looks at in the panel, as its instance reports it: what a message written beside it carries. */
   context: [context: PageContext];
   "display-address": [input: DisplayPageAddressInput];
+  "objects-changed": [change: PanelObjectChange];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
   /** Which page skill a message written beside the shown page reaches, as Node answered it with the page's panel. */
@@ -176,6 +177,7 @@ if (props.registerPageController) {
  */
 function changed(change: PanelObjectChange) {
   refreshContent(change);
+  emit("objects-changed", change);
   outerFrame?.refreshFrame(change);
   if (
     change.affected?.objectTypes?.includes(APPLICATION)

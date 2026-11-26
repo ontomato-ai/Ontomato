@@ -6,7 +6,8 @@ import ElementPlus, { ElMessage } from "element-plus";
 import { createPinia } from "pinia";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
-import { platformPageAccessKey } from "@ontomato/platform-shell";
+import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
+import examples from "../../../../../contracts/examples/platform-schedules.json";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 
 /*
@@ -22,6 +23,7 @@ const agents = vi.hoisted(() => [
 ]);
 const [sales, retired, opsDiagnosis] = agents;
 const sent = vi.hoisted(() => [] as string[]);
+const scheduleResponse = vi.hoisted(() => ({ tasks: [] as unknown[], timeZone: "Asia/Shanghai" }));
 const filled = vi.hoisted(() => [] as string[]);
 const directory = vi.hoisted(() => ({
   listAgents: async () => agents,
@@ -33,10 +35,15 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
     ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
     AgentShell: defineComponent({
       name: "AgentShell",
-      props: ["agentId", "sessionId"],
+      props: ["agentId", "sessionId", "display"],
       setup(props, { expose, slots }) {
         expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); }, fill: (text: string) => { filled.push(text); } });
-        return () => h("div", props.sessionId ? slots["artifact-actions"]?.({}) : undefined);
+        return () => h("div", [
+          slots.shortcuts?.(),
+          slots["before-history"]?.(),
+          props.sessionId ? slots["artifact-actions"]?.({}) : undefined,
+          props.display.page.value ? slots.feature?.({ featureId: props.display.page.value.featureId }) : undefined,
+        ]);
       },
     }),
     ShellNavBody: { name: "ShellNavBody", template: "<div />" },
@@ -44,6 +51,10 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
     useSessionRunFeed: () => {},
   };
 });
+vi.mock("../../../utils/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/api")>()),
+  nodeApiRequest: async () => Response.json(scheduleResponse),
+}));
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../assistant-host", () => ({
   createAssistantClient: () => ({
@@ -70,6 +81,7 @@ afterEach(() => {
   sessionStorage.clear();
   sent.splice(0);
   filled.splice(0);
+  scheduleResponse.tasks = [];
   directory.listAgents = async () => agents;
   vi.restoreAllMocks();
 });
@@ -100,6 +112,7 @@ async function openChat(query: Record<string, string>, standalone = false) {
   await router.push({ path, query });
   const internalPages = standalone ? {
     dashboard: "/applications/app-data-agent-workbench/dashboards",
+    schedules: "/applications/app-data-agent-workbench/schedules",
     agents: "/applications/app-data-agent-workbench/agents",
   } : undefined;
   const wrapper = mount(BusinessWorkbench, {
@@ -108,6 +121,12 @@ async function openChat(query: Record<string, string>, standalone = false) {
         [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
         // The platform answers which of its pages the account may open; here, every one.
         [platformPageAccessKey as symbol]: () => true,
+        [pilotPageKey as symbol]: () => (address: string) => address.split("?")[0] === platformRoutes.schedules.path
+          ? {
+              id: "panel-application", instance: platformRoutes.schedules.path, props: { address },
+              component: { props: ["address"], template: '<div :data-panel-address="address" />' },
+            }
+          : null,
       } },
   });
   wrappers.push(wrapper);
@@ -139,6 +158,35 @@ it("opens a dashboard saved from a DataAgent conversation through the dashboard 
     expect(router.currentRoute.value.path).toBe(platformRoutes.dashboards.path);
     expect(router.currentRoute.value.query).toEqual({ dashboardId: "new-dashboard" });
   });
+});
+
+it("opens the selected agent's schedule in the main workbench while retaining the session", async () => {
+  const sessionId = "44444444-4444-4444-8444-444444444444";
+  const page = "/applications/app-data-agent-workbench/schedules";
+  const example = examples.creates.find(item => item.name === "agents-instruction")!.response;
+  scheduleResponse.tasks = [
+    { ...example, title: "Sales review", appId: "agents", content: { agentId: sales!.id, instruction: "Review sales" } },
+    { ...example, id: "66666666-6666-4666-8666-666666666666", title: "Other review", appId: "agents",
+      content: { agentId: retired!.id, instruction: "Review" }, lastRun: null, latestResult: null },
+  ];
+  const { router, shell } = await openChat({ standalone: "1", sessionId }, true);
+  await vi.waitFor(() => expect(shell.findAll(".agent-schedule-list button").map(button => button.attributes("title"))).toEqual(["Sales review"]));
+
+  await shell.get(".agent-schedule-list button").trigger("click");
+  await vi.waitFor(() => {
+    expect(router.currentRoute.value.path).toBe("/applications/app-data-agent-workbench/workbench");
+    expect(router.currentRoute.value.query.sessionId).toBe(sessionId);
+    const [path, query] = String(router.currentRoute.value.query.page).split("?");
+    expect(path).toBe(page);
+    expect(new URLSearchParams(query).get("selectedTask")).toBe(example.id);
+    const address = shell.get(".legacy-schedules-surface").attributes("data-panel-address")!;
+    expect(new URLSearchParams(address.split("?")[1]).get("workspace")).toBe("agent");
+    expect(shell.get(".agent-schedule-list button").attributes("aria-current")).toBe("page");
+  });
+
+  const reopened = await openChat({ standalone: "1", sessionId, page: `${page}?selectedTask=${example.id}` }, true);
+  expect(reopened.shell.get(".agent-schedule-list button").attributes("aria-current")).toBe("page");
+  expect(reopened.shell.props("sessionId")).toBe(sessionId);
 });
 
 describe("a link to one agent", () => {
