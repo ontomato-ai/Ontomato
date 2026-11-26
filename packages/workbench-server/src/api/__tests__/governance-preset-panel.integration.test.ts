@@ -190,7 +190,6 @@ beforeAll(async () => {
     requireDomainId: () => "unused",
     requirePermission,
     assertPermission: async () => undefined,
-    assertObserveAccess: async () => undefined,
   } as unknown as WorkbenchIdentity);
 
   const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");

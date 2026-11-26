@@ -24,7 +24,6 @@ import { dashboardCardRequestSchema, dashboardAuthoring } from "@ontomato/contra
 import { dashboardSourceSchema, dashboardAddArtifactSchema, dashboardAddChartFileSchema } from "@ontomato/contracts/dashboard-artifacts";
 import { DashboardMetricClient } from "../../services/dashboard/metric-client";
 import { queryMetricCard, metricCardParameterForm, saveMetricCardParameters } from "../../services/dashboard/metric-data";
-import {registerDashboardProduct} from '../../services/product-assets/register-dashboard';
 const router: ExpressRouter = Router();
 function metricContext(req: AuthenticatedRequest) {
   const domainId = requireDomainId(req);
@@ -71,9 +70,7 @@ router.post(
     const ownerId = (req as AuthenticatedRequest).userId;
     const domainId = requireDomainId(req as AuthenticatedRequest);
     const data = await createEmptyDashboard(ownerId, domainId, req.body || {});
-    const request=req as AuthenticatedRequest;
-    const product=await registerDashboardProduct({userId:ownerId,domainId},data,{token:request.token,apiKey:request.apiKey,locale:request.locale});
-    res.json({ success: true, data:{...data,productAssetId:product.id} });
+    res.json({ success: true, data });
   })
 );
 router.post(
@@ -120,8 +117,7 @@ router.post(
       parseDashboardInput(dashboardSourceSchema, req.body),
       { token, apiKey, locale }
     );
-    const product=await registerDashboardProduct({userId,domainId:requireDomainId(req as AuthenticatedRequest)},data,{token,apiKey,locale});
-    res.json({ success: true, data:{...data,productAssetId:product.id} });
+    res.json({ success: true, data });
   })
 );
 router.post(
@@ -140,10 +136,7 @@ router.post("/add-chart-file",asyncHandler(async(req,res)=>{
   const body=parseDashboardInput(dashboardAddChartFileSchema,req.body);
   const credentials={token:request.token,apiKey:request.apiKey,locale:request.locale};
   const data=await addDashboardChartFile(request.userId,domainId,body,credentials);
-  if("name" in body.target){
-    const product=await registerDashboardProduct({userId:request.userId,domainId},data,credentials);
-    res.json({success:true,data:{...data,productAssetId:product.id}});
-  }else res.json({success:true,data});
+  res.json({success:true,data});
 }));
 router.post(
   dashboardAuthoring["dashboard.rename"].path,

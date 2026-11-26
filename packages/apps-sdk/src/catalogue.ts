@@ -482,7 +482,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "action",
     meaning:
-      "Displays the result of a read-only panel operation (`markdown`, `json`, `file`, or `sections` with optional status banner and `fields`, `records`, `code`, or `json` sections). Renders sections as tabs (`layout: 'tabs'`, default) or vertically stacked (`layout: 'stack'`). When bound to an operation descriptor via `operationSlot` and `operationName`, renders owner-declared `resultSections` tabs (respecting `defaultSectionId`) even before the operation has executed, showing `emptyText` inside empty tabs until execution populates them. Pure presentation: reads and writes nothing itself.",
+      "Displays the result of a read-only panel operation (`markdown`, `json`, `file`, or `sections` with optional conclusion banner and `fields`, `records`, `code`, or `json` sections). The banner states the outcome the operation reached (a test passed, a preflight found warnings) using the platform field tones; an operation that was refused, threw, or timed out is an operation error, not a banner. Renders sections as tabs (`layout: 'tabs'`, default) or vertically stacked (`layout: 'stacked'`). When bound to an operation descriptor via `operationSlot` and `operationName`, renders owner-declared `resultSections` tabs (respecting `defaultSectionId`) even before the operation has executed, showing `emptyText` inside empty tabs until execution populates them. Pure presentation: reads and writes nothing itself.",
     configProps: ["result", "operationSlot", "operationName", "emptyText", "layout"],
   }),
   defineComponentMeta({

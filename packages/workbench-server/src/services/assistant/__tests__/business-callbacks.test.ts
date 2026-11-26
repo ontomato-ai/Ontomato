@@ -248,6 +248,9 @@ it("declares workbench, ontology and authoring callbacks for app-builder runs wi
   prep.a.kind = "app-builder";
   const run = runtimeStartRunRequestSchema.parse(await prepareAppBuilderRun(prep));
   expect(run).not.toHaveProperty("environment");
+  expect(run.definition.skills).toContainEqual(expect.objectContaining({
+    skill: { namespace: { kind: "provider", provider: "workbench" }, name: "dashboard-pages" },
+  }));
   expect(Object.keys(run.businessCallbacks ?? {}).sort()).toEqual([
     "authoring",
     "ontology",

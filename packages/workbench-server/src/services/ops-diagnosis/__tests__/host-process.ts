@@ -19,9 +19,7 @@ installWorkbenchIdentity({ ...ossIdentity,
     Object.assign(req as AuthenticatedRequest, { userId, domainId, token, apiKey: "", locale: "en", userName: userId, roles: [] }); next();
   },
   requireDomainId(identity) { if (!identity.domainId) throw new Error("Domain required"); return identity.domainId; },
-  observeAccess(req, res, next) { if ((req as AuthenticatedRequest).userId === "denied") res.status(403).json({ error: "Observe permission required" }); else next(); },
   async resolveMcpCaller(req) { const [userId, domainId] = (req.header("tk") ?? "").split(":"); if (!["alice", "bob", "denied"].includes(userId) || !["a", "b"].includes(domainId)) throw new Error("Authentication required"); return { userId, domainId, token: req.header("tk") }; },
-  async assertObserveAccess(identity) { if (identity.token?.startsWith("denied:")) throw new Error("Observe permission required"); },
 });
 const { initializeConnection, closeConnection } = await import("../../../infrastructure/connection");
 const { syncDefaultPrompts } = await import("../../../core/prompts/loader");

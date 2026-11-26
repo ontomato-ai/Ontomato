@@ -4,7 +4,7 @@ import { panelDownloadReceiptSchema } from "./panel-download";
 import { panelUploadDeclarationSchema } from "./panel-upload";
 import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema, panelOperationIdSchema, panelOperationUnavailableSchema } from "./panel-manifest";
 import {
-  panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOperationTargetTypesSchema,
+  panelFieldToneSchema, panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOperationTargetTypesSchema,
   panelOptionListSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
   type PanelOperationTargetTypes,
 } from "./panel-projection";
@@ -192,12 +192,17 @@ export type PanelReadOperationRecordColumn = z.infer<typeof panelReadOperationRe
 
 export const panelReadOperationFieldItemSchema = z.object({
   label: z.string().min(1).max(200),
-  value: z.string(),
+  value: panelReadOperationRecordCellSchema,
 }).strict();
 export type PanelReadOperationFieldItem = z.infer<typeof panelReadOperationFieldItemSchema>;
 
+/**
+ * Conclusion banner shown above a finished operation's sections. Its tone speaks about the outcome the operation
+ * reached (a test passed, a preflight found warnings), never about the operation failing: a refused, thrown, or timed
+ * out operation stays an operation error so buttons, receipts, and agents keep reading it as one.
+ */
 export const panelReadOperationBannerSchema = z.object({
-  tone: z.enum(["success", "info", "warning", "error"]),
+  tone: panelFieldToneSchema,
   title: z.string().min(1).max(300),
   detail: z.string().optional(),
 }).strict();
