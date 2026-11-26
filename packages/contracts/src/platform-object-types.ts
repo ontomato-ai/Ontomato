@@ -233,6 +233,7 @@ const ontologyTypeDetailList = {
   source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
   requiredParams: ["type"], result: "panelRecordList",
 } as const satisfies PlatformReadDeclaration;
+const ontologyInstanceDetailPath = { kind: "scalar", type: "string" } as const;
 /** A catalogue searched and paged like the business knowledge list, for definitions with no further filter. */
 const definitionQuery = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
@@ -1001,12 +1002,16 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [ONTOLOGY_TYPE]: {
     ...describeType("ontologyType"),
     reads: {
+      count: countRead,
       schema: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphSchema" },
       counts: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
       countRows: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       start: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphStart" },
       neighbors: {
-        source: "type", parameterMode: "fixed", params: { node: "graphNode", relationKinds: "relationKinds", layers: "layers" },
+        source: "type", parameterMode: "fixed", params: {
+          node: "graphNode", relationKinds: "relationKinds", layers: "layers", targetClass: "className",
+          direction: "neighborDirection", limit: "neighborsLimit", offset: "nonNegativeInt",
+        },
         requiredParams: ["node"], result: "panelGraphNeighbors",
       },
       objects: {
@@ -1014,6 +1019,23 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         requiredParams: ["type"], result: "panelOntologyObjects",
       },
       ...metadataList,
+      graphNodes: metadataList.list,
+      instanceGraphClasses: metadataList.list,
+      instanceSearch: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", className: "className", page: "page" }, result: "panelRecordQuery",
+      },
+      instances: {
+        source: "type", parameterMode: "fixed",
+        params: { className: "className", search: "keyword", page: "page", size: "size" },
+        requiredParams: ["className"], result: "panelRecordQuery",
+        outputs: { detailPath: ontologyInstanceDetailPath },
+      },
+      instanceRecord: {
+        source: "type", parameterMode: "fixed", params: { object: "graphNode" },
+        requiredParams: ["object"], result: "panelRecord",
+        outputs: { typeLabel: { kind: "scalar", type: "string" }, detailPath: ontologyInstanceDetailPath },
+      },
       record: {
         source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
         outputs: {
@@ -1027,7 +1049,10 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       operations: ontologyTypeDetailList,
     },
   },
-  [ONTOLOGY_RELATION_KIND]: { ...describeType("ontologyRelationKind"), reads: metadataList },
+  [ONTOLOGY_RELATION_KIND]: {
+    ...describeType("ontologyRelationKind"),
+    reads: { ...metadataList, count: countRead, graphEdges: metadataList.list, record: modelReads.record },
+  },
   [FEEDBACK_RECORD]: {
     ...describeType("feedbackRecord"),
     reads: {
@@ -1378,7 +1403,7 @@ const relation = (
   id: string, from: string, to: PlatformRelationKindDeclaration["to"], owner: string, derived = false,
 ): PlatformRelationKindDeclaration => ({ id, from, to, labelKey: `platformOntology.relations.${id}`, derived, owner });
 
-const declaredTypes = Object.keys(platformObjectTypes);
+const layeredTypes = Object.keys(platformObjectTypes).filter(id => platformObjectTypes[id].layer);
 
 /** The declared topology and the owner each instance lookup must ask. */
 export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] = [
@@ -1419,7 +1444,7 @@ export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] =
   relation("user.published-workflow", USER, WORKFLOW, "java-workflow"),
   relation("user.published-metric-view", USER, METRIC_VIEW, "java-metric"),
   relation("projection.uses-component", PRODUCT_PROJECTION, SDK_COMPONENT, "node-product-panels"),
-  relation("projection.binds-target", PRODUCT_PROJECTION, declaredTypes, "node-product-panels"),
+  relation("projection.binds-target", PRODUCT_PROJECTION, layeredTypes, "node-product-panels"),
   relation("panel.contains-projection", PRODUCT_PANEL, PRODUCT_PROJECTION, "node-product-panels"),
   relation("panel.contains-panel", PRODUCT_PANEL, PRODUCT_PANEL, "node-product-panels"),
   relation("panel.provides-skill", PRODUCT_PANEL, SKILL, "node-product-panels", true),
