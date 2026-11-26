@@ -295,3 +295,5 @@ Node 3000 and Java 18087 are development upstreams, not browser entry URLs.
 Docker supplies the pinned Nginx gateway; no product image is built. On Linux its
 host-gateway must reach the host's Vite/Node/Java listeners. `dev:status` includes the
 gateway and `dev:down` removes only this checkout's development Compose services.
+
+<!-- Enterprise compatibility acceptance probe. -->
