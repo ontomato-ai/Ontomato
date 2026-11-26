@@ -8,7 +8,7 @@ import { mountPanel, panelAddress, usePanelBack, usePanelContext, usePanelOutput
  * a component is chosen or deep-linked via `?selected=`. Catalog view stays mounted with `v-show` and restores the
  * enclosing scroll container's position and search keyword on return. Detail view coordinates readiness solely through
  * ObjectHeader's read-only `status` and `errorMessage` outputs so missing components explain themselves in place
- * without mounting the summary or five detail tables.
+ * without mounting the meaning card or the five detail tables.
  */
 
 /** The capability map's type mode, opened at the platform's SDK component class. */
