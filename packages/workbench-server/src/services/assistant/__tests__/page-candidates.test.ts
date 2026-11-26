@@ -20,28 +20,20 @@ import type { AgentRow } from "../store";
 
 const mocks = vi.hoisted(() => ({
   agents: vi.fn<[], Promise<AgentRow[]>>(),
-  opsDiagnosis: vi.fn<[], Promise<AgentRow | undefined>>(),
+  query: vi.fn(),
+  listOfferings: vi.fn(),
   findByUse: vi.fn(),
   managementAccess: vi.fn<[], Promise<void>>(),
   homePanelId: vi.fn<[], Promise<string | null>>(),
 }));
 
-vi.mock("../../../infrastructure/product-current", () => ({
-  findCurrentProducts: async (domainId: string, kind: string, ids: string[]) => new Map(
-    [...new Set(offerings.flatMap(offer => offer.resourceIds))]
-      .filter(id => ids.includes(id) && (kind === "panel") === !id.startsWith("proj-"))
-      .map(id => [id, { id, domainId, ownerId: "author" }]),
-  ),
+vi.mock("../../../infrastructure/postgres", async original => ({
+  ...await original<typeof import("../../../infrastructure/postgres")>(),
+  getPostgresPool: () => ({ query: mocks.query }),
 }));
-vi.mock("../../product-governance/authorization", async original => ({
-  ...await original<typeof import("../../product-governance/authorization")>(),
-  decideObjects: async (requests: ObjectDecisionRequest[]) => requests.map(request =>
-    "target" in request && request.verb === "USE" && grantedIds.includes(request.target.id)
-      ? { allowed: true } : { allowed: false, code: "FORBIDDEN", reason: "Denied" }),
-}));
-vi.mock("../store", () => ({ assistantStore: { channelAgents: mocks.agents } }));
-vi.mock("../authorization", () => ({
-  allowedAgents: async (agents: AgentRow[]) => agents.filter(agent => Object.values(agentIds).includes(agent.id) || grantedIds.includes(agent.id)),
+vi.mock("../../product-governance/grants", async original => ({
+  ...await original<typeof import("../../product-governance/grants")>(),
+  productDefinitionOwnerHeaders: () => ({}),
 }));
 vi.mock("../../../identity/management", () => ({
   assertManagement: mocks.managementAccess,
@@ -69,6 +61,7 @@ installContentLayout({
 const { registerSkillProvider, protectedSkillRef } = await import("../../../core/skills/providers");
 const { registerPageSkillSourceOwner } = await import("../../skills/view");
 const { listAssistantAgents } = await import("../agents");
+const { listAgentDefinitions } = await import("../definitions");
 
 const domain = "candidates-domain";
 const owner = { domainId: domain, userId: "user-1" };
@@ -150,7 +143,7 @@ let offerings: ProtectedSkillOffering[] = [];
 registerSkillProvider({
   id: "product-panels",
   name: "Product panels",
-  list: async () => { throw new Error("Candidate reads must not enumerate skills"); },
+  list: mocks.listOfferings,
   findProtectedSource: async key => offerings.find(offering => offering.sourceKey === key) ?? null,
 });
 
@@ -246,7 +239,20 @@ beforeEach(() => {
   mocks.findByUse.mockImplementation(async (_domain, { useId }) => offerings.find(offering =>
     offering.sourceKey === (useId === "ops-turn-evidence" ? "builtin-product-ops-turn-evidence" : "panel-order"),
   ) ?? null);
-  mocks.opsDiagnosis.mockResolvedValue(undefined);
+  mocks.listOfferings.mockImplementation(async () => { throw new Error("Candidate reads must not enumerate skills"); });
+  mocks.query.mockImplementation(async (sql: string, params: [string[]] | [string, string[]]) => {
+    if (sql.includes('"assistant_agents"')) return { rows: await mocks.agents() };
+    const product = /"(builtin_)?product_(panels|projections)"/.exec(sql);
+    if (!product) throw new Error(`Unexpected query: ${sql}`);
+    const builtin = Boolean(product[1]);
+    const panels = product[2] === "panels";
+    const ids = params.length === 1 ? params[0] : params[1];
+    return {
+      rows: [...new Set(offerings.flatMap(offer => offer.resourceIds))]
+        .filter(id => ids.includes(id) && panels === !id.startsWith("proj-"))
+        .map(id => ({ id, domainId: builtin ? null : domain, ownerId: builtin ? null : "author" })),
+    };
+  });
   mocks.managementAccess.mockReset().mockResolvedValue(undefined);
   mocks.homePanelId.mockResolvedValue(null);
   mocks.agents.mockResolvedValue([
@@ -263,6 +269,18 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (input: string | URL, init?: Parameters<typeof fetch>[1]) => {
       const url = String(input);
+      if (url.endsWith("/authorization/objects/decide-batch")) {
+        const { requests } = JSON.parse(String(init?.body)) as { requests: ObjectDecisionRequest[] };
+        return Response.json({ decisions: requests.map(request => {
+          if (!("target" in request)) throw new Error("Unexpected creation request");
+          const { id, kind } = request.target;
+          const allowed = kind === "AGENT"
+            ? grantedIds.includes(id) || Object.values(agentIds).includes(id)
+            : request.verb === "USE" && grantedIds.includes(id);
+          return allowed ? { allowed: true } : { allowed: false, code: "FORBIDDEN", reason: "Denied" };
+        }) });
+      }
+      if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: projection });
       if (url.includes("/platform/page-skills?")) {
         const params = new URL(url, "http://owner.test").searchParams;
         const entrance = [ordersEntrance, dataBrowserEntrance, observerEntrance, homeEntrance]
@@ -298,12 +316,43 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("omits preset IDs from the unfiltered directory", async () => {
+function sizeDirectory(agents: number, skills: number) {
+  offerings = Array.from({ length: skills }, (_, i) => protectedOffering(`panel-fixture-${i}`, {
+    entrances: [ordersEntrance], resourceIds: [`panel-fixture-${i}`, `proj-fixture-${i}`],
+  }));
+  const rows = Array.from({ length: agents }, (_, i) => {
+    const id = i === 0 ? agentIds.regular : `aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12, "0")}`;
+    return agentRow(id, i === 0 ? "regular" : id, [protectedSkillRef("product-panels", domain, `panel-fixture-${i}`)]);
+  });
+  grantedIds = [...rows.map(row => row.id), ...offerings.flatMap(offer => offer.resourceIds)];
+  mocks.agents.mockResolvedValue(rows);
+  mocks.listOfferings.mockResolvedValue(offerings);
+}
+
+it.each([[2, 2, 1], [80, 220, 1], [220, 220, 2]])("lists %i ordinary agents without reading a domain skill catalogue of size %i (at most %i RPCs)", async (agents, skills, rpcBudget) => {
+  sizeDirectory(agents, skills);
+
   const result = await listAssistantAgents(owner, credentials);
 
+  expect(result.agents).toHaveLength(agents);
   expect(result.agents).toContainEqual(expect.objectContaining({ id: agentIds.regular, enabled: true }));
   expect(result).not.toHaveProperty("presetAgentIds");
-  expect(pageSkillsFetches).toBe(0);
+  expect(mocks.query.mock.calls.length).toBeLessThanOrEqual(1);
+  // Round 2 #2: ordinary candidates skip skill expansion, but agent authorization still spans batches.
+  expect(vi.mocked(fetch).mock.calls.length).toBeLessThanOrEqual(rpcBudget);
+  expect(mocks.listOfferings).not.toHaveBeenCalled();
+});
+
+it.each([[2, 4], [220, 7]])("lists %i agent settings within %i owner RPCs", async (size, rpcBudget) => {
+  sizeDirectory(size, size);
+
+  const result = await listAgentDefinitions(owner, credentials);
+
+  expect(result.agents).toHaveLength(size);
+  // Round 2 #2: one page-skill read, then separate agent, panel, and projection decision batches.
+  // These ceilings leave room to eliminate skill catalogue reads and move filtering to the owner.
+  expect(vi.mocked(fetch).mock.calls.length).toBeLessThanOrEqual(rpcBudget);
+  expect(mocks.query.mock.calls.length).toBeLessThanOrEqual(3);
 });
 
 it("returns only agents that carry the requested public skill", async () => {

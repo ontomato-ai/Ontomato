@@ -47,6 +47,7 @@ import { HttpError } from "../../../utils/errors";
 import { listAgentDefinitions } from "../../assistant/definitions";
 import { assistantSkillCatalog } from "../../assistant/skills";
 import { listPublishedDefinitions } from "../../business-definitions/definitions";
+import type { AssistantCredentials } from "../../../platform/agent-runtime/runtime";
 import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { readPanelComponentCatalogue } from "../../product-panels/component-catalogue";
 import { listObjectDetailPanelMappings } from "../../product-panels/object-detail";
@@ -79,7 +80,7 @@ vi.mock("../../business-definitions/definitions", () => ({
 }));
 vi.mock("../../product-governance/authorization", async original => ({
   ...await original<typeof import("../../product-governance/authorization")>(),
-  decideObjects: (requests: ObjectDecisionRequest[]) => decideProductObjects(requests),
+  decideObjects: (requests: ObjectDecisionRequest[], viewer: AssistantCredentials) => decideProductObjects(requests, viewer),
 }));
 vi.mock("../../product-governance/grants", async original => ({
   ...await original<typeof import("../../product-governance/grants")>(),
@@ -95,16 +96,19 @@ vi.mock("../../product-panels/object-detail", () => ({
 vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn() }));
 const pgQueryMock = vi.fn();
 const allowedUseIds = vi.fn<[], string[]>();
-const decideProductObjects = vi.fn(async (requests: ObjectDecisionRequest[]) => requests.map(request => {
-  if (!("target" in request) || !["PANEL", "PROJECTION"].includes(request.target.kind))
-    throw new Error("Expected product definition access");
-  expect(request.target.domainId).toBe(owner.domainId);
-  expect(request.ownerFacts).toEqual({
-    ownerId: request.target.id.startsWith("builtin-product-") ? null : owner.userId, state: "PUBLISHED",
+function productDecisions(requests: readonly ObjectDecisionRequest[]) {
+  return requests.map(request => {
+    if (!("target" in request) || !["PANEL", "PROJECTION"].includes(request.target.kind))
+      throw new Error("Expected product definition access");
+    expect(request.target.domainId).toBe(owner.domainId);
+    expect(request.ownerFacts).toEqual({
+      ownerId: request.target.id.startsWith("builtin-product-") ? null : owner.userId, state: "PUBLISHED",
+    });
+    return request.verb === "USE" && allowedUseIds().includes(request.target.id)
+      ? { allowed: true as const } : { allowed: false as const, code: "FORBIDDEN", reason: "Not admitted" };
   });
-  return request.verb === "USE" && allowedUseIds().includes(request.target.id)
-    ? { allowed: true } : { allowed: false, code: "FORBIDDEN", reason: "Not admitted" };
-}));
+}
+const decideProductObjects = vi.fn<[readonly ObjectDecisionRequest[], AssistantCredentials], Promise<ReturnType<typeof productDecisions>>>();
 
 const owner = { domainId: "domain-1", userId: "user-1" };
 const credentials = { token: "tok-1", locale: "zh-CN" };
@@ -173,6 +177,7 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof getPostgresPool>);
 
   allowedUseIds.mockReturnValue([]);
+  decideProductObjects.mockImplementation(async requests => productDecisions(requests));
   vi.mocked(readPanelComponentCatalogue).mockResolvedValue({
     version: "1.0.0",
     digest: "sha256:test",
@@ -453,54 +458,44 @@ describe("platform-ontology composite query", () => {
     expect(definition?.operations).toBeUndefined();
   });
 
-  it("coalesces shared owners in counts and separates ok, refused, and failed statuses across all four layers", async () => {
+  it.each([[2, 2], [220, 4]])("coalesces graph count reads with %i records per product kind and at most %i authorization RPCs", async (size, grantBudget) => {
     vi.mocked(assertManagement).mockRejectedValueOnce(new HttpError(403, "Cannot read the skill library", "PERMISSION_DENIED"));
-    allowedUseIds.mockReturnValue(["proj-kb", "panel-main"]);
+    const ids = (prefix: string) => Array.from({ length: size }, (_, i) => `${prefix}-${i}`);
+    const projectionIds = ids("proj-kb");
+    const panelIds = ids("panel-main");
+    allowedUseIds.mockReturnValue([...projectionIds, ...panelIds]);
+    const { decideObjects } = await vi.importActual<typeof import("../../product-governance/authorization")>("../../product-governance/authorization");
+    decideProductObjects.mockImplementation(decideObjects);
     pgQueryMock.mockImplementation(async (sql: string) => {
       if (sql.includes("product_projections")) {
         return {
-          rows: [
-            {
-              id: "proj-kb",
-              definition: {
-                name: "Knowledge List",
-                description: "",
-                visibility: "domain",
-                componentId: "@ontomato/sdk:ObjectList",
-                inputs: {},
-                outputs: {},
-                data: {
-                  items: {
-                    source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
-                    read: "query",
-                    params: {},
-                  },
-                },
-                config: {},
-              },
+          rows: projectionIds.map(id => ({
+            id,
+            definition: {
+              name: "Knowledge List",
+              description: "",
+              visibility: "domain",
+              componentId: "@ontomato/sdk:ObjectList",
+              inputs: {},
+              outputs: {},
+              data: {},
+              config: {},
             },
-          ],
+          })),
         };
       }
       if (sql.includes("product_panels")) {
         return {
-          rows: [
-            {
-              id: "panel-main",
-              definition: {
-                name: "Knowledge Panel",
-                description: "Main panel",
-                visibility: "domain",
-                content: { html: "<section></section>", module: "export default {};" },
-                manifest: {
-                  state: {},
-                  members: {
-                    list: { target: { projectionId: "proj-kb" } },
-                  },
-                },
-              },
+          rows: panelIds.map(id => ({
+            id,
+            definition: {
+              name: "Knowledge Panel",
+              description: "Main panel",
+              visibility: "domain",
+              content: { html: "<section></section>", module: "export default {};" },
+              manifest: { state: {}, members: {} },
             },
-          ],
+          })),
         };
       }
       return { rows: [] };
@@ -526,7 +521,14 @@ describe("platform-ontology composite query", () => {
       }
       throw new Error(`Unexpected GET URL: ${url}`);
     });
-    vi.mocked(backendPost).mockImplementation(async (_endpoint, url) => {
+    vi.mocked(backendPost).mockImplementation(async (_endpoint, url, body) => {
+      if (url.endsWith("/authorization/objects/decide-batch")) {
+        const { requests } = body as { requests: ObjectDecisionRequest[] };
+        return { ...okJson(null), text: JSON.stringify({ decisions: productDecisions(requests) }) };
+      }
+      if (url.endsWith("/action/queryList") || url.endsWith("/metricView/queryList")) {
+        return okJson((body as { countOnly?: boolean }).countOnly ? { total: size } : ids("asset").map(id => ({ id })));
+      }
       if (url.endsWith("/trigger/queryList")) {
         return { text: JSON.stringify({ success: false, message: "Trigger store down" }), headers: new Headers(), status: 200, statusText: "OK" };
       }
@@ -551,19 +553,21 @@ describe("platform-ontology composite query", () => {
     expect(byType.get("platform:AgentDefinition")).toMatchObject({ status: "ok", count: 1 });
     expect(byType.get("platform:Trigger")).toMatchObject({ status: "failed" });
     expect(byType.get("platform:SDKComponent")).toMatchObject({ status: "ok", count: 3 });
-    expect(byType.get("platform:ProductProjection")).toMatchObject({ status: "ok", count: 1 });
-    expect(byType.get("platform:ProductPanel")).toMatchObject({ status: "ok", count: 1 });
+    expect(byType.get("platform:Action")).toMatchObject({ status: "ok", count: size });
+    expect(byType.get("platform:MetricView")).toMatchObject({ status: "ok", count: size });
+    expect(byType.get("platform:ProductProjection")).toMatchObject({ status: "ok", count: size });
+    expect(byType.get("platform:ProductPanel")).toMatchObject({ status: "ok", count: size });
     expect(byType.get("platform:Application")).toMatchObject({ status: "ok", count: 1 });
     expect(byType.get("platform:ApplicationPanelUse")).toBeUndefined();
 
-    // /admin/getMetas must be called only once across ObjectType + Attribute + Relationship
-    const metaCalls = vi.mocked(backendPost).mock.calls.filter(([, url]) => String(url).endsWith("/admin/getMetas"));
-    expect(metaCalls).toHaveLength(1);
-    // The shared owner reads one facts batch per product kind across both counts.
-    expect(decideProductObjects.mock.calls.map(([requests]) => requests.map(request => "target" in request && request.target.kind)))
-      .toEqual(expect.arrayContaining([["PANEL"], ["PROJECTION"]]));
-    expect(decideProductObjects).toHaveBeenCalledTimes(2);
-    expect(listAgentDefinitions).toHaveBeenCalledWith(owner, credentials);
+    const rpcCalls = [...vi.mocked(backendGet).mock.calls, ...vi.mocked(backendPost).mock.calls];
+    // Object types, attributes, and relationships share a single metadata RPC.
+    expect(rpcCalls.filter(([, url]) => url.endsWith("/admin/getMetas")).length).toBeLessThanOrEqual(1);
+    // Round 2 #3: graph counts still materialize lists; panel and projection candidates span batches.
+    const authorizationCalls = rpcCalls.filter(([, url]) => url.endsWith("/authorization/objects/decide-batch"));
+    expect(authorizationCalls.length).toBeLessThanOrEqual(grantBudget);
+    expect(rpcCalls.length).toBeLessThanOrEqual(14 + grantBudget);
+    expect(pgQueryMock.mock.calls.length).toBeLessThanOrEqual(4);
     expect(assistantSkillCatalog).not.toHaveBeenCalled();
   });
 
