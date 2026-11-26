@@ -30,7 +30,7 @@ import {
   adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, createPanelOverlayRoot, newPanelInstanceName, scopedPanelStyle,
   type CodedPanelTarget, type DirectPanelRun, type PanelHostPort, type PanelHostState, type PanelSdkRelease,
 } from "@ontomato/platform-shell";
-import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import { candidateProjectionIds, type PanelManifest, type PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import {
   memberComponentId, panelModuleFor, PanelMemberUnavailable, panelPreviewHostKey, preloadCatalogueComponents, readProjectionForRender,
   type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
@@ -38,7 +38,7 @@ import {
 import {
   currentDefinitionCacheScope, framePanelCacheKey, getCachedPanel, getCachedProjection, ingestBundledPanelProjections,
   invalidateCachedPanel, invalidateCachedPanelById, invalidateCachedProjection, readCachedProjection,
-  reconcileDefinitionCacheWithSnapshot, setCachedPanel,
+  reconcileDefinitionCacheWithSnapshot, reconcileMountProjectionBundle, setCachedPanel, type MountProjectionBundle,
 } from "./panel-definition-cache";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import { authHost } from "@ontomato/workbench-ui/utils/auth";
@@ -207,18 +207,27 @@ function warmPanelProjectionComponents(manifest: PanelManifest, bundled?: Record
   if (ids.length) void preloadCatalogueComponents(ids);
 }
 
+function hasProjectionCandidates(manifest: PanelManifest) {
+  return Object.values(manifest.members).some(({ target }) => candidateProjectionIds(target).length > 0);
+}
+
 /** Checks whether a panel declares an inline `ConversationEntry` member so the route avoids a duplicate bottom composer. */
 export function panelHasInlineConversationEntry(
   panel: Pick<ProductPanel, "manifest" | "content">,
   projections?: Readonly<Record<string, BundledPanelProjection>> | readonly BundledPanelProjection[],
 ): boolean {
   const projectionList = Array.isArray(projections) ? projections : projections ? Object.values(projections) : [];
-  if (projectionList.some((entry) =>
-    entry.status === "ready"
-    && (entry.projection.componentId === "@ontomato/sdk:ConversationEntry" || entry.projection.componentId === "ConversationEntry")
-    && entry.projection.config?.presentation === "inline",
-  )) {
-    return true;
+  if (projectionList.length) {
+    const fixedIds = new Set(Object.values(panel.manifest.members).flatMap(({ target }) =>
+      "projectionId" in target ? [target.projectionId] : [],
+    ));
+    if (projectionList.some((entry) =>
+      entry.status === "ready" && fixedIds.has(entry.projection.id)
+      && (entry.projection.componentId === "@ontomato/sdk:ConversationEntry" || entry.projection.componentId === "ConversationEntry")
+      && entry.projection.config?.presentation === "inline",
+    )) {
+      return true;
+    }
   }
   for (const member of Object.values(panel.manifest.members ?? {})) {
     const raw = member as Record<string, unknown>;
@@ -261,13 +270,21 @@ export function platformPanelHost(
   const panelChatHost = createPanelChatHost(use.defaultAgent, { claimComposer, display });
   const shown: PanelUseRef = { applicationId, useId: use.id };
   const personalSource = { kind: "registered", ...shown } as const;
-  const bundleQuery = mode.kind === "view" ? "?includeProjections=1&view=1" : "?includeProjections=1";
+  const query = new URLSearchParams({ includeProjections: "1" });
+  if (mode.kind === "view") query.set("view", "1");
+  if (Object.values(use.inputs ?? {}).some(input => "frameState" in input || typeof input.literal === "object")) {
+    query.set("source", "registered");
+    query.set("applicationId", applicationId);
+    query.set("useId", use.id);
+  }
+  const bundleQuery = `?${query}`;
   const controlled = new Set(Object.keys(use.inputs ?? {}));
   let pendingPersonalState: PersonalStateRead | undefined;
   let lastPanel: ProductPanel | undefined;
-  let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let mountBundle: MountProjectionBundle | undefined;
   let panelDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
   let sourceReconciled = false;
+  const nestedSnapshots = new Set<() => Promise<void>>();
   return {
     // After entry admission, render the panel and its fixed projections under the reader's current use grants.
     async source() {
@@ -276,7 +293,7 @@ export function platformPanelHost(
       sourceReconciled = false;
       {
         const cached = getCachedPanel(use.panelId);
-        if (cached) {
+        if (cached && !hasProjectionCandidates(cached.manifest)) {
           warmPanelProjectionComponents(cached.manifest);
           const fields = personalFields(cached.manifest, controlled);
           if (fields.length) {
@@ -297,7 +314,7 @@ export function platformPanelHost(
           const forbidden = reconcileDefinitionCacheWithSnapshot(use.panelId, cached, verified, scope);
           if (verified.panel.revision === cached.revision) {
             lastPanel = cached;
-            mountUnavailable = forbidden;
+            mountBundle = forbidden;
             sourceReconciled = true;
             const cachedProjections: Record<string, BundledPanelProjection> = {};
             for (const member of Object.values(cached.manifest.members)) {
@@ -315,7 +332,7 @@ export function platformPanelHost(
         const scope = currentDefinitionCacheScope();
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}${bundleQuery}`));
         setCachedPanel(use.panelId, answer.panel, scope);
-        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        mountBundle = ingestBundledPanelProjections(answer.projections, scope);
         warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
         panelDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
@@ -332,7 +349,7 @@ export function platformPanelHost(
         const scope = currentDefinitionCacheScope();
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}${bundleQuery}`));
         setCachedPanel(panelId, answer.panel, scope);
-        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        mountBundle = ingestBundledPanelProjections(answer.projections, scope);
         lastPanel = answer.panel;
         return answer.panel;
       }
@@ -351,9 +368,9 @@ export function platformPanelHost(
       const pending = pendingPersonalState;
       pendingPersonalState = undefined;
       const mount = (opened: DirectPanelRun) => mountCoded(withNested({
-        ...directOptions(source, opened, shown, changed, beside, undefined, undefined, mountUnavailable),
+        ...directOptions(source, opened, shown, changed, beside, undefined, undefined, mountBundle),
         ...(panelDomainComponents ? { panelDomainComponents } : {}),
-      }, personalSource, pageCounter, panelChatHost, feed), target, source.panel.content.module, pageCounter, panelChatHost, feed);
+      }, personalSource, pageCounter, panelChatHost, feed, nestedSnapshots), target, source.panel.content.module, pageCounter, panelChatHost, feed);
       return withPersonalState(personalSource, [], source.panel.manifest, run, mount,
         entryPanel ? controlled : new Set(), entryPanel ? pending : undefined);
     },
@@ -367,10 +384,8 @@ export function platformPanelHost(
         throw failure;
       }
       const forbidden = reconcileDefinitionCacheWithSnapshot(panelId, lastPanel, answer, scope);
-      if (mountUnavailable && answer.members !== undefined) {
-        mountUnavailable.clear();
-        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
-      }
+      reconcileMountProjectionBundle(mountBundle, answer, forbidden);
+      await Promise.all([...nestedSnapshots].map(read => read()));
       return answer;
     },
     mode,
@@ -381,7 +396,7 @@ async function reconcileCachedApplicationFrame(
   cacheKey: string, framePanelId: string, query: URLSearchParams,
 ) {
   const cached = getCachedPanel(cacheKey);
-  if (!cached) return;
+  if (!cached || hasProjectionCandidates(cached.manifest)) return;
   const scope = currentDefinitionCacheScope();
   let verified;
   try {
@@ -428,9 +443,10 @@ export function framePanelHost(
   const panelChatHost = createPanelChatHost(isApplicationPanelUse(use) ? use.defaultAgent : undefined, chat);
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
   let lastPanel: ProductPanel | undefined;
-  let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let mountBundle: MountProjectionBundle | undefined;
   let frameDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
   let sourceReconciled = false;
+  const nestedSnapshots = new Set<() => Promise<void>>();
   return {
     async source() {
       warmTemplateCompiler();
@@ -440,7 +456,7 @@ export function framePanelHost(
         sourceReconciled = true;
         if (reconciled.panel) {
           lastPanel = reconciled.panel;
-          mountUnavailable = reconciled.forbidden;
+          mountBundle = reconciled.forbidden;
           reportFrameComposer(chat, reconciled.panel);
           return { kind: "registered", applicationId, use, panel: reconciled.panel };
         }
@@ -449,7 +465,7 @@ export function framePanelHost(
       const scope = currentDefinitionCacheScope();
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
       setCachedPanel(cacheKey, answer.panel, scope);
-      mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+      mountBundle = ingestBundledPanelProjections(answer.projections, scope);
       warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
       frameDomainComponents = answer.domainComponents;
       lastPanel = answer.panel;
@@ -465,7 +481,7 @@ export function framePanelHost(
         const scope = currentDefinitionCacheScope();
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?${sourceQuery}`));
         setCachedPanel(cacheKey, answer.panel, scope);
-        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        mountBundle = ingestBundledPanelProjections(answer.projections, scope);
         frameDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
         reportFrameComposer(chat, answer.panel, answer.projections);
@@ -477,9 +493,9 @@ export function framePanelHost(
     frame: () => { throw new Error("An application's frame runs in the platform's document, not in a frame"); },
     coded: (source, run, target) => mountCoded(
       withNested({
-        ...directOptions(source, run, shown, changed, undefined, frameSource, "frame", mountUnavailable, router),
+        ...directOptions(source, run, shown, changed, undefined, frameSource, "frame", mountBundle, router),
         ...(frameDomainComponents ? { panelDomainComponents: frameDomainComponents } : {}),
-      }, frameSource, undefined, panelChatHost, chat?.feed),
+      }, frameSource, undefined, panelChatHost, chat?.feed, nestedSnapshots),
       target, source.panel.content.module, undefined, panelChatHost, chat?.feed,
     ),
     async snapshot(panelId) {
@@ -493,10 +509,8 @@ export function framePanelHost(
         throw failure;
       }
       const forbidden = reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
-      if (mountUnavailable && answer.members !== undefined) {
-        mountUnavailable.clear();
-        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
-      }
+      reconcileMountProjectionBundle(mountBundle, answer, forbidden);
+      await Promise.all([...nestedSnapshots].map(read => read()));
       return answer;
     },
     mode: { kind: "view" },
@@ -525,14 +539,14 @@ export function builtinFramePanelHost(
   const sourceQuery = new URLSearchParams({ includeProjections: "1" });
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
   let lastPanel: ProductPanel | undefined;
-  let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let mountBundle: MountProjectionBundle | undefined;
   let sourceReconciled = false;
   return {
     async source() {
       warmTemplateCompiler();
       sourceReconciled = false;
       const cached = getCachedPanel(cacheKey);
-      if (cached) {
+      if (cached && !hasProjectionCandidates(cached.manifest)) {
         const scope = currentDefinitionCacheScope();
         let verified;
         try {
@@ -545,7 +559,7 @@ export function builtinFramePanelHost(
         if (verified.panel.revision === cached.revision) {
           lastPanel = cached;
           reportFrameComposer(chat, cached);
-          mountUnavailable = forbidden;
+          mountBundle = forbidden;
           sourceReconciled = true;
           return { kind: "registered", applicationId, use: placeholderUse, panel: cached };
         }
@@ -555,7 +569,7 @@ export function builtinFramePanelHost(
       const scope = currentDefinitionCacheScope();
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
       setCachedPanel(cacheKey, answer.panel, scope);
-      mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+      mountBundle = ingestBundledPanelProjections(answer.projections, scope);
       warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
       lastPanel = answer.panel;
       reportFrameComposer(chat, answer.panel, answer.projections);
@@ -570,7 +584,7 @@ export function builtinFramePanelHost(
         const scope = currentDefinitionCacheScope();
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?${sourceQuery}`));
         setCachedPanel(cacheKey, answer.panel, scope);
-        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        mountBundle = ingestBundledPanelProjections(answer.projections, scope);
         lastPanel = answer.panel;
         reportFrameComposer(chat, answer.panel, answer.projections);
         return answer.panel;
@@ -589,7 +603,7 @@ export function builtinFramePanelHost(
         readProjection: (id, readOptions) => readCachedProjection(
           id,
           () => readPlatformProjection(id),
-          readOptions?.dynamic ? { verifyAccess: true } : { mountUnavailable },
+          { mountBundle, verifyAccess: readOptions?.dynamic },
         ),
         preloadComponentIds: panelProjectionComponentIds(source.panel.manifest),
         use: null,
@@ -620,10 +634,7 @@ export function builtinFramePanelHost(
         throw failure;
       }
       const forbidden = reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
-      if (mountUnavailable && answer.members !== undefined) {
-        mountUnavailable.clear();
-        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
-      }
+      reconcileMountProjectionBundle(mountBundle, answer, forbidden);
       return answer;
     },
     mode: { kind: "view" },
@@ -766,8 +777,8 @@ function directOptions(
   readSource: PanelReadSource = { kind: "registered", ...use },
   /** The root its people's operations are bound to: the frame's, for a frame panel. */
   root?: "frame",
-  /** Bundled unavailable fixed projections for this mount only; never persisted across re-entries. */
-  mountUnavailable?: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>>,
+  /** The reader’s projection bundle for this mount. */
+  mountBundle?: MountProjectionBundle,
   router?: Router,
 ): OwnPanelOptions {
   const { global } = workbenchI18n();
@@ -778,7 +789,7 @@ function directOptions(
     readProjection: (id, readOptions) => readCachedProjection(
       id,
       () => readPlatformProjection(id),
-      readOptions?.dynamic ? { verifyAccess: true } : { mountUnavailable },
+      { mountBundle, verifyAccess: readOptions?.dynamic },
     ),
     preloadComponentIds: panelProjectionComponentIds(source.panel.manifest),
     use: root ? { ...use, root } : use,
@@ -825,8 +836,9 @@ function withNested(
   pageCounter?: PageCounter | null,
   panelChatHost?: PanelChatHost,
   feed?: PanelSessionFeed,
+  nestedSnapshots?: Set<() => Promise<void>>,
 ): DirectPanelMountOptions {
-  return { ...options, nested: (memberPath, run) => mountNested(options, source, memberPath, run, pageCounter, panelChatHost, feed) };
+  return { ...options, nested: (memberPath, run) => mountNested(options, source, memberPath, run, pageCounter, panelChatHost, feed, nestedSnapshots) };
 }
 
 /**
@@ -841,17 +853,20 @@ async function mountNested(
   pageCounter?: PageCounter | null,
   panelChatHost?: PanelChatHost,
   feed?: PanelSessionFeed,
+  nestedSnapshots?: Set<() => Promise<void>>,
 ): Promise<{ element: HTMLElement; mount: PanelRunMount }> {
   const path: ProductPanelNestedReadRequest["memberPath"] = [...(outer.memberPath ?? []), ...memberPath] as ProductPanelNestedReadRequest["memberPath"];
   // A placement the reader may not use, or one whose record is gone or not among its candidates, is that block's own
   // state, said where the panel would be; any other failure is said as it is.
+  const scope = currentDefinitionCacheScope();
   const answer = await json(`/api${PANEL_NESTED_READ_PATH}`, { method: "POST", body: JSON.stringify({ source, memberPath: path }) })
     .catch((failure: unknown) => {
       if (failure instanceof ApiRequestError && (failure.status === 403 || failure.status === 404))
         throw new PanelMemberUnavailable(failure.status, failure.message);
       throw failure;
     });
-  const { panel, domainComponents } = productPanelNestedReadResponseSchema.parse(answer);
+  const { panel, domainComponents, projections } = productPanelNestedReadResponseSchema.parse(answer);
+  const mountBundle = ingestBundledPanelProjections(projections, scope);
   // An object's detail panel is Node's to name: the placement asked by the object alone, and the panel Node answered
   // with completes it, so the placed panel's own reads and operations name the panel they were admitted for.
   const placedAt: PanelMemberPath = [...path.slice(0, -1) as PanelMemberPath, resolvedSegment(path.at(-1)!, panel.id)];
@@ -866,7 +881,7 @@ async function mountNested(
   try {
     const nestedReadProjection = source.kind === "candidate" || source.kind === "app-candidate"
       ? (id: string) => readPlatformProjection(id)
-      : (id: string) => readCachedProjection(id, () => readPlatformProjection(id), { verifyAccess: true });
+      : (id: string) => readCachedProjection(id, () => readPlatformProjection(id), { mountBundle, verifyAccess: true });
     const last = memberPath.at(-1);
     const mount = await withPersonalState(source, placedAt, panel.manifest, run, (opened) => mountCoded(
       withNested({
@@ -877,14 +892,24 @@ async function mountNested(
         run: { ...opened, overlayRoot: overlay.element, shown },
         memberPath: placedAt,
         panelDomainComponents: domainComponents,
-      }, source, pageCounter, panelChatHost, feed),
+      }, source, pageCounter, panelChatHost, feed, nestedSnapshots),
       { element, template }, panel.content.module, pageCounter, panelChatHost, feed,
     ), new Set(Object.keys(last ? outer.manifest.members[last.member]?.inputs ?? {} : {})));
+    const reconcile = async () => {
+      const scope = currentDefinitionCacheScope();
+      const verified = await snapshot(panel.id);
+      if (!nestedSnapshots?.has(reconcile)) return;
+      const unavailable = reconcileDefinitionCacheWithSnapshot(panel.id, panel, verified, scope);
+      reconcileMountProjectionBundle(mountBundle, verified, unavailable);
+      mount.projectionsChanged([...verified.projections, ...[...unavailable.keys()].map(id => ({ id }))]);
+    };
+    if (projections) nestedSnapshots?.add(reconcile);
     return {
       element,
       mount: {
         ...mount,
         dispose() {
+          nestedSnapshots?.delete(reconcile);
           mount.dispose();
           overlay.dispose();
           dropStyle?.();
