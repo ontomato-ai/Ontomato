@@ -4974,7 +4974,7 @@ defineExpose({
                       >…</span>
                       <TypedValue
                         v-else-if="usesTypedValueCell(entry.row, column)"
-                        :value="rawRecordField(entry.row, column.key)"
+                        :value="rawRecordField(entry.row, column.key) ?? null"
                         :field="column.key"
                         :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
                         :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"
@@ -5086,7 +5086,7 @@ defineExpose({
                     >…</span>
                     <TypedValue
                       v-else-if="usesTypedValueCell(entry.row, column)"
-                      :value="rawRecordField(entry.row, column.key)"
+                      :value="rawRecordField(entry.row, column.key) ?? null"
                       :field="column.key"
                       :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
                       :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"
@@ -5816,7 +5816,7 @@ defineExpose({
                     >…</span>
                     <TypedValue
                       v-else-if="usesTypedValueCell(entry.row, column)"
-                      :value="rawRecordField(entry.row, column.key)"
+                      :value="rawRecordField(entry.row, column.key) ?? null"
                       :field="column.key"
                       :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
                       :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, provide } from "vue";
+import { computed, inject } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import type { PanelFieldTone, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
@@ -12,7 +12,7 @@ import {
   extractMetricRow,
   kindFromMetricColumnType,
   parseTemplateTokens,
-  useOptionalMemberDatum,
+  useMemberDatumWhenNotGiven,
   type DisplayDataStateKind,
   type TypedFieldFormat,
 } from "./display-value";
@@ -85,12 +85,13 @@ const panel = inject(panelContextKey, null);
 const slot = inject(projectionKey, null);
 const memberGetter = inject(panelMemberKey, null);
 const member = memberGetter?.() ?? null;
-// A template given its data by a parent only renders that snapshot. Its TypedValue children always
-// render the values selected by the template, including empty placeholders, without starting their own reads.
-const boundDatum = props.record === undefined && props.values === undefined
-  ? useOptionalMemberDatum(member, ["record", "result"] as const)
-  : null;
-provide<typeof memberGetter>(panelMemberKey, null);
+// A template given its data by a parent only renders that snapshot; one given nothing reads its own datum. Its
+// placeholders are handed the values resolved here, `null` included, so none of them reads the member again.
+const boundDatum = useMemberDatumWhenNotGiven(
+  member,
+  ["record", "result"] as const,
+  props.record !== undefined || props.values !== undefined,
+);
 
 interface ResolvedTemplateData {
   readonly state: DisplayDataStateKind;
@@ -175,7 +176,7 @@ const resolvedEmptyText = computed(() =>
   }) || "—",
 );
 
-function fieldValueFor(key: string): PanelRecordFieldValue | undefined {
+function fieldValueFor(key: string): PanelRecordFieldValue | null {
   const { record, row } = resolvedData.value;
   if (record) {
     const raw = recordFieldDisplayValue(record, key);
@@ -185,7 +186,9 @@ function fieldValueFor(key: string): PanelRecordFieldValue | undefined {
   if (row && Object.hasOwn(row, key)) {
     return row[key] as PanelRecordFieldValue;
   }
-  return undefined;
+  // A field this snapshot has no value for is handed over as `null`, never left `undefined`: a placeholder told
+  // `undefined` would read the member again and could show another snapshot's value.
+  return null;
 }
 
 function fieldToneFor(key: string): PanelFieldTone | undefined {

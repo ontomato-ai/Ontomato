@@ -16,7 +16,7 @@ import {
   inferValueKind,
   resolveValueMapEntry,
   unwrapJsonField,
-  useOptionalMemberDatum,
+  useMemberDatumWhenNotGiven,
   type DisplayDataStateKind,
   type TypedNumberFormat,
   type TypedValueKind,
@@ -43,6 +43,9 @@ import {
  * localized boolean, status/enum tag, tag list, clickable object reference, multi-language name, list, or code/JSON —
  * without computing business logic. Reads from its projection's `record` (`panelRecord`) or `result` (`metricOutput`,
  * scalar/first-row cell) datum, or renders a direct `value` prop standalone or inside a slot.
+ *
+ * One display reads once: a `value` handed by a parent is drawn alone and no datum is read, so its tone is the parent's
+ * `tone` or the value's own tag; the record's `tones` apply only to the read this component makes itself.
  */
 const props = withDefaults(
   defineProps<{
@@ -115,7 +118,9 @@ const panel = inject(panelContextKey, null);
 const slot = inject(projectionKey, null);
 const memberGetter = inject(panelMemberKey, null);
 const member = memberGetter?.() ?? null;
-const boundDatum = useOptionalMemberDatum(member, ["record", "result"] as const);
+// A value handed by a parent is drawn alone: the parent read the datum, so this component starts no read of its own and
+// its tone comes from the parent or from the value's own tag, not from a second snapshot of the same datum.
+const boundDatum = useMemberDatumWhenNotGiven(member, ["record", "result"] as const, props.value !== undefined);
 
 interface ResolvedSource {
   readonly state: DisplayDataStateKind;

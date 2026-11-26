@@ -13,8 +13,7 @@ import { ElTag } from "element-plus/es/components/tag/index";
 import { ElTooltip } from "element-plus/es/components/tooltip/index";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { curatedIcon } from "@ontomato/platform-shell/icons";
-import { useMember, useMemberData } from "../panel/member";
-import type { PlatformObjectRecord } from "../panel/platform-objects";
+import { useMember, useMemberData } from "../panel/member";import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { useDataStateLabels } from "./data-state-labels";
 import { rawRecordField } from "./record-field";
 import type {
@@ -32,6 +31,8 @@ import type {
  *
  * Shared across Organization Management ("View effective permissions" dialog) and Member Detail ("Effective
  * permissions" tab) without bloating the generic `ObjectSummary` component with permission-specific layouts.
+ *
+ * One display reads once: a record or list handed by a parent is drawn alone and its datum is not read again.
  */
 const props = withDefaults(
   defineProps<{
@@ -78,12 +79,13 @@ function bindDatum(name: string) {
   }
 }
 
-const recordDatum = bindDatum("record");
-const orgSharesDatum = bindDatum("orgShares");
-const apiPermissionsDatum = bindDatum("apiPermissions");
-const subjectDataDatum = bindDatum("subjectData");
-const managedDataDatum = bindDatum("managedData");
-const effectiveDataDatum = bindDatum("effectiveData");
+// Each list a parent hands over is drawn alone; only the datums it leaves to this view are read, once each.
+const recordDatum = props.record === undefined ? bindDatum("record") : null;
+const orgSharesDatum = props.orgShares === undefined ? bindDatum("orgShares") : null;
+const apiPermissionsDatum = props.apiPermissions === undefined ? bindDatum("apiPermissions") : null;
+const subjectDataDatum = props.subjectData === undefined ? bindDatum("subjectData") : null;
+const managedDataDatum = props.managedData === undefined ? bindDatum("managedData") : null;
+const effectiveDataDatum = props.effectiveData === undefined ? bindDatum("effectiveData") : null;
 
 const i18n = (() => {
   try {
