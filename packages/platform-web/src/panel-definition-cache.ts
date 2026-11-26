@@ -138,17 +138,15 @@ export function invalidateCachedProjection(projectionId: string, minRevision?: n
   }
 }
 
-/**
- * Stores ready projections from a bundled panel response in the shared cache, and returns a mount-local map of
- * unavailable (403/404) entries so they are isolated to this mount and never cached across re-entries.
- */
+export type MountProjectionBundle = Map<string, BundledPanelProjection>;
+
+/** Ingests definition payloads while keeping the response's access decisions local to this mount. */
 export function ingestBundledPanelProjections(
   bundled: Readonly<Record<string, BundledPanelProjection>> | undefined,
   scope: DefinitionCacheScope | null,
-): Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> {
-  const unavailable = new Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>>();
-  if (!bundled) return unavailable;
-  for (const [projectionId, entry] of Object.entries(bundled)) {
+): MountProjectionBundle {
+  const mountBundle = new Map(Object.entries(bundled ?? {}));
+  for (const [projectionId, entry] of mountBundle) {
     if (entry.status === "ready") {
       setCachedProjection({
         projection: entry.projection,
@@ -156,10 +154,9 @@ export function ingestBundledPanelProjections(
       }, scope);
     } else {
       invalidateCachedProjection(projectionId);
-      unavailable.set(projectionId, entry);
     }
   }
-  return unavailable;
+  return mountBundle;
 }
 
 /**
@@ -171,7 +168,7 @@ export function ingestBundledPanelProjections(
  */
 export function reconcileDefinitionCacheWithSnapshot(
   panelCacheKey: string,
-  panel: ProductPanel | undefined,
+  panel: Pick<ProductPanel, "manifest"> | undefined,
   snapshot: PanelDefinitionSnapshot,
   scope?: DefinitionCacheScope | null,
 ): Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> {
@@ -189,6 +186,10 @@ export function reconcileDefinitionCacheWithSnapshot(
       projections.delete(id);
       inFlightProjections.delete(id);
     }
+  }
+  for (const [id, entry] of Object.entries(snapshot.unavailableProjections ?? {})) {
+    invalidateCachedProjection(id);
+    forbidden.set(id, entry);
   }
   if (inspectedPanel && snapshot.members) {
     for (const member of snapshot.members) {
@@ -209,9 +210,23 @@ export function reconcileDefinitionCacheWithSnapshot(
   return forbidden;
 }
 
+/** Refreshes the existing mount's access results against the latest snapshot. */
+export function reconcileMountProjectionBundle(
+  bundle: MountProjectionBundle | undefined,
+  snapshot: PanelDefinitionSnapshot,
+  unavailable: ReadonlyMap<string, Extract<BundledPanelProjection, { status: "unavailable" }>>,
+): void {
+  if (!bundle) return;
+  for (const { id, revision } of snapshot.projections) {
+    const entry = bundle.get(id);
+    if (entry && (entry.status === "unavailable" || entry.projection.revision !== revision)) bundle.delete(id);
+  }
+  for (const [id, entry] of unavailable) bundle.set(id, entry);
+}
+
 export interface ReadCachedProjectionOptions {
-  readonly mountUnavailable?: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>>;
-  /** Verify reader `use` grant with the server instead of serving a cached definition directly. */
+  readonly mountBundle?: MountProjectionBundle;
+  /** Require a grant from this mount or verify reader access with the server. */
   readonly verifyAccess?: boolean;
 }
 
@@ -225,11 +240,11 @@ export async function readCachedProjection(
   fetchProjection: () => Promise<ProductProjectionRenderResponse>,
   options?: ReadCachedProjectionOptions,
 ): Promise<ProductProjectionRenderResponse> {
-  if (!options?.verifyAccess) {
-    const denied = options?.mountUnavailable?.get(projectionId);
-    if (denied) throw new PanelMemberUnavailable(denied.httpStatus, denied.message);
+  const bundled = options?.mountBundle?.get(projectionId);
+  if (bundled?.status === "unavailable") throw new PanelMemberUnavailable(bundled.httpStatus, bundled.message);
 
-    const cached = getCachedProjection(projectionId);
+  if (!options?.verifyAccess || bundled?.status === "ready") {
+    const cached = getCachedProjection(projectionId, options?.verifyAccess ? bundled?.projection.revision : undefined);
     if (cached) return cached;
   }
 

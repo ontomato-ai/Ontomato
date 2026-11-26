@@ -1,7 +1,9 @@
 import {
-  productPanelSchema, productProjectionSchema, type ProductPanel, type ProductProjection,
+  productPanelSchema, productProjectionSchema, type ApplicationPanelUse, type ProductPanel, type ProductProjection,
 } from "@ontomato/contracts/product-panels";
 import type { DomainComponentRuntime } from "@ontomato/contracts/domain-components";
+import { candidateProjectionIds, panelObjectRefSchema, type PanelMember, type PanelPlacement } from "@ontomato/contracts/panel-manifest";
+import { PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { currentProductRecord, type CurrentProductRow } from "../../infrastructure/product-current";
 import { parseStoredDefinition } from "./definition-diagnostics";
 
@@ -59,6 +61,26 @@ export function fixedPanelProjectionIds({ manifest }: Pick<ProductPanel, "manife
   ))];
   fixedProjections.set(manifest, ids);
   return ids;
+}
+
+/** Fixed projections plus the finite candidates selected by the placement and panel declarations. */
+export function bundledPanelProjectionIds(
+  panel: Pick<ProductPanel, "manifest">,
+  inputs?: PanelMember["inputs"] | PanelPlacement["inputs"] | ApplicationPanelUse["inputs"],
+): readonly string[] {
+  const ids = new Set(fixedPanelProjectionIds(panel));
+  for (const { target } of Object.values(panel.manifest.members)) {
+    if (!("fromState" in target)) continue;
+    const candidates = candidateProjectionIds(target);
+    if (!candidates.length) continue;
+    const input = inputs?.[target.fromState];
+    const declared = input === undefined ? panel.manifest.state[target.fromState].default
+      : "literal" in input ? input.literal : undefined;
+    const ref = panelObjectRefSchema.safeParse(declared);
+    if (ref.success && ref.data.className === PRODUCT_PROJECTION && candidates.includes(ref.data.primaryKey)) ids.add(ref.data.primaryKey);
+    else for (const id of candidates) ids.add(id);
+  }
+  return [...ids];
 }
 
 export function renderDefinitionJson(definition: RenderDefinition) {

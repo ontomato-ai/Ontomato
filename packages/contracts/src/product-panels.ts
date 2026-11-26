@@ -481,10 +481,11 @@ export const productPanelSnapshotQuerySchema = productPanelReadQuerySchema;
 export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
 const includeProjectionsQuery = { includeProjections: z.literal("1").optional() };
-/** Panel record GET accepts the standard read query plus optional `includeProjections=1` bundling of fixed members. */
+/** A registered placement can supply the entry's declared inputs for bundling. */
 export const productPanelGetQuerySchema = z.union([
   z.object({ ...includeProjectionsQuery, view: z.literal("1").optional() }).strict(),
   applicationFrameReadQuerySchema.extend(includeProjectionsQuery).strict(),
+  panelUseRefSchema.extend({ source: z.literal("registered"), includeProjections: z.literal("1"), view: z.literal("1").optional() }),
 ]);
 export type ProductPanelGetQuery = z.infer<typeof productPanelGetQuerySchema>;
 
@@ -541,20 +542,22 @@ export const registerProductPanelRequestSchema = productPanelInputSchema.extend(
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;
 
 /**
- * One fixed projection member bundled into a panel record read (`?includeProjections=1`): either the authorized render
+ * One projection bundled into a panel record read (`?includeProjections=1`): either the authorized render
  * payload, or a per-member 403/404 isolation state so one unavailable member does not fail the whole panel read.
  */
+export const unavailablePanelProjectionSchema = z.object({
+  status: z.literal("unavailable"),
+  httpStatus: z.union([z.literal(403), z.literal(404)]),
+  message: z.string(),
+}).strict();
+
 export const bundledPanelProjectionSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("ready"),
     projection: currentProjectionRecordSchema,
     domainComponent: domainComponentRuntimeSchema.optional(),
   }).strict(),
-  z.object({
-    status: z.literal("unavailable"),
-    httpStatus: z.union([z.literal(403), z.literal(404)]),
-    message: z.string(),
-  }).strict(),
+  unavailablePanelProjectionSchema,
 ]);
 export type BundledPanelProjection = z.infer<typeof bundledPanelProjectionSchema>;
 
