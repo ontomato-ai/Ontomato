@@ -381,7 +381,7 @@ it("combines Java's native targets and app entries without resolving private nam
     { id: otherAgentId, name: "Private agent", enabled: true, permitted: false },
   ]);
   directory.caseSets.mockClear();
-  const http = vi.fn(async (url: string, init: RequestInit) => {
+  const http = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
     const { pathname, searchParams } = new URL(url);
     if (pathname === "/platform/applications") {
@@ -420,7 +420,7 @@ it("combines Java's native targets and app entries without resolving private nam
 });
 
 it("looks up active members through the shared domain directory with the viewer's credentials", async () => {
-  const fetchOwner = vi.fn(async (url: string, init: RequestInit) => {
+  const fetchOwner = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new URL(url).pathname).toBe("/product-governance/principals");
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
