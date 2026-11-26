@@ -831,7 +831,7 @@ it("rejects reader requests carrying a caller-selected URL or handler", async ()
   expect((await request("POST", "product-panels/read", { ...read, executor: "another-user" })).status).toBe(400);
 });
 
-it("reads the seven named ontology data items with the panel viewer", async () => {
+it("reads named graph and instance data with the panel viewer", async () => {
   const type = (id: string, read: string, params = {}) => ({
     source: { type: { kind: "PlatformObjectType", id } }, read, params,
   });
@@ -840,12 +840,12 @@ it("reads the seven named ontology data items with the panel viewer", async () =
     scope: { componentId: "@ontomato/sdk:RecordGraph",
       data: { nodes: type("platform:ObjectType", "list"), edges: type("platform:Relationship", "list") } },
     ontology: { componentId: "@ontomato/sdk:InstanceGraph", inputs: { node: { kind: "json" } }, data: {
-      schema: type("platform:OntologyType", "schema"), counts: type("platform:OntologyType", "counts"),
+      counts: type("platform:OntologyType", "counts"),
       start: type("platform:OntologyType", "start"),
       neighbors: type("platform:OntologyType", "neighbors", { node: { input: "node" }, relationKinds: { literal: [] } }),
     } },
-    objects: { componentId: "@ontomato/sdk:ObjectList", data: {
-      objects: type("platform:OntologyType", "objects", { type: { literal: "platform:ObjectType" } }),
+    instances: { componentId: "@ontomato/sdk:ObjectList", data: {
+      rows: type("platform:OntologyType", "instances", { className: { literal: "platform:ObjectType" } }),
     } },
     attributes: { componentId: "@ontomato/sdk:ObjectList", data: {
       rows: type("platform:Attribute", "list", { className: { literal: "warehouse" } }),
@@ -922,13 +922,12 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   expect(await ready("scope", "edges")).toMatchObject([{ primaryKey: "contains", fields: { fromclass: "warehouse", toclass: "item" } }]);
   expect(await ready("attributes", "rows")).toMatchObject([{ label: "Identifier", fields: { className: "warehouse", name: "id" } }]);
   expect(await ready("relationships", "rows")).toMatchObject([{ primaryKey: "filtered-contains" }]);
-  expect(await ready("ontology", "schema")).toMatchObject({ objectTypes: expect.any(Array), relationKinds: expect.any(Array) });
   expect(await ready("ontology", "counts")).toMatchObject({ counts: expect.any(Array) });
   expect(await ready("ontology", "start")).toMatchObject({ node: { primaryKey: "reader", label: "Pilot Reader" } });
   expect(await ready("ontology", "neighbors", { node: { className: "platform:ObjectType", primaryKey: "warehouse" } }))
     .toMatchObject({ node: { primaryKey: "warehouse" }, neighbors: expect.any(Array) });
-  expect(await ready("objects", "objects")).toMatchObject({ items: expect.arrayContaining([
-    expect.objectContaining({ node: { className: "platform:ObjectType", primaryKey: "warehouse" } }),
+  expect(await ready("instances", "rows")).toMatchObject({ rows: expect.arrayContaining([
+    expect.objectContaining({ className: "platform:ObjectType", primaryKey: "warehouse" }),
   ]) });
   const warehouse = { className: "platform:ObjectType", primaryKey: "warehouse" };
   const item = { className: "platform:ObjectType", primaryKey: "item" };
