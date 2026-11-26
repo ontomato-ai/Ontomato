@@ -115,7 +115,7 @@ describe("OperationResult", () => {
   });
 });
 
-describe("<Projection :inputs> and OperationButton draft read behavior", () => {
+describe("<Projection :values> and OperationButton draft read behavior", () => {
   const recordMeta = {
     domainId: "d",
     ownerId: "o",
@@ -187,7 +187,7 @@ describe("<Projection :inputs> and OperationButton draft read behavior", () => {
     batch: false as const,
   };
 
-  it("passes :inputs through in direct mode without scoping, ignores an attribute where it is placed, blocks agent when disabled, emits @read, and resets on draft switch", async () => {
+  it("passes :values through in direct mode, ignores an attribute where it is placed, blocks agent when disabled, emits @read, and resets on draft switch", async () => {
     const disabled = ref(true);
     const readEvents: PanelReadOperationResult[] = [];
     const requests = {
@@ -253,7 +253,7 @@ describe("<Projection :inputs> and OperationButton draft read behavior", () => {
           h(DirectProjectionComponent, { slot: "definition" }),
           h(DirectProjectionComponent, {
             slot: "trial",
-            inputs: { disabled: disabled.value },
+            values: { disabled: disabled.value },
             class: "extra-box",
             disabled: false,
             "data-undeclared": "ignored",
@@ -310,7 +310,7 @@ describe("<Projection :inputs> and OperationButton draft read behavior", () => {
     }
   });
 
-  it("passes :inputs through in frame mode Projection.vue without leaking undeclared attributes", async () => {
+  it("passes :values through in frame mode Projection.vue without leaking undeclared attributes", async () => {
     const disabled = ref(true);
     const frameManifest = definePanel({
       state: {},
@@ -369,7 +369,7 @@ describe("<Projection :inputs> and OperationButton draft read behavior", () => {
         });
         return () => h(FrameProjection, {
           slot: "trial",
-          inputs: { disabled: disabled.value },
+          values: { disabled: disabled.value },
           class: "frame-box",
           disabled: false,
           "data-ignored": "no",
