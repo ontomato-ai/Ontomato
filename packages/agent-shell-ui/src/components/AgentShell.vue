@@ -167,7 +167,9 @@ const currentFeature = display.feature;
  * The page skill of the page shown: what its own snapshot named for the instance shown, else the page's declaration. It
  * narrows who may take a message, and it travels with every message sent while that page is shown.
  */
-const pageSkill = computed(() => props.editorTitle ? null : (display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null));
+const pageSkill = computed(() => props.editorTitle || props.historyPageSelected
+  ? null
+  : (display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null));
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
 async function selectNavSession(id: string) {
