@@ -28,7 +28,6 @@ import type { WorkbenchIdentity } from "../../identity/types";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureOpsDiagnosisSchema } from "../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
-import { ensureAssistantPresetUpgradesSchema } from "../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
 import { ensureWorkspacesSchema } from "../../infrastructure/postgres-migrations/20261109-workspaces/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -84,8 +83,8 @@ export async function startPanelSkillEntryServer(options: {
   installContentLayout({ runtimeRoot: root, publicSkillsRoot, runtimeResources: [],
     prompts: [{ from: path.join(workbenchServerResourceRoot, "prompts"), to: "." }] });
   configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
-  const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
-  installWorkbenchIdentity({ requireDomainId: () => domainId, requirePermission, assertPermission: async () => undefined } as unknown as WorkbenchIdentity);
+
+  installWorkbenchIdentity({ requireDomainId: () => domainId } as unknown as WorkbenchIdentity);
   state.schema = `panel_entry_${randomUUID().replaceAll("-", "")}`;
   const store = new RuntimeStore(database, state.schema);
   state.pool = store.pool;
@@ -99,7 +98,6 @@ export async function startPanelSkillEntryServer(options: {
   const pool = store.pool;
   await ensureAssistantSchema(pool);
   await ensureAssistantDefaultPromptSchema(pool);
-  await ensureAssistantPresetUpgradesSchema(pool);
   await ensureAgentExecutionSchema(pool);
   await ensureOpsDiagnosisSchema(pool);
   await ensureWorkspacesSchema(pool);

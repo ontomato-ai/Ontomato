@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
+@Owned
 public class WorkbenchManagementController {
     public static final String PATH = "/internal/workbench-management/require";
 

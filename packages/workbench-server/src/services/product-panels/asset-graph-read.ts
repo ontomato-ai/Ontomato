@@ -16,7 +16,6 @@ import { buildProductAssetGraph, resolveObjectTypeLabel } from "./asset-graph";
 import { readAccessibleCurrentDefinitions } from "./current";
 import { currentProductRecord, type CurrentProductRow } from "../../infrastructure/product-current";
 import { listObjectDetailPanelMappings } from "./object-detail";
-import { projectionDefinition } from "./render-definitions";
 
 /** The records the catalogues can show: an unreadable definition is left to its own page, as the catalogues do. */
 function readableDefinitions<T>(rows: readonly CurrentProductRow[], schema: { safeParse: (value: unknown) => { success: boolean; data?: T } }) {
@@ -113,6 +112,6 @@ export async function readProductAssetGraph(owner: ProductOwner, viewer: Assista
   await resolveGraphNames(owner, graph, viewer, locale);
   return {
     graph,
-    grantableApplicationIds: new Set(details.filter(detail => detail.canMaintain).map(detail => detail.id)),
+    maintainableApplicationIds: new Set(details.filter(detail => detail.canMaintain).map(detail => detail.id)),
   };
 }

@@ -112,6 +112,7 @@ const paneStyle = computed(() => ({
   min-height: 0;
   height: 100%;
   overflow: hidden;
+  contain: layout;
   container-type: inline-size;
   container-name: page;
 }

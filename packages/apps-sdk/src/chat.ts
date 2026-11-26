@@ -7,5 +7,15 @@ import { contextTransport, type AppContext } from "./context";
  */
 export function createAssistantClient(context: AppContext) {
   const transport = contextTransport(context);
-  return createWorkbenchAssistantClient((path, init) => transport.request(path, init, ""));
+  // A result table can show more attachments than the frame bridge admits in flight.
+  let vectorRead = Promise.resolve();
+  return createWorkbenchAssistantClient((path, init) => {
+    if (!path.startsWith("/data-query/")) return transport.request(path, init, "");
+    const next = vectorRead.then(() => {
+      init.signal?.throwIfAborted();
+      return transport.request(path.slice("/data-query".length), init, "/data-query");
+    });
+    vectorRead = next.then(() => {}, () => {});
+    return next;
+  });
 }

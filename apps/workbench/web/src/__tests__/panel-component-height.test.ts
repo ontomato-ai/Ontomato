@@ -123,7 +123,7 @@ const meta = {
   description: "",
 };
 
-const disposers: (() => void)[] = [];
+const disposers: (() => void | Promise<void>)[] = [];
 
 beforeEach(() => {
   graphRecorder.fitCalls = 0;
@@ -131,8 +131,10 @@ beforeEach(() => {
   chartRecorder.receivedHeight = undefined;
 });
 
-afterEach(() => {
-  while (disposers.length) disposers.pop()!();
+afterEach(async () => {
+  const pending: Array<void | Promise<void>> = [];
+  while (disposers.length) pending.push(disposers.pop()!());
+  await Promise.all(pending);
   document.body.innerHTML = "";
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -209,9 +211,7 @@ function mountDirect(
     },
   });
   const mountedPanel = module.mountPanel({ setup: extra?.setup ?? (() => ({})) });
-  disposers.push(() => {
-    void mountPromise.then((m) => m.dispose());
-  });
+  disposers.push(() => mountPromise.then((m) => m.dispose()));
   return { element, mountPromise, mountedPanel };
 }
 
@@ -592,7 +592,7 @@ it("declares the height-fill and default-height CSS contract across member wrapp
 
   const metricChartCss = readRepoFile("packages/apps-sdk/src/base/MetricChart.vue");
   expect(metricChartCss).toMatch(/\.sdk-metric-chart\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*320px;/s);
-  expect(metricChartCss).not.toMatch(/\d+vh\b/);
+  expect(metricChartCss).toMatch(/\.el-dialog\.sdk-metric-chart-zoom-dialog\s*\{[^}]*height:\s*min\(720px, 92vh\);/s);
 
   const objectFormCss = readRepoFile("packages/apps-sdk/src/base/ObjectForm.vue");
   expect(objectFormCss).toMatch(/\.sdk-owner-form\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);

@@ -201,6 +201,7 @@ export function createSdkOverlay<T extends Component>(options: {
           {
             confirmButtonText: translate("platform.discard", "Discard"),
             cancelButtonText: translate("platform.keepEditing", "Keep editing"),
+            ...(panel?.overlayRoot?.isConnected ? { appendTo: panel.overlayRoot } : {}),
           },
         );
       }
@@ -243,12 +244,14 @@ export function createSdkOverlay<T extends Component>(options: {
 
       return () => {
         const forwarded = { ...attrs };
-        if (panel?.overlayRoot) {
+        const isFullscreen = options.kind === "dialog" && (forwarded.fullscreen === "" || Boolean(forwarded.fullscreen));
+        const targetRoot = isFullscreen ? (panel?.windowOverlayRoot ?? panel?.overlayRoot) : panel?.overlayRoot;
+        if (targetRoot) {
           const appendTo = forwarded.appendTo ?? forwarded["append-to"];
           delete forwarded.appendToBody;
           delete forwarded["append-to-body"];
           delete forwarded["append-to"];
-          forwarded.appendTo = appendTo && appendTo !== "body" ? appendTo : panel.overlayRoot;
+          forwarded.appendTo = appendTo && appendTo !== "body" ? appendTo : targetRoot;
         }
         if (panel?.overlayShown?.value === false) {
           delete forwarded["close-on-press-escape"];

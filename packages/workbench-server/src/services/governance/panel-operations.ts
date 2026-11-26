@@ -18,6 +18,7 @@ import {
   INSPECT_POLICY_ACCESS,
   ISSUE_USER_API_KEY_BATCH,
   LIST_PENDING_POLICY_GRANTS,
+  LIST_PENDING_POLICY_GRANTS_SUMMARY,
   ORG_GRANT,
   ORG_MEMBERSHIP,
   ORG_POSITION,
@@ -25,7 +26,6 @@ import {
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
   READ_MEMBER_ACCESS_CONTEXT,
-  REFRESH_POLICY_API_CATALOG,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
   REMOVE_USER,
@@ -89,7 +89,6 @@ const recordLabelSchema = z.object({ label: z.string().min(1) }).passthrough();
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const emptyInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
-const refreshCatalogResultSchema = z.object({ refreshed: z.boolean() }).strict();
 const jsonReadResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonObjectSchema });
 
 function policyReadTargetId(target?: { kind: string; primaryKey?: string } | null): string {
@@ -196,6 +195,16 @@ const orgInspectSchema = z.union([
     available: z.literal(true),
   }).passthrough(),
 ]);
+
+const pendingSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  policies: z.array(z.object({
+    policyId: z.string().min(1),
+    policyName: z.string().min(1),
+    typeLabel: z.string().min(1).nullish(),
+    count: z.number().int().nonnegative(),
+  }).strict()),
+}).strict();
 
 const objectTarget = <Type extends string>(objectType: Type) => z.object({
   kind: z.literal("object"),
@@ -893,32 +902,6 @@ export const governanceServerOperations = [
     },
   },
   {
-    handlerRef: REFRESH_POLICY_API_CATALOG,
-    labelKey: "panels.governance.policy.operations.refreshApiCatalog",
-    kind: "action",
-    binding: { kind: "PlatformOperation", id: REFRESH_POLICY_API_CATALOG },
-    effect: "write",
-    batch: false,
-    targetType: PERMISSION_POLICY,
-    targetSchema: z.null(),
-    inputSchema: emptyInputSchema,
-    resultSchema: refreshCatalogResultSchema,
-    execute(host: Host): Promise<SinglePanelOperationOutcome> {
-      return postAction(
-        host,
-        "/panel/governance/policies/api-permissions/refresh",
-        {},
-        "POLICY_API_CATALOG_REFRESH_FAILED",
-        "The owner could not refresh the API permission catalog",
-        data => ({
-          kind: "success",
-          data: refreshCatalogResultSchema.parse(data),
-          affected: { objects: [], objectTypes: [PERMISSION_POLICY] },
-        }),
-      );
-    },
-  },
-  {
     handlerRef: PREVIEW_POLICY_ENTRY_GRANT,
     labelKey: "panels.governance.policy.operations.previewEntryGrant",
     kind: "action",
@@ -975,6 +958,27 @@ export const governanceServerOperations = [
         kind: "json" as const,
         value: await listPendingPolicyGrantsPayload(host.executor.credentials, host.executor.owner.domainId, policyId),
       };
+    },
+  },
+  {
+    handlerRef: LIST_PENDING_POLICY_GRANTS_SUMMARY,
+    labelKey: "panels.governance.policy.operations.listPendingSummary",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: LIST_PENDING_POLICY_GRANTS_SUMMARY },
+    effect: "read",
+    batch: false,
+    targetType: PERMISSION_POLICY,
+    targetSchema: panelFormTargetSchema.optional(),
+    target: { source: "none" },
+    inputSchema: emptyInputSchema,
+    resultSchema: jsonReadResultSchema,
+    async execute(host: Host) {
+      const envelope = await ownerPost(host, "/panel/governance/policies/pending/summary", {}, ownerEnvelopeSchema);
+      if (!envelope.success) {
+        throw new HttpError(422, envelope.message ?? "The owner could not list pending grants",
+          "PERMISSION_POLICY_PENDING_UNAVAILABLE");
+      }
+      return { kind: "json" as const, value: pendingSummarySchema.parse(envelope.data) };
     },
   },
   {

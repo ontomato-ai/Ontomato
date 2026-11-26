@@ -469,6 +469,7 @@
         "config": {
           "tone": "info",
           "compact": true,
+          "field": "missingCount",
           "templateKey": "dashboardCards.missing",
           "hideWhenEmpty": true
         },

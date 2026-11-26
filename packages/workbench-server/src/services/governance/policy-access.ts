@@ -122,9 +122,10 @@ const inspectResultSchema = z.object({
 });
 
 const graphFactsSchema = z.object({
+  rolePolicies: z.array(z.object({ roleId: id, policyId: id, kind: z.enum(["MANAGEMENT", "OBJECT"]) })),
+  domainPolicyId: id,
+  entries: z.array(z.object({ id, applicationId: id, names: z.record(z.string()), pageKey: id })),
   policyGrants: z.array(z.object({ policyId: id, targetKind: id, targetKey: z.string(), verb: id, scope: scope.nullish() })),
-  roleActionGrants: z.array(z.object({ roleId: id, actionId: id, policyId: id, scopeKind: z.string().nullish() })),
-  roleWorkflowAuthoring: z.array(z.object({ roleId: id, workflowId: id, policyId: id, verb: id })),
 });
 export type AuthorizationGraphFacts = z.infer<typeof graphFactsSchema>;
 

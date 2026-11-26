@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
+@Owned
 public final class ObjectAuthorizationController {
     public static final String DECIDE_BATCH = "/authorization/objects/decide-batch";
     public static final String FIRST_PUBLICATION = "/authorization/objects/first-publication";

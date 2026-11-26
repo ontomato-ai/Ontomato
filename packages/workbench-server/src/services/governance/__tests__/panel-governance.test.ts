@@ -18,7 +18,6 @@ import {
   ORG_POSITION,
   ORG_UNIT,
   PERMISSION_POLICY,
-  REFRESH_POLICY_API_CATALOG,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
   REMOVE_USER,
@@ -593,16 +592,10 @@ describe("governance panel server operations", () => {
       data: { id: "p-1" },
       affected: { objectTypes: expect.arrayContaining([PERMISSION_POLICY, ROLE, USER]) },
     });
-    expect(await untargetedActionOp(REFRESH_POLICY_API_CATALOG).execute(host, null, {}, "intent-3")).toMatchObject({
-      kind: "success",
-      data: { refreshed: true },
-      affected: { objects: [], objectTypes: [PERMISSION_POLICY] },
-    });
     expect(sent).toContainEqual({
       path: "/api/data-query/panel/governance/policies/save",
       body: { ...values, id: "p-1", submittedFields },
     });
-    expect(sent).toContainEqual({ path: "/api/data-query/panel/governance/policies/api-permissions/refresh", body: {} });
 
     const remove = anyWriteOp(REMOVE_USER);
     if (!remove.batch) throw new Error("User removal must support batches");

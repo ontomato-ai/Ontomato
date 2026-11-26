@@ -51,6 +51,7 @@ async function evaluate(entry: DirectPanelModuleExports, words: string) {
 
 function run(template: string, options: {
   overlayRoot?: HTMLElement;
+  windowOverlayRoot?: HTMLElement;
   shown?: () => boolean;
   descriptor?: Record<string, unknown>;
   confirmOperation?: DirectPanelComponentPort["confirmOperation"];
@@ -86,6 +87,7 @@ function run(template: string, options: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
       failed: (reason) => { throw reason; },
       overlayRoot: options.overlayRoot,
+      windowOverlayRoot: options.windowOverlayRoot,
       shown: options.shown,
     }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -171,6 +173,27 @@ it("mounts a module's component once", async () => {
   await evaluate(module, "once");
   await expect(evaluate(module, "twice")).rejects.toThrow("A panel's module mounts its component once");
   (await mount).dispose();
+});
+
+
+it("mounts the Element Plus popper container in the whole-window overlay root", async () => {
+  const region = document.createElement("section");
+  document.body.append(region);
+  const overlay = createPanelOverlayRoot("popper-test", () => true, () => region);
+  const { module, mount } = run("", {
+    overlayRoot: overlay.element,
+    windowOverlayRoot: overlay.windowElement,
+  });
+  await evaluate(module, "popper");
+  const mounted = await mount;
+  try {
+    const popper = overlay.windowElement.querySelector('[id^="el-popper-container-"]');
+    expect(popper).not.toBeNull();
+    expect(overlay.element.querySelector('[id^="el-popper-container-"]')).toBeNull();
+  } finally {
+    mounted.dispose();
+    overlay.dispose();
+  }
 });
 
 it("scopes a custom operation's one-time delivery to the panel overlay and preserves it while hidden", async () => {

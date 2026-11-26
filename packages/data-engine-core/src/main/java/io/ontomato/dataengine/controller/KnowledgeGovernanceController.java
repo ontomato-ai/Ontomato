@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.agent.*;
@@ -8,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 @RequestMapping("/ontology/ai/knowledge-governance")
 public class KnowledgeGovernanceController {
   private final KnowledgeGovernanceService governance;

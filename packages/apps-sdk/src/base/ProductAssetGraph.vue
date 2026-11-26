@@ -2,11 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import { ElDialog } from "element-plus/es/components/dialog/index";
 import { ElTooltip } from "element-plus/es/components/tooltip/index";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberData, useMemberOutput, useMemberParam } from "../panel/member";
 import { useDataStateLabels } from "./data-state-labels";
+import { SdkDialog } from "../ui/SdkDialog";
 import {
   computeProductAssetGraphLayout,
   extractProductAssetGraph,
@@ -106,7 +106,7 @@ function translate(keys: readonly string[], fallback: string, params?: Record<st
 const dataStateLabels = useDataStateLabels();
 
 const COLUMN_LABELS: Record<ProductAssetGraphCategory, readonly [string, string]> = {
-  principal: ["ontology.productGraphPrincipals", "Members and roles"],
+  principal: ["ontology.productGraphPrincipals", "Roles and permission policies"],
   bundle: ["ontology.productBundle", "Delivery bundles"],
   composition: ["ontology.productComposition", "Composition assets"],
   element: ["ontology.productProjection", "Projection assets"],
@@ -127,6 +127,9 @@ const EDGE_LABELS: Record<string, readonly [string, string]> = {
   embodies: ["ontology.productEdgeEmbodies", "Embodies"],
   identity: ["ontology.productApplicationIdentity", "Application identity"],
   "depends-on": ["ontology.productEdgeDependsOn", "Depends on"],
+  "uses-policy": ["ontology.productGraphUsesPolicy", "Uses permission policy"],
+  enter: ["ontology.productGraphGrantsEntry", "Can enter"],
+  view: ["ontology.productGraphGrantsView", "Can view"],
   use: ["ontology.productEdgeUse", "Use grant"],
   edit: ["ontology.productEditGrant", "Edit access"],
 };
@@ -145,6 +148,8 @@ const KIND_LABELS: Record<string, readonly [string, string]> = {
   definition: ["ontology.productTargetDefinition", "Business definition"],
   AgentDefinition: ["ontology.productAgentDefinition", "Referenced agent"],
   principal: ["ontology.productPrincipal", "Member"],
+  policy: ["ontology.productGraphPermissionPolicy", "Permission policy"],
+  entry: ["ontology.productGraphEntry", "Application entry"],
   role: ["ontology.productRole", "Role"],
   domain: ["ontology.productDomainMembers", "Domain members"],
 };
@@ -287,7 +292,7 @@ const countsText = computed(() =>
 const captionText = computed(() =>
   translate(
     ["ontology.productGraphCaption"],
-    "Reference arrows point to the referenced asset; use and edit grants point from members and roles to applications. Only visible assets are shown, and grant details are limited to editable applications. Zoom to see the whole graph and scroll for details.",
+    "Reference arrows point to referenced assets. Roles use permission policies that grant access to application entries and objects. Grant details are limited to editable assets.",
   ),
 );
 
@@ -489,7 +494,7 @@ defineExpose({ fit, zoomIn, zoomOut, actualSize, scale });
           </svg>
         </div>
 
-        <el-dialog
+        <SdkDialog
           v-if="!expanded"
           v-model="fullscreen"
           :title="dialogTitle"
@@ -505,7 +510,7 @@ defineExpose({ fit, zoomIn, zoomOut, actualSize, scale });
             :show-caption="showCaption"
             @open="handleExpandedSelect"
           />
-        </el-dialog>
+        </SdkDialog>
       </div>
     </template>
   </DataState>

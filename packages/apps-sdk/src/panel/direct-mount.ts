@@ -93,6 +93,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     const instance = createDirectPanelInstance(options.manifest, {
       boundOutputs: run.boundOutputs,
       overlayRoot: run.overlayRoot,
+      windowOverlayRoot: run.windowOverlayRoot,
       shown: run.shown,
       read: options.read,
       confirmOperation: options.confirmOperation,

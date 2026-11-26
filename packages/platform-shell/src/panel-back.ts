@@ -24,6 +24,8 @@ export interface PanelBackControllerOptions {
   isDirty: () => boolean;
   /** Unified host confirmation for leaving unsaved edits; resolves true when clean or confirmed. */
   confirmLeaveUnsaved: () => Promise<boolean>;
+  /** The host surface Escape is scoped to; outside interactions keep their own Escape behavior. */
+  scopeElement?: () => HTMLElement | null;
 }
 
 export interface PanelBackController {
@@ -277,6 +279,23 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
       handlingBack ||
       stack.length === 0 ||
       hasOpenOverlay()
+    ) {
+      return;
+    }
+    const target = event.target;
+    const candidate = target instanceof Node && target !== document && target !== document.body && target !== document.documentElement
+      ? target
+      : typeof document !== "undefined"
+        ? document.activeElement
+        : null;
+    const scope = options.scopeElement?.();
+    if (
+      scope &&
+      candidate instanceof Node &&
+      candidate !== document &&
+      candidate !== document.body &&
+      candidate !== document.documentElement &&
+      !scope.contains(candidate)
     ) {
       return;
     }

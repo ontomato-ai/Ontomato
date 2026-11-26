@@ -799,9 +799,11 @@ function directOptions(
       preparation.intentId,
       changed,
       undefined,
-      hooks?.onConfirmed || hooks?.skipDialog
-        ? { ...(hooks.onConfirmed ? { onConfirmed: hooks.onConfirmed } : {}), ...(hooks.skipDialog ? { skipDialog: true } : {}) }
-        : undefined,
+      {
+        ...(run.overlayRoot ? { appendTo: run.overlayRoot } : {}),
+        ...(hooks?.onConfirmed ? { onConfirmed: hooks.onConfirmed } : {}),
+        ...(hooks?.skipDialog ? { skipDialog: true } : {}),
+      },
     ),
     expandPageComposer: expandDeclaredComposer,
     navigate: panelNavigator(router ?? platformRouter(), beside),
@@ -877,7 +879,10 @@ async function mountNested(
   // The placed panel's own theme with this placement's laid over it (default → … → the panel → this placement).
   const dropTheme = applyTheme(element, () => composeThemes(panel.theme, run.theme), hostThemeMode);
   const shown = () => outer.run.shown?.() ?? true;
-  const overlay = createPanelOverlayRoot(instance, shown);
+  const nestedContainer = outer.run.overlayContainer ?? (outer.run.overlayRoot && outer.run.overlayRoot.parentElement && outer.run.overlayRoot.parentElement !== document.body
+    ? () => outer.run.overlayRoot?.parentElement ?? null
+    : undefined);
+  const overlay = createPanelOverlayRoot(instance, shown, nestedContainer);
   try {
     const nestedReadProjection = source.kind === "candidate" || source.kind === "app-candidate"
       ? (id: string) => readPlatformProjection(id)
@@ -889,7 +894,13 @@ async function mountNested(
         readProjection: nestedReadProjection,
         manifest: panel.manifest,
         messages: panel.content.messages ?? {},
-        run: { ...opened, overlayRoot: overlay.element, shown },
+        run: {
+          ...opened,
+          overlayRoot: overlay.element,
+          windowOverlayRoot: overlay.windowElement,
+          ...(nestedContainer ? { overlayContainer: nestedContainer } : {}),
+          shown,
+        },
         memberPath: placedAt,
         panelDomainComponents: domainComponents,
       }, source, pageCounter, panelChatHost, feed, nestedSnapshots),

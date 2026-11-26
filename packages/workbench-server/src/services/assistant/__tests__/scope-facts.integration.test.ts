@@ -15,7 +15,6 @@ vi.mock("../../../utils/backend-client", async original => ({
 import { ensureAssistantSchema } from "../../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { assistantStore } from "../store";
 import { initializeDomainPresetAgents } from "../preset-initialization";
-import { ensureAssistantPresetUpgradesSchema } from "../../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
 import { ensureProductPanelsSchema } from "../../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 const database=process.env.RUNTIME_TEST_DATABASE_URL;
 if(!database)throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
@@ -23,7 +22,7 @@ const owner={domainId:"domain",userId:"user"},agent=randomUUID(),session=randomU
 beforeAll(async()=>{
   state.schema="scope_facts_"+randomUUID().replaceAll("-","");state.pool=new pg.Pool({connectionString:database});
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);await ensureAssistantSchema(state.pool);await ensureAssistantDefaultPromptSchema(state.pool);
-  await ensureAssistantPresetUpgradesSchema(state.pool);await ensureProductPanelsSchema(state.pool);
+  await ensureProductPanelsSchema(state.pool);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_agents(id,domain_id,kind,name,system_prompt) VALUES($1,'domain','custom','Agent','')`,[agent]);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_sessions(id,domain_id,owner_id,agent_id) VALUES($1,'domain','user',$2)`,[session,agent]);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_turns(id,session_id,retrieval_scope_id,request_seq,input_hash) VALUES($1,$2,$1,0,'old')`,[legacy,session]);

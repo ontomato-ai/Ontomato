@@ -12,6 +12,13 @@ export async function findDomainComponent(domainId: string, id: string, client: 
   return rows[0];
 }
 
+export async function registeredDomainComponentIds(domainId: string, ids: readonly string[]): Promise<string[]> {
+  const { rows } = await getPostgresPool().query<{ id: string }>(
+    `SELECT id FROM ${t("domain_components")} WHERE domain_id=$1 AND id=ANY($2::text[])`, [domainId, ids],
+  );
+  return rows.map(row => row.id);
+}
+
 export function domainComponentRecord(row: CurrentProductRow, editable: boolean) {
   const { visibility: _legacyVisibility, ...definition } = row.definition;
   const { id: _id, ...record } = currentProductRecord({ ...row, definition }, editable);

@@ -67,17 +67,3 @@ export const accountDeletionPageSchema = z.object({
   hasMore: z.boolean(),
 });
 export type AccountDeletionPage = z.infer<typeof accountDeletionPageSchema>;
-
-export interface ApplicationMenus {
-  applications: {
-    id: string; names: Record<string, string>; entryPath: string; sort: number;
-    groups: {
-      key: string; names: Record<string, string>; sort: number;
-      permissions: { id: string; code: string; names: Record<string, string>; sort: number; userTemplate: boolean }[];
-    }[];
-  }[];
-}
-export interface UserApplicationPermissions {
-  userId: string; domainId: string; permissions: string[];
-  applications: { applicationId: string; ownerService: string; permissions: string[] }[];
-}

@@ -15,6 +15,7 @@ import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
 import { visibilityReader } from "../agent-host/presentation";
 import {isAppBuilderKind} from '../app-builder/definition';
+import { presetAgents } from "./preset-definitions";
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import { prepareOpsDiagnosisRun } from "../ops-diagnosis/prepare";
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
@@ -26,6 +27,9 @@ import {
 } from "@ontomato/contracts/assistant-chat";
 import { agentHostSessionSchema } from "@ontomato/contracts/agent-host";
 import { listAssistantAgents } from "./agents";
+
+/** The platform's own assistants: the personal workspace lists the sessions of the agents its users built. */
+const platformAgentKinds = presetAgents.map(preset => preset.kind);
 import {
   runtimeArtifactSchema,
   type RuntimeArtifact,
@@ -140,7 +144,7 @@ export const assistantService = {
     const rows = (
       await db().query(
         `SELECT s.* FROM ${table("assistant_sessions")} s WHERE s.domain_id=$1 AND s.owner_id=$2 AND ($3::uuid IS NULL OR s.agent_id=$3) AND ($7::uuid IS NULL OR s.workspace_id=$7) AND ($4::timestamptz IS NULL OR (s.updated_at,s.id)<($4,$5::uuid))
-         AND (NOT $8::boolean OR (s.workspace_id IS NULL AND EXISTS (SELECT 1 FROM ${table("assistant_agents")} a WHERE a.id=s.agent_id AND a.domain_id=s.domain_id AND a.kind NOT IN ('regular','knowledge-governance','app-builder','ops-diagnosis'))))
+         AND (NOT $8::boolean OR (s.workspace_id IS NULL AND EXISTS (SELECT 1 FROM ${table("assistant_agents")} a WHERE a.id=s.agent_id AND a.domain_id=s.domain_id AND a.kind <> ALL($9::text[]))))
          ORDER BY s.updated_at DESC,s.id DESC LIMIT $6`,
         [
           owner.domainId,
@@ -151,6 +155,7 @@ export const assistantService = {
           input.limit + 1,
           input.workspaceId ?? null,
           input.analysisOnly ?? false,
+          platformAgentKinds,
         ],
       )
     ).rows as SessionRow[];

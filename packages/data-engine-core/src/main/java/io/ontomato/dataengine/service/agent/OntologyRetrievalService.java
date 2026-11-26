@@ -179,7 +179,7 @@ public class OntologyRetrievalService {
     return retrieverAccess.decide(retrieverAccess.subject(caller), Verb.USE).allowed();
   }
 
-  private void requireUse(Owner caller) {
+  public void requireUse(Owner caller) {
     retrieverAccess.require(retrieverAccess.subject(caller), Verb.USE);
   }
 

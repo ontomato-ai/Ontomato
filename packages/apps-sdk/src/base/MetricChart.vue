@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, inject, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { fillChartFile } from "@ontomato/contracts/chart-data";
 import { chartValueText } from "@ontomato/contracts/chart-presentation";
@@ -8,6 +8,8 @@ import { MetricChart as ChartView } from "@ontomato/foundation-ui/chart";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { TablePreview, type TableData } from "@ontomato/foundation-ui/preview";
 import { useMemberData, useMemberRefresh } from "../panel/member";
+import { panelContextKey } from "../panel/context";
+import { SdkDialog } from "../ui/SdkDialog";
 import { useDataStateLabels } from "./data-state-labels";
 
 /** The source card's chart file and saved parameters, as its owner hands them over. */
@@ -87,6 +89,7 @@ const i18n = (() => {
     return null;
   }
 })();
+const panel = inject(panelContextKey, null);
 const locale = computed(() => i18n?.locale.value ?? "en");
 const isZh = computed(() => locale.value.toLowerCase().startsWith("zh"));
 function translate(key: string, fallback: string): string {
@@ -260,13 +263,6 @@ const showInternalToolbar = computed(() =>
 
 const labels = useDataStateLabels(() => translate("ontology.ovNoChartData", "No chart data"));
 
-function onModalKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape" && isZoomed.value) {
-    event.stopPropagation();
-    closeZoom();
-  }
-}
-
 defineExpose({
   refresh: memberRefresh,
   viewMode: activeViewMode,
@@ -380,86 +376,85 @@ defineExpose({
       <span class="sdk-metric-chart-spinner" aria-hidden="true" />
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="isZoomed"
-        class="sdk-metric-chart-zoom-backdrop"
-        data-testid="metric-chart-zoom-modal"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="title || (isZh ? '图表详情' : 'Chart detail')"
-        tabindex="-1"
-        @keydown="onModalKeydown"
-        @click.self="closeZoom"
-      >
-        <div class="sdk-metric-chart-zoom-dialog">
-          <header class="sdk-metric-chart-zoom-header">
-            <div class="sdk-metric-chart-zoom-title-wrap">
-              <h3 class="sdk-metric-chart-zoom-title">{{ title || (isZh ? '图表详情' : 'Chart detail') }}</h3>
-              <span
-                v-if="truncationHint"
-                class="sdk-metric-chart-truncation-icon"
-                role="note"
-                :title="truncationHint"
-                :aria-label="truncationHint"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-                  <path d="M12 9v4" />
-                  <path d="M12 17h.01" />
-                </svg>
-              </span>
-            </div>
-            <div class="sdk-metric-chart-zoom-actions">
-              <button
-                type="button"
-                class="sdk-metric-chart-zoom-btn"
-                data-testid="metric-chart-zoom-toggle-view"
-                @click="toggleViewMode"
-              >
-                {{ activeViewMode === "chart" ? (isZh ? "数据表" : "Data table") : (isZh ? "图表" : "Chart") }}
-              </button>
-              <button
-                type="button"
-                class="sdk-metric-chart-zoom-close"
-                data-testid="metric-chart-zoom-close"
-                :aria-label="isZh ? '关闭' : 'Close'"
-                @click="closeZoom"
-              >
-                ×
-              </button>
-            </div>
-          </header>
-          <div class="sdk-metric-chart-zoom-body">
-            <div v-if="activeViewMode === 'table'" class="sdk-metric-chart-table-overlay">
-              <div class="sdk-metric-chart-table-body">
-                <TablePreview :table="tableSummary.table" :page-size="50" />
-              </div>
-              <footer class="sdk-metric-chart-table-footer">
-                <span class="sdk-metric-chart-table-count">{{ tableFooterText }}</span>
-                <div v-if="$slots['table-footer-actions']" class="sdk-metric-chart-table-actions">
-                  <slot
-                    name="table-footer-actions"
-                    :row-count="tableSummary.totalRows"
-                    :displayed-row-count="tableSummary.displayedRows"
-                    :truncation-hint="truncationHint"
-                  />
-                </div>
-              </footer>
-            </div>
-            <ChartView
-              v-else-if="currentPayload"
-              :file="currentPayload.file"
-              :metric="toChartViewMetric(currentPayload.metric)"
-              height="100%"
-              :hide-truncation-notice="true"
-              :undated="translate('ontology.ovUndated', 'Undated')"
-              :empty="translate('ontology.ovNoChartData', 'No data')"
-            />
+    <SdkDialog
+      :model-value="isZoomed"
+      :title="title || (isZh ? '图表详情' : 'Chart detail')"
+      width="min(1100px, 92vw)"
+      align-center
+      :show-close="false"
+      destroy-on-close
+      append-to-body
+      :append-to="panel?.windowOverlayRoot ?? 'body'"
+      class="sdk-metric-chart-zoom-dialog"
+      @update:model-value="setZoomed"
+    >
+      <template #header>
+        <div class="sdk-metric-chart-zoom-header">
+          <div class="sdk-metric-chart-zoom-title-wrap">
+            <h3 class="sdk-metric-chart-zoom-title">{{ title || (isZh ? '图表详情' : 'Chart detail') }}</h3>
+            <span
+              v-if="truncationHint"
+              class="sdk-metric-chart-truncation-icon"
+              role="note"
+              :title="truncationHint"
+              :aria-label="truncationHint"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+              </svg>
+            </span>
+          </div>
+          <div class="sdk-metric-chart-zoom-actions">
+            <button
+              type="button"
+              class="sdk-metric-chart-zoom-btn"
+              data-testid="metric-chart-zoom-toggle-view"
+              @click="toggleViewMode"
+            >
+              {{ activeViewMode === "chart" ? (isZh ? "数据表" : "Data table") : (isZh ? "图表" : "Chart") }}
+            </button>
+            <button
+              type="button"
+              class="sdk-metric-chart-zoom-close"
+              data-testid="metric-chart-zoom-close"
+              :aria-label="isZh ? '关闭' : 'Close'"
+              @click="closeZoom"
+            >
+              ×
+            </button>
           </div>
         </div>
+      </template>
+      <div v-if="isZoomed" class="sdk-metric-chart-zoom-body" data-testid="metric-chart-zoom-modal">
+        <div v-if="activeViewMode === 'table'" class="sdk-metric-chart-table-overlay">
+          <div class="sdk-metric-chart-table-body">
+            <TablePreview :table="tableSummary.table" :page-size="50" />
+          </div>
+          <footer class="sdk-metric-chart-table-footer">
+            <span class="sdk-metric-chart-table-count">{{ tableFooterText }}</span>
+            <div v-if="$slots['table-footer-actions']" class="sdk-metric-chart-table-actions">
+              <slot
+                name="table-footer-actions"
+                :row-count="tableSummary.totalRows"
+                :displayed-row-count="tableSummary.displayedRows"
+                :truncation-hint="truncationHint"
+              />
+            </div>
+          </footer>
+        </div>
+        <ChartView
+          v-else-if="currentPayload"
+          :file="currentPayload.file"
+          :metric="toChartViewMetric(currentPayload.metric)"
+          height="100%"
+          :hide-truncation-notice="true"
+          :undated="translate('ontology.ovUndated', 'Undated')"
+          :empty="translate('ontology.ovNoChartData', 'No data')"
+        />
       </div>
-    </Teleport>
+    </SdkDialog>
   </div>
 </template>
 
@@ -598,29 +593,6 @@ defineExpose({
   }
 }
 
-.sdk-metric-chart-zoom-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 2100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background: rgba(15, 23, 42, 0.45);
-  box-sizing: border-box;
-}
-
-.sdk-metric-chart-zoom-dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(1100px, 92%);
-  height: min(720px, 92%);
-  border-radius: var(--radius-lg, 12px);
-  background: var(--el-bg-color);
-  box-shadow: var(--el-box-shadow, 0 20px 50px rgba(0, 0, 0, 0.22));
-  overflow: hidden;
-}
-
 .sdk-metric-chart-zoom-header {
   display: flex;
   flex: none;
@@ -702,5 +674,28 @@ defineExpose({
   min-width: 0;
   min-height: 0;
   padding: 12px 16px 16px;
+}
+</style>
+
+<style>
+.el-dialog.sdk-metric-chart-zoom-dialog {
+  display: flex;
+  flex-direction: column;
+  height: min(720px, 92vh);
+  padding: 0;
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+}
+.el-dialog.sdk-metric-chart-zoom-dialog > .el-dialog__header {
+  padding: 0;
+  margin: 0;
+}
+.el-dialog.sdk-metric-chart-zoom-dialog > .el-dialog__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
 }
 </style>

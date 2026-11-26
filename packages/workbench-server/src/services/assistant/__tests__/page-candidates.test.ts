@@ -689,9 +689,10 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
       member: JSON.stringify({ source: opsSource, memberPath: [], ref: opsTurnRef }),
     }),
   );
-  expect(opsPage.agents.map((a) => a.id)).toEqual([agentIds.regular, opsId]);
+  // The page registers the diagnosis agent, so the assistant is not a candidate here.
+  expect(opsPage.agents.map((a) => a.id)).toEqual([opsId]);
   expect(opsPage.defaultAgentId).toBe(opsId);
-  expect(opsPage.presetAgentIds).toEqual({ regular: agentIds.regular, "ops-diagnosis": opsId });
+  expect(opsPage.presetAgentIds).toEqual({ "ops-diagnosis": opsId });
 
   // The data browser does not offer the diagnosis agent.
   const nonOpsPage = await listAssistantAgents(
@@ -713,8 +714,8 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
       member: JSON.stringify({ source: opsSource, memberPath: [], ref: opsTurnRef }),
     }),
   );
-  expect(diagnosisPage.agents.map((a) => a.id)).toEqual([agentIds.regular, opsId]);
-  expect(diagnosisPage.presetAgentIds).toEqual({ regular: agentIds.regular, "ops-diagnosis": opsId });
+  expect(diagnosisPage.agents.map((a) => a.id)).toEqual([opsId]);
+  expect(diagnosisPage.presetAgentIds).toEqual({ "ops-diagnosis": opsId });
   expect(mocks.managementAccess).not.toHaveBeenCalled();
 
   // Revoking USE removes diagnosis from the directory.

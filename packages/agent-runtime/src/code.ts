@@ -337,6 +337,11 @@ export class CodeExecutor {
         execution.errorMessage = "Execution workspace cleanup failed";
       }
     }
+    const secretValues = Object.values(request.environment.secrets)
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .sort((left, right) => right.length - left.length);
+    for (const [name, text] of Object.entries(outputs))
+      outputs[name] = redactSecrets(text, secretValues);
     await this.files.withLock(async () => {
       const snapshots: Record<
         string,
@@ -383,4 +388,11 @@ export class CodeExecutor {
     for (const value of this.active.values()) value.controller.abort();
     await Promise.allSettled([...this.active.values()].map((v) => v.done));
   }
+}
+
+export function redactSecrets(text: string, secrets: readonly string[]): string {
+  let result = text;
+  for (const secret of [...secrets].sort((left, right) => right.length - left.length))
+    result = result.split(secret).join("[REDACTED]");
+  return result;
 }

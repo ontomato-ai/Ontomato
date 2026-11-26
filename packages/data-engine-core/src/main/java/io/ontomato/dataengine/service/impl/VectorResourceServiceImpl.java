@@ -19,6 +19,11 @@ import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.VectorResourceService;
+import io.ontomato.dataengine.service.DataService;
+import io.ontomato.dataengine.service.QueryPermissions;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import io.ontomato.dataengine.util.DslUtil;
@@ -31,6 +36,9 @@ public class VectorResourceServiceImpl implements VectorResourceService {
 	
 	@Autowired
 	private VectorResourceDao vectorResourceDao;
+
+    @Autowired
+    private DataService data;
 
 	@Autowired
 	private DataAdapterRegistry dataAdapterRegistry;
@@ -240,8 +248,21 @@ public class VectorResourceServiceImpl implements VectorResourceService {
 	}
 
 	@Override
-	public File getFile(String indexName, String fileName) {
-		return vectorResourceDao.getFile(indexName, fileName);
-	}
+	public File getFile(String indexName, String fileName, String domainId, UserDataPermission permission) {
+        var object = vectorResourceDao.findResourceObject(indexName, fileName, domainId);
+        if (object == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Vector resource not found");
+        QueryPermissions.requireField(permission, object.className(), object.attribute(), QueryPermissions.Use.DETAIL);
+        var node = JSONObject.of("class", object.className(), "id", object.className() + ":" + object.objectId());
+        var record = data.queryInfoByNode(node, "en", permission, domainId);
+        if (!record.getBooleanValue("success")) {
+            HttpStatus status = switch (record.getString("code")) {
+                case "OBJECT_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+                case "DATA_PERMISSION_DENIED" -> HttpStatus.FORBIDDEN;
+                default -> HttpStatus.BAD_GATEWAY;
+            };
+            throw new ResponseStatusException(status, record.getString("message"));
+        }
+        return vectorResourceDao.getFile(indexName, fileName);
+    }
 
 }

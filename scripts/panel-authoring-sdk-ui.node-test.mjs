@@ -855,7 +855,10 @@ test("checkPanelWorkspace rejects config keys the SDK catalogue does not publish
     import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
     import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
     const typeTable = {
-      objectTypes: { "platform:MetricView": { reads: checks.platformObjectTypes["platform:MetricView"].reads } },
+      objectTypes: {
+        "platform:MetricView": { reads: checks.platformObjectTypes["platform:MetricView"].reads },
+        "platform:BusinessKnowledge": { reads: checks.platformObjectTypes["platform:BusinessKnowledge"].reads },
+      },
     };
     const catalogue = { version: "1.0.0", components: ${JSON.stringify(components)} };
     console.log(JSON.stringify(await checkPanelWorkspace(${JSON.stringify(dir)}, { checks, catalogue, version: "1.0.0", typeTable })));
@@ -879,6 +882,35 @@ test("checkPanelWorkspace rejects config keys the SDK catalogue does not publish
       return true;
     },
     "every unpublished key is reported together",
+  );
+
+  const objectList = {
+    componentId: "ObjectList", module: "@ontomato/sdk/base", exportName: "ObjectList", role: "control",
+    meaning: "List", data: { rows: { results: ["panelRecordQuery"], required: true } },
+    config: [prop("statusField")], ports: { props: [prop("status-field")], events: [], slots: [] },
+  };
+  const writeList = (key) => writeFileSync(join(dir, "panel.json"), JSON.stringify({
+    manifest: {
+      state: {},
+      members: {
+        kpi: {
+          component: "ObjectList",
+          type: "platform:BusinessKnowledge",
+          data: { rows: "query" },
+          config: { [key]: "status" },
+        },
+      },
+    },
+  }));
+  writeList("statusField");
+  assert.equal(JSON.parse(runWorkspace([objectList])).status, "valid");
+  writeList("status-field");
+  assert.throws(
+    () => runWorkspace([objectList]),
+    (error) => {
+      assert.match(error.stderr, /config\.status-field is not in the author-facing documentation .*documented config keys: statusField/u);
+      return true;
+    },
   );
 
   const builtinDir = mkdtempSync(join(tmpdir(), "panel-config-builtin-"));

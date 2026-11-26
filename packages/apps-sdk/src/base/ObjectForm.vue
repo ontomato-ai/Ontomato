@@ -2088,6 +2088,7 @@ async function confirmDiscard(): Promise<boolean> {
   const confirmed = await confirmDanger(t("platform.formDiscardConfirm"), t("platform.discard"), {
     confirmButtonText: t("platform.discard"),
     cancelButtonText: t("platform.keepEditing"),
+    ...(panel?.overlayRoot?.isConnected ? { appendTo: panel.overlayRoot } : {}),
   });
   if (confirmed) discard();
   return confirmed;
@@ -2102,6 +2103,7 @@ async function cancelCreate() {
     const confirmed = await confirmDanger(t("platform.formDiscardConfirm"), t("platform.cancel"), {
       confirmButtonText: t("platform.discard"),
       cancelButtonText: t("platform.keepEditing"),
+      ...(panel?.overlayRoot?.isConnected ? { appendTo: panel.overlayRoot } : {}),
     });
     if (!confirmed) return;
   }

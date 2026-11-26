@@ -8,8 +8,7 @@ refused it, so the caller knows whether to ask an administrator, wait, or fix th
 
 | # | Layer | Refusal reads | What it means | What to do |
 |---|---|---|---|---|
-| 1a | Action has grants | `No role grants this action` | Your roles hold no effective direct or active-workflow grant | Check the role and active workflow version |
-| 1b | Action has no grant records | Permission required: `/action/execute` | This legacy action uses its original API permission | Ask for that permission or configure a capability grant |
+| 1 | Action execution grant | `No role grants this action` | Your roles hold no effective direct or active-workflow grant | Check the role and active workflow version |
 | 2 | Declared target | Target not readable or outside granted scope | A declared object must be visible under the row rules and match your grant scope | Check the object key, role, and scope |
 | 3 | Business preconditions | `Action preconditions are not met: <reasons>` | Stored business state fails the action's condition | Read the author's reason |
 

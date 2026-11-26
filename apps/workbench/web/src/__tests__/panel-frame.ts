@@ -1,9 +1,9 @@
-import type { DirectPanelRun } from "@ontomato/platform-shell";
+import { panelOverlayContainerKey, type DirectPanelRun } from "@ontomato/platform-shell";
 import { vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createApp, defineComponent, h, ref, resolveComponent, type App } from "vue";
+import { createApp, defineComponent, h, ref, resolveComponent, type App, type Ref } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
@@ -569,11 +569,18 @@ export function providePlatform(app: App, counter: PageCounter = noAgents) {
 }
 
 /** Mounts a page as the platform does (`providePlatform`), with `counter` for its own composer, or one offering no agents. */
-export function mountPlatformPage(render: () => ReturnType<typeof h>, router: Router, counter: PageCounter = noAgents) {
+export function mountPlatformPage(
+  render: () => ReturnType<typeof h>,
+  router: Router,
+  counter: PageCounter = noAgents,
+  overlayContainer?: Ref<HTMLElement | null>,
+) {
   const app = providePlatform(createApp({ render }).use(router).use(workbenchI18n()).use(ElementPlus), counter);
   const element = document.createElement("div");
   document.body.append(element);
+  if (overlayContainer) app.provide(panelOverlayContainerKey, overlayContainer);
   app.mount(element);
+  if (overlayContainer) overlayContainer.value = element;
   return { app, element };
 }
 

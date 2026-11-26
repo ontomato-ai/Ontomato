@@ -246,7 +246,7 @@ class ActionPanelEndpointTest {
 
   @Test
   void anUngrantedExecuteReturnsARefusalCode() throws Exception {
-    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any(), any()))
+    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any(), any(), any()))
         .thenThrow(new OwnerRefusal("ACTION_NOT_GRANTED", "No role grants this action"));
 
     JSONObject body = performExecute("a1", "{}");
@@ -260,7 +260,7 @@ class ActionPanelEndpointTest {
   void aPythonExecutionErrorStaysAnUncodedFailure() throws Exception {
     PythonExecuteResult result = new PythonExecuteResult();
     result.setError("program failed");
-    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any(), any()))
+    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any(), any(), any()))
         .thenReturn(result);
 
     JSONObject body = performExecute("a1", "{}");
@@ -268,6 +268,22 @@ class ActionPanelEndpointTest {
     assertFalse(body.getBooleanValue("success"));
     assertFalse(body.containsKey("code"));
     assertEquals("program failed", body.getString("message"));
+  }
+
+  @Test
+  void passesTheSignedInTokenToTheRuntimeOutsideBusinessParameters() throws Exception {
+    PythonExecuteResult result = new PythonExecuteResult();
+    result.setResult("{}");
+    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any(), any(),
+        eq("caller-token"))).thenReturn(result);
+
+    JSONObject body = performExecute("a1", "{}", "caller-token");
+
+    assertTrue(body.getBooleanValue("success"));
+    ArgumentCaptor<JSONObject> parameters = ArgumentCaptor.forClass(JSONObject.class);
+    verify(actionService).execute(eq("a1"), parameters.capture(), eq("en"), any(), any(), anyInt(), any(), any(),
+        eq("caller-token"));
+    assertFalse(parameters.getValue().containsKey("callerToken"));
   }
 
   @Test
@@ -289,7 +305,7 @@ class ActionPanelEndpointTest {
         "status", "FAILED", "passed", false, "result", null, "error", "invalid order", "spendTime", 32,
         "testedAt", Instant.EPOCH.toString(), "trialStatus", "failed", "trialStatusLabel", "Trial failed");
     when(actionTrials.trialSavedAction(eq("a1"), eq(JSONObject.of("objDatas", List.of(), "relDatas", List.of())),
-        eq(JSONObject.of("orderId", "123")), eq("en"), any(), any(), eq(1)))
+        eq(JSONObject.of("orderId", "123")), eq("en"), any(), any(), eq(1), any()))
         .thenReturn(receipt).thenThrow(new OwnerRefusal("ACTION_TRIAL_FORBIDDEN", "Action execution permission is required"));
     String request = """
         {"id":"a1","sample":{"objDatas":[],"relDatas":[]},"parameters":{"orderId":"123"}}""";
@@ -300,6 +316,23 @@ class ActionPanelEndpointTest {
     var refused = perform("/action/trial", request);
     assertFalse(refused.getBooleanValue("success"));
     assertEquals("ACTION_TRIAL_FORBIDDEN", refused.getString("code"));
+  }
+
+  @Test
+  void trialEndpointPassesTheSignedInTokenToTheTrialRuntime() throws Exception {
+    var receipt = JSONObject.of("trialId", "t1", "actionId", "a1", "digest", "digest",
+        "status", "PASSED", "passed", true, "result", "{}", "error", null, "spendTime", 1,
+        "testedAt", Instant.EPOCH.toString(), "trialStatus", "passed", "trialStatusLabel", "Trial passed");
+    when(actionTrials.trialSavedAction(eq("a1"), any(), any(), eq("en"), any(), any(), eq(1),
+        eq("trial-caller-token"))).thenReturn(receipt);
+
+    JSONObject body = perform("/action/trial", """
+        {"id":"a1","sample":{"objDatas":[],"relDatas":[],"vectorDatas":[]}}""",
+        "trial-caller-token");
+
+    assertTrue(body.getBooleanValue("success"));
+    verify(actionTrials).trialSavedAction(eq("a1"), any(), any(), eq("en"), any(), any(), eq(1),
+        eq("trial-caller-token"));
   }
 
   @Test
@@ -354,23 +387,35 @@ class ActionPanelEndpointTest {
   }
 
   private JSONObject performExecute(String id, String param) throws Exception {
+    return performExecute(id, param, null);
+  }
+
+  private JSONObject performExecute(String id, String param, String token) throws Exception {
     var mvc = MockMvcBuilders.standaloneSetup(controller)
         .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-    var response = mvc.perform(post("/action/execute")
+    var request = post("/action/execute")
             .header("Accept-Language", "en")
             .param("id", id)
-            .param("param", param))
+            .param("param", param);
+    if (token != null) request.header("tk", token);
+    var response = mvc.perform(request)
         .andExpect(status().isOk()).andReturn().getResponse();
     return JSON.parseObject(response.getContentAsString());
   }
 
   private JSONObject perform(String path, String body) throws Exception {
+    return perform(path, body, null);
+  }
+
+  private JSONObject perform(String path, String body, String token) throws Exception {
     var mvc = MockMvcBuilders.standaloneSetup(controller)
         .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-    var response = mvc.perform(post(path)
+    var request = post(path)
             .header("Accept-Language", "en")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(body))
+            .content(body);
+    if (token != null) request.header("tk", token);
+    var response = mvc.perform(request)
         .andExpect(status().isOk()).andReturn().getResponse();
     return JSON.parseObject(response.getContentAsString());
   }

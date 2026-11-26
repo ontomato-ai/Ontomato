@@ -102,6 +102,7 @@ export interface ShellTaskPort {
 export type PageAgents = { agents: AgentHostAgent[]; defaultAgentId?: string; presetAgentIds?: Record<string, string> };
 
 export interface AgentHostClient {
+  readVectorResource?: import("./vector-resource").ReadVectorResource;
   listAgents(): Promise<AgentHostAgent[]>;
   /**
    * The agents that may take a message on this page, with the page's default agent when it registered one. A page the
@@ -150,6 +151,7 @@ export interface AgentHostClientOptions {
    * throws the host's own error otherwise, so error display stays with the host.
    */
   request(path: string, init: RequestInit): Promise<Response>;
+  readVectorResource?: AgentHostClient["readVectorResource"];
   /** Filters or renames the agents this host serves; the shell shows the result verbatim. */
   agents?(agents: AgentHostAgent[]): AgentHostAgent[];
   /** Called for every applied run frame, so a host page can refresh its own view of the run. */
@@ -331,6 +333,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
         await json<AgentHostArtifactResolution>(`${run(sessionId, runId)}/artifacts/resolve?${params}`)
       ).artifact;
     },
+    readVectorResource: options.readVectorResource,
     async readArtifact(artifact) {
       return (await call(`${session(artifact.sessionId)}/artifacts/${enc(artifact.id)}/content`)).blob();
     },

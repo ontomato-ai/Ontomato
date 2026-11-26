@@ -1104,6 +1104,7 @@ function askLeaveUnsavedRowDetail(): Promise<boolean> {
     {
       confirmButtonText: t("platform.discard"),
       cancelButtonText: t("platform.keepEditing"),
+      ...(panel?.overlayRoot?.isConnected ? { appendTo: panel.overlayRoot } : {}),
     },
   );
 }

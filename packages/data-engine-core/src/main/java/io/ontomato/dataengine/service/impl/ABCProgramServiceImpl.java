@@ -69,6 +69,7 @@ public class ABCProgramServiceImpl implements ABCProgramService {
     if (context.action() != null) authority = authority.withAction(context.action());
     if (context.executionId() != null) authority = authority.forExecution(context.executionId().toString());
     if (context.identity() != null) authority = authority.withIdentity(context.identity());
+    if (context.callerToken() != null) authority = authority.withCallerToken(context.callerToken());
     PythonExecuteResult result;
     try {
       result = pythonExecuteService.execute(id, function.getCode(), timeout, lang, authority, parameters, Map.of());

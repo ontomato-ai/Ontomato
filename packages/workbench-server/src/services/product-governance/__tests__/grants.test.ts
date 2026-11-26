@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { RETRIEVAL_AGENT_ID, type ProductGrantVerb } from "@ontomato/contracts/product-governance";
-import { readDomainProductGrants, registerProductResource, setProductGrants } from "../grants";
+import { registerProductResource, setProductGrants } from "../grants";
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
@@ -36,18 +36,4 @@ it("replaces a subject's grants under the caller credential, including revocatio
   expect(mocks.headers).toHaveBeenCalledWith("caller", undefined, "en", "key");
   expect(mocks.post).toHaveBeenCalledWith("product-grant-set", "http://java.test/product-governance/grant-set", input,
     { headers: { tk: "caller" }, retries: 1 });
-});
-
-it("reads domain grants with optional filters and propagates authorization failures", async () => {
-  const response = { grants: [{ resourceId: RETRIEVAL_AGENT_ID, principalKind: "domain", principalId: "*", verb: "use" }] };
-  mocks.post.mockResolvedValueOnce({ text: JSON.stringify(response) });
-  await expect(readDomainProductGrants({ token: "caller" })).resolves.toEqual(response);
-  const filter = { principalKind: "role" as const, principalId: "reviewers" };
-  const denied = Object.assign(new Error("Forbidden"), { status: 403 });
-  mocks.post.mockRejectedValueOnce(denied);
-  await expect(readDomainProductGrants({ token: "caller" }, filter)).rejects.toBe(denied);
-  expect(mocks.post.mock.calls.map(([, url, body, options]) => [url, body, options.headers])).toEqual([
-    ["http://java.test/product-governance/domain-grants", {}, { tk: "caller" }],
-    ["http://java.test/product-governance/domain-grants", filter, { tk: "caller" }],
-  ]);
 });

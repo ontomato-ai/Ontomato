@@ -711,9 +711,15 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
 
   @Override
   public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target, ActionPath path) throws Exception {
+    return execute(id, param, lang, user, permission, timeoutMinutes, target, path, null);
+  }
+
+  @Override
+  public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission,
+      int timeoutMinutes, ExecutionTarget target, ActionPath path, String callerToken) throws Exception {
     Action action = queryById(id);
     requireExecutable(action, lang, user, target);
-    Object[] o = executeAction(action, param, lang, user, permission, timeoutMinutes, target, null, path);
+    Object[] o = executeAction(action, param, lang, user, permission, timeoutMinutes, target, null, path, callerToken);
     PythonExecuteResult result = (PythonExecuteResult)o[1];
     if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
     else if (o[0] != null) {
@@ -729,7 +735,8 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
       UserDataPermission permission, int timeoutMinutes, UUID runId) throws Exception {
     requireExecutable(action, lang, creator, ExecutionTarget.LIVE);
     try {
-      return (PythonExecuteResult) executeAction(action, param, lang, creator, permission, timeoutMinutes, ExecutionTarget.LIVE, runId, new Standalone())[1];
+      return (PythonExecuteResult) executeAction(action, param, lang, creator, permission, timeoutMinutes,
+          ExecutionTarget.LIVE, runId, new Standalone(), null)[1];
     } catch (OwnerRefusal refusal) {
       PythonExecuteResult result = new PythonExecuteResult();
       result.setError(refusal.getMessage());
@@ -738,7 +745,7 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
   }
 
   private Object[] executeAction(Action action, JSONObject param, String lang, User user, UserDataPermission permission,
-      int timeoutMinutes, ExecutionTarget target, UUID runId, ActionPath path) throws Exception {
+      int timeoutMinutes, ExecutionTarget target, UUID runId, ActionPath path, String callerToken) throws Exception {
     requireActiveWorkflowStep(action, path, target);
     var admission = authorization.requireExecution(authorization.subject(user), action, path, target);
     Function function = MetricViewBindings.executionWriteFunction(action.getFunction(), param);
@@ -746,7 +753,7 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
     var grant = ActionRuntimeGrant.capture(action, user, param, path);
     List<String> affectedTypes = ActionDefinitionProjector.project(action).getList("affects", String.class);
     Object[] execution = abcProgramService.execute((runId == null ? UUID.randomUUID() : runId).toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
-        new ABCProgramService.ExecutionContext(runId, identitySnapshot(user, path), target, grant));
+        new ABCProgramService.ExecutionContext(runId, identitySnapshot(user, path), target, grant, callerToken));
     PythonExecuteResult result = (PythonExecuteResult) execution[1];
     if (result.getError() == null || result.getError().isBlank()) {
       result.setAffects(affectedTypes == null ? List.of() : affectedTypes);

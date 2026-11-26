@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
@@ -34,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RestController
+@Owned
 public class FunctionController {
 	
 	@Autowired

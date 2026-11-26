@@ -1,16 +1,31 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import static io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.cfg.CoercionAction;
+import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.type.LogicalType;
 import io.ontomato.dataengine.applications.ApplicationCatalog;
 import io.ontomato.dataengine.applications.PolicyEntryCatalog;
 import io.ontomato.dataengine.applications.PolicyEntryCatalog.EntryRoot;
 import io.ontomato.dataengine.bean.action.Action;
+import io.ontomato.dataengine.bean.action.ActionTarget;
 import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.WorkflowDao;
+import io.ontomato.dataengine.dao.TriggerDao;
+import io.ontomato.dataengine.service.agent.OntologyAgentStore;
+import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
@@ -19,14 +34,20 @@ import io.ontomato.dataengine.service.authorization.AuthorizationAccessInspector
 import io.ontomato.dataengine.service.authorization.AuthorizationAccessInspector.InspectResult;
 import io.ontomato.dataengine.service.authorization.AuthorizationAccessInspector.WorkflowStepAction;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.authorization.PolicyTypes;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +60,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
+@Owned
 @RequestMapping("/authorization/policies")
 public class AuthorizationPolicyGovernanceController {
     public record EntryRootsRequest(String policyId, Set<String> entryIds) {}
@@ -59,10 +81,9 @@ public class AuthorizationPolicyGovernanceController {
     public record ResolvePendingRequest(String policyId, List<Resolution> resolutions) {}
     public record ResolvePendingResult(String policyId, int resolvedCount) {}
     public record PolicyGrantFact(String policyId, Kind targetKind, String targetKey, Verb verb, GrantScope scope) {}
-    public record RoleActionGrant(String roleId, String actionId, String policyId, GrantScope.Kind scopeKind) {}
-    public record RoleWorkflowAuthoring(String roleId, String workflowId, String policyId, Verb verb) {}
-    public record GraphFacts(List<PolicyGrantFact> policyGrants, List<RoleActionGrant> roleActionGrants,
-                             List<RoleWorkflowAuthoring> roleWorkflowAuthoring) {}
+    public record GraphFacts(List<PolicyRef> rolePolicies, String domainPolicyId,
+                             List<ApplicationCatalog.VisibleEntry> entries,
+                             List<PolicyGrantFact> policyGrants) {}
 
     private final WorkbenchServiceAuthentication workbench;
     private final IdentityService identity;
@@ -74,11 +95,12 @@ public class AuthorizationPolicyGovernanceController {
     private final AuthorizationStore store;
     private final ActionDao actions;
     private final WorkflowDao workflows;
+    private final TriggerDao triggers;
 
     public AuthorizationPolicyGovernanceController(WorkbenchServiceAuthentication workbench, IdentityService identity,
             AuthorizationService authorization, AuthorizationPolicies policies, AuthorizationAccessInspector inspector,
             ApplicationCatalog catalog, AuthorizationSubjects subjects, AuthorizationStore store,
-            ActionDao actions, WorkflowDao workflows) {
+            ActionDao actions, WorkflowDao workflows, TriggerDao triggers) {
         this.workbench = workbench;
         this.identity = identity;
         this.authorization = authorization;
@@ -89,6 +111,7 @@ public class AuthorizationPolicyGovernanceController {
         this.store = store;
         this.actions = actions;
         this.workflows = workflows;
+        this.triggers = triggers;
     }
 
     @PostMapping("/entry-roots")
@@ -170,34 +193,156 @@ public class AuthorizationPolicyGovernanceController {
         return inspector.inspectAccess(authorization.resolveSubject(actor(request)), input);
     }
 
+    public record RegistrationTarget(Kind kind, String key) {}
+    public record RegistrationRequest(List<RegistrationTarget> targets, JsonNode snapshot) {}
+
+    private record GrantSnapshot(List<SnapshotPolicy> policies, List<SnapshotPolicyLink> policyLinks,
+                                 List<SnapshotManagementGrant> managementGrants, List<String> businessDataPolicyIds,
+                                 List<JsonNode> grants, List<JsonNode> actions, String ontologyRule) {}
+    private record SnapshotPolicy(String id, Integer type) {}
+    private record SnapshotPolicyLink(String policyId, Integer type) {}
+    private record SnapshotManagementGrant(String policyId, String operationId) {}
+    private record SnapshotGrant(String policyId, Kind kind, String key, Verb verb, GrantScope scope) {}
+    private record SnapshotAction(String id, String status, String target) {}
+
+    private static final JsonMapper SNAPSHOT_JSON = JsonMapper.builder()
+            .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+            .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS,
+                    DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .withCoercionConfig(LogicalType.Textual, coercions -> coercions
+                    .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
+                    .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
+                    .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail))
+            .build();
+
+    @ManagementEndpoint(AuthorizationPolicies.READ)
+    @PostMapping("/registered-targets/check")
+    public R<Set<RegistrationTarget>> registeredTargets(@RequestBody RegistrationRequest input) {
+        if (input.targets() == null || input.targets().stream()
+                .anyMatch(target -> target == null || target.kind() == null || blank(target.key())))
+            throw badRequest("Each target requires a kind and a stable key");
+        if (input.snapshot() != null && !input.snapshot().isNull()) validateSnapshot(input.snapshot());
+        var keysByKind = input.targets().stream().collect(Collectors.groupingBy(RegistrationTarget::kind,
+                Collectors.mapping(RegistrationTarget::key, Collectors.toSet())));
+        var domainId = identity.getCurrentUser().getDomainId();
+        var matches = new java.util.LinkedHashSet<RegistrationTarget>();
+        for (Map.Entry<Kind, Set<String>> group : keysByKind.entrySet()) {
+            var keys = group.getValue();
+            var registered = switch (group.getKey()) {
+                case ENTRY -> catalog.registeredEntryIds(domainId, keys);
+                case APPLICATION -> catalog.registeredApplicationIds(domainId, keys);
+                case WORKFLOW -> workflows.queryList(null, domainId).stream().map(Workflow::getId)
+                        .filter(keys::contains).collect(Collectors.toSet());
+                case TRIGGER -> triggers.queryList(domainId, null).stream().map(trigger -> trigger.getId())
+                        .filter(keys::contains).collect(Collectors.toSet());
+                case AGENT -> keys.contains(OntologyAgentStore.RETRIEVER) ? Set.of(OntologyAgentStore.RETRIEVER) : Set.<String>of();
+                default -> throw badRequest("This runtime does not own registrations for " + group.getKey());
+            };
+            registered.forEach(key -> matches.add(new RegistrationTarget(group.getKey(), key)));
+        }
+        return R.ok(matches);
+    }
+
+    private void validateSnapshot(JsonNode body) {
+        GrantSnapshot snapshot;
+        try {
+            snapshot = SNAPSHOT_JSON.treeToValue(body, GrantSnapshot.class);
+        } catch (JsonProcessingException invalid) {
+            throw badRequest("Invalid policy snapshot");
+        }
+        if (snapshot.grants() == null || snapshot.actions() == null || snapshot.policies() == null
+                || snapshot.policyLinks() == null || snapshot.managementGrants() == null || snapshot.businessDataPolicyIds() == null)
+            throw badRequest("Policy snapshot requires policies, role links, management grants, business data policies, grants and actions");
+        var policyTypes = validateSnapshotPolicies(snapshot);
+        var actionsById = snapshot.actions().stream().collect(Collectors.groupingBy(action -> action.path("id").asText()));
+        Map<String, Object> rule = null;
+        for (var input : snapshot.grants()) {
+            String location = "policy " + input.path("policyId").asText() + ", " + input.path("kind").asText()
+                    + ", key " + input.path("key").asText();
+            try {
+                var grant = SNAPSHOT_JSON.treeToValue(input, SnapshotGrant.class);
+                if (grant == null || blank(grant.policyId())) throw badRequest("A policy ID is required");
+                requireSnapshotPolicyType(policyTypes, grant.policyId(), PolicyTypes.OBJECT);
+                SnapshotAction action = null;
+                ActionTarget target = null;
+                if (grant.kind() == Kind.ACTION && grant.verb() == Verb.EXECUTE) {
+                    var candidates = actionsById.getOrDefault(grant.key(), List.of());
+                    if (candidates.size() != 1) throw badRequest("The snapshot must contain exactly one matching Action");
+                    action = SNAPSHOT_JSON.treeToValue(candidates.getFirst(), SnapshotAction.class);
+                    if (action.target() != null) {
+                        target = SNAPSHOT_JSON.readValue(action.target(), ActionTarget.class);
+                        if (target == null || blank(target.className()) || blank(target.keyParameter()))
+                            throw badRequest("The snapshot Action target requires a class and key parameter");
+                        if (rule == null) rule = snapshotRule(snapshot.ontologyRule());
+                    }
+                }
+                policies.validateSnapshotGrant(grant.kind(), grant.key(), grant.verb(), grant.scope(),
+                        action == null ? null : action.status(), target, rule);
+            } catch (JsonProcessingException invalid) {
+                throw badRequest("Invalid grant, scope or Action in " + location + ": " + invalid.getOriginalMessage());
+            } catch (ResponseStatusException invalid) {
+                throw badRequest(location + ": " + invalid.getReason());
+            } catch (IllegalArgumentException invalid) {
+                throw badRequest(location + ": " + invalid.getMessage());
+            }
+        }
+    }
+
+    private Map<String, Integer> validateSnapshotPolicies(GrantSnapshot snapshot) {
+        Map<String, Integer> types = new HashMap<>();
+        var knownTypes = Set.of(PolicyTypes.MANAGEMENT, PolicyTypes.BUSINESS_DATA, PolicyTypes.OBJECT);
+        for (var policy : snapshot.policies()) {
+            if (policy == null || blank(policy.id()) || policy.type() == null || !knownTypes.contains(policy.type()))
+                throw badRequest("Invalid snapshot policy: " + policy);
+            if (types.putIfAbsent(policy.id(), policy.type()) != null)
+                throw badRequest("Duplicate snapshot policy: " + policy.id());
+        }
+        for (var link : snapshot.policyLinks()) {
+            if (link == null || link.type() == null) throw badRequest("A role link requires a policy and its type: " + link);
+            requireSnapshotPolicyType(types, link.policyId(), link.type());
+        }
+        var operationIds = policies.managementCatalog().stream()
+                .map(ManagementOperations.Operation::id).collect(Collectors.toSet());
+        for (var grant : snapshot.managementGrants()) {
+            if (grant == null || !operationIds.contains(grant.operationId()))
+                throw badRequest("Unknown snapshot management operation: " + grant);
+            requireSnapshotPolicyType(types, grant.policyId(), PolicyTypes.MANAGEMENT);
+        }
+        for (var policyId : snapshot.businessDataPolicyIds()) requireSnapshotPolicyType(types, policyId, PolicyTypes.BUSINESS_DATA);
+        return types;
+    }
+
+    private static void requireSnapshotPolicyType(Map<String, Integer> types, String policyId, int expected) {
+        if (!Objects.equals(types.get(policyId), expected))
+            throw badRequest("Snapshot policy " + policyId + " requires policy type " + expected);
+    }
+
+    private static Map<String, Object> snapshotRule(String content) throws JsonProcessingException {
+        if (content == null) throw badRequest("The snapshot ontology rule is required");
+        var rule = SNAPSHOT_JSON.readTree(content);
+        if (rule == null || !rule.isObject() || !rule.path("classDef").isArray())
+            throw badRequest("The snapshot ontology rule requires a classDef array");
+        for (var definition : rule.path("classDef")) {
+            if (!definition.path("className").isTextual() || !definition.path("attrs").isArray())
+                throw badRequest("Each snapshot class requires a className and attrs");
+            for (var attribute : definition.path("attrs")) {
+                var enable = attribute.get("enable");
+                if (!attribute.path("name").isTextual() || enable != null && !enable.isNull() && !enable.isBoolean())
+                    throw badRequest("Each snapshot attribute requires a name and a boolean enable when specified");
+            }
+        }
+        return SNAPSHOT_JSON.convertValue(rule, new TypeReference<Map<String, Object>>() {});
+    }
+
     @PostMapping("/graph-facts")
     public GraphFacts graphFacts(HttpServletRequest request) {
         var domainId = actor(request).domainId();
-        var policyGrants = new ArrayList<PolicyGrantFact>();
-        var actionGrants = new ArrayList<RoleActionGrant>();
-        var workflowGrants = new ArrayList<RoleWorkflowAuthoring>();
-        var rolesByPolicy = new HashMap<String, Set<String>>();
-        List<String> workflowIds = null;
-        for (var grant : store.domainObjectGrants(domainId)) {
-            var target = grant.target();
-            var verb = grant.verb();
-            var policyId = grant.policyId();
-            policyGrants.add(new PolicyGrantFact(policyId, target.kind(), target.id(), verb, grant.scope()));
-            var roleIds = rolesByPolicy.computeIfAbsent(policyId, id -> store.policyRoleIds(domainId, id));
-            if (target.kind() == Kind.ACTION && verb == Verb.EXECUTE) {
-                for (var roleId : roleIds)
-                    actionGrants.add(new RoleActionGrant(roleId, target.id(), policyId, grant.scope().kind()));
-            }
-            if (target.kind() == Kind.WORKFLOW && (verb == Verb.EDIT || verb == Verb.CREATE)) {
-                if (verb == Verb.CREATE && workflowIds == null)
-                    workflowIds = workflows.queryList(null, domainId).stream().map(Workflow::getId).toList();
-                var ids = verb == Verb.CREATE ? workflowIds : List.of(target.id());
-                for (var roleId : roleIds) {
-                    for (var id : ids) workflowGrants.add(new RoleWorkflowAuthoring(roleId, id, policyId, verb));
-                }
-            }
-        }
-        return new GraphFacts(policyGrants, actionGrants, workflowGrants);
+        var policyGrants = store.domainObjectGrants(domainId).stream().map(grant ->
+                new PolicyGrantFact(grant.policyId(), grant.target().kind(), grant.target().id(),
+                        grant.verb(), grant.scope())).toList();
+        return new GraphFacts(store.domainRolePolicies(domainId), store.domainPolicy(domainId).policyId(),
+                catalog.visibleEntries(identity.getCurrentUser()), policyGrants);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

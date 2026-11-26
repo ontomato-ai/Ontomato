@@ -28,6 +28,7 @@ it("publishes only newly inserted presets and never restores withdrawn access on
     ["already-published", new Map([["regular", "withdrawn-id"]])],
   ]);
   const granted = new Set<string>();
+  const orderWrites: { domainId: string; kind: string; order: number }[] = [];
   mocks.get.mockResolvedValue({ text: JSON.stringify([...domains.keys()]) });
   mocks.query.mockResolvedValue({ rows: [], rowCount: 0 });
 
@@ -42,6 +43,7 @@ it("publishes only newly inserted presets and never restores withdrawn access on
         return { rows: [{ id: first }] };
       }
       expect(sql).not.toContain("assistant_preset_upgrades");
+      if (sql.includes("SET sort_order")) orderWrites.push({ domainId: params[0], kind: params[1], order: Number(params[2]) });
       return { rows: [] };
     };
     await callback({ query });
@@ -57,10 +59,10 @@ it("publishes only newly inserted presets and never restores withdrawn access on
 
   await initializeExistingDomainPresetAgents();
   const ids = [...domains.get("pending")!.values()].filter(id => id !== "legacy-id");
-  expect(ids).toHaveLength(4);
+  expect(ids).toHaveLength(7);
   expect(mocks.post.mock.calls[1][2]).toEqual({ domainId: "pending", ids });
   const upgradeIds = [...domains.get("already-published")!.values()].filter(id => id !== "withdrawn-id");
-  expect(upgradeIds).toHaveLength(4);
+  expect(upgradeIds).toHaveLength(7);
   expect(mocks.post.mock.calls[2][2]).toEqual({ domainId: "already-published", ids: upgradeIds });
   const revoked = ids[0];
   expect(granted.has(revoked)).toBe(true);
@@ -70,4 +72,11 @@ it("publishes only newly inserted presets and never restores withdrawn access on
   expect(mocks.post.mock.calls.map(([, , body]) => body.domainId)).toEqual(["pending", "pending", "already-published"]);
   expect(granted.has(revoked)).toBe(false);
   expect(granted.has("withdrawn-id")).toBe(false);
+
+  // A preset's place in agent lists comes from the definition, so a domain initialized earlier is brought back in line.
+  const places = orderWrites.filter(row => row.domainId === "pending").slice(0, 8);
+  expect(places.map(row => row.kind)).toEqual([
+    "regular", "analysis", "knowledge-governance", "modeling", "product-layer", "admin", "app-builder", "ops-diagnosis",
+  ]);
+  expect(places.map(row => row.order)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
 });

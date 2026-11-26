@@ -200,10 +200,11 @@ export const INSPECT_MEMBER_ACCESS = "users.inspectAccess";
 export const GRANT_MEMBER_ACCESS = "users.grantAccess";
 export const DELETE_ROLE = "roles.delete";
 export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
-export const REFRESH_POLICY_API_CATALOG = "permissionPolicies.refreshApiCatalog";
 export const PREVIEW_POLICY_ENTRY_GRANT = "permissionPolicies.previewEntryGrant";
 export const GRANT_POLICY_ENTRIES = "permissionPolicies.grantEntries";
 export const LIST_PENDING_POLICY_GRANTS = "permissionPolicies.listPending";
+/** Pending grants across the domain, grouped by policy: the policy list page's header entry. */
+export const LIST_PENDING_POLICY_GRANTS_SUMMARY = "permissionPolicies.listPendingSummary";
 export const RESOLVE_PENDING_POLICY_GRANT = "permissionPolicies.resolvePending";
 export const INSPECT_POLICY_ACCESS = "permissionPolicies.inspectAccess";
 export const DELETE_ORG_UNIT = "orgUnits.delete";
@@ -667,7 +668,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...modelReads,
       effectivePermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       effectiveOrgShares: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      effectiveApiPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      effectiveManagementOperations: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       effectiveSubjectDataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       effectiveManagedDataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       effectiveDataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
@@ -705,8 +706,9 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
-      REFRESH_POLICY_API_CATALOG, PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES,
-      LIST_PENDING_POLICY_GRANTS, RESOLVE_PENDING_POLICY_GRANT, INSPECT_POLICY_ACCESS,
+      PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES,
+      LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY, RESOLVE_PENDING_POLICY_GRANT,
+      INSPECT_POLICY_ACCESS,
     ],
   },
   [ORG_UNIT]: {

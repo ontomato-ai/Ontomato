@@ -30,7 +30,7 @@ import {panelUploadSize} from '@ontomato/contracts/panel-upload';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
 import type {AppBridgeConfirmPanelOperation,AppBridgeConfirmPanelOperationResult,AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import type {PanelConversationEntry} from '@ontomato/contracts/panel-conversation-entry';
-import {servePageComposerKey,type PageComposerExpand,type PageComposerRequest,type ServePageComposer} from '@ontomato/agent-shell-ui';
+import {servePageComposerKey,vectorResourceTarget,type PageComposerExpand,type PageComposerRequest,type ServePageComposer} from '@ontomato/agent-shell-ui';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
@@ -285,14 +285,14 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
  */
 export async function confirmPanelIntent(
   use:PanelUseRef,intentId:string,changed:(change:PanelObjectChange)=>void,admit?:(operationId:string)=>void,
-  options?:{onConfirmed?:()=>void;skipDialog?:boolean},
+  options?:{onConfirmed?:()=>void;skipDialog?:boolean;appendTo?:HTMLElement},
 ):Promise<AppBridgeConfirmPanelOperationResult>{
   const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(use)}`);
   const intent=await read.json();
   if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
   const {operationId,label,confirmation}=panelHumanOperationPreparationSchema.parse(intent);
   admit?.(operationId);
-  if(!options?.skipDialog&&confirmation.kind!=='none'&&!await askPerson(label,confirmation))return {decision:'cancel'};
+  if(!options?.skipDialog&&confirmation.kind!=='none'&&!await askPerson(label,confirmation,options?.appendTo))return {decision:'cancel'};
   options?.onConfirmed?.();
   const sent=await nodeApiRequest(`/api/panel-operations/intents/${encodeURIComponent(intentId)}/dispatch`,{method:'POST',body:'{}'});
   const answer=await sent.json();
@@ -311,7 +311,7 @@ export async function confirmPanelIntent(
 }
 
 /** The platform's dialog naming what an operation acts on and what its owner said goes with it; true when confirmed. */
-function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirmation,{kind:'none'}>){
+function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirmation,{kind:'none'}>,appendTo?:HTMLElement){
   const {t,locale}=workbenchI18n().global;
   // The owner's names are text: each is rendered as a text node, never as markup.
   const names=({objects,total}:Pick<PanelOperationImpact,'objects'|'total'>)=>[
@@ -324,7 +324,11 @@ function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirma
     ?[h('p',t('platform.confirmUploadFile',{name:confirmation.upload.name,size:panelUploadSize(confirmation.upload.size,locale.value)}))]:[];
   const message=h('div',confirmation.kind==='impact'?[...file,...impact(confirmation.impact)]
     :[...names(confirmation.targets),...(confirmation.skippedSummary?[h('p',confirmation.skippedSummary)]:[]),...(confirmation.impact?impact(confirmation.impact):[])]);
-  return confirmDanger(message,label,{confirmButtonText:label,cancelButtonText:t('common.cancel')});
+  return confirmDanger(message,label,{
+    confirmButtonText:label,
+    cancelButtonText:t('common.cancel'),
+    ...(appendTo?.isConnected?{appendTo}:{}),
+  });
 }
 function executionContext(source: object) {
   const context=executionBindings.get(source);
@@ -378,10 +382,13 @@ export function installAppHost(options: {
       // A panel's frame asks only for what its own declaration covers; every other frame for the SDK's capabilities.
       const panel=panelFrames.get(source);
       if(panel&&service===''&&method==='POST'&&path===PANEL_READ)init={...init,body:readAsFrame(panel,init.body)};
+      const readsVectorResource = !panel && execution.kind === 'live' && service === '/data-query' && method === 'GET'
+        && path.startsWith('/vectorResource/resource/') && path.split('/').length === 5
+        && Boolean(vectorResourceTarget(path));
       if(panel)admitPanelRequest(panel,method,path,service,init.body);
       else{
         const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];
-        if(service==='/data-query'&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
+        if(service==='/data-query'&&!readsVectorResource&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
         const declared=['/business-definitions','/business-definition-triggers','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?'));
         if(service===''&&!declared)throw new Error('Use a declared SDK product operation');
       }
@@ -397,7 +404,7 @@ export function installAppHost(options: {
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);
       if(execution.kind==='build-test')headers.set(BUILD_TEST_HEADER,JSON.stringify({kind:'build-test',contextId:execution.contextId}));
-      const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${path}`,{...init,headers,credentials:'omit'});
+      const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${path}`,{...init,headers,credentials:'omit',...(readsVectorResource ? {redirect:'error'} : {})});
       return panel?relayToPanel(panel,method,path,service,response):response;
     },
     invalidateProductData(source,event){
