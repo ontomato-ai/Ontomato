@@ -11,8 +11,8 @@ via application entry `inputs`.
   permissions & sharing (only available when `header.canGrant` is true; otherwise falls back to `"config"`).
 - `catalogPath` (`string`, `external: true`, `deepLink: false`): wired by the hosting application entry
   (`/ontology/agents` or `/agents/settings`) for the Back button and post-delete navigation.
-- `grantDialog`, `grantPrincipalKind`, `grantUser`, `grantRole`, `grantPrincipalId`, `grantVerb` (`deepLink: false`):
-  state for the Add Grant dialog (`grantVerb` is one of `"use"`, `"view"`, or `"edit"`).
+- `grantDialog`, `grantPolicy`, `grantPolicyId`, `grantVerb` (`deepLink: false`): state for the add-to-policy dialog
+  (`grantVerb` is one of `"use"`, `"view"`, or `"edit"`; `grantPolicyId` mirrors the chosen object policy).
 
 ## Editing, read-only access, and category protection
 
@@ -28,10 +28,12 @@ via application entry `inputs`.
 
 ## Managing permissions & sharing
 
-- Set `tab: "grants"` on an editable agent to inspect current grants (`grantsList`, showing each principal or role's
-  highest access level) and the domain-wide sharing status (`shareStatusDesc`).
+Adding to a policy is the agent-side shortcut for putting this object into one object policy; which members can use it
+and at which level is decided in that policy.
+
+- Set `tab: "grants"` on an editable agent to inspect the policies it is already in (`grantsList`: policy, permission
+  level, actions) and the domain-wide sharing status (`shareStatusDesc`).
 - Toggle domain-wide use (`domain:*:use`) via `shareEnable.share` or `shareDisable.share`.
-- Grant or update a member/role's single-select 3-level access (`use`, `view`, or `edit`) by opening the grant dialog
-  (`grantDialog: true`), selecting `grantPrincipalKind` (`"principal"` or `"role"`), choosing `grantUser` or
-  `grantRole`, setting `grantVerb`, and invoking `grantSubmit.grant`.
-- Revoke an individual member or role grant via the row action `grantsList.revoke`.
+- Add the agent to a policy by opening the dialog (`grantDialog: true`), choosing the policy in `policyPicker`, choosing
+  one level (`use`, `view`, or `edit`) in the inline segmented control, and invoking `grantSubmit.grant`.
+- Remove it from a policy via the row action `grantsList.revoke`.
