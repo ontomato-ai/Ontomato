@@ -57,7 +57,6 @@ beforeEach(() => {
 
   installWorkbenchIdentity({
     resolveMcpCaller: async () => ({ userId: "system", domainId: "default" }),
-    assertObserveAccess: async () => {},
   } as unknown as WorkbenchIdentity);
 });
 

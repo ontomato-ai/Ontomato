@@ -43,8 +43,8 @@ const props = withDefaults(
     operationName?: string;
     /** Optional empty-state text or message key shown when neither a result nor section-specific empty text is present. */
     emptyText?: string;
-    /** Section presentation layout: `"tabs"` (default tabbed panes) or `"stack"` (all sections rendered vertically in order). */
-    layout?: "tabs" | "stack";
+    /** Section presentation layout: `"tabs"` (default tabbed panes) or `"stacked"` (all sections rendered vertically in order). */
+    layout?: "tabs" | "stacked";
   }>(),
   {
     result: null,
@@ -117,6 +117,13 @@ const json = computed(() => (props.result?.kind === "json" ? formatOperationJson
 const truncation = computed(() => (props.result?.kind === "json" ? props.result.truncation ?? null : null));
 const sections = computed(() => operationResultSections(props.result));
 const banner = computed(() => (props.result?.kind === "sections" ? props.result.banner ?? null : null));
+/** The banner speaks about the outcome, so its platform tones map onto the alert kinds Element Plus draws. */
+const bannerType = computed<"success" | "info" | "warning" | "error">(() => {
+  const tone = banner.value?.tone;
+  if (tone === "danger") return "error";
+  if (tone === "default" || tone === undefined) return "info";
+  return tone;
+});
 
 function cellText(row: Record<string, PanelReadOperationRecordCell>, key: string): string {
   return formatOperationRecordCell(row[key]);
@@ -156,17 +163,17 @@ function cellText(row: Record<string, PanelReadOperationRecordCell>, key: string
       </template>
       <p v-else class="sdk-operation-empty">{{ t("platform.operationNoResult") }}</p>
     </div>
-    <div v-else-if="result.kind === 'sections'" class="sdk-operation-sections-wrap" :class="{ 'is-stacked': layout === 'stack' }">
+    <div v-else-if="result.kind === 'sections'" class="sdk-operation-sections-wrap" :class="{ 'is-stacked': layout === 'stacked' }">
       <el-alert
         v-if="banner"
-        :type="banner.tone"
+        :type="bannerType"
         :title="banner.title"
         :closable="false"
         show-icon
       >
         <pre v-if="banner.detail" class="sdk-operation-banner-detail">{{ banner.detail }}</pre>
       </el-alert>
-      <div v-if="layout === 'stack'" class="sdk-operation-stack">
+      <div v-if="layout === 'stacked'" class="sdk-operation-stack">
         <section
           v-for="section in sections"
           :key="section.id"

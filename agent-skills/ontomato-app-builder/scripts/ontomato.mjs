@@ -575,7 +575,6 @@ async function workspaceCommand(api, [command, ...args]) {
 
 async function productCommand(api, [command, ...args]) {
   const base="/product-assets";
-  if(command==='create-dashboard'&&args.length===1)return print(await workbench(api,'POST','/dashboards/create',{name:args[0]}));
   if(["list","types"].includes(command) && args.length===0)
     return print(await workbench(api,"GET",base+(command==="list"?"":`/${command}`)));
   if(command==="get" && args.length===1) return print(await workbench(api,"GET",`${base}/${encodeURIComponent(args[0])}`));

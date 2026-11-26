@@ -810,7 +810,7 @@ export const opsDiagnosisReadOperations = [
       return [describeDslTable(locale), ...describeDslResultSections(locale), describeDslRawResponse(locale)];
     },
     async execute(host, call) {
-      await requireDslQueryAccess(host.executor.owner, host.executor.credentials);
+      await requireDslQueryAccess(workbenchManagement.opsDslExecute, host.executor.owner, host.executor.credentials);
       const locale = host.locale;
       const { draft } = panelReadOperationInputSchema.parse(call.input);
       const dslObject = parseDslDraftObject(draft.dsl, locale);

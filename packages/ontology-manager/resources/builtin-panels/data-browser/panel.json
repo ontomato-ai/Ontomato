@@ -103,7 +103,7 @@
     },
     "members": {
       "instanceGraph": {
-        "component": "OntologyGraph",
+        "component": "InstanceGraph",
         "name": "Instance relationship graph",
         "description": "Sampled overview and paginated one-hop neighborhood graph of domain object instances with per-person saved node positions.",
         "type": "platform:ObjectType",

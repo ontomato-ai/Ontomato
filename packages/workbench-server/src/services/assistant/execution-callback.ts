@@ -70,15 +70,3 @@ export function governanceBusinessCallback(
   const callbackPath = `/api/assistant/sessions/${sessionId}/governance-window`;
   return sealedCallback(callbackPath, { purpose: "governance", sessionId }, runId, expiresAt, initiatorCredentials);
 }
-
-/** Declares the pinned product-profile tool callback under the tools prefix. */
-export function productBusinessCallback(
-  profileId: string,
-  releaseId: string,
-  runId: string,
-  expiresAt: number,
-  initiatorCredentials: AssistantCredentials,
-): RuntimeBusinessCallback {
-  const basePath = `/api/product-assets/${encodeURIComponent(profileId)}/releases/${encodeURIComponent(releaseId)}/tools`;
-  return sealedCallback(basePath, { purpose: "product-tool", profileId, releaseId }, runId, expiresAt, initiatorCredentials);
-}

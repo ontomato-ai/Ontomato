@@ -4,8 +4,7 @@ import {normalizeComposition} from '../../../utils/product-composition';
 import {productAssetInputSchema} from '@ontomato/contracts/product-assets';
 
 export async function ensureProductAssetsSchema(client: QueryableClient) {
-  await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_native_agent_bindings')}(domain_id text NOT NULL,asset_id text NOT NULL,agent_id text NOT NULL,PRIMARY KEY(domain_id,asset_id),UNIQUE(domain_id,agent_id));
-    CREATE TABLE IF NOT EXISTS ${t('product_native_application_bindings')}(domain_id text NOT NULL,asset_id text NOT NULL,application_id text NOT NULL,PRIMARY KEY(domain_id,asset_id),UNIQUE(domain_id,application_id));`);
+  await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_native_application_bindings')}(domain_id text NOT NULL,asset_id text NOT NULL,application_id text NOT NULL,PRIMARY KEY(domain_id,asset_id),UNIQUE(domain_id,application_id));`);
   await client.query(`CREATE TABLE IF NOT EXISTS ${t("product_assets")} (
     domain_id text NOT NULL, id text NOT NULL, owner_id text NOT NULL,
     name text NOT NULL, description text NOT NULL DEFAULT '', visibility text NOT NULL DEFAULT 'private',
@@ -31,9 +30,6 @@ export async function ensureProductAssetsSchema(client: QueryableClient) {
     ALTER TABLE ${t('product_assets')} ADD COLUMN IF NOT EXISTS ontology_registered_revision bigint NOT NULL DEFAULT 0`);
   // Preserve IDs and parent references while correcting legacy display-only panels.
   await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_asset_revisions')} (domain_id text NOT NULL,asset_id text NOT NULL,revision integer NOT NULL,asset jsonb NOT NULL,PRIMARY KEY(domain_id,asset_id,revision));
-    CREATE TABLE IF NOT EXISTS ${t('product_profile_sessions')} (domain_id text NOT NULL,session_id text NOT NULL,profile_id text NOT NULL,release_id text NOT NULL,PRIMARY KEY(domain_id,session_id));
-    ALTER TABLE ${t('product_profile_sessions')} ADD COLUMN IF NOT EXISTS context_objects jsonb NOT NULL DEFAULT '[]'::jsonb;
-    ALTER TABLE ${t('product_profile_sessions')} ADD COLUMN IF NOT EXISTS page_state jsonb NOT NULL DEFAULT '{}'::jsonb;
     CREATE TABLE IF NOT EXISTS ${t('definition_triggers')} (domain_id text NOT NULL,id text NOT NULL,status text NOT NULL,definition jsonb NOT NULL,PRIMARY KEY(domain_id,id));
     CREATE TABLE IF NOT EXISTS ${t('product_bundle_heads')} (domain_id text NOT NULL,bundle_id text NOT NULL,release_id text NOT NULL,PRIMARY KEY(domain_id,bundle_id));
     CREATE TABLE IF NOT EXISTS ${t('business_definitions')} (domain_id text NOT NULL,id text NOT NULL,status text NOT NULL,definition jsonb NOT NULL,PRIMARY KEY(domain_id,id));
@@ -73,7 +69,7 @@ export async function ensureProductAssetsSchema(client: QueryableClient) {
     UPDATE ${t('product_assets')} SET document=document-'workspace',revision=revision+1,updated_at=now() WHERE document->>'kind'='page' AND document ? 'workspace'`);
   await client.query(`INSERT INTO ${t('product_asset_revisions')} (domain_id,asset_id,revision,asset) SELECT domain_id,id,revision,jsonb_build_object('id',id,'ownerId',owner_id,'name',name,'description',description,'visibility',visibility,'document',document,'revision',revision,'createdAt',created_at,'updatedAt',updated_at,'editable',false) FROM ${t('product_assets')} ON CONFLICT DO NOTHING`);
   await client.query(`INSERT INTO ${t('product_ontology_outbox')} (domain_id,asset_id,revision,registration)
-    SELECT domain_id,id,revision,jsonb_build_object('id',id,'kind',document->>'kind','name',name,'revision',revision,'targetKind',CASE WHEN document ? 'renders' THEN document->'renders'->>'kind' WHEN document->>'kind'='agent-profile' THEN 'AgentDefinition' END,'targetId',CASE WHEN document ? 'renders' THEN document->'renders'->>'id' WHEN document->>'kind'='agent-profile' THEN document->>'agentId' END,'isDefault',COALESCE((document->>'isDefault')::boolean,false))
-    FROM ${t('product_assets')} WHERE (document ? 'renders' OR document->>'kind' IN ('application','agent-profile')) AND ontology_registered_revision<revision ON CONFLICT(domain_id,asset_id) DO NOTHING`);
+    SELECT domain_id,id,revision,jsonb_build_object('id',id,'kind',document->>'kind','name',name,'revision',revision,'targetKind',CASE WHEN document ? 'renders' THEN document->'renders'->>'kind' END,'targetId',CASE WHEN document ? 'renders' THEN document->'renders'->>'id' END,'isDefault',COALESCE((document->>'isDefault')::boolean,false))
+    FROM ${t('product_assets')} WHERE (document ? 'renders' OR document->>'kind' = 'application') AND ontology_registered_revision<revision ON CONFLICT(domain_id,asset_id) DO NOTHING`);
   await client.query(`DROP TABLE IF EXISTS ${t('product_projection_edges')}`);
 }

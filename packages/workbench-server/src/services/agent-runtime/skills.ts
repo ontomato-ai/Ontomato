@@ -13,9 +13,13 @@ import { backendPost } from "../../utils/backend-client";
 import { workbenchServerResourceRoot } from "../../content/resources";
 
 export function workbenchBuiltinSkillRoot(skill: RuntimeSkillRef): string {
-  return skill.name === "ontomato-app-builder"
-    ? path.resolve(workbenchServerResourceRoot, "../../agent-skills", skill.name)
-    : path.join(workbenchServerResourceRoot, "resources/runtime-skills", skill.name);
+  if (skill.name === "ontomato-app-builder") {
+    return path.resolve(workbenchServerResourceRoot, "../../agent-skills", skill.name);
+  }
+  if (skill.name === "dashboard-pages") {
+    return path.join(publicSkillsRoot(), "pages", skill.name);
+  }
+  return path.join(workbenchServerResourceRoot, "resources/runtime-skills", skill.name);
 }
 
 /** Push one standard package to the runtime, using the caller's verified domain. */

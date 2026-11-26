@@ -617,7 +617,7 @@ describe("ontology-visual-modeling builtin panel", () => {
     for (const member of Object.values(source.manifest.members)) {
       expect(member.component).not.toBe("PanelData");
     }
-    expect(source.manifest.members.graph.component).toBe("VisualModelingGraph");
+    expect(source.manifest.members.graph.component).toBe("ModelingGraphEditor");
     expect(source.manifest.members.nodeHeader.component).toBe("ObjectHeader");
     expect(source.manifest.members.edgeHeader.component).toBe("ObjectHeader");
     expect(source.manifest.members.attributes.component).toBe("ObjectList");
@@ -714,7 +714,7 @@ describe("ontology-visual-modeling builtin panel", () => {
     }
   });
 
-  it("VM-02 / VM-03 / VM-04 / VM-05: wires VisualModelingGraph top-four toolbar, halo/pill style, hover ports + pending edge, and double-click choose edit dialogs", async () => {
+  it("VM-02 / VM-03 / VM-04 / VM-05: wires ModelingGraphEditor top-four toolbar, halo/pill style, hover ports + pending edge, and double-click choose edit dialogs", async () => {
     const harness = mountVisualModeling();
     const { app, element } = await harness.open();
     try {

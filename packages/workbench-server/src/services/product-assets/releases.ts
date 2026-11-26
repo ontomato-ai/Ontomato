@@ -20,7 +20,7 @@ import {platformObjectProvider} from './platform-objects';
 import {synchronizeProductOntology} from './ontology';
 import {definitionTriggerSchema} from '@ontomato/contracts/product-subscriptions';
 import {readDefinitionTrigger} from '../business-definitions/triggers';
-import {nativeAgentAsset,nativeApplicationAsset} from './platform-assets';
+import {nativeApplicationAsset} from './platform-assets';
 
 export const releaseSnapshotSchema=z.object({schemaVersion:z.literal(1),roots:z.array(z.string()),assets:z.array(productAssetSchema),triggers:z.array(definitionTriggerSchema).optional(),contracts:z.array(z.object({kind:z.enum(['metric','action','definition','object-type','trigger']),id:z.string(),hash:z.string().min(1),contractVersion:z.union([z.literal(1),z.literal(2)]).optional()}))}).superRefine((snapshot,context)=>{
   const ids=new Set(snapshot.assets.map(asset=>asset.id));
@@ -138,7 +138,7 @@ async function captureAuthorizedRelease(owner:ProductOwner,roots:string[],creden
   const byId=new Map(assets.map(asset=>[asset.id,asset]));
   const readCaptured=async(id:string)=>{const asset=byId.get(id);if(!asset)throw new HttpError(409,'Release dependency is missing','PRODUCT_UNAVAILABLE');return asset;};
   for(const asset of assets){
-    if(await nativeAgentAsset(owner.domainId,asset.id)||await nativeApplicationAsset(owner.domainId,asset.id))throw new HttpError(409,'Platform-native assets use their registered execution boundary; they cannot be frozen as declarative projections','PRODUCT_UNPINNABLE_DEPENDENCY');
+    if(await nativeApplicationAsset(owner.domainId,asset.id))throw new HttpError(409,'Platform-native assets use their registered execution boundary; they cannot be frozen as declarative projections','PRODUCT_UNPINNABLE_DEPENDENCY');
     await validateComposition(asset.id,asset,readCaptured);
     await validatePageBindings(owner,asset,readCaptured,credentials);
     await validateProduct(owner,asset,credentials);
@@ -215,7 +215,7 @@ export async function publishProductBundle(owner:ProductOwner,id:string,revision
   const bundle=await getProduct(owner,id);
   if(!bundle.editable)throw new HttpError(403,'Bundle edit permission required','PRODUCT_FORBIDDEN');
   if(bundle.revision!==revision)throw new HttpError(409,'Bundle changed; reload before publishing','PRODUCT_CONFLICT');
-  if(!['agent-profile','application'].includes(bundle.document.kind))throw new HttpError(400,'Publish an Application or AgentProfile bundle','INVALID_PRODUCT_TYPE');
+  if(bundle.document.kind!=='application')throw new HttpError(400,'Publish an Application bundle','INVALID_PRODUCT_TYPE');
   if(bundle.document.kind==='application'&&bundle.document.workspaceId)throw new HttpError(400,'Source applications publish through the workspace release service','INVALID_PRODUCT_TYPE');
   if(bundle.document.kind==='application'&&!bundle.document.navigationId)throw new HttpError(400,'Declarative Applications require a Navigation root','INVALID_NAVIGATION');
   if(bundle.document.kind==='application'&&bundle.document.applicationId!==id)throw new HttpError(400,'Application bundle and governance identity must use the same ID','INVALID_PRODUCT_TARGET');
@@ -256,7 +256,7 @@ export async function rollbackProductBundle(owner:ProductOwner,id:string,release
   await assertLegacyProductWrite(owner,credentials,{id});
   const bundle=await getProduct(owner,id);
   if(!bundle.editable)throw new HttpError(403,'Bundle edit permission required','PRODUCT_FORBIDDEN');
-  if(!['agent-profile','application'].includes(bundle.document.kind)||bundle.document.kind==='application'&&bundle.document.workspaceId)throw new HttpError(400,'Expected a declarative Application or AgentProfile','INVALID_PRODUCT_TYPE');
+  if(bundle.document.kind!=='application'||bundle.document.workspaceId)throw new HttpError(400,'Expected a declarative Application','INVALID_PRODUCT_TYPE');
   const snapshot=await readProductRelease(owner,releaseId,id);
   if(snapshotAsset(snapshot,id).document.kind!==bundle.document.kind)throw new HttpError(400,'Bundle release type mismatch','INVALID_PRODUCT_TYPE');
   await productReleaseIssues(owner,snapshot,credentials);

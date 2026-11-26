@@ -29,7 +29,7 @@ import {
 } from "./panel-frame";
 
 /*
- * Projection-level OntologyGraph (M3 four-layer capability map + M4 object browser instance graph) and object-union
+ * Projection-level InstanceGraph (M3 four-layer capability map + M4 object browser instance graph) and object-union
  * panel state / pageContext selection through the platform's real host and bridge:
  * - checkPanelValue & panelSelection for object-union (explicit objectTypes and layers-derived) using contracts'
  *   matchesObjectType/objectUnionTypes, preserving full { className, primaryKey } and localized type display names.
@@ -144,7 +144,7 @@ const graphProjection = (id: string): ProductProjection => ({
   id,
   name: "Platform Capability Graph",
   description: "",
-  componentId: "@ontomato/sdk:OntologyGraph",
+  componentId: "@ontomato/sdk:InstanceGraph",
   inputs: {
     mode: { kind: "scalar", type: "string" },
     start: graphObject,

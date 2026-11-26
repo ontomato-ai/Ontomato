@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { agentCallerAdmissionSchema, agentCallerResolveSchema } from "@ontomato/contracts/agent-channel";
 import { agentHostSessionRunFrameSchema, agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -21,6 +22,13 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const tsx = createRequire(path.join(repo, "apps/workbench/package.json")).resolve("tsx");
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const queryServiceToken = "ops-query-fixture";
+const evidenceOperations = new Set<string>([
+  workbenchManagement.opsEvidenceRead.id,
+  workbenchManagement.opsEvidenceRuntimeRead.id,
+  workbenchManagement.opsEvidenceLogsRead.id,
+  workbenchManagement.opsKnowledgeRead.id,
+  workbenchManagement.opsDslExecute.id,
+]);
 
 // Needs PostgreSQL and spawns the real host and runtime processes.
 if (!database)
@@ -29,6 +37,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
   let model: Server, host: ChildProcess, root: string, hostUrl = "", runtimeUrl = "", modelUrl = "";
   const schema = `ops_${randomUUID().replaceAll("-", "")}`, children: ChildProcess[] = [];
   const callers = new Map<string, { userId: string; domainId: string; expiresAt: number }>();
+  const approvedManagement = new Set<string>();
   const pool = new pg.Pool({ connectionString: database });
   let logs = "", modelCalls = 0;
   let revokeDiagnosisUse = false;
@@ -106,6 +115,20 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
         res.writeHead(status, { "Content-Type": "application/json" });
         res.end(JSON.stringify(body));
       };
+      if (req.method === "POST" && req.url === "/internal/workbench-management/require") {
+        if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken)
+          return json(403, { error: { code: "WORKBENCH_SERVICE_REQUIRED", message: "Platform service authorization required" } });
+        const token = req.headers.tk;
+        if (typeof token !== "string" || !/^(alice|bob|denied):[ab]$/.test(token))
+          return json(401, { error: { code: "UNAUTHENTICATED", message: "A current domain member is required" } });
+        const [userId, domainId] = token.split(":");
+        const grant = JSON.parse(raw);
+        if (grant.domainId !== domainId || userId === "denied" || !evidenceOperations.has(grant.operationId))
+          return json(403, { error: { code: "PERMISSION_DENIED", message: "Evidence management permission required" } });
+        approvedManagement.add(`${token}/${grant.operationId}`);
+        res.writeHead(204);
+        return res.end();
+      }
       if (req.method === "POST" && req.url === "/platform/agent-channel/callers") {
         const token = req.headers.tk;
         if (typeof token !== "string" || !/^(alice|bob|denied):[ab]$/.test(token))
@@ -207,6 +230,8 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     const toolText = final.messages.filter((m) => m.message.role === "toolResult").map((m) => JSON.stringify(m.message.content)).join("\n");
     expect(toolText).toContain("workbench");
     expect(toolText).not.toContain("UNAUTHENTICATED");
+    expect(toolText).not.toContain("PERMISSION_DENIED");
+    expect(approvedManagement.has(`alice:a/${workbenchManagement.opsEvidenceLogsRead.id}`)).toBe(true);
     expect(final.messages.some((m) => m.message.role === "system")).toBe(false);
     expect(JSON.stringify(final)).not.toContain("ops-runtime-fixture"); expect(final.run.resolvedSkills.map((s) => s.skill.name)).toContain("ops-diagnosis");
     expect((await api(`/api/observe/agent/sessions/${session}/runs`, { message: "changed" }, "alice:a", run)).status).toBe(409);
@@ -231,6 +256,8 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     expect(agents.status, JSON.stringify(agents.body)).toBe(200);
     expect((await api("/api/assistant/sessions", { agentId: agents.body.agents[0].id }, "bob:a", session)).status).toBe(409);
     expect((await api(`/api/observe/evidence/runtime/workbench/sessions/${session}`, undefined, "bob:a")).status).toBe(404);
+    expect((await api(`/api/observe/evidence/runtime/workbench/sessions/${session}`, undefined, "alice:b")).status).toBe(404);
+    expect((await api(`/api/observe/evidence/runtime/workbench/sessions/${session}`, undefined, "denied:a")).status).toBe(403);
   }, 60000);
   it("closes pending admissions and cancels running work without a host loop", async () => {
     const session = randomUUID(), run = randomUUID(); await api("/api/observe/agent/sessions", { agentId: DIAGNOSIS_AGENT_ID }, "alice:a", session);
@@ -245,7 +272,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     const sessions = "/api/observe/agent/sessions";
     const session = randomUUID(), run = randomUUID();
     const input = { agentId: DIAGNOSIS_AGENT_ID };
-    // This caller has no Observe access and can still use the published diagnosis agent.
+    // The diagnosis agent remains usable without a management grant for evidence.
     expect((await api(sessions, input, "denied:a", randomUUID())).status).toBe(201);
     expect((await api(sessions, input, "alice:a", session)).status).toBe(201);
     expect((await api(`${sessions}/${session}/runs`, { message: "inspect logs" }, "alice:a", run)).status).toBe(202);

@@ -1,5 +1,4 @@
 import {
-  AGENT_DEFINITION,
   APPLICATION,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
@@ -190,8 +189,6 @@ export function resolveProductAssetTarget(
     className = PRODUCT_PANEL;
   } else if (node.kind === "application") {
     className = APPLICATION;
-  } else if (node.kind === "agent-profile") {
-    className = AGENT_DEFINITION;
   } else if (fallbackClassName) {
     className = fallbackClassName;
   } else if (node.category === "element") {

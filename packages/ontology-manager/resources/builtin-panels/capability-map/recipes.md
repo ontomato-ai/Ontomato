@@ -28,7 +28,7 @@
 
 | 成员 | 组件 | 数据来源 | 用途 |
 | --- | --- | --- | --- |
-| `graph` | `OntologyGraph` | `platform:OntologyType`（`schema`、`counts`、`start`、`neighbors`） | 四层类型图谱与实例一跳展开画布 |
+| `graph` | `InstanceGraph` | `platform:OntologyType`（`schema`、`counts`、`start`、`neighbors`） | 四层类型图谱与实例一跳展开画布 |
 | `typeList` | `ObjectList` | `platform:OntologyType.list` | 类型模式「按层分组」列表视图，按 `layer` 分组展示类型、可读计数/状态徽标与原因 |
 | `typePicker` | `ReferencePicker` | `platform:OntologyType.list` | 按类型挑选起点时的可过滤类型下拉选择器（按 `layer` 分组） |
 | `typeHeader` | `ObjectHeader` | `platform:OntologyType.record` | 类型模式右侧类详情标题、类型标识、计数状态徽标，并发布 `directoryPath`/`directoryName` 只读输出 |

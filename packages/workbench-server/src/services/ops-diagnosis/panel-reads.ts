@@ -12,7 +12,6 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import type { PanelFormDescription, PanelFormValues, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
-import { workbenchIdentity } from "../../identity/installed";
 import { parseTurnKey } from "../../logging/log-context";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { autotestConfig } from "../../platform/diagnosis/autotest/config";
@@ -68,15 +67,18 @@ export function parseAutotestCaseArtifactKey(primaryKey: string): { runId: strin
 }
 
 export async function requireDslQueryAccess(
+  operation: typeof workbenchManagement.opsDslRead | typeof workbenchManagement.opsDslExecute,
   owner: Pick<ProductOwner, "domainId">,
-  viewer: Pick<AssistantCredentials, "token" | "apiKey">,
+  viewer: AssistantCredentials,
 ): Promise<void> {
-  await workbenchIdentity().assertObserveAccess({
-    domainId: owner.domainId,
-    token: viewer.token,
-    apiKey: viewer.apiKey,
-  });
-  workbenchIdentity().requireDomainId({ domainId: owner.domainId });
+  try {
+    await assertManagement(operation, owner, viewer);
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.code !== "DEPENDENCY_UNAVAILABLE") throw error;
+    const unavailable = new HttpError(503, error.message, error.code);
+    unavailable.cause = error;
+    throw unavailable;
+  }
 }
 
 function flattenKnowledgeFiles(node: KnowledgeTreeNode, out: KnowledgeTreeNode[] = []): KnowledgeTreeNode[] {
@@ -801,7 +803,7 @@ export function createDslQueryReadAdapter(owner: ProductOwner, viewer: Assistant
   const locale = viewer.locale;
   return {
     async form(params?: { values?: PanelFormValues; changedField?: string | null }): Promise<PanelFormDescription> {
-      await requireDslQueryAccess(owner, viewer);
+      await requireDslQueryAccess(workbenchManagement.opsDslRead, owner, viewer);
       const dslText = typeof params?.values?.dsl === "string" ? params.values.dsl : DEFAULT_DSL_QUERY_TEXT;
       return {
         values: { dsl: dslText },
