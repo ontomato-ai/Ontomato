@@ -20,7 +20,7 @@ import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { listDefaultAgentOptions } from "../assistant/default-agents";
-import { listCurrentProducts } from "./catalog";
+import { listCurrentProductNames } from "./catalog";
 import { readCurrentPanel } from "./current";
 import { assetGraphNode, createAssetGraph, panelGraphMembers } from "./asset-graph";
 
@@ -312,13 +312,8 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
   const form = async (input: ApplicationCatalogueFormRequest) =>
     withDefaultAgentChoices(await client.form(input), () => defaultAgentChoices(owner.domainId, viewer.locale));
 
-  async function panelNameMap(): Promise<Map<string, string>> {
-    try {
-      const listed = await listCurrentProducts(owner, viewer, "panel", { q: "", scope: "all", sort: "name", limit: 100 });
-      return new Map(listed.items.map(item => [item.id, item.name || item.id]));
-    } catch {
-      return new Map();
-    }
+  function panelNameMap(): Promise<Map<string, string>> {
+    return listCurrentProductNames(owner, viewer, "panel");
   }
 
   async function agentLabelMap(): Promise<Map<string, string>> {
@@ -616,9 +611,7 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
       const detail = await record(primaryKey);
       const [panels, projectionNames] = await Promise.all([
         panelNameMap(),
-        listCurrentProducts(owner, viewer, "projection", { q: "", scope: "all", sort: "name", limit: 100 })
-          .then(result => new Map(result.items.map(item => [item.id, item.name || item.id])))
-          .catch(() => new Map<string, string>()),
+        listCurrentProductNames(owner, viewer, "projection"),
       ]);
       const graph = createAssetGraph();
       const appLabel = localizedApplicationText(detail.names, language) ?? detail.id;
