@@ -209,19 +209,20 @@ describe("ObjectList table columns, row activation, page-mode sizing, jumper, an
           showPageJumper: true,
         },
         data: {
-          objects: {
+          rows: {
             source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-            read: "objects",
-            params: { type: { input: "type" } },
+            read: "instances",
+            params: { className: { input: "type" } },
           },
         },
       },
     };
 
     const allItems = Array.from({ length: 6 }, (_, index) => ({
-      node: { className: "Server", primaryKey: `srv-${index + 1}` },
+      className: "Server",
+      primaryKey: `srv-${index + 1}`,
       label: `Server ${index + 1}`,
-      detail: `Host ${index + 1}`,
+      fields: {},
     }));
 
     const { element, reads } = mountDirect(
@@ -233,12 +234,7 @@ describe("ObjectList table columns, row activation, page-mode sizing, jumper, an
         const size = page.size ?? 2;
         const start = (num - 1) * size;
         return ready({
-          status: "ok",
-          type: "Server",
-          layer: "fact",
-          page: num,
-          pageSize: size,
-          items: allItems.slice(start, start + size),
+          rows: allItems.slice(start, start + size),
           total: allItems.length,
         });
       },
@@ -310,10 +306,10 @@ describe("ObjectList table columns, row activation, page-mode sizing, jumper, an
           pageSize: 2,
         },
         data: {
-          objects: {
+          rows: {
             source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-            read: "objects",
-            params: { type: { input: "type" } },
+            read: "instances",
+            params: { className: { input: "type" } },
           },
         },
       },
@@ -329,19 +325,14 @@ describe("ObjectList table columns, row activation, page-mode sizing, jumper, an
           return { status: "error", message: "Backend timeout" };
         }
         return ready({
-          status: "ok",
-          type: "Server",
-          layer: "fact",
-          page,
-          pageSize: 2,
-          items: page === 1
+          rows: page === 1
             ? [
-                { node: { className: "Server", primaryKey: "s-1" }, label: "Server 1" },
-                { node: { className: "Server", primaryKey: "s-2" }, label: "Server 2" },
+                { className: "Server", primaryKey: "s-1", label: "Server 1", fields: {} },
+                { className: "Server", primaryKey: "s-2", label: "Server 2", fields: {} },
               ]
             : [
-                { node: { className: "Server", primaryKey: "s-3" }, label: "Server 3" },
-                { node: { className: "Server", primaryKey: "s-4" }, label: "Server 4" },
+                { className: "Server", primaryKey: "s-3", label: "Server 3", fields: {} },
+                { className: "Server", primaryKey: "s-4", label: "Server 4", fields: {} },
               ],
           total: 4,
         });

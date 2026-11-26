@@ -683,12 +683,10 @@ function readAdapters(
     },
     [ONTOLOGY_TYPE]: {
       count: async () => (await ontology()).count(),
-      schema: async () => (await ontology()).schema(),
       counts: async () => (await ontology()).counts(),
       countRows: async () => (await ontology()).countRows(),
       start: async () => (await ontology()).start(),
       neighbors: async (_selection, params) => (await ontology()).neighbors(params),
-      objects: async (_selection, params) => (await ontology()).objects(params),
       list: async () => (await ontology()).list(),
       graphNodes: async () => (await ontology()).graphNodes(),
       instanceGraphClasses: async () => (await ontology()).instanceGraphClasses(),
@@ -992,8 +990,7 @@ export async function readProductPanelData(
     if (
       projection.operations && Object.keys(projection.operations).length > 0
       && (outcome.declaration.result === "panelRecordList"
-        || outcome.declaration.result === "panelRecordQuery"
-        || outcome.declaration.result === "panelOntologyObjects")
+        || outcome.declaration.result === "panelRecordQuery")
     ) {
       const datum = projection.data[request.dataName];
       const inputs = effectiveInputs(projection, member, submittedInputs);
@@ -1011,14 +1008,7 @@ export async function readProductPanelData(
           : undefined);
       const rows = outcome.declaration.result === "panelRecordList"
         ? (outcome.value as import("@ontomato/contracts/panel-projection").PanelRecord[])
-        : outcome.declaration.result === "panelRecordQuery"
-          ? ((outcome.value as import("@ontomato/contracts/panel-projection").PanelRecordQuery).rows)
-          : ((outcome.value as import("@ontomato/contracts/platform-ontology-data").PlatformOntologyObjectsResponse).items.map(item => ({
-              primaryKey: item.node.primaryKey,
-              className: item.node.className,
-              label: item.label,
-              fields: {},
-            })));
+        : (outcome.value as import("@ontomato/contracts/panel-projection").PanelRecordQuery).rows;
       const { describeRowOperationsForRows } = await import("./direct-operations");
       rowOperations = await describeRowOperationsForRows(
         { owner, credentials: readViewer },

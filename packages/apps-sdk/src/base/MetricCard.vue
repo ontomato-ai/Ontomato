@@ -4,7 +4,6 @@ import { useI18n } from "vue-i18n";
 import type { ChartDisplay, ChartFormat } from "@ontomato/contracts/chart-data";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import type { PanelFieldTone, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
-import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { panelContextKey } from "../panel/context";
 import { panelMemberKey } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
@@ -26,7 +25,7 @@ import { displayFieldText, rawRecordField } from "./record-field";
  * Displays one or more statistical metric cards (label + tabular numeral + optional unit, supporting description, and
  * semantic tone) for ontology headers, dashboards, and catalog summaries. Directly consumes a MetricView's `result`
  * (`metricOutput`) table — extracting a scalar or named column from the first (or `rowIndex`) row — as well as a single
- * `record` (`panelRecord`), `rows` (`panelRecordList` / `panelRecordQuery`), `objects` (`panelOntologyObjects`), or
+ * `record` (`panelRecord`), `rows` (`panelRecordList` / `panelRecordQuery`), or
  * standalone `value`/`items` props. Pure presentation: business aggregations belong in a MetricView or owner read.
  */
 const props = withDefaults(
@@ -123,7 +122,7 @@ const panel = inject(panelContextKey, null);
 const memberGetter = inject(panelMemberKey, null);
 const member = memberGetter?.() ?? null;
 const rawConfig = useProjectionConfig(member);
-const boundDatum = useOptionalMemberDatum(member, ["result", "record", "rows", "objects"] as const);
+const boundDatum = useOptionalMemberDatum(member, ["result", "record", "rows"] as const);
 
 function normalizeItem(raw: unknown): MetricCardItem | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -202,22 +201,6 @@ const parsedSource = computed<ParsedSource>(() => {
   }
   if (boundDatum.name === "record") {
     return { state: "ready", record: value as unknown as PlatformObjectRecord };
-  }
-  if (boundDatum.name === "objects") {
-    const response = value as unknown as PlatformOntologyObjectsResponse;
-    if (response.status === "refused") {
-      return { state: "forbidden", notice: response.reason || translate("platform.graphStatusRefused") };
-    }
-    if (response.status !== "ok") {
-      return {
-        state: "error",
-        notice: response.reason || (response.status === "unavailable"
-          ? translate("platform.graphStatusUnavailable")
-          : translate("platform.dataUnreachable")),
-      };
-    }
-    const hasTotal = typeof response.total === "number" && Number.isFinite(response.total);
-    return { state: "ready", total: hasTotal ? response.total : undefined, hasTotal };
   }
   if (Array.isArray(value)) {
     const rows = value as unknown as readonly PlatformObjectRecord[];
@@ -341,7 +324,7 @@ const renderedItems = computed<readonly RenderedMetricItem[]>(() => {
     } else if (src.state === "forbidden" || src.state === "error" || src.state === "awaiting") {
       display = "—";
     } else if (src.state === "empty") {
-      if (boundDatum?.name === "rows" || boundDatum?.name === "objects") {
+      if (boundDatum?.name === "rows") {
         display = formatTypedNumber(0, locale.value, item.numberFormat);
       } else {
         if (!label && src.metricOutput) {

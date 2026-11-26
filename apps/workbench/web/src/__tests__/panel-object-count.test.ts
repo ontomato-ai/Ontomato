@@ -6,7 +6,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { FEEDBACK_RECORD, OBJECT_TYPE, ONTOLOGY_TYPE } from "@ontomato/contracts/panel-client-requests";
+import { FEEDBACK_RECORD, OBJECT_TYPE } from "@ontomato/contracts/panel-client-requests";
 import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -14,7 +14,7 @@ import { noOperations } from "./panel-frame";
 
 /*
  * Official SDK ObjectCount component:
- * - Single metric from `panelRecordList` (`rows.length`), `panelRecordQuery` (prefers `total`), and `panelOntologyObjects`.
+ * - Single metric from `panelRecordList` (`rows.length`), `panelRecordQuery` (prefers `total`).
  * - `sumField` across numbers, numeric strings, arrays, and `{ kind: "json", value: ... }` field wrappers.
  * - Multi-metric `items` evaluated against a single datum read (1 request for multiple stats).
  * - Localized labels via `labelKey` (panel.t / i18n) and `label` fallback.
@@ -186,63 +186,6 @@ it("shows an unknown dash for panelRecordQuery when the owner omits total (never
     expect(el?.querySelector(".sdk-object-count-label")?.textContent?.trim()).toBe("Tasks");
   });
   expect(reads).toHaveLength(1);
-});
-
-it("reads panelOntologyObjects total and handles owner-level forbidden status", async () => {
-  const projection: DirectProjection = {
-    ...meta,
-    id: "ontology-objects-count",
-    name: "Ontology objects count",
-    componentId: "@ontomato/sdk:ObjectCount",
-    inputs: {},
-    outputs: {},
-    config: { label: "Objects" },
-    data: {
-      objects: {
-        source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-        read: "objects",
-        params: { type: { literal: "Person" } },
-      },
-    },
-  };
-  const { container } = mountCount(projection, () =>
-    ready({
-      status: "ok",
-      type: "Person",
-      layer: "fact",
-      items: [{ node: { className: "Person", primaryKey: "p-1" }, label: "Alice" }],
-      total: 128,
-      page: 1,
-      pageSize: 20,
-    }),
-  );
-
-  await vi.waitFor(() => {
-    const el = container.querySelector(".sdk-object-count");
-    expect(el?.getAttribute("data-state")).toBe("ready");
-    expect(el?.querySelector(".sdk-object-count-value")?.textContent?.trim()).toBe("128");
-  });
-  resetMount();
-
-  // Owner-level refused status inside panelOntologyObjects payload
-  const forbidden = mountCount(projection, () =>
-    ready({
-      status: "refused",
-      reason: "Ontology read denied",
-      type: "Person",
-      layer: "fact",
-      items: [],
-      total: 0,
-      page: 1,
-      pageSize: 20,
-    }),
-  );
-  await vi.waitFor(() => {
-    const el = forbidden.container.querySelector(".sdk-object-count");
-    expect(el?.getAttribute("data-state")).toBe("forbidden");
-    expect(el?.querySelector(".sdk-object-count-value")?.textContent?.trim()).toBe("—");
-    expect(el?.getAttribute("title")).toBe("Ontology read denied");
-  });
 });
 
 it("renders loading (…), empty (0), forbidden (—), and error (—) states without breaking layout", async () => {

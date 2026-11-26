@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
-import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import {
   platformOntologyCountsResponseSchema,
   platformOntologyNeighborsResponseSchema,
@@ -393,7 +392,6 @@ describe("platform-ontology composite query", () => {
     expect(derivedIds).toEqual(["role.owns-workflow-step", "panel.provides-skill"]);
 
     expect(platformOntologySchemaResponseSchema.parse(schema)).toEqual(schema);
-    expect(panelReadResultSchemas.panelGraphSchema.parse(schema)).toEqual(schema);
 
     const byId = new Map(schema.objectTypes.map((t) => [t.id, t]));
     for (const [id, detail] of Object.entries(platformTypeDetails)) {

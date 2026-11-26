@@ -104,9 +104,6 @@ export function frameMemberData(
           });
         break;
       }
-      case "panelGraphSchema":
-        value = await graphOf(type!).schema!();
-        break;
       case "panelGraphCounts":
         value = { counts: await graphOf(type!).counts!() };
         break;
@@ -133,15 +130,6 @@ export function frameMemberData(
           ...(typeof params.offset === "number" ? { offset: params.offset } : {}),
         });
         break;
-      case "panelOntologyObjects": {
-        const page = params.page as { number: number; size: number } | null;
-        value = await graphOf(type!).objects!({
-          type: params.type as string,
-          ...(params.search ? { keyword: params.search as string } : {}),
-          ...(page ? { page: page.number, pageSize: page.size } : {}),
-        });
-        break;
-      }
       case "chartTemplate":
       case "metricOutput": {
         // A frame reaches a chart's source only through the registered chart projection it read.

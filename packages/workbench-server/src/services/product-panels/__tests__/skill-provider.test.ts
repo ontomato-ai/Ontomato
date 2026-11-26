@@ -534,20 +534,16 @@ it("documents only the platform ontology reads declared on the projection", asyn
   const source = { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } };
   extraProjections.set("ontology-graph", {
     name: "Platform ontology", description: "", visibility: "domain", componentId: "@ontomato/sdk:InstanceGraph",
-    inputs: { node: { kind: "json" }, type: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
+    inputs: { node: { kind: "json" } }, outputs: {}, config: {},
     data: {
-      schema: { source, read: "schema", params: {} },
       neighbors: { source, read: "neighbors", params: { node: { input: "node" } } },
-      objects: { source, read: "objects", params: { type: { input: "type" } } },
     },
   });
   codeTasksPanel({ graph: { projectionId: "ontology-graph", inputs: {} } });
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   const reads = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
-  expect(reads).toContain("Member `graph`, dataName `schema` — schema returns `panelGraphSchema`");
   expect(reads).toContain("Member `graph`, dataName `neighbors` — neighbors returns `panelGraphNeighbors`");
-  expect(reads).toContain("Member `graph`, dataName `objects` — objects returns `panelOntologyObjects`");
   expect(reads).not.toContain("dataName `counts`");
   expect(reads).not.toContain("dataName `start`");
 });
