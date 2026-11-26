@@ -13,6 +13,7 @@ import { PANEL_MEMBER_RENDER_HEADER, productPanelReadResponseSchema } from "@ont
 import { applicationEntryResolutionSchema } from "@ontomato/contracts/product-panels";
 import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import { SDK_COMPONENT, SKILL } from "@ontomato/contracts/platform-object-types";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { protectedSkillRef } from "../../core/skills/providers";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
@@ -52,11 +53,6 @@ vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
 }));
-vi.mock("../../identity/installed", async original => ({
-  ...await original<typeof import("../../identity/installed")>(),
-  assertPermission: async () => undefined,
-}));
-
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 const domainId = "isolation-domain";
@@ -122,10 +118,10 @@ beforeAll(async () => {
     })) : [] });
   app.use(unwrapCallbackCredential);
   mountCurrentProductDecisions(app, {
-    token: "fixture-service", domain: domainId, kinds: ["PANEL", "PROJECTION", "SKILL"],
+    token: "fixture-service", domain: domainId, kinds: ["PANEL", "PROJECTION"],
     allow: ({ target, verb }, caller) => (caller === "reader" && target.id !== denied ||
       caller === "executor" && target.id !== executorDenied) &&
-      (verb === "USE" || target.kind === "SKILL" && verb === "VIEW" || caller === "reader"),
+      (verb === "USE" || caller === "reader"),
   });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
@@ -138,8 +134,15 @@ beforeAll(async () => {
   };
   app.post("/authorization/objects/decide-batch", (req, res) => {
     const token = req.header("tk");
-    res.json(agentObjectDecisions(req.body, request => "target" in request &&
-      request.target.domainId === domainId && allowed(request.target.id, request.verb.toLowerCase(), token)));
+    res.json(agentObjectDecisions(req.body, request => "create" in request
+      ? request.create === "AGENT" && token === "reader"
+      : request.target.domainId === domainId && allowed(request.target.id, request.verb.toLowerCase(), token)));
+  });
+  app.post("/internal/workbench-management/require", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    expect(req.header("tk")).toBe("reader");
+    expect(req.body).toEqual({ domainId, operationId: workbenchManagement.skillLibraryRead.id });
+    res.sendStatus(204);
   });
   app.post("/product-governance/check", (req, res) => {
     const token = req.header("tk");
@@ -213,7 +216,7 @@ beforeAll(async () => {
     name: "Skill catalogue", description: "", visibility: "domain", componentId: "@ontomato/sdk:PanelData",
     inputs: { search: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
     data: {
-      options: { source: skillType, read: "options", params: {} },
+      options: { source: skillType, read: "options", params: { agentTarget: { literal: "draft" } } },
       rows: { source: skillType, read: "query", params: { search: { input: "search" } } },
       record: { source: { object: { literal: { className: SKILL, primaryKey: skillRef(broken).name } } }, read: "record", params: {} },
       components: { source: { type: { kind: "PlatformObjectType", id: SDK_COMPONENT } }, read: "catalogue", params: {} },

@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormSaveInput, PanelFormValues } from "
 import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
+import { answerSkillPickerRead, confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, panelWithSlots, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -22,8 +22,8 @@ import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
  * not move the panel onto the object the owner created; and a draft accepted before the owner has checked it whole.
  */
 
-const sql = { namespace: { kind: "domain", domainId: "domain-1" }, name: "sql" };
-const chart = { namespace: { kind: "domain", domainId: "domain-1" }, name: "chart" };
+const sql = { namespace: { kind: "domain" as const, domainId: "domain-1" }, name: "sql" };
+const chart = { namespace: { kind: "domain" as const, domainId: "domain-1" }, name: "chart" };
 const stored: PanelFormValues = {
   name: "Analyst", description: "", icon: null, enabled: false, systemPrompt: "Be brief",
   modelSelection: { modelId: "gpt-4o" }, skills: [sql], classNames: ["Order"],
@@ -71,12 +71,14 @@ const formInputs = {
 const formParams = { values: { input: "values" }, changedField: { input: "changedField" } };
 const referencePicker = (id: string, objectType: string) => {
   const source = { type: { kind: "PlatformObjectType" as const, id: objectType } };
+  const skill = objectType === SKILL;
+  const agentParam = skill ? { agentTarget: { input: "agentTarget" } } : {};
   return projection(id, {
     componentId: "@ontomato/sdk:ReferencePicker",
-    inputs: { values: { kind: "json" } },
+    inputs: skill ? { agentTarget: { kind: "scalar", type: "string" } } : { values: { kind: "json" } },
     data: {
-      options: { source, read: "options", params: {} },
-      selected: { source, read: "resolve", params: { values: { input: "values" } } },
+      options: { source, read: "options", params: { ...agentParam } },
+      selected: { source, read: "resolve", params: skill ? { ...agentParam } : { values: { input: "values" } } },
     },
   });
 };
@@ -105,7 +107,7 @@ const manifest = definePanel({
   state: { selectedAgent: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
   members: {
     definition: { target: { projectionId: "agent-definition-form" }, inputs: { agent: { state: "selectedAgent" } } },
-    skills: { target: { projectionId: "agent-skill-choice" }, inputs: {} },
+    skills: { target: { projectionId: "agent-skill-choice" }, inputs: { agentTarget: { state: "selectedAgent", field: "primaryKey" } } },
     model: { target: { projectionId: "agent-model-choice" }, inputs: {} },
     scope: { target: { projectionId: "agent-data-scope" }, inputs: {} },
   },
@@ -143,8 +145,8 @@ function owner(request: Sent, valuesById: ReadonlyMap<string, PanelFormValues>):
   }
   const agent = /^\/api\/assistant\/agent-definitions\/([^/]+)$/.exec(request.path);
   if (agent && request.method === "GET") return Response.json(definition(agent[1]!, valuesById.get(agent[1]!)!));
-  if (request.path === "/api/assistant/agent-skills")
-    return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
+  const skills = answerSkillPickerRead(request, [AGENT, CREATED], [{ skill: sql, label: "SQL" }, { skill: chart, label: "Charts" }]);
+  if (skills) return skills;
   if (request.path === "/api/data-query/model-options")
     return Response.json({ data: {
       models: [{ name: "gpt-4o", type: "chat" }, { name: "gpt-4o-mini", type: "chat" }],
@@ -352,12 +354,13 @@ it("fills editable fields live in the form and its field projections, marked and
 
 it("shows a localized reason for a stored skill no longer in the catalogue", async () => {
   const { context } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } },
-    { override: (request) => request.path === "/api/assistant/agent-skills" ? Response.json({ skills: [] }) : undefined });
-  await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("sql"), { timeout: 5000 });
-  fieldItem("/skills")!.querySelector(".el-select__wrapper")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    { override: (request) => answerSkillPickerRead(request, [AGENT], []) });
+  await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("Unavailable skill"));
+  fieldItem("/skills")!.querySelector<HTMLElement>(".el-select__wrapper")!.click();
   await vi.waitFor(() => {
-    expect(document.querySelector('.el-select-dropdown__item[title="Unavailable"]')?.textContent).toContain("sql");
-  });
+    expect(document.querySelector('.el-select-dropdown__item[title="This skill is not available to you."]')?.textContent)
+      .toContain("Unavailable skill");
+  }, { timeout: 1500 });
   expect(context.instance.dirty()).toBe(false);
 });
 

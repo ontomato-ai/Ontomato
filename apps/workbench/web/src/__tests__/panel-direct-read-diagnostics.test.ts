@@ -25,7 +25,7 @@ import { noOperations } from "./panel-frame";
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 const skill = (name: string) => ({ namespace: { kind: "domain", domainId: "d" }, name });
-const agent = { className: AGENT_DEFINITION, primaryKey: "a-1" };
+const agent = { className: AGENT_DEFINITION, primaryKey: "ad4c9a59-bab6-4373-bfcf-198d3230e851" };
 const skillType = { type: { kind: "PlatformObjectType" as const, id: SKILL } };
 const projections: Record<string, DirectProjection> = {
   "skill-list": {
@@ -41,10 +41,10 @@ const projections: Record<string, DirectProjection> = {
   },
   "agent-skills": {
     ...record, id: "agent-skills", name: "Agent skills", componentId: "@ontomato/sdk:ReferencePicker",
-    inputs: { values: { kind: "json" } }, outputs: {}, config: {},
+    inputs: { agentTarget: { kind: "scalar", type: "string" }, values: { kind: "json" } }, outputs: {}, config: {},
     data: {
-      options: { source: skillType, read: "options", params: {} },
-      selected: { source: skillType, read: "resolve", params: { values: { input: "values" } } },
+      options: { source: skillType, read: "options", params: { agentTarget: { input: "agentTarget" } } },
+      selected: { source: skillType, read: "resolve", params: { agentTarget: { input: "agentTarget" }, values: { input: "values" } } },
     },
   },
 };
@@ -53,7 +53,7 @@ const manifest: DirectPanelManifest = {
   members: {
     list: { target: { projectionId: "skill-list" } },
     form: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "agent" } } },
-    skills: { target: { projectionId: "agent-skills" } },
+    skills: { target: { projectionId: "agent-skills" }, inputs: { agentTarget: { state: "agent", field: "primaryKey" } } },
   },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
