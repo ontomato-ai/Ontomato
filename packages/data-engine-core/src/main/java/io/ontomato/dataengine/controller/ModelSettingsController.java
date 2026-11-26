@@ -33,12 +33,12 @@ public class ModelSettingsController {
       @Override
       public List<Operation> managementOperations() {
           return List.of(
-              new Operation(READ, "Read model library settings", ManagementOperations.Access.READ),
-              new Operation(CHANGE, "Change model library settings", ManagementOperations.Access.CHANGE),
-              new Operation(DISCOVER, "Discover models", ManagementOperations.Access.CHANGE),
-              new Operation(TEST, "Test a model connection", ManagementOperations.Access.CHANGE),
-              new Operation(AGENTS_READ, "Read agent model selections", ManagementOperations.Access.READ),
-              new Operation(AGENTS_CHANGE, "Change agent model selections", ManagementOperations.Access.CHANGE));
+              new Operation(READ, "查看模型库设置", ManagementOperations.Access.READ),
+              new Operation(CHANGE, "更改模型库设置", ManagementOperations.Access.CHANGE),
+              new Operation(DISCOVER, "发现模型", ManagementOperations.Access.CHANGE),
+              new Operation(TEST, "测试模型连接", ManagementOperations.Access.CHANGE),
+              new Operation(AGENTS_READ, "查看智能体的模型选择", ManagementOperations.Access.READ),
+              new Operation(AGENTS_CHANGE, "更改智能体的模型选择", ManagementOperations.Access.CHANGE));
       }
   }
 

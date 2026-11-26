@@ -27,7 +27,7 @@ public class ObserveLogController {
   public static final class Operations implements ManagementOperations.Contributor {
       @Override
       public List<Operation> managementOperations() {
-          return List.of(new Operation(READ, "Read service logs", ManagementOperations.Access.READ));
+          return List.of(new Operation(READ, "查看服务日志", ManagementOperations.Access.READ));
       }
   }
 

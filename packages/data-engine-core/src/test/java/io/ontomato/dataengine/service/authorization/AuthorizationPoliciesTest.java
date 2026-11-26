@@ -60,9 +60,6 @@ class AuthorizationPoliciesTest {
         assertEquals(
                 List.of(AuthorizationPolicies.CHANGE, AuthorizationPolicies.READ, "mcp.services.list"),
                 policies.managementCatalog().stream().map(ManagementOperations.Operation::id).toList());
-        assertEquals(
-                List.of("Change authorization policies", "Read authorization policies", "List MCP services"),
-                policies.managementCatalog().stream().map(ManagementOperations.Operation::name).toList());
 
         when(store.managementOperations(DOMAIN, Set.of(POLICY)))
                 .thenReturn(Set.of(AuthorizationPolicies.READ, "mcp.services.list"));

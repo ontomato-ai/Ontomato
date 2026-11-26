@@ -47,8 +47,8 @@ public class WorkflowController {
     public static final class Operations implements ManagementOperations.Contributor {
         @Override
         public List<Operation> managementOperations() {
-            return List.of(new Operation(CHANGE, "Activate or deactivate workflows", ManagementOperations.Access.CHANGE),
-                    new Operation(READ, "Read workflow grants", ManagementOperations.Access.READ));
+            return List.of(new Operation(CHANGE, "发布和停用流程", ManagementOperations.Access.CHANGE),
+                    new Operation(READ, "查看流程带来的授权", ManagementOperations.Access.READ));
         }
     }
 

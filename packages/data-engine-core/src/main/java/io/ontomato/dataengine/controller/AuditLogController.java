@@ -28,7 +28,7 @@ public class AuditLogController {
     public static final class Operations implements ManagementOperations.Contributor {
         @Override
         public List<Operation> managementOperations() {
-            return List.of(new Operation(READ, "Read audit logs", ManagementOperations.Access.READ));
+            return List.of(new Operation(READ, "查看审计日志", ManagementOperations.Access.READ));
         }
     }
 
