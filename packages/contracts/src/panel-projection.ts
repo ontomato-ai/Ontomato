@@ -357,6 +357,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "keyword":
     case "agentKind":
     case "agentId":
+    case "agentSkillTarget":
     case "workspaceCommit":
     case "workspacePath":
     case "workspaceDiffTarget":
