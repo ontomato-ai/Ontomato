@@ -16,7 +16,7 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { dashboardChartSources } from "../dashboard/chart-sources";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { currentDefinitionAccess, requireCurrentDefinitionUse } from "./access";
 import { requireAllowed } from "../product-governance/authorization";
 import { insertCurrentProduct, requireCurrentProduct } from "./current";

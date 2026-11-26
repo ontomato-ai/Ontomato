@@ -10,7 +10,7 @@ import {
 } from "@ontomato/contracts/platform-ontology";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { HttpError } from "../../utils/errors";
 import { createPlatformOntologyCatalogueReads, createRelationKindDisplayMap } from "./catalogue-reads";
 import {

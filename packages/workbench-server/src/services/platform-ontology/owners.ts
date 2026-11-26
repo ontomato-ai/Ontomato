@@ -26,7 +26,7 @@ import { countVisibleAgentDefinitions } from "../assistant/definitions";
 import { listAgentDefinitionNodes, listAgentExecutionUserRelations, listAgentSkillRelations } from "../assistant/definition-relations";
 import { assistantSkillCatalog, countAssistantSkills } from "../assistant/skills";
 import { countPublishedDefinitions, listPublishedDefinitions } from "../business-definitions/definitions";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { countUsableCurrentDefinitions, usableCurrentDefinitionIds } from "../product-panels/access";
 import { readPanelComponentCatalogue } from "../product-panels/component-catalogue";
 import { listObjectDetailPanelMappings } from "../product-panels/object-detail";

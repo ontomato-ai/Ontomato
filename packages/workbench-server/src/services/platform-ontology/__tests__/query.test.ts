@@ -90,8 +90,8 @@ vi.mock("../../product-governance/authorization", async original => ({
   ...await original<typeof import("../../product-governance/authorization")>(),
   decideObjects: (requests: ObjectDecisionRequest[], viewer: AssistantCredentials) => decideProductObjects(requests, viewer),
 }));
-vi.mock("../../product-governance/grants", async original => ({
-  ...await original<typeof import("../../product-governance/grants")>(),
+vi.mock("../../product-governance/service-authentication", async original => ({
+  ...await original<typeof import("../../product-governance/service-authentication")>(),
   productDefinitionOwnerHeaders: vi.fn(() => ({})),
 }));
 vi.mock("../../product-panels/component-catalogue", () => ({

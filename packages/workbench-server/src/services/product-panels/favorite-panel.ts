@@ -42,7 +42,7 @@ import {
   removeFavoriteTarget,
 } from "../platform-home/service";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { cleanSessionDisplayTitle, formatShortDateTime, sessionOpenPath } from "./agent-session-panel";
 import { applicationCatalogueClient } from "./application-catalogue";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";

@@ -611,7 +611,7 @@ Each `deepLink: true` field has its own flat query parameter. Single-type `objec
 `primaryKey` (`?selected=my-app`), `object-union` fields use `className~primaryKey`, and list fields repeat
 the parameter (`?tag=a&tag=b`). An empty list uses `?tag=`. Frame fields use the `frame.` prefix
 (`?frame.term=2026-fall`). Build in-app links with `panelAddress(path, state)` from `@ontomato/sdk/panel`.
-The shell owns `standalone`, `from`, `navigationContext`.
+The shell owns `standalone`, `from`.
 A type graph's view uses `{"mode":"type","selectedType":"platform:SDKComponent"}` as state; the address contract encodes it as `?mode=type&selectedType=platform:SDKComponent`.
 
 ### Graph selection

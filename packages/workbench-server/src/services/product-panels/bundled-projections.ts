@@ -1,7 +1,7 @@
 import type { ProductPanelResponse } from "@ontomato/contracts/product-panels";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { validateProjectionComponent } from "./component-catalogue";
 import { readCurrentProjectionRecords } from "./current";
 

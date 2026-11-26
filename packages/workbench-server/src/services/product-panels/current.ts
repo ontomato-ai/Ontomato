@@ -15,7 +15,7 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { ObjectPublicationAccess } from "@ontomato/contracts/object-publication";
 import { requireAllowed, requireObject, writeFirstPublication } from "../product-governance/authorization";
 import { currentDefinition, currentDefinitionAccess, definitionKinds, requireCurrentDefinitionUse, requireCurrentUseAllowed } from "./access";

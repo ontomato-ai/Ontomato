@@ -10,7 +10,7 @@ import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { readPlatformOntologyCounts } from "./query";
 import {
   AGENT_DEFINITION,

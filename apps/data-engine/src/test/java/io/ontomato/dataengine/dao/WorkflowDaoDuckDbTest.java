@@ -11,7 +11,6 @@ import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.DataPermissionLookup;
-import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;

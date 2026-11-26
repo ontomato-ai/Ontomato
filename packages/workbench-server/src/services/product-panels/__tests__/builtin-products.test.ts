@@ -225,10 +225,10 @@ describe("readBuiltinProducts", () => {
       const countMembers = Object.entries(frame!.manifest.members).filter(([, member]) => "projectionId" in member.target);
       expect(countMembers).toHaveLength(19);
 
-      expect(frame!.content.module).toContain('"/permissions/members": "members"');
-      expect(frame!.content.module).toContain('"/permissions/roles": "roles"');
-      expect(frame!.content.module).toContain('"/permissions/policies": "policies"');
-      expect(frame!.content.module).toContain('"/permissions/organization": "organizationUnits"');
+      expect(frame!.content.module).toContain('"/ontology/members": "members"');
+      expect(frame!.content.module).toContain('"/ontology/roles": "roles"');
+      expect(frame!.content.module).toContain('"/ontology/policies": "policies"');
+      expect(frame!.content.module).toContain('"/ontology/organization": "organizationUnits"');
 
       const expectedCountReads: Record<string, string> = {
         objectTypes: "platform:ObjectType",

@@ -18,10 +18,10 @@ const COUNT_MEMBERS = {
   "/ontology/panels": "panels",
   "/ontology/applications": "applications",
   "/ontology/agents": "agents",
-  "/permissions/members": "members",
-  "/permissions/roles": "roles",
-  "/permissions/policies": "policies",
-  "/permissions/organization": "organizationUnits",
+  "/ontology/members": "members",
+  "/ontology/roles": "roles",
+  "/ontology/policies": "policies",
+  "/ontology/organization": "organizationUnits",
 };
 
 /** Curated platform icon keys matching each ontology manager menu entry. */
@@ -38,10 +38,10 @@ const ENTRY_ICONS = {
   "/ontology/assets/workflows": "git-branch",
   "/ontology/assets/triggers": "alarm-clock",
   "/ontology/skills": "puzzle",
-  "/permissions/members": "users",
-  "/permissions/roles": "user-cog",
-  "/permissions/policies": "shield-check",
-  "/permissions/organization": "building-2",
+  "/ontology/members": "users",
+  "/ontology/roles": "user-cog",
+  "/ontology/policies": "shield-check",
+  "/ontology/organization": "building-2",
   "/ontology/assets/capability-map": "share-2",
   "/ontology/components": "component",
   "/ontology/projections": "layers",
@@ -72,17 +72,11 @@ await mountPanel({
       return next;
     });
 
-    function openEntry(path) {
-      const address = path.startsWith("/ontology/") ? path : `${path}?navigationContext=ontology`;
-      void context.navigate(address);
-    }
-
     return {
       t: context.t,
       icons: ENTRY_ICONS,
       countMemberFor,
       trailingText,
-      openEntry,
     };
   },
 });

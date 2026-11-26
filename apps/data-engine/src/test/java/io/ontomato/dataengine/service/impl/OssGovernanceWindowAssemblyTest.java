@@ -61,7 +61,6 @@ class OssGovernanceWindowAssemblyTest {
     beans.registerSingleton("langService",mock(LangService.class));
     beans.registerSingleton("agentExecutionAccess",mock(AgentExecutionAccess.class));
     beans.registerSingleton("queryAccessService",mock(QueryAccessService.class));
-    beans.registerSingleton("productGrantService",mock(ProductGrantService.class));
     beans.registerSingleton("capabilityGrantLookup",mock(CapabilityGrantLookup.class));
     beans.registerSingleton("dataPermissionLookup",mock(DataPermissionLookup.class));
     context.register(AnonymousIdentityService.class,AnonymousScheduleIdentity.class,KnowledgeGovernanceService.class,

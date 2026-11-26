@@ -27,7 +27,7 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import { readPrincipalDirectory } from "../identity/principal-directory";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { addAuthorizationEdges } from "../product-assets/ontology";
 import { readProductAssetGraph } from "./asset-graph-read";
 

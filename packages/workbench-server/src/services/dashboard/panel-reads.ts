@@ -18,7 +18,7 @@ import { DASHBOARD, DASHBOARD_CARD, METRIC_VIEW } from "@ontomato/contracts/plat
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { favoriteTargetKey, readFavoriteKeySet } from "../platform-home/service";
 import { getOwnedDashboard } from "./access";
 import { DashboardMetricClient } from "./metric-client";

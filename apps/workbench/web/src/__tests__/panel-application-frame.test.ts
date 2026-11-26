@@ -312,7 +312,7 @@ it("supplies the frame's declared deepLink defaults on first unframed (beside-co
   }
 });
 
-it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads only visible count members, populates mobile select, and preserves navigationContext routing", async () => {
+it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads only visible count members, populates mobile select, and navigates to ontology-owned paths directly", async () => {
   expect(ontologyFrameModule).not.toContain("usePanelData");
   expect(JSON.stringify(ontologyFrameSource)).not.toContain("PanelData");
 
@@ -402,7 +402,7 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
     { ...panelUse("use-objects", "om-objects", content.id, "/ontology/objects"), names: { en: "Object types" }, groupKey: "facts" },
     { ...panelUse("use-knowledge", "om-knowledge", content.id, "/ontology/knowledge"), names: { en: "Business knowledge" }, groupKey: "facts" },
     { ...panelUse("use-skills", "om-skills", content.id, "/ontology/skills"), names: { en: "Skills" }, groupKey: "capabilities" },
-    { ...panelUse("use-members", "om-members", content.id, "/permissions/members"), names: { en: "Members" }, groupKey: "governance" },
+    { ...panelUse("use-members", "om-members", content.id, "/ontology/members"), names: { en: "Members" }, groupKey: "governance" },
   ];
 
   const readMembers: string[] = [];
@@ -533,10 +533,10 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
       "Members (7)",
     ]);
 
-    // Non-/ontology/ menu entries still append ?navigationContext=ontology on navigation.
+    // Clicking a governance menu entry navigates directly to its ontology-owned path with no extra query parameter.
     const membersRow = [...mounted.element.querySelectorAll<HTMLButtonElement>(".page-row")].find((row) => row.textContent?.includes("Members"));
     membersRow?.click();
-    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/permissions/members?navigationContext=ontology"));
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/ontology/members"));
   } finally {
     mounted.app.unmount();
     catalog.applications.value = previousApplications;

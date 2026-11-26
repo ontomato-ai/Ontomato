@@ -2,7 +2,7 @@ import { createScheduledTaskReads, type ScheduledApplicationsStatus } from "@ont
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readPrincipalDirectory } from "../identity/principal-directory";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { withReadDirective } from "../product-panels/read-directive";
 import { triggerClient } from "./trigger-client";
 

@@ -13,7 +13,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 
 /*
  * The metric and function owners' named reads for a panel, each read as the viewer. Both catalogues query the owner's

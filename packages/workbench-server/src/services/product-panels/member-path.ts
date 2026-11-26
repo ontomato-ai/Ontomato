@@ -19,7 +19,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanelNestedReadRequest, ProductPanelNestedReadResponse } from "@ontomato/contracts/panel-host";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { currentDefinitionAccess, requireCurrentDefinitionUse } from "./access";
 import { requireAllowed } from "../product-governance/authorization";
 import { readRegisteredPanelEntry, requirePanelEntry } from "./application-use";

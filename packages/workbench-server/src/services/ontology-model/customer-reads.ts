@@ -21,7 +21,7 @@ import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 
 const logger = createLogger("ontology:customer-reads");
 

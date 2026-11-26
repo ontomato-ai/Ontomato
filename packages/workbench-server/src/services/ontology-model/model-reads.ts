@@ -27,7 +27,7 @@ import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { PanelWriteServerOperation } from "../product-panels/server-operations";
 import {
   attributeViewSchema,

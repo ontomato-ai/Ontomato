@@ -1,5 +1,5 @@
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
 import type { DomainComponentRuntime } from "@ontomato/contracts/domain-components";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";

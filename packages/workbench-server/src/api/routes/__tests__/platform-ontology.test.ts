@@ -10,7 +10,6 @@ import { AuthFailedError, BackendResponseError, backendGet, backendPost } from "
 import { listAgentDefinitionNodes } from "../../../services/assistant/definition-relations";
 import { assistantSkillCatalog } from "../../../services/assistant/skills";
 import { listPublishedDefinitions } from "../../../services/business-definitions/definitions";
-import { grantedProductIds } from "../../../services/product-governance/grants";
 import { readPanelComponentCatalogue } from "../../../services/product-panels/component-catalogue";
 import { platformOntologyRouter } from "../platform-ontology";
 
@@ -30,7 +29,6 @@ vi.mock("../../../services/product-panels/access", async original => ({
 vi.mock("../../../services/assistant/definition-relations", () => ({
   listAgentDefinitionNodes: vi.fn(), listAgentExecutionUserRelations: async () => [], listAgentSkillRelations: async () => [],
 }));
-vi.mock("../../../services/product-governance/grants", () => ({ grantedProductIds: vi.fn() }));
 vi.mock("../../../services/product-panels/component-catalogue", () => ({ readPanelComponentCatalogue: vi.fn() }));
 
 let server: Server;
@@ -46,7 +44,6 @@ beforeEach(async () => {
   vi.mocked(listPublishedDefinitions).mockResolvedValue([]);
   vi.mocked(assistantSkillCatalog).mockResolvedValue({ skills: [] });
   vi.mocked(listAgentDefinitionNodes).mockResolvedValue([]);
-  vi.mocked(grantedProductIds).mockResolvedValue([]);
   vi.mocked(readPanelComponentCatalogue).mockResolvedValue({
     version: "1.0.0",
     digest: "sha256:test",

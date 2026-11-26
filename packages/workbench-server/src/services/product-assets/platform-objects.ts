@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import type {ProductOwner} from '../product-governance/grants';
+import type {ProductOwner} from '../product-governance/service-authentication';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
 

@@ -7,7 +7,7 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 import { panelStateKey } from "./personal-state-key";
 import { validatePersonalPlacement } from "./references";
