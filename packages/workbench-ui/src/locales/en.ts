@@ -295,6 +295,7 @@ export default {
     "uploadUploading": "Uploading…",
     "conversationEntryOpen": "Open conversation",
     "graphLayers": "Layers",
+    "graphCategories": "Categories",
     "graphMatches": "{count} matches",
     "graphCounts": "{nodes} nodes · {edges} edges",
     "graphEdgeStored": "Stored",
