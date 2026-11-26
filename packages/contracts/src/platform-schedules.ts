@@ -6,8 +6,8 @@ import {
 } from "./agent-runtime-values";
 import { formFieldErrorSchema, formFieldSchema, formTimeValueSchema, formValuesSchema } from "./form-fields";
 
-/** Gateway-relative resource. Every task and execution belongs to its creator in the current domain. */
-export const platformSchedulesPath = "/api/data-query/platform/scheduled-tasks";
+/** Gateway-relative resource. Definitions use object policies. Run details belong to the actual executor. */
+export const platformSchedulesPath = "/api/data-query/platform/triggers";
 export const PLATFORM_SCHEDULE_TITLE_MAX = 200;
 export const PLATFORM_SCHEDULE_TEXT_MAX = 4000;
 export const PLATFORM_SCHEDULE_FIELD_MAX = 100;
@@ -81,7 +81,7 @@ const summary = z.array(platformScheduleSummaryItemSchema).max(PLATFORM_SCHEDULE
 export const platformScheduleFormRequestSchema = z.object({
   values: platformScheduleContentSchema,
   changedField: platformScheduleFieldKeySchema.nullable(),
-  taskId: runtimeIdSchema.nullable(),
+  taskId: nonempty.nullable(),
   timeZone: platformScheduleTimeZoneSchema,
 }).strict();
 /** A complete replacement form. Removed fields and their values must never be merged back by a client. */
@@ -166,20 +166,62 @@ export const platformScheduleResultLinkSchema = z.object({
   }, "Expected an unprefixed same-origin result path"),
 }).strict();
 
-const definition = z.object({
+export const platformTaskStatusSchema = z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]);
+const targetKind = z.enum(["application", "action", "workflow"]);
+const capabilityTarget = z.object({ id: nonempty, name: z.string(), description: z.string().nullable() });
+export const platformTriggerTargetsSchema = z.object({
+  actions: z.array(capabilityTarget),
+  workflows: z.array(capabilityTarget),
+}).strict();
+export type PlatformTriggerTargets = z.infer<typeof platformTriggerTargetsSchema>;
+
+const notificationAddress = z.string().max(320).email().nullable();
+const settings = {
+  frequency: platformTaskFrequencySchema,
+  timeZone: platformScheduleTimeZoneSchema,
+  notifyEmail: notificationAddress,
+};
+const application = {
   title,
   appId: platformTaskAppSchema,
   content: platformScheduleContentSchema,
   formRevision: nonempty,
-  frequency: platformTaskFrequencySchema,
-  timeZone: platformScheduleTimeZoneSchema,
-  notifyEmail: z.string().max(320).email().nullable(),
+};
+const capability = {
+  title: z.string().trim().min(1).max(255),
+  appId: z.null().optional(),
+  formRevision: z.null().optional(),
+  targetId: nonempty,
+};
+function triggerDefinition<T extends z.ZodRawShape>(fields: T) {
+  return z.discriminatedUnion("targetKind", [
+    z.object({ ...fields, ...application, targetKind: z.literal("application"), targetId: z.null().optional() }).strict(),
+    z.object({ ...fields, ...capability, targetKind: z.literal("action"), content: z.object({
+      parameters: runtimeJsonObjectSchema, runStartParameters: z.array(nonempty).optional(),
+    }).strict() }).strict(),
+    z.object({ ...fields, ...capability, targetKind: z.literal("workflow"), content: z.object({
+      inputs: runtimeJsonObjectSchema, requester: z.string().nullish(), goalText: z.string().nullish(),
+    }).strict() }).strict(),
+  ]);
+}
+const input = {
+  ...settings,
+  timeZone: platformScheduleTimeZoneSchema.optional(),
+  description: z.string().nullish(),
+  executorId: nonempty.nullish(),
+  coauthorIds: z.array(nonempty).optional(),
+};
+export const platformTaskInputSchema = triggerDefinition(input);
+export const platformTaskUpdateSchema = triggerDefinition({ ...input, revision });
+export const platformTaskStatusUpdateSchema = z.object({
+  status: platformTaskStatusSchema, revision, enabled: z.boolean().optional(),
 }).strict();
-export const platformTaskInputSchema = definition.extend({ timeZone: platformScheduleTimeZoneSchema.optional() }).strict();
-export const platformTaskUpdateSchema = platformTaskInputSchema.extend({ revision }).strict();
 export const platformTaskEnabledSchema = z.object({ enabled: z.boolean(), revision }).strict();
 export const platformTaskListQuerySchema = z.object({
   appId: platformTaskAppSchema.optional(),
+  targetKind: targetKind.optional(),
+  status: platformTaskStatusSchema.optional(),
+  countOnly: z.enum(["true", "false"]).optional(),
   includeCredentialStatus: z.enum(["true", "false"]).optional(),
 }).strict();
 export const platformTaskCreateQuerySchema = z.object({ enabled: z.boolean().default(true) }).strict();
@@ -197,7 +239,7 @@ export const platformTaskIfMatchSchema = z.string().regex(/^"[1-9]\d*"$/).refine
 export const platformTaskRunStatusSchema = z.enum(["running", "completed", "failed", "skipped"]);
 const runSummary = z.object({
   id: runtimeIdSchema,
-  taskId: runtimeIdSchema,
+  taskId: nonempty,
   trigger: z.enum(["manual", "schedule", "unknown"]),
   status: platformTaskRunStatusSchema,
   scheduledAt: runtimeTimestampSchema.nullable(),
@@ -219,14 +261,23 @@ function checkOutcome(value: {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A skip reason belongs to a skipped execution" });
 }
 function checkRun(value: z.infer<typeof runSummary>, ctx: z.RefinementCtx) {
-  checkOutcome(value, ctx);
+  if (value.error !== null) checkOutcome(value, ctx);
   if ((value.status === "running") !== (value.finishedAt === null))
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Only a running execution has no finish time" });
 }
 export const platformTaskRunSummarySchema = runSummary.superRefine(checkRun);
-export const platformTaskRunSnapshotSchema = definition.pick({
-  title: true, appId: true, content: true, formRevision: true, timeZone: true,
-}).extend({
+export const platformTaskRunSnapshotSchema = z.object({
+  ...settings,
+  title: z.string(),
+  domainId: nonempty,
+  executorId: nonempty.nullable(),
+  version: revision,
+  description: z.string().nullable(),
+  targetKind,
+  targetId: nonempty.nullable(),
+  appId: platformTaskAppSchema.nullable(),
+  content: runtimeJsonObjectSchema,
+  formRevision: nonempty.nullable(),
   creatorId: nonempty,
   summary,
   locale: nonempty,
@@ -237,9 +288,21 @@ export const platformTaskRunSchema = runSummary.extend({
   result: z.string().nullable(),
   /** Application-owned read-only JSON, such as the parameters resolved at the actual start time. */
   executionDetails: runtimeJsonObjectSchema.nullable(),
-}).strict().superRefine(checkRun);
-export const platformTaskSchema = definition.extend({
-  id: runtimeIdSchema,
+}).strict().superRefine((run, ctx) => {
+  checkRun(run, ctx);
+  if (run.snapshot.executorId !== null && run.error === null) checkOutcome(run, ctx);
+});
+export const platformTaskSchema = triggerDefinition({
+  ...settings,
+  id: nonempty,
+  description: z.string().nullable(),
+  targetName: z.string().nullable(),
+  status: platformTaskStatusSchema,
+  version: revision,
+  reviewedBy: nonempty.nullable(),
+  executorId: nonempty,
+  coauthorIds: z.array(nonempty),
+  lastFiredAt: runtimeTimestampSchema.nullable(),
   creatorId: nonempty,
   summary,
   enabled: z.boolean(),
@@ -251,7 +314,7 @@ export const platformTaskSchema = definition.extend({
   activeRunId: runtimeIdSchema.nullable(),
   lastRun: platformTaskRunSummarySchema.nullable(),
   latestResult: z.object({ runId: runtimeIdSchema, link: platformScheduleResultLinkSchema }).strict().nullable(),
-}).strict().superRefine((task, ctx) => {
+}).superRefine((task, ctx) => {
   if ((!task.enabled || task.pause !== null) && task.nextRunAt !== null)
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Disabled or paused tasks have no next slot" });
   if (!task.enabled && task.pause !== null)
@@ -297,10 +360,10 @@ export const platformScheduleValidationSchema = platformScheduleValidationReques
   summary,
   references: runtimeJsonObjectSchema.nullable(),
 }).strict();
-export const platformScheduleExecutionRequestSchema = definition.pick({
-  title: true, appId: true, content: true, formRevision: true, timeZone: true,
-}).extend({
-  taskId: runtimeIdSchema,
+export const platformScheduleExecutionRequestSchema = z.object({
+  ...application,
+  timeZone: platformScheduleTimeZoneSchema,
+  taskId: nonempty,
   runId: runtimeIdSchema,
   locale: nonempty,
   trigger: z.enum(["manual", "schedule"]),
@@ -328,7 +391,7 @@ export const platformScheduleExecutionStateSchema = z.object({
 });
 /** Service-authenticated status reads verify the persisted owner and never admit or repair an execution. */
 export const platformScheduleExecutionStatusRequestSchema = z.object({
-  taskId: runtimeIdSchema,
+  taskId: nonempty,
   runId: runtimeIdSchema,
   owner: z.object({ userId: nonempty, domainId: nonempty }).strict(),
   handle: platformScheduleHandleSchema.nullable(),

@@ -25,7 +25,7 @@ test("application descriptions round trip in either locale and remain an explici
   assert.equal(contract.platformScheduleApplicationSchema.safeParse({ ...application, description: 12 }).success, false);
 });
 
-test("shared form and create exchanges cover all four applications", () => {
+test("application forms and task trigger definitions round trip", () => {
   roundTrip(contract.platformScheduleApplicationsSchema, examples.applications.response);
   for (const example of examples.forms) {
     roundTrip(contract.platformScheduleFormRequestSchema, example.request);
@@ -40,7 +40,7 @@ test("shared form and create exchanges cover all four applications", () => {
     assert.deepEqual(task.content, example.request.content);
   }
   const covered = new Set(examples.creates.map((example) => example.request.appId));
-  for (const appId of ["ontology", "agents", "operations", "governance"]) assert.ok(covered.has(appId), appId);
+  for (const appId of [null, "agents", "operations", "governance"]) assert.ok(covered.has(appId), appId);
 });
 
 test("a form is replaced as a whole: stale hidden values, duplicate field IDs and option IDs are rejected", () => {
@@ -81,12 +81,12 @@ test("application IDs are open, while old targets, arbitrary controls and client
   assert.equal(contract.platformTaskListQuerySchema.safeParse({ agentId: "20000000-0000-4000-8000-000000000001" }).success, false);
 });
 
-test("content preserves line arrays and local time text; UTF-8 limits cannot be bypassed with multibyte text", () => {
+test("action parameters preserve arrays and runtime dates; application form UTF-8 limits apply", () => {
   const input = examples.creates[0].request;
   const parsed = contract.platformTaskInputSchema.parse(input);
-  assert.equal(parsed.content["parameter:departments"], "销售部\n\n市场部");
-  assert.equal(parsed.content["parameter:cutoff"], "");
-  assert.equal(parsed.content["parameter:checkpoints"], "2026-11-06\n2026-11-07 09:30\n2026-11-08T01:30:00Z");
+  assert.deepEqual(parsed.content.parameters.departments, ["销售部", "市场部"]);
+  assert.deepEqual(parsed.content.runStartParameters, ["cutoff"]);
+  assert.deepEqual(parsed.content.parameters.checkpoints, ["2026-11-05T16:00:00Z", "2026-11-07T01:30:00Z", "2026-11-08T01:30:00Z"]);
   const within = Object.fromEntries(Array.from({ length: 5 }, (_, index) => [`field-${index}`, "中".repeat(4000)]));
   contract.platformScheduleContentSchema.parse(within);
   assert.equal(contract.platformScheduleContentSchema.safeParse({ ...within, extra: "中".repeat(4000) }).success, false);
@@ -131,6 +131,9 @@ test("running, completed, failed and skipped executions cannot contradict their 
   assert.equal(contract.platformTaskRunSchema.safeParse({ ...skipped, status: "failed" }).success, false);
   const failed = run("operations-lost-busy-response-is-interrupted");
   assert.equal(contract.platformTaskRunSchema.safeParse({ ...failed, error: null }).success, false);
+  roundTrip(contract.platformTaskRunSchema, {
+    ...failed, error: null, snapshot: { ...failed.snapshot, executorId: null, content: {}, summary: [], formRevision: null },
+  });
 });
 
 test("revision checks cover update, enabled and If-Match without reusing a task definition as a command", () => {
