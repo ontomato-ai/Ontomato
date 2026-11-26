@@ -6,11 +6,16 @@ import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.logging.ServiceLogContext;
 import io.ontomato.dataengine.service.IdentityService;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -154,41 +159,55 @@ public class PlatformTasks {
     var actor = actor(user, locale);
     var result = array();
     var tasks = store.visible(user.getDomainId(), user.getId(), null);
-    for (var entry : applications.all(user.getDomainId()).entrySet()) {
-      var provider = entry.getValue();
-      // A picker exists to create a task, so an application that refuses new ones does not belong in it. The provider
-      // still resolves through `applications.require` for the tasks it already has: their detail, their runs and the
-      // rollback path keep working, they are just no longer offered as a place to start something new.
-      if (!provider.acceptsNewTasks()) continue;
-      ObjectNode descriptor;
-      try {
-        descriptor = (ObjectNode) provider.describe(actor);
-      } catch (RuntimeException unavailable) {
-        descriptor =
-            object(
-                "id",
-                entry.getKey(),
-                "description",
-                provider.description(locale),
-                "available",
-                false,
-                "unavailableReason",
-                locale.startsWith("zh")
-                    ? "暂时无法确认你能否使用这个应用"
-                    : "Unable to confirm whether you can use this application right now",
-                "taskCount",
-                0);
+    // Retired applications still serve existing tasks but are absent from the creation picker.
+    var providers = applications.all(user.getDomainId()).entrySet().stream()
+        .filter(entry -> entry.getValue().acceptsNewTasks()).toList();
+    try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
+      Executor callbacks = command -> workers.execute(ServiceLogContext.wrap(command));
+      var remoteDescriptions = new HashMap<String, CompletableFuture<ObjectNode>>();
+      for (var entry : providers) {
+        var provider = entry.getValue();
+        if (provider.remote()) {
+          String id = entry.getKey();
+          remoteDescriptions.put(id, CompletableFuture.supplyAsync(
+              () -> describeApplication(id, provider, actor), callbacks));
+        }
       }
-      if (!applications.canEnter(entry.getKey(),user)) {
-        descriptor.put("available",false);
-        descriptor.put("unavailableReason",locale.startsWith("zh") ? "没有应用入口权限" : "Application entry permission is required");
+      for (var entry : providers) {
+        String id = entry.getKey();
+        var remote = remoteDescriptions.get(id);
+        var descriptor = remote == null ? describeApplication(id, entry.getValue(), actor) : remote.join();
+        if (!applications.canEnter(id, user)) {
+          descriptor.put("available", false);
+          descriptor.put("unavailableReason", locale.startsWith("zh")
+              ? "没有应用入口权限" : "Application entry permission is required");
+        }
+        descriptor.put(
+            "taskCount", tasks.stream().filter(task -> id.equals(task.definition().appId())).count());
+        result.add(descriptor);
       }
-      descriptor.put(
-          "taskCount",
-          tasks.stream().filter(task -> entry.getKey().equals(task.definition().appId())).count());
-      result.add(descriptor);
     }
     return object("applications", result, "totalCount", tasks.size());
+  }
+
+  private ObjectNode describeApplication(String id, ScheduleApplication provider, ScheduleApplication.Actor actor) {
+    try {
+      return (ObjectNode) provider.describe(actor);
+    } catch (RuntimeException unavailable) {
+      return object(
+          "id",
+          id,
+          "description",
+          provider.description(actor.locale()),
+          "available",
+          false,
+          "unavailableReason",
+          actor.locale().startsWith("zh")
+              ? "暂时无法确认你能否使用这个应用"
+              : "Unable to confirm whether you can use this application right now",
+          "taskCount",
+          0);
+    }
   }
 
   public JsonNode form(String appId, JsonNode input, String locale) {
