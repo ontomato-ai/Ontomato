@@ -146,9 +146,10 @@ describe("the platform layout", () => {
     expect(wrapper.find(".platform-rail").exists()).toBe(false);
   });
 
-  it("hands the ontology frame spec for linked administration pages and restores native navigation on direct entry", async () => {
+  it("keeps each application's frame scoped to its own address prefix without cross-app query overrides", async () => {
     const { wrapper, router, apps } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
-    router.addRoute({ path: "/permissions/members", component: page("members"), meta: { page: "/permissions/members" } });
+    router.addRoute({ path: "/ontology/members", component: page("ontology-members"), meta: { page: "/ontology/members" } });
+    router.addRoute({ path: "/permissions/members", component: page("permissions-members"), meta: { page: "/permissions/members" } });
     const ontology = apps.find((app) => app.id === "ontology")!;
     await wrapper.setProps({
       apps: apps.map((app) =>
@@ -156,15 +157,15 @@ describe("the platform layout", () => {
           ? {
               ...ontology,
               framePanelId: "builtin-product-ontology-frame",
-              groups: [...(ontology.groups ?? []), { key: "governance", pages: [{ id: "/permissions/members", label: "Members", icon: "pages" }] }],
+              groups: [...(ontology.groups ?? []), { key: "governance", pages: [{ id: "/ontology/members", label: "Members", icon: "users" }] }],
             }
           : app,
       ),
     });
-    await router.push({ path: "/permissions/members", query: { navigationContext: "ontology" } });
+    await router.push("/ontology/members");
     await flushPromises();
     expect(wrapper.get(".application-frame-double").attributes("data-frame-panel")).toBe("builtin-product-ontology-frame");
-    expect(wrapper.get(".mock-frame-menu").attributes("data-active-page")).toBe("/permissions/members");
+    expect(wrapper.get(".mock-frame-menu").attributes("data-active-page")).toBe("/ontology/members");
     expect(wrapper.find(".mock-frame-row.active").text()).toBe("Members");
     await router.push("/permissions/members");
     await flushPromises();

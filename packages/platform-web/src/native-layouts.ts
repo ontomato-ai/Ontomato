@@ -1,4 +1,3 @@
-import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication, isPlatformCatalogApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
@@ -30,46 +29,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   // An application whose pages are panels: it has no pages of its own to list, because every one of them is a use
   // relation the panel shows full.
   { renderer: "panels", sections: [] },
-  {
-    renderer: "ontology",
-    // Four layers organize existing screens; cross-application entries keep their original routes and permissions.
-    sections: [
-      {
-        key: "ontology:facts",
-        titleKey: "platform.layers.facts",
-        paths: [
-          managerPaths.graph,
-          managerPaths.objects,
-          managerPaths.attributes,
-          managerPaths.relations,
-          managerPaths.knowledge,
-          managerPaths.visualModeling,
-        ],
-      },
-      {
-        key: "ontology:capabilities",
-        titleKey: "platform.layers.capabilities",
-        // Scheduled tasks of functions are the platform's: one list for every kind of task.
-        paths: [managerPaths.metrics, managerPaths.functions, managerPaths.actions, managerPaths.workflows, managerPaths.triggers, platformRoutes.ontologySkills.path],
-      },
-      {
-        key: "ontology:governance",
-        titleKey: "platform.layers.governance",
-        // The agent principals page is gone: agents are configured in the product layer's settings page.
-        paths: [platformRoutes.members.path,platformRoutes.roles.path,platformRoutes.policies.path,platformRoutes.organization.path,managerPaths.capabilityMap],
-      },
-      {
-        key: "ontology:products",
-        titleKey: "platform.layers.products",
-        // The product layer in its own order — base components, projections, panels, applications, agents — each a panel
-        // entry the ontology manager declares.
-        paths: [
-          "/ontology/components", "/ontology/projections", "/ontology/panels", "/ontology/applications",
-          platformRoutes.ontologyAgents.path,
-        ],
-      },
-    ],
-  },
   {
     renderer: "agents",
     // The conversation is where the platform is entered, by every member of the domain; the agent settings and the models

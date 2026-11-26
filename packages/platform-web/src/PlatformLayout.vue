@@ -109,13 +109,7 @@ const railApps = computed(() => applicationShortcuts(props.apps??[],props.dynami
   // An application the reader opens from the rail opens in the platform; its external link is copied from its header.
   return railApp(app, () => emit('selectApp', app.id));
 }));
-const navigationContext=computed(()=>{
-  if(route.query.navigationContext!=='ontology')return null;
-  const app=props.apps.find(app=>app.id==='ontology');
-  const page=(route.meta.page as string|undefined)??route.path;
-  return app?.groups?.some(group=>group.pages.some(item=>item.id===page))?app:null;
-});
-const activeAppId = computed(() => navigationContext.value?.id??appFor(route.path)?.id ?? null);
+const activeAppId = computed(() => appFor(route.path)?.id ?? null);
 const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
 /**
  * An external link's tab (big main's ruling, 2026-11-21): an address the reader opened with `standalone=1` shows the
