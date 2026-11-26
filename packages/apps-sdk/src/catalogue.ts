@@ -418,7 +418,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "form",
     meaning:
-      "Renders an owner-declared create or edit form with validation, dirty tracking, assistant filling and Save/Discard; use to create or edit one object.\n\n\n- The owner declares the form and the component asks it again whenever a field the form depends on changes. What it saves is the owner's own form save, and only the fields the reader set.\n- A hidden owner field has no control, a refused field is marked, a failed read offers a retry, and a declared default gets a Reset that restores a copy without saving. A field the owner marks with `submitOn` to save on blur or change saves itself, and the assistant's filling of one goes through the reader's own confirmation.\n- It registers with the panel's form protocol, so drafts, back-navigation and assistant filling act on one form state wherever the page slices its fields.\n- Slot content replaces a field in that field's own place, keeping the owner's order and sections; a reference with no slot is shown as unavailable to edit rather than guessed at.\n- Unsaved work is protected before it can be lost: Discard asks first, a switch away from a dirty form confirms, and the pinned bar stays hidden while the form is clean.",
+      "Renders an owner-declared create or edit form with validation, dirty tracking, assistant filling and Save/Discard; use to create or edit one object.\n\n- The owner declares the form and the component asks it again whenever a field the form depends on changes. What it saves is the owner's own form save, and only the fields the reader set.\n- A hidden owner field has no control, a refused field is marked, a failed read offers a retry, and a declared default gets a Reset that restores a copy without saving. A field the owner marks with `submitOn` to save on blur or change saves itself, and the assistant's filling of one goes through the reader's own confirmation.\n- It registers with the panel's form protocol, so drafts, back-navigation and assistant filling act on one form state wherever the page slices its fields.\n- Slot content replaces a field in that field's own place, keeping the owner's order and sections; a reference with no slot is shown as unavailable to edit rather than guessed at.\n- Unsaved work is protected before it can be lost: Discard asks first, a switch away from a dirty form confirms, and the pinned bar stays hidden while the form is clean.",
     effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
@@ -533,6 +533,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "graph",
     meaning:
       "Draws two record reads as an interactive graph whose edges join at the fields the placement names; use for a graph of your own records, where `InstanceGraph` explores the ontology itself.\n\n- Inside an `ObjectForm` field slot it is that field's chooser: a choice adds or removes a node in the form's own value, the neighbours one edge away from a chosen node are marked, and one action adds them all.\n- Outside one it is a canvas the page drives: the chosen node and edge are the panel's state, a reader's places are kept per person, and a node never placed is placed by its relations with nothing written for it.\n- What the owner marks shows on the drawing: a node takes its category's colour when `nodeCategory` and `categories` are configured, `showCategoryLegend` adds a legend whose click folds a category and its edges away, and an edge is drawn dashed when the record's `edgeDashedField` holds `true`, so a derived relation reads differently from a stored one.\n- A partial refusal is not the whole failure: readable nodes still draw under a notice that relations cannot be shown, while forbidden nodes show the access refusal.\n- Highlighting is not choosing: what the page marks \u2014 search matches, or a directed path between two bound nodes with its trail and hop count \u2014 stands out and the rest fades. It decides nothing about what a node stands for or who may read it.",
+
     effects: "Reads the node and edge types' lists as the reader; it writes the enclosing form field when placed inside an `ObjectForm` field slot, or the panel state its outputs bind, never the owner.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
@@ -609,7 +610,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "graph",
     meaning:
-      "Draws caller-supplied nodes and edges on a canvas a reader pans, zooms and drags, and exports as a PNG; use `<interactive-graph-canvas>` for a graph outside a projection.\n\n\n- What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.\n- Each node takes its category's colour from the edition's palette, and an edge carries the label, the dashes and the weight it is given.\n- Nothing a reader does is kept here: the selection, the part in view, a double-click, a dragged node's new place and a click on empty canvas all come back to the caller to act on.",
+      "Draws caller-supplied nodes and edges on a canvas a reader pans, zooms and drags, and exports as a PNG; use `<interactive-graph-canvas>` for a graph outside a projection.\n\n- What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.\n- Each node takes its category's colour from the edition's palette, and an edge carries the label, the dashes and the weight it is given.\n- Nothing a reader does is kept here: the selection, the part in view, a double-click, a dragged node's new place and a click on empty canvas all come back to the caller to act on.",
     configProps: [
       "label", "nodes", "edges", "selected", "selectedEdges", "selection", "layout", "maxHeight", "categories",
       "labelWidth", "nodeSize", "labelSize", "readableLabels", "editable",
@@ -622,7 +623,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "graph",
     meaning:
-      "Draws the bound graph source as an interactive ontology graph in three modes — declared types by layer, a sampled overview, and paginated one-hop expansion; use for an instance explorer.\n\n\n- The modes are one component and what a placement binds decides which it shows: type mode draws declared types and relation kinds with per-type counts and access, overview mode draws a sampled dot-grid panorama that polls while the sample generates and recovers from a version conflict, and instance mode expands a node at a time from an anchored action bar.\n- Every edge of the drawing is a read the owner admits now: no neighbours, an owner refusal and a failed read are told apart rather than all drawn as an empty graph.\n- What the reader arranged and chose — layers, relation kinds, expanded nodes, group, neighbour filter and per-person positions — is the panel's state, read and written both ways so a page's own filter and the graph follow one choice.\n- Complete object identities are preserved and query matches are highlighted, so a drawn node is the same reference the rest of the page uses.",
+      "Draws the bound graph source as an interactive ontology graph in three modes — declared types by layer, a sampled overview, and paginated one-hop expansion; use for an instance explorer.\n\n- The modes are one component and what a placement binds decides which it shows: type mode draws declared types and relation kinds with per-type counts and access, overview mode draws a sampled dot-grid panorama that polls while the sample generates and recovers from a version conflict, and instance mode expands a node at a time from an anchored action bar.\n- Every edge of the drawing is a read the owner admits now: no neighbours, an owner refusal and a failed read are told apart rather than all drawn as an empty graph.\n- What the reader arranged and chose — layers, relation kinds, expanded nodes, group, neighbour filter and per-person positions — is the panel's state, read and written both ways so a page's own filter and the graph follow one choice.\n- Complete object identities are preserved and query matches are highlighted, so a drawn node is the same reference the rest of the page uses.",
     effects: "Reads the bound graph source's schema, counts, starting node, sampled overview, deferred connections, and paginated one-hop neighbors as the reader; writes only the panel's own selection, group filter, layer filter, relation-kind filter, neighbor filter, expanded-nodes, and personal positions state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Relationship:*"],
     // Expanding from a node is what the graph does; optional overview, deferred connections, and schema/counts/start reads activate when a placement supplies them.
@@ -846,7 +847,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Draws one object reference as a bordered card or as a compact button and navigates when the reader picks it; use to point at another object from a detail view.\n\n\n- A click is the panel's to act on: the card says which object was picked and writes the navigation output its placement declares, and writes nothing to an owner.\n- The same reference can be a card or a button and nothing about the object changes between them; only how much of it is shown does.",
+      "Draws one object reference as a bordered card or as a compact button and navigates when the reader picks it; use to point at another object from a detail view.\n\n- A click is the panel's to act on: the card says which object was picked and writes the navigation output its placement declares, and writes nothing to an owner.\n- The same reference can be a card or a button and nothing about the object changes between them; only how much of it is shown does.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -873,7 +874,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "chart",
     meaning:
-      "Draws one or more statistical metrics — a label, a tabular number, an optional unit, a description and a tone — as cards, compact rows or inline numbers; use for KPI summaries.\n\n\n- A count taken from a list, a query or an objects read is the owner's own number: a complete list counts its rows, a paged query takes strictly the total the owner returned, and nothing is summed here.\n- Pure presentation: it never aggregates on the client, so a number its owner did not compute does not appear.\n- A bare surface lets it sit inside an outer dashboard card without nesting one card in another.",
+      "Draws one or more statistical metrics — a label, a tabular number, an optional unit, a description and a tone — as cards, compact rows or inline numbers; use for KPI summaries.\n\n- A count taken from a list, a query or an objects read is the owner's own number: a complete list counts its rows, a paged query takes strictly the total the owner returned, and nothing is summed here.\n- Pure presentation: it never aggregates on the client, so a number its owner did not compute does not appear.\n- A bare surface lets it sit inside an outer dashboard card without nesting one card in another.",
     effects: "Reads the bound MetricView `result`, `record`, `rows`, or `objects` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -931,7 +932,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "content",
     meaning:
-      "Shows a searchable tree of slash-separated paths or parent-linked records and writes the reader's choice to panel state; use for a file or hierarchy navigator on a projection.\n\n\n- The two shapes read differently: paths are folders and files, where a folder only folds unless the placement lets it be chosen; records are linked by their parent field, keeping the order the owner returned.\n- Whatever is selectable, the chevron stays the chevron: folding a node is independent of choosing it.\n- An explicit choice is never overwritten: falling back to a default or first node applies only while nothing is selected.",
+      "Shows a searchable tree of slash-separated paths or parent-linked records and writes the reader's choice to panel state; use for a file or hierarchy navigator on a projection.\n\n- The two shapes read differently: paths are folders and files, where a folder only folds unless the placement lets it be chosen; records are linked by their parent field, keeping the order the owner returned.\n- Whatever is selectable, the chevron stays the chevron: folding a node is independent of choosing it.\n- An explicit choice is never overwritten: falling back to a default or first node applies only while nothing is selected.",
     effects: "Reads the owner's records or files as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
@@ -954,7 +955,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "content",
     meaning:
-      "Shows one object's text — Markdown, code, a CSV or TSV table, a diff, or paged segments of a longer file — as its owner's reads return it; use for a file or text viewer on a projection.\n\n\n- One source at a time and one page at a time: a list of sources is drawn as chips, and each More reads the next page of the chosen one.\n- What the text is drawn as follows its own name unless the placement says otherwise; without a recognisable extension it is drawn as preformatted text rather than guessed at.\n- Its active source, anchor and path are read as well as written, so two readers on one page keep one open and a relative Markdown link opens in place.\n- Which sources exist is the owner's read's decision: an issue's cited sources lists only those.",
+      "Shows one object's text — Markdown, code, a CSV or TSV table, a diff, or paged segments of a longer file — as its owner's reads return it; use for a file or text viewer on a projection.\n\n- One source at a time and one page at a time: a list of sources is drawn as chips, and each More reads the next page of the chosen one.\n- What the text is drawn as follows its own name unless the placement says otherwise; without a recognisable extension it is drawn as preformatted text rather than guessed at.\n- Its active source, anchor and path are read as well as written, so two readers on one page keep one open and a relative Markdown link opens in place.\n- Which sources exist is the owner's read's decision: an issue's cited sources lists only those.",
     effects: "Reads the owner's sources, pages and records as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
@@ -977,7 +978,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "content",
     meaning:
-      "Draws line-numbered source code beside the annotation segments that explain it, with the two panes kept in step; use to show why an action or query reads as it does.\n\n\n- Highlighting is token-based and only where the language is known; nothing is executed and nothing is inferred from the code's meaning.\n- A segment and a line select each other: a choice in one pane scrolls and marks the other, and clearing the choice clears both.\n- Code that no longer matches what is annotated is said so in place rather than silently reconciled.\n- A reference inside an annotation is handed to the page as a selection; it is not navigated from here.",
+      "Draws line-numbered source code beside the annotation segments that explain it, with the two panes kept in step; use to show why an action or query reads as it does.\n\n- Highlighting is token-based and only where the language is known; nothing is executed and nothing is inferred from the code's meaning.\n- A segment and a line select each other: a choice in one pane scrolls and marks the other, and clearing the choice clears both.\n- Code that no longer matches what is annotated is said so in place rather than silently reconciled.\n- A reference inside an annotation is handed to the page as a selection; it is not navigated from here.",
     effects: "Reads the bound object's annotatedCode datum as the reader; writes only the panel's own segment selection state and read-only outputs.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -1005,7 +1006,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "conversation",
     meaning:
-      "Places a way into a conversation with a platform agent — a button, or an embedded prompt box — from a panel member; use to start or hand off an agent chat.\n\n\n- As a button it asks the platform host to open the page's composer with what the member declares, so the conversation itself stays the shell's; embedded, it draws the platform's inline composer and serves the page's other triggers while mounted.\n- Nothing is sent that the reader did not mean: an empty prefill is not submitted, and a fresh conversation is a choice the member declares rather than a default.\n- The composer's agent choice is the platform's standard picker; a page whose composer skin differs supplies its own through a slot.",
+      "Places a way into a conversation with a platform agent — a button, or an embedded prompt box — from a panel member; use to start or hand off an agent chat.\n\n- As a button it asks the platform host to open the page's composer with what the member declares, so the conversation itself stays the shell's; embedded, it draws the platform's inline composer and serves the page's other triggers while mounted.\n- Nothing is sent that the reader did not mean: an empty prefill is not submitted, and a fresh conversation is a choice the member declares rather than a default.\n- The composer's agent choice is the platform's standard picker; a page whose composer skin differs supplies its own through a slot.",
     effects: "Applies the declared conversation behavior on click. In inline mode, sends the reader's typed prompt to the platform agent counter.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
@@ -1069,7 +1070,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "graph",
     panelUsable: false,
     meaning:
-      "Platform-dedicated layered graph of a product asset's references, drawn as category columns of cards joined by arrows; several product pages share it.\n\n\n- Hovering, focusing or selecting an asset highlights the edges and relation labels that touch it and dims the rest, so one reference is read without leaving the page.\n- Activating an asset is the panel's to act on: the graph says which real asset was opened and writes only the navigation output its placement declares.",
+      "Platform-dedicated layered graph of a product asset's references, drawn as category columns of cards joined by arrows; several product pages share it.\n\n- Hovering, focusing or selecting an asset highlights the edges and relation labels that touch it and dims the rest, so one reference is read without leaving the page.\n- Activating an asset is the panel's to act on: the graph says which real asset was opened and writes only the navigation output its placement declares.",
     effects: "Reads its bound `graph` datum as the reader when declared and writes the optional `navigate` output state on asset activation; writes nothing to any owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -1096,7 +1097,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "graph",
     panelUsable: false,
     meaning:
-      "Platform-dedicated ontology type graph canvas built on the shared `ObjectGraphCanvas` engine, carrying the ontology graph's fixed visual language.\n\n\n- Its drawing is fixed rather than configurable: node and edge strokes, selection and path emphasis, non-match dimming and a radial force layout are the ontology page's own.\n- A platform page places it; it writes only the panel state its outputs bind and never an owner, and its exported image keeps a solid background and carries the date.",
+      "Platform-dedicated ontology type graph canvas built on the shared `ObjectGraphCanvas` engine, carrying the ontology graph's fixed visual language.\n\n- Its drawing is fixed rather than configurable: node and edge strokes, selection and path emphasis, non-match dimming and a radial force layout are the ontology page's own.\n- A platform page places it; it writes only the panel state its outputs bind and never an owner, and its exported image keeps a solid background and carries the date.",
     effects: "Reads its bound `nodes` and `edges` lists as the reader and writes the panel state its outputs bind; never writes to any owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -1134,7 +1135,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "graph",
     panelUsable: false,
     meaning:
-      "Platform-dedicated visual modeling graph canvas built on the shared `ObjectGraphCanvas` engine, carrying the gestures a model is edited with.\n\n\n- Its connection ports are the editor's own: four directions per node, a live drag preview and a pending edge that shows a connection the reader has not committed — never written to an owner.\n- Selection keeps its own halo, edge labels are capsules, and the view toolbar carries zoom, fit and relayout beside whatever the page adds.\n- A double-click activates a node or edge rather than only selecting it.",
+      "Platform-dedicated visual modeling graph canvas built on the shared `ObjectGraphCanvas` engine, carrying the gestures a model is edited with.\n\n- Its connection ports are the editor's own: four directions per node, a live drag preview and a pending edge that shows a connection the reader has not committed — never written to an owner.\n- Selection keeps its own halo, edge labels are capsules, and the view toolbar carries zoom, fit and relayout beside whatever the page adds.\n- A double-click activates a node or edge rather than only selecting it.",
     effects: "Reads its bound `nodes` and `edges` lists as the reader and writes selection, position, and pending connection endpoint state (`connectFrom`, `connectTo`); temporary visual edges are never written to any owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -1173,7 +1174,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "layout",
     meaning:
-      "Renders the application entry the reader opened, in the member of a frame panel that belongs to it; use only in a custom frame panel.\n\n\n- The frame chooses where the entry goes, not which panel it is or what inputs it gets: what is drawn is the content the platform already admitted and runs, never started again here.\n- Write `<current-entry member=\"content\">` for the member whose target resolves the current entry.\n- The frame's own code reads the entry and the menu the same resolution gave through `usePanelContext()`, to draw its menu and mark the entry; opening another entry goes through `navigate`.\n- Outside an application's frame the place says it shows nothing, and a member that is not the current entry is refused in its place.",
+      "Renders the application entry the reader opened, in the member of a frame panel that belongs to it; use only in a custom frame panel.\n\n- The frame chooses where the entry goes, not which panel it is or what inputs it gets: what is drawn is the content the platform already admitted and runs, never started again here.\n- Write `<current-entry member=\"content\">` for the member whose target resolves the current entry.\n- The frame's own code reads the entry and the menu the same resolution gave through `usePanelContext()`, to draw its menu and mark the entry; opening another entry goes through `navigate`.\n- Outside an application's frame the place says it shows nothing, and a member that is not the current entry is refused in its place.",
     effects: "Reads nothing and writes nothing: the platform places the admitted content.",
     configProps: ["member"],
   }),
@@ -1184,7 +1185,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "action",
     meaning:
-      "Draws nothing: it is a projection member that exists only so a panel can declare the operations it runs from code; never use it to read or render business fields.\n\n\n- Its operations are reached through `usePanelOperation`, which registers a mounted page action by default; a background flow passes `{ entry: false }` and gets no entry.\n- It reads whatever datum the placement names, under the author's own name and with any read result, and the read's own signature still bounds what may be given to it.\n- For business fields, use an official component, configure it, or write one for that slot.",
+      "Draws nothing: it is a projection member that exists only so a panel can declare the operations it runs from code; never use it to read or render business fields.\n\n- Its operations are reached through `usePanelOperation`, which registers a mounted page action by default; a background flow passes `{ entry: false }` and gets no entry.\n- It reads whatever datum the placement names, under the author's own name and with any read result, and the read's own signature still bounds what may be given to it.\n- For business fields, use an official component, configure it, or write one for that slot.",
     // Any datum the projection names, under the author's own name, with any read result and the run-time values the
     // other components give; the read's own signature still bounds them. The catalogue test keeps these lists whole.
     data: {
