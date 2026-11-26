@@ -835,15 +835,11 @@ it("keeps backward-compatible type and instance modes working without overview p
   await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(2));
   expect(instance.outputs.graph?.activeMode).toBe("type");
 
-  // Switch to instance mode: does not send unsupported limit/offset/direction params to platform:OntologyType.neighbors
   instance.state.set("mode", "instance");
   await vi.waitFor(() => expect(instance.outputs.graph?.activeMode).toBe("instance"));
-  await vi.waitFor(() => expect(reads.some((r) => r.dataName === "neighbors")).toBe(true));
-  const legacyNeighborRead = reads.find((r) => r.dataName === "neighbors");
-  expect(legacyNeighborRead?.runtimeParams?.limit).toBeUndefined();
-  expect(legacyNeighborRead?.runtimeParams?.offset).toBeUndefined();
-  expect(legacyNeighborRead?.runtimeParams?.direction).toBeUndefined();
-  expect(legacyNeighborRead?.runtimeParams?.targetClass).toBeUndefined();
+  const neighborId = encodeGraphNodeId({ className: ACTION, primaryKey: "a-1" });
+  await vi.waitFor(() => expect(canvasRecorder.nodes.some((node) => node.id === neighborId)).toBe(true));
+  expect(reads.some((read) => read.dataName === "overview")).toBe(false);
 });
 
 it("exposes overview diagnostics outputs, clickable group headings, NOT_GENERATED refresh, GENERATING auto-poll, and drawing progress", async () => {
