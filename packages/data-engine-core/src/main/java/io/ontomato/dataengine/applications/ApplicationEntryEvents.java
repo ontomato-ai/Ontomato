@@ -2,6 +2,8 @@ package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.ontomato.dataengine.migration.DataEngineMigration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -18,8 +20,10 @@ import org.springframework.web.server.ResponseStatusException;
 public record ApplicationEntryEvents(JdbcTemplate db) implements DataEngineMigration {
     private static final String TYPE = "application.entry-roots.changed";
 
-    public record Roots(List<String> panelIds, List<String> agentIds) {
-        static final Roots EMPTY = new Roots(List.of(), List.of());
+    public record BoundPanelRoot(String panelId, Map<String, Map<String, Object>> inputs, boolean alsoUnbound) {}
+    public record Roots(List<String> panelIds, List<String> agentIds,
+                        @JsonInclude(JsonInclude.Include.NON_NULL) BoundPanelRoot boundPanelRoot) {
+        static final Roots EMPTY = new Roots(List.of(), List.of(), null);
     }
     public record EntryRoots(String entryId, Roots roots) {}
     public sealed interface PlatformEvent permits Event, AccountDeleted {
@@ -66,8 +70,12 @@ public record ApplicationEntryEvents(JdbcTemplate db) implements DataEngineMigra
             }
             var agents = entry.defaultAgent() != null && "id".equals(entry.defaultAgent().kind())
                     ? List.of(entry.defaultAgent().id()) : List.<String>of();
-            if (!panels.isEmpty() || !agents.isEmpty())
-                result.put(entryId(applicationId, entry.id()), new Roots(List.copyOf(panels), agents));
+            if (!panels.isEmpty() || !agents.isEmpty()) {
+                var inputs = entry.inputs();
+                var boundPanel = entry.panelEntry() && inputs != null && !inputs.isEmpty()
+                        ? new BoundPanelRoot(entry.panelId(), inputs, entry.panelId().equals(framePanelId)) : null;
+                result.put(entryId(applicationId, entry.id()), new Roots(List.copyOf(panels), agents, boundPanel));
+            }
         }
         return result;
     }
@@ -85,7 +93,8 @@ public record ApplicationEntryEvents(JdbcTemplate db) implements DataEngineMigra
             var next = after.getOrDefault(entry, Roots.EMPTY);
             if (!previous.equals(next)) {
                 statements.add(new Object[] { JSON.toJSONString(
-                        new Event(TYPE, null, null, domainId, actorId, entry, previous, next)) });
+                        new Event(TYPE, null, null, domainId, actorId, entry, previous, next),
+                        JSONWriter.Feature.WriteMapNullValue) });
             }
         }
         if (statements.isEmpty()) return;

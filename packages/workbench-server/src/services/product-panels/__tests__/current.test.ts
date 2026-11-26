@@ -8,6 +8,7 @@ import { productPanelInputSchema, registerProductPanelRequestSchema, registerPro
 import type { EntryDependency } from "@ontomato/contracts/entry-dependencies";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { METRIC_VIEW, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import type { PoolClient } from "pg";
 import { objectDecisions } from "../../../__tests__/fixtures/agent-object-decisions";
 import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), decide: vi.fn(), publish: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
@@ -34,10 +35,13 @@ vi.mock("../definition-stream", () => ({ notifyProductDefinitionChanged: mocks.n
 vi.mock("../entry-dependency-publication", () => ({ deliverEntryDependencyPublications: vi.fn() }));
 import { readCurrentPanel, readCurrentProjection, readCurrentProjectionRecords, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences } from "../current";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
+import { entryDependencyCompiler } from "../entry-dependency-compiler";
+import { readBoundEntryDependencies, saveBoundEntryDependencies } from "../entry-dependency-store";
 
 const owner = { domainId: "domain", userId: "author" }, credentials = { token: "caller", locale: "en" };
 let rows: Map<string, CurrentProductRow>;
 let dependencies: Map<string, EntryDependency[]>;
+let boundDependencies: Awaited<ReturnType<typeof readBoundEntryDependencies>>;
 let agentDomains: Map<string, string>;
 const projection = () => registerProductProjectionRequestSchema.parse({ name: "Task summary", description: "", visibility: "domain", revision: 0,
   componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" } },
@@ -61,6 +65,7 @@ afterAll(() => rm(runtimeRoot, { recursive: true }));
 beforeEach(() => {
   vi.resetAllMocks(); mocks.edits = []; rows = new Map();
   dependencies = new Map();
+  boundDependencies = new Map();
   agentDomains = new Map();
   mocks.decide.mockImplementation((request: ObjectDecisionRequest) =>
     "create" in request || request.verb !== "EDIT" || mocks.edits.includes(request.target.id));
@@ -77,6 +82,20 @@ beforeEach(() => {
     }
     if (sql.startsWith("INSERT INTO product_panel_entry_dependencies")) {
       dependencies.set(String(args[1]), JSON.parse(String(args[2])));
+      return { rows: [] };
+    }
+    if (sql.startsWith('SELECT entry_id AS "entryId"') && sql.includes("FROM product_bound_entry_panel_dependencies")) {
+      if (sql.includes("entry_id=ANY")) return { rows: [...boundDependencies.values()]
+        .filter(({ entryId }) => (args[1] as string[]).includes(entryId)) };
+      const [reference] = JSON.parse(String(args[1])) as Pick<EntryDependency, "objectType" | "objectKey">[];
+      return { rows: [...boundDependencies.values()].filter(({ dependencies: list }) =>
+        list.some(item => item.objectType === reference.objectType && item.objectKey === reference.objectKey)) };
+    }
+    if (sql.startsWith("INSERT INTO product_bound_entry_panel_dependencies")) {
+      const entryId = String(args[1]);
+      boundDependencies.set(entryId, {
+        entryId, panelId: String(args[2]), inputs: JSON.parse(String(args[3])), dependencies: JSON.parse(String(args[4])),
+      });
       return { rows: [] };
     }
     if (sql.startsWith("INSERT INTO product_publication_outbox")) return { rows: [] };
@@ -179,6 +198,45 @@ it("recompiles the upper closure without inheriting a child default through a pe
     data: { record: { source: { object: { literal: metric("projection-fixed") } }, read: "record", params: {} } },
   }));
   expect(metricDependencies("parent")).toEqual([{ objectType: "METRIC", objectKey: "projection-fixed", verb: "VIEW" }]);
+});
+
+it("publishes a bound entry change even when the projection leaves the unbound closure unchanged", async () => {
+  const metric = (primaryKey: string) => ({ className: METRIC_VIEW, primaryKey });
+  const type = { kind: "object", objectType: METRIC_VIEW } as const;
+  const view = { ...projection(), inputs: { metric: type },
+    data: { record: { source: { object: { input: "metric" } }, read: "record", params: {} } } };
+  await saveCurrentProjection(owner, credentials, "metric-projection", registerProductProjectionRequestSchema.parse(view));
+  const { revision, ...input } = panel();
+  await saveCurrentPanel(owner, credentials, "metric-panel", productPanelInputSchema.parse({
+    ...input, manifest: {
+      state: { metric: { type, external: true, default: metric("panel-default") } },
+      members: { summary: { target: { projectionId: "metric-projection" }, inputs: { metric: { state: "metric" } } } },
+    },
+  }), revision);
+
+  const client = { query: mocks.query } as unknown as PoolClient;
+  const entryId = "metrics/main", panelId = "metric-panel";
+  const inputs = { metric: { literal: metric("entry-metric") } };
+  const compile = entryDependencyCompiler(client, owner.domainId);
+  const before = await compile(panelId, inputs);
+  await saveBoundEntryDependencies(client, owner.domainId, entryId, { panelId, inputs }, before);
+  const unbound = dependencies.get(panelId);
+
+  await saveCurrentProjection(owner, credentials, "metric-projection", registerProductProjectionRequestSchema.parse({
+    ...view, revision: 1,
+    data: { record: { source: { object: { literal: metric("panel-default") } }, read: "record", params: {} } },
+  }));
+
+  const publications = mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO product_publication_outbox"));
+  const after = boundDependencies.get(entryId)!.dependencies;
+  expect(dependencies.get(panelId)).toBe(unbound);
+  expect(before).toContainEqual({ objectType: "METRIC", objectKey: "entry-metric", verb: "VIEW" });
+  expect(after.filter(({ objectType }) => objectType === "METRIC")).toEqual([
+    { objectType: "METRIC", objectKey: "panel-default", verb: "VIEW" },
+  ]);
+  expect(JSON.parse(String(publications.at(-1)![1][1]))).toMatchObject({
+    panels: [], boundPanels: [{ entryId, panelId, inputs, before, after }],
+  });
 });
 
 it("excludes placement targets from a nested closure while the parent controls that state field", async () => {

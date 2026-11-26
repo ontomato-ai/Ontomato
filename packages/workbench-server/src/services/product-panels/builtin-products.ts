@@ -19,8 +19,8 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import { readPanelComponentCatalogue, validateProjectionComponent } from "./component-catalogue";
 import { validateBuiltinProductReferences } from "./references";
 import { platformTypeEntries } from "./type-table";
-import { declaredProjectionAgents } from "./entry-dependency-compiler";
-import { compileRegisteredPanelRoots, installBuiltinPanelDependencies } from "./entry-dependency-store";
+import { declaredProjectionAgents, entryDependencyCompiler } from "./entry-dependency-compiler";
+import { compileRegisteredPanelRoots, installBuiltinPanelDependencies, saveBoundEntryDependencies } from "./entry-dependency-store";
 import { readAffectedEntryRoots } from "./entry-dependency-publication";
 
 const workspaceIdentity = z.object({
@@ -133,6 +133,7 @@ export async function installRegisteredPanelDependencies() {
   const panels = qualifiedTable(currentProductTables.panel);
   const details = qualifiedTable("product_object_details");
   await transaction(async client => {
+    const builtin = await client.query<{ id: string }>(`SELECT id FROM ${qualifiedTable(builtinProductTables.panel)}`);
     const { rows } = await client.query<{ domain_id: string; panel_ids: string[]; detail_panel_ids: string[] }>(
       `SELECT domain_id,
          ARRAY(SELECT id FROM ${panels} p WHERE p.domain_id=domains.domain_id AND NOT starts_with(id,$1)) AS panel_ids,
@@ -142,9 +143,16 @@ export async function installRegisteredPanelDependencies() {
     );
     for (const { domain_id, panel_ids, detail_panel_ids } of rows) {
       await lockProducts(client, { domainId: domain_id });
-      const entries = panel_ids.length ? await readAffectedEntryRoots(domain_id, panel_ids) : [];
+      const knownPanels = [...panel_ids, ...builtin.rows.map(({ id }) => id)];
+      const entries = knownPanels.length ? await readAffectedEntryRoots(domain_id, knownPanels) : [];
       const roots = new Set([...detail_panel_ids, ...entries.flatMap(({ roots }) => roots.panelIds)]);
       await compileRegisteredPanelRoots(client, domain_id, roots);
+      const compile = entryDependencyCompiler(client, domain_id);
+      for (const { entryId, roots: { boundPanelRoot } } of entries) {
+        if (boundPanelRoot)
+          await saveBoundEntryDependencies(client, domain_id, entryId, boundPanelRoot,
+            await compile(boundPanelRoot.panelId, boundPanelRoot.inputs));
+      }
     }
   });
 }

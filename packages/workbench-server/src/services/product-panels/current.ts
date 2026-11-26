@@ -27,7 +27,7 @@ import { panelSkillRef } from "./skill-identity";
 import { collectReferences, findPanelUsers, validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
 import { panelDefinition, projectionDefinition } from "./render-definitions";
-import { declaredProjectionAgents, storedPanelAuthoringDefinition } from "./entry-dependency-compiler";
+import { declaredProjectionAgents, entryDependencyCompiler, storedPanelAuthoringDefinition } from "./entry-dependency-compiler";
 import { compileRegisteredPanelRoots, updatePanelDependencies } from "./entry-dependency-store";
 import { deliverEntryDependencyPublications } from "./entry-dependency-publication";
 
@@ -283,6 +283,7 @@ async function validateApplicationReferences(client: PoolClient,
     throw new HttpError(400, "Frame conversation entry requires an application frame containing AgentChat", "INVALID_FRAME_CONVERSATION_ENTRY");
   }
   const frame = framePanelId === undefined ? undefined : panels.get(framePanelId)!;
+  const compile = entryDependencyCompiler(client, domainId);
   let definitions: Awaited<ReturnType<typeof assistantStore.agents>> | undefined;
   for (const use of uses) {
     const entryHasAgentChat = chatProjectionIds.size > 0 && panelContainsAgentChat(use.panelId);
@@ -311,6 +312,7 @@ async function validateApplicationReferences(client: PoolClient,
         throw new HttpError(400, `Entry '${use.id}' has incompatible input '${name}'`, "INVALID_PANEL_ENTRY_INPUT");
       }
     }
+    if (use.inputs && Object.keys(use.inputs).length) await compile(use.panelId, use.inputs);
 
     const { defaultAgent } = use;
     if (!defaultAgent || domainId === null) continue;
