@@ -487,11 +487,17 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   };
   const notify: NonNullable<PanelInstanceOptions["notify"]> =
     options.notify ?? (({ kind, text }) => {
+      // Mount toasts on the page region container (the overlay root's parent) rather than the per-panel overlay root
+      // so a toast emitted right before navigating to another panel in the same area (e.g. create -> detail, delete ->
+      // list) stays visible instead of being hidden or removed when the source panel leaves.
+      const appendTo = options.overlayRoot?.isConnected
+        ? options.overlayRoot.parentElement ?? options.overlayRoot
+        : undefined;
       ElMessage({
         type: kind,
         message: text,
         grouping: true,
-        ...(options.overlayRoot?.isConnected ? { appendTo: options.overlayRoot } : {}),
+        ...(appendTo ? { appendTo } : {}),
       });
     });
   const instance = createPanelInstance(direct, {

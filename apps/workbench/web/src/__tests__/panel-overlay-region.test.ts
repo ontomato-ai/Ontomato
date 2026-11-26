@@ -144,11 +144,15 @@ it("mounts the ProductAssetGraph fullscreen preview in the whole-window root", a
   expect(mounted.overlay.element.querySelector(".sdk-product-asset-graph-dialog")).toBeNull();
 });
 
-it("appends the direct panel's default notify message to the page-region overlay root", async () => {
+it("appends the direct panel's default notify message to the page-region container so it survives panel navigation", async () => {
   const region = document.createElement("section");
   document.body.append(region);
-  const overlay = createPanelOverlayRoot("overlay-notify", () => true, () => region);
-  cleanups.push(() => overlay.dispose());
+  const shown = ref(true);
+  const overlay = createPanelOverlayRoot("overlay-notify", () => shown.value, () => region);
+  cleanups.push(() => {
+    overlay.dispose();
+    region.remove();
+  });
   const instance = createDirectPanelInstance(definePanel({ state: {}, members: {} }), {
     pageKey: "overlay-notify",
     url: () => "/overlay-notify",
@@ -163,6 +167,19 @@ it("appends the direct panel's default notify message to the page-region overlay
   });
 
   instance.notify({ kind: "success", text: "Saved" });
-  await vi.waitFor(() => expect(overlay.element.querySelector(".el-message")?.textContent).toContain("Saved"));
+  await vi.waitFor(() => expect(region.querySelector(".el-message")?.textContent).toContain("Saved"));
+  expect(overlay.element.querySelector(".el-message")).toBeNull();
   expect(overlay.windowElement.querySelector(".el-message")).toBeNull();
+
+  // Hiding or disposing the source panel's overlay root (e.g. create -> detail or delete -> list navigation) must not
+  // hide or detach the toast while the page region stays mounted.
+  shown.value = false;
+  await flush();
+  const afterHide = region.querySelector<HTMLElement>(".el-message");
+  expect(afterHide?.textContent).toContain("Saved");
+  expect(afterHide?.closest("[hidden]")).toBeNull();
+
+  overlay.dispose();
+  await flush();
+  expect(region.querySelector(".el-message")?.textContent).toContain("Saved");
 });
