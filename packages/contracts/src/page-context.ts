@@ -450,8 +450,8 @@ export type AssistantAgentsQuery = z.infer<typeof assistantAgentsQuerySchema>;
 
 export const pageCatalogApplicationSchema = z.object({
   applicationId: entranceApplicationIdSchema,
-  names: localizedTextSchema.optional(),
-  descriptions: localizedTextSchema.optional(),
+  name: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
 }).strict();
 export type PageCatalogApplication = z.infer<typeof pageCatalogApplicationSchema>;
 
@@ -460,16 +460,16 @@ export const pageCatalogEntrySchema = pageEntranceSchema.extend({
   panelId: z.string().min(1).nullable(),
   kind: z.enum(["panel", "native", "frame-conversation"]),
   path: z.string().min(1).startsWith("/"),
-  names: localizedTextSchema.optional(),
-  descriptions: localizedTextSchema.optional(),
+  name: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
   groupKey: z.string().min(1).optional(),
 }).strict();
 export type PageCatalogEntry = z.infer<typeof pageCatalogEntrySchema>;
 
 export const pageCatalogGroupSchema = z.object({
   key: z.string().min(1),
-  names: localizedTextSchema.optional(),
-  descriptions: localizedTextSchema.optional(),
+  name: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
   entries: z.array(pageCatalogEntrySchema),
 }).strict();
 export type PageCatalogGroup = z.infer<typeof pageCatalogGroupSchema>;
