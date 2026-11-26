@@ -8,7 +8,6 @@ import java.util.Set;
 /** Edition-owned identity and application lifecycle integration. */
 public interface ApplicationAccess {
     User entryUser(String credential);
-    default void requireLegacyProductAuthor(User publisher, String authorId) {}
     default List<ApplicationPanelUse> builtinEntries(String applicationId) { return List.of(); }
     default void declare(JSONObject app, ApplicationCatalog.Declaration declaration, boolean created) {}
     default void retire(JSONObject app) {}

@@ -77,13 +77,25 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private List<Map<String,Object>> records() {
         return jdbc.queryForList("SELECT * FROM sys_application ORDER BY id");
     }
+    /** A user application row as the retired hosted publication used to create it, for catalogue fixtures. */
+    private void publishFixture(String id, ApplicationCatalog.Declaration d, QueryAccessService.GrantUser user) {
+        jdbc.update("""
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,panel_settings,allow_standalone,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,?,now())
+            ON CONFLICT(id) DO UPDATE SET names=excluded.names,descriptions=excluded.descriptions,updated_at=now()
+            """, id, user.domainId(), "workbench", user.id(), "hosted",
+            JSON.toJSONString(d.names()), JSON.toJSONString(d.descriptions()), d.icon(), "apps", "business", 100,
+            JSONObject.of("path", "/apps/" + id + "/", "entryKey", "main").toJSONString(), null, "release",
+            JSON.toJSONString(d.groups()), "/apps/" + id + "/", JSON.toJSONString(d.pageSkills()),
+            JSON.toJSONString(d.panelUses()), "{}", true);
+    }
     @Test void completeWorkbenchDeclarationRemovesOnlyItsUndeclaredBuiltins() throws Exception {
         var current = builtin("agents", "native");
         catalog.builtins("workbench", List.of(current, builtin("agent-builder", "native"), builtin("old-link", "link")));
         catalog.builtins("data-engine", List.of(builtin("ontology", "native")));
         var user = new QueryAccessService.GrantUser("owner", "domain");
-        catalog.publish("app-domain", current.declaration(), "release", user);
-        catalog.publish("app-persisted", current.declaration(), "release", user);
+        publishFixture("app-domain", current.declaration(), user);
+        publishFixture("app-persisted", current.declaration(), user);
         // A persisted non-builtin remains outside this service-owned builtin collection even without a domain.
         jdbc.update("UPDATE sys_application SET domain_id=NULL WHERE id='app-persisted'");
         var protectedRows = jdbc.queryForList("SELECT * FROM sys_application WHERE id IN ('ontology','app-domain','app-persisted') ORDER BY id");
@@ -575,7 +587,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         when(identity.getCurrentUser()).thenReturn(owner);
         EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         for (var id : List.of("app-a", "app-b", "app-c", "app-d"))
-            catalog.publish(id, builtin(id, "native").declaration(), "release", owner);
+            publishFixture(id, builtin(id, "native").declaration(), owner);
         jdbc.update("""
             UPDATE sys_application SET names = CASE id
                 WHEN 'app-a' THEN '{"en":"Alpha","fr":"Zulu"}'::jsonb
@@ -599,7 +611,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         when(identity.getCurrentUser()).thenReturn(owner);
         EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         for (var id : List.of("app-a", "app-b", "app-c"))
-            catalog.publish(id, builtin(id, "native").declaration(), "release", owner);
+            publishFixture(id, builtin(id, "native").declaration(), owner);
         jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00+00' WHERE id = 'app-a'");
         jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00.000001+00' WHERE id IN ('app-b','app-c')");
 
@@ -629,8 +641,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         allowOtherPanels = true;
         EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         catalog.builtins("data-engine", List.of(builtin("browser", "native")));
-        catalog.publish("app-hosted", builtin("hosted", "native").declaration(), "release", owner);
-        catalog.publish("app-private-foreign", builtin("foreign", "native").declaration(), "release", foreign);
+        publishFixture("app-hosted", builtin("hosted", "native").declaration(), owner);
+        publishFixture("app-private-foreign", builtin("foreign", "native").declaration(), foreign);
         http.perform(put(CATALOGUE_APP).contentType(MediaType.APPLICATION_JSON).content(CATALOGUE_REGISTRATION))
             .andExpect(status().isOk());
 
