@@ -5,7 +5,6 @@ import {HttpError} from '../../utils/errors';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {
   productGrantChangeResponseSchema,
-  productGrantPrincipalsResponseSchema,
   type ChangeProductGrantRequest,
   type ProductGrantVerb,
   type SetProductGrantsRequest,
@@ -96,20 +95,6 @@ export async function productGrantIdsForOwner(owner:ProductOwner,verb: ProductGr
   const result=JSON.parse(response.text);
   if(!Array.isArray(result.ids)||result.ids.some((id:unknown)=>typeof id!=='string'))throw new HttpError(503,'Invalid product Grant response','PRODUCT_GOVERNANCE_UNAVAILABLE');
   return result.ids;
-}
-export async function searchProductGrantPrincipals(
-  kind: "principal" | "role",
-  keyword: string | undefined,
-  limit: number,
-  credentials: AssistantCredentials,
-) {
-  const response = await backendPost(
-    "product-grant-principals",
-    config.dataQuery.baseUrl + "/product-governance/principals",
-    { kind, ...(keyword ? { keyword } : {}), limit },
-    { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1 },
-  );
-  return productGrantPrincipalsResponseSchema.parse(JSON.parse(response.text));
 }
 export async function changeProductGrant(id:string,grant:ChangeProductGrantRequest,credentials:AssistantCredentials){
   const response=await backendPost('product-grant-mutation',config.dataQuery.baseUrl+'/product-governance/grant',{id,...grant},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});

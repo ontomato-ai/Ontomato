@@ -22,7 +22,7 @@ const copyCurrentProductMock = vi.hoisted(() => vi.fn());
 const deleteCurrentProductMock = vi.hoisted(() => vi.fn());
 const readCurrentPanelMock = vi.hoisted(() => vi.fn());
 const readCataloguePanelMock = vi.hoisted(() => vi.fn());
-const searchProductGrantPrincipalsMock = vi.hoisted(() => vi.fn());
+const backendPostMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../catalog", () => {
   const listCurrentProductRecords: typeof import("../catalog").listCurrentProductRecords = async (owner, viewer, kind) => {
@@ -65,8 +65,9 @@ vi.mock("../current", () => ({
   saveCurrentProjection: vi.fn(),
 }));
 
-vi.mock("../../product-governance/grants", () => ({
-  searchProductGrantPrincipals: searchProductGrantPrincipalsMock,
+vi.mock("../../../utils/backend-client", async original => ({
+  ...await original<typeof import("../../../utils/backend-client")>(),
+  backendPost: backendPostMock,
 }));
 
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../catalog-reads";
@@ -84,7 +85,13 @@ beforeAll(() => {
 });
 
 const owner = { domainId: "domain-1", userId: "user-1" };
-const viewer = { token: "token-1", locale: "en" };
+const viewer = {
+  token: "token-1",
+  apiKey: "reader-key",
+  locale: "en",
+  headers: { "X-Request-Id": "catalogue-read" },
+  executionUserId: "executor",
+};
 
 const samplePanel = {
   id: "orders-panel",
@@ -133,8 +140,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   readCurrentPanelMock.mockResolvedValue(samplePanel);
   readCataloguePanelMock.mockResolvedValue({ panel: samplePanel });
-  searchProductGrantPrincipalsMock.mockResolvedValue({
-    options: [{ id: "user-1", name: "Alice Chen" }],
+  backendPostMock.mockResolvedValue({
+    text: JSON.stringify({ options: [{ id: "user-1", name: "Alice Chen", kind: "member" }] }),
   });
   currentProductGrantsMock.mockResolvedValue({
     shared: true,
@@ -178,16 +185,36 @@ describe("createProductPanelReadAdapter", () => {
           updatedAt: "2026-11-21T00:00:00.000Z",
           editable: false,
         },
+        {
+          id: "archived-author-panel",
+          ownerId: "archived-author",
+          name: "Archived Orders",
+          description: "",
+          visibility: "domain",
+          revision: 1,
+          updatedAt: "2026-11-20T00:00:00.000Z",
+          editable: false,
+        },
       ],
       nextCursor: "cursor-next",
-      total: 2,
+      total: 3,
       unavailableItems: [{ id: "broken-panel", reason: "Invalid manifest" }],
     });
 
     const adapter = createProductPanelReadAdapter(owner, viewer);
     const result = panelReadResultSchemas.panelRecordQuery.parse(await adapter.query({ scope: "all", sort: "updated", template: true }));
 
-    expect(result.total).toBe(2);
+    expect(backendPostMock).toHaveBeenCalledTimes(1);
+    expect(backendPostMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringMatching(/\/platform\/identity\/principals$/u),
+      { kind: "member", ids: ["user-1", "archived-author"] },
+      expect.objectContaining({ headers: expect.objectContaining({
+        tk: viewer.token, "X-API-Key": viewer.apiKey, "Accept-Language": viewer.locale, ...viewer.headers,
+      }) }),
+    );
+    expect(backendPostMock.mock.calls[0][3].headers).not.toHaveProperty("uid");
+    expect(result.total).toBe(3);
     expect(result.nextCursor).toBe("cursor-next");
     expect(result.diagnostics).toEqual(["broken-panel: Invalid manifest"]);
     expect(result.rows[0]).toMatchObject({
@@ -216,6 +243,15 @@ describe("createProductPanelReadAdapter", () => {
       },
       tones: { visibility: "info", template: "default", editable: "info" },
     });
+    expect(result.rows[2].fields.owner).toBe("");
+  });
+
+  it("propagates an author directory failure from panel details", async () => {
+    const error = new Error("Identity directory unavailable");
+    backendPostMock.mockRejectedValueOnce(error);
+    const adapter = createProductPanelReadAdapter(owner, viewer);
+
+    await expect(adapter.record("orders-panel")).rejects.toBe(error);
   });
 
   it("returns panelRecord with formatted overview fields and scalar outputs", async () => {

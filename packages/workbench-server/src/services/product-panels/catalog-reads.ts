@@ -41,8 +41,9 @@ import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
+import { readPrincipalDirectory } from "../identity/principal-directory";
 import { requireObject } from "../product-governance/authorization";
-import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
 import { readHomePanel } from "../platform-home/service";
 import { platformHomeStore } from "../platform-home/store";
 import {
@@ -199,25 +200,9 @@ async function resolveOwnerNames(
   viewer: AssistantCredentials,
 ): Promise<Map<string, string>> {
   const uniqueIds = [...new Set(ownerIds.filter((id): id is string => typeof id === "string" && id.length > 0))];
-  const names = new Map<string, string>();
-  if (!uniqueIds.length) return names;
-  try {
-    const { options } = await searchProductGrantPrincipals("principal", undefined, 100, viewer);
-    for (const option of options) names.set(option.id, option.name);
-  } catch {
-    // Fall back to per-user resolution or raw owner IDs when principal listing is unavailable.
-  }
-  const missing = uniqueIds.filter(id => !names.has(id));
-  if (missing.length) {
-    try {
-      const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
-      const { options } = await createAgentOptionReadAdapters(viewer).users.resolve(missing);
-      for (const option of options) names.set(option.primaryKey, option.label);
-    } catch {
-      // Keep raw owner IDs when the user directory service is unavailable.
-    }
-  }
-  return names;
+  if (!uniqueIds.length) return new Map();
+  const { options } = await readPrincipalDirectory(viewer, { kind: "member", ids: uniqueIds });
+  return new Map(options.map(({ id, name }) => [id, name]));
 }
 
 function visibilityLabel(locale: string | undefined, visibility: ProductVisibility): string {
@@ -287,7 +272,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
 
   function ownerDisplayName(ownerId: string | null, ownerNames: ReadonlyMap<string, string>): string {
     if (ownerId === null) return appWord("platformOwner");
-    return ownerNames.get(ownerId) ?? ownerId;
+    return ownerNames.get(ownerId) ?? "";
   }
 
   function toPanelSummaryRecord(item: ListedPanelSummary, ownerNames: ReadonlyMap<string, string>): PanelRecord {
