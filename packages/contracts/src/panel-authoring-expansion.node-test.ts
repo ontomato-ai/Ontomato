@@ -350,7 +350,7 @@ test("short graph ports resolve their individual datum owners and bind personal 
   const edgeType = "platform:Relationship";
   const object = (objectType: string) => ({ kind: "object", objectType });
   const positions = { kind: "json" };
-  const graph = buildComponent("ObjectGraph", {
+  const graph = buildComponent("RecordGraph", {
     data: {
       nodes: { results: ["panelRecordList"], required: true },
       edges: { results: ["panelRecordList"], required: false },
@@ -367,7 +367,7 @@ test("short graph ports resolve their individual datum owners and bind personal 
     id, platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[id].reads }),
   ])) };
   const member = panelAuthoringMemberSchema.parse({
-    component: "ObjectGraph",
+    component: "RecordGraph",
     data: { nodes: { type: nodeType, read: "list" }, edges: { type: edgeType, read: "list" } },
     state: { selectedNode: "node", selectedEdge: "edge", checked: "checked", positions: "positions" },
   });
@@ -1471,7 +1471,7 @@ test("ObjectTree expands both files + scalar selected and rows + object selected
   );
 });
 
-test("OntologyGraph accepts customer Relationship.neighbors via capability declaration, and collection components accept customer ObjectType.query", () => {
+test("InstanceGraph accepts customer Relationship.neighbors via capability declaration, and collection components accept customer ObjectType.query", () => {
   const customerTypeTable = {
     objectTypes: {
       Department: platformTypeTableEntrySchema.parse({ reads: customerOntologyReads }),
@@ -1480,7 +1480,7 @@ test("OntologyGraph accepts customer Relationship.neighbors via capability decla
     },
   };
   const anyObject = { kind: "object" as const, objectType: "@any" };
-  const ontologyGraphComp = buildComponent("OntologyGraph", {
+  const instanceGraphComp = buildComponent("InstanceGraph", {
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Relationship:*"],
     data: {
       neighbors: {
@@ -1500,7 +1500,7 @@ test("OntologyGraph accepts customer Relationship.neighbors via capability decla
     },
     outputs: { selected: { kind: "scalar", type: "string" } },
   });
-  const objectGraphComp = buildComponent("ObjectGraph", {
+  const recordGraphComp = buildComponent("RecordGraph", {
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
       nodes: { results: ["panelRecordList", "panelRecordQuery"], required: true, runtimeParams: ["page", "size"] },
@@ -1529,16 +1529,16 @@ test("OntologyGraph accepts customer Relationship.neighbors via capability decla
     members: {},
   }).state;
 
-  // 1. OntologyGraph binds customer Relationship.neighbors without hardcoding ObjectRelations.
+  // 1. InstanceGraph binds customer Relationship.neighbors without hardcoding ObjectRelations.
   const graphRelMember = panelAuthoringMemberSchema.parse({
-    component: "OntologyGraph",
+    component: "InstanceGraph",
     data: { neighbors: { read: "neighbors", type: "prereqOf" } },
     state: { start: "course", selected: "course", visibleRelationKinds: "relKinds" },
   });
   assert("component" in graphRelMember);
   const expandedRel = expandPanelAuthoringMember("courseGraph", graphRelMember, {
     state: manifestState,
-    components: [ontologyGraphComp],
+    components: [instanceGraphComp],
     typeTable: customerTypeTable,
   });
   assert.deepEqual(expandedRel.projection.data.neighbors.source, { type: { kind: "Relationship", id: "prereqOf" } });
@@ -1560,9 +1560,9 @@ test("OntologyGraph accepts customer Relationship.neighbors via capability decla
   assert.deepEqual(expandedTree.projection.data.rows.source, { type: { kind: "ObjectType", id: "Department" } });
   assert.deepEqual(expandedTree.projection.outputs.selected, { kind: "object", objectType: "Department" });
 
-  // 3. ObjectGraph binds customer ObjectType.query for nodes & edges.
+  // 3. RecordGraph binds customer ObjectType.query for nodes & edges.
   const recordGraphMember = panelAuthoringMemberSchema.parse({
-    component: "ObjectGraph",
+    component: "RecordGraph",
     data: {
       nodes: { type: "Course", read: "query" },
       edges: { type: "CourseLink", read: "query" },
@@ -1573,7 +1573,7 @@ test("OntologyGraph accepts customer Relationship.neighbors via capability decla
   assert("component" in recordGraphMember);
   const expandedGraph = expandPanelAuthoringMember("courseMap", recordGraphMember, {
     state: manifestState,
-    components: [objectGraphComp],
+    components: [recordGraphComp],
     typeTable: customerTypeTable,
   });
   assert.deepEqual(expandedGraph.projection.data.nodes.source, { type: { kind: "ObjectType", id: "Course" } });

@@ -137,7 +137,7 @@ const projections: Record<string, object> = {
   missing: recordOf({ className: "person", primaryKey: "p9" }),
   staff: {
     ...neighborsOf("person_to_org", { node: { literal: org }, limit: { literal: 1 } }),
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
   },
   audits: neighborsOf("org_to_audit", { node: { literal: org } }),
   crossed: neighborsOf("person_to_org", { node: { literal: org }, relationKinds: { literal: ["org_to_audit"] } }),

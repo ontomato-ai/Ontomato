@@ -15,8 +15,6 @@ vi.mock("../context",()=>({assistantOntologyContext:mocks.overview}));
 vi.mock("../ontology-retrieval",()=>({OntologyRetrievalClient:class {open=mocks.open;links=mocks.links;closeScope=mocks.scopeClose;}}));
 vi.mock("../prompts",()=>({effectiveSystemPrompt:()=>"Instructions"}));
 vi.mock("../../skills/operations",()=>({withDomainSkills:async(_domain:string,fn:()=>Promise<unknown>)=>fn()}));
-vi.mock("../../product-assets/platform-assets",()=>({nativeProfileId:async()=>null}));
-vi.mock("../../product-assets/agent-profile",()=>({profileSourceForSession:async()=>null,agentProfileForAgent:async()=>null,profileForSession:async()=>null}));
 vi.mock("../../agent-runtime/callback-credential",()=>({callbackCredential:mocks.callback}));
 vi.mock("../../agent-host/caller",()=>({openAgentCaller:async()=>({id:runId,domainId:owner.domainId}),restoreAgentCaller:async()=>({owner:{domainId:"domain",userId:"user"},credentials:{}})}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology"}}}));

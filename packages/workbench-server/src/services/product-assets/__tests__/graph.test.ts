@@ -16,24 +16,19 @@ it('preserves intermediate composition edges and keeps same-named ontology ident
   expect(new Set(graph.nodes.map(node=>node.id)).size).toBe(graph.nodes.length);
 });
 it('never invents hidden asset nodes',()=>{
-  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['missing'],contextViews:[]});
-  const graph=productGraph([profile]);
+  const page=asset('page',{kind:'page',children:[{assetId:'missing'}]});
+  const graph=productGraph([page]);
   expect(graph.nodes.some(node=>node.id==='asset:missing')).toBe(false);
-  expect(graph.edges).toContainEqual({source:'asset:profile',target:'agent:agent',relation:'embodies',storage:'product-index'});
+  expect(graph.edges).toEqual([]);
 });
-it('preserves distinct Navigation, tool and context relationships',()=>{
+it('preserves Navigation relationships',()=>{
   const navigation=asset('nav',{kind:'navigation',entry:'home',nodes:[{id:'home',pageId:'home',label:'Home',path:'/'}]});
   const page=asset('home',{kind:'page',children:[]});
   const app=asset('app',{kind:'application',applicationId:'app',navigationId:'nav',children:[]});
-  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['tool'],contextViews:['context']});
-  const tool=asset('tool',{kind:'metric-widget',renders:{kind:'MetricView',id:'metric'},parameters:{},valueField:'value'});
-  const context=asset('context',{kind:'object-projection',renders:{kind:'ObjectType',id:'Person'},renderer:'text',fields:['name']});
-  const graph=productGraph([app,navigation,page,profile,tool,context]);
+  const graph=productGraph([app,navigation,page]);
   expect(graph.edges).toEqual(expect.arrayContaining([
     {source:'asset:app',target:'asset:nav',relation:'navigates',storage:'product-index'},
     {source:'asset:nav',target:'asset:home',relation:'navigates',storage:'product-index'},
-    {source:'asset:profile',target:'asset:tool',relation:'tools',storage:'product-index'},
-    {source:'asset:profile',target:'asset:context',relation:'context',storage:'product-index'},
   ]));
 });
 it('rejects graph responses with dangling endpoints before they reach the renderer',()=>{

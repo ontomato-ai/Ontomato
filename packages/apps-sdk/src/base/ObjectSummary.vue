@@ -15,6 +15,7 @@ import {
   isRecordReference,
   isRecordTag,
   recordFieldArrayItems,
+  recordFieldDisplayValue,
   referenceDisplayLabel,
   scalarFieldText,
   toChildFieldReference,
@@ -55,6 +56,11 @@ const props = withDefaults(
     tagsField?: string;
     /** Field key drawn as full-width reading prose below the divider in `"article"` layout. */
     bodyField?: string;
+    /**
+     * Optional panel message key shown in place of the body prose when `bodyField` has no text; leave it unset to
+     * draw nothing there.
+     */
+    bodyEmptyText?: string;
     /** Optional panel message key shown in a centered empty state when no object is selected yet. */
     emptyText?: string;
     /** Optional panel message key shown when the requested object cannot be found or has been removed. */
@@ -87,6 +93,7 @@ const props = withDefaults(
     bodyField: undefined,
     emptyText: undefined,
     missingText: undefined,
+    bodyEmptyText: undefined,
     copyableFields: undefined,
     presentation: "fields",
     density: "comfortable",
@@ -158,6 +165,7 @@ const result = computed(() => recordData.value as DataStateResult<PlatformObject
 const labels = useDataStateLabels();
 const resolvedEmptyText = computed(() => (props.emptyText ? panel.t(props.emptyText) : ""));
 const resolvedMissingText = computed(() => (props.missingText ? panel.t(props.missingText) : ""));
+const resolvedBodyEmptyText = computed(() => (props.bodyEmptyText ? panel.t(props.bodyEmptyText) : ""));
 const showArticleEmpty = computed(
   () => isArticle.value && Boolean(resolvedEmptyText.value) && result.value.status === "awaiting",
 );
@@ -183,7 +191,7 @@ const summaryListStyle = computed(() =>
 );
 
 function fieldText(current: PlatformObjectRecord, name: string): string {
-  return displayFieldText(current.fields[name], locale.value, t);
+  return displayFieldText(recordFieldDisplayValue(current, name), locale.value, t);
 }
 
 function recordTagField(current: PlatformObjectRecord, name: string): PanelRecordTagFieldValue | null {
@@ -362,11 +370,14 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
               <span v-else class="sdk-object-summary-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
             </template>
           </div>
-          <div v-if="bodyField" class="sdk-object-summary-article-body">
+          <div v-if="bodyField && fieldText(current, bodyField) !== ''" class="sdk-object-summary-article-body">
             <template v-for="(part, index) in textHighlightSegments(fieldText(current, bodyField), current.highlights?.[bodyField])" :key="index">
               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
             </template>
           </div>
+          <p v-else-if="bodyField && resolvedBodyEmptyText" class="sdk-object-summary-article-body sdk-object-summary-body-empty">
+            {{ resolvedBodyEmptyText }}
+          </p>
           <dl
             v-if="articleExtraFields.length"
             class="sdk-object-summary-list sdk-object-summary-article-extra"
@@ -581,6 +592,10 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
   flex: 1 1 auto;
   justify-content: center;
   min-height: 240px;
+}
+.sdk-object-summary-body-empty {
+  color: var(--sdk-text-color-secondary, var(--el-text-color-secondary));
+  font-size: var(--text-sm);
 }
 .sdk-object-summary-empty {
   align-items: center;

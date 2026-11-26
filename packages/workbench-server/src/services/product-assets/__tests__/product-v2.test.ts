@@ -20,7 +20,7 @@ it('keeps legacy migration inputs and personal preferences out of the current au
   expect(productAuthoringSchema.safeParse({name:'Metric',revision:0,document:{kind:'metric-widget',renders:{kind:'MetricView',id:'metric'},parameters:{},renderer:'table',fields:['count']}}).success).toBe(false);
 });
 it('exposes every V2 asset kind through catalog creation and paginated filtering',()=>{
-  for(const kind of ['metric-widget','action-view','collection-view','object-projection','navigation','agent-profile']){
+  for(const kind of ['metric-widget','action-view','collection-view','object-projection','navigation']){
     expect(productTypes.some(type=>type.kind===kind)).toBe(true);
     expect(productQuerySchema.parse({kind}).kind).toBe(kind);
   }

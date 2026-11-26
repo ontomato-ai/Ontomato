@@ -13,7 +13,6 @@ import { workspaceCommitSchema, workspaceExportSchema, type WorkspaceFile } from
 import { resolveLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { issueHostedPreviewToken } from "../workspaces/preview-tokens";
 import type { AssistantOwner } from "../assistant/store";
 import { readPanelDomainComponents } from "../product-panels/component-catalogue";
 import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../product-panels/current";
@@ -43,17 +42,6 @@ export type AppPreviewDescriptor =
       previewContext: { kind: "build-test"; test: BuildTestContext | null };
     }
   | {
-      kind: "hosted";
-      appId: string;
-      materialized: boolean;
-      workspaceId: string | null;
-      entries: BuilderPreviewEntry[];
-      activeEntryId: null;
-      hostedPreviewUrl: string;
-      expiresAt: string | null;
-      previewContext: { kind: "build-test"; test: BuildTestContext | null };
-    }
-  | {
       kind: "panel";
       appId: string;
       materialized: boolean;
@@ -70,7 +58,6 @@ interface LoadedPreviewSource {
   ref: "working" | string;
   parsed: ParsedApplicationSource;
   test: BuildTestContext | null;
-  hostedReleaseId: string | null;
 }
 
 async function readAllWorkingFiles(
@@ -117,12 +104,11 @@ async function loadPreviewSource(
       ref,
       parsed: parseApplicationSource(files),
       test,
-      hostedReleaseId: ctx.live?.snapshot.kind === "hosted" ? ctx.live.snapshot.releaseId : null,
     };
   }
 
   // Unmaterialized published application: derive source in memory with zero writes (Standard §4.3).
-  if (ctx.live?.snapshot.kind === "panel") {
+  if (ctx.live) {
     const files = serializeApplicationSource(ctx.live.snapshot);
     return {
       appId,
@@ -131,19 +117,6 @@ async function loadPreviewSource(
       ref: "working",
       parsed: parseApplicationSource(files),
       test: null,
-      hostedReleaseId: null,
-    };
-  }
-
-  if (ctx.live?.snapshot.kind === "hosted") {
-    return {
-      appId,
-      materialized: false,
-      workspaceId: null,
-      ref: "working",
-      parsed: { kind: "hosted", hasIndexHtml: true },
-      test: null,
-      hostedReleaseId: ctx.live.snapshot.releaseId,
     };
   }
 
@@ -154,7 +127,6 @@ async function loadPreviewSource(
     ref: "working",
     parsed: { kind: "empty" },
     test: null,
-    hostedReleaseId: null,
   };
 }
 
@@ -238,45 +210,6 @@ export async function readApplicationPreviewDescriptor(
       entries: [],
       activeEntryId: null,
       previewContext: { kind: "build-test", test: source.test },
-    };
-  }
-
-  if (source.parsed.kind === "hosted") {
-    if (source.workspaceId) {
-      const issued = await issueHostedPreviewToken(owner, credentials, source.workspaceId, appWorkspaceSlot(appId));
-      return {
-        kind: "hosted",
-        appId,
-        materialized: true,
-        workspaceId: source.workspaceId,
-        entries: [],
-        activeEntryId: null,
-        hostedPreviewUrl: `/api/workspaces/${source.workspaceId}/preview/${issued.token}/index.html`,
-        expiresAt: issued.expiresAt,
-        previewContext: { kind: "build-test", test: source.test },
-      };
-    }
-    if (source.hostedReleaseId) {
-      return {
-        kind: "hosted",
-        appId,
-        materialized: false,
-        workspaceId: null,
-        entries: [],
-        activeEntryId: null,
-        hostedPreviewUrl: `/apps/${encodeURIComponent(appId)}/index.html`,
-        expiresAt: null,
-        previewContext: { kind: "build-test", test: null },
-      };
-    }
-    return {
-      kind: "empty",
-      appId,
-      materialized: false,
-      workspaceId: null,
-      entries: [],
-      activeEntryId: null,
-      previewContext: { kind: "build-test", test: null },
     };
   }
 

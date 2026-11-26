@@ -344,6 +344,46 @@
     "value": "Description"
   },
   {
+    "key": "Admin.form.options",
+    "value": "Options"
+  },
+  {
+    "key": "Admin.form.optionValue",
+    "value": "Value"
+  },
+  {
+    "key": "Admin.form.optionLabel",
+    "value": "Display name"
+  },
+  {
+    "key": "Admin.form.optionTone",
+    "value": "Tone"
+  },
+  {
+    "key": "Admin.form.toneNone",
+    "value": "Unspecified"
+  },
+  {
+    "key": "Admin.tone.default",
+    "value": "Default"
+  },
+  {
+    "key": "Admin.tone.info",
+    "value": "Info"
+  },
+  {
+    "key": "Admin.tone.success",
+    "value": "Success"
+  },
+  {
+    "key": "Admin.tone.warning",
+    "value": "Warning"
+  },
+  {
+    "key": "Admin.tone.danger",
+    "value": "Danger"
+  },
+  {
     "key": "Admin.form.ownerType",
     "value": "Owner type"
   },

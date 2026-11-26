@@ -527,6 +527,8 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
   writeFileSync(join(panelFolder, "panel.html"), '<div id="app"></div>');
   writeFileSync(join(panelFolder, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";');
   writeFileSync(join(panelFolder, "recipes.md"), "Open the [capability map](/ontology/assets/capability-map).");
+  const projections = [{ id: "builtin-product-catalogue-count", input: { component: "ObjectCount", type: entryType, data: { rows: "count" } } }];
+  writeFileSync(join(panelFolder, "projections.json"), JSON.stringify(projections));
   const java = { id: "ontology", declaration: { panelUses: [
     { id: "catalogue", path: "/ontology/catalogue", panelId },
   ] } };
@@ -548,6 +550,7 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
   };
   await stageBuiltinPanels(options);
   const [relative] = JSON.parse(readFileSync(join(options.directory, "index.json"), "utf8"));
+  assert.deepEqual(JSON.parse(readFileSync(join(options.directory, relative, "projections.json"), "utf8")), projections);
   assert.equal(relative, "@ontomato/page-owner/catalogue");
   for (const file of ["registration.json", "panel.json", "panel.html", "panel.mjs", "recipes.md"]) {
     assert.equal(readFileSync(join(options.directory, relative, file), "utf8"), readFileSync(join(panelFolder, file), "utf8"));

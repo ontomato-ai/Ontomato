@@ -170,7 +170,7 @@
         "id": "builtin-product-9dc2abcb-1a64-4e1a-b919-0b8f69a02b65"
       },
       "graph": {
-        "component": "OntologyModelGraph",
+        "component": "OntologyTypeGraph",
         "data": {
           "nodes": {
             "type": "platform:ObjectType",

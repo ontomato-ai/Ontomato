@@ -9,7 +9,6 @@ const typeKeys={
   page:['productPage','productPageDescription','Page'],
   navigation:['productNavigation','productNavigationDescription','Navigation'],
   application:['productApplication','productApplicationDescription','Application'],
-  'agent-profile':['productAgentProfile','productAgentDescription','AgentProfile'],
 } as const;
 type Translate=(key:keyof OntologyMessages)=>string;
 export function localizedProductTypes(ot:Translate){return productTypes.map(type=>{const [name,description]=typeKeys[type.kind];return {...type,name:ot(name),description:ot(description)};}).sort((a,b)=>productCategories.findIndex(category=>category.id===a.category)-productCategories.findIndex(category=>category.id===b.category));}

@@ -91,6 +91,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     const { requests } = options;
     const domainSources = new WeakMap<object, DomainComponentRuntime>();
     const instance = createDirectPanelInstance(options.manifest, {
+      boundOutputs: run.boundOutputs,
       overlayRoot: run.overlayRoot,
       shown: run.shown,
       read: options.read,

@@ -1,4 +1,4 @@
-import { productAssetSchema,productPageSchema,productCountsResponseSchema, type ProductQuery, type ProductAssetInput } from "@ontomato/contracts/product-assets";
+import { productAssetSchema } from "@ontomato/contracts/product-assets";
 import { productGrantsResponseSchema, type ChangeProductGrantRequest } from "@ontomato/contracts/product-governance";
 import type { ManagerRequest } from "../api";
 import {productGraphSchema,defaultProjectionWarningsSchema} from '@ontomato/contracts/product-graph';
@@ -13,36 +13,17 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
   }
   return {
     synchronizePlatform:async()=>send('/synchronize-platform','POST',{}),
-    nativeBinding:async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}`);return {agentId:result.nativeAgentId as string|undefined,applicationId:result.nativeApplicationId as string|undefined};},
+    nativeBinding:async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}`);return {applicationId:result.nativeApplicationId as string|undefined};},
     graph:async()=>productGraphSchema.parse((await send('/graph')).graph),
     defaultProjectionWarnings:async()=>defaultProjectionWarningsSchema.parse(await send('/validation/default-projections')),
     projections:async(kind:'ObjectType'|'Definition'|'MetricView'|'Action',id:string)=>{const result=await send('/projections?'+new URLSearchParams({kind,id}));return {...result,assets:result.assets.map((asset:unknown)=>productAssetSchema.parse(asset))};},
-    agentContext:async(id:string)=>send(`/${encodeURIComponent(id)}/agent-context`),
     sourceTypes:async(id:string)=>send(`/${encodeURIComponent(id)}/source-types`) as Promise<{objectTypes:string[];complete:boolean}>,
     object:async(id:string,primaryKey:string,revision?:number)=>send(`/${encodeURIComponent(id)}/object`,'POST',{primaryKey,revision}) as Promise<{object:Record<string,unknown>}>,
     grants:async(id:string)=>productGrantsResponseSchema.parse(await send(`/${encodeURIComponent(id)}/grants`)),
     changeGrant:async(id:string,grant:ChangeProductGrantRequest)=>send(`/${encodeURIComponent(id)}/grants`,'POST',grant),
     changeDomainGrant:async(id:string,shared:boolean)=>send(`/${encodeURIComponent(id)}/domain-grant`,'POST',{shared}),
-    publish:async(id:string,revision:number)=>send(`/${encodeURIComponent(id)}/publish`,'POST',{revision}),
-    retryPublication:async(id:string)=>send(`/${encodeURIComponent(id)}/retry-publication`,'POST',{}),
-    upgrade:async(id:string)=>send(`/${encodeURIComponent(id)}/upgrade`) as Promise<{releaseId:string;revision:number;assets:{id:string;change:string;fromRevision?:number;toRevision?:number}[];contracts:{kind:string;id:string;change:string}[]}>,
-    releases:async(id:string)=>send(`/${encodeURIComponent(id)}/releases`) as Promise<{releases:{releaseId:string;createdAt:string;active:boolean}[]}>,
-    rollback:async(id:string,releaseId:string)=>send(`/${encodeURIComponent(id)}/rollback`,'POST',{releaseId}),
-    migrate:async(id:string,revision:number)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate`,'POST',{revision})).asset),
-    migrateDashboard:async(id:string,revision:number)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate-dashboard`,'POST',{revision})).asset),
-    migratePlatform:async(id:string,revision:number,profileId?:string)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate-platform`,'POST',{revision,profileId})).asset),
-    executeProfileTool:async(profileId:string,toolId:string,parameters:Record<string,unknown>)=>send(`/${encodeURIComponent(profileId)}/tools/${encodeURIComponent(toolId)}`,'POST',{parameters}),
     collection:async(id:string,parameters:Record<string,unknown>,fields:string[],offset=0,projectionId?:string)=>send(`/definitions/${encodeURIComponent(id)}/query`,'POST',{parameters,fields,offset,projectionId}),
-    list: async () => ((await send("")).assets as unknown[]).map(asset=>productAssetSchema.parse(asset)),
-    query:async(query:Partial<ProductQuery>={})=>productPageSchema.parse(await send('/query?'+new URLSearchParams(Object.entries(query).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)])))),
-    counts:async()=> productCountsResponseSchema.parse(await send('/counts')).counts,
     get: async (id:string) => {const result=await send(`/${encodeURIComponent(id)}`);if(result.issues?.some((issue:{assetId:string})=>issue.assetId===id))throw new Error('A referenced capability contract changed; upgrade this product release');return productAssetSchema.parse(result.asset);},
     dependencies: async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}/dependencies`);return {graph:productGraphSchema.parse(result.graph),references:result.references as import('@ontomato/contracts/product-assets').ProductReference[],usedBy:result.usedBy as {id:string;name:string}[]};},
-    overlay:async(id:string)=>send(`/${encodeURIComponent(id)}/overlay`),
-    saveOverlay:async(id:string,workspace:import('@ontomato/contracts/personal-workspace').PersonalWorkspace,revision:number)=>send(`/${encodeURIComponent(id)}/overlay`,'PUT',{workspace,revision}),
-    save: async (id:string, input:ProductAssetInput, revision:number) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}`,"PUT",{name:input.name,description:input.description,document:input.document,revision})).asset),
-    copy: async (id:string,name:string) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/copy`,"POST",{name})).asset),
-    createPage:async(id:string,name:string)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/create-page`,'POST',{name})).asset),
-    delete: async (id:string,revision:number) => { await send(`/${encodeURIComponent(id)}`,"DELETE",{revision}); },
   };
 }

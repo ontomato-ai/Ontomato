@@ -89,7 +89,7 @@ export { default as TwoPaneLayout } from "../base/TwoPaneLayout.vue";
 export { default as WorkbenchLayout } from "../base/WorkbenchLayout.vue";
 export { default as SectionGroup } from "../base/SectionGroup.vue";
 export { default as ReferencePicker } from "../base/ReferencePicker.vue";
-export { default as ObjectGraph } from "../base/ObjectGraph.vue";
+export { default as RecordGraph } from "../base/RecordGraph.vue";
 export { default as ProductAssetGraph } from "../base/ProductAssetGraph.vue";
 export type {
   ProductAssetGraphCategory,
@@ -101,8 +101,8 @@ export type {
   ProductAssetGraphRelation,
   ProductAssetGraphTarget,
 } from "../base/product-asset-graph-types";
-export { default as OntologyModelGraph } from "../base/OntologyModelGraph.vue";
-export { default as VisualModelingGraph } from "../base/VisualModelingGraph.vue";
+export { default as OntologyTypeGraph } from "../base/OntologyTypeGraph.vue";
+export { default as ModelingGraphEditor } from "../base/ModelingGraphEditor.vue";
 export type { PendingGraphEdge } from "../base/object-graph-export";
 export { default as ObjectTree } from "../base/ObjectTree.vue";
 export { default as ObjectTextReader } from "../base/ObjectTextReader.vue";

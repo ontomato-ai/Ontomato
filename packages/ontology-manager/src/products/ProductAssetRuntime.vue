@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch,onBeforeUnmount,inject,type Component } from "vue";
+import { computed, ref, watch,onBeforeUnmount,inject } from "vue";
 import {onProductInvalidation} from '@ontomato/contracts/product-invalidation';
-import {productWidgets,productAgentRuntimeKey, type ProductAsset } from "@ontomato/contracts/product-assets";
+import {productWidgets, type ProductAsset } from "@ontomato/contracts/product-assets";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { objectViewDocumentSchema,readViewPath } from "@ontomato/contracts/object-views";
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
@@ -16,7 +16,6 @@ import {useManagerClient} from '../context';
 import {openApplicationKey} from '@ontomato/platform-shell';
 const {ot}=useOntologyText();
 const props = defineProps<{asset:ProductAsset;revision?:number;preview?:boolean;pageState?:Record<string,unknown>}>();
-const agentRuntime=inject<Component|null>(productAgentRuntimeKey,null);
 const emit=defineEmits<{refresh:[];navigate:[id:string]}>();
 const dataRevision=ref(0);
 const client=useManagerClient();
@@ -66,8 +65,6 @@ const document = computed(() => {
   <ActionProjectionRuntime v-else-if="asset.document.kind==='action-view'" :asset="asset" :page-state="pageState" :preview="preview" @refresh="emit('refresh')"/>
   <ObjectProjectionRuntime v-else-if="asset.document.kind==='object-projection'" :revision="dataRevision" :asset="asset" :page-state="pageState" :preview="preview"/>
   <CollectionProjectionRuntime v-else-if="asset.document.kind==='collection-view'" :key="`${revision}:${dataRevision}`" :asset="asset" :page-state="pageState"/>
-  <component :is="agentRuntime" v-else-if="asset.document.kind==='agent-profile'&&agentRuntime" :asset="asset" :preview="preview" :page-state="pageState"/>
-  <section v-else-if="asset.document.kind==='agent-profile'"><h3>{{asset.name}}</h3><p>{{asset.description}}</p></section>
   <nav v-else-if="asset.document.kind==='navigation'" class="product-navigation"><el-button v-for="node in asset.document.nodes" :key="node.id" text @click="emit('navigate',node.pageId)">{{node.label}}</el-button></nav>
   <ObjectViewRuntime v-else-if="['metric-widget','action-view','widget','widget-group','operation-panel'].includes(asset.document.kind)" :key="asset.revision" class="product-widget-runtime" :document="document" :object="{}" :reference="{className:'product',primaryKey:asset.id}" :revision="(revision??0)+dataRevision" :preview="preview" @refresh="emit('refresh')" />
   <a v-else-if="asset.document.kind === 'dashboard'" class="product-entry" :href="`#/dashboards?dashboardId=${encodeURIComponent(asset.document.dashboardId)}`"><strong>{{ asset.name }}</strong><span>{{ ot('productOpenDashboard') }} ↗</span></a>

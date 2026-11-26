@@ -35,9 +35,6 @@ import { assistantName, assistantDescription } from "./labels";
 import {isAppBuilderKind} from '../app-builder/definition';
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import {transaction} from '../../infrastructure/postgres-transaction';
-import {lockProducts} from '../product-assets/store';
-import {synchronizeNativeProfile} from '../product-assets/platform-assets';
-import { synchronizeProductOntology } from "../product-assets/ontology";
 import { validateExecutionSetting, prepareExecutionSetting } from "./execution-setting";
 const view = (a: AgentRow, locale?: string) =>
   assistantAgentDefinitionSchema.parse({
@@ -165,13 +162,12 @@ export async function saveAgentDefinitionSnapshot(
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
-    const result = await transaction(async client => {
-      await lockProducts(client, owner);
+    const definition = await transaction(async client => {
       const agent = await readAgentDefinitionRow(id, owner, client);
       await requireAgent(agent, "EDIT", credentials);
       const current = view(agent, locale);
       const partial = "submittedFields" in update ? update : undefined;
-      if (partial?.submittedFields.length === 0) return { definition: current, ontologyChanged: false };
+      if (partial?.submittedFields.length === 0) return current;
       const changed = (field: keyof AssistantAgentUpdateInput) =>
         partial === undefined || partial.submittedFields.some(path => path === `/${field}` || path.startsWith(`/${field}/`));
 
@@ -209,18 +205,16 @@ export async function saveAgentDefinitionSnapshot(
       set("sortOrder", "sort_order", input.sortOrder);
       set("executionUserId", "execution_user_id", executionUserId);
       set("skills", "skills", skills === undefined ? undefined : JSON.stringify(skills));
-      if (!assignments.length) return { definition: current, ontologyChanged: false };
+      if (!assignments.length) return current;
 
       const { rows: [saved] } = await client.query<AgentRow>(
         `UPDATE ${t("assistant_agents")} SET ${assignments.join(",")} WHERE id=$1 AND domain_id=$2 RETURNING *`,
         parameters,
       );
       if (!saved) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
-      const ontologyChanged = await synchronizeNativeProfile(client, owner, saved, locale);
-      return { definition: view(saved, locale), ontologyChanged };
+      return view(saved, locale);
     });
-    if (result.ontologyChanged) await synchronizeProductOntology(owner);
-    return { definition: result.definition, skillView: access.view };
+    return { definition, skillView: access.view };
   });
 }
 export async function createAgentDefinition(
@@ -242,7 +236,6 @@ export async function createAgentDefinitionSnapshot(
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
     const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, [], access);
     const definition = await transaction(async client => {
-      await lockProducts(client, owner);
       const { rows: [existing] } = await client.query<AgentRow>(
         `SELECT * FROM ${t("assistant_agents")} WHERE id=$1`, [id],
       );
@@ -310,7 +303,6 @@ export async function agentDefinitionDeletionRestriction(id: string, owner: Assi
 
 export async function deleteAgentDefinition(id: string, owner: AssistantOwner, credentials: AssistantCredentials) {
   await transaction(async client => {
-    await lockProducts(client, owner);
     const agent = await readAgentDefinitionRow(id, owner, client);
     const restriction = presetDeletionRestriction(agent.kind, credentials.locale);
     if (restriction) throw new HttpError(403, restriction.reason, "PRESET_AGENT_READ_ONLY");

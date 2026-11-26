@@ -55,7 +55,7 @@ import {
 /*
  * End-to-end candidate test of the M3 four-layer capability map panel (`examples/panels/capability-map/`):
  * runs the actual candidate files (`material.mjs`) directly in the platform document through the preview route,
- * panel host, direct module runner, `OntologyGraph`, `ObjectRelations`, `ObjectList` (dynamic type + user picker),
+ * panel host, direct module runner, `InstanceGraph`, `ObjectRelations`, `ObjectList` (dynamic type + user picker),
  * and `SegmentedControl`, with every member read answered through Node's `/api/product-panels/read` entry.
  */
 
@@ -1317,7 +1317,7 @@ describe("builtin capability-map panel (PanelData-free)", () => {
     }
   });
 
-  it("links ObjectRelations summary, collapsed empty groups, bindings, relation filter, and set-as-start bidirectionally with OntologyGraph", { timeout: 30000 }, async () => {
+  it("links ObjectRelations summary, collapsed empty groups, bindings, relation filter, and set-as-start bidirectionally with InstanceGraph", { timeout: 30000 }, async () => {
     const { app, sent } = await mountBuiltin({
       mode: "instance",
       start: { className: PRODUCT_PROJECTION, primaryKey: "proj-kb" },
@@ -1338,10 +1338,10 @@ describe("builtin capability-map panel (PanelData-free)", () => {
         expect(bindings).toContain("knowledge.approve");
       }, { timeout: 5000 });
 
-      // Both edges drawn initially on OntologyGraph.
+      // Both edges drawn initially on InstanceGraph.
       await vi.waitFor(() => expect(canvasRecorder.edges).toHaveLength(2), { timeout: 5000 });
 
-      // 2) Filtering relation kinds inside ObjectRelations updates relationKinds state and filters OntologyGraph edges.
+      // 2) Filtering relation kinds inside ObjectRelations updates relationKinds state and filters InstanceGraph edges.
       const selectEl = document.querySelector(".panel-host-coded .sdk-object-relations-filter-select");
       expect(selectEl).not.toBeNull();
       // Select only "projection.binds-target" via the rendered option dropdown.
@@ -1360,7 +1360,7 @@ describe("builtin capability-map panel (PanelData-free)", () => {
         expect(document.querySelector('.panel-host-coded [data-relation-kind="projection.binds-target"]')).not.toBeNull();
       }, { timeout: 5000 });
 
-      // 3) Clicking "Set as start" inside ObjectRelations promotes Business knowledge as start on OntologyGraph.
+      // 3) Clicking "Set as start" inside ObjectRelations promotes Business knowledge as start on InstanceGraph.
       const setStartBtn = document.querySelector<HTMLButtonElement>(
         '.panel-host-coded [data-relation-kind="projection.binds-target"] .sdk-object-relations-set-start',
       )!;

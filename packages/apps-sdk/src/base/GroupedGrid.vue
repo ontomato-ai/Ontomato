@@ -72,7 +72,7 @@ import {
   resolveOperationInputFields,
 } from "./operation-dispatch";
 import { isActionValuesEnvelope, wrapActionOperationInput, type OperationInputField } from "./operation-input-schema";
-import { displayFieldText } from "./record-field";
+import { displayFieldText, recordFieldDisplayValue } from "./record-field";
 import OperationInputDialog from "./OperationInputDialog.vue";
 
 /**
@@ -1042,7 +1042,7 @@ function resolveConversationPrefill(item: GroupedGridItem, action: ResolvedRowAc
         if (key === "className") return ref.className;
         if (key === "label") return item.row.label;
         if (key === "ref") return refJson;
-        return displayFieldText(item.row.fields[key], locale.value, t);
+        return displayFieldText(recordFieldDisplayValue(item.row, key), locale.value, t);
       })
     : "";
   if (!interpolated.trim()) {

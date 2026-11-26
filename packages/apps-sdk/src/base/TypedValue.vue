@@ -30,6 +30,7 @@ import {
   isRecordReference,
   isRecordTag,
   rawRecordField,
+  recordFieldDisplayValue,
   recordFieldArrayItems,
   referenceDisplayLabel,
   scalarFieldText,
@@ -188,7 +189,7 @@ const resolved = computed<ResolvedSource>(() => {
 
   const record = current.value as unknown as PlatformObjectRecord;
   const fieldKey = props.field ?? "label";
-  const raw = rawRecordField(record, fieldKey);
+  const raw = recordFieldDisplayValue(record, fieldKey);
   const tagFallback = raw === undefined && record.tags?.[fieldKey] ? record.tags[fieldKey] : undefined;
   return {
     state: "ready",

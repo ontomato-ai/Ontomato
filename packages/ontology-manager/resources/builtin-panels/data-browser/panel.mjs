@@ -141,7 +141,7 @@ await mountPanel({
       return t("db.graphNeighborProgress", { loaded, total: progress.total });
     });
 
-    // Clear panel graphStart/expandedNodes when OntologyGraph returns to overview via its floating back button.
+    // Clear panel graphStart/expandedNodes when InstanceGraph returns to overview via its floating back button.
     watch(graphActiveMode, (mode, prev) => {
       if (mode === "overview" && prev === "instance") {
         if (instance.state.values.value.graphStart != null || (instance.state.values.value.expandedNodes?.length ?? 0) > 0) {
@@ -150,7 +150,7 @@ await mountPanel({
       }
     });
 
-    // Bidirectional sync between ReferencePicker object ref (`graphSearchClass`) and OntologyGraph scalar (`graphSearchClassName` / `selectedGroup`).
+    // Bidirectional sync between ReferencePicker object ref (`graphSearchClass`) and InstanceGraph scalar (`graphSearchClassName` / `selectedGroup`).
     const graphSearchClassKey = computed(() => state.value.graphSearchClass?.primaryKey ?? null);
     const graphSearchClassNameState = computed(() => {
       const raw = state.value.graphSearchClassName;

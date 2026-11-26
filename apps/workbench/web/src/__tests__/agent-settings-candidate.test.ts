@@ -69,7 +69,7 @@ const fields: PanelFormDescription["fields"] = [
   field("/description", "Description", { kind: "text", multiline: true }),
   field("/icon", "Avatar", { kind: "hidden" }),
   field("/enabled", "Enabled", { kind: "switch" }),
-  field("/systemPrompt", "Instructions", { kind: "markdown" }),
+  field("/systemPrompt", "Instructions", { kind: "text", presentation: "markdown" }),
   field("/modelSelection/modelId", "Model", reference("platform:ModelOption")),
   field("/skills", "Skills", reference("platform:Skill", true)),
   field("/classNames", "Data scope", { kind: "reference", objectType: "platform:ObjectType", multiple: true, relatedObjectTypes: ["platform:Relationship"] }),

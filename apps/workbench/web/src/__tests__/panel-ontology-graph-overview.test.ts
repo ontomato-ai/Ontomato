@@ -28,7 +28,7 @@ import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text
 import { noOperations } from "./panel-frame";
 
 /*
- * Component tests for OntologyGraph sampled overview, grouped headings, aggregated edges, deferred connections,
+ * Component tests for InstanceGraph sampled overview, grouped headings, aggregated edges, deferred connections,
  * paginated & filtered neighbor expansion, snapshot version-conflict recovery, per-person `positions`, toolbar /
  * overlay slots, and backward-compatible `type` / `instance` modes.
  */
@@ -143,7 +143,7 @@ function overviewProjection(id = "sampled-graph", config: ProductProjection["con
     ...meta,
     id,
     name: "Sampled Graph",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {
       mode: { kind: "scalar", type: "string" },
       start: domainNodeUnion,
@@ -740,7 +740,7 @@ it("keeps backward-compatible type and instance modes working without overview p
     ...meta,
     id: "legacy-graph",
     name: "Legacy Graph",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {
       mode: { kind: "scalar", type: "string" },
       selected: { kind: "object-union", layers: allLayers },
@@ -835,15 +835,11 @@ it("keeps backward-compatible type and instance modes working without overview p
   await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(2));
   expect(instance.outputs.graph?.activeMode).toBe("type");
 
-  // Switch to instance mode: does not send unsupported limit/offset/direction params to platform:OntologyType.neighbors
   instance.state.set("mode", "instance");
   await vi.waitFor(() => expect(instance.outputs.graph?.activeMode).toBe("instance"));
-  await vi.waitFor(() => expect(reads.some((r) => r.dataName === "neighbors")).toBe(true));
-  const legacyNeighborRead = reads.find((r) => r.dataName === "neighbors");
-  expect(legacyNeighborRead?.runtimeParams?.limit).toBeUndefined();
-  expect(legacyNeighborRead?.runtimeParams?.offset).toBeUndefined();
-  expect(legacyNeighborRead?.runtimeParams?.direction).toBeUndefined();
-  expect(legacyNeighborRead?.runtimeParams?.targetClass).toBeUndefined();
+  const neighborId = encodeGraphNodeId({ className: ACTION, primaryKey: "a-1" });
+  await vi.waitFor(() => expect(canvasRecorder.nodes.some((node) => node.id === neighborId)).toBe(true));
+  expect(reads.some((read) => read.dataName === "overview")).toBe(false);
 });
 
 it("exposes overview diagnostics outputs, clickable group headings, NOT_GENERATED refresh, GENERATING auto-poll, and drawing progress", async () => {

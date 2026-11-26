@@ -457,15 +457,24 @@ async function evaluateProductGrantRelation(
   return { status: "ok", edges: [] };
 }
 
-type SearchableOntologyObjectItem = PlatformOntologyObjectItem & { readonly searchText?: string };
+type InstanceMetadata = Partial<Record<"description" | "status" | "version" | "enabled", string | number | boolean>>;
+type SearchableOntologyObjectItem = PlatformOntologyObjectItem & {
+  readonly searchText?: string;
+  readonly metadata?: InstanceMetadata;
+};
 
-function toPublicObjectItem(item: SearchableOntologyObjectItem, detailOverride?: string): PlatformOntologyObjectItem {
-  const detail = detailOverride !== undefined ? detailOverride : item.detail;
-  return {
-    node: item.node,
-    label: item.label,
-    ...(detail !== undefined ? { detail } : {}),
-  };
+type OwnerObjectsResult = OwnerReadResult<SearchableOntologyObjectItem[]>
+  | { ok: false; status: "unavailable"; reason: string };
+
+const ownerReadErrors = {
+  refused: [403, "FORBIDDEN"],
+  failed: [502, "UPSTREAM_FAILED"],
+  unavailable: [503, "SERVICE_UNAVAILABLE"],
+} as const;
+
+export function platformOntologyOwnerReadError(status: Exclude<PlatformOntologyStatus, "ok">, reason?: string): HttpError {
+  const [httpStatus, code] = ownerReadErrors[status];
+  return new HttpError(httpStatus, reason ?? status, code);
 }
 
 /** Lists all objects of a single declared type for counts, object picker, and label lookup. */
@@ -473,7 +482,7 @@ async function readObjectsOfType(
   readers: PlatformOntologyOwnerReaders,
   typeId: string,
   includeDomainShared = true,
-): Promise<OwnerReadResult<SearchableOntologyObjectItem[]> | { ok: false; status: "unavailable"; reason: string }> {
+): Promise<OwnerObjectsResult> {
 
   switch (typeId) {
     case OBJECT_TYPE: {
@@ -485,7 +494,7 @@ async function readObjectsOfType(
           node: { className: OBJECT_TYPE, primaryKey: cls.className },
           label: cls.showName || cls.classDesc || cls.className,
           detail: cls.className,
-          ...(cls.classDesc ? { searchText: cls.classDesc } : {}),
+          ...(cls.classDesc ? { searchText: cls.classDesc, metadata: { description: cls.classDesc } } : {}),
         })),
       };
     }
@@ -513,7 +522,7 @@ async function readObjectsOfType(
           node: { className: RELATIONSHIP, primaryKey: rel.relationship },
           label: rel.showName || rel.desc || rel.relationship,
           detail: rel.fromclass && rel.toclass ? `${rel.fromclass} → ${rel.toclass}` : undefined,
-          ...(rel.desc ? { searchText: rel.desc } : {}),
+          ...(rel.desc ? { searchText: rel.desc, metadata: { description: rel.desc } } : {}),
         })),
       };
     }
@@ -526,6 +535,7 @@ async function readObjectsOfType(
           node: { className: METRIC_VIEW, primaryKey: m.id },
           label: m.name,
           detail: m.status,
+          ...(m.status !== undefined && { metadata: { status: m.status } }),
         })),
       };
     }
@@ -550,6 +560,7 @@ async function readObjectsOfType(
           node: { className: ACTION, primaryKey: action.id },
           label: action.name,
           detail: action.status,
+          ...(action.status !== undefined && { metadata: { status: action.status } }),
         })),
       };
     }
@@ -562,6 +573,10 @@ async function readObjectsOfType(
           node: { className: WORKFLOW, primaryKey: wf.id },
           label: wf.name,
           detail: wf.version !== undefined ? `v${wf.version}` : wf.status,
+          metadata: {
+            ...(wf.status !== undefined && { status: wf.status }),
+            ...(wf.version !== undefined && { version: wf.version }),
+          },
         })),
       };
     }
@@ -574,6 +589,7 @@ async function readObjectsOfType(
           node: { className: TRIGGER, primaryKey: tr.id },
           label: tr.name,
           detail: tr.effectKind ?? undefined,
+          ...(tr.enabled !== undefined && { metadata: { enabled: tr.enabled } }),
         })),
       };
     }
@@ -585,7 +601,7 @@ async function readObjectsOfType(
         data: res.data.map((skill) => ({
           node: { className: SKILL, primaryKey: skill.primaryKey },
           label: skill.title,
-          ...(skill.description ? { searchText: skill.description } : {}),
+          ...(skill.description ? { searchText: skill.description, metadata: { description: skill.description } } : {}),
         })),
       };
     }
@@ -597,6 +613,7 @@ async function readObjectsOfType(
         data: res.data.map((k) => ({
           node: { className: BUSINESS_KNOWLEDGE, primaryKey: k.id },
           label: k.title,
+          ...(k.status !== undefined && { metadata: { status: k.status } }),
         })),
       };
     }
@@ -705,6 +722,7 @@ async function readObjectsOfType(
         data: res.data.map((agent) => ({
           node: { className: AGENT_DEFINITION, primaryKey: agent.id },
           label: agent.name,
+          metadata: { enabled: agent.enabled },
           detail: withDomainSharedDetail(
             agent.enabled ? "enabled" : "disabled",
             sharedIds.has(agent.id),
@@ -734,7 +752,9 @@ async function readObjectsOfType(
           node: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
           label: projection.name,
           detail: projection.componentId,
-          ...(projection.description ? { searchText: projection.description } : {}),
+          ...(projection.description ? {
+            searchText: projection.description, metadata: { description: projection.description },
+          } : {}),
         })),
       };
     }
@@ -756,6 +776,7 @@ async function readObjectsOfType(
             node: { className: PRODUCT_PANEL, primaryKey: panel.id },
             label: panel.name,
             ...(detail ? { detail } : {}),
+            ...(panel.description && { metadata: { description: panel.description } }),
           };
         }),
       };
@@ -850,6 +871,23 @@ export async function readPlatformOntologyObjects(
   credentials: AssistantCredentials,
   input: PlatformOntologyObjectsRequest,
 ): Promise<PlatformOntologyObjectsResponse> {
+  const { failures: _failures, items, ...page } = await readPlatformOntologyInstancePage(owner, credentials, input);
+  return {
+    ...page,
+    items: items.map(({ node, label, detail }) => ({ node, label, ...(detail !== undefined && { detail }) })),
+  };
+}
+
+type PlatformOntologyInstancePage = Omit<PlatformOntologyObjectsResponse, "items"> & {
+  items: SearchableOntologyObjectItem[];
+  failures?: { type: string; status: Exclude<PlatformOntologyStatus, "ok">; reason: string }[];
+};
+
+export async function readPlatformOntologyInstancePage(
+  owner: ProductOwner,
+  credentials: AssistantCredentials,
+  input: PlatformOntologyObjectsRequest,
+): Promise<PlatformOntologyInstancePage> {
   const page = Math.max(1, input.page ?? 1);
   const pageSize = Math.min(200, Math.max(1, input.pageSize ?? 50));
   const keyword = input.keyword?.trim().toLowerCase() ?? "";
@@ -876,12 +914,12 @@ export async function readPlatformOntologyObjects(
     );
 
     let okCount = 0;
-    let firstError: { status: PlatformOntologyStatus; reason?: string } | null = null;
-    const matched: Array<{ rank: number; item: PlatformOntologyObjectItem }> = [];
+    const failures: NonNullable<PlatformOntologyInstancePage["failures"]> = [];
+    const matched: Array<{ rank: number; item: SearchableOntologyObjectItem }> = [];
 
     for (const { spec, res } of results) {
       if (!res.ok) {
-        if (!firstError) firstError = { status: res.status, reason: res.reason };
+        failures.push({ type: spec.id, status: res.status, reason: res.reason });
         continue;
       }
       okCount++;
@@ -906,12 +944,13 @@ export async function readPlatformOntologyObjects(
         const detail = detailText ? `${typeLabel} · ${detailText}` : typeLabel;
         matched.push({
           rank,
-          item: toPublicObjectItem(item, detail),
+          item: { ...item, detail },
         });
       }
     }
 
-    if (okCount === 0 && firstError) {
+    if (okCount === 0) {
+      const firstError = failures[0]!;
       return {
         type: input.type,
         layer: "capability",
@@ -940,6 +979,7 @@ export async function readPlatformOntologyObjects(
       total: matched.length,
       page,
       pageSize,
+      failures,
     };
   }
 
@@ -977,11 +1017,26 @@ export async function readPlatformOntologyObjects(
     type: spec.id,
     layer: spec.layer,
     status: "ok",
-    items: sorted.slice(offset, offset + pageSize).map((item) => toPublicObjectItem(item)),
+    items: sorted.slice(offset, offset + pageSize),
     total: sorted.length,
     page,
     pageSize,
   };
+}
+
+export async function readPlatformOntologyInstance(
+  owner: ProductOwner,
+  credentials: AssistantCredentials,
+  node: PlatformOntologyNodeRef,
+): Promise<SearchableOntologyObjectItem> {
+  const spec = PLATFORM_ONTOLOGY_TYPE_MAP.get(node.className);
+  if (!spec) throw new HttpError(404, `Unknown platform ontology type: ${node.className}`, "OBJECT_NOT_FOUND");
+  const readers = new PlatformOntologyOwnerReaders(owner, credentials);
+  const result = await readObjectsOfType(readers, spec.id);
+  if (!result.ok) throw platformOntologyOwnerReadError(result.status, result.reason);
+  const item = result.data.find(candidate => candidate.node.primaryKey === node.primaryKey);
+  if (!item) throw new HttpError(404, `Object not found: ${node.className}~${node.primaryKey}`, "OBJECT_NOT_FOUND");
+  return item;
 }
 
 /** Evaluates one declared relation kind for the requested center node (outgoing or incoming). */
@@ -1785,40 +1840,27 @@ export async function readPlatformOntologyNeighbors(
           !(isSelfUser && centerRes.data.length === 0)) {
         throw new HttpError(404, `Object not found: ${className}~${primaryKey}`, "OBJECT_NOT_FOUND");
       }
-    } else if (!isSelfUser) {
-      switch (centerRes.status) {
-        case "refused":
-          throw new HttpError(403, centerRes.reason ?? `Access refused for ${className}`, "FORBIDDEN");
-        case "unavailable":
-          throw new HttpError(503, centerRes.reason ?? `Owner unavailable for ${className}`, "SERVICE_UNAVAILABLE");
-        case "failed":
-          throw new HttpError(502, centerRes.reason ?? `Failed to read ${className}`, "UPSTREAM_FAILED");
-      }
-    }
+    } else if (!isSelfUser) throw platformOntologyOwnerReadError(centerRes.status, centerRes.reason);
   }
   const centerKey = nodeKey(input.node);
 
   const kindFilter = input.relationKinds?.length ? new Set(input.relationKinds) : null;
   const layerFilter = input.layers?.length ? new Set(input.layers) : null;
+  const { targetClass, direction, limit, offset = 0 } = input;
+  const matchesOppositeType = (type: string) =>
+    (!targetClass || type === targetClass)
+    && (!layerFilter || layerFilter.has(PLATFORM_ONTOLOGY_TYPE_MAP.get(type)!.layer));
 
   const applicableRelations = PLATFORM_ONTOLOGY_RELATION_KINDS.filter((rel) => {
     if (kindFilter && !kindFilter.has(rel.id)) return false;
     const targets = relationTargets(rel);
-    const isOutgoing = rel.from === input.node.className;
-    const isIncoming = targets.includes(input.node.className);
-    if (!isOutgoing && !isIncoming) return false;
-    if (layerFilter) {
-      const oppositeTypes: string[] = [];
-      if (isOutgoing) oppositeTypes.push(...targets);
-      if (isIncoming) oppositeTypes.push(rel.from);
-      const anyLayerMatches = oppositeTypes.some((t) => {
-        if (t === ONTOLOGY_TYPE) return true;
-        const tSpec = PLATFORM_ONTOLOGY_TYPE_MAP.get(t);
-        return tSpec ? layerFilter.has(tSpec.layer) : false;
-      });
-      if (!anyLayerMatches) return false;
-    }
-    return true;
+    // Projection bindings can point to type references as well as instances of the declared target types.
+    const bindsType = rel.id === "projection.binds-target";
+    const isOutgoing = rel.from === className
+      && ((bindsType && targetClass === ONTOLOGY_TYPE) || targets.some(matchesOppositeType));
+    const isIncoming = targets.includes(bindsType && className === ONTOLOGY_TYPE ? primaryKey : className)
+      && matchesOppositeType(rel.from);
+    return (direction !== "incoming" && isOutgoing) || (direction !== "outgoing" && isIncoming);
   });
 
   const evaluations = await Promise.all(
@@ -1831,16 +1873,16 @@ export async function readPlatformOntologyNeighbors(
   const seenEdges = new Set<string>();
   const edges: PlatformOntologyEdge[] = [];
   const relations: PlatformOntologyRelationStatus[] = [];
-  const neighborRefs = new Map<string, PlatformOntologyNodeRef>();
   const hintLabels = new Map<string, { label: string; detail?: string }>();
 
   for (const { spec, result } of evaluations) {
-    let addedCount = 0;
     for (const candidate of result.edges) {
       const fromKey = nodeKey(candidate.from);
       const toKey = nodeKey(candidate.to);
       const direction: "outgoing" | "incoming" = fromKey === centerKey ? "outgoing" : "incoming";
       const opposite = direction === "outgoing" ? candidate.to : candidate.from;
+      if (input.direction && input.direction !== "both" && input.direction !== direction) continue;
+      if (targetClass && opposite.className !== targetClass) continue;
       const oppositeLayer = resolveNodeLayer(opposite);
       if (!oppositeLayer) continue;
       if (layerFilter && !layerFilter.has(oppositeLayer)) continue;
@@ -1848,7 +1890,6 @@ export async function readPlatformOntologyNeighbors(
       const dedupKey = `${spec.id}|${fromKey}|${toKey}`;
       if (seenEdges.has(dedupKey)) continue;
       seenEdges.add(dedupKey);
-      addedCount++;
 
       edges.push({
         id: `${spec.id}:${candidate.from.className}:${candidate.from.primaryKey}->${candidate.to.className}:${candidate.to.primaryKey}`,
@@ -1862,19 +1903,25 @@ export async function readPlatformOntologyNeighbors(
 
       if (candidate.fromLabel) hintLabels.set(fromKey, { label: candidate.fromLabel, detail: candidate.fromDetail });
       if (candidate.toLabel) hintLabels.set(toKey, { label: candidate.toLabel, detail: candidate.toDetail });
-
-      const oppKey = nodeKey(opposite);
-      if (oppKey !== centerKey && !neighborRefs.has(oppKey)) {
-        neighborRefs.set(oppKey, opposite);
-      }
     }
 
     relations.push({
       relationKind: spec.id,
       status: result.status,
-      edgeCount: addedCount,
+      edgeCount: 0,
       ...(result.reason ? { reason: result.reason } : {}),
     });
+  }
+
+  const pageEdges = edges.slice(offset, limit === undefined ? undefined : offset + limit);
+  const nextOffset = offset + pageEdges.length < edges.length ? offset + pageEdges.length : null;
+  const pageCounts = new Map<string, number>();
+  const neighborRefs = new Map<string, PlatformOntologyNodeRef>();
+  for (const edge of pageEdges) {
+    pageCounts.set(edge.relationKind, (pageCounts.get(edge.relationKind) ?? 0) + 1);
+    const opposite = edge.direction === "outgoing" ? edge.to : edge.from;
+    const key = nodeKey(opposite);
+    if (key !== centerKey) neighborRefs.set(key, opposite);
   }
 
   // Resolve canonical labels from each referenced node's owner (reusing per-request cache).
@@ -1940,7 +1987,13 @@ export async function readPlatformOntologyNeighbors(
   return {
     node: centerNode,
     neighbors,
-    edges,
-    relations,
+    edges: pageEdges,
+    relations: relations.map(relation => ({
+      ...relation,
+      edgeCount: pageCounts.get(relation.relationKind) ?? 0,
+      ...(relation.status === "ok" && nextOffset !== null && { truncated: true }),
+    })),
+    nextOffset,
+    total: edges.length,
   };
 }

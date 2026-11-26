@@ -166,6 +166,7 @@ import {
   isRecordTag,
   rawRecordField,
   recordFieldArrayItems,
+  recordFieldDisplayValue,
   referenceDisplayLabel,
   scalarFieldText,
   toChildFieldReference,
@@ -173,6 +174,7 @@ import {
 } from "./record-field";
 import { textHighlightSegments } from "./text-highlight";
 import { useDataStateLabels } from "./data-state-labels";
+import StatusDot from "./StatusDot.vue";
 
 type ObjectListSelection = ObjectListRef | PanelChildObjectIdentity;
 
@@ -2054,7 +2056,7 @@ function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string
     const mappedLabel = columnMapped(row, column)?.label;
     return mappedLabel ?? derived.text;
   }
-  return displayFieldText(rawRecordField(row, column.key), locale.value, t, column.listSeparator ?? ", ");
+  return displayFieldText(recordFieldDisplayValue(row, column.key), locale.value, t, column.listSeparator ?? ", ");
 }
 /** A column's secondary line text in a row, when `subtitleKey` is configured. */
 function columnSubtitleText(row: PlatformObjectRecord, column: ObjectListColumn): string {
@@ -3089,9 +3091,10 @@ function choose(row: PlatformObjectRecord) {
   if (openTarget) {
     highlightedIdentity.value = rowIdentityKey(row);
     void panel.navigate(openTarget);
+    return;
   }
   if (!rowSelectable) {
-    if (!openTarget) highlightedIdentity.value = rowIdentityKey(row);
+    highlightedIdentity.value = rowIdentityKey(row);
     return;
   }
   const identity = rowIdentityKey(row);
@@ -3314,7 +3317,7 @@ const listHasTwoLines = computed(() =>
 );
 
 function fieldValue(row: PlatformObjectRecord, key: string): string {
-  return displayFieldText(rawRecordField(row, key), locale.value, t);
+  return displayFieldText(recordFieldDisplayValue(row, key), locale.value, t);
 }
 
 function referenceField(row: PlatformObjectRecord, key: string): PanelRecordReferenceFieldValue | null {
@@ -5473,12 +5476,11 @@ defineExpose({
               @blur="commitTabInlineRename(row, rowIndex)"
             />
             <template v-else>
-              <span
+              <StatusDot
                 v-if="statusField && statusStyle === 'dot' && fieldValue(row, statusField) !== ''"
-                class="sdk-object-list-status-dot"
-                :data-tone="statusFieldTone(row, statusField)"
+                :tone="statusFieldTone(row, statusField)"
                 :title="fieldValue(row, statusField)"
-              ></span>
+              />
               <span
                 v-if="hasRowDraft(row)"
                 class="sdk-object-list-draft-dot"
@@ -6256,13 +6258,12 @@ defineExpose({
                 </span>
                 <span class="sdk-object-list-item-content">
                   <span class="sdk-object-list-item-head" :class="{ 'sdk-object-list-item-head-dot': statusStyle === 'dot' }">
-                    <span
+                    <StatusDot
                       v-if="statusField && statusStyle === 'dot' && fieldValue(entry.row, statusField) !== ''"
-                      class="sdk-object-list-status-dot"
-                      :data-tone="statusFieldTone(entry.row, statusField)"
+                      :tone="statusFieldTone(entry.row, statusField)"
                       :title="fieldValue(entry.row, statusField)"
-                      aria-hidden="true"
-                    ></span>
+                      aria-hidden
+                    />
                     <span
                       v-if="hasRowDraft(entry.row)"
                       class="sdk-object-list-draft-dot"
@@ -7341,25 +7342,6 @@ defineExpose({
 .sdk-object-list-item-head-dot {
   gap: var(--spacing-xs);
   justify-content: flex-start;
-}
-.sdk-object-list-status-dot {
-  background: var(--el-text-color-placeholder);
-  border-radius: 50%;
-  flex: 0 0 auto;
-  height: 7px;
-  width: 7px;
-}
-.sdk-object-list-status-dot[data-tone="success"] {
-  background: var(--el-color-success);
-}
-.sdk-object-list-status-dot[data-tone="warning"] {
-  background: var(--el-color-warning);
-}
-.sdk-object-list-status-dot[data-tone="danger"] {
-  background: var(--el-color-danger);
-}
-.sdk-object-list-status-dot[data-tone="info"] {
-  background: var(--el-color-info);
 }
 .sdk-object-list-item-label {
   flex: 1 1 auto;

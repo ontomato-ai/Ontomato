@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { personalWorkspaceSchema } from "./personal-workspace";
 import { viewWidgetSchema, nonChartViewWidgetSchema, type ViewWidget } from "./object-views";
-import {metricProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema,agentProfileSchema,ontologyParameterTypeSchema} from './product-projections';
+import {metricProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema,ontologyParameterTypeSchema} from './product-projections';
 
 const id = z.string().min(1).max(200);
 const title = z.string().trim().min(1).max(200);
@@ -32,10 +32,9 @@ const pageDocumentSchema=z.object({kind:z.literal('page'),children:placements,la
 const applicationDocumentSchema=z.object({kind:z.literal('application'),applicationId:id,workspaceId:z.string().uuid().optional(),children:placements,navigationId:id.optional()}).strict();
 export const platformWidgetSchema=z.object({kind:z.literal('platform'),source:z.enum(['assistant','apps','data','tasks','conversations','objects','recent']),placeholder:z.string().max(500).default(''),limit:z.number().int().min(1).max(20).default(4),workspace:personalWorkspaceSchema.optional()}).strict();
 export const productPlatformRuntimeKey=Symbol.for('ontomato.product-platform-runtime');
-export const productAgentRuntimeKey=Symbol.for('ontomato.product-agent-runtime');
 export const productDocumentSchema = z.discriminatedUnion("kind", [
   metricProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,
-  navigationSchema.innerType(),agentProfileSchema,
+  navigationSchema.innerType(),
   pageDocumentSchema.extend({workspace:personalWorkspaceSchema.optional()}),
   z.object({ kind: z.literal("layout-template"), workspace: personalWorkspaceSchema, children: placements,compositionVersion:z.literal(2).optional() }).strict(),
   z.object({ kind: z.literal("widget"), widget: z.union([productWidgetSchema,platformWidgetSchema]) }).strict(),
@@ -86,7 +85,7 @@ export type ProductAssetInput = z.infer<typeof productAssetInputSchema>;
 export type ProductAsset = z.infer<typeof productAssetSchema>;
 export const productSaveSchema = productAssetInputSchema.innerType().extend({ revision: z.number().int().nonnegative() }).strict();
 export const productAuthoringDocumentSchema=z.discriminatedUnion("kind",[
-  metricProjectionSchema.extend({renderer:z.enum(['number','chart']).default('number')}),actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema.innerType(),agentProfileSchema,
+  metricProjectionSchema.extend({renderer:z.enum(['number','chart']).default('number')}),actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema.innerType(),
   pageDocumentSchema,applicationDocumentSchema,
 ]);
 export const productAuthoringSchema=productSaveSchema.omit({visibility:true}).extend({document:productAuthoringDocumentSchema.superRefine(refineMetricPresentation)});
@@ -108,7 +107,6 @@ export function productReferences(document: ProductDocument): ProductReference[]
     else if(widget.resourceId&&['properties','links','metric','table','chart'].includes(widget.kind))references.push({kind:'metric',id:widget.resourceId});
   }
   if(document.kind==='navigation')references.push(...document.nodes.map(node=>({kind:'asset' as const,id:node.pageId})));
-  if(document.kind==='agent-profile')references.push(...[...document.tools,...document.contextViews].map(id=>({kind:'asset' as const,id})));
   if ("children" in document) references.push(...document.children.map(child => ({ kind: "asset" as const, id: child.assetId })));
   if (document.kind === "layout-template") {
     references.push(...document.workspace.dashboardIds.map(id => ({ kind: "dashboard" as const, id })));
@@ -142,7 +140,6 @@ export function platformWidget(document:ProductDocument){return document.kind===
 
 export const productTypes = [
   {kind:'application',category:'bundle',name:'应用',description:'面向人的产品交付，装配导航与页面并固定发布依赖'},
-  {kind:'agent-profile',category:'bundle',name:'智能体配置',description:'面向智能体的能力交付，引用工具投影、对象上下文和指令'},
   {kind:'page',category:'composition',name:'页面',description:'以资产引用组织布局；模板和可嵌入页面是页面形态'},
   {kind:'navigation',category:'composition',name:'导航',description:'引用页面，组织入口、菜单、深链接与转场'},
   {kind:'object-projection',category:'element',name:'对象视图',description:'绑定一个对象类型，呈现对象属性、关系与上下文'},
@@ -153,7 +150,7 @@ export const productTypes = [
 
 export const productQuerySchema=z.object({
   search:z.string().trim().max(200).default(''),
-  kind:z.enum(['page','layout-template','widget','widget-group','operation-panel','dashboard','object-view','application','metric-widget','action-view','collection-view','object-projection','navigation','agent-profile']).optional(),
+  kind:z.enum(['page','layout-template','widget','widget-group','operation-panel','dashboard','object-view','application','metric-widget','action-view','collection-view','object-projection','navigation']).optional(),
   scope:z.enum(['all','mine','shared']).default('all'),
   pageForm:z.enum(['all','page','embeddable','template']).optional(),
    sort:z.enum(['structure','updated','name']).optional(),

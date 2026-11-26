@@ -317,9 +317,9 @@ export const panelReadParameterSchemas = {
   layers: platformOntologyNeighborsRequestSchema.shape.layers.unwrap(),
   ontologyType: platformOntologyObjectsRequestSchema.shape.type,
   className: panelObjectRefSchema.shape.className,
-  neighborsLimit: positiveInteger.max(100),
-  neighborDirection: z.enum(["incoming", "outgoing", "both"]),
-  nonNegativeInt: z.number().int().nonnegative(),
+  neighborsLimit: platformOntologyNeighborsRequestSchema.shape.limit.unwrap(),
+  neighborDirection: platformOntologyNeighborsRequestSchema.shape.direction.unwrap(),
+  nonNegativeInt: platformOntologyNeighborsRequestSchema.shape.offset.unwrap(),
   recordFilters: recordFiltersSchema,
   recordSort: recordSortSchema,
   ontologyParameter: runtimeJsonValueSchema,
@@ -667,6 +667,12 @@ export const panelRecordSchema = z.object({
   tones: z.record(panelFieldToneSchema).optional(),
   /** A field's values as separate tags, by field name. */
   tags: z.record(z.array(z.string())).optional(),
+  /**
+   * The display text an owner gives a field's value, by field name (`{"status": "Approved"}`), shaped like `tones`:
+   * one value per field in a record. Presentation only — filtering, sorting, forms and the operations that read the
+   * record all use the value in `fields`.
+   */
+  valueLabels: z.record(z.string().min(1)).optional(),
   /** Display field keys (including label and subtitle). Omit this property when nothing matched. */
   highlights: z.record(z.array(panelTextHighlightRangeSchema).min(1))
     .refine(fields => Object.keys(fields).length > 0, "Omit highlights when there are no matches").optional(),
@@ -862,6 +868,8 @@ export {
 const simpleControls = [
   z.object({
     kind: z.literal("text"), multiline: z.boolean().optional(),
+    /** Presentation only changes how the string is drawn: a plain input (default) or a multiline Markdown editor that counts characters as the reader writes. */
+    presentation: z.enum(["input", "markdown"]).optional(),
     secret: z.boolean().optional(),
     clearable: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
@@ -936,7 +944,6 @@ const simpleControls = [
     )),
   }).strict(),
   z.object({ kind: z.literal("switch") }).strict(),
-  z.object({ kind: z.literal("markdown") }).strict(),
   z.object({ kind: z.literal("avatar") }).strict(),
   /** The owner keeps the icon's string key, including keys written by older releases. */
   z.object({ kind: z.literal("application-icon") }).strict(),
