@@ -91,6 +91,15 @@ class SkillManager {
     const view = await readSkillView(domainId, credentials);
     return view.requireSkillById(id);
   }
+  async requireSkillResource(domainId: string, id: string, credentials: AssistantCredentials) {
+    const view = await readSkillView(domainId, credentials);
+    const skill = view.requireSkillById(id);
+    // Saved outputs still fetch public and provider resources through their source's admission rules.
+    if (skill.source.kind === "domain") {
+      await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);
+    }
+    return skill;
+  }
   async searchSkills(domainId: string, query: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
     const needle = query.trim().toLowerCase();
     if (!needle) {

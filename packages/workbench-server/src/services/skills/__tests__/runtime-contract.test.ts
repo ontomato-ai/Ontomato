@@ -133,6 +133,7 @@ it("round-trips a standard package byte-for-byte and lists and reads its files",
 
 it("denies library reads without management read permission while allowing the agent to publish its selected skill", async () => {
   await skillManager.importSkill(domain, zip(), credentials, true);
+  panelOfferings = [panelSkill()];
   assertManagement.mockImplementation(async ({ id }: { id: string }) => {
     if (id === workbenchManagement.skillLibraryRead.id) throw new HttpError(403, "Read denied", "PERMISSION_DENIED");
   });
@@ -143,9 +144,12 @@ it("denies library reads without management read permission while allowing the a
     () => skillManager.getSkillInfo(domain, reference.name, credentials),
     () => skillManager.listSkillFiles(domain, reference.name, credentials),
     () => skillManager.readSkillFile(domain, reference.name, "SKILL.md", credentials),
+    () => skillManager.requireSkillResource(domain, reference.name, credentials),
     () => skillManager.exportSkill(domain, reference.name, credentials),
     () => skillManager.getSkillReferences(domain, reference.name, referenceAccess),
   ]) await expect(read()).rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
+  await expect(skillManager.requireSkillResource(domain, "panel-skill", credentials))
+    .resolves.toMatchObject({ source: { kind: "provider" } });
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const digest = "a".repeat(64);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
