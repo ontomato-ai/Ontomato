@@ -105,7 +105,7 @@ class TaskMail {
   private String runLink(TaskStore.Run run) {
     var origin = requirePublicOrigin();
     return origin.getScheme() + "://" + origin.getRawAuthority() + publicBasePath
-        + "/#/schedules?taskId=" + UriUtils.encode(run.taskId(), UTF_8) + "&runId=" + run.id();
+        + "/#/schedules?selectedTask=" + UriUtils.encode(run.taskId(), UTF_8) + "&runId=" + run.id();
   }
 
   private URI requirePublicOrigin() {

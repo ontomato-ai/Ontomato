@@ -49,7 +49,7 @@ class TaskMailTest {
     when(language.get("fr", "scheduledTasks.mail.completedStatus")).thenReturn("Exécution terminée");
     when(language.get("fr", "scheduledTasks.mail.failedStatus")).thenReturn("Échec de l’exécution");
     var mail = new TaskMail(env, language);
-    String link = "https://workbench.example.test:8443/team/#/schedules?taskId=task%2F%26%20old&runId=" + RUN_ID;
+    String link = "https://workbench.example.test:8443/team/#/schedules?selectedTask=task%2F%26%20old&runId=" + RUN_ID;
 
     assertStatusMail(mail.compose(run("creator", "fr"), RESULT, null), "Exécution terminée", link);
     assertStatusMail(mail.compose(run(null, "fr"), null, new TaskStore.Failure("run_failed", ERROR)),
