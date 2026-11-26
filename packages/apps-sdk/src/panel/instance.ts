@@ -92,6 +92,8 @@ export interface PanelInstanceOptions {
    * opened panel itself: every member path, operation ID and page-context selection of this instance starts with it.
    */
   memberPath?: PanelMemberPath;
+  /** Output names wired by the parent of a placed panel. */
+  boundOutputs?: ReadonlySet<string>;
   /** A member's segment of a path: its key, with the selection that placed it where the panel's state chose it. */
   segmentOf?: (member: string) => PanelMemberPath[number];
 }
@@ -342,6 +344,10 @@ export interface PanelInstance {
   markDisposed(): void;
   readonly manifest: PanelManifest;
   readonly state: PanelStateStore;
+  /** Whether another panel places this instance as one of its members. */
+  readonly nested: boolean;
+  /** Whether the parent has wired the named output of this instance. */
+  readonly isOutputBound: (name: string) => boolean;
   // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
   // (a nested panel's selection) without end.
   readonly pageContext: ComputedRef<PageContext>;
@@ -562,6 +568,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   /** Each member's own parameter values: those its component set and no panel state holds. */
   const own = shallowRef<Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue>>>>>({});
   const prefix = options.memberPath ?? [];
+  const boundOutputs = options.boundOutputs ?? new Set<string>();
   const segmentOf = options.segmentOf ?? ((member: string) => ({ member }));
   const memberPathOf = (member: string): PublisherPath => {
     const segment = segmentOf(member);
@@ -1529,6 +1536,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   }
   const instance: PanelInstance = {
     instanceId,
+    nested: prefix.length > 0,
+    isOutputBound: name => boundOutputs.has(name),
     isDisposed: () => disposed,
     markDisposed() {
       disposed = true;

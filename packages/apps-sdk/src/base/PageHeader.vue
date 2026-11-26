@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, inject } from "vue";
 import { useI18n } from "vue-i18n";
+import { panelContextKey } from "../panel/context";
 import type { PageHeaderDraft, PageHeaderLabels } from "./page-header-types";
 
 /**
@@ -8,7 +9,7 @@ import type { PageHeaderDraft, PageHeaderLabels } from "./page-header-types";
  * back link, single-line title (plain text or a projection-bound component in `#title`), optional description, flexible
  * right-side actions/controls (`#actions` or default slot), and an optional Save/Discard draft group (`draft`).
  *
- * It asks nothing from the platform host and adapts to its own container width via CSS container queries.
+ * A nested panel keeps its actions and leaves the page heading to the outer panel.
  */
 const props = withDefaults(
   defineProps<{
@@ -55,7 +56,11 @@ defineSlots<{
   actions(): unknown;
   /** Convenience default slot rendered in the right-side actions area after `#actions` and before draft controls. */
   default(): unknown;
+  /** Custom draft controls at the end of the actions area. */
+  draft(): unknown;
 }>();
+
+const nested = inject(panelContextKey, null)?.instance.nested ?? false;
 
 const i18n = (() => {
   try {
@@ -78,7 +83,7 @@ const resolvedLabels = computed<PageHeaderLabels>(() => ({
 
 const resolvedTitle = computed(() => props.title ?? "");
 
-const effectiveDensity = computed<"bar" | "compact" | "expanded">(() => props.density);
+const effectiveDensity = computed(() => nested ? "compact" : props.density);
 
 const draftSaving = computed(() => Boolean(props.draft?.saving));
 const draftDirty = computed(() => Boolean(props.draft?.dirty));
@@ -101,6 +106,7 @@ function handleSave() {
 
 <template>
   <header
+    v-if="!nested || $slots.actions || $slots.default || $slots.draft || draft"
     class="sdk-page-header"
     :class="{
       compact: effectiveDensity === 'compact' || effectiveDensity === 'bar',
@@ -108,10 +114,10 @@ function handleSave() {
     }"
   >
     <div
-      v-if="$slots.leading || backLabel || $slots.title || resolvedTitle || $slots.description || description || $slots.actions || $slots.default || draft"
+      v-if="nested || $slots.leading || backLabel || $slots.title || resolvedTitle || $slots.description || description || $slots.actions || $slots.default || $slots.draft || draft"
       class="sdk-page-header-row"
     >
-      <div v-if="$slots.leading || backLabel || $slots.title || resolvedTitle || $slots.description || description" class="sdk-page-header-text">
+      <div v-if="!nested && ($slots.leading || backLabel || $slots.title || resolvedTitle || $slots.description || description)" class="sdk-page-header-text">
         <div v-if="$slots.leading || backLabel || $slots.title || resolvedTitle" class="sdk-page-header-heading">
           <span v-if="$slots.leading" class="sdk-page-header-leading"><slot name="leading" /></span>
           <button v-if="backLabel" type="button" class="sdk-page-header-back" @click="emit('back')">
@@ -139,10 +145,11 @@ function handleSave() {
         <div v-if="$slots.description" class="sdk-page-header-description"><slot name="description" /></div>
         <p v-else-if="description" class="sdk-page-header-description">{{ description }}</p>
       </div>
-      <div v-if="$slots.actions || $slots.default || draft" class="sdk-page-header-actions">
+      <div v-if="$slots.actions || $slots.default || $slots.draft || draft" class="sdk-page-header-actions">
         <slot name="actions" />
         <slot />
-        <div v-if="draft" class="sdk-page-header-draft">
+        <slot v-if="$slots.draft" name="draft" />
+        <div v-else-if="draft" class="sdk-page-header-draft">
           <span v-if="draftDirty" class="sdk-page-header-unsaved" role="status">{{ resolvedLabels.unsavedChanges }}</span>
           <button
             v-if="draftDirty"

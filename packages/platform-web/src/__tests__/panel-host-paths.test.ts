@@ -424,6 +424,7 @@ describe("controlled personal state fields", () => {
       child: {
         target: { fromState: "childRef", candidates: { panelIds: ["panel-nested-child"] } },
         inputs: { term: { state: "outerTerm" } },
+        outputs: { term: { state: "outerTerm" } },
       },
     },
   });
@@ -798,7 +799,7 @@ describe("controlled personal state fields", () => {
       import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
       await mountPanel({
         setup() {
-          globalThis.__controlledPersonalNestedState = usePanelContext().instance.state;
+          globalThis.__controlledPersonalNested = usePanelContext().instance;
           return {};
         },
       });
@@ -825,15 +826,21 @@ describe("controlled personal state fields", () => {
       }))!;
       await view.ready;
       const outerMount = view.direct.value?.mount as {
-        instance: { placing(member: string): Promise<unknown> };
+        instance: { placing(member: string): Promise<unknown>; nested: boolean; isOutputBound(name: string): boolean };
       } | undefined;
+      expect(outerMount!.instance.nested).toBe(false);
+      expect(outerMount!.instance.isOutputBound("term")).toBe(false);
       await outerMount!.instance.placing("child");
 
-      const childState = (globalThis as Record<string, unknown>).__controlledPersonalNestedState as {
-        values: { value: Record<string, unknown> };
-        set(name: string, value: unknown): void;
+      const child = (globalThis as Record<string, unknown>).__controlledPersonalNested as {
+        nested: boolean;
+        isOutputBound(name: string): boolean;
+        state: { values: { value: Record<string, unknown> }; set(name: string, value: unknown): void };
       };
-      expect(childState).toBeDefined();
+      expect(child.nested).toBe(true);
+      expect(child.isOutputBound("term")).toBe(true);
+      expect(child.isOutputBound("density")).toBe(false);
+      const childState = child.state;
       expect(reads).toEqual([
         {
           memberPath: [{
@@ -869,7 +876,7 @@ describe("controlled personal state fields", () => {
       ]);
       expect(storage).toEqual({ term: "summer", density: "spacious" });
     } finally {
-      delete (globalThis as Record<string, unknown>).__controlledPersonalNestedState;
+      delete (globalThis as Record<string, unknown>).__controlledPersonalNested;
       scope.stop();
       vi.useRealTimers();
     }
