@@ -7,10 +7,7 @@ import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import {
-  ACTION,
   OBJECT_TYPE,
-  ONTOLOGY_TYPE,
-  USER,
   platformOntologyLayers,
 } from "@ontomato/contracts/platform-object-types";
 import type {
@@ -733,114 +730,6 @@ it("persists dragged coordinates in per-person json positions state, restores th
   expect(canvasRecorder.nodes.find((n) => n.id === o1Id)?.x).not.toBe(777);
 
   localStorageSetSpy.mockRestore();
-});
-
-it("keeps backward-compatible type and instance modes working without overview port", async () => {
-  const legacyProjection: ProductProjection = {
-    ...meta,
-    id: "legacy-graph",
-    name: "Legacy Graph",
-    componentId: "@ontomato/sdk:InstanceGraph",
-    inputs: {
-      mode: { kind: "scalar", type: "string" },
-      selected: { kind: "object-union", layers: allLayers },
-      selectedType: { kind: "scalar", type: "string" },
-    },
-    outputs: {
-      selectedNode: { kind: "object-union", layers: allLayers },
-      selectedType: { kind: "scalar", type: "string" },
-    },
-    config: {},
-    data: {
-      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
-      counts: { source: typeSource(ONTOLOGY_TYPE), read: "counts", params: {} },
-      start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
-      neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: {} },
-    },
-  };
-
-  const legacyManifest: PanelManifest = {
-    state: {
-      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false, default: "type" },
-      selected: { type: { kind: "object-union", layers: allLayers }, personal: false, deepLink: false, external: false },
-      selectedType: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
-    },
-    members: {
-      graph: {
-        target: { projectionId: "legacy-graph" },
-        inputs: {
-          mode: { state: "mode" },
-          selected: { state: "selected" },
-          selectedType: { state: "selectedType" },
-        },
-        outputs: {
-          selectedNode: { state: "selected" },
-          selectedType: { state: "selectedType" },
-        },
-      },
-    },
-  };
-
-  const { instance, reads } = mountDirect(legacyManifest, { "legacy-graph": legacyProjection }, (request) => {
-    if (request.dataName === "schema") {
-      return ready({
-        layers: ["capability", "governance"],
-        objectTypes: [
-          { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
-          { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
-        ],
-        relationKinds: [
-          {
-            id: "action.hasOwner",
-            from: ACTION,
-            to: USER,
-            derived: false,
-            owner: "java-action",
-            labelKey: "platformOntology.relations.actionHasOwner",
-            group: "dependency",
-          },
-        ],
-      });
-    }
-    if (request.dataName === "counts") {
-      return ready({
-        counts: [
-          { type: ACTION, layer: "capability", status: "ok", count: 3 },
-          { type: USER, layer: "governance", status: "ok", count: 2 },
-        ],
-      });
-    }
-    if (request.dataName === "start") {
-      return ready({ node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" } });
-    }
-    if (request.dataName === "neighbors") {
-      return ready({
-        node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
-        neighbors: [{ className: ACTION, primaryKey: "a-1", label: "Approve", layer: "capability" }],
-        edges: [
-          {
-            id: "e-legacy-1",
-            relationKind: "action.hasOwner",
-            from: { className: ACTION, primaryKey: "a-1" },
-            to: { className: USER, primaryKey: "u-1" },
-            direction: "incoming",
-            derived: false,
-          },
-        ],
-        relations: [{ relationKind: "action.hasOwner", status: "ok", edgeCount: 1 }],
-      });
-    }
-    return ready({});
-  });
-
-  await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(2));
-  expect(instance.outputs.graph?.activeMode).toBe("type");
-
-  instance.state.set("mode", "instance");
-  await vi.waitFor(() => expect(instance.outputs.graph?.activeMode).toBe("instance"));
-  const neighborId = encodeGraphNodeId({ className: ACTION, primaryKey: "a-1" });
-  await vi.waitFor(() => expect(canvasRecorder.nodes.some((node) => node.id === neighborId)).toBe(true));
-  expect(reads.some((read) => read.dataName === "overview")).toBe(false);
 });
 
 it("exposes overview diagnostics outputs, clickable group headings, NOT_GENERATED refresh, GENERATING auto-poll, and drawing progress", async () => {

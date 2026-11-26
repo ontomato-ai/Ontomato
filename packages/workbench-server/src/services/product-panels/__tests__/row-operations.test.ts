@@ -38,7 +38,6 @@ const mocks = vi.hoisted(() => ({
   findProduct: vi.fn(),
   listScheduledTasks: vi.fn(),
   queryKnowledge: vi.fn(),
-  readOntologyObjects: vi.fn(),
   usedPanels: vi.fn(),
   readCatalogue: vi.fn(),
 }));
@@ -118,11 +117,6 @@ vi.mock("../../business-knowledge/panel-reads", () => ({
     counts: vi.fn(),
     record: vi.fn(),
     form: vi.fn(),
-  }),
-}));
-vi.mock("../../platform-ontology/panel-reads", () => ({
-  createPlatformOntologyReadAdapter: (owner: unknown, viewer: unknown) => ({
-    objects: (params: Record<string, unknown>) => mocks.readOntologyObjects(owner, viewer, params),
   }),
 }));
 vi.mock("../application-catalogue", async importOriginal => {

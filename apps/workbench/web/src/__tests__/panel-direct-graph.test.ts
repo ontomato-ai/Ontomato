@@ -603,7 +603,7 @@ it("shows forbidden and error datum states on direct RecordGraph without pretend
   await vi.waitFor(() => expect(chooseScope).toHaveBeenCalledWith("/classNames", ["Order"]));
 });
 
-it("drives direct InstanceGraph in type and instance modes through member reads with no resource adapters", async () => {
+it("drives direct InstanceGraph through member reads with no resource adapters", async () => {
   const graphProjection: ProductProjection = {
     ...meta,
     id: "capability-graph",
@@ -612,18 +612,15 @@ it("drives direct InstanceGraph in type and instance modes through member reads 
     inputs: {
       mode: { kind: "scalar", type: "string" },
       selected: { kind: "object-union", layers: allLayers },
-      selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       node: { kind: "object-union", layers: allLayers },
       layers: { kind: "json" },
     },
     outputs: {
       selectedNode: { kind: "object-union", layers: allLayers },
-      selectedType: { kind: "scalar", type: "string" },
     },
     config: {},
     data: {
-      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
       counts: { source: typeSource(ONTOLOGY_TYPE), read: "counts", params: {} },
       start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
       neighbors: {
@@ -636,9 +633,8 @@ it("drives direct InstanceGraph in type and instance modes through member reads 
 
   const manifest: PanelManifest = {
     state: {
-      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false, default: "type" },
+      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false, default: "instance" },
       selected: { type: { kind: "object-union", layers: allLayers }, personal: false, deepLink: true, external: true },
-      selectedType: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false },
       query: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false, default: "" },
     },
     members: {
@@ -647,12 +643,10 @@ it("drives direct InstanceGraph in type and instance modes through member reads 
         inputs: {
           mode: { state: "mode" },
           selected: { state: "selected" },
-          selectedType: { state: "selectedType" },
           query: { state: "query" },
         },
         outputs: {
           selectedNode: { state: "selected" },
-          selectedType: { state: "selectedType" },
         },
       },
     },
@@ -663,34 +657,6 @@ it("drives direct InstanceGraph in type and instance modes through member reads 
   const userNode = { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" as const };
 
   const { instance, element, reads } = mountDirect(manifest, { "capability-graph": graphProjection }, (request) => {
-    if (request.dataName === "schema") {
-      return ready({
-        layers: ["capability", "governance"],
-        objectTypes: [
-          { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
-          { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
-        ],
-        relationKinds: [
-          {
-            id: "action.hasOwner",
-            from: ACTION,
-            to: USER,
-            derived: false,
-            owner: "java-action",
-            labelKey: "platformOntology.relations.actionHasOwner",
-            group: "dependency",
-          },
-        ],
-      });
-    }
-    if (request.dataName === "counts") {
-      return ready({
-        counts: [
-          { type: ACTION, layer: "capability", status: "ok", count: 5 },
-          { type: USER, layer: "governance", status: "refused", reason: "Owner denied" },
-        ],
-      });
-    }
     if (request.dataName === "start") {
       return ready({ node: actionNode });
     }
@@ -735,22 +701,9 @@ it("drives direct InstanceGraph in type and instance modes through member reads 
     throw new Error(`Unexpected read ${request.dataName}`);
   });
 
-  // Type mode loads schema + counts through host read port and renders counts/refusal badges.
-  await vi.waitFor(() => expect(canvasRecorder.nodes).toHaveLength(2));
-  expect(reads.map((r) => r.dataName).sort()).toEqual(["counts", "schema"]);
-  expect(canvasRecorder.nodes.find((n) => n.id === ACTION)?.label).toContain("(5)");
-  expect(canvasRecorder.nodes.find((n) => n.id === USER)?.label).toContain("No permission");
-
-  // Type selection writes selectedType state.
-  canvasRecorder.emitSelect?.([ACTION]);
-  await nextTick();
-  expect(instance.state.values.value.selectedType).toBe(ACTION);
-
-  // Switching to instance mode reads start + neighbors and renders the 3-state refused notice.
   const actionId = encodeGraphNodeId(actionNode);
   const workflowId = encodeGraphNodeId(workflowNode);
   const userId = encodeGraphNodeId(userNode);
-  instance.state.set("mode", "instance");
   await vi.waitFor(() => expect(canvasRecorder.nodes.map((n) => n.id)).toContain(workflowId));
   expect(element.querySelector("[data-graph-state='refused']")?.textContent).toContain("No user read");
 
@@ -778,33 +731,29 @@ it("surfaces forbidden and error host read states on direct InstanceGraph withou
     id: "capability-graph",
     name: "Capability map",
     componentId: "@ontomato/sdk:InstanceGraph",
-    inputs: { mode: { kind: "scalar", type: "string" }, node: { kind: "object-union", layers: allLayers } },
+    inputs: { node: { kind: "object-union", layers: allLayers } },
     outputs: {},
     config: {},
     data: {
-      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
+      start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
       neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: { node: { input: "node" } } },
     },
   };
   const manifest: PanelManifest = {
-    state: {
-      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false, default: "type" },
-    },
+    state: {},
     members: {
-      graph: { target: { projectionId: "capability-graph" }, inputs: { mode: { state: "mode" } } },
+      graph: { target: { projectionId: "capability-graph" }, inputs: {} },
     },
   };
 
   let response: ProductPanelReadResponse = { status: "forbidden" };
-  const { instance, element } = mountDirect(manifest, { "capability-graph": graphProjection }, () => response);
+  const { element } = mountDirect(manifest, { "capability-graph": graphProjection }, () => response);
 
   await vi.waitFor(() => expect(element.querySelector("[data-graph-state='forbidden']")).not.toBeNull());
   expect(element.querySelector(".el-empty")).toBeNull();
 
   response = { status: "error", message: "Ontology service failed" };
-  instance.state.set("mode", "instance");
-  await nextTick();
-  instance.state.set("mode", "type");
+  element.querySelector<HTMLButtonElement>('[data-graph-action="refresh"]')!.click();
   await vi.waitFor(() => expect(element.querySelector("[data-graph-state='error']")?.textContent).toContain("Ontology service failed"));
   expect(element.querySelector(".el-empty")).toBeNull();
 });
@@ -1264,10 +1213,9 @@ it("keeps newly discovered layers visible when InstanceGraph expands without dec
 
 /*
  * The relation kinds the graph draws follow the panel's state (M3's capability map, 2026-11-21): the page's own kind
- * filter writes a list of relation kinds, and the canvas draws only those — their edges between types, and in instance
- * mode only the neighbors they reach. Holding nothing, every kind is drawn; the graph's own reads are unchanged.
+ * filter writes a list of relation kinds, and the canvas draws only those — the edges and the neighbors they reach. Holding nothing, every kind is drawn; the graph's own reads are unchanged.
  */
-it("draws only the relation kinds the panel's state holds, in type and instance modes", async () => {
+it("draws only the relation kinds the panel's state holds in instance mode", async () => {
   const kindsType = { kind: "list" as const, items: { kind: "object" as const, objectType: ONTOLOGY_RELATION_KIND } };
   const graphProjection: ProductProjection = {
     ...meta, id: "kinds-graph", name: "Kinds", componentId: "@ontomato/sdk:InstanceGraph",
@@ -1275,7 +1223,6 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
     outputs: { visibleRelationKinds: kindsType },
     config: {},
     data: {
-      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
       counts: { source: typeSource(ONTOLOGY_TYPE), read: "counts", params: {} },
       start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
       neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: { node: { input: "node" } } },
@@ -1283,7 +1230,7 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
   };
   const manifest: PanelManifest = {
     state: {
-      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false, default: "type" },
+      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false, default: "instance" },
       kinds: { type: kindsType, personal: false, deepLink: false, external: false },
     },
     members: {
@@ -1294,19 +1241,6 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
   const workflowNode = { className: WORKFLOW, primaryKey: "wf-1", label: "Order Pipeline", layer: "capability" as const };
   const userNode = { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" as const };
   const { instance } = mountDirect(manifest, { "kinds-graph": graphProjection }, (request) => {
-    if (request.dataName === "schema") return ready({
-      layers: ["capability", "governance"],
-      objectTypes: [
-        { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
-        { id: WORKFLOW, layer: "capability", labelKey: "platformOntology.types.workflow" },
-        { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
-      ],
-      relationKinds: [
-        { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java-action", labelKey: "platformOntology.relations.actionHasOwner", group: "dependency" },
-        { id: "workflow.invokesAction", from: WORKFLOW, to: ACTION, derived: true, owner: "java-workflow", labelKey: "platformOntology.relations.workflowInvokesAction", group: "dependency" },
-      ],
-    });
-    if (request.dataName === "counts") return ready({ counts: [] });
     if (request.dataName === "start") return ready({ node: actionNode });
     return ready({
       node: actionNode, neighbors: [workflowNode, userNode],
@@ -1318,15 +1252,8 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
     });
   });
   const kind = (id: string) => ({ className: ONTOLOGY_RELATION_KIND, primaryKey: id });
-  const edgeKinds = () => canvasRecorder.edges.map((edge) => edge.id.split(":")[0]).sort();
-
-  // Type mode: every kind while the state holds none, then only the kinds it holds.
-  await vi.waitFor(() => expect(edgeKinds()).toEqual(["action.hasOwner", "workflow.invokesAction"]));
+  await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]));
   instance.state.set("kinds", [kind("action.hasOwner")]);
-  await vi.waitFor(() => expect(edgeKinds()).toEqual(["action.hasOwner"]));
-
-  // Instance mode: only the neighbor an edge of a kind shown reaches, beside the start.
-  instance.state.set("mode", "instance");
   await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id)).toEqual(["e-2"]));
   expect(canvasRecorder.nodes.map((node) => node.id).sort()).toEqual([encodeGraphNodeId(actionNode), encodeGraphNodeId(userNode)].sort());
   instance.state.set("kinds", null);
@@ -1343,7 +1270,6 @@ it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations an
     outputs: { selected: nodeUnion, visibleRelationKinds: kindsType },
     config: {},
     data: {
-      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
       counts: { source: typeSource(ONTOLOGY_TYPE), read: "counts", params: {} },
       start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
       neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: { node: { input: "node" } } },
@@ -1386,19 +1312,6 @@ it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations an
     manifest,
     { "sync-graph": graphProjection, "sync-relations": relationsProjection },
     (request) => {
-      if (request.dataName === "schema") return ready({
-        layers: ["capability", "governance"],
-        objectTypes: [
-          { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
-          { id: WORKFLOW, layer: "capability", labelKey: "platformOntology.types.workflow" },
-          { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
-        ],
-        relationKinds: [
-          { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java-action", labelKey: "platformOntology.relations.actionHasOwner", group: "dependency" },
-          { id: "workflow.invokesAction", from: WORKFLOW, to: ACTION, derived: true, owner: "java-workflow", labelKey: "platformOntology.relations.workflowInvokesAction", group: "dependency" },
-        ],
-      });
-      if (request.dataName === "counts") return ready({ counts: [] });
       if (request.dataName === "start") return ready({ node: actionNode });
       return ready({
         node: actionNode,
@@ -1455,7 +1368,7 @@ it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations an
   await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]));
 });
 
-it("syncs visibleLayers and expandedNodes bidirectionally and publishes startLabel, startDetail, and visibleRelationKindLabels read-only outputs", async () => {
+it("syncs visibleLayers and expandedNodes bidirectionally and publishes startLabel and startDetail read-only outputs", async () => {
   const nodeUnion = { kind: "object-union" as const, layers: allLayers, objectTypes: [ONTOLOGY_TYPE] };
   const stringList = { kind: "list" as const, items: { kind: "scalar" as const, type: "string" as const } };
   const nodeList = { kind: "list" as const, items: nodeUnion };
@@ -1481,7 +1394,6 @@ it("syncs visibleLayers and expandedNodes bidirectionally and publishes startLab
     },
     config: { showLayerFilter: true },
     data: {
-      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
       counts: { source: typeSource(ONTOLOGY_TYPE), read: "counts", params: {} },
       start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
       neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: {} },
@@ -1527,21 +1439,6 @@ it("syncs visibleLayers and expandedNodes bidirectionally and publishes startLab
     manifest,
     { "stateful-graph": graphProjection },
     (request) => {
-      if (request.dataName === "schema") {
-        return ready({
-          layers: ["fact", "capability", "governance", "product"],
-          objectTypes: [
-            { id: OBJECT_TYPE, layer: "fact", labelKey: "platformOntology.types.objectType" },
-            { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
-            { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
-          ],
-          relationKinds: [
-            { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java", labelKey: "Owned by user", group: "dependency" },
-            { id: "action.targetsObject", from: ACTION, to: OBJECT_TYPE, derived: false, owner: "java", labelKey: "platformOntology.relations.action.targets-object-type", group: "dependency" },
-          ],
-        });
-      }
-      if (request.dataName === "counts") return ready({ counts: [] });
       if (request.dataName === "start") return ready({ node: userNode });
       const node = (request.runtimeParams?.node ?? request.inputs.node) as { className: string; primaryKey: string };
       const layers = (request.runtimeParams?.layers ?? request.inputs.layers) as string[] | undefined;
@@ -1627,20 +1524,5 @@ it("syncs visibleLayers and expandedNodes bidirectionally and publishes startLab
   await vi.waitFor(() => {
     expect(instance.outputs.graph?.startLabel).toBe("Approve Order");
     expect(instance.outputs.graph?.startDetail).toBe("Action · act-2");
-  });
-
-  // 7) Type mode publishes localized visibleRelationKindLabels from schema.relationKinds.
-  instance.state.setState({
-    mode: "type",
-    kinds: [{ className: ONTOLOGY_RELATION_KIND, primaryKey: "action.targetsObject" }],
-  });
-  await vi.waitFor(() => {
-    expect(instance.outputs.graph?.visibleRelationKindLabels).toEqual(["Targets object type"]);
-    expect(instance.outputs.graph?.startLabel).toBeNull();
-    expect(instance.outputs.graph?.startDetail).toBeNull();
-  });
-  instance.state.set("kinds", null);
-  await vi.waitFor(() => {
-    expect(instance.outputs.graph?.visibleRelationKindLabels).toEqual([]);
   });
 });

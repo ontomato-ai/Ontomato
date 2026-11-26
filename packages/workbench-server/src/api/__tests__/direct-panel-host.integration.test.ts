@@ -620,7 +620,6 @@ it("reads the authoritative operation type table while isolating stale published
   expect(table.resultSchemas.actionDefinition).toMatchObject({ properties: { effects: { type: "array" } } });
   expect(table.resultSchemas.actionExplanation).toMatchObject({ properties: { codeSegments: { type: "array" } } });
   expect(table.resultSchemas.sdkComponentDefinition).toMatchObject({ properties: { componentId: { type: "string" } } });
-  expect(table.resultSchemas.panelOntologyObjects).toMatchObject({ properties: { items: { type: "array" } } });
   const customerReads = {
     query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page", size: "size", filters: "recordFilters", sort: "recordSort" }, result: "panelRecordQuery" },
     record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },

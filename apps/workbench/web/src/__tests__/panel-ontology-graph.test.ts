@@ -3,12 +3,10 @@ import { defineComponent, h, nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import {
   ACTION,
-  APPLICATION,
   OBJECT_TYPE,
   ONTOLOGY_TYPE,
   ROLE,
   USER,
-  WORKFLOW,
   platformOntologyLayers,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
@@ -33,8 +31,6 @@ import {
  * panel state / pageContext selection through the platform's real host and bridge:
  * - checkPanelValue & panelSelection for object-union (explicit objectTypes and layers-derived) using contracts'
  *   matchesObjectType/objectUnionTypes, preserving full { className, primaryKey } and localized type display names.
- * - Type mode: four-layer column preset layout, counts/status badges (ok/refused/failed/unavailable), stored vs derived
- *   edges, internal layer filter (does not mutate panel state), query highlighting without hiding, selectedType output.
  * - Instance mode: default start(), 1-hop neighbors(), incremental merge on unexpanded click without losing or moving
  *   existing nodes, no redundant fetch on already-expanded node, query highlighting without hiding or refetching,
  *   drawn-only legend counts, readable-label opening fit with overflow hint, PNG download, host refresh reload, and
@@ -156,11 +152,9 @@ const graphProjection = (id: string): ProductProjection => ({
   },
   outputs: {
     selectedNode: graphObject,
-    selectedType: { kind: "scalar", type: "string" },
   },
   config: {},
   data: {
-    schema: { source: graphSource, read: "schema", params: {} },
     counts: { source: graphSource, read: "counts", params: {} },
     start: { source: graphSource, read: "start", params: {} },
     neighbors: {
@@ -255,137 +249,6 @@ it("keeps graph coordinates as personal state even when node keys resemble objec
   expect(state.deepLinkable()).toEqual({});
 });
 
-it("renders type mode in four-layer columns with count statuses, internal layer filter, query highlight and selectedType output", async () => {
-  const projections = { "cap-graph": graphProjection("cap-graph") };
-  const manifest = definePanel({
-    state: {
-      mode: { type: { kind: "scalar", type: "string" }, deepLink: false },
-      start: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
-      selected: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
-      selectedType: { type: { kind: "scalar", type: "string" }, deepLink: false },
-      query: { type: { kind: "scalar", type: "string" }, deepLink: false },
-    },
-    members: {
-      graph: {
-        target: { projectionId: "cap-graph" },
-        inputs: {
-          mode: { state: "mode" },
-          start: { state: "start" },
-          selected: { state: "selected" },
-          query: { state: "query" },
-        },
-        outputs: {
-          selectedNode: { state: "selected" },
-          selectedType: { state: "selectedType" },
-        },
-      },
-    },
-  });
-  const panel = panelRecord("panel-cap-type", "Capability Map", manifest);
-  panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
-  const use = panelUse("use-cap-type", "cap-map-type", panel.id, "/ontology/assets/capability-map");
-
-  installPlatform(hostWith(projections, (request) => {
-    if (request.path === "/api/platform-ontology/schema") {
-      return Response.json({
-        layers: ["fact", "capability", "governance", "product"],
-        objectTypes: [
-          { id: OBJECT_TYPE, layer: "fact", labelKey: "platformOntology.types.objectType" },
-          { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
-          { id: WORKFLOW, layer: "capability", labelKey: "platformOntology.types.workflow" },
-          { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
-          { id: APPLICATION, layer: "product", labelKey: "platformOntology.types.application" },
-        ],
-        relationKinds: [
-          {
-            id: "action.targets-object-type",
-            from: ACTION,
-            to: OBJECT_TYPE,
-            labelKey: "platformOntology.relations.action.targets-object-type",
-            derived: false,
-            owner: "java-action",
-            group: "dependency",
-          },
-          {
-            id: "role.owns-workflow-step",
-            from: USER,
-            to: WORKFLOW,
-            labelKey: "platformOntology.relations.role.owns-workflow-step",
-            derived: true,
-            owner: "java-workflow",
-            group: "authorization",
-          },
-        ],
-      });
-    }
-    if (request.path === "/api/platform-ontology/counts") {
-      return Response.json({
-        counts: [
-          { type: OBJECT_TYPE, layer: "fact", status: "ok", count: 12 },
-          { type: ACTION, layer: "capability", status: "refused", reason: "No action permission" },
-          { type: WORKFLOW, layer: "capability", status: "failed", reason: "Upstream 500" },
-          { type: USER, layer: "governance", status: "ok", count: 5 },
-          { type: APPLICATION, layer: "product", status: "unavailable" },
-        ],
-      });
-    }
-    if (request.path === "/api/platform-ontology/neighbors") {
-      throw new Error("neighbors should not be called in type mode");
-    }
-    return undefined;
-  }));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(registered("app-test", use, panel), use.path, { mode: "type" });
-  inside(frame);
-
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const mounted = await mountPanel({});
-
-  await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(5));
-
-  // Four-layer column order: fact.x < capability.x < governance.x < product.x
-  expect(nodeById(OBJECT_TYPE)!.x!).toBeLessThan(nodeById(ACTION)!.x!);
-  expect(nodeById(ACTION)!.x!).toBeLessThan(nodeById(USER)!.x!);
-  expect(nodeById(USER)!.x!).toBeLessThan(nodeById(APPLICATION)!.x!);
-
-  // Count and status labels on type nodes
-  expect(nodeById(OBJECT_TYPE)!.label).toContain("12");
-  expect(nodeById(ACTION)!.label).toContain("No permission");
-  expect(nodeById(WORKFLOW)!.label).toContain("Read failed");
-  expect(nodeById(APPLICATION)!.label).toContain("Pending");
-
-  // Stored edge solid, derived edge dashed
-  const storedEdge = canvasRecorder.edges.find((edge) => edge.source === ACTION && edge.target === OBJECT_TYPE);
-  const derivedEdge = canvasRecorder.edges.find((edge) => edge.source === USER && edge.target === WORKFLOW);
-  expect(storedEdge?.line).toBe("solid");
-  expect(derivedEdge?.line).toBe("dashed");
-
-  // Internal layer filter toggles fact layer OFF without mutating panel state
-  const stateBeforeFilter = JSON.stringify(mounted.context.instance.state.values.value);
-  const factToggle = document.querySelector<HTMLButtonElement>('[data-graph-layer="fact"]');
-  expect(factToggle).not.toBeNull();
-  factToggle!.click();
-  await vi.waitFor(() => expect(nodeById(OBJECT_TYPE)).toBeUndefined());
-  expect(JSON.stringify(mounted.context.instance.state.values.value)).toBe(stateBeforeFilter);
-
-  // Query highlights matching drawn nodes and mutes others, never hides drawn nodes
-  mounted.context.instance.state.set("query", "Action");
-  await nextTick();
-  await vi.waitFor(() => expect(nodeById(ACTION)?.tone).toBe("accent"));
-  expect(canvasRecorder.nodes.length).toBe(4);
-  expect(nodeById(USER)?.tone).toBe("muted");
-
-  // Clicking a type node writes selectedType scalar state; clicking blank clears it
-  canvasRecorder.emitSelect!([ACTION]);
-  await nextTick();
-  expect(mounted.context.instance.state.values.value.selectedType).toBe(ACTION);
-
-  canvasRecorder.emitBlank!();
-  await nextTick();
-  expect(mounted.context.instance.state.values.value.selectedType).toBeNull();
-});
-
 it("runs instance mode with default start, incremental neighbor expand, full object-union identity, drawn-only legend, fit/relayout and U12 conditional export", async () => {
   const projections = { "cap-graph": graphProjection("cap-graph") };
   const manifest = definePanel({
@@ -451,14 +314,14 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
         edges: [
           {
             id: "e-r1-act1",
-            relationKind: "role.can-execute-action",
+            relationKind: "permission-policy.can-execute-action",
             from: { className: ROLE, primaryKey: "r-admin" },
             to: { className: ACTION, primaryKey: "act-approve" },
             direction: "outgoing",
             derived: false,
           },
         ],
-        relations: [{ relationKind: "role.can-execute-action", status: "ok", edgeCount: 1 }],
+        relations: [{ relationKind: "permission-policy.can-execute-action", status: "ok", edgeCount: 1 }],
       });
     }
     return undefined;
@@ -619,7 +482,7 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
         edges: [],
         relations: [
           { relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" },
-          { relationKind: "user.created-action", status: "failed", edgeCount: 0, reason: "Timeout" },
+          { relationKind: "permission-policy.can-enter-application", status: "failed", edgeCount: 0, reason: "Timeout" },
         ],
       });
     }

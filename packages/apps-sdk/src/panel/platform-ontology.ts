@@ -165,11 +165,9 @@ export const platformOntologyAdapters: PlatformObjectAdapterFactory = (
 ): readonly PlatformObjectAdapter[] => {
   const client = createPlatformOntologyClient(requests);
   const graph: PlatformObjectGraph = {
-    schema: client.schema,
     counts: client.counts,
     start: client.start,
     neighbors: client.neighbors,
-    objects: client.objects,
   };
 
   return [

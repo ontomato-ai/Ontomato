@@ -19,9 +19,8 @@ import {
 } from "./product-panels";
 import { applicationCatalogueEntriesSchema } from "./application-catalogue";
 import { panelManifestSchema } from "./panel-manifest";
-import { platformOntologySchemaResponseSchema } from "./platform-ontology";
 import {
-  panelGraphConnectionsSchema, panelGraphOverviewSchema, platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
+  panelGraphConnectionsSchema, panelGraphOverviewSchema, platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema,
   platformOntologyStartResponseSchema,
 } from "./platform-ontology-data";
 import { platformTaskRunPageSchema, platformTaskRunSchema } from "./platform-schedules";
@@ -134,14 +133,11 @@ export const panelReadResultSchemas = {
   scheduledTaskRun: platformTaskRunSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
-  // The graph schema also describes the reads registered here. Resolve its validators on access.
-  get panelGraphSchema() { return platformOntologySchemaResponseSchema; },
   panelGraphConnections: panelGraphConnectionsSchema,
   panelGraphOverview: panelGraphOverviewSchema,
   panelGraphCounts: platformOntologyCountsResponseSchema,
   panelGraphStart: platformOntologyStartResponseSchema,
   panelGraphNeighbors: platformOntologyNeighborsResponseSchema,
-  panelOntologyObjects: platformOntologyObjectsResponseSchema,
   panelRelationNeighbors: panelRelationNeighborsSchema,
   chartTemplate: chartProjectionTemplateSchema,
   metricOutput: dashboardMetricOutputSchema,

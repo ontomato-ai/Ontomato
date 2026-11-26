@@ -1025,7 +1025,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("ontologyType"),
     reads: {
       count: countRead,
-      schema: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphSchema" },
       counts: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
       countRows: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       start: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphStart" },
@@ -1035,10 +1034,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           direction: "neighborDirection", limit: "neighborsLimit", offset: "nonNegativeInt",
         },
         requiredParams: ["node"], result: "panelGraphNeighbors",
-      },
-      objects: {
-        source: "type", parameterMode: "fixed", params: { type: "ontologyType", search: "keyword", page: "page" },
-        requiredParams: ["type"], result: "panelOntologyObjects",
       },
       ...metadataList,
       graphNodes: metadataList.list,

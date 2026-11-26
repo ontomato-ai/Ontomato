@@ -9,6 +9,7 @@ import {
   type ApplicationEntryResolution, type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
+import type { ScheduledApplicationsStatus } from "@ontomato/platform-schedules/panel-reads";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
 import {
@@ -54,6 +55,7 @@ export class PanelReadBatchCache {
   private readonly grants = new Map<string, Promise<void>>();
   private readonly products = new Map<string, Promise<CurrentProductRow | undefined>>();
   private readonly reads = new Map<string, Promise<unknown>>();
+  private readonly scheduledApplications = new Map<string | undefined, Promise<ScheduledApplicationsStatus>>();
   private readonly domainId: string;
 
   constructor(private readonly owner: ProductOwner, private readonly viewer: AssistantCredentials) {
@@ -74,6 +76,10 @@ export class PanelReadBatchCache {
 
   read(key: string, load: () => Promise<unknown>) {
     return memoize(this.reads, key, load);
+  }
+
+  scheduleApplications(previewHeader: string | undefined, load: () => Promise<ScheduledApplicationsStatus>) {
+    return memoize(this.scheduledApplications, previewHeader, load);
   }
 
   async prefetch(targets: readonly Target[]) {

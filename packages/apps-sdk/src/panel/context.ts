@@ -404,11 +404,6 @@ export function useProjectionGraph(objectType?: string): PlatformObjectGraph {
     for (const [className, items] of byType) instance.nameObjects(className, items);
   };
   return {
-    schema() {
-      const fn = adapterPart(type, "graph").schema;
-      if (!fn) throw new Error(`Platform object '${type}' has no graph schema`);
-      return fn();
-    },
     counts() {
       const fn = adapterPart(type, "graph").counts;
       if (!fn) throw new Error(`Platform object '${type}' has no graph counts`);

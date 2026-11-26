@@ -20,7 +20,7 @@ import { noOperations } from "./panel-frame";
 /*
  * Official SDK general display components (TypedValue, RecordTemplate, InfoBanner, ObjectRefCard, MetricCard):
  * - Projection-bound rendering from `panelRecord`, `metricOutput` (`result` table), `panelRecordList`/`panelRecordQuery`,
- *   and `panelOntologyObjects` without duplicating reads or computing business logic.
+ *   without duplicating reads or computing business logic.
  * - Standalone / slot rendering with direct props, localized copy, reference navigation, and loading/empty/forbidden/error states.
  */
 
@@ -654,17 +654,17 @@ describe("MetricCard", () => {
 
     const forbiddenProjection: DirectProjection = {
       ...meta,
-      id: "objects-forbidden",
+      id: "rows-forbidden",
       name: "Forbidden count",
       componentId: "@ontomato/sdk:MetricCard",
       inputs: {},
       outputs: {},
       config: { label: "Objects" },
       data: {
-        objects: {
+        rows: {
           source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-          read: "objects",
-          params: { type: { literal: "Order" } },
+          read: "instances",
+          params: { className: { literal: "Order" } },
         },
       },
     };

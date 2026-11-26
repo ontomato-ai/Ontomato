@@ -13,7 +13,7 @@ import {
   projectionOperationTargetMatches, type DirectProjectionData, type DirectProjectionPorts, type ProjectionOperationBinding,
   type ProjectionOperationParam,
 } from "./panel-projection";
-import { customerRelationReads, DASHBOARD_CARD, platformOntologyLayers } from "./platform-object-types";
+import { customerRelationReads, DASHBOARD_CARD } from "./platform-object-types";
 import { chartProjectionSchema } from "./product-panels";
 import type { PlatformTypeTableResponse } from "./platform-type-table";
 
@@ -150,9 +150,6 @@ export function expandPanelAuthoringMember(
   const outputTypes = new Map<string, DirectPanelPortType>();
   const outputBindings = new Map<string, PanelStateRef>();
   const consumedState = new Set<string>();
-  const ontologyNode: DirectPanelPortType = {
-    kind: "object-union", layers: [...platformOntologyLayers],
-  };
 
   function sameBinding(a: PanelMemberInput, b: PanelMemberInput): boolean {
     if ("state" in a && "state" in b)
@@ -210,7 +207,6 @@ export function expandPanelAuthoringMember(
 
   const dataTypes = new Map<string, string>();
   const dataRowTypes = new Map<string, string>();
-  let readsOntologyObjects = false;
   const data: DirectProjectionPorts["data"] = Object.fromEntries(Object.entries(member.data ?? {}).map(([name, shorthand]) => {
     const path = `data.${name}`;
     const { read, type: declaredType, params: explicit = {} } = typeof shorthand === "string" ? { read: shorthand } : shorthand;
@@ -226,7 +222,6 @@ export function expandPanelAuthoringMember(
       : fail(`${path}.read`, `'${read}' is not registered on type '${readType}'`);
     dataTypes.set(name, readType);
     dataRowTypes.set(name, declaration.rowType ?? readType);
-    readsOntologyObjects ||= declaration.result === "panelOntologyObjects";
     const datum = datumDecl ?? fail(path, "The component does not declare this datum");
     if (!datum.results.includes(declaration.result))
       fail(path, `The component does not accept result '${declaration.result}' for this datum`);
@@ -382,13 +377,8 @@ export function expandPanelAuthoringMember(
       bindInput(port, fieldName, path);
     }
     if (output) {
-      const usesOntologyNodes = componentId === "@ontomato/sdk:ObjectList" && readsOntologyObjects && objectTypeOf(output) === "@binding";
-      if (usesOntologyNodes && output.kind === "list")
-        fail(path, "The objects read exposes several types, but list state requires one object type");
       let offered: DirectPanelPortType;
-      if (usesOntologyNodes) {
-        offered = ontologyNode;
-      } else if (
+      if (
         componentId === "@ontomato/sdk:ObjectList"
         && port === "selected"
         && actual.kind === "child-object"

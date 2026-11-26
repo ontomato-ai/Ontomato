@@ -28,7 +28,6 @@ import {
   type PanelRecordReferenceFieldValue,
   type PanelRecordTagFieldValue,
 } from "@ontomato/contracts/panel-projection";
-import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { confirmDanger } from "@ontomato/platform-shell";
@@ -57,7 +56,6 @@ import { admittedOperations, missingOperationDescriptorResult } from "../panel/m
 import type {
   PlatformChildFieldReference,
   PlatformFieldReference,
-  PlatformGraphStatus,
   PlatformObjectRecord,
   TextHighlightRange,
 } from "../panel/platform-objects";
@@ -266,13 +264,11 @@ interface ParsedListData {
   readonly nextCursor?: string;
   /** What the owner says of a partial answer, in the reader's language, shown beside the rows. */
   readonly diagnostics: readonly string[];
-  readonly status: PlatformGraphStatus;
-  readonly reason?: string;
 }
 
 /**
  * Platform objects as a selectable list or multi-column table. Reads its member's `rows` (`panelRecordList` /
- * `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum through `useMemberData` and exchanges search,
+ * `panelRecordQuery`) datum through `useMemberData` and exchanges search,
  * pagination, single selection and checked items through `useMemberParam`. Search input, pagination controls and
  * multi-row checkboxes are inferred from the owner's read signature and the member's output bindings.
  */
@@ -625,16 +621,15 @@ const panel = usePanelContext();
 const member = useMember();
 const objectType = projectionElement(slot.projection).id;
 
-const datumName: "rows" | "objects" = "objects" in member.projection.data ? "objects" : "rows";
-const datum = member.projection.data[datumName];
+const datum = member.projection.data.rows;
 if (!datum) {
-  throw new Error(`Projection ${member.projection.id} declares neither 'rows' nor 'objects' datum`);
+  throw new Error(`Projection ${member.projection.id} declares no 'rows' datum`);
 }
 
 const placement = panel.manifest.members[member.key]!;
 const declaration = directReadDeclaration(member.projection, datum);
 const rowObjectType = directReadRowType(member.projection, datum) ?? objectType;
-const hasObjectRows = datumName === "objects" || declaration?.rowType !== undefined
+const hasObjectRows = declaration?.rowType !== undefined
   || ("type" in datum.source && (datum.source.type.kind === "ObjectType" || datum.source.type.kind === "PlatformObjectType"));
 const signatureParams = declaration?.parameterMode === "fixed" ? declaration.params : {};
 const requiredParamNames = new Set(declaration?.parameterMode === "fixed" ? (declaration.requiredParams ?? []) : []);
@@ -1255,32 +1250,12 @@ function rowExpandAriaLabel(row: PlatformObjectRecord): string {
     : t("platform.listExpandRow", { label });
 }
 
-const activeType = computed<string | null>(() => {
-  if (datumName !== "objects") return rowObjectType;
-  const value = currentParams.value.type;
-  return typeof value === "string" && value ? value : null;
-});
-
 const filterSignature = computed(() =>
   JSON.stringify(nonPagingParamNames.map((name) => currentParams.value[name] ?? null)),
 );
 let initialLoadDone = false;
 let pendingScrollToTop = false;
 
-// Synchronously clear local search and reset paging when switching dynamic type, so useMemberData issues one read.
-if (datumName === "objects") {
-  watch(
-    activeType,
-    (next, prev) => {
-      if (next === prev) return;
-      if (searchParam && !isAuthoredParam("search") && searchParam.value.value !== null) {
-        searchParam.set(null);
-      }
-      resetPaging();
-    },
-    { flush: "sync" },
-  );
-}
 if ("object" in datum.source) {
   const parentSource = datum.source.object;
   const parentSourceKey = computed(() =>
@@ -1327,8 +1302,8 @@ if (pageMode === "page") {
   );
 }
 
-const datumState = useMemberData(datumName);
-const refreshDatum = useMemberRefresh(datumName);
+const datumState = useMemberData("rows");
+const refreshDatum = useMemberRefresh("rows");
 const highlightedIdentity = ref<string | null>(null);
 const hasSupplement = Object.hasOwn(member.projection.data, "supplement");
 const supplementState = hasSupplement ? useMemberData("supplement") : null;
@@ -1351,7 +1326,7 @@ function isCellAwaitingSupplement(row: PlatformObjectRecord, key: string): boole
 }
 
 const isCompleteList = computed<boolean>(() => {
-  if (datumName !== "rows" || pageMode !== "none" || hasServerSearch) return false;
+  if (pageMode !== "none" || hasServerSearch) return false;
   if (declaration) return declaration.result === "panelRecordList";
   return datumState.value.status === "ready" ? Array.isArray(datumState.value.value) : true;
 });
@@ -1365,37 +1340,12 @@ const activeReadyDatum = computed<MemberReadyData | undefined>(() => {
 
 function parseReadyDatum(ready: MemberReadyData | undefined): ParsedListData {
   if (!ready) {
-    return { rows: [], total: null, hasTotal: false, diagnostics: [], status: "ok" };
+    return { rows: [], total: null, hasTotal: false, diagnostics: [] };
   }
   const value = ready.value;
-  if (datumName === "objects") {
-    const response = value as unknown as PlatformOntologyObjectsResponse;
-    if (response.status !== "ok") {
-      return {
-        rows: [],
-        total: null,
-        hasTotal: false,
-        diagnostics: [],
-        status: response.status,
-        reason: response.reason,
-      };
-    }
-    const items: PlatformObjectRecord[] = response.items.map((item) => {
-      const fields: Record<string, string> = item.detail !== undefined ? { detail: item.detail } : {};
-      return {
-        primaryKey: item.node.primaryKey,
-        className: item.node.className,
-        label: item.label,
-        ...(item.detail !== undefined ? { subtitle: item.detail } : {}),
-        fields,
-      };
-    });
-    const hasTotal = typeof response.total === "number" && Number.isFinite(response.total);
-    return { rows: items, total: hasTotal ? response.total : null, hasTotal, diagnostics: [], status: "ok" };
-  }
   if (Array.isArray(value)) {
     const items = value as unknown as readonly PlatformObjectRecord[];
-    return { rows: items, total: items.length, hasTotal: true, diagnostics: [], status: "ok" };
+    return { rows: items, total: items.length, hasTotal: true, diagnostics: [] };
   }
   const queryResult = value as unknown as PanelRecordQuery;
   const items = queryResult.rows as unknown as readonly PlatformObjectRecord[];
@@ -1407,16 +1357,15 @@ function parseReadyDatum(ready: MemberReadyData | undefined): ParsedListData {
     hasTotal,
     nextCursor: queryResult.nextCursor,
     diagnostics: queryResult.diagnostics ?? [],
-    status: "ok",
   };
 }
 
 const parsedData = computed<ParsedListData>(() => parseReadyDatum(activeReadyDatum.value));
 const hasPreviousOnError = computed(
-  () => datumState.value.status === "error" && Boolean(datumState.value.previous) && parsedData.value.status === "ok",
+  () => datumState.value.status === "error" && Boolean(datumState.value.previous),
 );
 const hasPreviousOnLoading = computed(
-  () => datumState.value.status === "loading" && Boolean(datumState.value.previous) && parsedData.value.status === "ok",
+  () => datumState.value.status === "loading" && Boolean(datumState.value.previous),
 );
 const isRefreshingWithPrevious = computed(
   () => hasPreviousOnLoading.value || (datumState.value.status === "ready" && Boolean(datumState.value.refreshing)),
@@ -1464,7 +1413,7 @@ watch(
       pendingAppendCursor = null;
       return;
     }
-    if (state.status !== "ready" || parsedData.value.status !== "ok") {
+    if (state.status !== "ready") {
       if (state.status === "error") {
         loadingMore.value = false;
         if (hasPreviousOnError.value || (pendingAppendCursor !== null && cursorBatches.value.length > 0)) return;
@@ -1593,7 +1542,7 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
   if (!hasActiveLocalFilter.value) return mergedRows.value;
   const query = normalizedLocalQuery.value;
   const filters = activeLocalFieldFilters.value;
-  const fallbackClassName = activeType.value ?? rowObjectType;
+  const fallbackClassName = rowObjectType;
   return mergedRows.value.filter((row) => {
     if (query !== "" && !matchesLocalSearch(row, query, locale.value, t, props.searchFields)) return false;
     for (const [fieldKey, expected] of filters) {
@@ -1615,9 +1564,7 @@ const effectiveHasTotal = computed(
       : parsedData.value.hasTotal,
 );
 const nextCursor = computed(() => parsedData.value.nextCursor);
-const queryStatus = computed(() => parsedData.value.status);
 const diagnostics = computed(() => parsedData.value.diagnostics);
-const queryReason = computed(() => parsedData.value.reason);
 
 const childSelectionParent = computed<PanelObjectIdentity | null>(() => {
   if (!isChildObjectSelection || !("object" in datum.source)) return null;
@@ -1631,7 +1578,7 @@ const childSelectionParent = computed<PanelObjectIdentity | null>(() => {
 });
 
 function rowObjectRef(row: PlatformObjectRecord) {
-  return panelRecordObjectRef(row, activeType.value ?? rowObjectType);
+  return panelRecordObjectRef(row, rowObjectType);
 }
 
 function rowSelectionValue(row: PlatformObjectRecord): ObjectListSelection {
@@ -1644,7 +1591,7 @@ function rowSelectionValue(row: PlatformObjectRecord): ObjectListSelection {
 const listedRefs = computed(() => rows.value.map(rowObjectRef));
 
 function rowItemKey(row: PlatformObjectRecord) {
-  return panelRecordItemKey(row, { fallbackClassName: activeType.value ?? rowObjectType });
+  return panelRecordItemKey(row, { fallbackClassName: rowObjectType });
 }
 
 function rowClassName(row: PlatformObjectRecord): string {
@@ -1699,7 +1646,7 @@ const columnToggleOpen = ref(false);
 
 const dynamicColumnScopeKey = computed(() =>
   JSON.stringify({
-    activeType: activeType.value,
+    rowObjectType,
     typeParam: currentParams.value.type ?? null,
     classNameParam: currentParams.value.className ?? null,
     parent: "object" in datum.source
@@ -2142,7 +2089,7 @@ const paginationItems = computed<readonly PaginationItem[]>(() => {
 
 const footerReady = computed(
   () =>
-    (datumState.value.status === "ready" && queryStatus.value === "ok" && (rows.value.length > 0 || (isTable.value && usesCursorPages.value)))
+    (datumState.value.status === "ready" && (rows.value.length > 0 || (isTable.value && usesCursorPages.value)))
     || (loadingMore.value && rows.value.length > 0)
     || ((hasPreviousOnError.value || hasPreviousOnLoading.value) && rows.value.length > 0),
 );
@@ -2150,7 +2097,7 @@ const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.val
 const footerTotal = computed<number | null>(() => (loadingMore.value ? lastKnownTotal.value : total.value));
 const showFooterTotal = computed(() => footerHasTotal.value && footerTotal.value !== null && (
   footerReady.value
-  || (datumState.value.status === "ready" && queryStatus.value === "ok")
+  || datumState.value.status === "ready"
   || (datumState.value.status === "empty" && isCompleteList.value)
 ));
 
@@ -2200,7 +2147,7 @@ const showRangeSummary = computed(
     Boolean(props.showRangeBar)
     && rows.value.length > 0
     && (
-      (datumState.value.status === "ready" && queryStatus.value === "ok")
+      datumState.value.status === "ready"
       || hasPreviousOnError.value
       || hasPreviousOnLoading.value
       || loadingMore.value
@@ -2270,13 +2217,6 @@ const showCreateRow = computed(() => {
   if (!createSlot) return false;
   if (props.creatingRow === true) return true;
   return hasRenderableVNodes(createSlot());
-});
-
-const queryStatusLabel = computed(() => {
-  if (queryStatus.value === "refused") return t("platform.graphStatusRefused");
-  if (queryStatus.value === "failed") return t("platform.graphStatusFailed");
-  if (queryStatus.value === "unavailable") return t("platform.graphStatusUnavailable");
-  return "";
 });
 
 /**
@@ -2514,7 +2454,7 @@ watch(
       selectInitially([]);
       return;
     }
-    if (state.status !== "ready" || parsedData.value.status !== "ok") return;
+    if (state.status !== "ready") return;
     const allLoaded = rawRows.value;
     if (isChildObjectSelection && selectedStateType?.kind === "child-object" && childSelectionParent.value) {
       panel.instance.nameChildObjects(childSelectionParent.value, selectedStateType.collection, allLoaded);
@@ -2558,7 +2498,7 @@ if (pageMode === "none") {
     localFilterSignature,
     (next, prev) => {
       if (next === prev || !initialLoadDone) return;
-      if (datumState.value.status !== "ready" || parsedData.value.status !== "ok") return;
+      if (datumState.value.status !== "ready") return;
       scrollTop.value = 0;
       if (scrollContainerRef.value) scrollContainerRef.value.scrollTop = 0;
     },
@@ -2671,7 +2611,7 @@ const groups = computed<readonly ObjectListGroup[]>(() =>
     ? buildObjectListGroups(
         rows.value,
         props.groupBy!.trim(),
-        activeType.value ?? rowObjectType,
+        rowObjectType,
         locale.value,
         t,
         resolvedGroupEmptyLabel.value,
@@ -3722,7 +3662,7 @@ const noneModeFeedbackState = computed<ObjectListRowOperationState | null>(() =>
 });
 
 function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, ListRowSlotOperation>> {
-  const fallbackClassName = activeType.value ?? rowObjectType;
+  const fallbackClassName = rowObjectType;
   const rowKey = panelRowOperationKey(row, fallbackClassName);
   const batchForRow = mergedRowOperations.value[rowKey];
   const rowResults = rowResultsFor(row);
@@ -3757,7 +3697,7 @@ const rowOpRunning = computed(() => busyRowActions.value.size > 0);
 const writeRowOpRunning = computed(() => busyWriteRowActions.value.size > 0);
 
 function rowActionBusyKey(row: PlatformObjectRecord, actionId: string): string {
-  const fallbackClassName = activeType.value ?? rowObjectType;
+  const fallbackClassName = rowObjectType;
   return `${panelRowOperationKey(row, fallbackClassName)}\0${actionId}`;
 }
 
@@ -3769,7 +3709,7 @@ function isRowWriteOperationInFlight(row: PlatformObjectRecord, operationName: s
   const descriptor = admittedOpMap.value[operationName];
   if (descriptor?.effect === "read") return false;
   const binding = member.projection.operations?.[operationName];
-  const fallbackClassName = activeType.value ?? rowObjectType;
+  const fallbackClassName = rowObjectType;
   const ref = rowObjectRef(row);
   const target = binding
     ? resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value)
@@ -3957,7 +3897,7 @@ onBeforeUnmount(() => {
 /** Unique mounted list instance ID; rotates on remount, dynamic type switch, or parent/member input change. */
 const listInstanceId = ref(randomId());
 watch(
-  () => JSON.stringify({ activeType: activeType.value, inputs: member.inputs.value }),
+  () => JSON.stringify({ rowObjectType, inputs: member.inputs.value }),
   (next, prev) => {
     if (next !== prev) listInstanceId.value = randomId();
   },
@@ -3968,7 +3908,7 @@ watch(
  * row actions must always use the composite `<className>:<primaryKey>` key and reject bare primary keys.
  */
 const requiresCompositeRowKey = computed<boolean>(() => {
-  if (datumName === "objects" || !rowObjectType) return true;
+  if (!rowObjectType) return true;
   const isUnionState = (stateName: string | undefined) => {
     if (!stateName) return false;
     const field = panel.manifest.state[stateName];
@@ -3983,7 +3923,7 @@ const requiresCompositeRowKey = computed<boolean>(() => {
   ) {
     return true;
   }
-  const fallback = activeType.value ?? rowObjectType;
+  const fallback = rowObjectType;
   return rows.value.some((item) => Boolean(item.className && item.className !== fallback));
 });
 
@@ -4019,7 +3959,7 @@ function waitForInitialRowsLoad(timeoutMs = 2000): Promise<boolean> {
 function findLoadedRowByKey(
   rowKey: string,
 ): { readonly ok: true; readonly row: PlatformObjectRecord } | { readonly ok: false; readonly reason: "action_not_found" | "input_required"; readonly message: string } {
-  const fallbackClassName = activeType.value ?? rowObjectType;
+  const fallbackClassName = rowObjectType;
   const exactMatches = rows.value.filter((item) => panelRowOperationKey(item, fallbackClassName) === rowKey);
   if (exactMatches.length === 1) return { ok: true, row: exactMatches[0]! };
   if (exactMatches.length > 1) {
@@ -4075,7 +4015,7 @@ async function executeRowOperation(
   if (isRowBusyKey(rowIdKey)) return { status: "skipped" };
   const binding = member.projection.operations?.[operationName];
   if (!binding) return { status: "skipped" };
-  const fallbackClassName = activeType.value ?? rowObjectType;
+  const fallbackClassName = rowObjectType;
   const target = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
   if (target === undefined) return { status: "skipped" };
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
@@ -4098,7 +4038,7 @@ async function executeRowOperation(
     if (phase === "confirm" && (isRowBusyKey(rowIdKey) || busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || isSharedWriteBusy())) {
       return { ok: false, message: "Another operation is currently running on this row." };
     }
-    const liveFallback = activeType.value ?? rowObjectType;
+    const liveFallback = rowObjectType;
     const liveRow = rows.value.find((item) => panelRowOperationKey(item, liveFallback) === capturedCompositeKey);
     if (!liveRow) {
       return { ok: false, message: `Row '${capturedCompositeKey}' is no longer displayed.` };
@@ -4391,7 +4331,7 @@ watch(
             return { ok: false, reason: "action_not_found", message: `Row operation '${operationName}' is not declared on this list.` };
           }
           if (expectedTarget !== undefined) {
-            const fallbackClassName = activeType.value ?? rowObjectType;
+            const fallbackClassName = rowObjectType;
             const resolvedTarget = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
             const effectiveTarget = resolvedTarget ?? {
               kind: "object" as const,
@@ -4532,7 +4472,7 @@ async function runConversationRowAction(
   event?: MouseEvent,
 ): Promise<void> {
   const actionId = item.id ?? "conversation";
-  const fallbackClassName = activeType.value ?? rowObjectType;
+  const fallbackClassName = rowObjectType;
   const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
   const busyKey = `${capturedCompositeKey}\0${actionId}`;
   if (busyRowActions.value.has(busyKey)) return;
@@ -4581,7 +4521,7 @@ function triggerRowAction(row: PlatformObjectRecord, index: number, item: Resolv
   if (item.kind === "local" && item.id) {
     const ref = rowObjectRef(row);
     if (item.to) {
-      const address = resolveRowActionAddress(item.to, row, activeType.value ?? rowObjectType);
+      const address = resolveRowActionAddress(item.to, row, rowObjectType);
       void panel.navigate(address);
     }
     emit("row-action", { id: item.id, ref, index });
@@ -4657,23 +4597,23 @@ useMemberOutput("status", () => datumState.value.status);
 useMemberOutput("listed", () => {
   if (!hasObjectRows) return null;
   if (datumState.value.status === "empty") return [];
-  return datumState.value.status === "ready" && queryStatus.value === "ok" ? listedRefs.value : null;
+  return datumState.value.status === "ready" ? listedRefs.value : null;
 });
 useMemberOutput("total", () => {
-  if (datumState.value.status === "ready" && parsedData.value.status === "ok") {
+  if (datumState.value.status === "ready") {
     return parsedData.value.hasTotal ? parsedData.value.total : null;
   }
   if (datumState.value.status === "empty" && isCompleteList.value) return 0;
   return null;
 });
 useMemberOutput("loadedCount", () => {
-  if (datumState.value.status === "ready" && parsedData.value.status === "ok") return rawRows.value.length;
+  if (datumState.value.status === "ready") return rawRows.value.length;
   if (datumState.value.status === "empty") return 0;
   return null;
 });
 useMemberOutput("filteredCount", () => {
   if (!isCompleteList.value) return null;
-  if (datumState.value.status === "ready" && parsedData.value.status === "ok") return rows.value.length;
+  if (datumState.value.status === "ready") return rows.value.length;
   if (datumState.value.status === "empty") return 0;
   return null;
 });
@@ -4829,17 +4769,8 @@ defineExpose({
       {{ rangeSummaryText }}
     </div>
 
-    <p
-      v-if="datumState.status === 'ready' && queryStatus !== 'ok'"
-      class="sdk-object-list-status"
-      :data-status="queryStatus"
-      :role="queryStatus === 'failed' ? 'alert' : 'status'"
-    >
-      <span class="sdk-object-list-status-label">{{ queryStatusLabel }}</span>
-      <span v-if="queryReason" class="sdk-object-list-status-reason">{{ queryReason }}</span>
-    </p>
     <div
-      v-else-if="listResult.status === 'loading' && $slots.loading"
+      v-if="listResult.status === 'loading' && $slots.loading"
       class="sdk-object-list-custom-loading"
       aria-busy="true"
     >
@@ -7754,25 +7685,6 @@ defineExpose({
   list-style: none;
   margin: 0;
   padding: 0 var(--spacing-xs);
-}
-.sdk-object-list-status {
-  align-items: center;
-  color: var(--el-text-color-secondary);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: var(--text-xs);
-  gap: var(--spacing-xs);
-  margin: 0;
-  padding: var(--spacing-md) var(--spacing-xs);
-}
-.sdk-object-list-status[data-status="refused"] {
-  color: var(--el-color-warning-text);
-}
-.sdk-object-list-status[data-status="failed"] {
-  color: var(--el-color-danger-text);
-}
-.sdk-object-list-status-reason {
-  color: var(--el-text-color-secondary);
 }
 mark {
   background: var(--el-color-warning-light-7);

@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { computed, createApp, defineComponent, h, nextTick, provide, ref } from "vue";
+import { createApp, h, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -14,7 +14,6 @@ import {
   BUSINESS_KNOWLEDGE,
   OBJECT_TYPE,
   ONTOLOGY_TYPE,
-  platformOntologyLayers,
   ROLE,
   SCHEDULED_TASK,
   USER,
@@ -47,9 +46,6 @@ import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/sr
  *   external update) sent in `inputs.search` (authored, never `runtimeParams`).
  * - Instance-local checked list (`outputs.checked`) separate from single selection, visible-only select-all across pages,
  *   excluded from deepLink & pageContext, panel event clearing on selection change, partial retention, and type rejection.
- * - M3 dynamic type catalog (`data.objects`: `panelOntologyObjects`): awaiting state with zero reads, runtime `page` and
- *   `search` params, type-switch search & page reset, full `(className, primaryKey)` identity matching, owner labels under
- *   the real object type, and distinct refused/failed/unavailable statuses.
  */
 
 const meta = {
@@ -780,237 +776,6 @@ it("selects a row without touching the checked list, and supports explicit toggl
   element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-item-btn")[1]!.click();
   await nextTick();
   expect(instance.state.values.value.selectedKnowledge).toBeNull();
-});
-
-it("supports dynamic type queries via data.objects (panelOntologyObjects) with status separation and identity matching", async () => {
-  const pickerProj: DirectProjection = {
-    ...meta,
-    id: "type-object-picker",
-    name: "Type Object Picker",
-    componentId: "@ontomato/sdk:ObjectList",
-    inputs: { type: { kind: "scalar", type: "string" } },
-    outputs: { selected: { kind: "object-union", layers: [...platformOntologyLayers] } },
-    config: { pageSize: 2 },
-    data: {
-      objects: {
-        source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-        read: "objects",
-        params: { type: { input: "type" } },
-      },
-    },
-  };
-  const manifest = definePanel({
-    state: {
-      selectedType: { type: { kind: "scalar", type: "string" } },
-      start: { type: { kind: "object-union", layers: [...platformOntologyLayers] } },
-    },
-    members: {
-      picker: {
-        target: { projectionId: pickerProj.id },
-        inputs: { type: { state: "selectedType" } },
-        outputs: { selected: { state: "start" } },
-      },
-    },
-  });
-
-  const { instance, element, reads } = mountDirect(
-    manifest,
-    { [pickerProj.id]: pickerProj },
-    (request) => {
-      const type = String(request.inputs.type);
-      const search = typeof request.runtimeParams?.search === "string" ? request.runtimeParams.search.toLowerCase() : "";
-      const page = (request.runtimeParams?.page as { number: number; size: number } | undefined) ?? { number: 1, size: 20 };
-      const offset = (page.number - 1) * page.size;
-      if (type === ROLE) {
-        return ready({ type: ROLE, layer: "governance", status: "refused", reason: "No role permission", items: [], total: 0, page: page.number, pageSize: page.size });
-      }
-      if (type === USER) {
-        return ready({ type: USER, layer: "governance", status: "failed", reason: "Identity service 503", items: [], total: 0, page: page.number, pageSize: page.size });
-      }
-      if (type === "platform:Definition") {
-        return ready({ type: "platform:Definition", layer: "capability", status: "unavailable", reason: "Owner not connected", items: [], total: 0, page: page.number, pageSize: page.size });
-      }
-      if (type === WORKFLOW) {
-        return ready({
-          type: WORKFLOW,
-          layer: "capability",
-          status: "ok",
-          items: [{ node: { className: WORKFLOW, primaryKey: "shared-1" }, label: "Nightly Flow" }],
-          total: 1,
-          page: page.number,
-          pageSize: page.size,
-        });
-      }
-      const all = [
-        { node: { className: ACTION, primaryKey: "shared-1" }, label: "Deploy Action" },
-        { node: { className: ACTION, primaryKey: "act-2" }, label: "Rollback Action" },
-        { node: { className: ACTION, primaryKey: "act-3" }, label: "Audit Action" },
-      ].filter((item) => !search || item.label.toLowerCase().includes(search));
-      return ready({
-        type,
-        layer: "capability",
-        status: "ok",
-        items: all.slice(offset, offset + page.size),
-        total: all.length,
-        page: page.number,
-        pageSize: page.size,
-      });
-    },
-  );
-
-  // 1) No type selected yet -> DataState awaiting, zero reads, no count/pagination.
-  await vi.waitFor(() => {
-    expect(element.querySelector('[data-state="awaiting"]')?.textContent).toContain("Select an item first");
-  });
-  expect(reads).toHaveLength(0);
-  expect(element.querySelector(".sdk-object-list-count")).toBeNull();
-  expect(element.querySelector(".sdk-object-list-pagination")).toBeNull();
-
-  // 2) Select ACTION -> reads page 1 with runtimeParams { page: { number: 1, size: 2 } }, shows count + pagination.
-  instance.state.set("selectedType", ACTION);
-  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(2));
-  expect(reads[0]!.inputs).toEqual({ type: ACTION });
-  expect(reads[0]!.runtimeParams).toEqual({ page: { number: 1, size: 2 } });
-  expect(element.querySelector(".sdk-object-list-count")?.textContent).toContain("3");
-  expect(element.querySelector(".sdk-object-list-pagination")).not.toBeNull();
-
-  // 3) Advance to page 2.
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
-  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
-  expect(reads[1]!.runtimeParams).toEqual({ page: { number: 2, size: 2 } });
-
-  // 4) Typing search resets to page 1 in a single read with runtimeParams.search.
-  const searchInput = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
-  searchInput.value = "deploy";
-  searchInput.dispatchEvent(new Event("input"));
-  await vi.waitFor(() => expect(reads).toHaveLength(3));
-  expect(reads[2]!.runtimeParams).toEqual({ search: "deploy", page: { number: 1, size: 2 } });
-  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Deploy Action"));
-
-  // 5) Selecting item writes full { className: ACTION, primaryKey: "shared-1" } and registers label under ACTION.
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
-  await nextTick();
-  expect(instance.state.values.value.start).toEqual({ className: ACTION, primaryKey: "shared-1" });
-  expect(instance.pageContext.value.selection).toEqual([
-    { kind: ACTION, id: "shared-1", label: expect.stringContaining(`Deploy Action (${ACTION} shared-1)`) },
-  ]);
-
-  // 6) Switch to WORKFLOW (same primaryKey "shared-1"): resets search & paging in ONE read, does NOT mis-highlight.
-  instance.state.set("selectedType", WORKFLOW);
-  await vi.waitFor(() => expect(reads).toHaveLength(4));
-  expect(reads[3]!.inputs).toEqual({ type: WORKFLOW });
-  expect(reads[3]!.runtimeParams).toEqual({ page: { number: 1, size: 2 } });
-  expect(searchInput.value).toBe("");
-  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Nightly Flow"));
-  expect(element.querySelector(".sdk-object-list-item-btn")?.getAttribute("aria-selected")).toBe("false");
-
-  // 7) Distinct refused / failed / unavailable statuses hide count & pagination and never collapse into empty.
-  instance.state.set("selectedType", ROLE);
-  await vi.waitFor(() => expect(element.querySelector('[data-status="refused"]')?.textContent).toContain("No role permission"));
-  expect(element.querySelector(".sdk-object-list-count")).toBeNull();
-  expect(element.querySelector(".sdk-object-list-pagination")).toBeNull();
-
-  instance.state.set("selectedType", USER);
-  await vi.waitFor(() => expect(element.querySelector('[data-status="failed"]')?.textContent).toContain("Identity service 503"));
-
-  instance.state.set("selectedType", "platform:Definition");
-  await vi.waitFor(() => expect(element.querySelector('[data-status="unavailable"]')?.textContent).toContain("Owner not connected"));
-});
-
-it("draws a declared ObjectList with data.objects in a frame via <Projection> and frameMemberData", async () => {
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  const { platformOntologyAdapters } = await import("../../../../../packages/apps-sdk/src/panel/platform-ontology");
-  const { createPanelInstance } = await import("../../../../../packages/apps-sdk/src/panel/instance");
-  const { panelContextKey } = await import("../../../../../packages/apps-sdk/src/panel/context");
-  const { default: Projection } = await import("../../../../../packages/apps-sdk/src/panel/Projection.vue");
-
-  platformOntologyAdapters({
-    async request(path, init) {
-      if (path === "/platform-ontology/objects") {
-        const body = JSON.parse(String(init.body)) as { type: string; page?: number; pageSize?: number };
-        return Response.json({
-          type: body.type,
-          layer: "capability",
-          status: "ok",
-          items: [{ node: { className: body.type, primaryKey: "act-1" }, label: "Deploy Release" }],
-          total: 1,
-          page: body.page ?? 1,
-          pageSize: body.pageSize ?? 20,
-        });
-      }
-      throw new Error(`Unexpected path ${path}`);
-    },
-  }).forEach(registerPlatformObjectAdapter);
-
-  const pickerProj: DirectProjection = {
-    ...meta,
-    id: "frame-type-picker",
-    name: "Picker",
-    componentId: "@ontomato/sdk:ObjectList",
-    inputs: { type: { kind: "scalar", type: "string" } },
-    outputs: { selected: { kind: "object-union", layers: [...platformOntologyLayers] } },
-    config: { pageSize: 10 },
-    data: {
-      objects: {
-        source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-        read: "objects",
-        params: { type: { input: "type" } },
-      },
-    },
-  };
-  const manifest = definePanel({
-    state: {
-      selectedType: { type: { kind: "scalar", type: "string" } },
-      selectedNode: { type: { kind: "object-union", layers: [...platformOntologyLayers] } },
-    },
-    members: {
-      picker: {
-        target: { projectionId: pickerProj.id },
-        inputs: { type: { state: "selectedType" } },
-        outputs: { selected: { state: "selectedNode" } },
-      },
-    },
-  });
-  const instance = createPanelInstance(manifest, {
-    text: (key) => key,
-    pageKey: "frame-picker",
-    url: () => "/frame-picker",
-    label: () => "Frame picker",
-    initial: { selectedType: ACTION },
-    ...noOperations,
-    readProjection: async () => pickerProj,
-  });
-
-  const element = document.createElement("div");
-  document.body.appendChild(element);
-  const app = createApp(defineComponent({
-    setup: () => {
-      provide(panelContextKey, {
-        panel: { content: { html: "", module: "" }, manifest },
-        manifest,
-        instance,
-        projection: (id: string) => instance.projection(id),
-        invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
-        projectionsChanged: () => () => {},
-        holdUnsaved: () => () => {},
-        t: (key: string) => key,
-        resources: async () => {},
-        expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); }, currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
-      });
-      return () => h(Projection, { slot: "picker" });
-    },
-  })).use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
-  app.mount(element);
-  cleanup = () => {
-    app.unmount();
-    element.remove();
-  };
-
-  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Deploy Release"));
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
-  await nextTick();
-  expect(instance.state.values.value.selectedNode).toEqual({ className: ACTION, primaryKey: "act-1" });
 });
 
 // A list's columns (the feedback page, 2026-11-22): a short value never breaks onto two lines; a long one ends in an
@@ -1810,10 +1575,10 @@ it("renders total count, clickable numeric page jump buttons, and ellipsis foldi
       outputs: { selected: { kind: "object", objectType: USER } },
       config: { pageSize: 10, fallbackToFirst: true },
       data: {
-        objects: {
+        rows: {
           source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-          read: "objects",
-          params: { type: { input: "type" } },
+          read: "instances",
+          params: { className: { input: "type" } },
         },
       },
     },
@@ -1838,13 +1603,8 @@ it("renders total count, clickable numeric page jump buttons, and ellipsis foldi
     (request) => {
       const page = (request.runtimeParams?.page as { number: number; size: number } | undefined)?.number ?? 1;
       return ready({
-        status: "ok",
-        type: USER,
-        layer: "governance",
-        page,
-        pageSize: 10,
         total: 120,
-        items: [{ node: { className: USER, primaryKey: `u-${page}` }, label: `User page ${page}` }],
+        rows: [{ className: USER, primaryKey: `u-${page}`, label: `User page ${page}`, fields: {} }],
       });
     },
     { initial: { selectedType: USER } },
@@ -2312,10 +2072,10 @@ it("scrolls the list scroll container back to top when switching pages", async (
       outputs: {},
       config: { pageSize: 10 },
       data: {
-        objects: {
+        rows: {
           source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-          read: "objects",
-          params: { type: { input: "type" } },
+          read: "instances",
+          params: { className: { input: "type" } },
         },
       },
     },
@@ -2338,13 +2098,8 @@ it("scrolls the list scroll container back to top when switching pages", async (
     (request) => {
       const page = (request.runtimeParams?.page as { number: number; size: number } | undefined)?.number ?? 1;
       return ready({
-        status: "ok",
-        type: USER,
-        layer: "governance",
-        page,
-        pageSize: 10,
         total: 30,
-        items: [{ node: { className: USER, primaryKey: `u-${page}` }, label: `User page ${page}` }],
+        rows: [{ className: USER, primaryKey: `u-${page}`, label: `User page ${page}`, fields: {} }],
       });
     },
     { initial: { selectedType: USER } },

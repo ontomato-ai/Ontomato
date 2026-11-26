@@ -20,8 +20,6 @@ import { projectionReadReferences, type PanelFieldTone, type PanelOptionList } f
 import type {
   PanelGraphConnections,
   PanelGraphOverview,
-  PlatformOntologyObjectsRequest,
-  PlatformOntologyObjectsResponse,
 } from "@ontomato/contracts/platform-ontology";
 
 /*
@@ -263,7 +261,7 @@ export interface PlatformGraphNode {
 export interface PlatformGraphEdge {
   readonly id: string;
   readonly relationKind: string;
-  /** Optional display label or message key; falls back to schema/platform relation labelKey when omitted. */
+  /** Optional display label or message key; falls back to the platform relation labelKey when omitted. */
   readonly label?: string;
   readonly from: PanelObjectValue;
   readonly to: PanelObjectValue;
@@ -281,35 +279,6 @@ export interface PlatformGraphRelationStatus {
   readonly truncated?: boolean;
 }
 
-/** One object type declared in a graph's type-mode schema. */
-export interface PlatformGraphTypeSpec {
-  readonly id: string;
-  readonly layer?: string;
-  readonly labelKey?: string;
-  readonly label?: string;
-}
-
-/** One relation kind declared in a graph's type-mode schema. */
-export interface PlatformGraphRelationKindSpec {
-  readonly id: string;
-  readonly from: string;
-  readonly to: string | readonly string[];
-  readonly labelKey?: string;
-  readonly label?: string;
-  readonly derived?: boolean;
-  readonly group?: string;
-  /** `false` when the type graph draws one sentence instead of this kind's target edges. */
-  readonly typeEdges?: false;
-}
-
-/** Schema returned for type mode: ordered layers (optional), types and relation kinds. */
-export interface PlatformGraphSchema {
-  readonly layers?: readonly string[];
-  readonly objectTypes: readonly PlatformGraphTypeSpec[];
-  readonly relationKinds: readonly PlatformGraphRelationKindSpec[];
-}
-
-/** Readable count and access status for one object type in type mode. */
 export interface PlatformGraphTypeCount {
   readonly type: string;
   readonly layer?: string;
@@ -342,9 +311,7 @@ export interface PlatformGraphNeighborsResult {
 
 /** Graph source port implemented by a resource adapter bound to a graph projection. */
 export interface PlatformObjectGraph {
-  /** Schema of types and relation kinds for type mode (optional for instance/overview graphs). */
-  schema?(): Promise<PlatformGraphSchema>;
-  /** Per-type readable counts and access status for type mode (optional for instance/overview graphs). */
+  /** Optional per-type readable counts and access status. */
   counts?(): Promise<readonly PlatformGraphTypeCount[]>;
   /** Default starting node for instance mode when no explicit `start` input is provided. */
   start?(): Promise<PlatformGraphNode | null>;
@@ -354,8 +321,6 @@ export interface PlatformObjectGraph {
   connections?(query: { readonly version: string; readonly sampleToken?: string }): Promise<PanelGraphConnections>;
   /** One-hop neighbors, edges and per-relation-kind outcome statuses for one node. */
   neighbors(query: PlatformGraphNeighborsQuery): Promise<PlatformGraphNeighborsResult>;
-  /** One page of the objects of one type the reader may see, as the owner answers it (the ontology's objects read). */
-  objects?(query: PlatformOntologyObjectsRequest): Promise<PlatformOntologyObjectsResponse>;
 }
 
 /**

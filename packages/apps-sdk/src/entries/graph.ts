@@ -17,11 +17,8 @@ export type {
   PlatformGraphNeighborsQuery,
   PlatformGraphNeighborsResult,
   PlatformGraphNode,
-  PlatformGraphRelationKindSpec,
   PlatformGraphRelationStatus,
-  PlatformGraphSchema,
   PlatformGraphStatus,
   PlatformGraphTypeCount,
-  PlatformGraphTypeSpec,
   PlatformObjectGraph,
 } from "../panel/platform-objects";

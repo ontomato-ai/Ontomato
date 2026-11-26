@@ -44,24 +44,10 @@ afterEach(() => {
 
 describe("capability graph relation kinds", () => {
   it("declares no relation kind that reads the retired product grants or a definition's provenance", () => {
-    const ids = platformRelationKinds.map(relation => relation.id);
-    for (const retired of [
-      "role.can-use-product",
-      "role.can-view-product",
-      "role.can-edit-product",
-      "user.can-use-product",
-      "user.can-view-product",
-      "user.can-edit-product",
-      "role.can-execute-action",
-      "role.can-author-workflow",
-      "user.created-action",
-      "user.created-workflow",
-      "user.created-metric-view",
-      "user.published-action",
-      "user.published-workflow",
-      "user.published-metric-view",
-    ]) {
-      expect(ids, retired).not.toContain(retired);
+    for (const { id } of platformRelationKinds) {
+      expect(id).not.toMatch(/^(?:role|user)\.can-(?:use|view|edit)-product$/);
+      expect(id).not.toMatch(/^role\.can-(?:execute-action|author-workflow)$/);
+      expect(id).not.toMatch(/^user\.(?:created|published)-(?:action|workflow|metric-view)$/);
     }
   });
 
