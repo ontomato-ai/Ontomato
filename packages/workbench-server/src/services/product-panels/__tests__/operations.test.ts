@@ -19,7 +19,7 @@ import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import { openPresentationView } from "../../agent-host/presentation";
 const mocks = vi.hoisted(() => ({createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
+vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test",queryServiceToken:"fixture-service"})}}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
 vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({}),findAgent:async()=>undefined}}));
@@ -1403,4 +1403,74 @@ it("asks the owner for availability of a targetless write operation", async () =
   }, {});
   expect(unavailable).toHaveBeenCalledWith(expect.anything(), null);
   expect(descriptors.create?.unavailable).toEqual(reason);
+});
+
+it("describes mixed scoped Action buttons in one owner item and displays caller scope refusals", async () => {
+  const handlerRef = "test.create";
+  const unavailable = vi.fn(async () => ({ reason: "Creation is closed" }));
+  mockRegisteredOperation({
+    handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
+    kind: "action", effect: "write", batch: false, unavailable,
+    targetSchema: z.null(), inputSchema: z.object({}), resultSchema: z.object({}),
+    execute: async () => ({ kind: "success" as const, data: {} }),
+  });
+  const panel = await mocks.panel();
+  const member = { target: { projectionId: "action-buttons" } };
+  panel.manifest.members.buttons = member;
+  const first = { className: "Order", primaryKey: "O1" };
+  const second = { className: "Order", primaryKey: "O2" };
+  const action = (id: string, object: typeof first) => ({
+    operation: { kind: "Action", id }, target: { literal: object },
+  });
+  mocks.projection.mockResolvedValue({
+    id: "action-buttons", inputs: {}, binding: { kind: "Action", id: "primary" }, operations: {
+      approve: action("primary", first),
+      create: { operation: { kind: "PlatformOperation", id: handlerRef } },
+      denied: action("secondary", second),
+      hidden: action("hidden", second),
+    },
+  });
+  const { projection } = await requireDirectPanelMember(owner, credentials, panel, "buttons");
+  const actor = { owner, credentials: { apiKey: "executor-key", locale: "en" } };
+  const retrievalScopeId = uuid(39);
+  const path = {
+    source: { kind: "registered" as const, applicationId: "A", useId: "tasks" },
+    registration: { panelId: "P", framePanelId: "F", inputs: undefined }, uses: [],
+  };
+  mocks.backend.mockImplementationOnce(async (_method, url, body, options) => {
+    expect(new URL(url).pathname).toBe("/internal/workbench-panel-reads");
+    expect(options.headers).toMatchObject({
+      "X-API-Key": "executor-key", "X-Ontomato-Retrieval-Caller-Id": retrievalScopeId,
+    });
+    expect(body.reads).toEqual([{ ...path, call: {
+      type: "platform:Action", name: "executionDefinitions", parameters: {
+        actions: [
+          { primaryKey: "primary", object: first }, { primaryKey: "secondary", object: second }, { primaryKey: "hidden", object: second },
+        ],
+      },
+    } }]);
+    expect(body.reads[0]).not.toHaveProperty("visibleKinds");
+    return { text: JSON.stringify({ viewer: owner, results: [{ status: "ready", payload: [
+      { status: "ready", payload: {
+        id: "primary", name: "Approve", codeHash: "hash", target: { className: "Order", keyParameter: "order_id" },
+        function: { parameters: [{ name: "order_id", type: "TYPE_STRING" }] },
+      } },
+      { status: "forbidden", code: "ACTION_TARGET_OUT_OF_SCOPE", error: "超出本轮数据范围", payload: {
+        id: "secondary", name: "Complete order", target: { className: "Order", keyParameter: "order_id" },
+        function: { parameters: [{ name: "order_id", type: "TYPE_STRING" }] },
+      } },
+      { status: "forbidden", code: "ACTION_TARGET_OUT_OF_SCOPE", error: "Outside action permission" },
+    ] }] }) };
+  });
+
+  const result = await readAdmittedProjectionOperations(actor, { panel, member, projection, slot: "buttons" }, {}, { path, retrievalScopeId });
+  expect(result).toMatchObject({
+    approve: { label: "Approve", handlerRef: "actions.execute" },
+    create: { unavailable: { reason: "Creation is closed" } },
+    denied: { label: "Complete order", handlerRef: "actions.execute", unavailable: { reason: "超出本轮数据范围" } },
+  });
+  expect(result.approve).not.toHaveProperty("unavailable");
+  expect(Object.keys(result)).toEqual(["approve", "create", "denied"]);
+  expect(unavailable).toHaveBeenCalledWith(expect.objectContaining({ executor: actor }), null);
+  expect(mocks.backend).toHaveBeenCalledTimes(1);
 });

@@ -1,6 +1,8 @@
+import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
+
 const readDirective = Symbol("panelReadDirective");
 
-type ReadDirective = { rereadAfterMs?: number };
+type ReadDirective = { rereadAfterMs?: number; rowOperations?: PanelRowOperationsMap };
 
 export function withReadDirective<T>(value: T, directive: ReadDirective) {
   return { value, [readDirective]: directive };

@@ -10,7 +10,7 @@ import {
 
 vi.mock("../../../infrastructure/postgres", () => ({ qualifiedTable: (name: string) => name }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: async () => undefined }));
-vi.mock("../../product-governance/grants", () => ({ requireProductGrant: async () => undefined }));
+vi.mock("../../product-governance/service-authentication", () => ({ requireProductGrant: async () => undefined }));
 
 beforeAll(() => {
   installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });

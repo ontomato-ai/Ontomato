@@ -68,6 +68,7 @@ export interface PanelOperationHost {
 }
 interface OperationInputDescription {
   secretFields?: readonly string[];
+  describeLocalInputSchema?(locale?: string): PanelOwnerOperationDescriptor["inputSchema"];
   /** The owner's input schema with presentation annotations in the reader's locale. */
   describeInputSchema?(host: PanelOperationHost, locale?: string):
     PanelOwnerOperationDescriptor["inputSchema"] | Promise<PanelOwnerOperationDescriptor["inputSchema"]>;
@@ -157,7 +158,7 @@ export interface PanelReadServerOperation extends OperationInputDescription {
   targetSchema: z.ZodType<ReadCall["target"]>;
   inputSchema: z.ZodType<ReadCall["input"]>;
   resultSchema: z.ZodType<PanelReadOperationResult>;
-  describeResultSections?: (host: PanelOperationHost, locale?: string) =>
+  describeResultSections?: (locale?: string) =>
     Promise<readonly PanelReadOperationSectionDeclaration[] | undefined> | readonly PanelReadOperationSectionDeclaration[] | undefined;
   unavailable?(host: PanelOperationHost, target: PanelRecordTarget | null): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
   execute(host: PanelOperationHost, call: ReadCall): Promise<ReadResult>;
@@ -258,15 +259,22 @@ export function panelServerOperationLabel(handler: PanelServerOperation, locale?
   return label;
 }
 
-export async function describeServerOperation(handler: PanelServerOperation, host: PanelOperationHost, slot?: string,
+export async function describeServerOperation(handler: PanelServerOperation, context: PanelOperationHost | string | undefined, slot?: string,
   target?: PanelOwnerOperationDescriptor["target"],
+  inputSchema?: PanelOwnerOperationDescriptor["inputSchema"],
 ) {
+  const host = typeof context === "object" ? context : undefined;
+  const locale = typeof context === "string" ? context : host?.locale;
+  if (handler.describeInputSchema && !host && inputSchema === undefined)
+    throw new HttpError(422, `Operation '${handler.handlerRef}' needs owner input-schema facts`, "PANEL_OPERATION_READ_UNAVAILABLE");
   return describePanelOperationFromDeclaration(operationDeclaration(handler), {
-    label: panelServerOperationLabel(handler, host.locale), slot, target,
-    inputSchema: await handler.describeInputSchema?.(host, host.locale),
+    label: panelServerOperationLabel(handler, locale), slot, target,
+    inputSchema: inputSchema ?? (handler.describeInputSchema
+      ? await handler.describeInputSchema(host!, locale)
+      : handler.describeLocalInputSchema?.(locale)),
     resultSchema: runtimeJsonSchema(handler.resultSchema),
     ...(handler.effect === "read" && handler.describeResultSections && {
-      resultSections: await handler.describeResultSections(host, host.locale),
+      resultSections: await handler.describeResultSections(locale),
     }),
     ...(handler.effect === "write" && handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
   });

@@ -6,14 +6,14 @@ import { assistantService } from "../assistant/service";
 import { assistantStore } from "../assistant/store";
 import { diagnosisService } from "./service";
 import { withScheduledUserActivity } from "../assistant/scheduled-activity";
-import { checkedForm, completeForm, emptyExecution, instruction, option, scheduledSessionId, select, summarizeFields, type ScheduleApplication, type ScheduleContext } from "../scheduling/application";
+import { checkedForm, completeForm, emptyExecution, instruction, option, scheduledSessionId, select, summarizeFields, type ScheduleApplication, type ScheduleContext, type ScheduleTargetLabelAccess } from "../scheduling/application";
 import { scheduledConversationStatus } from "../scheduling/conversation";
 import { listCaseSets } from "../../platform/diagnosis/autotest/cases/repository";
 import { getActiveRun, isRunActive, startRun } from "../../platform/diagnosis/autotest/runner/run-controller";
 import { loadRunMeta, scheduledRunSource } from "../../platform/diagnosis/autotest/results/store";
 import { workbenchIdentity } from "../../identity/installed";
 import { assertManagement } from "../../identity/management";
-import { agentAllowed } from "../assistant/authorization";
+import { agentAllowed, agentInVisibilityRange } from "../assistant/authorization";
 import { HttpError } from "../../utils/errors";
 
 function fingerprint(input: PlatformScheduleExecutionRequest): string {
@@ -102,19 +102,28 @@ async function operationForm(
   input: PlatformScheduleFormRequest,
   context: ScheduleContext,
   inspectionOperation: typeof workbenchManagement.opsInspectionRead | typeof workbenchManagement.opsInspectionStart,
+  access?: ScheduleTargetLabelAccess,
 ) {
   const { owner, credentials } = context;
   const zh = credentials.locale?.startsWith("zh");
   const selected = input.values.operation;
   if (selected !== undefined && selected !== "inspection" && selected !== "autotest")
     throw new HttpError(400, "Unknown operations schedule type", "INVALID_REQUEST");
-  const autotestRefusal = selected === "inspection" ? undefined : await refused(requireAutotestFormAccess(context));
+  const autotestRefusal = selected === "inspection" ? undefined
+    : access
+      ? access.caseSets.allowed ? undefined : new HttpError(403, access.caseSets.reason!, "PERMISSION_DENIED")
+      : await refused(requireAutotestFormAccess(context));
   const defaultOperation = autotestRefusal ? "inspection" : "autotest";
   const operation = selected ?? defaultOperation;
   if (operation === "autotest" && autotestRefusal) throw autotestRefusal;
-  if (operation === "inspection") await assertManagement(inspectionOperation, owner, credentials);
+  if (operation === "inspection") {
+    if (!access) await assertManagement(inspectionOperation, owner, credentials);
+    else if (!access.inspection.allowed) throw new HttpError(403, access.inspection.reason!, "PERMISSION_DENIED");
+  }
   const diagnosis = await assistantStore.opsDiagnosis(owner.domainId);
-  const canInspect = Boolean(diagnosis?.enabled && await agentAllowed(diagnosis, "USE", credentials));
+  const canInspect = Boolean(diagnosis?.enabled && (access
+    ? agentInVisibilityRange(diagnosis, access.agentUse, owner.domainId)
+    : await agentAllowed(diagnosis, "USE", credentials)));
   const fields: FormField[] = [operationField(zh, autotestRefusal?.message ?? null,
     canInspect ? null : zh ? "无权使用运维诊断智能体" : "Operations diagnosis use permission required", defaultOperation)];
   if (operation === "inspection") fields.push(instruction(zh ? "指令" : "Instruction"));
@@ -135,11 +144,11 @@ export const operationsScheduleApplication: ScheduleApplication = {
       throw inspection instanceof HttpError && inspection.status === 403 ? autotest : inspection;
     }
   },
-  async describeTargets(contents, context) {
+  async describeTargets(contents, context, access) {
     const zh = context.credentials.locale?.startsWith("zh");
     const operations = operationField(zh, null, null);
     const caseSets = contents.some(content => content.operation === "autotest")
-      && !(await refused(requireAutotestFormAccess(context)))
+      && (access ? access.caseSets.allowed : !(await refused(requireAutotestFormAccess(context))))
       ? caseSetField(context.owner.domainId, zh) : undefined;
     const inspection = instruction(zh ? "指令" : "Instruction");
     return contents.map(content => ({
@@ -150,8 +159,8 @@ export const operationsScheduleApplication: ScheduleApplication = {
         ? (caseSets ? [operations, caseSets] : [operations]) : [operations, inspection], content),
     }));
   },
-  form(input, context) {
-    return operationForm(input, context, workbenchManagement.opsInspectionRead);
+  form(input, context, access) {
+    return operationForm(input, context, workbenchManagement.opsInspectionRead, access);
   },
   async validate(input, context) {
     if (input.content.operation === "autotest")

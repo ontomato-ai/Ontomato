@@ -60,7 +60,15 @@ const panelReads = (sent: Sent[], panelId: string) => sent.filter(request => req
 const openings = (sent: Sent[]) => sent.filter(request => request.path === APPLICATION_ENTRY_PATH);
 
 function entryAnswer(use: ApplicationPanelUse, pageSkillContext = member(use)) {
-  return Response.json({ applicationId: app, use, menu: { singleEntry: false, groups: [], panelUses: [] }, pageSkillContext });
+  return Response.json({
+    applicationId: app,
+    use,
+    allowStandalone: true,
+    frame: null,
+    content: null,
+    menu: { singleEntry: false, groups: [], panelUses: [] },
+    pageSkillContext,
+  });
 }
 const asksToOpen = (request: Sent, use: ApplicationPanelUse) =>
   request.path === APPLICATION_ENTRY_PATH && new URLSearchParams(request.search).get("path") === use.path;

@@ -9,6 +9,7 @@ import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.bean.metricView.MetricViewContent;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 public interface MetricViewService {
@@ -46,6 +47,8 @@ public interface MetricViewService {
 	public void delete(String id, String domainId, String lang) throws Exception;
 
 	String systemDeletionRefusal(String id, String domainId, String lang);
+
+	String systemDeletionRefusal(String id, String lang, SubjectContext subject);
 	
 	public MetricView queryById(String id, String domainId);
 
@@ -54,10 +57,10 @@ public interface MetricViewService {
 	public List<MetricView> queryList(String status, String functionId, String className, String domainId);
 
     /** The number of metric views the list filters select, without hydrating bindings or display fields. */
-    long count(String status, String functionId, String className, String origin, String domainId);
+    long count(String status, String functionId, String className, String origin, SubjectContext subject);
 
     /** The owner's form description for a MetricView, or a field error for an incoming draft. */
-    JSONObject form(JSONObject request, String lang, String domainId);
+    JSONObject form(JSONObject request, String lang, SubjectContext subject);
 
     /** One item of a batch publication-status change: its saved metric, its refusal, or why it failed. */
     record StatusResult(String id, MetricView data, OwnerRefusal refusal, String error) {}

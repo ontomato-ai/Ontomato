@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.dao;
 
+import static io.ontomato.dataengine.service.OntologyNeighborFacts.ID_PADDING;
+
 import io.ontomato.dataengine.service.MetricViewBindings;
 import io.ontomato.dataengine.service.QueryPackage;
 import java.sql.ResultSet;
@@ -198,6 +200,56 @@ public class FunctionDao {
 	public List<Function> queryReadCandidates(String domainId) {
 		return jdbcTemplate.query("SELECT id, operation, domain_id, created_by, published FROM " + TABLE_NAME + " WHERE domain_id = ?",
 				(rs, rowNum) -> mapReadFacts(rs), domainId);
+	}
+
+	public List<Function> queryReadCandidates(String domainId, String id) {
+		return jdbcTemplate.query(
+				"SELECT id, name, operation, domain_id, created_by, published FROM " + TABLE_NAME + " WHERE domain_id = ? AND id = ?",
+				(rs, rowNum) -> {
+					var function = mapReadFacts(rs);
+					function.setName(rs.getString("name"));
+					return function;
+				}, domainId, id);
+	}
+
+	public record ObjectTypeReferences(Function definition, List<String> classNames) {}
+
+	public List<Function> queryReadCandidates(String domainId, Set<String> ids) {
+		if (ids.isEmpty()) return List.of();
+		return jdbcTemplate.query(
+				"SELECT id, name, operation, domain_id, created_by, published FROM " + TABLE_NAME + " WHERE domain_id = ? AND id = ANY (?)",
+				(rs, rowNum) -> {
+					var function = mapReadFacts(rs);
+					function.setName(rs.getString("name"));
+					return function;
+				}, domainId, new SqlArrayValue("varchar", ids.toArray()));
+	}
+
+	public List<ObjectTypeReferences> objectTypeReferences(String domainId, String centerId, boolean outgoing) {
+		// Match the parameters exposed by Function.getParameters(), including query-package manifests.
+		var sql = """
+				SELECT id, name, operation, domain_id, created_by, published, refs.class_ids
+				FROM function
+				CROSS JOIN LATERAL (
+					SELECT ARRAY(
+						SELECT btrim(ref, ?) FROM jsonb_array_elements_text(jsonb_path_query_array(
+							jsonb_build_array(return_def::jsonb) ||
+								CASE WHEN query_package IS NULL OR query_package::jsonb = 'null'::jsonb
+									THEN COALESCE(NULLIF(parameters::jsonb, 'null'::jsonb), '[]'::jsonb)
+									ELSE query_package::jsonb #> '{manifest,parameterDefs}' END,
+							'$[*].classNames[*] ? (@.type() == "string")'
+						)) AS names(ref)
+					) AS class_ids
+				) refs
+				WHERE domain_id = ? AND
+				""" + (outgoing ? "id = ?" : "? = ANY (refs.class_ids)") + " ORDER BY modify_timestamp DESC";
+		return jdbcTemplate.query(sql, (rs, row) -> {
+			var function = mapReadFacts(rs);
+			function.setName(rs.getString("name"));
+			var classes = outgoing ? List.of((String[]) rs.getArray("class_ids").getArray()).stream()
+					.filter(id -> !id.isEmpty()).distinct().toList() : List.of(centerId);
+			return new ObjectTypeReferences(function, classes);
+		}, ID_PADDING, domainId, centerId);
 	}
 
 	public long countByIds(String domainId, List<String> ids) {

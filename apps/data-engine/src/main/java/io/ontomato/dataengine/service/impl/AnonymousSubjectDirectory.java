@@ -24,6 +24,16 @@ public class AnonymousSubjectDirectory implements SubjectDirectory {
     }
 
     @Override
+    public List<MemberIdentity> memberIdentitiesInDomain(String domainId) {
+        return List.of();
+    }
+
+    @Override
+    public List<MemberIdentity> memberIdentitiesInDomain(String domainId, Set<String> memberIds) {
+        return List.of();
+    }
+
+    @Override
     public long countInDomain(String domainId) {
         return 0;
     }

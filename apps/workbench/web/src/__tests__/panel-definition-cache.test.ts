@@ -18,6 +18,7 @@ import {
 } from "../../../../../packages/platform-web/src/panel-definition-cache";
 import { candidatePanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
+  APPLICATION_ENTRY_PATH,
   isPanelDataRead,
   installPlatform,
   leaveFrame,
@@ -149,6 +150,13 @@ describe("panel definition cache & bundled projections", () => {
     const denied = { status: "unavailable", httpStatus: 403, message: "No use grant" };
     let revoked = false;
     const { sent, router } = openPage(request => {
+      if (request.path === APPLICATION_ENTRY_PATH) {
+        return Response.json({
+          applicationId: APP_ID, use: useEntry, allowStandalone: true, frame: null,
+          content: { panel, projections: { [first.id]: revoked ? denied : { status: "ready", projection: first } } },
+          menu: { singleEntry: true, groups: [], panelUses: [useEntry] },
+        });
+      }
       if (request.path === `/api/data-query/platform/applications/${APP_ID}/panel-uses`) {
         return Response.json({
           data: { applicationId: APP_ID, entry: { path: `/applications/${APP_ID}`, renderer: "panels" }, panelUses: [useEntry] },
@@ -186,6 +194,7 @@ describe("panel definition cache & bundled projections", () => {
     const projectionGets = () => sent.filter(({ method, path }) => method === "GET" && path.startsWith("/api/product-projections/"));
     try {
       await vi.waitFor(() => expect(page.element.textContent).toContain("First candidate"));
+      expect(sent.some(({ method, path }) => method === "GET" && path === `/api/product-panels/${PANEL_ID}`)).toBe(false);
       expect(projectionGets()).toEqual([]);
 
       await router.push(panelAddress(useEntry.path, { choice: ref(second.id) }, manifest));
@@ -206,9 +215,11 @@ describe("panel definition cache & bundled projections", () => {
       page.app.unmount();
     }
 
+    const openingCount = sent.filter(({ path }) => path === APPLICATION_ENTRY_PATH).length;
     const reopened = mountPlatformPage(() => h(RouterView), router);
     try {
       await vi.waitFor(() => expect(reopened.element.querySelector('[data-state="forbidden"]')).not.toBeNull());
+      expect(sent.filter(({ path }) => path === APPLICATION_ENTRY_PATH)).toHaveLength(openingCount + 1);
       expect(projectionGets().some(({ path }) => path.endsWith(first.id))).toBe(false);
     } finally {
       reopened.app.unmount();

@@ -4,7 +4,7 @@ import {
   directPanelMemberPathSchema, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema, productPanelReadRequestSchema,
   type DirectPanelMemberPath, type ProductPanelReadSource,
 } from "@ontomato/contracts/panel-host";
-import { readProductPanelData } from "../../services/product-panels/data-reads";
+import { readAssistantPanelMember } from "../../services/assistant/registered-panel-read";
 import { readNestedPanel, resolvePanelMemberPath } from "../../services/product-panels/member-path";
 import { requirePanelUseEntry } from "../../services/product-panels/application-use";
 import { readCurrentPanelRecord } from "../../services/product-panels/current";
@@ -64,7 +64,7 @@ async function panelReader(req: Request, runId: string, source: ProductPanelRead
   }
   const reader = { ...owner, userId: executor.executionUserId ?? owner.userId };
   const userName = executor.executionUserId === null ? (req as AuthenticatedRequest).userName : undefined;
-  return { reader, credentials: executor.credentials, userName };
+  return { reader, credentials: executor.credentials, retrievalScopeId: executor.retrievalScopeId, userName };
 }
 
 async function pageDiscoveryOwner(req: Request, runId: string) {
@@ -95,8 +95,8 @@ assistantExecutionRouter.post("/:runId/panels/description", wrap(async (req, res
 assistantExecutionRouter.post("/:runId/panels/read", wrap(async (req, res) => {
   const runId = callbackRun(req, res.locals.runtimeCallback);
   const input = productPanelReadRequestSchema.parse(req.body);
-  const { reader, credentials, userName } = await panelReader(req, runId, input.source, input.memberPath);
-  res.json(await readProductPanelData(reader, credentials, input, userName));
+  const { reader, credentials, retrievalScopeId, userName } = await panelReader(req, runId, input.source, input.memberPath);
+  res.json(await readAssistantPanelMember({ owner: reader, credentials }, input, userName, retrievalScopeId ?? undefined));
 }));
 
 const assistantNestedPanelReadRequestSchema = productPanelNestedReadRequestSchema.extend({

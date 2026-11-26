@@ -89,7 +89,7 @@ export function requireMatchingOutput(card: MetricReferenceEntry, output: Dashbo
   }
 }
 
-async function ownedCard(owner: AssistantOwner, request: DashboardCardRequest) {
+export async function ownedCard(owner: AssistantOwner, request: DashboardCardRequest) {
   const detail = await getOwnedDashboard(owner.userId, owner.domainId, request.dashboardId);
   const card = detail.groups.flatMap(group => [...group.charts, ...group.metrics]).find(entry => entry.id === request.cardId);
   if (!card) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");

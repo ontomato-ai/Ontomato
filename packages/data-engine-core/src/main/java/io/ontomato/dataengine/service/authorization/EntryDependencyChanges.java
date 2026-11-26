@@ -87,6 +87,8 @@ public final class EntryDependencyChanges implements DataEngineMigration {
     private void apply(String domainId, Source source, EntryChange change) {
         if (change.entryId() == null || change.entryId().isBlank() || change.before() == null || change.after() == null)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid entry dependency change");
+        if (change.before().isEmpty() && change.after().isEmpty() && !"application".equals(source.kind()))
+            return;
         var entry = new ObjectTarget(domainId, Kind.ENTRY, change.entryId());
         var affectedPolicies = store.entryPolicies(entry);
         var removed = difference(change.before(), change.after());

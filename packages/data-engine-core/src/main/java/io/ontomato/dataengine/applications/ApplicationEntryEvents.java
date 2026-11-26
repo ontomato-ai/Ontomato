@@ -25,7 +25,7 @@ public record ApplicationEntryEvents(JdbcTemplate db) implements DataEngineMigra
                         @JsonInclude(JsonInclude.Include.NON_NULL) BoundPanelRoot boundPanelRoot) {
         static final Roots EMPTY = new Roots(List.of(), List.of(), null);
     }
-    public record EntryRoots(String entryId, Roots roots) {}
+    public record EntryRoots(String entryId, Roots roots, String domainId) {}
     public sealed interface PlatformEvent permits Event, AccountDeleted {
         String sequence();
     }

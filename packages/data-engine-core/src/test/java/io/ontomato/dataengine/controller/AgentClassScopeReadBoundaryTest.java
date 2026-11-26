@@ -268,12 +268,13 @@ class AgentClassScopeReadBoundaryTest {
 		ObjectTypeView orderType = new ObjectTypeView("Order", "Order", "", 1, 1, 0, Map.of("status", "ok"), List.of());
 		ObjectTypeView customerType = new ObjectTypeView("Customer", "Customer", "", 1, 0, 0, Map.of("status", "ok"), List.of());
 
-		when(modelService.attributes(eq("Order"), eq(user), eq("en"))).thenReturn(List.of(orderAttr));
-		when(modelService.attributes(eq("Customer"), eq(user), eq("en"))).thenReturn(List.of(customerAttr));
-		when(modelService.attributes(eq(null), eq(user), eq("en"))).thenReturn(List.of(orderAttr, customerAttr));
-		when(modelService.objectTypes(eq(user), eq("en"))).thenReturn(List.of(orderType, customerType));
-		when(modelService.objectType(eq("Order"), eq(user), eq("en"))).thenReturn(orderType);
-		when(modelService.objectType(eq("Customer"), eq(user), eq("en"))).thenReturn(customerType);
+		String domain = user.getDomainId();
+		when(modelService.attributes(eq("Order"), eq(domain), eq("en"))).thenReturn(List.of(orderAttr));
+		when(modelService.attributes(eq("Customer"), eq(domain), eq("en"))).thenReturn(List.of(customerAttr));
+		when(modelService.attributes(eq(null), eq(domain), eq("en"))).thenReturn(List.of(orderAttr, customerAttr));
+		when(modelService.objectTypes(eq(domain), eq("en"))).thenReturn(List.of(orderType, customerType));
+		when(modelService.objectType(eq("Order"), eq(domain), eq("en"))).thenReturn(orderType);
+		when(modelService.objectType(eq("Customer"), eq(domain), eq("en"))).thenReturn(customerType);
 		when(modelService.deletionImpact(eq("Order"), eq(user), eq("en"))).thenReturn(new DeletionImpact(List.of()));
 
 		// Scoped agent reading allowed class attributes succeeds.
@@ -291,7 +292,7 @@ class AgentClassScopeReadBoundaryTest {
 				.header(CALLER_HEADER, SCOPED_CALLER))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
-		verify(modelService, never()).attributes(eq("Customer"), eq(user), eq("en"));
+		verify(modelService, never()).attributes(eq("Customer"), eq(domain), eq("en"));
 
 		// Unfiltered attributes and object-types lists are filtered to the caller's class scope.
 		var filteredAttrs = JSON.parseArray(modelMvc.perform(get("/ontology/model/attributes")
@@ -364,13 +365,14 @@ class AgentClassScopeReadBoundaryTest {
 		FormDescription emptyForm = new FormDescription(
 				List.of(), Map.of(), new FormSave("POST", "/ontology/model/object-type/update", object("type", "object")));
 
-		when(modelService.relationships(eq("Order"), eq(user), eq("en"))).thenReturn(List.of(inScope, crossScope));
-		when(modelService.relationships(eq(null), eq(user), eq("en"))).thenReturn(List.of(inScope, crossScope));
-		when(modelService.relationship(eq("order_item"), eq(user), eq("en"))).thenReturn(inScope);
-		when(modelService.relationship(eq("order_customer"), eq(user), eq("en"))).thenReturn(crossScope);
-		when(modelService.objectTypeForm(any(), eq(user), eq("en"))).thenReturn(emptyForm);
-		when(modelService.attributeForm(any(), eq(user), eq("en"))).thenReturn(emptyForm);
-		when(modelService.relationshipForm(any(), eq(user), eq("en"))).thenReturn(emptyForm);
+		String domain = user.getDomainId();
+		when(modelService.relationships(eq("Order"), eq(domain), eq("en"))).thenReturn(List.of(inScope, crossScope));
+		when(modelService.relationships(eq(null), eq(domain), eq("en"))).thenReturn(List.of(inScope, crossScope));
+		when(modelService.relationship(eq("order_item"), eq(domain), eq("en"))).thenReturn(inScope);
+		when(modelService.relationship(eq("order_customer"), eq(domain), eq("en"))).thenReturn(crossScope);
+		when(modelService.objectTypeForm(any(), eq(domain), eq("en"))).thenReturn(emptyForm);
+		when(modelService.attributeForm(any(), eq(domain), eq("en"))).thenReturn(emptyForm);
+		when(modelService.relationshipForm(any(), eq(domain), eq("en"))).thenReturn(emptyForm);
 
 		// Excluded class filter on relationships is rejected; in-scope class filter hides cross-scope edges.
 		modelMvc.perform(get("/ontology/model/relationships")
@@ -444,7 +446,7 @@ class AgentClassScopeReadBoundaryTest {
 
 	@Test
 	void humanModelReadsDoNotInvokeAgentExecutionScope() throws Exception {
-		when(modelService.attributes(eq("Customer"), eq(user), eq("en")))
+		when(modelService.attributes(eq("Customer"), eq(user.getDomainId()), eq("en")))
 				.thenReturn(List.of(new AttributeView("Customer", "email", "Email", "varchar", "", true, false, false)));
 
 		modelMvc.perform(get("/ontology/model/attributes")

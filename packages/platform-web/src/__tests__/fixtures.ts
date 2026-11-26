@@ -101,6 +101,8 @@ export function catalogEntryFixture(url: URL): Response {
     const use = uses.find(entry => entry.path === path);
     if (use) return Response.json({
       applicationId: app.id, use, framePanelId: app.framePanelId,
+      allowStandalone: app.allowStandalone ?? true,
+      frame: null, content: null,
       menu: { singleEntry: uses.length <= 1, names: app.names, groups: app.groups ?? [], panelUses: uses },
     });
   }

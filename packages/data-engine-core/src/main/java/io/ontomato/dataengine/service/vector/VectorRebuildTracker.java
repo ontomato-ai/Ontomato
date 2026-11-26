@@ -29,14 +29,16 @@ public class VectorRebuildTracker {
     }
 
     public boolean isRunning(String domainId) {
-        Entry entry = entryOf(domainId);
+        Entry entry = entries.get(domainId);
+        if (entry == null) return false;
         synchronized (entry) {
             return entry.running;
         }
     }
 
     public boolean isPauseRequested(String domainId) {
-        Entry entry = entryOf(domainId);
+        Entry entry = entries.get(domainId);
+        if (entry == null) return false;
         synchronized (entry) {
             return entry.pauseRequested;
         }
@@ -81,18 +83,23 @@ public class VectorRebuildTracker {
      * compares a query vector of one generation with rows of another.
      */
     public <T> T shared(String domainId, Supplier<T> body) {
-        return locked(entryOf(domainId).lock.readLock(), body);
+        return locked(entryOf(domainId).lock.readLock(), body::get);
     }
 
     /** Change the generation or claim the run with no vector write or search in flight. */
-    public <T> T exclusively(String domainId, Supplier<T> change) {
+    public <T, E extends Exception> T exclusively(String domainId, Change<T, E> change) throws E {
         return locked(entryOf(domainId).lock.writeLock(), change);
     }
 
-    private static <T> T locked(Lock lock, Supplier<T> body) {
+    @FunctionalInterface
+    public interface Change<T, E extends Exception> {
+        T run() throws E;
+    }
+
+    private static <T, E extends Exception> T locked(Lock lock, Change<T, E> body) throws E {
         lock.lock();
         try {
-            return body.get();
+            return body.run();
         } finally {
             lock.unlock();
         }

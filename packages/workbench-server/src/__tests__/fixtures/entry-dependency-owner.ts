@@ -2,8 +2,8 @@ import { entryDependencyChangeRequestSchema, type EntryRoots } from "@ontomato/c
 import type { Express, RequestHandler } from "express";
 import { z } from "zod";
 
-type Entry = { entryId: string; roots: EntryRoots };
-const affectedRootsRequest = z.object({ domainId: z.string().min(1), panelIds: z.array(z.string().min(1)) });
+type Entry = { entryId: string; roots: EntryRoots; domainId?: string | null };
+const affectedRootsRequest = z.object({ domainId: z.string().min(1).nullable(), panelIds: z.array(z.string().min(1)) });
 
 /** Serve the Java wire contract from the fixture's own application registrations. */
 export function mountEntryDependencyOwner(app: Express, {
@@ -11,7 +11,7 @@ export function mountEntryDependencyOwner(app: Express, {
 }: {
   prefix?: string;
   token: string;
-  entries: (domainId: string) => readonly Entry[];
+  entries: (domainId: string | null) => readonly Entry[];
 }) {
   const trusted: RequestHandler = (req, res, next) => {
     if (req.header("X-Ontomato-Query-Service-Token") !== token) {

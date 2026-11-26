@@ -51,6 +51,21 @@ function answer(request: Sent) {
 function answerWithCatalog(panelUses: ApplicationPanelUse[]) {
   const apps = catalogWith(panelUses);
   return (request: Sent) => {
+    if (request.path === "/api/product-panels/application-entry") {
+      const path = new URLSearchParams(request.search).get("path");
+      const matched = panelUses.find((entry) => entry.path === path);
+      if (matched) {
+        return Response.json({
+          applicationId: "ontology",
+          use: matched,
+          allowStandalone: false,
+          frame: null,
+          content: null,
+          menu: { singleEntry: panelUses.length <= 1, groups: [], panelUses },
+        });
+      }
+      return Response.json({ error: { message: "Entry not found" } }, { status: 404 });
+    }
     if (request.path === catalogPath) {
       return Response.json({
         success: true,
@@ -106,16 +121,17 @@ it("opens a built-in application's entry at its original address, through the pa
 });
 
 it.each([
-  ["a cold link", [], 1, 1],
-  ["a newly granted entry", catalogWith([]), 0, 1],
-] as const)("reads the owning application on demand to open %s", async (_scenario, initialCatalog, expectedCatalogReads, expectedSingleReads) => {
+  ["a cold link", []],
+  ["a newly granted entry", catalogWith([])],
+] as const)("opens %s via a single application-entry call without fetching the catalog", async (_scenario, initialCatalog) => {
   const sent = installPlatform(answerWithCatalog([components]));
   useApplicationCatalog().applications.value = [...initialCatalog];
   const { router, app } = await open(components.path);
   try {
     expect(router.currentRoute.value.path).toBe(components.path);
-    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(expectedCatalogReads);
-    expect(sent.filter(request => request.path === `${catalogPath}/ontology`)).toHaveLength(expectedSingleReads);
+    expect(sent.filter(request => request.path === "/api/product-panels/application-entry")).toHaveLength(1);
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(0);
+    expect(sent.filter(request => request.path === `${catalogPath}/ontology`)).toHaveLength(0);
   } finally {
     app.unmount();
   }
@@ -129,8 +145,9 @@ it("goes where an address no page serves goes for a reader the entry does not ad
   try {
     expect(router.currentRoute.value.path).toBe("/home");
     expect(element.querySelector(".home")).not.toBeNull();
+    expect(sent.filter(request => request.path === "/api/product-panels/application-entry")).toHaveLength(1);
     expect(sent.filter(request => request.path === catalogPath)).toHaveLength(0);
-    expect(sent.filter(request => request.path === `${catalogPath}/ontology`)).toHaveLength(1);
+    expect(sent.filter(request => request.path === `${catalogPath}/ontology`)).toHaveLength(0);
   } finally {
     app.unmount();
   }
@@ -200,17 +217,19 @@ it("goes home when the landing picks back the very address nothing serves for th
   }
 });
 
-it("reads the catalog once before calling an address a page's code asks for missing", async () => {
+it("resolves an unregistered address via application-entry once before calling it missing", async () => {
   // A page asks from a native start page: nothing has read the catalog yet, so no entry is known.
-  installPlatform(answerWithCatalog([components]));
+  const sent = installPlatform(answerWithCatalog([components]));
   const { router, app } = await open("/home");
   try {
     expect(useApplicationCatalog().applications.value).toEqual([]);
     await panelNavigator(router)("/ontology/components");
     expect(router.currentRoute.value.path).toBe("/ontology/components");
-    // Read once for the ask that failed, not for every ask.
+    expect(sent.filter(request => request.path === "/api/product-panels/application-entry")).toHaveLength(1);
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(0);
+    // Navigating back to an already-known route does not re-query application-entry.
     await panelNavigator(router)("/home");
-    expect(useApplicationCatalog().applications.value.map((application) => application.id)).toContain("ontology");
+    expect(sent.filter(request => request.path === "/api/product-panels/application-entry")).toHaveLength(1);
   } finally {
     app.unmount();
   }

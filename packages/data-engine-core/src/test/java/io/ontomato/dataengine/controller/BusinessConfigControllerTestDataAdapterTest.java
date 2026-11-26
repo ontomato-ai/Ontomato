@@ -31,10 +31,12 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.dataAdapter.ConnectionSecretCodec;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterConnection;
 import io.ontomato.dataengine.dataAdapter.DataAdapterProvider;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
+import io.ontomato.dataengine.dataAdapter.SecretCipher;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
@@ -72,6 +74,7 @@ class BusinessConfigControllerTestDataAdapterTest {
 		ReflectionTestUtils.setField(controller, "sandboxPermissions", permissions);
 		ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
 		ReflectionTestUtils.setField(controller, "dataAdapterRegistry", registry);
+		ReflectionTestUtils.setField(controller, "connectionSecretCodec", new ConnectionSecretCodec(registry, mock(SecretCipher.class)));
 	}
 
 	@Test

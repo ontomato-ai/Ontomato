@@ -294,7 +294,7 @@ public class OntologyQueryService {
 
   /** Only the existence bit leaves the query boundary. Governance fields are not client projections. */
   public boolean actionTargetExists(ActionTarget target, String key, CapabilityGrantLookup.Admission grant,
-                                   QueryAccessService.Access access) throws Exception {
+                                   QueryAccessService.Access access) {
     String name = target.className();
     var permission = access.permission();
     QueryPermissions.requireClass(permission, name);

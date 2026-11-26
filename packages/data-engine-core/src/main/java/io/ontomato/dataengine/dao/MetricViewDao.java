@@ -1,5 +1,9 @@
 package io.ontomato.dataengine.dao;
 
+import static io.ontomato.dataengine.service.OntologyNeighborFacts.ID_PADDING;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -9,6 +13,7 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Component;
 
 import com.alibaba.fastjson2.JSON;
@@ -266,6 +271,45 @@ public class MetricViewDao extends BaseDao {
             metric.setBindings(bindings(metric.getId()));
         }
         return oList;
+	}
+
+	public List<MetricView> provenanceCandidates(String domainId, Set<String> memberIds) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		var ids = memberIds.toArray();
+		return jdbcTemplate.query("SELECT id, name, status, created_by, reviewed_by FROM " + TABLE_NAME
+				+ " WHERE domain_id = ? AND type = 'GENERAL' AND (BTRIM(created_by, ?) = ANY (?) OR BTRIM(reviewed_by, ?) = ANY (?))"
+				+ " ORDER BY modify_timestamp DESC", (row, index) -> {
+					var definition = definitionFacts(row, domainId);
+					definition.setReviewedBy(row.getString("reviewed_by"));
+					return definition;
+				}, domainId, ID_PADDING, new SqlArrayValue("varchar", ids), ID_PADDING, new SqlArrayValue("varchar", ids));
+	}
+
+	public List<FunctionDependency<MetricView>> functionDependencies(String domainId, String centerId, boolean sourceCenter) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		String center = sourceCenter ? "id" : "function_id";
+		return jdbcTemplate.query(
+				"SELECT id, name, status, created_by, function_id FROM " + TABLE_NAME
+						+ " WHERE domain_id = ? AND type = 'GENERAL' AND " + center + " = ? ORDER BY modify_timestamp DESC",
+				(row, index) -> new FunctionDependency<>(definitionFacts(row, domainId), row.getString("function_id")),
+				domainId, centerId);
+	}
+
+	private static MetricView definitionFacts(ResultSet row, String domainId) throws SQLException {
+		var metric = new MetricView();
+		metric.setId(row.getString("id"));
+		metric.setName(row.getString("name"));
+		metric.setStatus(row.getString("status"));
+		metric.setDomainId(domainId);
+		metric.setCreatedBy(row.getString("created_by"));
+		return metric;
+	}
+
+	public List<MetricView> definitionDirectoryEntries(String domainId, Set<String> ids) {
+		if (ids.isEmpty() || !assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		return jdbcTemplate.query("SELECT id, name, status, created_by FROM " + TABLE_NAME
+				+ " WHERE domain_id = ? AND type = 'GENERAL' AND id = ANY (?)",
+				(row, index) -> definitionFacts(row, domainId), domainId, new SqlArrayValue("varchar", ids.toArray()));
 	}
 
 	/** The number of metric views the list filters select, without hydrating bindings or display fields. */

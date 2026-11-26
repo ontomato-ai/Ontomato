@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { applicationCatalogueRecordSchema } from "@ontomato/contracts/application-catalogue";
 import type { PoolClient } from "pg";
 import {
   applicationPanelUsesManagementSchema, isBuiltinProductId,
   productPanelInputSchema, productProjectionInputSchema,
-  type ProductPanelInput, type ProductProjectionInput,
+  type ApplicationPanelUsesManagement, type ProductPanelInput, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
 import { findCurrentProducts } from "../../infrastructure/product-current";
@@ -95,13 +96,7 @@ export async function readLiveApplicationSnapshot(
   const opts = backendOptions(credentials);
 
   const record = await applicationCatalogueClient(credentials).record(appId);
-  if (!record.canMaintain || record.source === "builtin") {
-    throw new HttpError(403, "Application edit permission required", "PRODUCT_FORBIDDEN");
-  }
-
-  if (!record.canEditEntries) {
-    throw new HttpError(403, "Application has no editable source", "FORBIDDEN");
-  }
+  requireEditableApplication(record);
 
   const usesResp = await backendGet(
     "app-builder-panel-uses",
@@ -112,6 +107,35 @@ export async function readLiveApplicationSnapshot(
     success: z.literal(true),
     data: applicationPanelUsesManagementSchema,
   }).parse(JSON.parse(usesResp.text));
+  return assembleLiveApplicationSnapshot(domainId, appId, record, management, options);
+}
+
+type ApplicationRecord = z.infer<typeof applicationCatalogueRecordSchema>;
+
+function requireEditableApplication(record: ApplicationRecord) {
+  if (!record.canMaintain || record.source === "builtin") {
+    throw new HttpError(403, "Application edit permission required", "PRODUCT_FORBIDDEN");
+  }
+  if (!record.canEditEntries) {
+    throw new HttpError(403, "Application has no editable source", "FORBIDDEN");
+  }
+}
+
+export async function readAdmittedLiveApplicationSnapshot(domainId: string, appId: string, payload: unknown, ownedOnly: boolean) {
+  const record = applicationCatalogueRecordSchema.parse(payload);
+  requireEditableApplication(record);
+  const { entry, panelUses, names, descriptions, icon, groups, allowStandalone, framePanelId, theme, delivery } = record;
+  const management = applicationPanelUsesManagementSchema.parse({
+    applicationId: record.id, entry, panelUses, declaration: { names, descriptions, icon, groups },
+    allowStandalone, framePanelId, theme, delivery,
+  });
+  return assembleLiveApplicationSnapshot(domainId, appId, record, management, { ownedOnly });
+}
+
+async function assembleLiveApplicationSnapshot(
+  domainId: string, appId: string, record: ApplicationRecord,
+  management: ApplicationPanelUsesManagement, options: ReadLiveSnapshotOptions,
+): Promise<LiveSnapshotResult> {
   const { applicationId: _id, entry, ...settings } = management;
   const manifest: ApplicationSourceManifest = {
     ...settings,

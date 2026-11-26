@@ -7,6 +7,7 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.concurrent.Callable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -79,6 +80,13 @@ public class QueryAccessService {
     return new Access(
         user, identity.getCurrentUserDataPermission(), null, null,
         identity.getCurrentCredentialExpiresAt()).withTarget(request.getHeader(DataSandboxService.HEADER)==null ? ExecutionTarget.LIVE : contexts.resolve(request));
+  }
+
+  /** Load the ordinary query facts for a verified viewer within the originating request's authorization scope. */
+  public Access captureLivePanelAccess(User viewer, Callable<UserDataPermission> livePermission) throws Exception {
+    identity.requireQueryAccess(viewer.getId(), viewer.getDomainId());
+    var permission = livePermission.call();
+    return new Access(viewer, permission, null, null, identity.getCurrentCredentialExpiresAt());
   }
 
   public static java.util.List<String> classScope(UserDataPermission permission, java.util.List<String> requested) {

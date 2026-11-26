@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -64,14 +65,15 @@ class MetricViewPanelEndpointTest {
 
   @Test
   void countsThroughTheSameListUrlWithoutHydratingTheList() throws Exception {
-    when(metricViewService.count(eq("PUBLISHED"), isNull(), isNull(), eq("SYSTEM"), eq("domain"))).thenReturn(3L);
+    when(metricViewService.count(eq("PUBLISHED"), isNull(), isNull(), eq("SYSTEM"), any())).thenReturn(3L);
 
     JSONObject body = perform("/metricView/queryList", """
         {"countOnly":true,"status":"PUBLISHED","origin":"SYSTEM"}""");
 
     assertTrue(body.getBooleanValue("success"));
     assertEquals(3, body.getJSONObject("data").getIntValue("total"));
-    verify(metricViewService).count("PUBLISHED", null, null, "SYSTEM", "domain");
+    verify(metricViewService).count(eq("PUBLISHED"), isNull(), isNull(), eq("SYSTEM"),
+        org.mockito.ArgumentMatchers.argThat(subject -> "domain".equals(subject.identity().domainId())));
     verify(metricViewService, never()).queryList(any(), any(), any(), any());
   }
 
@@ -284,7 +286,7 @@ class MetricViewPanelEndpointTest {
 
   @Test
   void theFormEndpointReportsAnOwnerRefusalWithItsCode() throws Exception {
-    when(metricViewService.form(any(), eq("en"), eq("domain")))
+    when(metricViewService.form(any(), eq("en"), any(SubjectContext.class)))
         .thenThrow(new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found"));
 
     JSONObject body = perform("/metricView/form", """
@@ -301,7 +303,7 @@ class MetricViewPanelEndpointTest {
     JSONObject values = MetricViewForm.defaults();
     JSONObject description = MetricViewForm.describe(values,
         List.of(FormFields.error("/name", "required", "name is required")), null, "en", langService);
-    when(metricViewService.form(any(), eq("en"), eq("domain"))).thenReturn(description);
+    when(metricViewService.form(any(), eq("en"), any(SubjectContext.class))).thenReturn(description);
 
     JSONObject body = perform("/metricView/form", """
         {"target":{"kind":"draft"},"values":{"name":""},"changedField":null}""");
@@ -345,7 +347,7 @@ class MetricViewPanelEndpointTest {
 
   @Test
   void theFormEndpointReturnsTheOwnersDescription() throws Exception {
-    when(metricViewService.form(any(), eq("en"), eq("domain"))).thenReturn(JSONObject.of(
+    when(metricViewService.form(any(), eq("en"), any(SubjectContext.class))).thenReturn(JSONObject.of(
         "values", JSONObject.of("name", "Revenue"), "fields", new JSONArray(), "save", JSONObject.of("path", "/metricView/save")));
 
     JSONObject body = perform("/metricView/form", """
@@ -363,7 +365,7 @@ class MetricViewPanelEndpointTest {
     values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of(
         "parameterDefs", JSONArray.of(JSONObject.of("name", "amount", "type", "TYPE_NUMBER")))));
     JSONObject description = MetricViewForm.describe(values, List.of(), null, "en", langService);
-    when(metricViewService.form(any(), eq("en"), eq("domain"))).thenReturn(description);
+    when(metricViewService.form(any(), eq("en"), any(SubjectContext.class))).thenReturn(description);
 
     JSONObject body = perform("/metricView/form", """
         {"target":{"kind":"draft"},"changedField":null}""");

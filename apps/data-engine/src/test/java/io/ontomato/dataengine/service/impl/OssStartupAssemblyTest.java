@@ -173,6 +173,13 @@ class OssStartupAssemblyTest {
             var organizations = ctx.getBean(OrganizationDirectory.class);
             assertEquals(new OrganizationDirectory.Snapshot(List.of(), List.of(), List.of(), List.of(), List.of()),
                 organizations.snapshot(user.getDomainId()));
+            assertTrue(organizations.unitInstances(user.getDomainId()).isEmpty());
+            assertTrue(organizations.positionInstances(user.getDomainId()).isEmpty());
+            assertTrue(organizations.grantInstances(user.getDomainId()).isEmpty());
+            assertTrue(organizations.unitCenter(user.getDomainId(), "unit").isEmpty());
+            assertTrue(organizations.positionCenter(user.getDomainId(), "post").isEmpty());
+            assertTrue(organizations.unitChildLinks(user.getDomainId(), "unit", true, true).links().isEmpty());
+            assertTrue(organizations.unitPositionLinks(user.getDomainId(), "post", false).links().isEmpty());
             var policies = ctx.getBean(PermissionPolicyDirectory.class);
             assertEquals(List.of(), policies.listPolicies(user.getDomainId()));
             assertEquals(List.of(), policies.listRolePolicies(user.getDomainId()));

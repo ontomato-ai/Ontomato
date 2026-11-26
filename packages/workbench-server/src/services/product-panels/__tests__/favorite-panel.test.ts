@@ -10,6 +10,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
+import { HttpError } from "../../../utils/errors";
 import type { PanelOperationHost, PanelRecordTarget } from "../server-operations";
 
 const state = vi.hoisted(() => ({
@@ -56,10 +57,10 @@ vi.mock("../../ontology-model/customer-reads", () => ({
 }));
 
 vi.mock("../../dashboard/access", () => ({
-  getOwnedDashboard: vi.fn(async (_u, _d, id: string) => state.dashboardsById[id] ?? {
-    id,
-    name: `Board ${id}`,
-    groups: [],
+  getOwnedDashboard: vi.fn(async (_u, _d, id: string) => {
+    const dashboard = state.dashboardsById[id];
+    if (dashboard instanceof HttpError) throw dashboard;
+    return dashboard ?? { id, name: "Board " + id, groups: [] };
   }),
 }));
 
@@ -212,7 +213,7 @@ it("lists real object identities, checks status, and adds/removes/reorders acros
   expect(await adapter.list({ targetGroup: "objects" })).toEqual([]);
 });
 
-it("executes live dashboard card previews with formatted KPI values, chart payloads, truncation, error isolation, and default cap", async () => {
+it("lists dashboard card placements without querying metrics, preserving order, caps and missing selections", async () => {
   const makeMetric = (id: string, metricId: string, unit = "USD") => ({
     id,
     name: `Metric ${id}`,
@@ -243,91 +244,35 @@ it("executes live dashboard card previews with formatted KPI values, chart paylo
       {
         id: "g1",
         title: "Overview",
-        metrics: [
-          makeMetric("m1", "metric-ok"),
-          makeMetric("m2", "metric-fail"),
-          makeMetric("m3", "metric-ok"),
-          makeMetric("m4", "metric-ok"),
-        ],
-        charts: [
-          makeChart("c1", "metric-chart"),
-          makeChart("c2", "metric-chart"),
-          makeChart("c3", "metric-chart"),
-        ],
+        metrics: ["m1", "m2", "m3", "m4", "m5", "m6", "m7"].map(id => makeMetric(id, "metric")),
+        charts: ["c1", "c2", "c3", "c4", "c5"].map(id => makeChart(id, "metric-chart")),
       },
     ],
   };
 
-  state.metricDescribe.mockImplementation(async (metricId: string) => ({
-    id: metricId,
-    name: metricId,
-    revision: 3,
-    status: "PUBLISHED",
-    parameterDefs: [],
-  }));
-  state.metricExecute.mockImplementation(async (query: { metricId: string }) => {
-    if (query.metricId === "metric-fail") {
-      throw new Error("Metric engine timeout");
-    }
-    if (query.metricId === "metric-chart") {
-      return {
-        columns: [{ key: "day", label: "Day" }, { key: "total", label: "Total" }],
-        rows: [{ day: "Mon", total: 42 }],
-        truncation: { returnedRows: 1, totalRows: 50 },
-      };
-    }
-    return {
-      columns: [{ key: "total", label: "Total" }],
-      rows: [{ total: 1234.5 }],
-    };
-  });
-
   const rows = await adapter.list({ targetGroup: "dashboardCards" });
-  // Default cap without explicit dashboardCards selection: 3 metrics + 2 charts
-  expect(rows.map(r => r.fields.cardId)).toEqual(["m1", "m2", "m3", "c1", "c2"]);
-
-  // Deduplicated describe calls per unique metricId
-  expect(state.metricDescribe).toHaveBeenCalledTimes(3);
-
-  // Metric m1 formatted cleanly
-  expect(rows[0]?.fields).toMatchObject({
-    cardKind: "metric",
-    value: "1,234.5",
-    unit: "USD",
-    partial: false,
+  expect(rows.map(row => row.fields.cardId)).toEqual(["m1", "m2", "m3", "c1", "c2"]);
+  expect(rows[0]).toMatchObject({
+    label: "Metric m1", subtitle: "Revenue Board",
+    fields: { cardKind: "metric", order: 0, colSpan: 4, rowSpan: 1, unit: "USD" },
+    outputs: { openPath: "/dashboards?dashboardId=dash-live&cardId=m1", unavailable: false },
   });
-  expect(rows[0]?.fields.output).toMatchObject({ kind: "json" });
-
-  // Metric m2 isolated error without failing siblings
-  expect(rows[1]?.fields).toMatchObject({
-    cardKind: "metric",
-    error: "Metric engine timeout",
-  });
-
-  // Chart c1 carries wrapped chartFile, output, and partial truncation flag
   expect(rows[3]?.fields).toMatchObject({
-    cardKind: "chart",
-    groupId: "preview",
-    colSpan: 6,
-    rowSpan: 2,
-    partial: true,
-    chartFile: { kind: "json" },
-    output: { kind: "json" },
+    cardKind: "chart", groupId: "preview", order: 3, colSpan: 6, rowSpan: 2, chartFile: { kind: "json" },
   });
+  for (const row of rows) {
+    for (const field of ["value", "output", "error", "partial"]) expect(row.fields).not.toHaveProperty(field);
+  }
 
-  // Explicit followed cards that are deleted or inaccessible are omitted from preview rows and reported via missingCount
-  state.dashboardCards = { "dash-live": ["m1", "deleted-card-1", "c1", "deleted-card-2"] };
-  const filteredRows = await adapter.list({ targetGroup: "dashboardCards" });
-  expect(filteredRows.map(r => r.fields.cardId)).toEqual(["m1", "c1"]);
-  const statusRecord = await adapter.dashboardCardsStatus();
-  expect(statusRecord.outputs).toEqual({
-    missingCount: 2,
-    metricCount: 1,
-    chartCount: 1,
-  });
-  expect(statusRecord.fields).toMatchObject({
-    missingCount: 2,
-    metricCount: 1,
-    chartCount: 1,
-  });
+  state.dashboardIds.push("inaccessible");
+  state.dashboardsById.inaccessible = new HttpError(404, "Dashboard not found");
+  state.dashboardCards = {
+    "dash-live": ["c3", "m7", "m6", "deleted-1", "c2", "m5", "m4", "c1", "m3", "m2", "m1", "c4", "c5", "deleted-2"],
+    inaccessible: ["private-card"],
+  };
+  const selectedRows = await adapter.list({ targetGroup: "dashboardCards" });
+  expect(selectedRows.map(row => row.fields.cardId)).toEqual(["m7", "m6", "m5", "m4", "m3", "m2", "c3", "c2", "c1", "c4"]);
+  expect((await adapter.dashboardCardsStatus()).outputs).toEqual({ missingCount: 3, metricCount: 6, chartCount: 4 });
+  expect(state.metricDescribe).not.toHaveBeenCalled();
+  expect(state.metricExecute).not.toHaveBeenCalled();
 });

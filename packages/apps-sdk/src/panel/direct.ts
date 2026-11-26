@@ -361,7 +361,7 @@ export type PanelMemberReadRequest =
   | (Omit<Extract<ProductPanelReadRequest, { operations: true }>, "source"> & { dataName?: never });
 
 /** The platform's read entry for a panel's members, as the reader: the host fills in which panel it is. */
-export type PanelReadPort = (request: PanelMemberReadRequest) => Promise<ProductPanelReadResponse>;
+export type PanelReadPort = (request: PanelMemberReadRequest, independent?: true) => Promise<ProductPanelReadResponse>;
 
 /**
  * One named datum of a member, read through the platform's read entry: unread while it waits for its object or a
@@ -389,10 +389,13 @@ export async function readMemberDatum(
   // A read the platform answered with a failure (unavailable, refused before the owner) is this datum's failure, with the
   // platform's reason; one it never answered (the request reached nothing) is unreachable. The member shows either where
   // its data would be.
-  const result: MemberDataState = await read({
+  const declaration = directReadDeclaration(projection, data);
+  const request: PanelMemberReadRequest = {
     memberPath, dataName: name, inputs: authored,
     ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
-  }).catch((reason: unknown) => {
+  };
+  const pending = declaration?.result === "metricOutput" ? read(request, true) : read(request);
+  const result: MemberDataState = await pending.catch((reason: unknown) => {
     const code = reason && typeof reason === "object" && typeof (reason as { code?: unknown }).code === "string"
       ? (reason as { code: string }).code
       : reason && typeof reason === "object" && (reason as { status?: unknown }).status === 409
@@ -408,7 +411,6 @@ export async function readMemberDatum(
   });
   if (result.status !== "ready") return result;
   // The host's answer is checked against the result the owner registered for this read.
-  const declaration = directReadDeclaration(projection, data);
   if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
   return {
     status: "ready",

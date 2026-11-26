@@ -16,7 +16,7 @@ import { assertManagement } from "../../identity/management";
 import { createLogger } from "../../logging/logger";
 import { HttpError } from "../../utils/errors";
 import { withDomainSkills } from "./operations";
-import { readSkillView } from "./view";
+import { readSkillView, type SkillView } from "./view";
 import { listAnalysisAgentSkillReferences, removeAnalysisAgentSkillReferences } from "../assistant/skill-references";
 
 const logger = createLogger("skill-manager");
@@ -78,13 +78,14 @@ class SkillManager {
   }
   async getAllSkills(domainId: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
     await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);
-    const { registry } = await readSkillView(domainId, credentials);
-    return { skills: this.describeSkills(registry.getSkills(), credentials.locale) };
+    return this.describeLibrary(await readSkillView(domainId, credentials), credentials.locale);
+  }
+  describeLibrary({ registry }: SkillView, locale?: string): SkillCatalog {
+    return { skills: this.describeSkills(registry.getSkills(), locale) };
   }
   async countSkills(domainId: string, credentials: AssistantCredentials): Promise<number> {
     await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);
-    const { registry } = await readSkillView(domainId, credentials);
-    return registry.getSkills().length;
+    return (await readSkillView(domainId, credentials)).registry.getSkills().length;
   }
   async getSkillInfo(domainId: string, id: string, credentials: AssistantCredentials) {
     return this.describeSkill(await this.requireReadableSkill(domainId, id, credentials), credentials.locale);
@@ -110,6 +111,10 @@ class SkillManager {
       return { skills: [] };
     }
     const catalogue = await this.getAllSkills(domainId, credentials);
+    return this.searchLibrary(catalogue, needle);
+  }
+  searchLibrary(catalogue: SkillCatalog, query: string): SkillCatalog {
+    const needle = query.trim().toLowerCase();
     return { ...catalogue, skills: catalogue.skills.filter(skill =>
       [skill.id, skill.title, skill.description].some(value => value.toLowerCase().includes(needle))) };
   }
@@ -197,7 +202,9 @@ class SkillManager {
 
   /** The package's files, relative to its root, for a reader to browse. */
   async listSkillFiles(domainId: string, id: string, credentials: AssistantCredentials): Promise<SkillFile[]> {
-    const skill = await this.requireReadableSkill(domainId, id, credentials);
+    return this.listFilesFromEntry(await this.requireReadableSkill(domainId, id, credentials));
+  }
+  async listFilesFromEntry(skill: SkillEntry): Promise<SkillFile[]> {
     return (await skill.provide()).files.map((file) => ({ path: file.path, size: Buffer.byteLength(file.content, "utf8") }))
       .sort((a, b) => (a.path < b.path ? -1 : 1));
   }
@@ -207,14 +214,16 @@ class SkillManager {
    * stays over it.
    */
   async readSkillFile(domainId: string, id: string, requestedPath: string, credentials: AssistantCredentials): Promise<string> {
-    const skill = await this.requireReadableSkill(domainId, id, credentials);
+    return this.readFileFromEntry(await this.requireReadableSkill(domainId, id, credentials), requestedPath, credentials.locale);
+  }
+  async readFileFromEntry(skill: SkillEntry, requestedPath: string, locale?: string): Promise<string> {
     const relative = normalizeSkillPackagePath(requestedPath);
     if (!relative) throw new HttpError(400, `Invalid skill file path: ${requestedPath}`, "INVALID_SKILL_FILE_PATH");
     const source = (await skill.provide()).files.find((file) => file.path === relative)?.content;
     if (source === undefined) throw new HttpError(404, `Skill file not found: ${relative}`, "SKILL_FILE_NOT_FOUND");
     const translations = publicSkillTranslationsRoot();
     const translated = skill.source.kind === "public" && translations
-      ? path.join(translations, resolveLocale(credentials.locale), path.relative(publicSkillsRoot(), skill.source.path), relative) : null;
+      ? path.join(translations, resolveLocale(locale), path.relative(publicSkillsRoot(), skill.source.path), relative) : null;
     if (!translated || !fs.existsSync(translated)) return source;
     const frontmatter = source.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0] ?? "";
     return frontmatter + fs.readFileSync(translated, "utf8");

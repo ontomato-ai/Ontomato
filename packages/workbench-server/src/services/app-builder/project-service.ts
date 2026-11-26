@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
 import { domainApplicationIconSchema, recommendApplicationIcon } from "@ontomato/contracts/application-icons";
+import { applicationCatalogueQueryResultSchema } from "@ontomato/contracts/application-catalogue";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import type { BuildTestContext } from "@ontomato/contracts/build-tests";
+import { buildTestContextSchema } from "@ontomato/contracts/build-tests";
 import {
   isApplicationPanelUse, isBuiltinProductId, METRIC_CHART_COMPONENT,
   type ProductPanelInput, type ProductProjectionInput,
@@ -13,20 +14,22 @@ import {
   type Workspace, type WorkspaceCommit, type WorkspaceCommitPage,
   type WorkspaceDiff, type WorkspaceFile, type WorkspaceTree,
 } from "@ontomato/contracts/workspaces";
+import { APPLICATION } from "@ontomato/contracts/platform-object-types";
 import { supportedLocales, resolveLocale } from "../../i18n";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { findCurrentProduct } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import type { JavaPanelRead, JavaPanelReadResult } from "../product-panels/java-panel-reads";
 import type { AssistantOwner } from "../assistant/store";
 import { applicationCatalogueClient } from "../product-panels/application-catalogue";
 import { saveCurrentPanel, saveCurrentProjection } from "../product-panels/current";
 import { assertAppBuilderAccess } from "./access";
 import { closeWorkspaceBuildTests, WorkspaceBuildTests } from "./build-tests";
-import { readLiveApplicationSnapshot, type LiveSnapshotResult } from "./live-snapshot";
+import { readAdmittedLiveApplicationSnapshot, readLiveApplicationSnapshot, type LiveSnapshotResult } from "./live-snapshot";
 import {
-  appBuilderProjectStore, appWorkspaceSlot,
+  appBuilderProjectStore, appWorkspaceSlot, draftApplicationMetaSchema,
   type AppBuilderProjectRow, type AppBuilderReleaseRow, type DraftApplicationMeta, type OwnedResourceRef,
 } from "./project-store";
 import {
@@ -60,6 +63,11 @@ export interface BuilderPreviewEntry {
   path: string;
 }
 
+const builderTestStatusSchema = buildTestContextSchema.pick({ status: true, expiresAt: true }).extend({
+  sampleSummary: buildTestContextSchema.shape.sampleSummary.pick({ name: true }),
+});
+export type BuilderTestStatus = z.infer<typeof builderTestStatusSchema>;
+
 export interface BuilderProjectDetail extends BuilderProjectSummary {
   sourceKind: "panel" | "empty";
   materialized: boolean;
@@ -69,11 +77,22 @@ export interface BuilderProjectDetail extends BuilderProjectSummary {
   drift: DriftReport;
   conflictFiles: string[];
   hasConflicts: boolean;
-  test: BuildTestContext | null;
+  test: BuilderTestStatus | null;
   previewEntries: BuilderPreviewEntry[];
   foreignPanelIds: string[];
   foreignProjectionIds: string[];
   currentReleaseId: string | null;
+}
+
+export function builderPublishBlock(detail: BuilderProjectDetail) {
+  if (detail.busy) return "busy";
+  if (!detail.materialized) return "notMaterialized";
+  if (detail.drift.hasDrift) return "driftBlocking";
+  if (detail.hasConflicts) return "conflictsBlocking";
+}
+
+export function canRestartBuilderTest(test: BuilderTestStatus | null) {
+  return test !== null && (test.status === "EXPIRED" || test.status === "CLOSED") && Boolean(test.sampleSummary.name);
 }
 
 export interface AuthorizedProjectContext {
@@ -101,6 +120,12 @@ function filesAreCanonicalEqual(a: unknown, b: unknown): boolean {
   return sha256Canonical(a) === sha256Canonical(b);
 }
 
+function draftMetadata(owner: AssistantOwner, project: AppBuilderProjectRow | null) {
+  if (!project?.draftMeta) return;
+  if (project.createdBy !== owner.userId) throw new HttpError(404, "Application project not found", "NOT_FOUND");
+  return project.draftMeta;
+}
+
 /**
  * Authorizes access to an application project:
  * - Published domain application: caller must satisfy Java `canMaintain === true` (excludes `builtin` & `connected`).
@@ -115,12 +140,8 @@ export async function authorizeBuilderProject(
   const project = await appBuilderProjectStore.findByAppId(owner.domainId, appId);
   const runtime = appRuntimeClient(owner, appId);
 
-  if (project?.draftMeta) {
-    if (project.createdBy !== owner.userId) {
-      throw new HttpError(404, "Application project not found", "NOT_FOUND");
-    }
-    return { appId, published: false, project, live: null, metadata: project.draftMeta, runtime };
-  }
+  const draft = draftMetadata(owner, project);
+  if (draft) return { appId, published: false, project, live: null, metadata: draft, runtime };
 
   if (options.skipLiveRead) {
     const detail = await applicationCatalogueClient(credentials).record(appId);
@@ -149,6 +170,64 @@ export async function authorizeBuilderProject(
   return { appId, published: true, project, live, metadata, runtime };
 }
 
+async function locateBuilderProject(owner: AssistantOwner, appId: string) {
+  const project = await appBuilderProjectStore.findByAppId(owner.domainId, appId);
+  return { project, draft: draftMetadata(owner, project) };
+}
+
+function builderProjectContext(
+  owner: AssistantOwner, appId: string, project: AppBuilderProjectRow | null, draft: DraftApplicationMeta | undefined,
+  metadata: DraftApplicationMeta, live: LiveSnapshotResult | null = null,
+): AuthorizedProjectContext {
+  return { appId, project, live, published: draft === undefined, metadata, runtime: appRuntimeClient(owner, appId) };
+}
+
+/** The project row locates the owner; published authority comes from the same Java read item. */
+export async function prepareBuilderProjectMetadataRead(owner: AssistantOwner, appId: string) {
+  const { project, draft } = await locateBuilderProject(owner, appId);
+  return {
+    call: draft ? undefined : { type: APPLICATION, name: "builderProjectMetadata", parameters: { primaryKey: appId } },
+    present(payload: unknown): AuthorizedProjectContext {
+      return builderProjectContext(owner, appId, project, draft, draft ?? draftApplicationMetaSchema.parse(payload));
+    },
+  };
+}
+
+export function builderFactPayload(result: JavaPanelReadResult) {
+  if (result.status === "ready") return result.payload;
+  if (result.status === "forbidden") throw new HttpError(403, result.error, result.code ?? undefined);
+  if (result.status === "error") throw new HttpError(502, result.error, result.code ?? undefined);
+  throw new HttpError(404, "Application project not found", "NOT_FOUND");
+}
+
+export async function prepareBuilderProjectFacts(
+  owner: AssistantOwner, appId: string, { live, status }: { live: boolean; status: boolean },
+) {
+  const { project, draft } = await locateBuilderProject(owner, appId);
+  const facts: { call: NonNullable<JavaPanelRead["call"]> }[] = [];
+  const catalogueIndex = draft ? undefined : facts.push({
+    call: { type: APPLICATION, name: live ? "record" : "builderProjectMetadata", parameters: { primaryKey: appId } },
+  }) - 1;
+  const statusIndex = status && project ? facts.push({
+    call: { type: APPLICATION, name: "builderTestStatus", parameters: { workspaceId: project.workspaceId } },
+  }) - 1 : undefined;
+
+  return {
+    facts, catalogueIndex, statusIndex,
+    async context(results: readonly JavaPanelReadResult[]) {
+      if (draft) return builderProjectContext(owner, appId, project, draft, draft);
+      const payload = builderFactPayload(results[catalogueIndex!]);
+      if (!live) return builderProjectContext(owner, appId, project, draft, draftApplicationMetaSchema.parse(payload));
+      const snapshot = await readAdmittedLiveApplicationSnapshot(owner.domainId, appId, payload, project !== null);
+      return builderProjectContext(owner, appId, project, draft, snapshot.snapshot.application.declaration, snapshot);
+    },
+    test(results: readonly JavaPanelReadResult[]): BuilderTestStatus | null {
+      if (statusIndex === undefined || results[statusIndex].status === "empty") return null;
+      return builderTestStatusSchema.parse(builderFactPayload(results[statusIndex]));
+    },
+  };
+}
+
 /**
  * Lists editable domain applications (excluding `builtin` and externally `connected` apps)
  * merged with the caller's unpublished draft projects.
@@ -175,7 +254,16 @@ export async function listBuilderProjects(
   const editableApps = catalogueRows.filter(
     row => row.source === "domain" && row.canMaintain && row.canEditEntries,
   );
+  return mergeBuilderProjects(owner, credentials.locale, editableApps, search);
+}
 
+export const builderProjectRowsSchema = z.array(applicationCatalogueQueryResultSchema.shape.rows.element.pick({
+  id: true, names: true, descriptions: true, icon: true, updatedAt: true, canEditEntries: true,
+}));
+
+export async function mergeBuilderProjects(
+  owner: AssistantOwner, locale: string | undefined, editableApps: z.infer<typeof builderProjectRowsSchema>, search?: string,
+): Promise<BuilderProjectSummary[]> {
   const [drafts, projectMap] = await Promise.all([
     appBuilderProjectStore.listDraftsByCreator(owner.domainId, owner.userId),
     appBuilderProjectStore.listByAppIds(owner.domainId, editableApps.map(row => row.id)),
@@ -207,7 +295,7 @@ export async function listBuilderProjects(
     const ws = workspaceStatus.get(draft.appId);
     items.push({
       appId: draft.appId,
-      name: localizedNameOf(draft.draftMeta.names, credentials.locale, draft.appId),
+      name: localizedNameOf(draft.draftMeta.names, locale, draft.appId),
       names: draft.draftMeta.names,
       descriptions: draft.draftMeta.descriptions,
       icon: draft.draftMeta.icon,
@@ -225,7 +313,7 @@ export async function listBuilderProjects(
     const ws = bound ? workspaceStatus.get(row.id) : undefined;
     items.push({
       appId: row.id,
-      name: localizedNameOf(row.names, credentials.locale, row.id),
+      name: localizedNameOf(row.names, locale, row.id),
       names: row.names,
       descriptions: row.descriptions,
       icon: row.icon,
@@ -275,12 +363,16 @@ function previewEntriesFromManifest(manifest: ApplicationSourceManifest, locale?
 /** Reads application identity and workspace status without traversing source files or live definitions. */
 export async function getBuilderProjectStatus(owner: AssistantOwner, credentials: AssistantCredentials, appId: string) {
   const ctx = await authorizeBuilderProject(owner, credentials, appId, { skipLiveRead: true });
+  return readBuilderProjectStatus(ctx, credentials.locale);
+}
+
+export async function readBuilderProjectStatus(ctx: AuthorizedProjectContext, locale?: string) {
   const workspaceId = ctx.project?.workspaceId ?? null;
   const workspace = workspaceId === null ? null
     : workspaceSchema.parse(await ctx.runtime.request(`/v1/workspaces/${workspaceId}`));
   return {
     ...ctx.metadata,
-    name: localizedNameOf(ctx.metadata.names, credentials.locale, appId),
+    name: localizedNameOf(ctx.metadata.names, locale, ctx.appId),
     published: ctx.published,
     materialized: workspace !== null,
     workspaceId,
@@ -296,16 +388,24 @@ export async function getBuilderProject(
   appId: string,
 ): Promise<BuilderProjectDetail> {
   const ctx = await authorizeBuilderProject(owner, credentials, appId);
-  const { project, live, runtime } = ctx;
+  return readBuilderProjectDetail(owner.domainId, ctx, credentials.locale, workspaceId =>
+    new WorkspaceBuildTests(owner, credentials, workspaceId, appWorkspaceSlot(appId)).current());
+}
+
+export async function readBuilderProjectDetail(
+  domainId: string, ctx: AuthorizedProjectContext, locale: string | undefined,
+  readTest: (workspaceId: string) => BuilderTestStatus | null | Promise<BuilderTestStatus | null>,
+): Promise<BuilderProjectDetail> {
+  const { appId, project, live, runtime } = ctx;
 
   let workspace: Workspace | null = null;
-  let test: BuildTestContext | null = null;
+  let test: BuilderTestStatus | null = null;
   let workingFiles: WorkspaceFile[] = [];
 
   if (project) {
     workspace = workspaceSchema.parse(await runtime.request(`/v1/workspaces/${project.workspaceId}`));
     const [currentTest, files] = await Promise.all([
-      new WorkspaceBuildTests(owner, credentials, project.workspaceId, appWorkspaceSlot(appId)).current(),
+      readTest(project.workspaceId),
       readWorkspaceFiles(runtime, project.workspaceId),
     ]);
     test = currentTest;
@@ -325,7 +425,7 @@ export async function getBuilderProject(
         const parsed = parseApplicationSource(workingFiles);
         if (parsed.kind === "panel-app") {
           sourceKind = "panel";
-          previewEntries = previewEntriesFromManifest(parsed.application, credentials.locale);
+          previewEntries = previewEntriesFromManifest(parsed.application, locale);
         } else if (parsed.kind === "legacy-single-panel") {
           sourceKind = "panel";
           previewEntries = [{ id: "main", panelId: "root", label: "Preview", path: `/applications/${appId}/main` }];
@@ -340,30 +440,17 @@ export async function getBuilderProject(
     }
   } else if (live) {
     sourceKind = "panel";
-    previewEntries = previewEntriesFromManifest(live.snapshot.application, credentials.locale);
+    previewEntries = previewEntriesFromManifest(live.snapshot.application, locale);
   }
 
-  let drift: DriftReport = { hasDrift: false, items: [] };
-  if (live && project?.lastSyncedFingerprint) {
-    const liveFingerprint = computeLiveFingerprint(live.snapshot);
-    const appLabel = localizedNameOf(
-      live.snapshot.application.declaration.names,
-      credentials.locale,
-      appId,
-    );
-    drift = diffFingerprints(project.lastSyncedFingerprint, liveFingerprint, {
-      applicationLabel: appLabel,
-      panelLabels: live.panelLabels,
-      projectionLabels: live.projectionLabels,
-    });
-  }
+  const drift = readBuilderProjectDrift(ctx, locale);
 
   const { names, descriptions, icon } = ctx.metadata;
-  const releases = ctx.published && project ? await appBuilderProjectStore.listReleases(owner.domainId, appId) : [];
+  const releases = ctx.published && project ? await appBuilderProjectStore.listReleases(domainId, appId) : [];
 
   return {
     appId,
-    name: localizedNameOf(names, credentials.locale, appId),
+    name: localizedNameOf(names, locale, appId),
     names,
     descriptions,
     icon,
@@ -387,6 +474,32 @@ export async function getBuilderProject(
     foreignProjectionIds: live?.foreignProjectionIds ?? [],
     currentReleaseId: releases[0]?.id ?? null,
   };
+}
+
+export function readBuilderProjectDrift(ctx: AuthorizedProjectContext, locale?: string): DriftReport {
+  const { appId, live, project } = ctx;
+  if (!live || !project?.lastSyncedFingerprint) return { hasDrift: false, items: [] };
+  return diffFingerprints(project.lastSyncedFingerprint, computeLiveFingerprint(live.snapshot), {
+    applicationLabel: localizedNameOf(live.snapshot.application.declaration.names, locale, appId),
+    panelLabels: live.panelLabels,
+    projectionLabels: live.projectionLabels,
+  });
+}
+
+export function builderRestoreBlock(
+  state: Pick<BuilderProjectDetail, "materialized" | "busy" | "headCommit">, commit: unknown,
+) {
+  if (!state.materialized) return "notMaterialized";
+  if (state.busy) return "busy";
+  if (commit === state.headCommit) return "currentCommit";
+}
+
+export function builderRollbackBlock(
+  state: Pick<BuilderProjectDetail, "busy" | "drift" | "currentReleaseId">, releaseId: unknown,
+) {
+  if (state.busy) return "busy";
+  if (state.drift.hasDrift) return "driftBlocking";
+  if (state.currentReleaseId && releaseId === state.currentReleaseId) return "currentRelease";
 }
 
 /**
@@ -501,7 +614,10 @@ export async function readApplicationSourceFiles(
   appId: string,
   commit?: string,
 ): Promise<Array<{ path: string; size: number }>> {
-  const ctx = await authorizeBuilderProject(owner, credentials, appId);
+  return readBuilderSourceFiles(await authorizeBuilderProject(owner, credentials, appId), commit);
+}
+
+export async function readBuilderSourceFiles(ctx: AuthorizedProjectContext, commit?: string) {
   if (ctx.project) {
     const query = commit ? `?${new URLSearchParams({ commit })}` : "";
     const tree = (await ctx.runtime.request(`/v1/workspaces/${ctx.project.workspaceId}/tree${query}`)) as WorkspaceTree;
@@ -526,7 +642,10 @@ export async function readApplicationSourceFile(
   filePath: string,
   commit?: string,
 ): Promise<{ path: string; bytes: Buffer }> {
-  const ctx = await authorizeBuilderProject(owner, credentials, appId);
+  return readBuilderSourceFile(await authorizeBuilderProject(owner, credentials, appId), filePath, commit);
+}
+
+export async function readBuilderSourceFile(ctx: AuthorizedProjectContext, filePath: string, commit?: string) {
   if (ctx.project) {
     const params = new URLSearchParams({ path: filePath, ...(commit && { commit }) });
     const bytes = await ctx.runtime.bytes(`/v1/workspaces/${ctx.project.workspaceId}/files/content?${params}`);
@@ -549,15 +668,25 @@ export async function readApplicationSourceCommits(
   limit = 30,
 ): Promise<{ headCommit: string | null; items: WorkspaceCommit[]; hasMore: boolean }> {
   const ctx = await authorizeBuilderProject(owner, credentials, appId, { skipLiveRead: true });
-  if (!ctx.project) return { headCommit: null, items: [], hasMore: false };
+  const { headCommit, items, hasMore } = await readBuilderSourceCommits(ctx, offset, limit);
+  return { headCommit, items, hasMore };
+}
+
+export async function readBuilderSourceCommits(ctx: AuthorizedProjectContext, offset: number, limit: number) {
+  if (!ctx.project) return { headCommit: null, items: [], hasMore: false, busy: false };
   const [ws, page] = await Promise.all([
     ctx.runtime.request(`/v1/workspaces/${ctx.project.workspaceId}`).then(v => workspaceSchema.parse(v)),
-    ctx.runtime.request(
-      `/v1/workspaces/${ctx.project.workspaceId}/commits?${new URLSearchParams({ offset: String(offset), limit: String(limit + 1) })}`,
-    ) as Promise<WorkspaceCommitPage>,
+    readBuilderCommitPage(ctx, offset, limit),
   ]);
-  const hasMore = page.items.length > limit;
-  return { headCommit: ws.headCommit, items: page.items.slice(0, limit), hasMore };
+  return { headCommit: ws.headCommit, ...page, busy: Boolean(ws.activeRunId) };
+}
+
+export async function readBuilderCommitPage(ctx: AuthorizedProjectContext, offset: number, limit: number) {
+  if (!ctx.project) return { items: [], hasMore: false };
+  const page = (await ctx.runtime.request(
+    `/v1/workspaces/${ctx.project.workspaceId}/commits?${new URLSearchParams({ offset: String(offset), limit: String(limit + 1) })}`,
+  )) as WorkspaceCommitPage;
+  return { items: page.items.slice(0, limit), hasMore: page.items.length > limit };
 }
 
 async function findCommitInWorkspace(runtime: RuntimeClient, workspaceId: string, targetCommit: string): Promise<WorkspaceCommit> {
@@ -578,6 +707,10 @@ export async function readApplicationSourceDiff(
   target: string = "latest",
 ): Promise<{ patch: string; from: string | null; to: string; commit: WorkspaceCommit | null; materialized: boolean }> {
   const ctx = await authorizeBuilderProject(owner, credentials, appId, { skipLiveRead: true });
+  return readBuilderSourceDiff(ctx, target);
+}
+
+export async function readBuilderSourceDiff(ctx: AuthorizedProjectContext, target: string) {
   if (!ctx.project) return { patch: "", from: null, to: "working", commit: null, materialized: false };
   const ws = workspaceSchema.parse(await ctx.runtime.request(`/v1/workspaces/${ctx.project.workspaceId}`));
   const commit = target === "working"
@@ -934,8 +1067,12 @@ export async function listApplicationBuilderReleases(
   credentials: AssistantCredentials,
   appId: string,
 ): Promise<AppBuilderReleaseRow[]> {
-  await authorizeBuilderProject(owner, credentials, appId, { skipLiveRead: true });
-  return appBuilderProjectStore.listReleases(owner.domainId, appId);
+  const ctx = await authorizeBuilderProject(owner, credentials, appId, { skipLiveRead: true });
+  return readBuilderSourceReleases(owner.domainId, ctx);
+}
+
+export function readBuilderSourceReleases(domainId: string, ctx: AuthorizedProjectContext) {
+  return appBuilderProjectStore.listReleases(domainId, ctx.appId);
 }
 
 async function assertBuilderWorkspaceIdle(runtime: RuntimeClient, workspaceId: string) {

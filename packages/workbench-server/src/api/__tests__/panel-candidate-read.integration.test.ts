@@ -110,11 +110,14 @@ beforeAll(async () => {
     ownerContexts.push(JSON.parse(req.header(BUILD_TEST_HEADER)!));
     res.json({ success: true, data: { id: "review", name: "Review candidate" } });
   });
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     const user = req.header("tk");
     Object.assign(req, { userId: user, domainId: "domain", token: user, locale: "en" });
     next();
-  }, buildTestAccess);
+  };
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate, buildTestAccess);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   server = app.listen(0, "127.0.0.1");

@@ -15,24 +15,40 @@ import {
   APPLICATION_PUBLISH_BUILDER_SOURCE,
   APPLICATION_UPDATE_BUILDER_META,
 } from "@ontomato/contracts/platform-object-types";
-import { applicationDeclarationSchema } from "@ontomato/contracts/platform-identity";
-import { workspaceNameSchema, workspacePageSchema } from "@ontomato/contracts/workspaces";
+import { applicationCatalogSchema, applicationDeclarationSchema } from "@ontomato/contracts/platform-identity";
+import { workspaceNameSchema, workspacePageSchema, type WorkspaceCommit } from "@ontomato/contracts/workspaces";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { cachedZodToRuntimeJsonSchema as jsonSchema } from "../../utils/zod-json-schema";
 import type { AssistantOwner } from "../assistant/store";
-import { assertAppBuilderAccess } from "./access";
+import { requireFormFieldNames } from "../../utils/form-field-names";
+import { APPLICATION_NAVIGATION_READ } from "../product-panels/application-catalogue";
+import type { PreparedOwnerReadFacts } from "../product-panels/java-panel-reads";
+import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
+import { assertAppBuilderAccess, requireAppBuilderNavigation } from "./access";
 import {
   authorizeBuilderProject,
+  builderProjectRowsSchema,
+  builderPublishBlock,
+  canRestartBuilderTest,
   fileLanguageForPath,
   getBuilderProject,
   getBuilderProjectStatus,
   listApplicationBuilderReleases,
   listBuilderProjects,
+  mergeBuilderProjects,
+  prepareBuilderProjectFacts,
+  prepareBuilderProjectMetadataRead,
+  readBuilderCommitPage,
+  readBuilderProjectDetail,
+  readBuilderProjectStatus,
   readApplicationSourceCommits,
   readApplicationSourceDiff,
   readApplicationSourceFile,
   readApplicationSourceFiles,
+  type AuthorizedProjectContext,
+  type BuilderProjectDetail,
+  type BuilderProjectSummary,
 } from "./project-service";
 
 const shortCommit = (commit: string) => commit.slice(0, 7);
@@ -79,7 +95,10 @@ export class ApplicationBuilderReadAdapter {
    */
   async builderProjects(params: Record<string, unknown>): Promise<PanelRecord[]> {
     const search = paramsSchema.keyword.optional().parse(params.search);
-    const items = await listBuilderProjects(this.owner, this.credentials, search);
+    return this.presentBuilderProjects(await listBuilderProjects(this.owner, this.credentials, search));
+  }
+
+  presentBuilderProjects(items: BuilderProjectSummary[]): PanelRecord[] {
     return items.map(item => ({
       className: APPLICATION,
       primaryKey: item.appId,
@@ -110,13 +129,14 @@ export class ApplicationBuilderReadAdapter {
    * Computes live drift, conflict markers, build-test status, and previewable entries on demand.
    */
   async builderProject(appId: string): Promise<PanelRecord> {
-    const detail = await getBuilderProject(this.owner, this.credentials, appId);
+    return this.presentBuilderProject(await getBuilderProject(this.owner, this.credentials, appId));
+  }
+
+  presentBuilderProject(detail: BuilderProjectDetail): PanelRecord {
     const buildTestStatus = detail.test?.status ?? "NONE";
     const buildTestSampleName = detail.test?.sampleSummary?.name ?? "";
     const buildTestExpiresAt = detail.test?.expiresAt ?? "";
-    const buildTestCanRestart = !!detail.test
-      && (detail.test.status === "EXPIRED" || detail.test.status === "CLOSED")
-      && !!detail.test.sampleSummary?.name;
+    const buildTestCanRestart = canRestartBuilderTest(detail.test);
 
     const outputs = {
       appId: detail.appId,
@@ -186,7 +206,11 @@ export class ApplicationBuilderReadAdapter {
    */
   async builderSessions(appId: string, params: Record<string, unknown>) {
     const ctx = await authorizeBuilderProject(this.owner, this.credentials, appId, { skipLiveRead: true });
-    if (!ctx.project) {
+    return this.presentBuilderSessions(ctx.project, params);
+  }
+
+  async presentBuilderSessions(project: AuthorizedProjectContext["project"], params: Record<string, unknown>) {
+    if (!project) {
       return { rows: [] as PanelRecord[], hasMore: false };
     }
     const cursor = paramsSchema.cursor.optional().parse(params.cursor);
@@ -194,7 +218,7 @@ export class ApplicationBuilderReadAdapter {
       ?? paramsSchema.limit.optional().parse(params.limit)
       ?? 10;
     const { assistantService } = await import("../assistant/service");
-    const page = await assistantService.list(this.owner, { workspaceId: ctx.project.workspaceId, cursor, limit });
+    const page = await assistantService.list(this.owner, { workspaceId: project.workspaceId, cursor, limit });
     const rows: PanelRecord[] = page.sessions.map(session => {
       const status = session.latestRun?.status ?? "idle";
       const running = status === "running";
@@ -228,7 +252,10 @@ export class ApplicationBuilderReadAdapter {
 
   async sourceFiles(appId: string, params: Record<string, unknown>): Promise<PanelRecord[]> {
     const commit = paramsSchema.workspaceCommit.optional().parse(params.commit);
-    const files = await readApplicationSourceFiles(this.owner, this.credentials, appId, commit);
+    return this.presentSourceFiles(await readApplicationSourceFiles(this.owner, this.credentials, appId, commit));
+  }
+
+  presentSourceFiles(files: Awaited<ReturnType<typeof readApplicationSourceFiles>>): PanelRecord[] {
     return files.map(file => {
       const language = fileLanguageForPath(file.path);
       const basename = file.path.split("/").pop() || file.path;
@@ -248,7 +275,10 @@ export class ApplicationBuilderReadAdapter {
   async sourceFile(appId: string, params: Record<string, unknown>): Promise<PanelRecord> {
     const filePath = paramsSchema.workspacePath.parse(params.path);
     const commit = paramsSchema.workspaceCommit.optional().parse(params.commit);
-    const file = await readApplicationSourceFile(this.owner, this.credentials, appId, filePath, commit);
+    return this.presentSourceFile(await readApplicationSourceFile(this.owner, this.credentials, appId, filePath, commit));
+  }
+
+  presentSourceFile(file: Awaited<ReturnType<typeof readApplicationSourceFile>>): PanelRecord {
     const language = fileLanguageForPath(file.path);
     const isText = Boolean(language) && isUtf8(file.bytes);
     return {
@@ -265,14 +295,12 @@ export class ApplicationBuilderReadAdapter {
   }
 
   async sourceCommits(appId: string, params: Record<string, unknown>) {
-    const cursor = paramsSchema.cursor.optional().parse(params.cursor);
-    const parsedCursor = cursor !== undefined && /^\d+$/.test(cursor) ? Number(cursor) : undefined;
-    const requestedSize = paramsSchema.size.optional().parse(params.size);
-    const { offset, limit } = workspacePageSchema.parse({
-      offset: parsedCursor ?? params.offset,
-      limit: requestedSize ?? params.limit,
-    });
+    const { offset, limit } = sourceCommitPage(params);
     const page = await readApplicationSourceCommits(this.owner, this.credentials, appId, offset, limit);
+    return this.presentSourceCommits(page, offset);
+  }
+
+  presentSourceCommits(page: Awaited<ReturnType<typeof readApplicationSourceCommits>>, offset: number) {
     const nextOffset = offset + page.items.length;
     return {
       rows: page.items.map(commit => ({
@@ -295,7 +323,10 @@ export class ApplicationBuilderReadAdapter {
 
   async sourceDiff(appId: string, params: Record<string, unknown>): Promise<PanelRecord> {
     const target = paramsSchema.workspaceDiffTarget.optional().parse(params.target) ?? "latest";
-    const result = await readApplicationSourceDiff(this.owner, this.credentials, appId, target);
+    return this.presentSourceDiff(appId, await readApplicationSourceDiff(this.owner, this.credentials, appId, target));
+  }
+
+  presentSourceDiff(appId: string, result: Awaited<ReturnType<typeof readApplicationSourceDiff>>): PanelRecord {
     if (!result.materialized) {
       return {
         primaryKey: appId,
@@ -331,7 +362,10 @@ export class ApplicationBuilderReadAdapter {
   }
 
   async sourceReleases(appId: string): Promise<PanelRecord[]> {
-    const releases = await listApplicationBuilderReleases(this.owner, this.credentials, appId);
+    return this.presentSourceReleases(await listApplicationBuilderReleases(this.owner, this.credentials, appId));
+  }
+
+  presentSourceReleases(releases: Awaited<ReturnType<typeof listApplicationBuilderReleases>>): PanelRecord[] {
     return releases.map(release => {
       const short = shortCommit(release.commitId);
       return {
@@ -352,6 +386,10 @@ export class ApplicationBuilderReadAdapter {
 
   async builderCreateForm(values?: PanelFormValues): Promise<PanelFormDescription> {
     await assertAppBuilderAccess(this.credentials);
+    return this.presentBuilderCreateForm(values);
+  }
+
+  presentBuilderCreateForm(values?: PanelFormValues): PanelFormDescription {
     const fields: PanelFormField[] = [
       {
         path: "/name",
@@ -389,6 +427,10 @@ export class ApplicationBuilderReadAdapter {
 
   async builderMetaForm(appId: string, values?: PanelFormValues): Promise<PanelFormDescription> {
     const detail = await getBuilderProjectStatus(this.owner, this.credentials, appId);
+    return this.presentBuilderMetaForm(appId, detail, values);
+  }
+
+  presentBuilderMetaForm(appId: string, detail: Awaited<ReturnType<typeof readBuilderProjectStatus>>, values?: PanelFormValues) {
     const description = detail.descriptions[this.credentials.locale ?? "en"]
       ?? Object.values(detail.descriptions)[0]
       ?? "";
@@ -433,7 +475,13 @@ export class ApplicationBuilderReadAdapter {
       ? await readApplicationSourceCommits(this.owner, this.credentials, appId, 0, 50)
       : { items: [], hasMore: false, headCommit: null };
 
-    const options = commitsPage.items.map(commit => {
+    return this.presentBuilderPublishForm(detail, commitsPage.items, values, defaultCommit);
+  }
+
+  presentBuilderPublishForm(
+    detail: BuilderProjectDetail, commits: readonly WorkspaceCommit[], values?: PanelFormValues, defaultCommit?: string,
+  ): PanelFormDescription {
+    const options = commits.map(commit => {
       const disabledReason = !commit.parentIds.length ? this.text("initialCommit") : null;
       return {
         value: commit.id,
@@ -446,15 +494,8 @@ export class ApplicationBuilderReadAdapter {
     const preferred = defaultCommit ? options.find(opt => opt.value === defaultCommit && !opt.disabled) : undefined;
     const selected = preferred ?? options.find(opt => !opt.disabled) ?? options[0];
 
-    const blocked = detail.busy
-      ? this.text("busy")
-      : !detail.materialized
-        ? this.text("notMaterialized")
-        : detail.drift.hasDrift
-          ? this.text("driftBlocking")
-          : detail.hasConflicts
-            ? this.text("conflictsBlocking")
-            : null;
+    const block = builderPublishBlock(detail);
+    const blocked = block && this.text(block);
 
     const fields: PanelFormField[] = [
       ...(!detail.published
@@ -494,7 +535,7 @@ export class ApplicationBuilderReadAdapter {
         ...values,
       },
       APPLICATION_PUBLISH_BUILDER_SOURCE,
-      `/api/app-builder/projects/${encodeURIComponent(appId)}/publish`,
+      `/api/app-builder/projects/${encodeURIComponent(detail.appId)}/publish`,
       jsonSchema(builderPublishFieldsSchema),
     );
   }
@@ -505,4 +546,88 @@ export function createApplicationBuilderReadAdapter(
   credentials: AssistantCredentials,
 ): ApplicationBuilderReadAdapter {
   return new ApplicationBuilderReadAdapter(owner, credentials);
+}
+
+function builderFormValues(params: Record<string, unknown>) {
+  const values = paramsSchema.panelFormValues.optional().parse(params.values);
+  requireFormFieldNames(values, "values");
+  return values;
+}
+
+export async function prepareBuilderPanelRead(
+  owner: AssistantOwner, credentials: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
+) {
+  if (selection.typeId !== APPLICATION) return;
+  const adapter = new ApplicationBuilderReadAdapter(owner, credentials);
+  if (selection.method === "builderCreateForm") {
+    const values = builderFormValues(params);
+    return {
+      call: APPLICATION_NAVIGATION_READ,
+      present(payload: unknown) {
+        requireAppBuilderNavigation(applicationCatalogSchema.parse(payload));
+        return adapter.presentBuilderCreateForm(values);
+      },
+    };
+  }
+  if (selection.method === "builderProjects") {
+    const search = paramsSchema.keyword.optional().parse(params.search);
+    return {
+      call: { type: APPLICATION, name: selection.method, parameters: search === undefined ? {} : { search } },
+      async present(payload: unknown) {
+        const projects = await mergeBuilderProjects(owner, credentials.locale, builderProjectRowsSchema.parse(payload), search);
+        return adapter.presentBuilderProjects(projects);
+      },
+    };
+  }
+  if (selection.method === "builderSessions" || selection.method === "builderMetaForm") {
+    const project = await prepareBuilderProjectMetadataRead(owner, selection.primaryKey!);
+    if (selection.method === "builderSessions") {
+      return {
+        call: project.call,
+        present: (payload: unknown) => adapter.presentBuilderSessions(project.present(payload).project, params),
+      };
+    }
+    const values = builderFormValues(params);
+    return {
+      call: project.call,
+      async present(payload: unknown) {
+        const ctx = project.present(payload);
+        const detail = await readBuilderProjectStatus(ctx, credentials.locale);
+        return adapter.presentBuilderMetaForm(ctx.appId, detail, values);
+      },
+    };
+  }
+}
+
+export async function prepareBuilderPanelFacts(
+  owner: AssistantOwner, credentials: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
+): Promise<PreparedOwnerReadFacts | undefined> {
+  const { typeId, method, primaryKey } = selection;
+  if (typeId !== APPLICATION || (method !== "builderProject" && method !== "builderPublishForm")) return;
+  const project = await prepareBuilderProjectFacts(owner, primaryKey!, { live: true, status: true });
+  const values = method === "builderPublishForm" ? builderFormValues(params) : undefined;
+  const defaultCommit = method === "builderPublishForm" ? paramsSchema.workspaceCommit.optional().parse(params.defaultCommit) : undefined;
+  const adapter = new ApplicationBuilderReadAdapter(owner, credentials);
+  return {
+    facts: project.facts,
+    async present(_viewer, results) {
+      const ctx = await project.context(results);
+      const test = project.test(results);
+      const detail = await readBuilderProjectDetail(owner.domainId, ctx, credentials.locale, () => test);
+      if (method === "builderProject") return adapter.presentBuilderProject(detail);
+      const { items } = await readBuilderCommitPage(ctx, 0, 50);
+      return adapter.presentBuilderPublishForm(detail, items, values, defaultCommit);
+    },
+  };
+}
+
+
+export function sourceCommitPage(params: Record<string, unknown>) {
+  const cursor = paramsSchema.cursor.optional().parse(params.cursor);
+  const parsedCursor = cursor !== undefined && /^\d+$/.test(cursor) ? Number(cursor) : undefined;
+  const requestedSize = paramsSchema.size.optional().parse(params.size);
+  return workspacePageSchema.parse({
+    offset: parsedCursor ?? params.offset,
+    limit: requestedSize ?? params.limit,
+  });
 }

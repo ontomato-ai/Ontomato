@@ -205,7 +205,7 @@ beforeEach(() => {
       return { rows: [] };
     if (sql.includes("FROM product_object_details")) return { rows: [] };
     if (sql.includes("product_bound_entry_panel_dependencies")
-      || sql.startsWith("SELECT panel_id,dependencies FROM product_panel_entry_dependencies")
+      || sql.startsWith("SELECT panel_id,dependencies")
       || sql.startsWith("INSERT INTO product_panel_entry_dependencies")
       || sql.startsWith("INSERT INTO product_publication_outbox")
       || sql.startsWith("SELECT dependency_sequence,dependency_change FROM product_publication_outbox"))

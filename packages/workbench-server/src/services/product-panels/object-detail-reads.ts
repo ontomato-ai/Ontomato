@@ -4,11 +4,12 @@ import { OBJECT_TYPE, PRODUCT_PANEL, SAVE_OBJECT_DETAIL_PANEL } from "@ontomato/
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { assertManagement } from "../../identity/management";
 import { tForLocale } from "../../i18n";
+import { findCurrentProduct } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { ProductOwner } from "../product-governance/service-authentication";
-import { currentDefinitionAccess, usableCurrentIds } from "./access";
+import { currentDefinitionAccess, definitionVisibleInRange, type DefinitionVisibilityRange } from "./access";
 import { findDetailPanel, findObjectDetailPanelId } from "./object-detail";
 
 export const objectDetailText = (locale: string | undefined, key: string) =>
@@ -24,13 +25,33 @@ export async function canConfigureObjectDetail(owner: ProductOwner, viewer: Assi
   }
 }
 
-export function createObjectDetailReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+interface ObjectDetailReadAccess {
+  canConfigure(): boolean | Promise<boolean>;
+  canUsePanel(panel: Parameters<typeof currentDefinitionAccess>[1][number]): boolean | Promise<boolean>;
+}
+
+export function createRegisteredObjectDetailReadAdapter(
+  owner: ProductOwner, viewer: AssistantCredentials, canConfigure: boolean, panelUse: DefinitionVisibilityRange,
+) {
+  return createObjectDetailReadAdapter(owner, viewer, {
+    canConfigure: () => canConfigure,
+    canUsePanel: panel => definitionVisibleInRange(panel, panelUse, owner.domainId),
+  });
+}
+
+export function createObjectDetailReadAdapter(
+  owner: ProductOwner, viewer: AssistantCredentials,
+  access: ObjectDetailReadAccess = {
+    canConfigure: () => canConfigureObjectDetail(owner, viewer),
+    canUsePanel: async panel => (await currentDefinitionAccess("panel", [panel], owner.domainId, viewer, false)).decisions[0].allowed,
+  },
+) {
   const text = (key: string) => objectDetailText(viewer.locale, key);
 
   return {
     async record(className: string): Promise<PanelRecord> {
       const [id, canConfigure] = await Promise.all([
-        findObjectDetailPanelId(owner.domainId, className), canConfigureObjectDetail(owner, viewer),
+        findObjectDetailPanelId(owner.domainId, className), access.canConfigure(),
       ]);
       let panelStatus = "unconfigured";
       let panelId = "";
@@ -42,7 +63,7 @@ export function createObjectDetailReadAdapter(owner: ProductOwner, viewer: Assis
           panelStatus = "unavailable";
           unavailableReason = text(detail.status);
           if (canConfigure) panelId = id;
-        } else if (!(await currentDefinitionAccess("panel", [detail.panel], owner.domainId, viewer, false)).decisions[0].allowed) {
+        } else if (!(await access.canUsePanel(detail.panel))) {
           panelStatus = "forbidden";
           unavailableReason = text("forbidden");
           if (canConfigure) panelId = id;
@@ -65,9 +86,10 @@ export function createObjectDetailReadAdapter(owner: ProductOwner, viewer: Assis
 
     async form(className: string, values?: PanelFormValues): Promise<PanelFormDescription> {
       const [id, canConfigure] = await Promise.all([
-        findObjectDetailPanelId(owner.domainId, className), canConfigureObjectDetail(owner, viewer),
+        findObjectDetailPanelId(owner.domainId, className), access.canConfigure(),
       ]);
-      const panelId = canConfigure || id === null || (await usableCurrentIds("panel", owner.domainId, [id], viewer)).has(id) ? id : null;
+      const mapped = !canConfigure && id !== null ? await findCurrentProduct(owner.domainId, "panel", id) : undefined;
+      const panelId = canConfigure || (mapped && await access.canUsePanel(mapped)) ? id : null;
       return {
         fields: [{
           path: "/panelId", label: text("panelName"), help: text("formHelp"), required: false,

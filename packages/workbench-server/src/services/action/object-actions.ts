@@ -267,7 +267,7 @@ export function objectActionDeclaration(
   };
 }
 
-export function describeObjectAction(resolved: ResolvedObjectAction) {
+export function describeObjectAction(resolved: Pick<ResolvedObjectAction, "declaration" | "name">) {
   return describePanelOperationFromDeclaration(resolved.declaration, {
     handlerRef: ACTIONS_EXECUTE,
     label: resolved.name,

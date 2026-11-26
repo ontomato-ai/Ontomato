@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -77,6 +78,28 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private List<Map<String,Object>> records() {
         return jdbc.queryForList("SELECT * FROM sys_application ORDER BY id");
     }
+
+    @Test void keepsExistingDomainAndClasspathEntryRegistrationsAfterUpgrade() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var author = new QueryAccessService.GrantUser("author", "domain");
+        when(identity.getCurrentUser()).thenReturn(author);
+        EntryAuthorizationFixture.allowEdit(authorization, author, null);
+        http.perform(put("/platform/applications/app-upgrade/panel-uses").contentType(MediaType.APPLICATION_JSON).content("""
+            {"entry":{"path":"/applications/app-upgrade","renderer":"panels"},"initialOpenEntryIds":[],
+             "declaration":{"names":{"en":"Upgrade"},"descriptions":{},"icon":"pages","groups":[]},
+             "panelUses":[{"id":"browse","pageKey":"upgrade-browse","panelId":"panel-upgrade",
+               "path":"/applications/app-upgrade/browse"}]}
+            """)).andExpect(status().isOk());
+        var upgrade = new ApplicationCatalogUpgrade(jdbc);
+        upgrade.afterPropertiesSet();
+        upgrade.afterPropertiesSet();
+
+        var roots = catalog.affectedEntryRoots(null, Set.of("panel-upgrade", "builtin-product-skills-library"));
+        assertTrue(roots.stream().anyMatch(row -> row.entryId().equals("app-upgrade/browse") && "domain".equals(row.domainId())));
+        assertTrue(roots.stream().anyMatch(row -> row.entryId().equals("ontology/ontology-skills") && row.domainId() == null));
+        assertEquals("panel-upgrade", catalog.panelReadRegistrations("domain").apply("app-upgrade", "browse").use().panelId());
+    }
+
     /** A user application row as the retired hosted publication used to create it, for catalogue fixtures. */
     private void publishFixture(String id, ApplicationCatalog.Declaration d, QueryAccessService.GrantUser user) {
         jdbc.update("""

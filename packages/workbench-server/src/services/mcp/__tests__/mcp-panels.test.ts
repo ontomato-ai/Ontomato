@@ -78,7 +78,7 @@ vi.mock("../catalog", () => ({
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: vi.fn(() => mockRuntime),
 }));
-vi.mock("../../product-governance/grants", () => ({
+vi.mock("../../product-governance/service-authentication", () => ({
   productGrantAllowed: vi.fn(async () => false),
   requireProductGrant: vi.fn(async () => undefined),
 }));

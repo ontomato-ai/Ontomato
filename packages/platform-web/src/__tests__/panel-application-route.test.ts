@@ -32,18 +32,22 @@ const mountedInstances: {
   overlayContainer: Readonly<Ref<HTMLElement | null>> | null;
 }[] = [];
 let framePanelId: string | undefined;
-const readFrameManifest = vi.fn();
+let frameResponses: Array<{ panel: { id: string; manifest: { state: Record<string, unknown>; members: Record<string, unknown> } } } | null> = [];
 
 import { useApplicationCatalog } from "../catalog";
 
 vi.mock("../panel-host", () => ({
-  // Java's resolve-entry, answered from the test's use relations: the one at the asked address, with the menu.
+  // Single opening response, answered from the test's use relations with bundled frame/content fields.
   resolveApplicationEntry: async ({ path }: { path: string }) => {
     const use = uses.find((candidate) => candidate.path.replace(/^#/, "") === path || candidate.path === path);
     if (!use) throw new Error(`No entry at ${path}`);
-    return { applicationId: path.split("/")[2], use, framePanelId, menu: { singleEntry: uses.length <= 1, groups: [], panelUses: uses } };
+    const frame = frameResponses.length ? frameResponses.shift()! : null;
+    return {
+      applicationId: path.split("/")[2], use, framePanelId,
+      allowStandalone: true, frame, content: null,
+      menu: { singleEntry: uses.length <= 1, groups: [], panelUses: uses },
+    };
   },
-  readApplicationFrameManifest: readFrameManifest,
   // The host the route builds is the one for the use relation its address names.
   platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
   onPanelReadDenied: () => () => {},
@@ -88,7 +92,7 @@ beforeAll(() => {
 beforeEach(() => {
   mountedInstances.length = 0;
   framePanelId = undefined;
-  readFrameManifest.mockReset();
+  frameResponses = [];
 });
 
 async function mountAt(path: string, props: Record<string, unknown> = {}) {
@@ -193,11 +197,12 @@ describe("a panel application's page", () => {
     wrapper.unmount();
   });
 
-  it("clears the previous frame default if the next entry cannot read the frame beside a conversation", async () => {
+  it("clears the previous frame default if the next entry has no bundled frame beside a conversation", async () => {
     framePanelId = "term-frame";
-    readFrameManifest
-      .mockResolvedValueOnce({ state: { term: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "fall" } } })
-      .mockRejectedValueOnce(new Error("Frame snapshot unavailable"));
+    frameResponses = [
+      { panel: { id: "term-frame", manifest: { state: { term: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "fall" } }, members: {} } } },
+      null,
+    ];
 
     const { router, wrapper } = await mountAt("/applications/app-a/tasks", { navigate: vi.fn() });
     expect(wrapper.get('[data-use="use-tasks"]').attributes("data-term")).toBe("fall");

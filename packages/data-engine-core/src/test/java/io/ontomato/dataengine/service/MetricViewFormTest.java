@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service;
 
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.subject;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -33,7 +35,7 @@ class MetricViewFormTest {
 
   @BeforeEach
   void setup() {
-    ReflectionTestUtils.setField(service, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain-a", "user-1"));
+    ReflectionTestUtils.setField(service, "definitions", allowedDefinitions("domain-a", "user-1"));
     ReflectionTestUtils.setField(service, "firstPublication", mock(io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.class));
     ReflectionTestUtils.setField(service, "metricViewDao", metricViewDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
@@ -130,7 +132,7 @@ class MetricViewFormTest {
     request.put("values", values);
     request.put("changedField", "/function/queryPackage");
 
-    JSONObject form = service.form(request, "en", "domain-a");
+    JSONObject form = service.form(request, "en", subject("domain-a", "user-1"));
 
     assertCarries(values, form.getJSONObject("values"));
     assertEquals(List.of(), errorsOf(form));
@@ -192,7 +194,7 @@ class MetricViewFormTest {
     request.put("values", values);
     request.put("changedField", null);
 
-    JSONObject form = service.form(request, "en", "domain-a");
+    JSONObject form = service.form(request, "en", subject("domain-a", "user-1"));
 
     verify(metricViewDao, never()).save(any());
     assertEquals("New metric", form.getJSONObject("values").getString("name"));
@@ -207,7 +209,7 @@ class MetricViewFormTest {
     request.put("values", JSONObject.of("description", "Weekly revenue", "function", JSONObject.of("logic", "Count orders")));
     request.put("changedField", null);
 
-    JSONObject form = service.form(request, "en", "domain-a");
+    JSONObject form = service.form(request, "en", subject("domain-a", "user-1"));
 
     JSONObject values = form.getJSONObject("values");
     assertEquals(List.of(), errorsOf(form));
@@ -319,7 +321,7 @@ class MetricViewFormTest {
     JSONObject request = JSONObject.of("target", JSONObject.of("kind", "draft"));
     request.put("values", values);
     request.put("changedField", null);
-    return service.form(request, "en", "domain-a");
+    return service.form(request, "en", subject("domain-a", "user-1"));
   }
 
   @SuppressWarnings("unchecked")
@@ -336,7 +338,7 @@ class MetricViewFormTest {
   }
 
   private JSONObject form(JSONObject request) {
-    return service.form(request, "en", "domain-a");
+    return service.form(request, "en", subject("domain-a", "user-1"));
   }
 
   private JSONObject objectTarget(String id) {

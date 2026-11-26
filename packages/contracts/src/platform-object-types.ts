@@ -78,6 +78,7 @@ export type PanelReadOutputType = {
   readonly type: "boolean" | "string" | "number";
 };
 
+
 export type PlatformReadDeclaration = PanelReadSignature & {
   source: "type" | "object";
   result: PanelReadResultId;
@@ -97,6 +98,7 @@ export interface PlatformObjectTypeDeclaration {
   labelKey?: string;
   /** Set for types that have a declared place in the four-layer ontology. */
   layer?: typeof platformOntologyLayers[number];
+  /** Locate facts required by this type when its instances are counted in the four-layer ontology. */
   /**
    * When this object type's primary key is composite `<encodeURIComponent(parentPrimaryKey)>/<encodeURIComponent(localKey)>`,
    * declares the owning parent object type so deep-link URLs can omit the redundant parent prefix whenever the manifest
@@ -625,7 +627,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("skill", "capability"),
     childCollections: ["files"],
     reads: {
-      count: countRead,
+      count: { ...countRead },
       // `options` and `resolve` pick skills for an agent; `query` is the library catalogue, read-only provider packages included.
       options: {
         ...referenceReads.options, params: { agentTarget: "agentSkillTarget" }, requiredParams: ["agentTarget"],
@@ -634,11 +636,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         ...referenceReads.resolve, params: { agentTarget: "agentSkillTarget", values: "optionValues" },
         requiredParams: ["agentTarget", "values"],
       },
-      query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
+      query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" },
+        result: "panelRecordQuery" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       files: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       file: {
-        source: "object", parameterMode: "fixed", params: { path: "skillFilePath" }, requiredParams: ["path"], result: "panelRecord",
+        source: "object", parameterMode: "fixed", params: { path: "skillFilePath" }, requiredParams: ["path"],
+        result: "panelRecord",
       },
     },
     operations: [IMPORT_SKILL, DELETE_SKILL, EXPORT_SKILL],
@@ -1058,8 +1062,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("ontologyType"),
     reads: {
       count: countRead,
-      counts: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
-      countRows: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      counts: { ...metadataList.list, result: "panelGraphCounts" },
+      countRows: metadataList.list,
       start: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphStart" },
       neighbors: {
         source: "type", parameterMode: "fixed", params: {

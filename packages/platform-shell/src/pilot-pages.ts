@@ -1,5 +1,5 @@
 import { inject, type Component, type InjectionKey } from "vue";
-import type { ApplicationEntryResolution } from "@ontomato/contracts/product-panels";
+import type { ApplicationOpenResponse } from "@ontomato/contracts/product-panels";
 
 /**
  * A page the assembly mounts beside the conversation (the agent platform's page pane): its address, the page's own
@@ -41,7 +41,7 @@ export function usePilotPage(): PilotPageRegistry {
 
 /** Whether the initiating user is admitted to open a given site-relative page address. */
 export type PageAdmissionResult =
-  | { ok: true; openedEntry?: ApplicationEntryResolution }
+  | { ok: true; openedEntry?: ApplicationOpenResponse }
   | { ok: false; reason: "forbidden" | "not_found" | "unsupported_target"; error?: { code: string; message: string } };
 
 export type PageAdmissionChecker = (address: string) => Promise<PageAdmissionResult>;

@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+
 import io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner;
 import java.util.List;
 
@@ -68,11 +70,15 @@ public interface ActionService {
 	
 	public void delete(String id, String lang, User user) throws Exception;
 
-	String systemDeletionRefusal(String id, String domainId, String lang);
+	String deleteRefusal(String id, String lang, SubjectContext subject);
 	
 	public Action queryById(String id);
 	
+	List<Action> listVisibleDefinitions(SubjectContext subject, String status, String className);
+
 	public List<Action> queryList(String status, String functionId, String className, String domainId);
+
+	List<Action> queryPublishedByIds(String domainId, List<String> ids);
 
 	/** The number of Actions the same owner filters would list, counted without hydrating them. */
 	public long count(String status, String functionId, String className, String domainId,
@@ -95,8 +101,12 @@ public interface ActionService {
 	 */
 	public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user, UserDataPermission permission, ExecutionTarget target) throws Exception;
 
+	/** Checks an admitted definition's opening form for a button description. */
+	void requireExecutionForm(Action action, JSONObject bound, List<String> readOnly, String lang,
+			SubjectContext subject, CapabilityGrantLookup.Admission admission, ExecutionTarget target);
+
 	/** The owner's form description for an Action, or a field error for an incoming draft. */
-	public JSONObject definitionForm(JSONObject request, String lang, User user);
+	public JSONObject definitionForm(JSONObject request, String lang, SubjectContext subject);
 
 	/** One item of a batch publication-status change: its saved action, its refusal, or why it failed. */
 	record StatusResult(String id, Action data, OwnerRefusal refusal, String error) {}

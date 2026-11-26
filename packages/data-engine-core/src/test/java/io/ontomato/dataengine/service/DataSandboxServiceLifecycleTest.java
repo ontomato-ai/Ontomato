@@ -15,6 +15,7 @@ import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.dataAdapter.DataAdapterConnection;
 import io.ontomato.dataengine.dataAdapter.SandboxTarget;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,6 +106,74 @@ class DataSandboxServiceLifecycleTest {
     }
 
     @Test
+    void currentFactUsesTheSameSelectionAsCurrentAndLeavesTheExpiredReadyRowUntouched() {
+        var jdbc = new Ledger();
+        var identity = mock(IdentityService.class);
+        var user = new QueryAccessService.GrantUser("user", "domain");
+        when(identity.getCurrentUser()).thenReturn(user);
+        var service = new DataSandboxService(jdbc, identity, null, null, null, null, null);
+        var access = new QueryAccessService.Access(user, null, null, null, null);
+        jdbc.addTest("expired", "user", "domain", "workspace", "build-test", "READY", 1L, 1L);
+        jdbc.addTest("ended", "user", "domain", "workspace", "build-test", "CLOSED", 1L, 2L);
+        jdbc.addTest("trial", "user", "domain", "workspace", "action-trial", "READY", 1L, 3L);
+        jdbc.addTest("other-user", "other", "domain", "workspace", "build-test", "READY", 1L, 4L);
+        jdbc.addTest("other-domain", "user", "other", "workspace", "build-test", "READY", 1L, 5L);
+        jdbc.addTest("other-workspace", "user", "domain", "other", "build-test", "READY", 1L, 6L);
+
+        assertEquals(JSONObject.of("status", "EXPIRED", "expiresAt", 1L,
+                "sampleSummary", JSONObject.of("name", "expired.json")), service.currentStatusFact("workspace", access));
+        assertNull(service.currentStatusFact("missing", access));
+        assertEquals("READY", jdbc.rows.get("expired").getString("state"));
+        assertEquals(0, jdbc.writes);
+        verifyNoInteractions(identity);
+
+        var current = service.current("workspace");
+        assertEquals("expired", current.getString("contextId"));
+        assertEquals("EXPIRED", current.getString("status"));
+        assertEquals("EXPIRED", jdbc.rows.get("expired").getString("state"));
+        assertEquals(1, jdbc.writes);
+        // The terminal ordering is unchanged once the dedicated status call has persisted expiry.
+        assertEquals("ended.json", service.currentStatusFact("workspace", access).getJSONObject("sampleSummary").getString("name"));
+    }
+
+    @Test
+    void explicitCleanupPersistsExpiryBeforeCleaningAnUnscannedReadyRow() {
+        var jdbc = new Ledger();
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("user", "domain"));
+        var grants = mock(QueryGrantService.class);
+        var service = spy(new DataSandboxService(jdbc, identity, null, null, grants, null, null));
+        jdbc.addTest("expired", "user", "domain", "workspace", "build-test", "READY", 1L, 1L);
+        doAnswer(call -> {
+            assertEquals("EXPIRED", jdbc.rows.get("expired").getString("state"));
+            return null;
+        }).when(service).dropSampleStructure(any(), any(), eq("domain"), any());
+
+        var response = service.retryCleanup("expired");
+        assertEquals("EXPIRED", response.getString("status"));
+        assertEquals("", response.getString("cleanupError"));
+        assertTrue(jdbc.rows.get("expired").getBooleanValue("cleanup_attempted"));
+        verify(grants).revokeContext("expired");
+    }
+
+    @Test
+    void explicitCleanupStillRefusesAReadyRowBeforeExpiry() {
+        var jdbc = new Ledger();
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("user", "domain"));
+        var grants = mock(QueryGrantService.class);
+        var service = new DataSandboxService(jdbc, identity, null, null, grants, null, null);
+        jdbc.addTest("ready", "user", "domain", "workspace", "build-test", "READY", Long.MAX_VALUE, 1L);
+
+        var refused = assertThrows(BuildTestException.class, () -> service.retryCleanup("ready"));
+        assertEquals(409, refused.getStatusCode().value());
+        assertEquals("BUILD_TEST_CONTEXT_NOT_READY", refused.getCode());
+        assertEquals("READY", jdbc.rows.get("ready").getString("state"));
+        assertEquals(0, jdbc.writes);
+        verifyNoInteractions(grants);
+    }
+
+    @Test
     void idleExpiryDoesNotAccessBusinessDatabases() {
         var jdbc = mock(JdbcTemplate.class);
         var registry = mock(DataAdapterRegistry.class);
@@ -153,9 +222,19 @@ class DataSandboxServiceLifecycleTest {
 
     private static final class Ledger extends JdbcTemplate {
         private final Map<String, JSONObject> rows = new HashMap<>();
+        private int writes;
+
+        void addTest(String id, String user, String domain, String workspace, String purpose, String state,
+                long expiresAt, long createdAt) {
+            rows.put(id, JSONObject.of("id", id, "owner_id", user, "domain_id", domain, "scope_key", workspace,
+                    "purpose", purpose, "state", state, "expires_at", expiresAt, "created_at", createdAt,
+                    "cleanup_attempted", false, "data", JSONObject.of("sampleName", id + ".json", "classNames",
+                            new JSONArray(), "resources", new JSONArray(), "binding", new JSONObject())));
+        }
 
         @Override
         public int update(String sql, Object... args) {
+            writes++;
             String id = (String) args[0];
             if (sql.startsWith("INSERT INTO data_sandboxes")) {
                 rows.put(id, JSONObject.of("id", id, "short_id", args[1], "domain_id", args[2],
@@ -167,6 +246,8 @@ class DataSandboxServiceLifecycleTest {
                 rows.get(args[args.length - 1]).put("state", sql.split("'")[1]);
             } else if (sql.contains("SET cleanup_attempted=true")) {
                 rows.get(id).put("cleanup_attempted", true);
+            } else if (sql.contains("SET cleanup_attempted=false")) {
+                rows.get(id).put("cleanup_attempted", false);
             } else if (sql.contains("SET cleanup_error=''")) {
                 rows.get(id).put("cleanup_error", "");
             } else {
@@ -179,6 +260,19 @@ class DataSandboxServiceLifecycleTest {
         public <T> List<T> queryForList(String sql, Class<T> type, Object... args) {
             if (sql.startsWith("SELECT row_to_json")) {
                 return List.of(type.cast(rows.get(args[0]).toJSONString()));
+            }
+            if (sql.contains("WHERE owner_id=? AND domain_id=? AND scope_key=? AND purpose='build-test'")
+                    && sql.contains("ORDER BY CASE WHEN state IN ('PREPARING','READY') THEN 0 ELSE 1 END,created_at DESC,id DESC")) {
+                return rows.values().stream()
+                        .filter(record -> args[0].equals(record.getString("owner_id"))
+                                && args[1].equals(record.getString("domain_id"))
+                                && args[2].equals(record.getString("scope_key"))
+                                && "build-test".equals(record.getString("purpose")))
+                        .sorted(Comparator.comparing((JSONObject record) ->
+                                List.of("PREPARING", "READY").contains(record.getString("state"))).reversed()
+                                .thenComparing(Comparator.comparingLong((JSONObject record) -> record.getLongValue("created_at")).reversed())
+                                .thenComparing(record -> record.getString("id"), Comparator.reverseOrder()))
+                        .limit(1).map(record -> type.cast(record.getString("id"))).toList();
             }
             return List.of();
         }
