@@ -798,7 +798,7 @@
         <projection
           v-if="selectedClassKey"
           slot="instanceTable"
-          :export-file-name="exportFileName"
+          :values="{ exportFileName }"
           @choose="openInstanceDetail"
           @clear-filters="onListClearFilters"
         >

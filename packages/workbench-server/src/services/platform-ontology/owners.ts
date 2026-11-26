@@ -1,6 +1,5 @@
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
-import { isApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import {
   domainProductGrantsResponseSchema,
   type DomainProductGrantEntry,
@@ -16,7 +15,8 @@ import {
   type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
-import { assertPermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import { getPostgresPool } from "../../infrastructure/postgres";
 import { currentProductRows, type CurrentProductRow } from "../../infrastructure/product-current";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
@@ -119,11 +119,23 @@ export interface RawSubject {
   roleIds: string[];
 }
 
+/** The frozen range one grant applies to: every object, or one class field relative to the subject. */
+export interface RawGrantScope {
+  kind: string;
+  className?: string | null;
+  field?: string | null;
+}
+
 export interface RawGrant {
   roleId?: string | null;
   roleCode?: string | null;
   capabilityKind?: string | null;
   capabilityId?: string | null;
+  /** Set only on grants activated by a workflow step, with the step and the revision that put them in force. */
+  workflowId?: string | null;
+  stepNo?: number | null;
+  activatedByWorkflowVersion?: string | null;
+  scope?: RawGrantScope | null;
   inForce: boolean;
 }
 
@@ -237,7 +249,6 @@ export interface RawApplication {
   id: string;
   name: string;
   kind: string;
-  panelIds: string[];
 }
 
 export interface ResolvedRole {
@@ -363,16 +374,6 @@ export class PlatformOntologyOwnerReaders {
       { headers: this.headers, retries: 1, timeoutMs: 30_000 },
     );
     return this.parseDataEngineResponse(endpoint, response.text);
-  }
-
-  private analysisAgentPermission(): Promise<OwnerReadResult<true>> {
-    return this.memo("perm:analysis-agent", async () => {
-      await assertPermission(
-        { token: this.credentials.token, apiKey: this.credentials.apiKey },
-        ["analysis-agent"],
-      );
-      return true as const;
-    });
   }
 
   ontologyMeta(): Promise<OwnerReadResult<RawOntologyMeta>> {
@@ -576,13 +577,22 @@ export class PlatformOntologyOwnerReaders {
   grants(): Promise<OwnerReadResult<RawGrant[]>> {
     return this.memo("java:/workflow/grants", async () => {
       const rows = asArray(await this.postDataEngine("/workflow/grants", {}));
-      return rows.map((row) => ({
-        roleId: asString(row.roleId) ?? null,
-        roleCode: asString(row.roleCode) ?? null,
-        capabilityKind: asString(row.capabilityKind) ?? null,
-        capabilityId: asString(row.capabilityId) ?? null,
-        inForce: row.inForce === true,
-      }));
+      return rows.map((row) => {
+        const scope = asRecord(row.scope);
+        return {
+          roleId: asString(row.roleId) ?? null,
+          roleCode: asString(row.roleCode) ?? null,
+          capabilityKind: asString(row.capabilityKind) ?? null,
+          capabilityId: asString(row.capabilityId) ?? null,
+          workflowId: asString(row.workflowId) ?? null,
+          stepNo: typeof row.stepNo === "number" ? row.stepNo : null,
+          activatedByWorkflowVersion: asString(row.activatedByWorkflowVersion) ?? null,
+          scope: scope && asString(scope.kind)
+            ? { kind: asString(scope.kind)!, className: asString(scope.className), field: asString(scope.field) }
+            : null,
+          inForce: row.inForce === true,
+        };
+      });
     });
   }
 
@@ -717,9 +727,8 @@ export class PlatformOntologyOwnerReaders {
   }
 
   async skills(): Promise<OwnerReadResult<RawSkill[]>> {
-    const perm = await this.analysisAgentPermission();
-    if (!perm.ok) return perm;
     return this.memo("node:assistant-skills", async () => {
+      await assertManagement(workbenchManagement.skillLibraryRead, this.owner, this.credentials);
       const catalog = await assistantSkillCatalog(this.owner.domainId, this.credentials);
       return catalog.skills.map((item) => ({
         primaryKey: runtimeSkillKey(item.skill),
@@ -898,8 +907,30 @@ export class PlatformOntologyOwnerReaders {
           Object.values(app.names)[0] ??
           app.id,
         kind: app.kind,
-        panelIds: [...new Set((app.panelUses ?? []).filter(isApplicationPanelUse).map((use) => use.panelId))],
       }));
+    });
+  }
+
+  /**
+   * The panels each visible application's entries open, read one application at a time.
+   *
+   * The navigation list strips `panelUses` before it is returned, so an entry read is the only place
+   * the assembly between an application and its panels can be seen.
+   */
+  applicationPanelUses(): Promise<OwnerReadResult<ReadonlyMap<string, string[]>>> {
+    return this.memo("node:application-entries", async () => {
+      const apps = await this.applications();
+      if (!apps.ok) throw new HttpError(apps.status === "refused" ? 403 : 502, apps.reason, "OWNER_READ_FAILED");
+      const uses = new Map<string, string[]>();
+      await Promise.all(apps.data.map(async (app) => {
+        const raw = asRecord(await this.getDataEngine(`/platform/applications/${encodeURIComponent(app.id)}`));
+        const panelIds = asArray(raw?.panelUses).flatMap((use) => {
+          const panelId = asString(use.panelId);
+          return panelId ? [panelId] : [];
+        });
+        uses.set(app.id, [...new Set(panelIds)]);
+      }));
+      return uses;
     });
   }
 

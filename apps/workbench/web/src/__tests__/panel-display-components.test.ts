@@ -312,6 +312,24 @@ describe("RecordTemplate", () => {
     expect(navigated).toEqual([[{ className: OBJECT_TYPE, primaryKey: "User", label: "User" }, "source"]]);
   });
 
+  it("shows an owner's declared display text for a field value and keeps the value itself", async () => {
+    const { container } = mountStandalone(RecordTemplate, {
+      template: "{status}",
+      record: {
+        primaryKey: "o-1",
+        label: "Order",
+        fields: { status: "APPROVED" },
+        tones: { status: "success" },
+        valueLabels: { status: "Approved" },
+      },
+      onNavigate: () => {},
+    });
+
+    // The page shows the declared name with the value's tone; the record still carries the stored value.
+    expect(container.textContent?.replace(/\s+/g, " ").trim()).toBe("Approved");
+    expect(container.querySelector(".sdk-typed-value-tag")?.getAttribute("data-tone")).toBe("success");
+  });
+
   it("fills MetricView result cells into a localized fixed sentence via templateKey without computation", async () => {
     const projection: DirectProjection = {
       ...meta,

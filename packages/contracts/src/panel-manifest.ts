@@ -322,13 +322,18 @@ export type PanelMemberTarget = z.infer<typeof panelMemberTargetSchema>;
 const literalValue = z.object({ literal: runtimeJsonValueSchema }).strict();
 const itemValue = z.object({ item: z.literal(true) }).strict();
 const commandInputSchema = z.union([literalValue, panelStateRefSchema, itemValue]);
+export const panelMemberOutputRefSchema = z.object({
+  member: key,
+  name: key,
+  path: formFieldErrorSchema.shape.field.optional(),
+}).strict();
+export type PanelMemberOutputRef = z.infer<typeof panelMemberOutputRefSchema>;
+
 export const panelMemberInputSchema = z.union([
   literalValue,
   panelStateRefSchema,
   panelStateFieldRefSchema,
-  z.object({
-    output: z.object({ member: key, name: key, path: formFieldErrorSchema.shape.field.optional() }).strict(),
-  }).strict(),
+  z.object({ output: panelMemberOutputRefSchema }).strict(),
 ]);
 export type PanelMemberInput = z.infer<typeof panelMemberInputSchema>;
 const placementPorts = {

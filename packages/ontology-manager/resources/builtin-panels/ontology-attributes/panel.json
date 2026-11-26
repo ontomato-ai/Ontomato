@@ -107,7 +107,8 @@
               "key": "ownerObject",
               "labelKey": "attr.colOwner",
               "kind": "reference",
-              "minWidth": 130
+              "minWidth": 130,
+              "minContainerWidth": 561
             },
             {
               "key": "type",
@@ -125,7 +126,8 @@
                 "false": {
                   "labelKey": "attr.dash"
                 }
-              }
+              },
+              "minContainerWidth": 901
             },
             {
               "key": "primaryKey",
@@ -138,7 +140,8 @@
                 "false": {
                   "labelKey": "attr.dash"
                 }
-              }
+              },
+              "minContainerWidth": 901
             }
           ]
         },

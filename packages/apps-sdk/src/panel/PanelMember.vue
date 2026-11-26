@@ -9,7 +9,7 @@ import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance, type MemberInputs } from "./direct";
 import { localDraftStoreKey } from "./local-drafts";
 import { memberComponentId } from "./projection-element";
-import { declaredComponentProps, pickProjectionPlacementAttrs } from "./projection-attrs";
+import { declaredComponentProps, placementListeners } from "./projection-attrs";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { hasDeclaredComponentAncestor, useFormFieldSlot, useListRowSlot } from "./slot-context";
 import { useDataStateLabels } from "../base/data-state-labels";
@@ -20,8 +20,10 @@ const props = defineProps<{
   instance: DirectPanelInstance;
   /** The member's key in the panel's declaration. */
   member: string;
-  /** Optional slot-supplied input overrides (creates an isolated per-instance member context). */
+  /** Input values a slot supplies to an isolated instance of this member (a row's `{ target: ref }`). */
   inputs?: MemberInputs;
+  /** Values that follow the page, given where the member is placed; a fixed value belongs in the member's config. */
+  values?: Readonly<Record<string, unknown>>;
 }>();
 
 const attrs = useAttrs();
@@ -34,6 +36,7 @@ if (props.inputs !== undefined && listRowSlot === null && inject(projectionKey, 
   && useFormFieldSlot() === null && !hasDeclaredComponentAncestor(props.instance.direct.components)) {
   throw new Error(`Panel member '${props.member}': ${projectionSlotInputsGuidance}`);
 }
+/** A placement given inputs inside a slot is an instance of its own; one in the page's own template is the panel's member. */
 const isScoped = props.inputs !== undefined || listRowSlot !== null;
 let disposeScoped: (() => void) | undefined;
 onBeforeUnmount(() => {
@@ -127,18 +130,18 @@ if (props.instance.localDrafts) provide(localDraftStoreKey, props.instance.local
 provide(projectionKey, { slot: props.member, get projection() { return loaded.value!.slot.projection; }, get inputs() { return loaded.value!.member.inputs.value; } });
 provide(panelMemberKey, () => loaded.value!.member);
 /**
- * What the component takes as its own props: its configuration, the inputs it declares as props (such as a graph's
- * `selected`), event listeners, and declared component props passed on `<Projection>` (such as `:disabled`). Any
- * undeclared inputs or attributes are filtered out so they do not fall through as DOM attributes.
+ * What the component takes as its own props: its fixed configuration, the values that follow the page (those of this
+ * placement and its declared inputs), and the panel's listeners. Any undeclared value is filtered out so it does not fall
+ * through as a DOM attribute.
  */
 const bound = computed(() => {
   const { component, slot, member } = loaded.value!;
   const declared = declaredComponentProps(component);
-  const fromProjection = Object.fromEntries(
-    Object.entries({ ...slot.projection.config, ...member.inputs.value }).filter(([name]) => declared.has(name)),
-  );
-  const { listeners, props: placementProps } = pickProjectionPlacementAttrs(attrs, declared);
-  return { ...fromProjection, ...placementProps, ...listeners };
+  const values = { ...slot.projection.config, ...member.inputs.value, ...props.values };
+  return {
+    ...Object.fromEntries(Object.entries(values).filter(([name]) => declared.has(name))),
+    ...placementListeners(attrs),
+  };
 });
 const labels = useDataStateLabels();
 const innerRef = ref<{ refresh?: () => void } | null>(null);

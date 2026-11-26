@@ -297,6 +297,9 @@ export interface PlatformGraphRelationKindSpec {
   readonly labelKey?: string;
   readonly label?: string;
   readonly derived?: boolean;
+  readonly group?: string;
+  /** `false` when the type graph draws one sentence instead of this kind's target edges. */
+  readonly typeEdges?: false;
 }
 
 /** Schema returned for type mode: ordered layers (optional), types and relation kinds. */

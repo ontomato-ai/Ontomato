@@ -336,7 +336,7 @@
 
   <div class="vm-body">
     <div class="vm-canvas">
-      <projection slot="graph" :hint="t('visualModeling.hint')" @choose="onGraphChoose">
+      <projection slot="graph" :values="{ hint: t('visualModeling.hint') }" @choose="onGraphChoose">
         <template #toolbar-actions>
           <div class="vm-selection">
             <sdk-tag v-if="selectedNode" type="primary" size="small" disable-transitions>
@@ -372,7 +372,7 @@
           <div v-show="showNodeContent">
             <projection
               slot="nodeHeader"
-              :fallback-title="nodeEverReady ? (lastNodeLabel || selectedNode.primaryKey) : undefined"
+              :values="{ fallbackTitle: nodeEverReady ? (lastNodeLabel || selectedNode.primaryKey) : undefined }"
             ></projection>
           </div>
           <span v-if="!showNodeContent" class="vm-state">{{ selectedNode.primaryKey }}</span>

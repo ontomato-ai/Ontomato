@@ -109,7 +109,8 @@ function memberData({ memberPath: [{ member }], dataName, inputs, runtimeParams 
   if (member === "scope") return dataName === "nodes"
     ? [["Order", "Orders"], ["Customer", "Customers"], ["Invoice", "Invoices"]].map(([primaryKey, label]) => ({ primaryKey, label, fields: {} }))
     : [{ primaryKey: "rel-1", label: "", fields: { fromclass: "Order", toclass: "Customer" } }];
-  const catalogue = catalogues[member]!;
+  if (member === "skills") expect([AGENT, OTHER]).toContain(inputs.agentTarget);
+  const catalogue = catalogues[member === "draftSkills" ? "skills" : member]!;
   if (dataName === "options") return { options: catalogue };
   const held = [(runtimeParams?.values ?? inputs.values ?? [])].flat();
   return { options: held.map(value => catalogue.find(one => JSON.stringify(one.value) === JSON.stringify(value))).filter(Boolean) };

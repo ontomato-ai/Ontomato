@@ -9,6 +9,7 @@ import type pg from "pg";
 import { expect, vi } from "vitest";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { pageSkillPlacementKey, type PageSkill } from "@ontomato/contracts/page-skills";
 import type { ApplicationPanelInputs, PanelSkillSource } from "@ontomato/contracts/product-panels";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
@@ -231,6 +232,12 @@ export async function startPanelSkillEntryServer(options: {
       "target" in request && request.target.domainId === domainId &&
       request.target.kind === "AGENT" && grants.has(request.target.id),
     ));
+  });
+  app.post("/internal/workbench-management/require", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");
+    expect(req.header("tk")).toBe("editor");
+    expect(req.body).toEqual({ domainId, operationId: workbenchManagement.skillLibraryRead.id });
+    res.sendStatus(204);
   });
   app.post("/product-governance/service-resources", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");

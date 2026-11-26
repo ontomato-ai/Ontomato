@@ -81,7 +81,7 @@
   <section class="fn-detail-page">
     <page-header :back-label="t('detail.back')" :draft="detailDraft" @back="goBack">
       <template #title>
-        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <projection v-if="selectedKey" slot="header" :values="{ fallbackTitle: selectedKey }"></projection>
         <h1 v-else-if="isCreate" class="fn-detail-title">{{ t("newFunction") }}</h1>
         <h1 v-else class="fn-detail-title">{{ t("panel.name") }}</h1>
       </template>

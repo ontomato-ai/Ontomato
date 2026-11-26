@@ -36,6 +36,7 @@ import { servePageComposerKey } from "../../../../../packages/agent-shell-ui/src
 
 import type { ConfirmPanelOperation, PanelHumanOperations } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { randomId } from "@ontomato/contracts/random-id";
+import { runtimeSkillKey, runtimeSkillRefSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 
 // Disable ElMessage auto-close timers in frame tests so their 3s timeout cannot fire after
 // happy-dom tears down requestAnimationFrame and trigger Vue transition onLeave errors.
@@ -352,6 +353,28 @@ function panelReadItems(request: Sent): Sent[] {
 
 export function sentPanelReadItems(sent: readonly Sent[]) {
   return sent.filter(isPanelDataRead).flatMap(panelReadItems);
+}
+
+export function answerSkillPickerRead(
+  request: Sent,
+  agentTargets: readonly string[],
+  catalogue: readonly { skill: RuntimeSkillRef; label: string }[],
+): Response | undefined {
+  if (request.path !== panelReadPath) return;
+  const { dataName, inputs, runtimeParams } = request.body as {
+    dataName: string; inputs: { agentTarget: string }; runtimeParams?: { values?: unknown[] };
+  };
+  if (dataName !== "options" && dataName !== "selected") return;
+  if (!agentTargets.includes(inputs.agentTarget)) throw new Error("Skill picker read has the wrong agent target");
+  const options = catalogue.map(({ skill, label }) => ({ primaryKey: runtimeSkillKey(skill), value: skill, label }));
+  if (dataName === "options") return Response.json({ status: "ready", value: { options } });
+  const selected = runtimeParams!.values!.map(value => {
+    const skill = runtimeSkillRefSchema.parse(value);
+    const primaryKey = runtimeSkillKey(skill);
+    return options.find(option => option.primaryKey === primaryKey) ??
+      { primaryKey, value: skill, label: "Unavailable skill", unavailable: { reason: "This skill is not available to you." } };
+  });
+  return Response.json({ status: "ready", value: { options: selected } });
 }
 
 export function installPlatform(answer: (request: Sent) => Response | Promise<Response>, router: Router = createRouter({ history: createMemoryHistory(), routes: [] })) {

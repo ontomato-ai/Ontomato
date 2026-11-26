@@ -13,7 +13,8 @@ export {
 } from "./panel-manifest";
 export {
   checkAuthoringDirectApiCalls, checkAuthoringScript, checkAuthoringStyles, checkAuthoringTemplate, checkAuthoringTheme,
-  componentModuleImports, componentOfficialSpecifiers, isComponentOfficialSpecifier, panelModuleImports,
+  checkProjectionConfigSources, componentModuleImports, componentOfficialSpecifiers, isComponentOfficialSpecifier,
+  panelModuleImports, projectionPlacementGuidance,
 } from "./panel-module";
 export {
   SDK_PLATFORM_THEME_TOKENS, SDK_RENAMED_EXPORTS, SDK_THEME_TOKEN_ALIASES, SDK_THEME_TOKENS,

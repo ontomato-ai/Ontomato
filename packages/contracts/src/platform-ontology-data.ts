@@ -33,6 +33,19 @@ export const platformOntologyEdgeBindingSchema = z.object({
 }).strict();
 export type PlatformOntologyEdgeBinding = z.infer<typeof platformOntologyEdgeBindingSchema>;
 
+export const platformOntologyEdgeAuthorizationSchema = z.object({
+  verb: z.string().min(1).optional(),
+  verbLabel: z.string().min(1).optional(),
+  entry: z.string().min(1).optional(),
+  entryLabel: z.string().min(1).optional(),
+  scope: z.string().min(1).optional(),
+  scopeLabel: z.string().min(1).optional(),
+  scopeField: z.string().min(1).optional(),
+  stepNo: z.number().int().min(1).optional(),
+  version: z.number().int().min(1).optional(),
+}).strict();
+export type PlatformOntologyEdgeAuthorization = z.infer<typeof platformOntologyEdgeAuthorizationSchema>;
+
 export const platformOntologyEdgeSchema = z.object({
   id: z.string().min(1),
   relationKind,
@@ -42,6 +55,7 @@ export const platformOntologyEdgeSchema = z.object({
   direction: z.enum(["outgoing", "incoming"]),
   derived: z.boolean(),
   binding: platformOntologyEdgeBindingSchema.optional(),
+  authorization: platformOntologyEdgeAuthorizationSchema.optional(),
 }).strict();
 export type PlatformOntologyEdge = z.infer<typeof platformOntologyEdgeSchema>;
 

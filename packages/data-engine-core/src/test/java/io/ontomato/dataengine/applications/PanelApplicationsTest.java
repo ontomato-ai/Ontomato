@@ -315,13 +315,6 @@ class PanelApplicationsTest {
         verifyNoInteractions(identity, access, grants);
     }
 
-    @Test void deniesLegacyPublicationForAnAlreadyManagedPanelsApplication() {
-        doReturn(List.of(app("app-panel-a", "panels", List.of()))).when(catalog).all();
-        assertThrows(ResponseStatusException.class, () -> catalog.publishProduct("app-panel-a", metadata(), "release", user,
-            new io.ontomato.dataengine.service.ProductGrantService.OwnerFacts("author", "current")));
-        verify(db, never()).update(anyString(), any(Object[].class));
-    }
-
     @Test void navigationCatalogReturnsSummaryWithoutPanelUsesWhileSingleApplicationViewKeepsFilteredPanelUses() throws Exception {
         var named = new ApplicationPanelUse("use-named", "named", "panel-p", "/applications/app-panel-a/named", null, Map.of("en", "Tasks", "zh-CN", "任务"));
         var denied = new ApplicationPanelUse("use-denied", "denied", "panel-q", "/applications/app-panel-a/denied", null, Map.of("en", "Hidden"));

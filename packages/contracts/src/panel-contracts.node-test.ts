@@ -66,7 +66,7 @@ import {
   LIST_PENDING_POLICY_GRANTS, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
   PERMISSION_POLICY, PREVIEW_POLICY_ENTRY_GRANT, PRODUCT_PROJECTION, REFRESH_POLICY_API_CATALOG,
   RESOLVE_PENDING_POLICY_GRANT, ROLE, USER as ONTOLOGY_USER,
-  platformObjectTypes, platformOntologyLayers, platformRelationKinds,
+  platformObjectTypes, platformOntologyLayers, platformRelationGroups, platformRelationKinds,
 } from "./platform-object-types";
 import {
   applicationPanelUseSchema, applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
@@ -2669,11 +2669,11 @@ test("the four-layer topology points to declared kinds and distinguishes stored 
     assert.ok(platformObjectTypes[relation.from]?.labelKey);
     for (const target of typeof relation.to === "string" ? [relation.to] : relation.to)
       assert.ok(platformObjectTypes[target]?.labelKey);
+    assert.ok(platformRelationGroups.includes(relation.group), relation.id);
   }
-  assert.equal(platformRelationKinds.find(relation => relation.id === "user.published-workflow")?.derived, false);
-  assert.equal(platformRelationKinds.find(relation => relation.id === "role.can-author-workflow")?.derived, true);
   assert.equal(platformRelationKinds.find(relation => relation.id === "panel.contains-panel")?.derived, false);
   assert.equal(platformRelationKinds.find(relation => relation.id === "panel.provides-skill")?.derived, true);
+  assert.equal(platformRelationKinds.find(relation => relation.id === "role.owns-workflow-step")?.derived, true);
   assert.equal(platformObjectTypes[APPLICATION_PANEL_USE]?.layer, undefined);
   assert.equal(platformObjectTypes[ORG_MEMBERSHIP]?.layer, undefined);
   assert.equal(platformObjectTypes[ORG_UNIT]?.layer, "fact");
@@ -2690,15 +2690,22 @@ test("the four-layer topology points to declared kinds and distinguishes stored 
     "org-grant.grants-role",
     "role.uses-permission-policy",
     "permission-policy.governs-object-type",
-    "role.can-use-product",
-    "role.can-view-product",
-    "role.can-edit-product",
-    "user.can-use-product",
-    "user.can-view-product",
-    "user.can-edit-product",
+    "permission-policy.can-enter-application",
+    "permission-policy.can-execute-action",
+    "permission-policy.can-use-object",
   ]) {
     assert.equal(platformRelationKinds.find(relation => relation.id === id)?.derived, false, id);
   }
+  /** The type graph draws one sentence instead of a kind's target edges; instance reads keep the declaration. */
+  assert.equal(platformRelationKinds.find(relation => relation.id === "projection.binds-target")?.typeEdges, false);
+  assert.deepEqual(
+    platformRelationKinds.filter(relation => relation.typeEdges === false).map(relation => relation.id),
+    ["projection.binds-target"],
+  );
+  assert.deepEqual(
+    [...new Set(platformRelationKinds.map(relation => relation.group))].sort(),
+    [...platformRelationGroups].sort(),
+  );
   assert.equal(
     platformRelationKinds.some(relation => relation.from === ORG_UNIT && (relation.to === ROLE || (Array.isArray(relation.to) && relation.to.includes(ROLE)))),
     false,
