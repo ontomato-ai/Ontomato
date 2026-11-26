@@ -10,6 +10,8 @@ import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.ObjectAccess;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -226,6 +228,29 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
         var objects = context.objectPolicyIds().stream().sorted()
                 .flatMap(policy -> store.policyObjectGrants(domainId, policy).stream()).toList();
         return new SubjectPolicyGrants(granted, objects);
+    }
+
+    /**
+     * The grants {@link #subjectPolicyGrants} reports, kept per policy and with the roles that carry each policy, so a
+     * page can say which role's policy a right comes from. An administrator's management operations come from the role
+     * and not from a policy: {@code administrator} reports that, and the caller adds the whole catalog.
+     */
+    public SubjectAttribution subjectAttribution(String domainId, String userId) {
+        var context = authorization.resolveSubject(new AuthorizationService.VerifiedIdentity(
+                domainId, userId, AuthorizationService.CredentialLimit.UNRESTRICTED));
+        var roleIdsByPolicy = new LinkedHashMap<String, List<String>>();
+        context.policyRefsByRole().forEach((roleId, refs) -> refs.forEach(ref ->
+                roleIdsByPolicy.computeIfAbsent(ref.policyId(), key -> new ArrayList<>()).add(roleId)));
+        var policies = new ArrayList<PolicyAttribution>();
+        for (var policyId : context.managementPolicyIds().stream().sorted().toList()) {
+            policies.add(new PolicyAttribution(policyId, List.copyOf(roleIdsByPolicy.get(policyId)),
+                    store.managementOperations(domainId, Set.of(policyId)), List.of()));
+        }
+        for (var policyId : context.objectPolicyIds().stream().sorted().toList()) {
+            policies.add(new PolicyAttribution(policyId, List.copyOf(roleIdsByPolicy.get(policyId)), Set.of(),
+                    store.policyObjectGrants(domainId, policyId)));
+        }
+        return new SubjectAttribution(context.roles().administrator(), policies);
     }
 
     public List<ManagementOperations.Operation> managementCatalog() {

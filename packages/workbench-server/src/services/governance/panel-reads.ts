@@ -13,6 +13,7 @@ import {
   type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
@@ -22,6 +23,7 @@ import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-q
 import type { OwnerReadResult } from "../platform-ontology/owners";
 import { listPolicyEntries, readPolicyChangePermission } from "./policy-access";
 import type { PolicyWorkbenchCatalog } from "./policy-catalog";
+import { loadPolicyWorkbenchCatalog } from "./policy-catalog";
 
 /*
  * Direct-panel read adapters for enterprise governance owners: users, roles, permission policies, and organization
@@ -317,4 +319,22 @@ export async function readMemberAccessContext(
     canManage: candidates.length > 0 && await readPolicyChangePermission(viewer, candidates[0]!.id),
     preselectedPolicyId: preselected ? inspectingPolicyId ?? null : null,
   };
+}
+
+/**
+ * Everything the member's effective-permission page shows, in one owner read: the entries he can enter, the system
+ * interfaces, the product-layer and capability-layer objects, the business data he sees, and the workflow steps that
+ * hand him work. Each row carries the roles and policies its right comes from, and each category its count; the owner
+ * names the objects it holds, and the product-layer names come with the Workbench catalog the owner cannot see.
+ */
+export async function readMemberEffectiveAccess(
+  owner: ProductOwner, viewer: AssistantCredentials, subjectId: string,
+): Promise<RuntimeJsonObject> {
+  const workbenchCatalog = await loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale);
+  return governanceOwner(viewer)(
+    "governance-user-effective-access",
+    "/panel/governance/users/effective-access",
+    { id: subjectId, workbenchCatalog },
+    runtimeJsonObjectSchema,
+  );
 }
