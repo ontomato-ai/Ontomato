@@ -83,6 +83,11 @@ class SkillManager {
     const { registry, diagnostics } = await readSkillView(domainId, credentials);
     return { skills: this.describeSkills(registry.getSkills(), credentials.locale), ...(diagnostics && { diagnostics }) };
   }
+  async countSkills(domainId: string, credentials: AssistantCredentials): Promise<number> {
+    await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);
+    const { registry } = await readSkillView(domainId, credentials);
+    return registry.getSkills().length;
+  }
   async getSkillInfo(domainId: string, id: string, credentials: AssistantCredentials) {
     return this.describeSkill(await this.requireReadableSkill(domainId, id, credentials), credentials.locale);
   }

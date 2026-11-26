@@ -4,7 +4,7 @@ import type { ComponentDeclaration } from "@ontomato/contracts/component-declara
 import type { DomainComponentRuntime } from "@ontomato/contracts/domain-components";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
-import { domainComponentForProjection, domainComponentRecord, listVisibleDomainComponents } from "../domain-components/store";
+import { countVisibleDomainComponents, domainComponentForProjection, domainComponentRecord, listVisibleDomainComponents } from "../domain-components/store";
 import {
   APPS_SDK_COMPONENT_GROUPS,
   appsSdkComponentCatalogSchema,
@@ -175,7 +175,10 @@ function summarizeBindsElement(bindsElement: readonly string[] | undefined): str
 }
 
 export async function countSdkComponents(owner: ProductOwner, viewer: AssistantCredentials) {
-  return { rows: [], total: (await readAuthorComponentCatalogue(owner, viewer)).size };
+  const [released, domainCount] = await Promise.all([
+    readReleasedAuthorComponents(), countVisibleDomainComponents(owner.domainId, viewer),
+  ]);
+  return { rows: [], total: released.size + domainCount };
 }
 
 export async function listSdkComponents(

@@ -142,6 +142,27 @@ public class OntologyModelController {
 						java.util.Objects.toString(ThreadContext.get("correlationId"), "ontology")));
 	}
 
+	@GetMapping(value = "/object-types", params = "countOnly=true")
+	public Map<String, Integer> countObjectTypes(HttpServletRequest request) {
+		return countMetadata("objectTypes", request);
+	}
+
+	@GetMapping(value = "/attributes", params = {"countOnly=true", "!className"})
+	public Map<String, Integer> countAttributes(HttpServletRequest request) {
+		return countMetadata("attributes", request);
+	}
+
+	@GetMapping(value = "/relationships", params = {"countOnly=true", "!className"})
+	public Map<String, Integer> countRelationships(HttpServletRequest request) {
+		return countMetadata("relationships", request);
+	}
+
+	private Map<String, Integer> countMetadata(String field, HttpServletRequest request) {
+		User user = SystemUtils.getCurUser();
+		ExecutionTarget target = executionTarget(request, user);
+		return Map.of("total", service.countMetadata(user, isClassScoped(target) ? target.classNames() : null).get(field));
+	}
+
 	@GetMapping("/object-types")
 	public List<ObjectTypeView> objectTypes(
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,

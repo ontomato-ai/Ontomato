@@ -551,6 +551,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [FUNCTION]: {
     ...describeType("function", "capability"),
     reads: {
+      count: countRead,
       list: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", operation: "functionOperation" },
@@ -617,6 +618,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("skill", "capability"),
     childCollections: ["files"],
     reads: {
+      count: countRead,
       // `options` and `resolve` pick skills for an agent; `query` is the library catalogue, read-only provider packages included.
       options: {
         ...referenceReads.options, params: { agentTarget: "agentSkillTarget" }, requiredParams: ["agentTarget"],
@@ -637,6 +639,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [BUSINESS_KNOWLEDGE]: {
     ...describeType("businessKnowledge", "capability"),
     reads: {
+      count: countRead,
       query: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", status: "knowledgeStatus", cursor: "cursor", size: "size" },
@@ -656,6 +659,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [USER]: {
     ...describeType("user", "governance"),
     reads: {
+      count: countRead,
       ...referenceReads,
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
@@ -679,6 +683,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [ROLE]: {
     ...describeType("role", "governance"),
     reads: {
+      count: countRead,
       ...referenceReads,
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
@@ -692,6 +697,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [PERMISSION_POLICY]: {
     ...describeType("permissionPolicy", "governance"),
     reads: {
+      count: countRead,
       ...referenceReads,
       ...governancePageQuery,
       ...modelReads,
@@ -705,6 +711,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [ORG_UNIT]: {
     ...describeType("orgUnit", "fact"),
     reads: {
+      count: countRead,
       ...metadataList,
       ...referenceReads,
       record: modelReads.record,

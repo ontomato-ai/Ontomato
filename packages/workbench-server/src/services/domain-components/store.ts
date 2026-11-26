@@ -23,6 +23,21 @@ export function domainComponentForProjection(domainId: string | null, id: string
 }
 
 
+export async function countVisibleDomainComponents(domainId: string, credentials: AssistantCredentials): Promise<number> {
+  const pool = getPostgresPool();
+  const { rows } = await pool.query<Pick<CurrentProductRow, "id" | "domainId" | "ownerId">>(
+    `SELECT id, domain_id AS "domainId", owner_id AS "ownerId" FROM ${t("domain_components")} WHERE domain_id=$1`,
+    [domainId],
+  );
+  const { decisions } = await currentDefinitionAccess("component", rows, domainId, credentials, false);
+  const ids = rows.filter((_, index) => decisions[index].allowed).map(({ id }) => id);
+  const { rows: [count] } = await pool.query<{ total: number }>(
+    `SELECT COUNT(*)::int AS total FROM ${t("domain_components")} WHERE domain_id=$1 AND id=ANY($2::text[])`,
+    [domainId, ids],
+  );
+  return count.total;
+}
+
 export async function listVisibleDomainComponents(domainId: string, credentials: AssistantCredentials, readEdits = true) {
   const { rows } = await getPostgresPool().query<CurrentProductRow>(
     `SELECT ${currentProductColumns} FROM ${t("domain_components")}

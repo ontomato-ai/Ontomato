@@ -31,6 +31,7 @@ public interface AdminService {
 	public Map<String, Object> getJSONRule(String domainId);
 
 	Map<String, Integer> countOntologyMetadata(String domainId);
+	Map<String, Integer> countModelMetadata(String domainId, List<String> classScope);
 
 	public Map<String, String> getSchemaMarkdown(List<String> classNames, String domainId);
 	

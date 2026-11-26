@@ -358,6 +358,7 @@ function readAdapters(
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
     },
     [FUNCTION]: {
+      count: () => functions.count(),
       list: (_selection, params) => functions.list(params),
       query: (_selection, params) => functions.query(params),
       record: selection => functions.record(selection.primaryKey!),
@@ -411,6 +412,7 @@ function readAdapters(
       operationRows: selection => readSdkComponentOperationRows(owner, selection.primaryKey!, viewer),
     },
     [USER]: {
+      count: () => governance.users.count(),
       options: async (_selection, params) => (await options()).users.options({
         keyword: panelReadParameterSchemas.keyword.optional().parse(params.keyword),
         page: panelReadParameterSchemas.page.optional().parse(params.page),
@@ -431,6 +433,7 @@ function readAdapters(
       ),
     },
     [ROLE]: {
+      count: () => governance.roles.count(),
       options: async (_selection, params) => {
         const keyword = panelReadParameterSchemas.keyword.optional().parse(params.keyword);
         const page = panelReadParameterSchemas.page.optional().parse(params.page);
@@ -455,6 +458,7 @@ function readAdapters(
       contributionWorkflowSteps: selection => governance.roles.contributionWorkflowSteps(selection.primaryKey!),
     },
     [PERMISSION_POLICY]: {
+      count: () => governance.policies.count(),
       options: () => governance.policies.options(),
       resolve: (_selection, params) => governance.policies.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
       query: (_selection, params) => governance.policies.query(params),
@@ -463,6 +467,7 @@ function readAdapters(
       createForm: (_selection, params) => governance.policies.createForm(formParams(params)),
     },
     [ORG_UNIT]: {
+      count: () => governance.orgUnits.count(),
       list: () => governance.orgUnits.list(),
       options: () => governance.orgUnits.options(),
       resolve: (_selection, params) => governance.orgUnits.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
@@ -494,6 +499,7 @@ function readAdapters(
       form: (selection, params) => governance.orgGrants.form(selection.primaryKey!, formParams(params)),
     },
     [SKILL]: {
+      count: async () => (await skillLibrary()).count(),
       async options(_selection, params) {
         return (await agentSkills(params.agentTarget)).options();
       },
@@ -727,6 +733,7 @@ function readAdapters(
       }),
     },
     [BUSINESS_KNOWLEDGE]: {
+      count: () => knowledge.count(),
       query: (_selection, params) => knowledge.query(params),
       counts: (_selection, params) => knowledge.counts(params),
       record: (selection, params) => knowledge.record(selection.primaryKey!, params),
