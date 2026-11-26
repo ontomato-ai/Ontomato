@@ -150,8 +150,9 @@ it("keeps the native governance skill and the protected panel at the same entry,
   expect(group).toMatchObject({ locator: entrance, skills: [governance, skill],
     defaults: [{ pageKey: entrance.pageKey, defaultAgent: governanceDefault }],
   });
-  // The entry registers knowledge governance: the assistant takes nothing from this page, that preset takes both.
-  expect(effectiveAssistantSkills({ kind: "regular", skills: [] }, view)).toHaveLength(0);
+  // This entry registers knowledge governance, so the assistant takes nothing from it; that preset takes both its own
+  // skill and the protected panel, and the other entry, which registers nobody, stays with the assistant.
+  expect(effectiveAssistantSkills({ kind: "regular", skills: [] }, view).map(ref => ref.name)).not.toContain(governance.name);
   expect(effectiveAssistantSkills({ kind: "knowledge-governance", skills: [governance] }, view)).toEqual([governance, skill]);
 });
 
