@@ -1,0 +1,85 @@
+name: Enterprise compatibility network probe
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [synchronize]
+
+permissions: {}
+
+jobs:
+  network:
+    if: >-
+      github.event.pull_request.number == 422 &&
+      github.event.pull_request.head.repo.id == github.event.repository.id &&
+      github.event.pull_request.head.ref == 'ci/enterprise-compat-smoke-green'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Compare unauthenticated GitLab requests
+        shell: bash
+        run: |
+          env -i PATH="$PATH" node <<'JS'
+          const { execFile } = require('node:child_process');
+
+          const targets = [
+            ['GET', 'https://git.uino.com/api/v4/version'],
+            ['POST', 'https://git.uino.com/api/v4/projects/8459/trigger/pipeline'],
+          ];
+          const mimeTypes = new Set([
+            'application/json', 'application/problem+json', 'application/octet-stream',
+            'text/html', 'text/plain',
+          ]);
+          const errorNames = new Set(['TypeError', 'TimeoutError', 'AbortError', 'AggregateError', 'Error']);
+          const causeCodes = new Set([
+            'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENETUNREACH',
+            'EHOSTUNREACH', 'EPIPE', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'UND_ERR_HEADERS_TIMEOUT',
+            'ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+            'SELF_SIGNED_CERT_IN_CHAIN', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+            'ERR_SSL_WRONG_VERSION_NUMBER', 'ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE',
+          ]);
+
+          function contentType(value) {
+            const mime = value?.split(';', 1)[0].trim().toLowerCase();
+            return mimeTypes.has(mime) ? mime : (mime ? 'other' : 'none');
+          }
+
+          async function fetchProbe(method, url) {
+            try {
+              const response = await fetch(url, {
+                method,
+                body: method === 'POST' ? new URLSearchParams() : undefined,
+                redirect: 'error',
+                signal: AbortSignal.timeout(10000),
+              });
+              console.log(`fetch ${method} HTTP ${response.status} ${contentType(response.headers.get('content-type'))}`);
+              await response.body?.cancel().catch(() => {});
+            } catch (error) {
+              const name = errorNames.has(error?.name) ? error.name : 'Error';
+              const codes = [error?.cause, ...(error?.cause?.errors ?? [])]
+                .map(cause => cause?.code).filter(code => causeCodes.has(code));
+              console.log(`fetch ${method} ${name} cause.code=${[...new Set(codes)].join(',') || 'unavailable'}`);
+            }
+          }
+
+          function curlProbe(method, url) {
+            const args = [
+              '-q', '--silent', '--max-time', '10', '--output', '/dev/null',
+              '--write-out', '%{http_code}\t%{content_type}', '--request', method,
+            ];
+            if (method === 'POST') args.push('--data', '');
+            return new Promise(resolve => {
+              execFile('curl', [...args, url], (error, stdout) => {
+                const [status, mime] = stdout.split('\t', 2);
+                const exit = error ? (Number.isInteger(error.code) ? error.code : 'unavailable') : 0;
+                console.log(`curl ${method} exit=${exit} HTTP ${/^\d{3}$/.test(status) ? status : 'unavailable'} ${contentType(mime)}`);
+                resolve();
+              });
+            });
+          }
+
+          (async () => {
+            await Promise.all(targets.map(args => fetchProbe(...args)));
+            await Promise.all(targets.map(args => curlProbe(...args)));
+          })();
+          JS
