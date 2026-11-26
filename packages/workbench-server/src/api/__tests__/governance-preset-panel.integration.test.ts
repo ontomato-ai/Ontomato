@@ -60,6 +60,7 @@ let server: Server | undefined;
 let contentRoot: string;
 
 const panelSourcesByDomain = new Map<string, PanelSkillSource[]>();
+const priorAgentPolicies = new Map<string, string>();
 const publications: { domainId: string; ids: string[] }[] = [];
 const registrations: { domainId: string; id: string }[] = [];
 let failRegistrationFor: string | undefined;
@@ -212,7 +213,10 @@ beforeAll(async () => {
     const domainId = req.header("tk");
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     res.json({ decisions: req.body.requests.map(({ target }: { target: { domainId: string; id: string } }) =>
-      target.domainId === domainId && publications.some(row => row.domainId === domainId && row.ids.includes(target.id))
+      target.domainId === domainId && (
+        priorAgentPolicies.get(target.id) === domainId ||
+        publications.some(row => row.domainId === domainId && row.ids.includes(target.id))
+      )
         ? { allowed: true }
         : { allowed: false, code: "FORBIDDEN", reason: "Agent is not published in this domain" }) });
   });
@@ -343,6 +347,7 @@ it("upgrades existing domains at startup once the registered governance panel is
      VALUES ($1, $2, $3, 'Knowledge governance', 'Existing', NULL, $4::jsonb, 2)`,
     [existingId, domainId, GOVERNANCE_KIND, JSON.stringify(GOVERNANCE_SKILLS)],
   );
+  priorAgentPolicies.set(existingId, domainId);
 
   await initializeDomainPresetAgents(domainId);
   expect((await assistantStore.agents(domainId)).map(agent => agent.kind).sort()).toEqual(presetKinds);
@@ -361,6 +366,7 @@ it("upgrades existing domains at startup once the registered governance panel is
   expect((await assistantStore.agents(startupDomain)).map(agent => agent.kind).sort()).toEqual(presetKinds);
   expect(await storedGovernanceRow(domainId)).toEqual({ id: existingId, skills: [...GOVERNANCE_SKILLS, panelRef] });
   expect(await upgradeRecordCount(domainId)).toBe(1);
+  expect(publications.filter(row => row.domainId === domainId).flatMap(row => row.ids)).not.toContain(existingId);
 });
 
 it("only creates agents through the service-token initialization endpoint and never re-adds an admin-removed skill", async () => {
