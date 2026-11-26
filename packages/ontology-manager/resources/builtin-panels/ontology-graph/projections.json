@@ -642,6 +642,32 @@
     }
   },
   {
+    "id": "builtin-product-og-business-product-graph",
+    "input": {
+      "componentId": "@ontomato/sdk:ProductAssetGraph",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "graph": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "productGraph",
+          "params": {}
+        }
+      },
+      "config": {
+        "expanded": true
+      },
+      "name": "Product asset reference graph",
+      "description": "Every product asset and the references between them, opened in the ontology graph panel's product relation dialog.",
+      "visibility": "platform"
+    }
+  },
+  {
     "id": "builtin-product-og-capability-type-count",
     "input": {
       "componentId": "@ontomato/sdk:ObjectCount",

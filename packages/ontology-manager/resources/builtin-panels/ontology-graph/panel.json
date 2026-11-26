@@ -371,15 +371,9 @@
         }
       },
       "productGraph": {
-        "component": "ProductAssetGraph",
-        "type": "platform:ObjectType",
-        "data": {
-          "graph": "productGraph"
-        },
-        "config": {
-          "expanded": true
-        },
-        "id": "builtin-product-d5a7982b-81f6-4319-b51b-910c3e7f8412"
+        "target": {
+          "projectionId": "builtin-product-og-business-product-graph"
+        }
       },
       "pathFromPicker": {
         "target": {

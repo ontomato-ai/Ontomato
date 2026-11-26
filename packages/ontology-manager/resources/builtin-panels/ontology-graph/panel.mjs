@@ -528,11 +528,18 @@ await mountPanel({
       }
     }
 
-    // Esc or browser Back clears an active object/relation selection cleanly.
+    // Esc or browser Back clears an active object/relation selection cleanly; closes the product graph dialog first.
     usePanelBack(
       () => Boolean(requestedObjectKey.value || requestedRelationKey.value),
       clearSelection,
       { pushHistory: true },
+    );
+    usePanelBack(
+      () => productGraphOpen.value,
+      () => {
+        productGraphOpen.value = false;
+      },
+      { pushHistory: false },
     );
 
     // Every address action below is offered only where the selected element's own read published one.
