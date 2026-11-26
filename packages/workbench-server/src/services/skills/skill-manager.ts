@@ -123,6 +123,18 @@ class SkillManager {
   async getDeleteSkillRestriction(domainId: string, id: string, credentials: AssistantCredentials) {
     return skillWriteRestriction(await this.requireSkillForChange(domainId, id, credentials));
   }
+  async getDeleteSkillRestrictions(domainId: string, ids: readonly string[], credentials: AssistantCredentials) {
+    await assertManagement(workbenchManagement.skillLibraryChange, { domainId }, credentials);
+    const view = await readSkillView(domainId, credentials);
+    return new Map(ids.map(id => {
+      try {
+        return [id, skillWriteRestriction(view.requireSkillById(id))] as const;
+      } catch (error) {
+        if (error instanceof HttpError && error.code === "SKILL_NOT_FOUND") return [id, null] as const;
+        throw error;
+      }
+    }));
+  }
   async getDeleteSkillReferences(domainId: string, id: string, access: ReferenceAccess) {
     const skill = await this.requireSkillForChange(domainId, id, access.credentials);
     if (skillWriteRestriction(skill)) return null;
