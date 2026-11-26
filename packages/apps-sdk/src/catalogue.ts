@@ -214,8 +214,11 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentPicker",
     role: "control",
     group: "conversation",
-    meaning: "Chooses one of the agents the host serves; it grants nothing: the server decides what the reader may use. A page writes it as a tag when its own composer skin differs from the standard one: `<agent-picker variant=\"home\" :agents=\"…\" :agent-id=\"…\" :label=\"…\" @select=\"…\">`.",
-    configProps: ["label"],
+    // The platform's own picker: a panel writes it as a tag when its composer skin differs from the standard one. Not an
+    // author-facing component of its own — the generic conversation entry already carries the default picker.
+    panelUsable: false,
+    meaning:
+      "Chooses one of the agents the host serves; it grants nothing: the server decides what the reader may use. The generic conversation entry draws the standard picker itself; a platform page whose composer skin differs writes `<agent-picker variant=\"home\" :agents=\"…\" :agent-id=\"…\" :label=\"…\" @select=\"…\">` through the entry's `#agent-picker` slot.",
   }),
   defineComponentMeta({
     componentId: "AgentAvatar",
