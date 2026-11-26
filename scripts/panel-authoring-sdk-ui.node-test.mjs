@@ -270,6 +270,10 @@ test("checkPanelWorkspace accepts manifest.components for Vue slots, ObjectList 
         {
           componentId: "ObjectList", module: "@ontomato/sdk/base", exportName: "ObjectList", role: "control", meaning: "List",
           data: { rows: { results: ["panelRecordQuery", "panelRecordList"], required: true, runtimeParams: ["cursor", "size"] } },
+          config: [
+            { name: "columns", type: "array", description: "Column layout", required: false },
+            { name: "rowActions", type: "object", description: "Row action column", required: false },
+          ],
           outputs: { selected: { kind: "object", objectType: "@binding" } },
           ports: { props: [], events: [], slots: [] },
         },
@@ -358,6 +362,10 @@ test("checkPanelWorkspace rejects removed legacy listColumn, listRowDetail, and 
           {
             componentId: "ObjectList", module: "@ontomato/sdk/base", exportName: "ObjectList", role: "control", meaning: "List",
             data: { rows: { results: ["panelRecordQuery", "panelRecordList"], required: true } },
+            config: [
+              { name: "columns", type: "array", description: "Column layout", required: false },
+              { name: "rowActions", type: "object", description: "Row action column", required: false },
+            ],
             outputs: { selected: { kind: "object", objectType: "@binding" } },
             ports: { props: [], events: [], slots: [] },
           },
@@ -558,12 +566,12 @@ test("checkPanelWorkspace accepts official display components bound to metricOut
     const catalogue = {
       version: "1.0.0",
       components: [
-        { componentId: "MetricCard", module: "@ontomato/sdk/base", exportName: "MetricCard", role: "presentation", meaning: "Metric card", data: { result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
-        { componentId: "TypedValue", module: "@ontomato/sdk/base", exportName: "TypedValue", role: "presentation", meaning: "Typed value", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
-        { componentId: "RecordTemplate", module: "@ontomato/sdk/base", exportName: "RecordTemplate", role: "presentation", meaning: "Record template", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
-        { componentId: "InfoBanner", module: "@ontomato/sdk/base", exportName: "InfoBanner", role: "presentation", meaning: "Info banner", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
-        { componentId: "ObjectRefCard", module: "@ontomato/sdk/base", exportName: "ObjectRefCard", role: "presentation", meaning: "Object ref card", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
-        { componentId: "ObjectForm", module: "@ontomato/sdk/base", exportName: "ObjectForm", role: "control", meaning: "Object form", data: { form: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] } }, ports: { props: [], events: [], slots: [] } },
+        { componentId: "MetricCard", module: "@ontomato/sdk/base", exportName: "MetricCard", role: "presentation", meaning: "Metric card", data: { result: { results: ["metricOutput"], required: false } }, config: [{ name: "field", type: "string", description: "Value field", required: false }, { name: "unit", type: "string", description: "Unit", required: false }], ports: { props: [], events: [], slots: [] } },
+        { componentId: "TypedValue", module: "@ontomato/sdk/base", exportName: "TypedValue", role: "presentation", meaning: "Typed value", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, config: [{ name: "field", type: "string", description: "Value field", required: false }, { name: "kind", type: "string", description: "Value kind", required: false }], ports: { props: [], events: [], slots: [] } },
+        { componentId: "RecordTemplate", module: "@ontomato/sdk/base", exportName: "RecordTemplate", role: "presentation", meaning: "Record template", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, config: [{ name: "template", type: "string", description: "Sentence template", required: false }], ports: { props: [], events: [], slots: [] } },
+        { componentId: "InfoBanner", module: "@ontomato/sdk/base", exportName: "InfoBanner", role: "presentation", meaning: "Info banner", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, config: [{ name: "tone", type: "string", description: "Tone", required: false }, { name: "field", type: "string", description: "Text field", required: false }], ports: { props: [], events: [], slots: [] } },
+        { componentId: "ObjectRefCard", module: "@ontomato/sdk/base", exportName: "ObjectRefCard", role: "presentation", meaning: "Object ref card", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, config: [{ name: "field", type: "string", description: "Reference field", required: false }, { name: "caption", type: "string", description: "Caption", required: false }], ports: { props: [], events: [], slots: [] } },
+        { componentId: "ObjectForm", module: "@ontomato/sdk/base", exportName: "ObjectForm", role: "control", meaning: "Object form", data: { form: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] } }, config: [{ name: "presentation", type: "string", description: "Form presentation", required: false }, { name: "cardColumns", type: "number", description: "Card columns", required: false }, { name: "groups", type: "array", description: "Field groups", required: false }], ports: { props: [], events: [], slots: [] } },
       ],
     };
     const typeTable = {
@@ -597,8 +605,9 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
       source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
     }).map(({ metadata }) => {
       const rest = { ...metadata };
+      const config = (metadata.configProps ?? []).map(name => ({ name, type: "json", description: name, required: false }));
       delete rest.configProps;
-      return { ...rest, ports: { props: [], events: [], slots: [] } };
+      return { ...rest, ...(config.length ? { config } : {}), ports: { props: [], events: [], slots: [] } };
     });
     const catalogue = { version: "1.0.0", components };
     import { customerOntologyReads } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/platform-object-types.ts")).href)};
@@ -690,8 +699,9 @@ test("panel check accepts top-level targetless customer Actions on ObjectForm an
         source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
       }).map(({ metadata }) => {
         const rest = { ...metadata };
+        const config = (metadata.configProps ?? []).map(name => ({ name, type: "json", description: name, required: false }));
         delete rest.configProps;
-        return { ...rest, ports: { props: [], events: [], slots: [] } };
+        return { ...rest, ...(config.length ? { config } : {}), ports: { props: [], events: [], slots: [] } };
       });
       const typeTable = {
         resultSchemas: { panelFormDescription: { type: "object" } },
@@ -776,7 +786,12 @@ test("panel check accepts standalone ordinary projections that omit data", () =>
       const components = componentMetadata({
         tsconfig: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/tsconfig.json"),
         source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
-      }).map(({ metadata }) => ({ ...metadata, ports: { props: [], events: [], slots: [] } }));
+      }).map(({ metadata }) => {
+        const rest = { ...metadata };
+        const config = (metadata.configProps ?? []).map(name => ({ name, type: "json", description: name, required: false }));
+        delete rest.configProps;
+        return { ...rest, ...(config.length ? { config } : {}), ports: { props: [], events: [], slots: [] } };
+      });
       const typeTable = {
         resultSchemas: {},
         objectTypes: { Order: { reads: {} } },
@@ -803,6 +818,88 @@ test("panel check accepts standalone ordinary projections that omit data", () =>
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("checkPanelWorkspace rejects config keys the SDK catalogue does not publish, and builtin panels stay exempt", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "panel-config-published-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "registration.json"), JSON.stringify({
+    panels: [{ id: "metrics-panel", mode: "create", input: { name: "Metrics", description: "", visibility: "domain" } }],
+  }, null, 2));
+  writeFileSync(join(dir, "panel.json"), JSON.stringify({
+    manifest: {
+      state: { selectedMetric: { type: { kind: "object", objectType: "platform:MetricView" }, deepLink: true } },
+      members: {
+        kpi: {
+          component: "MetricCard",
+          type: "platform:MetricView",
+          target: "selectedMetric",
+          data: { result: "result" },
+          config: { field: "total_count", unit: "items", unpublishedKnob: true },
+        },
+      },
+    },
+    content: { messages: { en: { "panel.name": "Metrics" } } },
+  }, null, 2));
+  writeFileSync(join(dir, "panel.html"), '<div id="app"><projection slot="kpi"></projection></div>\n');
+  writeFileSync(join(dir, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n');
+
+  const metricCard = (config) => ({
+    componentId: "MetricCard", module: "@ontomato/sdk/base", exportName: "MetricCard", role: "presentation",
+    meaning: "Metric card", data: { result: { results: ["metricOutput"], required: false } },
+    ...(config === undefined ? {} : { config }),
+    ports: { props: [], events: [], slots: [] },
+  });
+  const prop = (name) => ({ name, type: "string", description: name, required: false });
+  const runWorkspace = (components) => execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", `
+    import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+    import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+    const typeTable = {
+      objectTypes: { "platform:MetricView": { reads: checks.platformObjectTypes["platform:MetricView"].reads } },
+    };
+    const catalogue = { version: "1.0.0", components: ${JSON.stringify(components)} };
+    console.log(JSON.stringify(await checkPanelWorkspace(${JSON.stringify(dir)}, { checks, catalogue, version: "1.0.0", typeTable })));
+  `], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+  assert.throws(
+    () => runWorkspace([metricCard([prop("field"), prop("unit")])]),
+    (error) => {
+      const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
+      assert.match(output, /config\.unpublishedKnob is not in the author-facing documentation of @ontomato\/sdk:MetricCard/u, output);
+      assert.match(output, /documented config keys: field, unit/u, output);
+      return true;
+    },
+    "an unpublished config key should fail the offline check",
+  );
+  assert.throws(
+    () => runWorkspace([metricCard([prop("field")])]),
+    (error) => {
+      const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
+      assert.match(output, /config\.unit, config\.unpublishedKnob are not in the author-facing documentation/u, output);
+      return true;
+    },
+    "every unpublished key is reported together",
+  );
+
+  const builtinDir = mkdtempSync(join(tmpdir(), "panel-config-builtin-"));
+  t.after(() => rmSync(builtinDir, { recursive: true, force: true }));
+  writeFileSync(join(builtinDir, "registration.json"), JSON.stringify({
+    panels: [{ id: "builtin-product-test", input: { name: "Test", description: "Test" } }],
+  }));
+  writeFileSync(join(builtinDir, "panel.json"), JSON.stringify({
+    manifest: {
+      state: {},
+      members: { kpi: { component: "MetricCard", operation: "platform:Relationship.save", config: { unpublishedKnob: true } } },
+    },
+  }));
+  writeFileSync(join(builtinDir, "panel.html"), '<div id="app"><projection slot="kpi"></projection></div>\n');
+  writeFileSync(join(builtinDir, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n');
+  const builtin = JSON.parse(execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", `
+    import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+    import { checkBuiltinPanelSource } from ${JSON.stringify(PANEL_CHECK_URL)};
+    console.log(JSON.stringify(await checkBuiltinPanelSource(${JSON.stringify(builtinDir)}, { ...checks, draftReadOperationIds: [] }, { assignIds: true })));
+  `], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  assert.equal(builtin.panelId, "builtin-product-test");
 });
 
 test("describePanelType includes top-level targetless operations affecting the queried type", async () => {
