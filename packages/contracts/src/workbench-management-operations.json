@@ -13,6 +13,8 @@
   "opsKnowledgeRead": { "id": "ops.knowledge.read", "name": "Read operations knowledge", "access": "read" },
   "opsDiagnosisCreate": { "id": "ops.diagnoses.create", "name": "Start a diagnosis from evidence", "access": "change" },
   "opsEvidenceRead": { "id": "ops.evidence.read", "name": "Read diagnostic service evidence", "access": "read" },
+  "opsEvidenceLogsRead": { "id": "ops.evidence.logs.read", "name": "Read service logs for a diagnosis", "access": "read" },
+  "opsEvidenceRuntimeRead": { "id": "ops.evidence.runtime.read", "name": "Read runtime session evidence for a diagnosis", "access": "read" },
   "opsDslRead": { "id": "ops.dsl.read", "name": "Read the operations DSL console", "access": "read" },
   "opsDslExecute": { "id": "ops.dsl.execute", "name": "Run an operations DSL query", "access": "change" },
   "opsInspectionRead": { "id": "ops.inspection.read", "name": "Read scheduled inspection options", "access": "read" },

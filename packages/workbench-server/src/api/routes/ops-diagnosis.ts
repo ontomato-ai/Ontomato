@@ -35,13 +35,13 @@ router.post("/diagnoses", requireManagement(workbenchManagement.opsDiagnosisCrea
 const evidence: ReturnType<typeof Router> = Router();
 const provider = (value: unknown) => z.enum(["workbench", "ontology"]).parse(value);
 const readEvidence = requireManagement(workbenchManagement.opsEvidenceRead);
-const readTurnEvidence = requireManagement(workbenchManagement.opsTurnEvidenceRead);
+const readRuntimeEvidence = requireManagement(workbenchManagement.opsEvidenceRuntimeRead);
 const readKnowledge = requireManagement(workbenchManagement.opsKnowledgeRead);
 evidence.post("/resolve", readEvidence, wrap(async (req, res) => {
   const c = context(req), { target } = z.object({ target: diagnosisTargetSchema }).strict().parse(req.body);
   res.json(await resolveDiagnosisEvidence(target, { ...c.owner, ...c.credentials }));
 }));
-evidence.get("/logs/:service", requireManagement(workbenchManagement.opsLogsRead), wrap(async (req, res) => {
+evidence.get("/logs/:service", requireManagement(workbenchManagement.opsEvidenceLogsRead), wrap(async (req, res) => {
   let query;
   try { query = serviceLogQuerySchema.parse(req.query); } catch { throw new HttpError(400, "Invalid log query", "INVALID_LOG_QUERY"); }
   const service = serviceLogServiceSchema.parse(req.params.service), c = context(req);
@@ -49,16 +49,16 @@ evidence.get("/logs/:service", requireManagement(workbenchManagement.opsLogsRead
     res.json(await (service === "workbench" ? queryWorkbenchServiceLogs(query) : service === "ontology" ? queryOntologyServiceLogs(query, c.credentials) : queryRuntimeServiceLogs(query, c.owner.domainId)));
   } catch (e) { if (e instanceof LogQueryError) throw new HttpError(e.status, e.message, e.code); throw e; }
 }));
-evidence.get("/runtime/:owner/sessions/:sessionId", readTurnEvidence, wrap(async (req, res) => {
+evidence.get("/runtime/:owner/sessions/:sessionId", readRuntimeEvidence, wrap(async (req, res) => {
   const c = context(req); res.json(await readEvidenceSession(provider(req.params.owner), id(req, "sessionId"), { ...c.owner, ...c.credentials }));
 }));
-evidence.get("/runtime/:owner/sessions/:sessionId/runs/:runId", readTurnEvidence, wrap(async (req, res) => {
+evidence.get("/runtime/:owner/sessions/:sessionId/runs/:runId", readRuntimeEvidence, wrap(async (req, res) => {
   const c = context(req); res.json(await readEvidenceRun(provider(req.params.owner), id(req, "sessionId"), id(req, "runId"), { ...c.owner, ...c.credentials }));
 }));
-evidence.get("/runtime/:owner/sessions/:sessionId/artifacts/:artifactId", readTurnEvidence, wrap(async (req, res) => {
+evidence.get("/runtime/:owner/sessions/:sessionId/artifacts/:artifactId", readRuntimeEvidence, wrap(async (req, res) => {
   const c = context(req); res.json(await readEvidenceArtifact(provider(req.params.owner), id(req, "sessionId"), id(req, "artifactId"), { ...c.owner, ...c.credentials }));
 }));
-evidence.get("/runtime/:owner/sessions/:sessionId/artifacts/:artifactId/content", readTurnEvidence, wrap(async (req, res) => {
+evidence.get("/runtime/:owner/sessions/:sessionId/artifacts/:artifactId/content", readRuntimeEvidence, wrap(async (req, res) => {
   const c = context(req), source = provider(req.params.owner), session = id(req, "sessionId"), artifact = id(req, "artifactId");
   const a = await readEvidenceArtifact(source, session, artifact, { ...c.owner, ...c.credentials });
   let bytes: Buffer;

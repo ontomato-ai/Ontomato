@@ -24,8 +24,8 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const queryServiceToken = "ops-query-fixture";
 const evidenceOperations = new Set<string>([
   workbenchManagement.opsEvidenceRead.id,
-  workbenchManagement.opsTurnEvidenceRead.id,
-  workbenchManagement.opsLogsRead.id,
+  workbenchManagement.opsEvidenceRuntimeRead.id,
+  workbenchManagement.opsEvidenceLogsRead.id,
   workbenchManagement.opsKnowledgeRead.id,
   workbenchManagement.opsDslExecute.id,
 ]);
@@ -231,7 +231,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     expect(toolText).toContain("workbench");
     expect(toolText).not.toContain("UNAUTHENTICATED");
     expect(toolText).not.toContain("PERMISSION_DENIED");
-    expect(approvedManagement.has(`alice:a/${workbenchManagement.opsLogsRead.id}`)).toBe(true);
+    expect(approvedManagement.has(`alice:a/${workbenchManagement.opsEvidenceLogsRead.id}`)).toBe(true);
     expect(final.messages.some((m) => m.message.role === "system")).toBe(false);
     expect(JSON.stringify(final)).not.toContain("ops-runtime-fixture"); expect(final.run.resolvedSkills.map((s) => s.skill.name)).toContain("ops-diagnosis");
     expect((await api(`/api/observe/agent/sessions/${session}/runs`, { message: "changed" }, "alice:a", run)).status).toBe(409);
