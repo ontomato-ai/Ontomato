@@ -86,7 +86,7 @@ const draft = ref(defaultPersonalWorkspace());
 const draftChildren=ref<Array<{assetId:string;column:'main'|'sidebar';span?:'full'|'half';width?:number}>>([]);
 const draftPageLayout=ref({mode:'columns' as 'columns'|'grid',mainWidth:8,gap:'comfortable' as 'compact'|'normal'|'comfortable'});
 const addProductId=ref('');
-const reusableProducts=computed(()=>productAssets.value.filter(asset=>asset.id!==homeAsset.value?.id&&['page','widget','widget-group','operation-panel','dashboard','object-view','metric-widget','action-view','collection-view','object-projection','agent-profile'].includes(asset.document.kind)&&!(asset.document.kind==='page'&&asset.document.isTemplate)));
+const reusableProducts=computed(()=>productAssets.value.filter(asset=>asset.id!==homeAsset.value?.id&&['page','widget','widget-group','operation-panel','dashboard','object-view','metric-widget','action-view','collection-view','object-projection'].includes(asset.document.kind)&&!(asset.document.kind==='page'&&asset.document.isTemplate)));
 function addProduct(){if(addProductId.value&&!draftChildren.value.some(child=>child.assetId===addProductId.value))draftChildren.value.push({assetId:addProductId.value,column:'main',span:'full'});}
 async function saveComposition(){
   if(!homeAsset.value || homeAsset.value.document.kind!=='page')throw new Error('Page unavailable');

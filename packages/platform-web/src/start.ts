@@ -3,7 +3,7 @@ import { createApp, defineAsyncComponent,h,defineComponent,type PropType, type A
 import type {ProductAsset} from '@ontomato/contracts/product-assets';
 import {productRenderersKey} from '@ontomato/ontology-manager';
 import PlatformCollectionList from './pages/PlatformCollectionList.vue';
-import {productPlatformRuntimeKey,productAgentRuntimeKey} from '@ontomato/contracts/product-assets';
+import {productPlatformRuntimeKey} from '@ontomato/contracts/product-assets';
 import {installProductEmbedding} from './app-host';
 import { createPinia, type Pinia } from "pinia";
 import ElementPlus from "element-plus";
@@ -78,7 +78,6 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
 
   const app = createApp(App);
   app.provide(productPlatformRuntimeKey,defineAsyncComponent(()=>import('./pages/PersonalWorkspaceRoute.vue')));
-  app.provide(productAgentRuntimeKey,defineAsyncComponent(()=>import('./pages/ProductAgentRuntime.vue')));
   const platformRenderers=new Map(['Conversation','Favorite','RecentVisit','Task','FavoriteApplication','Dashboard'].map(type=>[
     `collection-view:platform:${type}:list`,
     defineComponent({

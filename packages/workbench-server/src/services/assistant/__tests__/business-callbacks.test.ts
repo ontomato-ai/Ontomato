@@ -10,8 +10,6 @@ import { runtimeBusinessCallbacksSchema, type RuntimeBusinessCallbacks } from "@
 import { workbenchServerResourceRoot } from "../../../content/resources";
 
 const mocks = vi.hoisted(() => ({
-  profile: vi.fn(),
-  source: vi.fn(),
   record: vi.fn(),
   skills: vi.fn(),
   open: vi.fn(),
@@ -20,10 +18,7 @@ const mocks = vi.hoisted(() => ({
   authorize: vi.fn(),
 }));
 
-vi.mock("../../product-assets/agent-profile", () => ({
-  profileForSession: mocks.profile,
-  profileSourceForSession: mocks.source,
-}));
+
 vi.mock("../../../utils/backend-client", () => ({
   backendPost: vi.fn(),
   buildBackendHeaders: (_token: unknown, _user: unknown, _locale: unknown, _key: unknown, headers: unknown) => headers ?? {},
@@ -67,7 +62,6 @@ import { unwrapCallbackCredential } from "../../agent-runtime/callback-credentia
 const sessionId = "11111111-1111-4111-8111-111111111111";
 const runId = "22222222-2222-4222-8222-222222222222";
 const workspaceId = "33333333-3333-4333-8333-333333333333";
-const releaseId = "44444444-4444-4444-8444-444444444444";
 const mcpServiceId = "55555555-5555-4555-8555-555555555555";
 const analyst = { name: "analyst", namespace: { kind: "provider" as const, provider: "ontology" } };
 const digest = "a".repeat(64);
@@ -97,9 +91,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.source.mockResolvedValue(null);
   mocks.open.mockResolvedValue({ id: runId });
-  mocks.profile.mockResolvedValue(null);
   mocks.skills.mockResolvedValue({ skills: [{ skill: analyst, digest }], pageControl: true });
   mocks.overview.mockResolvedValue("Ontology");
   mocks.hasGovernance.mockReturnValue(false);
@@ -152,7 +144,6 @@ async function assertNarrowedCallbacks(callbacks: RuntimeBusinessCallbacks) {
     generation: "/runtime-context",
     retrieval: "",
     governance: "",
-    product: "/tool-1",
   };
   for (const [key, entry] of Object.entries(callbacks) as [keyof RuntimeBusinessCallbacks, NonNullable<RuntimeBusinessCallbacks[keyof RuntimeBusinessCallbacks]>][]) {
     const declaredPrefix = new URL(entry.baseUrl).pathname;
@@ -211,35 +202,6 @@ it("adds the governance callback only when a governance skill is loaded", async 
     "workbench",
   ]);
   expect(run.businessCallbacks?.governance?.baseUrl).toBe(`http://workbench.test/api/assistant/sessions/${sessionId}/governance-window`);
-  await assertNarrowedCallbacks(run.businessCallbacks!);
-});
-
-it("declares only the product callback for product-profile runs and keeps absolute tool paths", async () => {
-  mocks.source.mockResolvedValue({ profileId: "profile" });
-  mocks.profile.mockResolvedValue({
-    id: "profile",
-    agentId: "agent",
-    releaseId,
-    instructions: "Instructions",
-    tools: [{ assetId: "tool-1", name: "Tool 1", kind: "action", parameters: [] }],
-    contextViews: [],
-    issues: [],
-  });
-  const run = runtimeStartRunRequestSchema.parse(await prepareAnalystRun(basePreparation(null)));
-  expect(run).not.toHaveProperty("environment");
-  expect(Object.keys(run.businessCallbacks ?? {})).toEqual(["product"]);
-  expect(run.businessCallbacks?.product?.baseUrl).toBe(
-    `http://workbench.test/api/product-assets/profile/releases/${releaseId}/tools`,
-  );
-  expect(run.definition.productTools?.[0]?.path).toBe(
-    `/api/product-assets/profile/releases/${releaseId}/tools/tool-1?sessionId=${sessionId}`,
-  );
-  // Bare /tools without trailing slash/toolId must be rejected because credential pathPrefix ends with /tools/.
-  const bareTools = await callWithCredential(
-    `/api/product-assets/profile/releases/${releaseId}/tools`,
-    run.businessCallbacks!.product!.credential,
-  );
-  expect(bareTools.status).toBe(401);
   await assertNarrowedCallbacks(run.businessCallbacks!);
 });
 

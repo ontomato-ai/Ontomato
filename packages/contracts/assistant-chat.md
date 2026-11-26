@@ -52,8 +52,8 @@ a selected user uses their current shared Key through the existing internal reso
 transport contains only executionActor references, never executor credentials. Same-run steer and
 followup keep the selection; an idle wakeup creates a new run and reads the current definition.
 Sessions, files, notifications, feedback and page-skill filtering remain with the initiator.
-AgentProfile.agentId references the same Node definition, including its current execution setting;
-profiles do not store a separate execution user or principal permission.
+Run preparation and page-skill eligibility read the current AgentDefinition.
+Session admission and continuation require agent use permission.
 
 classNames scopes both the initial ontology context and retrieval, intersected with
 the executor's authorized classes by ontology. graphScope is removed without

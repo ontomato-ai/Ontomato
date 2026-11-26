@@ -5,7 +5,6 @@ import { z } from "zod";
 import { modelSelectionSchema } from "./model-settings";
 import { codeLimitsSchema } from "./agent-runtime-code";
 import { runtimeMcpRefSchema } from "./agent-runtime-mcp";
-import {runtimeProductToolSchema} from './agent-runtime-product-tools';
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
 import { runtimeBusinessCallbacksSchema } from "./agent-runtime-business-callbacks";
 import { runtimePresentationCallbackSchema } from "./agent-presentation";
@@ -69,12 +68,8 @@ export const runtimeAgentDefinitionSchema = z
       .strict()
       .optional(),
     externalMcp: z.array(runtimeMcpRefSchema),
-    productTools:z.array(runtimeProductToolSchema).max(100).optional(),
-    toolSurface:z.enum(['standard','product']).optional(),
   })
-  .strict().superRefine((definition,context)=>{
-    if(definition.toolSurface==='product'&&(definition.skills.length||definition.externalMcp.length))context.addIssue({code:'custom',message:'Product tool surfaces cannot include inherited skills or MCP tools'});
-  });
+  .strict();
 
 /** Stored definitions predate the engine's ownership of context compaction. */
 export const storedRuntimeAgentDefinitionSchema = z.preprocess(value => {
