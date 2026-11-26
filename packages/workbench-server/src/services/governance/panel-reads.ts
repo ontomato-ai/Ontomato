@@ -244,6 +244,23 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       createForm(params: GovernanceFormParams): Promise<PanelFormDescription> {
         return owner("governance-policy-create-form", "/panel/governance/policies/form", formBody(undefined, params), panelFormDescriptionSchema);
       },
+      async objectGrantCandidates(id: string, params: Record<string, unknown>): Promise<PanelOptionList> {
+        const workbenchCatalog = options.loadPolicyCatalog ? await options.loadPolicyCatalog() : undefined;
+        return owner("governance-policy-object-candidates", "/panel/governance/policies/object-candidates", {
+          id,
+          field: params.field,
+          ...(params.values !== undefined && { values: params.values }),
+          ...(params.keyword !== undefined && { keyword: params.keyword }),
+          ...(workbenchCatalog ? { workbenchCatalog } : {}),
+        }, panelOptionListSchema);
+      },
+      dataClassCandidates(id: string, params: Record<string, unknown>): Promise<PanelOptionList> {
+        return owner("governance-policy-data-class-candidates", "/panel/governance/policies/data-class-candidates", {
+          id,
+          ...(params.values !== undefined && { values: params.values }),
+          ...(params.keyword !== undefined && { keyword: params.keyword }),
+        }, panelOptionListSchema);
+      },
     },
     orgUnits: {
       count: () => count("governance-org-units-count", "/panel/governance/org-units/list"),

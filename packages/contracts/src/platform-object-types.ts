@@ -206,7 +206,6 @@ export const PREVIEW_POLICY_ENTRY_GRANT = "permissionPolicies.previewEntryGrant"
 export const GRANT_POLICY_ENTRIES = "permissionPolicies.grantEntries";
 export const REVOKE_POLICY_ENTRIES = "permissionPolicies.revokeEntries";
 export const PREVIEW_POLICY_ENTRY_REVOKE = "permissionPolicies.previewEntryRevoke";
-export const POLICY_OBJECT_GRANT_CANDIDATES = "permissionPolicies.objectGrantCandidates";
 export const LIST_PENDING_POLICY_GRANTS = "permissionPolicies.listPending";
 /** Pending grants across the domain, grouped by policy: the policy list page's header entry. */
 export const LIST_PENDING_POLICY_GRANTS_SUMMARY = "permissionPolicies.listPendingSummary";
@@ -716,10 +715,21 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...referenceReads,
       ...governancePageQuery,
       ...modelReads,
+      objectGrantCandidates: {
+        source: "object", parameterMode: "fixed",
+        params: { field: "objectGrantField", values: "panelFormValues", keyword: "keyword" },
+        requiredParams: ["field"],
+        result: "panelOptionList",
+      },
+      dataClassCandidates: {
+        source: "object", parameterMode: "fixed",
+        params: { values: "panelFormValues", keyword: "keyword" },
+        result: "panelOptionList",
+      },
     },
     operations: [
       `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
-      PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES, REVOKE_POLICY_ENTRIES, PREVIEW_POLICY_ENTRY_REVOKE, POLICY_OBJECT_GRANT_CANDIDATES,
+      PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES, REVOKE_POLICY_ENTRIES, PREVIEW_POLICY_ENTRY_REVOKE,
       LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY, RESOLVE_PENDING_POLICY_GRANT,
       INSPECT_POLICY_ACCESS,
     ],
