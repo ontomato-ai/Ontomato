@@ -28,7 +28,6 @@ describe("application standalone link owner read and save routing", () => {
     source: "domain" as const,
     canMaintain: true,
     canEditEntries: true,
-    canGrant: true,
     entryCount: 1,
     entry: { path: "/applications/app-sales", renderer: "panels" },
     panelUses: [],

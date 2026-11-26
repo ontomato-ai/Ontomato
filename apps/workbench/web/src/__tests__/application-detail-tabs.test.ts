@@ -14,7 +14,7 @@ import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { panelAddress, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { APPLICATION, ROLE, USER, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
@@ -164,7 +164,6 @@ function mountApplicationDetail(options: {
   initialState?: Record<string, unknown>;
   canMaintain?: boolean;
   canEditEntries?: boolean;
-  canGrant?: boolean;
 } = {}) {
   const reads: DataReadRequest[] = [];
   const opsReads: OpsReadRequest[] = [];
@@ -176,7 +175,6 @@ function mountApplicationDetail(options: {
 
   const canMaintain = options.canMaintain ?? true;
   const canEditEntries = options.canEditEntries ?? true;
-  const canGrant = options.canGrant ?? true;
 
   const router = createRouter({
     history: createMemoryHistory(),
@@ -275,40 +273,6 @@ function mountApplicationDetail(options: {
             },
           });
         }
-        if (member === "grantSubmit") {
-          return Response.json({
-            status: "ready",
-            value: {
-              grant: {
-                kind: "action",
-                handlerRef: "applications.grant",
-                label: "Grant",
-                effect: "write",
-                target: { source: "input", input: "target" },
-                inputSchema: {},
-                resultSchema: {},
-                batch: false,
-              },
-            },
-          });
-        }
-        if (member === "grantsList") {
-          return Response.json({
-            status: "ready",
-            value: {
-              revoke: {
-                kind: "action",
-                handlerRef: "applications.grant",
-                label: "Revoke",
-                effect: "write",
-                target: { source: "input", input: "target" },
-                inputSchema: {},
-                resultSchema: {},
-                batch: false,
-              },
-            },
-          });
-        }
         return Response.json({ status: "ready", value: {} });
       }
 
@@ -320,12 +284,10 @@ function mountApplicationDetail(options: {
             primaryKey: "app-1",
             className: APPLICATION,
             label: "Sample App",
-            fields: { id: "app-1", domainShared: false },
+            fields: { id: "app-1" },
             outputs: {
               canMaintain,
               canEditEntries,
-              canGrant,
-              domainShared: false,
               openPath: "/applications/app-1",
             },
           },
@@ -350,34 +312,6 @@ function mountApplicationDetail(options: {
       }
       if (member === "save" && body.dataName === "form") {
         return Response.json({ status: "ready", value: entryFormDescription("identity") });
-      }
-      if (member === "userPicker" && body.dataName === "options") {
-        return Response.json({
-          status: "ready",
-          value: {
-            options: [{ primaryKey: "user-1", value: { className: USER, primaryKey: "user-1" }, label: "Alice" }],
-          },
-        });
-      }
-      if (member === "rolePicker" && body.dataName === "options") {
-        return Response.json({
-          status: "ready",
-          value: {
-            options: [{ primaryKey: "role-1", value: { className: ROLE, primaryKey: "role-1" }, label: "Editor" }],
-          },
-        });
-      }
-      if (member === "grantsList" && body.dataName === "rows") {
-        return Response.json({
-          status: "ready",
-          value: [
-            {
-              primaryKey: "grant-1",
-              label: "Alice",
-              fields: { principalKind: "principal", principalId: "user-1", verb: "use", revocable: true },
-            },
-          ],
-        });
       }
       return Response.json({ status: "empty" });
     }
@@ -449,7 +383,6 @@ describe("application-detail tab mount retention and dialog/permission unmountin
       initialState: { selected: appRef("app-1"), tab: "entries" },
       canMaintain: true,
       canEditEntries: true,
-      canGrant: true,
     });
     const mounted = await harness.open();
     try {
@@ -467,10 +400,8 @@ describe("application-detail tab mount retention and dialog/permission unmountin
       expect(entriesPanel!.style.display).not.toBe("none");
       expect(mounted.element.querySelector('[data-tab="identity"]')).toBeNull();
       expect(mounted.element.querySelector('[data-tab="assets"]')).toBeNull();
-      expect(mounted.element.querySelector('[data-tab="grants"]')).toBeNull();
       expect(harness.reads.some((r) => r.memberPath[0]?.member === "save")).toBe(false);
       expect(harness.reads.some((r) => r.memberPath[0]?.member === "usedPanelsList")).toBe(false);
-      expect(harness.reads.some((r) => r.memberPath[0]?.member === "grantsList")).toBe(false);
 
       const entriesListEl = entriesPanel!.querySelector(".sdk-object-list") as HTMLElement | null;
       expect(entriesListEl).not.toBeNull();
@@ -522,7 +453,6 @@ describe("application-detail tab mount retention and dialog/permission unmountin
       initialState: { selected: appRef("app-1"), tab: "entries" },
       canMaintain: true,
       canEditEntries: true,
-      canGrant: true,
     });
     const mounted = await harness.open();
     try {
@@ -576,159 +506,6 @@ describe("application-detail tab mount retention and dialog/permission unmountin
       });
     } finally {
       mounted.app.unmount();
-    }
-  });
-
-  it("unmounts grantSubmit, userPicker, and rolePicker when grant dialog is closed and unmounts grants tab & dialog without canGrant", async () => {
-    // Part A: with canGrant = true, grants tab is mounted, but grant dialog projections stay unmounted until opened.
-    const allowedHarness = mountApplicationDetail({
-      initialState: { selected: appRef("app-1"), tab: "grants" },
-      canMaintain: true,
-      canEditEntries: true,
-      canGrant: true,
-    });
-    const allowedMounted = await allowedHarness.open();
-    try {
-      await waitFor(
-        () =>
-          allowedMounted.element.querySelector('[data-tab="grants"]')?.textContent?.includes("Alice") === true
-          && allowedHarness.controller() !== null,
-        "grants tab ready when canGrant is true",
-      );
-
-      const grantsPanel = allowedMounted.element.querySelector('[data-tab="grants"]') as HTMLElement | null;
-      expect(grantsPanel).not.toBeNull();
-      expect(grantsPanel!.style.display).not.toBe("none");
-
-      // Dialog closed: grantSubmit, userPicker, and rolePicker are not mounted or exposed.
-      expect(allowedHarness.reads.some((r) => r.memberPath[0]?.member === "userPicker")).toBe(false);
-      expect(allowedHarness.reads.some((r) => r.memberPath[0]?.member === "rolePicker")).toBe(false);
-      expect(document.body.querySelector(".apps-dialog-footer")).toBeNull();
-      expect(
-        await allowedHarness.controller()!.executeAction!({ operation: "grantSubmit.grant", agentRun: AGENT_RUN }),
-      ).toMatchObject({
-        ok: false,
-        reason: "action_not_found",
-      });
-
-      // Open grant dialog: userPicker and grantSubmit mount; switching to role mounts rolePicker.
-      const addGrantBtn = Array.from(grantsPanel!.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
-        b.textContent?.includes("Add grant"),
-      );
-      expect(addGrantBtn).toBeTruthy();
-      addGrantBtn!.click();
-
-      await waitFor(
-        () =>
-          allowedHarness.reads.some((r) => r.memberPath[0]?.member === "userPicker")
-          && document.body.querySelector(".apps-dialog-footer") !== null,
-        "grant dialog mounted userPicker and grantSubmit on open",
-      );
-      expect(allowedHarness.reads.some((r) => r.memberPath[0]?.member === "rolePicker")).toBe(false);
-
-      // While open with a selected principal, grantSubmit is mounted and live (awaiting confirmation, NOT action_not_found).
-      allowedHarness.controller()!.applyState({
-        grantUser: { className: USER, primaryKey: "user-1" },
-      });
-      await waitFor(() => {
-        const buttons = Array.from(document.body.querySelectorAll<HTMLButtonElement>(".apps-dialog-footer button"));
-        const submitBtn = buttons.find((b) => b.textContent?.includes("Grant"));
-        return Boolean(submitBtn && !submitBtn.disabled);
-      }, "grantSubmit button enabled once grantPrincipalId syncs");
-      const openGrant = await allowedHarness.controller()!.executeAction!({
-        operation: "grantSubmit.grant",
-        agentRun: AGENT_RUN,
-      });
-      expect(openGrant).toMatchObject({
-        ok: true,
-        kind: "awaiting_confirmation",
-        operation: "grantSubmit.grant",
-      });
-
-      allowedHarness.controller()!.applyState({ grantPrincipalKind: "role" });
-      await waitFor(
-        () => allowedHarness.reads.some((r) => r.memberPath[0]?.member === "rolePicker"),
-        "rolePicker mounted when grantPrincipalKind switches to role",
-      );
-
-      // Close grant dialog: footer & projections unmount immediately and grantSubmit is no longer exposed.
-      allowedHarness.controller()!.applyState({ grantDialog: null });
-      await waitFor(
-        () => document.body.querySelector(".apps-dialog-footer") === null,
-        "grant dialog footer unmounted on close",
-      );
-      expect(
-        await allowedHarness.controller()!.executeAction!({ operation: "grantSubmit.grant", agentRun: AGENT_RUN }),
-      ).toMatchObject({
-        ok: false,
-        reason: "action_not_found",
-      });
-    } finally {
-      allowedMounted.app.unmount();
-    }
-
-    leaveFrame();
-    useApplicationCatalog().applications.value = [];
-    document.body.innerHTML = "";
-
-    // Part B: with canGrant = false, grants tab and grant dialog are never mounted even if state asks for them.
-    const deniedHarness = mountApplicationDetail({
-      initialState: { selected: appRef("app-1"), tab: "grants", grantDialog: true },
-      canMaintain: true,
-      canEditEntries: true,
-      canGrant: false,
-    });
-    const deniedMounted = await deniedHarness.open();
-    try {
-      await waitFor(
-        () =>
-          deniedMounted.element.querySelector('[data-tab="identity"]') !== null
-          && deniedHarness.controller() !== null,
-        "panel ready when canGrant is false",
-      );
-
-      const identityPanel = deniedMounted.element.querySelector('[data-tab="identity"]') as HTMLElement;
-      await waitFor(
-        () => identityPanel.style.display !== "none",
-        "falls back to identity tab when canGrant is false",
-      );
-
-      expect(deniedMounted.element.querySelector('[data-tab="grants"]')).toBeNull();
-      expect(document.body.querySelector(".apps-dialog-footer")).toBeNull();
-      expect(deniedHarness.reads.some((r) => r.memberPath[0]?.member === "grantsList")).toBe(false);
-      expect(deniedHarness.reads.some((r) => r.memberPath[0]?.member === "shareStatusDesc")).toBe(false);
-      expect(deniedHarness.reads.some((r) => r.memberPath[0]?.member === "userPicker")).toBe(false);
-      expect(deniedHarness.reads.some((r) => r.memberPath[0]?.member === "rolePicker")).toBe(false);
-      expect(
-        await deniedHarness.controller()!.executeAction!({ operation: "grantSubmit.grant", agentRun: AGENT_RUN }),
-      ).toMatchObject({
-        ok: false,
-        reason: "action_not_found",
-      });
-      expect(
-        await deniedHarness.controller()!.executeAction!({ operation: "shareEnable.share", agentRun: AGENT_RUN }),
-      ).toMatchObject({
-        ok: false,
-        reason: "action_not_found",
-      });
-      expect(
-        await deniedHarness.controller()!.executeAction!({ operation: "shareDisable.share", agentRun: AGENT_RUN }),
-      ).toMatchObject({
-        ok: false,
-        reason: "action_not_found",
-      });
-      expect(
-        await deniedHarness.controller()!.executeAction!({
-          operation: "grantsList.revoke",
-          rowKey: "grant-1",
-          agentRun: AGENT_RUN,
-        }),
-      ).toMatchObject({
-        ok: false,
-        reason: "action_not_found",
-      });
-    } finally {
-      deniedMounted.app.unmount();
     }
   });
 });

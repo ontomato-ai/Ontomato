@@ -13,7 +13,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.sun.net.httpserver.HttpServer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.IdentityService;
-import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
@@ -34,8 +34,11 @@ import org.springframework.http.converter.json.MappingJackson2HttpMessageConvert
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private ApplicationCatalog catalog;
@@ -45,9 +48,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private MockMvc http;
     private ApplicationAccess access;
     private IdentityService identity;
-    private ProductGrantService grants;
-    private final Map<String, Boolean> panelGrants = new java.util.HashMap<>();
-    private boolean allowOtherPanels;
+    private ProductPrincipalLookup grants;
     private PanelResources panels;
 
     @BeforeEach void setup() {
@@ -55,12 +56,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         new ApplicationEntryEvents(jdbc).run();
         access = mock(ApplicationAccess.class);
         identity = mock(IdentityService.class);
-        grants = mock(ProductGrantService.class);
-        when(grants.allowed(anyString(), eq("use"))).thenAnswer(call ->
-            panelGrants.getOrDefault(call.<String>getArgument(0), allowOtherPanels));
-        when(grants.allowedBatchFor(any(), any(), anyList(), eq("use"))).thenAnswer(call ->
-            call.<List<String>>getArgument(2).stream()
-                .collect(java.util.stream.Collectors.toMap(id -> id, id -> panelGrants.getOrDefault(id, allowOtherPanels))));
+        when(identity.workbenchSubjectId(any())).thenAnswer(call ->
+            call.getArgument(0, io.ontomato.dataengine.core.bean.User.class).getId());
+        grants = mock(ProductPrincipalLookup.class);
+
+
         panels = mock(PanelResources.class);
         catalog = new ApplicationCatalog(jdbc,
             new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, grants, authorization);
@@ -137,7 +137,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
 
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        panelGrants.put("builtin-product-knowledge", true);
 
         http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")
                 .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
@@ -191,7 +190,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
 
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        panelGrants.put(use.panelId(), true);
 
         http.perform(get("/platform/applications/resolve-entry").param("path", use.path()))
             .andExpect(status().isOk())
@@ -212,7 +210,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             """.getBytes(StandardCharsets.UTF_8), "applications/descriptions-test.json");
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        panelGrants.put("builtin-product-info", true);
 
         catalog.builtins("data-engine", List.of(ApplicationCatalogUpgrade.Builtins.readDeclaration(source)));
 
@@ -242,7 +239,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var viewer = new QueryAccessService.GrantUser("owner", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
         EntryAuthorizationFixture.allowEdit(authorization, viewer, null);
-        panelGrants.put("info-panel", true);
 
         var writer = "/platform/applications/app-descriptions/panel-uses";
         http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
@@ -294,9 +290,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         when(identity.getCurrentUser()).thenReturn(viewer);
 
         for (var name : List.of("projections", "panels", "applications")) {
-            panelGrants.put("builtin-product-ontology-" + name, true);
-        }
-        for (var name : List.of("projections", "panels", "applications")) {
             http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/" + name))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.applicationId").value("ontology"))
@@ -322,7 +315,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
         when(identity.getCurrentUser()).thenReturn(operator);
         EntryAuthorizationFixture.allowEdit(authorization, operator, null);
-        allowOtherPanels = true;
 
         var id = "app-ontology-panels";
         var path = "/applications/" + id;
@@ -367,7 +359,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
         var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
         when(identity.getCurrentUser()).thenReturn(operator);
-        allowOtherPanels = true;
 
         var response = http.perform(put("/platform/applications/app-new-trial/panel-uses")
                 .contentType(MediaType.APPLICATION_JSON).content(panelsTrialRegistration("app-new-trial")))
@@ -379,10 +370,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     }
 
     @Test void aBuiltinEntryResolvesTheSamePanelForTwoDomainsWithoutGrantRows() throws Exception {
-        var resourceGrants = new ProductGrantService(jdbc, identity, (userId, domainId) -> java.util.Set.of());
-        resourceGrants.afterPropertiesSet();
         var actualCatalog = new ApplicationCatalog(jdbc,
-            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, resourceGrants, authorization);
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, grants, authorization);
         actualCatalog.builtins("data-engine", List.of(builtInBrowser("builtin-product-browser")));
         var first = new QueryAccessService.GrantUser("one", "domain-one");
         var second = new QueryAccessService.GrantUser("two", "domain-two");
@@ -398,7 +387,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         }
         deniedEntries.add("two:browser/browse");
         mvc.perform(request).andExpect(status().isForbidden());
-        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM product_grant", Integer.class));
+        assertNull(jdbc.queryForObject("SELECT to_regclass('public.product_grant')::text", String.class));
         verifyNoInteractions(panels);
 
         var localUse = new ApplicationPanelUse("local", "local", "builtin-product-browser", "/applications/app-local/home", null, null);
@@ -408,7 +397,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         actualCatalog.putPanelUses("app-local", registration, second);
         assertEquals("builtin-product-browser",
             actualCatalog.require("app-local").getList("panelUses", ApplicationPanelUse.class).getFirst().panelId());
-        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null, null, "pages", null);
+        verify(panels).requireUsableRegistration("domain-two", null, List.of(localUse), null, null, "pages", null);
     }
 
     private ApplicationCatalog.Builtin builtInBrowser(String panelId) {
@@ -439,7 +428,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var owner = new QueryAccessService.GrantUser("author", "domain");
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(owner);
-        allowOtherPanels = true;
         EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         var path = "/platform/applications/app-school/panel-uses";
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content("""
@@ -529,7 +517,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var author = new QueryAccessService.GrantUser("author", "domain");
         when(identity.getCurrentUser()).thenReturn(author);
         EntryAuthorizationFixture.allowEdit(authorization, author, null);
-        allowOtherPanels = true;
         var path = "/platform/applications/app-root-inputs/panel-uses";
         var registration = """
             {"entry":{"path":"/applications/app-root-inputs","renderer":"panels"},"initialOpenEntryIds":[],
@@ -626,7 +613,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var reader = new QueryAccessService.GrantUser("reader", "domain");
         var foreign = new QueryAccessService.GrantUser("foreign", "another-domain");
         when(identity.getCurrentUser()).thenReturn(owner);
-        allowOtherPanels = true;
         EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         catalog.builtins("data-engine", List.of(builtin("browser", "native")));
         catalog.publish("app-hosted", builtin("hosted", "native").declaration(), "release", owner);
@@ -634,7 +620,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(put(CATALOGUE_APP).contentType(MediaType.APPLICATION_JSON).content(CATALOGUE_REGISTRATION))
             .andExpect(status().isOk());
 
-        panelGrants.put("panel-hidden", false);
         deniedEntries.add("owner:browser/main");
         http.perform(get(CATALOGUE).param("countOnly", "true"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(2))
@@ -643,7 +628,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.rows[0].id").value("app-catalogue"))
             .andExpect(jsonPath("$.data.rows[0].source").value("domain"))
             .andExpect(jsonPath("$.data.rows[0].canMaintain").value(true))
-            .andExpect(jsonPath("$.data.rows[0].canGrant").value(true))
             .andExpect(jsonPath("$.data.rows[0].canEditEntries").value(true))
             .andExpect(jsonPath("$.data.rows[0].entryCount").value(2))
             .andExpect(jsonPath("$.data.nextCursor").value("app-catalogue"));
@@ -730,7 +714,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var owner = new QueryAccessService.GrantUser("owner", "domain");
         when(identity.getCurrentUser()).thenReturn(owner);
         EntryAuthorizationFixture.allowEdit(authorization, owner, null);
-        allowOtherPanels = true;
 
         var form = http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON).content("""
             {"section":"create","target":{"kind":"draft"},"changedField":null}
@@ -817,7 +800,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             """, declared.id());
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        panelGrants.put(use.panelId(), true);
 
         var route = "/platform/applications/resolve-entry";
         var byPath = http.perform(get(route).param("path", use.path()))
@@ -849,7 +831,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             """);
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
             .andExpect(status().isOk());
-        verify(panels).requireCurrent(eq("domain"), isNull(), eq(List.of()), isNull(), isNull(), eq("pages"), any(Locale.class));
+        verify(panels).requireUsableRegistration(eq("domain"), isNull(), eq(List.of()), isNull(), isNull(), eq("pages"), any(Locale.class));
         jdbc.update("UPDATE sys_application SET icon=? WHERE id=?", "ontology", "app-icon-proof");
         var declaration = registration.getJSONObject("declaration");
         declaration.put("icon", "ontology");
@@ -857,7 +839,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         clearInvocations(panels);
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
             .andExpect(status().isOk());
-        verify(panels).requireCurrent(eq("domain"), isNull(), eq(List.of()), isNull(), isNull(), isNull(), any(Locale.class));
+        verify(panels).requireUsableRegistration(eq("domain"), isNull(), eq(List.of()), isNull(), isNull(), isNull(), any(Locale.class));
 
         var identityPath = "/platform/applications/app-icon-proof/identity";
         var update = JSONObject.of("names", JSONObject.of("en", "Renamed again"), "descriptions", new JSONObject(), "icon", "ontology");
@@ -894,7 +876,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         });
         server.start();
         try {
-            var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
+            var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service", identity);
             var remoteCatalog = new ApplicationCatalog(jdbc, new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
                 access, "{}", panelClient, grants, authorization);
             var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(remoteCatalog, identity,
@@ -902,7 +884,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 .setControllerAdvice(new ApplicationErrors())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
             when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("owner", "domain"));
-            panelGrants.put("panel-overview", true);
 
             mvc.perform(put("/platform/applications/app-default-agent-proof/panel-uses")
                     .param("create", "true").locale(Locale.SIMPLIFIED_CHINESE)
@@ -948,7 +929,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         });
         server.start();
         try {
-            var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
+            var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service", identity);
             var remoteCatalog = new ApplicationCatalog(jdbc, new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
                 access, "{}", panelClient, grants, authorization);
             var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(remoteCatalog, identity,
@@ -956,7 +937,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 .setControllerAdvice(new ApplicationErrors())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
             when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("owner", "domain"));
-            panelGrants.put("panel-overview", true);
 
             var body = """
                 {"entry":{"path":"/applications/app-native-settings","renderer":"panels"},"initialOpenEntryIds":[],
@@ -1008,9 +988,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         });
         server.start();
         try {
-            var remote = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
+            var remote = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service", identity);
 
-            remote.requireCurrent("domain", null, List.of(
+            when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("registrant", "domain"));
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+            remote.requireUsableRegistration("domain", null, List.of(
                 new ApplicationPanelUse("report", "report", "panel-report", "/example/report",
                     new DefaultAgentTarget("preset", null, "knowledge-governance"), null),
                 new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan",
@@ -1025,6 +1007,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             assertEquals(JSONObject.of("kind", "id", "id", "planner"), uses.getJSONObject(1).getJSONObject("defaultAgent"));
             assertFalse(uses.getJSONObject(2).containsKey("defaultAgent"));
         } finally {
+            RequestContextHolder.resetRequestAttributes();
             server.stop(0);
         }
     }
@@ -1060,8 +1043,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             "/settings/system-config/authorization",
             null, Map.of("en", "License"), null, null, "system-settings", "key-round", ApplicationPanelUse.NATIVE_KIND);
         when(access.builtinEntries("settings")).thenReturn(List.of(editionAuth));
-        // Panel grant returns true ONLY for builtin-product-audit-log, false for everything else (including null).
-        panelGrants.put("builtin-product-audit-log", true);
 
         var settings = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/settings.json"));
         catalog.builtins("data-engine", List.of(settings));

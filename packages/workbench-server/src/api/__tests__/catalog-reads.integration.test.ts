@@ -164,7 +164,7 @@ beforeAll(async () => {
       menu: { singleEntry: true, names: declaration.names, groups: [], panelUses: [] } } });
   });
   const summary = { id: applicationId, names: declaration.names, descriptions: {}, icon: "pages",
-    source: "domain", canMaintain: false, canGrant: false, canEditEntries: false, entryCount: 1 };
+    source: "domain", canMaintain: false, canEditEntries: false, entryCount: 1 };
   app.get("/java/platform/applications/catalogue", (req, res) => {
     expect(req.header("tk")).toBe(viewer.token);
     expect(req.query).toEqual({ search: "App", scope: "visible", size: "4" });

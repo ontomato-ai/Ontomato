@@ -622,8 +622,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       entryRows: selection => applications.entryRows(selection.primaryKey!),
       usedPanels: selection => applications.usedPanels(selection.primaryKey!),
       referenceGraph: selection => applications.referenceGraph(selection.primaryKey!),
-      grants: selection => applications.grants(selection.primaryKey!),
-      grantRows: selection => applications.grantRows(selection.primaryKey!),
       form: (selection, params) => applications.form(selection.primaryKey!, {
         ...formParams(params),
         section: panelReadParameterSchemas.applicationFormSection.parse(params.section),

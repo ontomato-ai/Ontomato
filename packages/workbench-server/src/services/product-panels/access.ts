@@ -1,5 +1,7 @@
 import { findCurrentProducts, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
+import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { HttpError } from "../../utils/errors";
 import { decideObjects, requireAllowed, type ObjectDefinition } from "../product-governance/authorization";
 
 export type DefinitionKind = CurrentProductKind | "component";
@@ -31,7 +33,16 @@ export async function requireCurrentDefinitionUse(
   kind: DefinitionKind, row: DefinitionFacts, domainId: string, credentials: AssistantCredentials,
 ) {
   const { decisions } = await currentDefinitionAccess(kind, [row], domainId, credentials, false);
-  requireAllowed(decisions[0]);
+  requireCurrentUseAllowed(kind, decisions[0], credentials.locale);
+}
+
+export function requireCurrentUseAllowed(
+  kind: DefinitionKind, decision: Parameters<typeof requireAllowed>[0], locale: AssistantCredentials["locale"],
+) {
+  if (kind === "panel" && !decision.allowed && decision.code === "OBJECT_FORBIDDEN") {
+    throw new HttpError(403, tForLocale(locale, "panels.objectDetail.forbidden"), decision.code);
+  }
+  requireAllowed(decision);
 }
 
 export async function usableCurrentIds(

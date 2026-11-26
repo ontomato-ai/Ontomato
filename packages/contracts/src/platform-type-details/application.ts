@@ -25,11 +25,6 @@ export const applicationTypeDetail = {
       description: "Whether the current caller has maintenance authority to edit this domain panel application's entry table.",
     },
     {
-      name: "canGrant",
-      type: "boolean",
-      description: "Whether the current caller may manage the application's sharing and grants under product edit authority.",
-    },
-    {
       name: "allowStandalone",
       type: "boolean",
       description: "Whether this application can be opened standalone without the platform sidebar and expose an external link.",
@@ -75,5 +70,5 @@ export const applicationTypeDetail = {
     },
   ],
   rules:
-    "The platform maintains built-in applications, and Java checks domain identity, assigned paths, and permission to use referenced panels during domain registration. Java checks application and entry admission and panel use before opening an entry, requires maintenance authority for edits and deletion, and requires a product edit grant to manage access.",
+    "The platform maintains built-in applications, and Java checks domain identity, assigned paths, and permission to use referenced panels during domain registration. Java checks entry admission and panel use before opening an entry. The application catalogue is visible to callers who can open an entry or edit the application. Java requires maintenance authority for edits and deletion.",
 } as const satisfies PlatformTypeDetailDeclaration;

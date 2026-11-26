@@ -8,7 +8,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import io.ontomato.dataengine.core.bean.User;
-import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -106,7 +106,7 @@ class ApplicationStandaloneToggleTest {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.allowEntries();
         var panels = mock(PanelResources.class);
-        var grants = mock(ProductGrantService.class);
+        var grants = mock(ProductPrincipalLookup.class);
         var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", panels, grants, authorization));
 
         var user = mock(User.class);
@@ -155,7 +155,7 @@ class ApplicationStandaloneToggleTest {
         }).when(transactions).executeWithoutResult(any());
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.allowEntries();
-        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", mock(PanelResources.class), mock(ProductGrantService.class), authorization));
+        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", mock(PanelResources.class), mock(ProductPrincipalLookup.class), authorization));
 
         var existingSettings = JSONObject.of(
             "id", "settings",

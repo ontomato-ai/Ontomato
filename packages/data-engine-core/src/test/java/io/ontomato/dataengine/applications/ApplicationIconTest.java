@@ -5,7 +5,7 @@ import static org.mockito.Mockito.*;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.core.bean.User;
-import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
@@ -35,7 +35,7 @@ class ApplicationIconTest {
         var panels = mock(PanelResources.class);
         var user = mock(User.class);
         when(user.getDomainId()).thenReturn("domain");
-        var catalog = spy(new ApplicationCatalog(db, tx, access, "{}", panels, mock(ProductGrantService.class), authorization));
+        var catalog = spy(new ApplicationCatalog(db, tx, access, "{}", panels, mock(ProductPrincipalLookup.class), authorization));
         var app = JSONObject.of("id", "app-example", "domainId", "domain", "releaseId", "release", "icon", "ontology");
         doReturn(app).when(catalog).require("app-example");
 
@@ -60,7 +60,7 @@ class ApplicationIconTest {
     @Test void registeredApplicationEditUsesOwnershipOrExplicitObjectPolicy() {
         var subjects = mock(AuthorizationSubjects.class);
         var store = mock(AuthorizationStore.class);
-        var grants = mock(ProductGrantService.class);
+        var grants = mock(ProductPrincipalLookup.class);
         var authorization = new AuthorizationService(subjects, store, null, null, null);
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class),
             mock(ApplicationAccess.class), "{}", mock(PanelResources.class), grants, authorization));
@@ -86,14 +86,12 @@ class ApplicationIconTest {
             var user = new QueryAccessService.GrantUser(id, "domain");
             var record = catalog.catalogueRecord("app-example", user);
             assertTrue(record.getBooleanValue("canMaintain"));
-            assertTrue(record.getBooleanValue("canGrant"));
             assertTrue(catalog.legacyMaintenance("app-example", user));
         }
         for (String id : List.of("reader", "admin")) {
             var user = new QueryAccessService.GrantUser(id, "domain");
             var record = catalog.catalogueRecord("app-example", user);
             assertFalse(record.getBooleanValue("canMaintain"));
-            assertFalse(record.getBooleanValue("canGrant"));
             assertEquals(HttpStatus.FORBIDDEN, assertThrows(ResponseStatusException.class,
                 () -> catalog.legacyMaintenance("app-example", user)).getStatusCode());
         }
@@ -104,6 +102,5 @@ class ApplicationIconTest {
         assertTrue(catalog.legacyMaintenance("app-example", new QueryAccessService.GrantUser("editor", "domain")));
         assertThrows(ResponseStatusException.class,
             () -> catalog.legacyMaintenance("app-example", new QueryAccessService.GrantUser("author", "domain")));
-        verify(grants, never()).allowedFor(anyString(), anyString(), anyString(), eq("edit"));
     }
 }

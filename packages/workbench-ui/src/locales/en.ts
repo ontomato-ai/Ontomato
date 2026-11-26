@@ -1512,7 +1512,7 @@ export default {
       },
       "application": {
         "definition": "A published unit that makes content available through application entries.",
-        "rules": "The platform maintains built-in applications, and Java checks domain identity, assigned paths, and permission to use referenced panels during domain registration. Java checks application and entry admission and panel use before opening an entry, requires maintenance authority for edits and deletion, and requires a product edit grant to manage access.",
+        "rules": "The platform maintains built-in applications. The application catalogue is visible to callers who can open an entry or edit the application. Java lists and opens entries based solely on Entry permissions. Workbench checks panel USE when reading a panel and validates USE for referenced panels during registration. Java checks domain identity and assigned paths during registration and requires maintenance authority for edits and deletion.",
         "properties": {
           "id": "The stable identifier of the application.",
           "names": "Display names keyed by language code.",

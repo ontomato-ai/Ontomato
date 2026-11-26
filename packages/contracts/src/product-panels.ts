@@ -426,7 +426,15 @@ const applicationEntrySettings = {
 };
 
 export const APPLICATION_PANEL_REFERENCES_PATH = "/internal/product-panels/validate-references";
-/** The platform service authenticates this request. Node validates the public inputs and the fixed closure. */
+/** The platform service authenticates the Java caller. The independently authenticated registrant must match this header. */
+export const APPLICATION_REGISTRANT_HEADER = "X-Ontomato-Application-Registrant";
+export const applicationIconValidationRequestSchema = z.object({
+  kind: z.literal("icon"),
+  domainId: id,
+  icon: domainApplicationIconSchema,
+}).strict();
+
+/** Registration requires the registrant's USE of the declared roots and frame, and validates the fixed closure. */
 export const applicationPanelReferencesRequestSchema = z.object({
   domainId: id,
   /** Submit on creation or when the icon changes. Unchanged stored values are not checked here. */
@@ -790,8 +798,6 @@ export const registerApplicationPanelUsesRequestSchema = z.object({
   declaration: applicationMetadataSchema.optional(),
   /** Entries to grant to the domain's default policy on first registration. */
   initialOpenEntryIds: z.array(applicationPanelUseSchema.shape.id).optional(),
-  /** Optional initial domain sharing intent when creating an application. */
-  shared: z.boolean().optional(),
   /** Whether the application allows standalone open (`standalone=1`) and exposes an external link; defaults to true. */
   allowStandalone: z.boolean().optional(),
   ...applicationEntrySettings,

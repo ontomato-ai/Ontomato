@@ -2,7 +2,6 @@ import { z } from "zod";
 import { applicationMetadataSchema } from "./application-metadata";
 import { panelFormRequestSchema } from "./panel-projection";
 import { applicationFormSectionSchema } from "./product-catalog-query";
-import { changeProductGrantRequestSchema, productCatalogueGrantsSchema } from "./product-governance";
 import { productCurrentIdParamsSchema } from "./product-record-id";
 import {
   applicationPanelUsesManagementSchema, applicationPanelUsesResponseSchema, registerApplicationPanelUsesRequestSchema,
@@ -13,7 +12,6 @@ const summary = applicationMetadataSchema.pick({ names: true, descriptions: true
   source: z.enum(["builtin", "domain"]),
   canMaintain: z.boolean(),
   canEditEntries: z.boolean(),
-  canGrant: z.boolean(),
   entryCount: z.number().int().nonnegative(),
   allowStandalone: z.boolean().optional(),
   updatedAt: z.string().optional(),
@@ -64,7 +62,7 @@ export const applicationEntriesUpdateSchema = registerApplicationPanelUsesReques
 });
 
 const sourcePath = z.string().regex(/^\/(?!\/)/);
-export const applicationSourceManifestSchema = registerApplicationPanelUsesRequestSchema.omit({ shared: true }).extend({
+export const applicationSourceManifestSchema = registerApplicationPanelUsesRequestSchema.extend({
   declaration: applicationMetadataSchema,
   entry: registerApplicationPanelUsesRequestSchema.shape.entry.extend({
     path: sourcePath,
@@ -72,8 +70,3 @@ export const applicationSourceManifestSchema = registerApplicationPanelUsesReque
   }),
 });
 export type ApplicationSourceManifest = z.infer<typeof applicationSourceManifestSchema>;
-
-export const applicationUseGrantChangeSchema = changeProductGrantRequestSchema.extend({ verb: z.literal("use") });
-export const applicationUseGrantsSchema = productCatalogueGrantsSchema.omit({ shared: true }).extend({
-  grants: z.array(productCatalogueGrantsSchema.shape.grants.element.extend({ verb: z.literal("use") })),
-});
