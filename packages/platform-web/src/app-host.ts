@@ -19,12 +19,13 @@ import { readRuntimeConfig } from "./config";
 import {fetchWorkbench,nodeApiRequest} from '@ontomato/workbench-ui';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 import {productReferences} from '@ontomato/contracts/product-assets';
-import {validatePageState,validateProductNavigation,productNavigationTargetSchema} from '@ontomato/contracts/product-page-state';
+import {validateProductNavigation,productNavigationTargetSchema} from '@ontomato/contracts/product-page-state';
 import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
 import type {PanelObjectChange} from './panel-host';
 import type {CandidatePanelSource,ProductPanelReadSource} from '@ontomato/contracts/panel-host';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
+import {applicationRootPath} from '@ontomato/contracts/platform-identity';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
 import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelHumanOperationConfirmation,type PanelUseRef} from '@ontomato/contracts/panel-agent';
@@ -457,17 +458,14 @@ export function installAppHost(options: {
       const result=await response.json();
       if(!response.ok)throw new Error(result.error?.message??'Published page unavailable');
       const asset=productAssetSchema.parse(result.asset);
-      let state:Record<string,unknown>;
       if('pageId' in target){
         validateProductNavigation(result.assets.map((item:unknown)=>productAssetSchema.parse(item)),target.pageId);
         if(asset.document.kind!=='page')throw new Error('Typed navigation requires a Page');
-        state=validatePageState(asset.document.params??{},target.params);
-      }else{
-        if(asset.document.kind!=='object-projection')throw new Error('Instance navigation requires an ObjectView');
-        state=validatePageState({selected:{kind:'object',objectType:asset.document.renders.id}},{selected:target.object});
-      }
-      // An external link's tab stays so by itself (see external-link.ts): the address carries no flag of its own.
-      await options.router.push({path:'/products/'+encodeURIComponent(targetId),query:{applicationId,state:JSON.stringify(state)}});
+      }else if(asset.document.kind!=='object-projection')throw new Error('Instance navigation requires an ObjectView');
+      // A published page has no address of its own: what it names is checked against the release, and the application it
+      // belongs to opens at its root, where its own panels show it. An external link's tab stays so by itself (see
+      // external-link.ts): the address carries no flag of its own.
+      await options.router.push(applicationRootPath(applicationId));
     },
     onAuthFailure: options.onAuthFailure,
     setPageContext() {},

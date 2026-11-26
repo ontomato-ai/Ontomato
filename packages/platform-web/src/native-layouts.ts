@@ -144,7 +144,7 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       framePanelId: app.framePanelId,
       ...(app.singleEntry !== undefined ? { singleEntry: app.singleEntry } : {}),
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
-      prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
-      home: applicationRoute ? applicationRootPath(app.id) : app.kind === "product" ? app.entry.path : admittedHome ?? firstPanelPath ?? undefined };
+      prefix: applicationRoute || app.kind === "product" ? applicationRootPath(app.id) : app.entry.path,
+      home: applicationRoute || app.kind === "product" ? applicationRootPath(app.id) : admittedHome ?? firstPanelPath ?? undefined };
   });
 }

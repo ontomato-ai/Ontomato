@@ -55,12 +55,12 @@ async function readOnce(data: unknown) {
 }
 
 describe("the application catalog", () => {
-  it('opens declarative product applications through their typed product entry instead of an iframe',async()=>{
+  it('opens a declarative product application at its application address rather than the imported product path',async()=>{
     const product={...catalogFixture()[0],id:'app-declarative',kind:'product' as const,entry:{path:'/products/app-declarative?applicationId=app-declarative'},releaseId:'release'};
     const catalog=await readOnce([product]);
     const [application]=catalogPartition(catalog.applications.value,'en');
-    expect(application.prefix).toBe('/products/app-declarative');
-    expect(application.home).toBe(product.entry.path);
+    expect(application.prefix).toBe('/applications/app-declarative');
+    expect(application.home).toBe('/applications/app-declarative');
   });
   it("keeps the list it shows while it reads the applications again", async () => {
     const shown = catalogFixture();

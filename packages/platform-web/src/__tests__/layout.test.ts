@@ -103,7 +103,6 @@ async function mountLayout(path: string, granted: string[]) {
 describe("the platform layout", () => {
   it("renders published product and panel applications under App Builder in the second rail group", async () => {
     const { wrapper, router } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
-    router.addRoute({ path: "/products/:productAssetId", component: page("product") });
     router.addRoute({ path: "/applications/:applicationId/:panelPath(.*)?", component: page("application") });
     router.addRoute({ path: "/home", component: page("home") });
     const catalog = catalogFixture();
