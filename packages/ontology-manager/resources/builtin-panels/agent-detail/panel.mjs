@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import {
   appIcon,
   mountPanel,
@@ -115,6 +115,65 @@ function runtimeSkillFromKey(key) {
   return null;
 }
 
+function avatarAppIconByKey(key) {
+  const mapped = AVATAR_APP_ICON_KEYS[key];
+  return mapped ? appIcon(mapped) : null;
+}
+
+function avatarSvgKeyByKey(key) {
+  if (key === "TrendingUp" || key === "Target") return key;
+  return "Brain";
+}
+
+const AvatarGlyph = {
+  name: "AgentDetailAvatarGlyph",
+  props: {
+    iconKey: { type: String, required: true },
+    size: { type: Number, default: 18 },
+  },
+  setup(props) {
+    return () => {
+      const appGlyph = avatarAppIconByKey(props.iconKey);
+      if (appGlyph) return h(appGlyph, { size: props.size, "aria-hidden": "true" });
+      const attrs = {
+        viewBox: "0 0 24 24",
+        width: props.size,
+        height: props.size,
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": 2,
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+        "aria-hidden": "true",
+      };
+      const key = avatarSvgKeyByKey(props.iconKey);
+      if (key === "TrendingUp") {
+        return h("svg", attrs, [
+          h("path", { d: "M16 7h6v6" }),
+          h("path", { d: "m22 7-8.5 8.5-5-5L2 17" }),
+        ]);
+      }
+      if (key === "Target") {
+        return h("svg", attrs, [
+          h("circle", { cx: 12, cy: 12, r: 10 }),
+          h("circle", { cx: 12, cy: 12, r: 6 }),
+          h("circle", { cx: 12, cy: 12, r: 2 }),
+        ]);
+      }
+      return h("svg", attrs, [
+        h("path", { d: "M12 18V5" }),
+        h("path", { d: "M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" }),
+        h("path", { d: "M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" }),
+        h("path", { d: "M17.997 5.125a4 4 0 0 1 2.526 5.77" }),
+        h("path", { d: "M18 18a4 4 0 0 0 2-7.464" }),
+        h("path", { d: "M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" }),
+        h("path", { d: "M6 18a4 4 0 0 1-2-7.464" }),
+        h("path", { d: "M6.003 5.125a4 4 0 0 0-2.526 5.77" }),
+      ]);
+    };
+  },
+};
+
 /*
  * Agent detail panel: full-width edit-on-open view for one platform:AgentDefinition.
  * - Opens via ?selected=<id> from either /ontology/agents/detail or /agents/settings/detail.
@@ -148,6 +207,11 @@ await mountPanel({
         return "basics";
       },
       set: (next) => state.set("tab", SECTION_KEYS.includes(next) ? next : "basics"),
+    });
+    const screenRef = ref(null);
+    watch(activeSection, async () => {
+      await nextTick();
+      if (screenRef.value) screenRef.value.scrollTop = 0;
     });
     const sections = computed(() => SECTION_KEYS.map((key) => ({
       key,
@@ -337,16 +401,6 @@ await mountPanel({
 
     function avatarSwatchIndexOf(icon) {
       return avatarColorIndex(parseAgentAvatar(icon).color);
-    }
-
-    function avatarAppIconByKey(key) {
-      const mapped = AVATAR_APP_ICON_KEYS[key];
-      return mapped ? appIcon(mapped) : null;
-    }
-
-    function avatarSvgKeyByKey(key) {
-      if (key === "TrendingUp" || key === "Target") return key;
-      return "Brain";
     }
 
     function selectAvatarKey(currentIcon, key, set) {
@@ -781,6 +835,7 @@ await mountPanel({
       detailReady,
       recordErrorText,
       detailDraft,
+      screenRef,
       sections,
       activeSection,
       activeSectionLabel,
@@ -807,8 +862,7 @@ await mountPanel({
       avatarStyle,
       avatarKeyOf,
       avatarSwatchIndexOf,
-      avatarAppIconByKey,
-      avatarSvgKeyByKey,
+      avatarGlyph: AvatarGlyph,
       selectAvatarKey,
       selectAvatarColor,
       skillsLoading,

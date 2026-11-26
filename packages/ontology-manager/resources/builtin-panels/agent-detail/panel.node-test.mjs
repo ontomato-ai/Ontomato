@@ -144,6 +144,35 @@ test("capabilities use shared picker dialogs while the owner form still carries 
   assert.match(html, /slot="toolPicker"/u);
 });
 
+test("detail polish keeps scroll reset, plural save text, bounded scope controls, and avatar preview explicit", () => {
+  assert.match(html, /<section ref="screenRef" class="agent-detail-screen">/u);
+  assert.match(moduleSource, /watch\(activeSection, async \(\) => \{/u);
+  assert.match(moduleSource, /screenRef\.value\.scrollTop = 0/u);
+
+  const messages = panel.content.messages;
+  assert.equal(messages.en["savebar.unsaved"], "{count} unsaved change | {count} unsaved changes");
+  assert.equal(messages["zh-CN"]["savebar.unsaved"], "{count} 项未保存");
+  for (const locale of Object.values(messages)) {
+    assert.equal(typeof locale["form.avatarPreview"], "string");
+    for (const key of ["skills.addTitle", "skills.addConfirm", "tools.addTitle", "tools.addConfirm"]) {
+      assert.equal(locale[key].includes("{count}"), false, `${key} does not imply a delta count`);
+    }
+  }
+  assert.equal(messages.en["skills.addTitle"], "Select skills");
+  assert.equal(messages.en["tools.addTitle"], "Select external tools");
+  assert.equal(messages.en["skills.addConfirm"], "OK");
+  assert.equal(messages.en["tools.addConfirm"], "OK");
+
+  assert.match(html, /agent-detail-avatar-preview-label/u);
+  assert.match(html, /agent-detail-avatar-preview-circle/u);
+  assert.match(html, /:is="avatarGlyph"/u);
+  assert.match(moduleSource, /avatarGlyph: AvatarGlyph/u);
+  assert.match(html, /t\("form\.avatarPreview"\)/u);
+  assert.match(html, /agent-detail-scope-mode-switch/u);
+  assert.match(html, /max-width: min\(400px, 100%\)/u);
+  assert.match(html, /agent-detail-class-picker \{[\s\S]*?padding-bottom: var\(--spacing-md\)/u);
+});
+
 test("all panel messages keep the same keys in every locale", () => {
   const messages = panel.content.messages;
   const locales = Object.keys(messages);

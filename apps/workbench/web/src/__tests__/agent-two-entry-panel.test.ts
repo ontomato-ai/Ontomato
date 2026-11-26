@@ -1153,7 +1153,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         if (!found) throw new Error("Expected sticky save bar for the dirty form");
         return found;
       }, { timeout: 5000 });
-      expect(savebar.textContent).toContain("1 unsaved changes");
+      expect(savebar.textContent).toContain("1 unsaved change");
       expect(savebar.textContent).toContain("Name");
       expect([...savebar.querySelectorAll<HTMLButtonElement>("button")].map((button) => button.textContent?.trim()))
         .toEqual(expect.arrayContaining(["Discard", "Save"]));

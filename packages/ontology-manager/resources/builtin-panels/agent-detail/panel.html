@@ -484,6 +484,41 @@
     border-radius: var(--radius-md);
     background: var(--sdk-fill-color-extra-light);
   }
+  .agent-detail-avatar-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-lg);
+    width: 100%;
+  }
+  .agent-detail-avatar-options {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .agent-detail-avatar-preview {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .agent-detail-avatar-preview-label {
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+  }
+  .agent-detail-avatar-preview-circle {
+    display: inline-grid;
+    place-items: center;
+    width: 70px;
+    height: 70px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    color: var(--sdk-color-primary);
+  }
   .agent-detail-avatar-row {
     display: flex;
     align-items: flex-start;
@@ -525,9 +560,16 @@
     font-size: var(--text-xs);
     line-height: 1.5;
   }
+  .agent-detail-scope-mode-switch {
+    align-self: flex-start;
+    width: fit-content;
+    max-width: min(400px, 100%);
+  }
   .agent-detail-class-picker {
     min-height: 240px;
     max-height: 420px;
+    padding-bottom: var(--spacing-md);
+    box-sizing: border-box;
     overflow: auto;
     border: 1px solid var(--sdk-border-color-light);
     border-radius: var(--radius-md);
@@ -602,6 +644,12 @@
   }
 
   @container agent-detail-page (max-width: 640px) {
+    .agent-detail-avatar-main {
+      flex-direction: column;
+    }
+    .agent-detail-avatar-preview {
+      align-self: flex-end;
+    }
     .agent-detail-body {
       padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
@@ -622,56 +670,7 @@
         >
           <template v-if="detailReady" #leading>
             <span class="agent-detail-avatar" :style="avatarStyle(liveIcon)" aria-hidden="true">
-              <component :is="avatarAppIconByKey(avatarKeyOf(liveIcon))" v-if="avatarAppIconByKey(avatarKeyOf(liveIcon))" :size="17" />
-              <svg
-                v-else-if="avatarSvgKeyByKey(avatarKeyOf(liveIcon)) === 'TrendingUp'"
-                viewBox="0 0 24 24"
-                width="17"
-                height="17"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M16 7h6v6" />
-                <path d="m22 7-8.5 8.5-5-5L2 17" />
-              </svg>
-              <svg
-                v-else-if="avatarSvgKeyByKey(avatarKeyOf(liveIcon)) === 'Target'"
-                viewBox="0 0 24 24"
-                width="17"
-                height="17"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <circle cx="12" cy="12" r="6" />
-                <circle cx="12" cy="12" r="2" />
-              </svg>
-              <svg
-                v-else
-                viewBox="0 0 24 24"
-                width="17"
-                height="17"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M12 18V5" />
-                <path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" />
-                <path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" />
-                <path d="M17.997 5.125a4 4 0 0 1 2.526 5.77" />
-                <path d="M18 18a4 4 0 0 0 2-7.464" />
-                <path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" />
-                <path d="M6 18a4 4 0 0 1-2-7.464" />
-                <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
-              </svg>
+              <component :is="avatarGlyph" :icon-key="avatarKeyOf(liveIcon)" :size="17" />
             </span>
           </template>
         </projection>
@@ -720,7 +719,7 @@
           </button>
         </nav>
 
-        <section class="agent-detail-screen">
+        <section ref="screenRef" class="agent-detail-screen">
           <div v-if="detailDraft && detailDraft.dirty" class="agent-detail-savebar" role="status">
             <div class="agent-detail-savebar-copy">
               <strong>{{ t("savebar.unsaved", { count: dirtyItemCount }) }}</strong>
@@ -792,72 +791,50 @@
                   data-field="/icon"
                 >
                   <div class="agent-detail-avatar-control">
-                    <div class="agent-detail-avatar-row">
-                      <span class="agent-detail-avatar-sublabel">{{ t("form.avatarIcon") }}</span>
-                      <div class="agent-detail-avatar-choices" role="group" :aria-label="t('form.avatarIcon')">
-                        <button
-                          v-for="iconKey in avatarIconKeys"
-                          :key="iconKey"
-                          type="button"
-                          class="agent-detail-avatar-icon"
-                          :class="{ active: avatarKeyOf(value) === iconKey }"
-                          :title="iconKey"
-                          :aria-label="iconKey"
-                          :aria-pressed="avatarKeyOf(value) === iconKey"
-                          :disabled="disabled"
-                          @click="selectAvatarKey(value, iconKey, set)"
-                        >
-                          <component :is="avatarAppIconByKey(iconKey)" v-if="avatarAppIconByKey(iconKey)" :size="18" aria-hidden="true" />
-                          <svg
-                            v-else
-                            viewBox="0 0 24 24"
-                            width="18"
-                            height="18"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                          >
-                            <g v-if="iconKey === 'TrendingUp'">
-                              <path d="M16 7h6v6" />
-                              <path d="m22 7-8.5 8.5-5-5L2 17" />
-                            </g>
-                            <g v-else-if="iconKey === 'Target'">
-                              <circle cx="12" cy="12" r="10" />
-                              <circle cx="12" cy="12" r="6" />
-                              <circle cx="12" cy="12" r="2" />
-                            </g>
-                            <g v-else>
-                              <path d="M12 18V5" />
-                              <path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" />
-                              <path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" />
-                              <path d="M17.997 5.125a4 4 0 0 1 2.526 5.77" />
-                              <path d="M18 18a4 4 0 0 0 2-7.464" />
-                              <path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" />
-                              <path d="M6 18a4 4 0 0 1-2-7.464" />
-                              <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
-                            </g>
-                          </svg>
-                        </button>
+                    <div class="agent-detail-avatar-main">
+                      <div class="agent-detail-avatar-options">
+                        <div class="agent-detail-avatar-row">
+                          <span class="agent-detail-avatar-sublabel">{{ t("form.avatarIcon") }}</span>
+                          <div class="agent-detail-avatar-choices" role="group" :aria-label="t('form.avatarIcon')">
+                            <button
+                              v-for="iconKey in avatarIconKeys"
+                              :key="iconKey"
+                              type="button"
+                              class="agent-detail-avatar-icon"
+                              :class="{ active: avatarKeyOf(value) === iconKey }"
+                              :title="iconKey"
+                              :aria-label="iconKey"
+                              :aria-pressed="avatarKeyOf(value) === iconKey"
+                              :disabled="disabled"
+                              @click="selectAvatarKey(value, iconKey, set)"
+                            >
+                              <component :is="avatarGlyph" :icon-key="iconKey" :size="18" />
+                            </button>
+                          </div>
+                        </div>
+                        <div class="agent-detail-avatar-row">
+                          <span class="agent-detail-avatar-sublabel">{{ t("form.avatarColor") }}</span>
+                          <div class="agent-detail-avatar-choices" role="group" :aria-label="t('form.avatarColor')">
+                            <button
+                              v-for="(swatch, index) in avatarSwatches"
+                              :key="index"
+                              type="button"
+                              class="agent-detail-avatar-color"
+                              :class="{ active: avatarSwatchIndexOf(value) === index }"
+                              :style="{ background: swatch }"
+                              :aria-label="t('form.avatarColorOption', { index: index + 1 })"
+                              :aria-pressed="avatarSwatchIndexOf(value) === index"
+                              :disabled="disabled"
+                              @click="selectAvatarColor(value, index, set)"
+                            ></button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div class="agent-detail-avatar-row">
-                      <span class="agent-detail-avatar-sublabel">{{ t("form.avatarColor") }}</span>
-                      <div class="agent-detail-avatar-choices" role="group" :aria-label="t('form.avatarColor')">
-                        <button
-                          v-for="(swatch, index) in avatarSwatches"
-                          :key="index"
-                          type="button"
-                          class="agent-detail-avatar-color"
-                          :class="{ active: avatarSwatchIndexOf(value) === index }"
-                          :style="{ background: swatch }"
-                          :aria-label="t('form.avatarColorOption', { index: index + 1 })"
-                          :aria-pressed="avatarSwatchIndexOf(value) === index"
-                          :disabled="disabled"
-                          @click="selectAvatarColor(value, index, set)"
-                        ></button>
+                      <div class="agent-detail-avatar-preview">
+                        <span class="agent-detail-avatar-preview-label">{{ t("form.avatarPreview") }}</span>
+                        <span class="agent-detail-avatar-preview-circle" :style="avatarStyle(value)" aria-hidden="true">
+                          <component :is="avatarGlyph" :icon-key="avatarKeyOf(value)" :size="34" />
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -1038,12 +1015,14 @@
               </template>
               <template #field-classNames="{ field, value, error, changed, disabled, set }">
                 <div class="agent-detail-scope-field" :class="{ 'agent-detail-scope-field-changed': changed }">
-                  <sdk-segmented
-                    v-model="classScopeMode"
-                    :options="classScopeModeOptions"
-                    :disabled="disabled"
-                    :aria-label="t('scope.modeLabel')"
-                  ></sdk-segmented>
+                  <div class="agent-detail-scope-mode-switch">
+                    <sdk-segmented
+                      v-model="classScopeMode"
+                      :options="classScopeModeOptions"
+                      :disabled="disabled"
+                      :aria-label="t('scope.modeLabel')"
+                    ></sdk-segmented>
+                  </div>
                   <projection v-if="classScopeMode === 'graph'" slot="scope"></projection>
                   <template v-else>
                     <div class="agent-detail-class-picker" :inert="disabled">
