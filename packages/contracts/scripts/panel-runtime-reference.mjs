@@ -202,7 +202,7 @@ const contents = [
   "which registers a mounted page action entry automatically. Pass `{ entry: false }` for a background flow or",
   "to subscribe ahead of time to an operation behind a dialog. For example,",
   "`usePanelOperation(\"submit\", \"apply\", { entry: false })` exposes the operation read through `state`. Once",
-  "`state.value.status === \"ready\"`, use `state.value.value.apply?.unavailable?.reason` in the outer toolbar.",
+  "`state.value.status === \"ready\"`, pass `state.value.value.apply?.unavailable?.reason` to `<sdk-tooltip>` on the outer disabled toolbar button.",
   "Only the dialog's `OperationButton` registers a `page_action`.",
   "",
   "In Vue, call the hook’s `run(input)`. The SDK obtains the target from the binding and the host",
