@@ -5,45 +5,43 @@ import { agentChannelService } from "../channel";
 import { restoreAgentCaller } from "../caller";
 import { assistantStore } from "../../assistant/store";
 import { diagnosisService } from "../../ops-diagnosis/service";
-import { workbenchIdentity } from "../../../identity/installed";
+const assertManagement = vi.hoisted(() => vi.fn());
 vi.mock("../../assistant/skills",()=>({needsRetrievalScope:()=>false}));
 vi.mock("../caller",() => ({ restoreAgentCaller: vi.fn() }));
 vi.mock("../../assistant/authorization",() => ({ allowedAgents: async (agents: unknown[]) => agents }));
 vi.mock("../../assistant/store",() => ({ assistantStore: { channelAgents: vi.fn() } }));
 vi.mock("../../ops-diagnosis/service",() => ({ diagnosisService: { agents: vi.fn() },createDiagnosis: vi.fn(),prepareDiagnosis: vi.fn() }));
-vi.mock("../../../identity/installed",() => ({ workbenchIdentity: vi.fn() }));
+vi.mock("../../../identity/management", () => ({ assertManagement }));
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:true,packs:{
   en:{messages:en,...enLocaleMeta},
   "zh-CN":{messages:{...en,"assistant.default.regular.name":"智能助手","assistant.default.regular.description":"业务数据助手"},...enLocaleMeta},
 }});
 const actor = { id: "11111111-1111-4111-8111-111111111111",domainId: "a" };
-const observeAccess = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
-  observeAccess.mockReset();
+  assertManagement.mockReset();
   vi.mocked(restoreAgentCaller).mockResolvedValue({ owner: { userId: "user",domainId: "a" },credentials: { apiKey: "initiating-key" },expiresAt: 1000 });
-  vi.mocked(workbenchIdentity).mockReturnValue({ assertObserveAccess: observeAccess } as unknown as ReturnType<typeof workbenchIdentity>);
   vi.mocked(assistantStore.channelAgents).mockResolvedValue([{ id: actor.id,name: "Assistant",description: "Help",enabled: true,kind: "regular" } as Awaited<ReturnType<typeof assistantStore.channelAgents>>[number]]);
   vi.mocked(diagnosisService.agents).mockResolvedValue({ agents: [{ id: actor.id,name: "Diagnosis",description: "Inspect",icon: null,enabled: true }] });
 });
 it("the workbench provider lists only its own agents",async () => {
   const result = await agentChannelService.list({ providerId: "workbench",actor,language:"en" },"a");
   expect(result.agents.map(agent => agent.ref.providerId)).toEqual(["workbench"]);
-  expect(observeAccess).not.toHaveBeenCalled();
+  expect(assertManagement).not.toHaveBeenCalled();
   expect(diagnosisService.agents).not.toHaveBeenCalled();
 });
 it("the diagnosis provider lists only its own agents",async () => {
   const result = await agentChannelService.list({ providerId: "observe",actor,language:"en" },"a");
   expect(result.agents.map(agent => agent.ref.providerId)).toEqual(["observe"]);
   expect(assistantStore.channelAgents).not.toHaveBeenCalled();
-  expect(observeAccess).not.toHaveBeenCalled();
+  expect(assertManagement).not.toHaveBeenCalled();
 });
-it("does not query observe access to list an authorized diagnosis agent",async () => {
-  observeAccess.mockRejectedValue(new Error("observe access must not be checked"));
+it("lists authorized diagnosis agents without a management grant",async () => {
+  assertManagement.mockRejectedValue(new Error("Management denied"));
   const result = await agentChannelService.list({ providerId: "observe",actor,language:"en" },"a");
   expect(result.agents.map(agent => agent.ref.providerId)).toEqual(["observe"]);
   expect(diagnosisService.agents).toHaveBeenCalledOnce();
-  expect(observeAccess).not.toHaveBeenCalled();
+  expect(assertManagement).not.toHaveBeenCalled();
 });
 
 it("uses the caller locale with the workbench's existing default label owner",async()=>{

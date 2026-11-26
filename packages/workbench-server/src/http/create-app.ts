@@ -251,10 +251,6 @@ export function createWorkbenchApp(): Express {
   app.use("/api/mcp", mcpRouter);
   app.use("/api/query-history", queryHistoryRouter);
   app.use("/api/observe/agent/knowledge", opsKnowledgeRouter);
-  app.use(
-    ["/api/observe/diagnoses", "/api/observe/evidence"],
-    identity.observeAccess,
-  );
   app.use("/api/observe/retention", artifactRetentionRouter);
   app.use("/api/observe/autotest", autotestRouter);
   app.use("/api/observe", opsDiagnosisRouter);

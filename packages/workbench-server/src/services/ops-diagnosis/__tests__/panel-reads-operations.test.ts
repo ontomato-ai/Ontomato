@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as panelCheck from "@ontomato/contracts/panel-check";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 import { panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import type { DiagnosisEvidence } from "@ontomato/contracts/ops-diagnosis";
 import {
   AUTOTEST_CASE_ARTIFACT,
@@ -30,7 +31,6 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { BackendResponseError, BackendUnavailableError } from "../../../utils/backend-client";
 import { HttpError } from "../../../utils/errors";
 import { installWorkbenchIdentity } from "../../../identity/installed";
-import type { WorkbenchIdentity } from "../../../identity/types";
 import { buildTurnWorkspace } from "../../../platform/diagnosis/observe/workspaces/builder";
 import { loadManifest, saveManifest } from "../../../platform/diagnosis/observe/workspaces/store";
 import { describeServerOperation, panelServerOperation, type PanelOperationHost, type PanelReadServerOperation, type PanelWriteServerOperation } from "../../product-panels/server-operations";
@@ -56,7 +56,6 @@ configureI18n({
 
 const mocks = vi.hoisted(() => ({
   assertManagement: vi.fn(),
-  assertObserveAccess: vi.fn<Parameters<WorkbenchIdentity["assertObserveAccess"]>, ReturnType<WorkbenchIdentity["assertObserveAccess"]>>(async () => {}),
   knowledgeDir: "",
   workspacesDir: "",
   autotestDataDir: "",
@@ -198,7 +197,6 @@ beforeEach(() => {
   mocks.keptArtifacts.clear();
   mocks.activeRun = null;
   mocks.assertManagement.mockReset().mockResolvedValue(undefined);
-  mocks.assertObserveAccess.mockReset().mockResolvedValue(undefined);
   mocks.verifyDomain.mockReset().mockResolvedValue(undefined);
   mocks.resolveEvidence.mockReset();
   mocks.backendPost.mockReset();
@@ -215,8 +213,6 @@ beforeEach(() => {
     requirePermission: () => (_req, _res, next) => next(),
     assertPermission: async () => {},
     requireDeploymentMaintenance: (_req, _res, next) => next(),
-    observeAccess: (_req, _res, next) => next(),
-    assertObserveAccess: mocks.assertObserveAccess,
     requireDomainId: ({ domainId }) => {
       if (!domainId) throw new HttpError(403, "Domain required");
       return domainId;
@@ -229,7 +225,7 @@ afterEach(() => {
 });
 
 describe("Observe and Autotest panel owner reads and operations", () => {
-  it("lists and reads OpsKnowledge documents including directory index.md and enforces observe access", async () => {
+  it("lists and reads OpsKnowledge documents including directory index.md and enforces management access", async () => {
     fs.writeFileSync(path.join(mocks.knowledgeDir, "guides/index.md"), "# Guides Index\n\nOverview.", "utf8");
     const adapter = createOpsKnowledgeReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
     const files = await adapter.files();
@@ -524,8 +520,11 @@ describe("Observe and Autotest panel owner reads and operations", () => {
   });
 
   it("reads the DSL draft form and executes dslQuery.execute with default 2 sections and provider-inserted middle sections", async () => {
-    const adapter = createDslQueryReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
+    const owner = { domainId: "domain-a", userId: "user-1" };
+    const viewer = { token: "tok", locale: "en" };
+    const adapter = createDslQueryReadAdapter(owner, viewer);
     const form = panelFormDescriptionSchema.parse(await adapter.form());
+    expect(mocks.assertManagement).toHaveBeenLastCalledWith(workbenchManagement.opsDslRead, owner, viewer);
     expect(form.values).toEqual({ dsl: DEFAULT_DSL_QUERY_TEXT });
     expect(form.fields).toHaveLength(1);
     expect(form.fields[0]).toMatchObject({
@@ -544,6 +543,9 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     await expect(
       executeOp.execute(host, { target: { kind: "draft" }, input: { draft: { dsl: "{invalid" }, parameters: {} } }),
     ).rejects.toMatchObject({ status: 422, code: "INVALID_DSL_QUERY" });
+    expect(mocks.assertManagement).toHaveBeenLastCalledWith(
+      workbenchManagement.opsDslExecute, host.executor.owner, host.executor.credentials,
+    );
 
     const call = { target: { kind: "draft" as const }, input: { draft: { dsl: DEFAULT_DSL_QUERY_TEXT }, parameters: {} } };
     const descriptor = await describeServerOperation(executeOp, host, "executeDsl");
@@ -655,13 +657,12 @@ describe("Observe and Autotest panel owner reads and operations", () => {
       unregister();
     }
 
-    // Observe access is enforced on both form read and execution.
-    mocks.assertObserveAccess.mockRejectedValueOnce(new HttpError(403, "Forbidden"));
-    await expect(adapter.form()).rejects.toMatchObject({ status: 403 });
-    mocks.assertObserveAccess.mockRejectedValueOnce(new HttpError(403, "Forbidden"));
-    await expect(
-      executeOp.execute(host, { target: { kind: "draft" }, input: { draft: { dsl: DEFAULT_DSL_QUERY_TEXT }, parameters: {} } }),
-    ).rejects.toMatchObject({ status: 403 });
+    for (const callDsl of [() => adapter.form(), () => executeOp.execute(host, call)]) {
+      mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Forbidden", "PERMISSION_DENIED"));
+      await expect(callDsl()).rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
+      mocks.assertManagement.mockRejectedValueOnce(new HttpError(502, "Unavailable", "DEPENDENCY_UNAVAILABLE"));
+      await expect(callDsl()).rejects.toMatchObject({ status: 503, code: "DEPENDENCY_UNAVAILABLE" });
+    }
   });
 
   it("validates ops-dsl-console builtin panel source with real draftReadOperationIds and 8-locale parity", async () => {
