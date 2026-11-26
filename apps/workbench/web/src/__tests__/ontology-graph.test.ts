@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
@@ -23,6 +23,8 @@ import type {
 import { provideUnsavedChanges } from "@ontomato/platform-shell";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
+import { useTemplateCompiler } from "../../../../../packages/platform-web/src/panel-module";
+import { baseComponents } from "../../../../../packages/apps-sdk/src/base-components";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import {
   installPlatform,
@@ -383,6 +385,23 @@ function mountOntologyGraph(options: {
   };
 }
 
+const waitFor = <T>(check: () => T | Promise<T>) => vi.waitFor(check, { timeout: 5000 });
+
+beforeAll(async () => {
+  const usedComponents = new Set(
+    Object.values(authoringMembers).flatMap((definition) =>
+      "component" in definition && definition.component ? [definition.component] : [],
+    ),
+  );
+  await Promise.all([
+    useTemplateCompiler(),
+    ...Array.from(usedComponents).map((name) => {
+      const load = baseComponents[name as keyof typeof baseComponents];
+      return load ? load() : Promise.resolve();
+    }),
+  ]);
+}, 30_000);
+
 afterEach(() => {
   leaveFrame();
   vi.restoreAllMocks();
@@ -396,7 +415,7 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
     const harness = mountOntologyGraph();
     const { app, element } = await harness.open();
     try {
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(graphCanvasState.nodes).toHaveLength(2);
         expect(graphCanvasState.edges).toHaveLength(1);
       });
@@ -422,7 +441,7 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
       const downloadBtn = element.querySelector<HTMLButtonElement>("[data-graph-action='download']");
       expect(downloadBtn).not.toBeNull();
       downloadBtn!.click();
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(graphCanvasState.exportCalls).toHaveLength(1);
         expect(savedFiles).toHaveLength(1);
       });
@@ -439,14 +458,14 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
     const harness = mountOntologyGraph();
     const { app, element } = await harness.open();
     try {
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(element.querySelector("[data-action='product-relation-graph']")).not.toBeNull();
       });
 
       const openBtn = element.querySelector<HTMLButtonElement>("[data-action='product-relation-graph']")!;
       openBtn.click();
 
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(document.body.querySelector("[data-product-graph-dialog]")).not.toBeNull();
         expect(document.body.querySelectorAll("[data-product-graph-node]")).toHaveLength(4);
       });
@@ -461,14 +480,14 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
       expect(panelCard).not.toBeNull();
       expect(panelCard.textContent).toContain("Order Overview Panel");
       panelCard.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(document.body.querySelectorAll("[data-product-graph-edge].related-edge")).toHaveLength(2);
         expect(document.body.querySelectorAll("[data-product-graph-edge].muted-edge")).toHaveLength(1);
       });
 
       // Clicking an asset card navigates to the panel detail route with real asset primaryKey.
       panelCard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(harness.router.currentRoute.value.path).toBe("/ontology/panels/detail");
         expect(harness.router.currentRoute.value.query.selected).toBe("panel-1");
       });
@@ -493,7 +512,7 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
     const { app, element } = await harness.open();
     try {
       // Initial read failure hides empty canvas and renders reader-safe error without technical stack text.
-      await vi.waitFor(() => {
+      await waitFor(() => {
         const banner = element.querySelector("[data-graph-read-error]");
         expect(banner).not.toBeNull();
         expect(banner!.textContent).toContain("Unable to read the ontology graph right now");
@@ -506,7 +525,7 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
       failGraph = false;
       const retryBtn = element.querySelector<HTMLButtonElement>("[data-graph-read-error] button")!;
       retryBtn.click();
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(element.querySelector("[data-graph-read-error]")).toBeNull();
         expect(graphCanvasState.nodes).toHaveLength(2);
       });
@@ -516,7 +535,7 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
       failGraph = true;
       const headerRefreshBtn = element.querySelector<HTMLButtonElement>("button[title='Refresh']")!;
       headerRefreshBtn.click();
-      await vi.waitFor(() => {
+      await waitFor(() => {
         const banner = element.querySelector("[data-graph-read-error]");
         expect(banner).not.toBeNull();
         expect(banner!.textContent).toContain("Unable to read the ontology graph right now");
