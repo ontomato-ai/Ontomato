@@ -9,7 +9,7 @@ type GraphEdge = ProductGraph["edges"][number];
 type PanelSource = Pick<ProductPanel, "id" | "name" | "revision" | "template"> & {
   manifest: Pick<ProductPanel["manifest"], "members">;
 };
-type ProjectionSource = Pick<ProductProjection, "id" | "name" | "revision"> & Parameters<typeof projectionReadReferences>[0];
+type ProjectionSource = Pick<ProductProjection, "id" | "name" | "revision"> & { readonly shared?: boolean } & Parameters<typeof projectionReadReferences>[0];
 
 export interface AssetGraphSources {
   panels: readonly PanelSource[];
@@ -93,8 +93,8 @@ export function panelGraphMembers(panel: Pick<PanelSource, "id" | "manifest">) {
 
 export function addProjectionGraphReferences(
   graph: ReturnType<typeof createAssetGraph>, projection: ProjectionSource, objectTypeLabel: AssetGraphSources["objectTypeLabel"],
+  source = `asset:${projection.id}`,
 ) {
-  const source = `asset:${projection.id}`;
   for (const ref of projectionReadReferences(projection)) {
     const kind = ref.kind === "MetricView" ? "metric" : ref.kind === "Action" ? "action" : "definition";
     const isObjectType = ref.kind === "ObjectType" || ref.kind === "PlatformObjectType";
@@ -107,13 +107,88 @@ export function addProjectionGraphReferences(
   }
 }
 
+/** Relations the graph reads as "this asset uses that one": the direction the connectivity rule follows. */
+const USE_RELATIONS: ReadonlySet<GraphEdge["relation"]> = new Set(["navigates", "contains", "renders", "depends-on"]);
+
+/** What an asset carries to its readers beyond what it uses: its ontology targets and the agent it defaults to. */
+const CARRIED_RELATIONS: ReadonlySet<GraphEdge["relation"]> = new Set(["renders", "depends-on", "identity"]);
+
+const ASSET_KINDS: ReadonlySet<string> = new Set(["application", "page", "object-projection"]);
+
+function isPlatformObjectType(className: string) {
+  return Object.hasOwn(platformObjectTypes, className);
+}
+
+/** A business ontology element: the object types and definitions a product asset can be used for. */
+function isBusinessOntologyNode(node: GraphNode) {
+  return node.kind === "definition"
+    || (node.kind === "object-type" && !isPlatformObjectType(node.id.slice("object-type:".length)));
+}
+
+/**
+ * Keeps the assets that lead to this domain's business ontology, plus what those assets carry. An asset that only
+ * reaches platform-owned objects says nothing about the business ontology, so it is not drawn.
+ */
+function keepBusinessFacing(graph: ProductGraph): ProductGraph {
+  const users = new Map<string, string[]>();
+  const carried = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    if (USE_RELATIONS.has(edge.relation)) {
+      const sources = users.get(edge.target);
+      if (sources) sources.push(edge.source);
+      else users.set(edge.target, [edge.source]);
+    }
+    if (CARRIED_RELATIONS.has(edge.relation)) {
+      const targets = carried.get(edge.source);
+      if (targets) targets.push(edge.target);
+      else carried.set(edge.source, [edge.target]);
+    }
+  }
+  const byId = new Map(graph.nodes.map(node => [node.id, node]));
+  const keeps = new Set<string>();
+  const pending: string[] = [];
+  for (const edge of graph.edges) {
+    if (USE_RELATIONS.has(edge.relation) && isBusinessOntologyNode(byId.get(edge.target)!)) pending.push(edge.source);
+  }
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (keeps.has(id)) continue;
+    keeps.add(id);
+    for (const source of users.get(id) ?? []) pending.push(source);
+  }
+  // Only the assets themselves are judged; a member projection already reached the ontology through its panel.
+  const keptAssets = [...keeps].filter(id => ASSET_KINDS.has(byId.get(id)!.kind));
+  const carriedPending = [...keptAssets];
+  while (carriedPending.length) {
+    for (const target of carried.get(carriedPending.pop()!) ?? []) {
+      if (keeps.has(target)) continue;
+      keeps.add(target);
+      carriedPending.push(target);
+    }
+  }
+  return {
+    nodes: graph.nodes.filter(node => keeps.has(node.id)),
+    edges: graph.edges.filter(edge => keeps.has(edge.source) && keeps.has(edge.target)),
+  };
+}
+
 export function buildProductAssetGraph(sources: AssetGraphSources): ProductGraph {
   const graph = createAssetGraph();
   const panelIds = new Set(sources.panels.map(panel => panel.id));
-  const projectionIds = new Set(sources.projections.map(projection => projection.id));
+  const projectionById = new Map(sources.projections.map(projection => [projection.id, projection]));
+  const memberProjections = new Map<string, Set<string>>();
+  for (const panel of sources.panels) {
+    const ids = new Set(panelGraphMembers(panel).filter(member => member.kind === "projection").map(member => member.id));
+    if (ids.size) memberProjections.set(panel.id, ids);
+  }
+  // A member projection is part of its panel, not an asset of its own; only a shared one stands on its own here too.
+  const drawnProjections = sources.projections.filter(projection =>
+    ![...memberProjections.values()].some(ids => ids.has(projection.id)) || projection.shared === true);
+  const drawnProjectionIds = new Set(drawnProjections.map(projection => projection.id));
+
   for (const app of sources.applications) graph.addNode(assetGraphNode("application", app));
   for (const panel of sources.panels) graph.addNode(assetGraphNode("panel", panel));
-  for (const projection of sources.projections) graph.addNode(assetGraphNode("projection", projection));
+  for (const projection of drawnProjections) graph.addNode(assetGraphNode("projection", projection));
   for (const agent of sources.agents) {
     graph.addNode({ id: `agent:${agent.id}`, name: agent.name, kind: "AgentDefinition", category: "ontology" });
   }
@@ -128,9 +203,14 @@ export function buildProductAssetGraph(sources: AssetGraphSources): ProductGraph
   }
   for (const panel of sources.panels) {
     for (const { kind, id } of panelGraphMembers(panel)) {
-      if ((kind === "panel" ? panelIds : projectionIds).has(id)) {
+      if ((kind === "panel" ? panelIds : drawnProjectionIds).has(id)) {
         graph.addEdge(`asset:${panel.id}`, `asset:${id}`, "contains");
       }
+    }
+    // The panel reaches the ontology through its own member projections.
+    for (const id of memberProjections.get(panel.id) ?? []) {
+      const projection = projectionById.get(id);
+      if (projection) addProjectionGraphReferences(graph, projection, sources.objectTypeLabel, `asset:${panel.id}`);
     }
   }
   for (const { className, panelId } of sources.objectDetailMappings) {
@@ -139,6 +219,6 @@ export function buildProductAssetGraph(sources: AssetGraphSources): ProductGraph
     graph.addNode(node);
     graph.addEdge(`asset:${panelId}`, node.id, "renders", "ontology");
   }
-  for (const projection of sources.projections) addProjectionGraphReferences(graph, projection, sources.objectTypeLabel);
-  return graph.build();
+  for (const projection of drawnProjections) addProjectionGraphReferences(graph, projection, sources.objectTypeLabel);
+  return keepBusinessFacing(graph.build());
 }

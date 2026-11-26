@@ -83,7 +83,10 @@ export async function readProductAssetGraph(owner: ProductOwner, viewer: Assista
   ]);
   const graph = buildProductAssetGraph({
     panels: panelRows.map(row => panelDefinition(row, false)),
-    projections: projectionRows.map(row => projectionDefinition(row, false)),
+    projections: projectionRows.map(row => {
+      const projection = projectionDefinition(row, false);
+      return { ...projection, shared: projection.visibility === "domain" };
+    }),
     applications: details.map(detail => {
       const entries = detail.panelUses.filter(isApplicationPanelUse);
       return {
