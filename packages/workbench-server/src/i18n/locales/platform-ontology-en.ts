@@ -85,7 +85,6 @@ export const platformOntologyEn = {
   "platformOntology.relations.projection.binds-target": "Binds target",
   "platformOntology.relations.panel.contains-projection": "Contains projection",
   "platformOntology.relations.panel.contains-panel": "Contains panel",
-  "platformOntology.relations.panel.provides-skill": "Provides skill",
   "platformOntology.relations.application.uses-panel": "Uses panel",
   "platformOntology.relations.agent.uses-skill": "Uses skill",
   "platformOntology.relations.agent.executes-as-user": "Executes as user",

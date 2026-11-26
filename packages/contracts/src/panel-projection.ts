@@ -1010,7 +1010,7 @@ const formSubmitOn = z.enum(["manual", "blur", "change"]).optional();
 const fieldShape = z.object({
   path: fieldPath,
   label: z.string().min(1),
-  /** JSON Schema for this value, derived from the owner's save schema for consumers such as the panel skill. */
+  /** JSON Schema for this value, derived from the owner's save schema for form consumers. */
   valueSchema: runtimeJsonObjectSchema,
   required: z.boolean(),
   help: z.string().nullish(),

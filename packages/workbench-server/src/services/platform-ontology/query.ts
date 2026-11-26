@@ -30,7 +30,6 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import type { AuthorizationGraphFacts } from "../governance/policy-access";
 import type { ProductOwner } from "../product-governance/service-authentication";
-import { panelSkillRef } from "../product-panels/skill-identity";
 import { triggerClient } from "../scheduling/trigger-client";
 import {
   PlatformOntologyOwnerReaders,
@@ -1517,34 +1516,6 @@ async function evaluateRelationKind(
               fromLabel: panel.name,
             });
           }
-        }
-      }
-      return { status: "ok", edges };
-    }
-
-    case "panel.provides-skill": {
-      const [panelsRes, skillsRes] = await Promise.all([
-        readers.productPanels(),
-        readers.skills(),
-      ]);
-      if (!panelsRes.ok) return { status: panelsRes.status, reason: panelsRes.reason, edges: [] };
-      if (!skillsRes.ok) return { status: skillsRes.status, reason: skillsRes.reason, edges: [] };
-      const skillByKey = new Map(skillsRes.data.map((skill) => [skill.primaryKey, skill]));
-      const edges: RawEdgeCandidate[] = [];
-      for (const panel of panelsRes.data) {
-        const skillKey = runtimeSkillKey(panelSkillRef(readers.owner.domainId, panel.id));
-        const skill = skillByKey.get(skillKey);
-        if (!skill) continue;
-        if (
-          (node.className === PRODUCT_PANEL && panel.id === node.primaryKey) ||
-          (node.className === SKILL && skillKey === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: PRODUCT_PANEL, primaryKey: panel.id },
-            to: { className: SKILL, primaryKey: skillKey },
-            fromLabel: panel.name,
-            toLabel: skill.title,
-          });
         }
       }
       return { status: "ok", edges };

@@ -11,12 +11,12 @@ import { publishSkill, workbenchBuiltinSkillRoot } from "../agent-runtime/skills
 export async function prepareAppBuilderRun({ a, turn, input, owner, credentials, reader, pageSkillContext }: AssistantPreparation, appId?: string): Promise<RuntimeStartRunRequest> {
   const sdk = await currentAppSdk();
   const prepared = pageSkillContext
-    ? await (await import("../assistant/skills")).prepareCurrentPageSkill(owner.domainId, credentials, pageSkillContext, owner.userId)
+    ? await (await import("../assistant/skills")).validateCurrentPageContext(owner.domainId, credentials, pageSkillContext, owner.userId)
     : null;
   const intrinsic = await Promise.all(APP_BUILDER.skills.map((ref) => publishSkill(workbenchBuiltinSkillRoot(ref), ref)));
-  const currentPage = prepared?.currentPage;
-  const pageControl = prepared !== null;
-  const skills = [...intrinsic, ...(prepared ? [prepared.skill] : [])].map(({ skill, digest }) => ({ skill, digest }));
+  const currentPage = prepared;
+  const pageControl = true;
+  const skills = intrinsic.map(({ skill, digest }) => ({ skill, digest }));
   return {
     language: credentials.locale ?? "en",
     input,

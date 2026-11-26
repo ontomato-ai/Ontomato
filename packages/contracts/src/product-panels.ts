@@ -15,7 +15,7 @@ import {
 import { METRIC_VIEW, platformObjectTypes } from "./platform-object-types";
 import { applicationMetadataSchema } from "./application-metadata";
 import { domainApplicationIconSchema } from "./application-icons";
-import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
+import { pageSkillContextSchema } from "./page-context";
 import { runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
 export { chartProjectionTemplateSchema } from "./dashboard";
@@ -449,21 +449,6 @@ export const applicationPanelReferencesRequestSchema = z.object({
 }).strict();
 export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelReferencesRequestSchema>;
 
-/** Java exposes registered entry facts to the authenticated provider service. */
-export const panelSkillSourceSchema = panelUseRefSchema.extend({
-  panelId: id,
-  path: applicationPanelUsePathSchema,
-  entrance: pageSkillEntranceSchema,
-  names: z.record(z.string(), z.string()).optional(),
-  applicationNames: z.record(z.string(), z.string()).optional(),
-});
-export type PanelSkillSource = z.infer<typeof panelSkillSourceSchema>;
-export const panelSkillSourcesResponseSchema = z.array(panelSkillSourceSchema);
-export const panelSkillSourcesQuerySchema = z.union([
-  z.object({ domainId: id }).strict(),
-  panelUseRefSchema.extend({ domainId: id }),
-]);
-
 /** The Java declaration is the sole takeover authority, including for legacy writers. */
 export const panelApplicationEntrySchema = z.object({
   path,
@@ -792,7 +777,6 @@ export const applicationPanelUsesParamsSchema = z.object({ applicationId: id }).
 /**
  * Create a panels application or replace an existing panels application's use relations.
  * Java rejects an existing application whose entry renderer is not panels: this API cannot perform a takeover.
- * Existing application maintainer checks apply; pageSkills are derived, never supplied alongside the relations.
  */
 export const registerApplicationPanelUsesRequestSchema = z.object({
   entry: panelApplicationEntrySchema,

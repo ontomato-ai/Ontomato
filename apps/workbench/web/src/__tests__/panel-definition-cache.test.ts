@@ -23,7 +23,6 @@ import {
   leaveFrame,
   mountPlatformPage,
   nothingAt,
-  pageSkillContextFor,
   panelRecord,
   panelSnapshot,
   panelUse,
@@ -231,7 +230,6 @@ describe("panel definition cache & bundled projections", () => {
       }
       if (request.path === `/api/product-panels/${PANEL_ID}`) {
         const query = new URLSearchParams(request.search);
-        const pageSkillContext = pageSkillContextFor(panel, request);
         const projections: Record<string, BundledPanelProjection> | undefined =
           query.get("includeProjections") === "1"
             ? {
@@ -241,10 +239,9 @@ describe("panel definition cache & bundled projections", () => {
                   : { status: "unavailable", httpStatus: 403, message: "No access to projection B" },
               }
             : undefined;
-        return Response.json({ panel, ...(pageSkillContext && { pageSkillContext }), ...(projections && { projections }) });
+        return Response.json({ panel, ...(projections && { projections }) });
       }
       if (request.path === `/api/product-panels/${PANEL_ID}/snapshot`) {
-        const pageSkillContext = pageSkillContextFor(panel, request);
         return Response.json({
           panel: { id: panel.id, revision: panel.revision },
           projections: projBAllowed
@@ -256,7 +253,6 @@ describe("panel definition cache & bundled projections", () => {
               ? { status: "ready", memberPath: [{ member: "listB" }], target: { kind: "projection", id: PROJ_B_ID }, revision: projB.revision }
               : { status: "forbidden", memberPath: [{ member: "listB" }] },
           ],
-          ...(pageSkillContext && { pageSkillContext }),
         });
       }
       if (request.path === `/api/product-projections/${PROJ_A_ID}`) {
@@ -337,7 +333,6 @@ describe("panel definition cache & bundled projections", () => {
       }
       if (request.path === `/api/product-panels/${PANEL_ID}`) {
         const query = new URLSearchParams(request.search);
-        const pageSkillContext = pageSkillContextFor(currentPanel, request);
         const projections: Record<string, BundledPanelProjection> | undefined =
           query.get("includeProjections") === "1"
             ? {
@@ -345,7 +340,7 @@ describe("panel definition cache & bundled projections", () => {
                 [PROJ_B_ID]: { status: "ready", projection: currentProjB },
               }
             : undefined;
-        return Response.json({ panel: currentPanel, ...(pageSkillContext && { pageSkillContext }), ...(projections && { projections }) });
+        return Response.json({ panel: currentPanel, ...(projections && { projections }) });
       }
       if (request.path === `/api/product-panels/${PANEL_ID}/snapshot`) {
         return panelSnapshot(currentPanel, { [PROJ_A_ID]: currentProjA, [PROJ_B_ID]: currentProjB }, request);
@@ -414,10 +409,8 @@ describe("panel definition cache & bundled projections", () => {
         if (panelRevoked) {
           return Response.json({ error: { code: "FORBIDDEN", message: "Panel access revoked" } }, { status: 403 });
         }
-        const pageSkillContext = pageSkillContextFor(currentPanel, request);
         return Response.json({
           panel: currentPanel,
-          ...(pageSkillContext && { pageSkillContext }),
           projections: {
             [PROJ_A_ID]: { status: "ready", projection: currentProjA },
             [PROJ_B_ID]: { status: "ready", projection: currentProjB },
@@ -428,7 +421,6 @@ describe("panel definition cache & bundled projections", () => {
         if (panelRevoked) {
           return Response.json({ error: { code: "FORBIDDEN", message: "Panel access revoked" } }, { status: 403 });
         }
-        const pageSkillContext = pageSkillContextFor(currentPanel, request);
         return Response.json({
           panel: { id: currentPanel.id, revision: currentPanel.revision },
           projections: projARevoked
@@ -440,7 +432,6 @@ describe("panel definition cache & bundled projections", () => {
               : { status: "ready", memberPath: [{ member: "listA" }], target: { kind: "projection", id: PROJ_A_ID }, revision: currentProjA.revision },
             { status: "ready", memberPath: [{ member: "listB" }], target: { kind: "projection", id: PROJ_B_ID }, revision: currentProjB.revision },
           ],
-          ...(pageSkillContext && { pageSkillContext }),
         });
       }
       if (request.path === `/api/product-projections/${PROJ_A_ID}`) {
@@ -511,7 +502,6 @@ describe("panel definition cache & bundled projections", () => {
       }
       if (request.path === `/api/product-panels/${PANEL_ID}`) {
         const query = new URLSearchParams(request.search);
-        const pageSkillContext = pageSkillContextFor(currentPanel, request);
         const projections: Record<string, BundledPanelProjection> | undefined =
           query.get("includeProjections") === "1"
             ? {
@@ -519,7 +509,7 @@ describe("panel definition cache & bundled projections", () => {
                 [PROJ_B_ID]: { status: "ready", projection: currentProjB },
               }
             : undefined;
-        return Response.json({ panel: currentPanel, ...(pageSkillContext && { pageSkillContext }), ...(projections && { projections }) });
+        return Response.json({ panel: currentPanel, ...(projections && { projections }) });
       }
       if (request.path === `/api/product-panels/${PANEL_ID}/snapshot`) {
         if (panelRevoked) {

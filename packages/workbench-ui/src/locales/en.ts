@@ -861,7 +861,7 @@ export default {
     "switchWhileRunning": "Finish or stop the running reply before switching agents",
     "collapseComposer": "Hide the message box",
     "expandComposer": "Ask about this page",
-    "pageAgentUnavailable": "This page's agent is unavailable: its page skill has no agent for you, or the agent it names has gone. Ask a domain administrator to check the page's configuration.",
+    "pageAgentUnavailable": "This page's agent is unavailable: no enabled agent you can use carries the page operation skill, or the agent the page names has gone. Ask a domain administrator to check the page's configuration.",
     "pageContext": "Current page: {page} ({url})",
     "pageContextAddress": "Current page: {url}",
     "selectionContext": "Selected: {selection}",
@@ -1477,7 +1477,6 @@ export default {
       "panel": {
         "contains-projection": "Contains projection",
         "contains-panel": "Contains panel",
-        "provides-skill": "Provides skill"
       },
       "application": {
         "uses-panel": "Uses panel"

@@ -121,6 +121,6 @@ class ApplicationCatalogEntryMenuTest {
 
     private static JSONObject app(String id, List<ApplicationPanelUse> uses) {
         return JSONObject.of("id", id, "kind", "native", "entry", JSONObject.of("path", "/" + id, "renderer", id, "entryKey", "main"),
-            "names", Map.of("en", id), "groups", List.of(), "pageSkills", List.of(), "panelUses", uses);
+            "names", Map.of("en", id), "groups", List.of(), "panelUses", uses);
     }
 }

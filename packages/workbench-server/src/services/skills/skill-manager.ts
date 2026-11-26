@@ -6,7 +6,6 @@ import type { AnalysisAgentSkillReference, SkillCatalog, SkillInfo, SkillDeleteR
 import type { StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { isProtectedSkillName } from "../../core/skills/providers";
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { skillWriteRestriction, type SkillEntry } from "../../core/skills/types";
 import { readSkillPackage } from "../../core/skills/package";
@@ -61,7 +60,6 @@ function openSkillZip(bytes: Buffer) {
   catch (error) { throw new InvalidSkillPackageError(`Invalid SKILL.md: ${String(error)}`); }
   if (!parsed) throw new InvalidSkillPackageError("Standard SKILL.md frontmatter is required");
   const id = parsed.manifest.name;
-  if (isProtectedSkillName(id)) throw new InvalidSkillPackageError("This skill name is reserved");
   return { id, manifest: parsed.manifest, entries, prefix };
 }
 class SkillManager {
@@ -71,7 +69,7 @@ class SkillManager {
     const labels = isPublic && labelPath && resolveLocale(locale).toLowerCase().startsWith("zh")
       ? readSkillLabels(labelPath)[skill.skill.name] : undefined;
     return { id: skill.skill.name, skill: skill.skill, isPublic,
-      path: skill.source.kind === "provider" ? undefined : skill.source.path,
+      path: skill.source.path,
       writeRestriction: skillWriteRestriction(skill),
       title: labels?.title ?? skill.displayTitle ?? skill.skill.name, description: labels?.description ?? skill.manifest.description };
   }
@@ -80,8 +78,8 @@ class SkillManager {
   }
   async getAllSkills(domainId: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
     await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);
-    const { registry, diagnostics } = await readSkillView(domainId, credentials);
-    return { skills: this.describeSkills(registry.getSkills(), credentials.locale), ...(diagnostics && { diagnostics }) };
+    const { registry } = await readSkillView(domainId, credentials);
+    return { skills: this.describeSkills(registry.getSkills(), credentials.locale) };
   }
   async countSkills(domainId: string, credentials: AssistantCredentials): Promise<number> {
     await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);

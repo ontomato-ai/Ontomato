@@ -1,54 +1,38 @@
 import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
-import { createHash } from "node:crypto";
-import { stringify } from "yaml";
 import { z } from "zod";
 import { skillCatalogDiagnosticsSchema } from "@ontomato/contracts/skills";
-import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
-import {
-  panelManifestSchema, panelOperationId,
-} from "@ontomato/contracts/panel-manifest";
-import { pageSkillPlacementKey } from "@ontomato/contracts/page-skills";
+import { panelManifestSchema, panelOperationId } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import { declaredCustomerFormSaveName, directReadDeclaration, projectionOperationIsRowScoped, projectionReadReference } from "@ontomato/contracts/panel-projection";
 import {
   builtinProductPanelInputSchema, builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
-  type BuiltinProductPanelInput, type BuiltinProductProjectionInput, type PanelSkillSource,
+  type BuiltinProductPanelInput, type BuiltinProductProjectionInput,
   type ProductPanelInput, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
-import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceFailure } from "../../core/skills/providers";
+import { SkillSourceRecordError } from "../../core/skills/providers";
 import { getLocale, resolveLocale } from "../../i18n";
-import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
+import type { CurrentProductRow } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readObjectActions } from "../action/panel-reads";
 import { readPanelComponentCatalogue, readProjectionComponent } from "./component-catalogue";
 import { boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
 import { panelServerOperationLabel } from "./server-operations";
-import { panelSkillScope } from "./skill-identity";
+import { requireCurrentProduct } from "./current";
+import type { AssistantOwner } from "../assistant/store";
 
 type ComponentCatalogue = ReadonlyMap<string, ComponentDeclaration>;
 type PanelDefinition = BuiltinProductPanelInput | ProductPanelInput;
 type ProjectionDefinition = BuiltinProductProjectionInput | ProductProjectionInput;
-const verbs = new Intl.ListFormat("en", { type: "conjunction" });
 
-function fingerprint(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function panelSkillManifest(skill: RuntimeSkillRef, panel: PanelDescription, sourceFingerprint: string): StandardSkillFrontmatter {
-  const actions = [
-    ...(panel.reads ? ["read current data"] : []),
-    "open the panel",
-    ...(panel.forms.length ? ["fill live forms"] : []),
-    ...(panel.operations.length ? ["review declared operations"] : []),
-  ];
-  const actionText = verbs.format(actions);
-  return {
-    name: skill.name,
-    description: `${actionText[0]!.toUpperCase()}${actionText.slice(1)} for ${panel.name}.`,
-    metadata: { "ontomato-panel-fingerprint": sourceFingerprint },
-  };
-}
+/** The admitted entrance facts repeated inside one freshly generated page description. */
+export type PageDescriptionEntrance = {
+  applicationId: string;
+  useId: string;
+  path: string;
+  names?: Record<string, string>;
+  applicationNames?: Record<string, string>;
+};
 
 function safeField(path: (string | number)[]): string | undefined {
   const parts: (string | number)[] = [];
@@ -93,103 +77,54 @@ const panelDependencies = z.object({
   }),
 });
 
-/** Supply dependency facts before reading an admitted panel's package. */
-export async function panelSkillSources(
-  domainId: string, sources: readonly PanelSkillSource[], reader: AssistantCredentials,
-): Promise<(ProtectedSkillOffering | SkillSourceFailure)[]> {
-  const panels = new Map<string, PanelSkillSource[]>();
-  for (const source of sources) {
-    const panelSources = panels.get(source.panelId) ?? [];
-    panelSources.push(source);
-    panels.set(source.panelId, panelSources);
-  }
-  const projections = new Map<string, ReturnType<typeof findCurrentProduct>>();
-  function projectionRow(id: string) {
-    const cached = projections.get(id);
-    if (cached) return cached;
-    const read = findCurrentProduct(domainId, "projection", id);
-    projections.set(id, read);
-    return read;
-  }
-  let release: ReturnType<typeof readPanelComponentCatalogue> | undefined;
-  let actionCatalog: Promise<ReadonlyMap<string, { name: string; declaration: PanelOperationDeclaration }>> | undefined;
-  return Promise.all([...panels].map(async ([id, panelSources]): Promise<ProtectedSkillOffering | SkillSourceFailure> => {
-    const scope = panelSkillScope(id);
-    const row = await findCurrentProduct(domainId, "panel", id);
-    const entrances = [...new Map(panelSources.map(({ entrance }) => [pageSkillPlacementKey(entrance), entrance])).values()];
-    let dependencies: z.infer<typeof panelDependencies>;
-    try {
-      dependencies = parseDefinition(panelDependencies, row, id);
-    } catch (error) {
-      if (!(error instanceof SkillSourceRecordError)) throw error;
-      const { field, reason } = error.detail;
-      return { sourceKey: id, scope, entrances, knownRequiredResourceIds: [id], ...(field ? { field } : {}), reason };
-    }
-    const projectionIds = [...new Set(Object.values(dependencies.manifest.members)
-      .flatMap(({ target }) => "projectionId" in target ? [target.projectionId] : []))];
-    async function buildSnapshot() {
-      const panel = parseDefinition<PanelDefinition>(scope === "platform" ? builtinProductPanelInputSchema : productPanelInputSchema, row, id);
-      const [sdk, rows] = await Promise.all([
-        release ??= readPanelComponentCatalogue().catch(cause => {
-          throw new Error("Unable to read the current SDK component catalogue", { cause });
-        }),
-        Promise.all(projectionIds.map(projectionRow)),
-      ]);
-      const entries = projectionIds.map((projectionId, index) => {
-        const schema = isBuiltinProductId(projectionId) ? builtinProductProjectionInputSchema : productProjectionInputSchema;
-        return [projectionId, parseDefinition<ProjectionDefinition>(schema, rows[index], projectionId, panel.name)] as const;
-      });
-      const locale = reader.locale ? resolveLocale(reader.locale) : getLocale();
-      const hasActions = entries.some(([, projection]) =>
-        Object.values(projection.operations ?? {}).some(({ operation }) => operation.kind === "Action"));
-      const actions = hasActions
-        ? await (actionCatalog ??= readObjectActions(reader).then(({ actions: list }) =>
-          new Map(list.map(({ declaration, name }) => [declaration.id, { name, declaration }]))))
-        : undefined;
-      const installedIds = [...new Set(entries.map(([, projection]) => projection.componentId))]
-        .filter(componentId => !sdk.components.has(componentId));
-      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk), { domainId: scope === "platform" ? null : domainId, credentials: reader })] as const));
-      const components = new Map<string, ComponentDeclaration>(sdk.components);
-      for (const [id, component] of installed) if (component) components.set(id, component);
-      const description = describePanel(panel, new Map(entries), components, locale, actions);
-      const operationLabels = description.operations.map(({ id, label }) => [id, label]);
-      return {
-        description, locale,
-        fingerprint: fingerprint([id, panel, entries, sdk.version, sdk.digest, locale, operationLabels, ...installed]),
-      };
-    }
-    let snapshot: ReturnType<typeof buildSnapshot> | undefined;
-    const read = () => snapshot ??= buildSnapshot();
-    return {
-      kind: "protected",
-      sourceKey: id,
-      scope,
-      entrances,
-      resourceIds: [id, ...projectionIds],
-      async readManifest(skill) {
-        const { description, fingerprint } = await read();
-        return panelSkillManifest(skill, description, fingerprint);
-      },
-      async readDisplayTitle() {
-        const { description } = await read();
-        return description.name;
-      },
-      async provide(skill, context) {
-        const { description, locale, fingerprint: sourceFingerprint } = await read();
-        const fixedKeys = (context?.entryInputKeys ?? []).filter(key => Object.hasOwn(description.state, key));
-        const admitted = context?.admittedEntrances && new Set(context.admittedEntrances.map(pageSkillPlacementKey));
-        const available = panelSources.filter(({ entrance }) => !admitted || admitted.has(pageSkillPlacementKey(entrance)))
-          .sort((a, b) => a.path.localeCompare(b.path, "en") || a.applicationId.localeCompare(b.applicationId, "en")
-            || a.useId.localeCompare(b.useId, "en"));
-        const fixed = new Set(fixedKeys);
-        const scopedState = Object.fromEntries(Object.entries(description.state).filter(([key]) => !fixed.has(key)));
-        const scoped = { ...description, state: scopedState };
-        const scopedFingerprint = fingerprint([sourceFingerprint, [...fixed].sort(), available]);
-        const manifest = panelSkillManifest(skill, scoped, scopedFingerprint);
-        return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${describeSkill(scoped, available, locale)}\n` }] };
-      },
-    };
-  }));
+/**
+ * Generate the description of one admitted panel entrance from the current panel, projection, component and operation
+ * definitions. This is a run-time document for the agent: it is neither stored nor exposed as a skill identity.
+ * The owner checks here are the ordinary panel/projection USE checks; entry admission happens before the caller gets here.
+ */
+export async function generatePanelPageDescription(
+  owner: AssistantOwner,
+  reader: AssistantCredentials,
+  panelId: string,
+  entrance: PageDescriptionEntrance,
+  entryInputKeys: readonly string[] = [],
+): Promise<string> {
+  const panelRow = await requireCurrentProduct(owner, reader, "panel", panelId, "use");
+  const dependencies = parseDefinition(panelDependencies, panelRow, panelId);
+  const projectionIds = [...new Set(Object.values(dependencies.manifest.members)
+    .flatMap(({ target }) => "projectionId" in target ? [target.projectionId] : []))];
+  const projectionRows = await Promise.all(projectionIds.map(id => requireCurrentProduct(owner, reader, "projection", id, "use")));
+  const panel = parseDefinition<PanelDefinition>(isBuiltinProductId(panelId) ? builtinProductPanelInputSchema : productPanelInputSchema,
+    panelRow, panelId);
+  const sdk = await readPanelComponentCatalogue().catch(cause => {
+    throw new Error("Unable to read the current SDK component catalogue", { cause });
+  });
+  const entries = projectionIds.map((projectionId, index) => {
+    const schema = isBuiltinProductId(projectionId) ? builtinProductProjectionInputSchema : productProjectionInputSchema;
+    return [projectionId, parseDefinition<ProjectionDefinition>(schema, projectionRows[index], projectionId, panel.name)] as const;
+  });
+  const locale = reader.locale ? resolveLocale(reader.locale) : getLocale();
+  const hasActions = entries.some(([, projection]) =>
+    Object.values(projection.operations ?? {}).some(({ operation }) => operation.kind === "Action"));
+  const actions = hasActions
+    ? await readObjectActions(reader).then(({ actions: list }) =>
+      new Map(list.map(({ declaration, name }) => [declaration.id, { name, declaration }])))
+    : undefined;
+  const installedIds = [...new Set(entries.map(([, projection]) => projection.componentId))]
+    .filter(componentId => !sdk.components.has(componentId));
+  const installed = await Promise.all(installedIds.map(async id => [
+    id,
+    await readProjectionComponent(id, () => Promise.resolve(sdk), {
+      domainId: isBuiltinProductId(panelId) ? null : owner.domainId,
+      credentials: reader,
+    }),
+  ] as const));
+  const components = new Map<string, ComponentDeclaration>(sdk.components);
+  for (const [id, component] of installed) if (component) components.set(id, component);
+  const description = describePanel(panel, new Map(entries), components, locale, actions);
+  const fixed = new Set(entryInputKeys.filter(key => Object.hasOwn(description.state, key)));
+  const scoped = { ...description, state: Object.fromEntries(Object.entries(description.state).filter(([key]) => !fixed.has(key))) };
+  return describeSkill(scoped, [entrance], locale);
 }
 
 type ActionCatalogEntry = { name: string; declaration: PanelOperationDeclaration };
@@ -288,11 +223,11 @@ function describePanel(
   };
 }
 
-function localizedName(names: PanelSkillSource["names"], locale: string) {
+function localizedName(names: PageDescriptionEntrance["names"], locale: string) {
   return names && (names[locale] ?? names.en ?? Object.values(names)[0]);
 }
 
-function describeEntrances(sources: readonly PanelSkillSource[], locale: string): string {
+function describeEntrances(sources: readonly PageDescriptionEntrance[], locale: string): string {
   const heading = "### Available entrances";
   if (!sources.length) return `${heading}\nThe initiating user has no registered entrance for this panel.`;
   return [
@@ -310,7 +245,7 @@ function describeEntrances(sources: readonly PanelSkillSource[], locale: string)
 
 function describeSkill(
   { name, description, content, state, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription,
-  available: readonly PanelSkillSource[], locale: string,
+  available: readonly PageDescriptionEntrance[], locale: string,
 ): string {
   const { recipes } = content;
   return [
@@ -342,7 +277,7 @@ function describeSkill(
       "### Declared operations and live page actions",
       ...operations.map(describeOperation),
       ...(operations.length ? [] : [hasPlacedMembers ? "No operations directly on this panel." : "No operations."]),
-      "When this run has the `page_action` tool and this page is open beside the conversation, invoke declared operations directly through `page_action({ operation, memberPath?, rowKey?, input? })` so the page runs the exact same UI button/form entry a human clicks with the logged-in user's permissions. Never call a write owner endpoint directly from a platform panel skill.",
+      "When this run has the `page_action` tool and this page is open beside the conversation, invoke declared operations directly through `page_action({ operation, memberPath?, rowKey?, input? })` so the page runs the exact same UI button/form entry a human clicks with the logged-in user's permissions. Never call a write owner endpoint directly when a declared page operation exists.",
       "Use `page_action({ operation: \"page.refresh\" })` to reload displayed data or `page_action({ operation: \"<formMember>.discard\" })` to discard unsaved edits in a mounted form.",
       ...(operations.some(operation => operation.owner?.declaration.batch) ? [
         "For a batch-capable operation on checked items, first select/check the target items through declared public state (`present({ target, state })`), then invoke the batch operation with `page_action({ operation })`.",

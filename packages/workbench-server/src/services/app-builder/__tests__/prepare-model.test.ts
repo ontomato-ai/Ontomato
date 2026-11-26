@@ -16,6 +16,7 @@ it('uses the app-builder selected model and declares run-scoped business callbac
    workbench:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/workbench').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/workbench',credential:'wbc1.sealed'},
    ontology:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/ontology').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/ontology',credential:'wbc1.sealed'},
    authoring:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/authoring').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/authoring',credential:'wbc1.sealed'},
+   panelOperations:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/panels').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/panels',credential:'wbc1.sealed'},
  });
  expect(JSON.stringify(run)).not.toContain('human-secret');
 });

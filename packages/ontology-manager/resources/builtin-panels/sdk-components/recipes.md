@@ -22,7 +22,7 @@
 ## 回答「某个组件要什么数据、有哪些配置」
 
 1. 从页面上下文和地址参数读 `selected`（组件主键），或在 `search` 非空时按搜索词理解读者指的是哪一批组件。
-2. 用页面技能的「读当前数据」读取页面已声明的成员数据：
+2. 用页面说明中对应成员的「读当前数据」读取页面已声明的成员数据：
    - 成员 `list`（`rows` / `catalogue`）：按搜索词查看按用途分组排列的组件目录（组件、角色、使用范围、适用对象、所属包）。
    - 成员 `header` 或 `summary`（`record`）：查看选中组件的名称、组件标识（`componentId`）、所属包（`package`）、模块（`module`）、导出名（`exportName`）、角色（`role`）、用途分组（`group`）、使用范围（`panelUsable`）、适用对象类型（`bindsElement`）与副作用（`effects`）。
    - 成员 `meaningCard`（`record`，取 `meaning`）：查看组件的完整含义说明，按 Markdown 排版；它同时也在 `record` 的 `meaning` 字段里。

@@ -72,7 +72,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private ApplicationCatalog.Builtin builtin(String id, String kind) {
         return new ApplicationCatalog.Builtin(id, kind, "apps", "build", 1,
             JSONObject.of("path", "/"+id, "renderer", id, "entryKey", "main"), null,
-            new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "pages", List.of(), List.of(), List.of()));
+            new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "pages", List.of(), List.of()));
     }
     private List<Map<String,Object>> records() {
         return jdbc.queryForList("SELECT * FROM sys_application ORDER BY id");
@@ -80,13 +80,13 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     /** A user application row as the retired hosted publication used to create it, for catalogue fixtures. */
     private void publishFixture(String id, ApplicationCatalog.Declaration d, QueryAccessService.GrantUser user) {
         jdbc.update("""
-            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,panel_settings,allow_standalone,updated_at)
-            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,?,now())
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,schedule_adapter,release_id,groups,entry_path,panel_uses,panel_settings,allow_standalone,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?,now())
             ON CONFLICT(id) DO UPDATE SET names=excluded.names,descriptions=excluded.descriptions,updated_at=now()
             """, id, user.domainId(), "workbench", user.id(), "hosted",
             JSON.toJSONString(d.names()), JSON.toJSONString(d.descriptions()), d.icon(), "apps", "business", 100,
             JSONObject.of("path", "/apps/" + id + "/", "entryKey", "main").toJSONString(), null, "release",
-            JSON.toJSONString(d.groups()), "/apps/" + id + "/", JSON.toJSONString(d.pageSkills()),
+            JSON.toJSONString(d.groups()), "/apps/" + id + "/",
             JSON.toJSONString(d.panelUses()), "{}", true);
     }
     @Test void completeWorkbenchDeclarationRemovesOnlyItsUndeclaredBuiltins() throws Exception {
@@ -133,38 +133,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertEquals("agents", catalog.require("agents").getString("id"));
     }
 
-    @Test void aNativeKnowledgeGroupKeepsItsGovernanceSkillAndPresetWithAnAdmittedPanelMember() throws Exception {
-        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
-        var ontology = JSON.parseObject(new ClassPathResource("applications/ontology.json").getContentAsString(StandardCharsets.UTF_8),
-            ApplicationCatalog.Builtin.class);
-        var metadata = ontology.declaration();
-        var mapping = new PageSkills.Declaration("knowledge-use", "knowledge",
-            new PageSkills.Skill(new PageSkills.Namespace("provider", "ontology", null), "knowledge-governance"), List.of());
-        var use = new ApplicationPanelUse("knowledge-use", "knowledge", "builtin-product-knowledge", "/ontology/knowledge",
-            new DefaultAgentTarget("id", "knowledge-agent", null), null);
-        var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
-            metadata.groups(), List.of(mapping), List.of(use));
-        catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(ontology.id(), ontology.kind(), ontology.rail(),
-            ontology.category(), ontology.sort(), ontology.entry(), ontology.scheduleAdapter(), declaration)));
-
-        var viewer = new QueryAccessService.GrantUser("viewer", "domain");
-        when(identity.getCurrentUser()).thenReturn(viewer);
-
-        http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")
-                .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data[?(@.path == '/ontology/knowledge')].entrance.entryKey")
-                .value(org.hamcrest.Matchers.contains("knowledge-use")));
-        http.perform(get("/platform/applications/ontology/panel-uses"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.entry.renderer").value("ontology"))
-            .andExpect(jsonPath("$.data.panelUses[0].id").value("knowledge-use"));
-        http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/knowledge"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.use.id").value("knowledge-use"));
-        PageSkillsContractTest.expectKnowledgeMapping(http.perform(get("/platform/page-skills")));
-    }
-
     @Test void aDuplicateKeyNamesTheFileAndTheKey() {
         var source = new ByteArrayResource("""
             {"declaration":{"panelUses":[],"panelUses":[]}}
@@ -195,7 +163,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             "/native-framed-demo/overview", null,
             Map.of("en", "Overview"), null, null, null);
         var metadata = new ApplicationCatalog.Declaration(Map.of("en", "Native framed"), Map.of(), "pages",
-            List.of(), List.of(), List.of(use));
+            List.of(), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
             declared.rail(), declared.category(), declared.sort(), declared.entry(),
             declared.scheduleAdapter(), metadata, null, "builtin-product-native-frame")));
@@ -350,34 +318,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertTrue(roots.stream().anyMatch(entry -> entry.entryId().equals(id + "/other")));
         assertFalse(catalog.ownsEntry("trial-domain", id + "/trial"));
         assertFalse(roots.stream().anyMatch(entry -> entry.entryId().equals(id + "/trial")));
-        http.perform(get("/platform/page-skills")).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.admittedEntrances[?(@.pageKey == 'ontology-panels')].entryKey")
-                .value(org.hamcrest.Matchers.contains("use-ontology-panels")));
-        http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "trial-domain")
-                .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data[?(@.applicationId == 'app-ontology-panels')].useId")
-                .value(org.hamcrest.Matchers.contains("other")));
-        http.perform(post("/platform/applications/catalogue/form").contentType(MediaType.APPLICATION_JSON).content("""
-            {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-ontology-panels"}}
-            """)).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.values.panelUses.length()").value(2))
-            .andExpect(jsonPath("$.data.errors[0].field").value("/panelUses/0/pageKey"))
-            .andExpect(jsonPath("$.data.errors[0].message").value(org.hamcrest.Matchers.allOf(
-                org.hamcrest.Matchers.containsString("ontology-panels"), org.hamcrest.Matchers.containsString("/ontology/panels"),
-                org.hamcrest.Matchers.containsString("trial-domain"), org.hamcrest.Matchers.containsString(id))));
-    }
-
-    @Test void domainRegistrationNamesTheBuiltinEntryThatReservedThePageKey() throws Exception {
-        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
-        var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
-        when(identity.getCurrentUser()).thenReturn(operator);
-
-        var response = http.perform(put("/platform/applications/app-new-trial/panel-uses")
-                .contentType(MediaType.APPLICATION_JSON).content(panelsTrialRegistration("app-new-trial")))
-            .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
-        assertTrue(response.contains("ontology-panels"));
-        assertTrue(response.contains("/ontology/panels"));
-        assertTrue(response.contains("built-in application 'ontology'"));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM sys_application WHERE id='app-new-trial'", Integer.class));
     }
 
@@ -416,7 +356,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var use = new ApplicationPanelUse("browse", "browse", panelId, "/browser/data", null, null);
         var metadata = builtin("browser", "native").declaration();
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
-            metadata.groups(), List.of(), List.of(use));
+            metadata.groups(), List.of(use));
         return new ApplicationCatalog.Builtin("browser", "native", "apps", "build", 1,
             JSONObject.of("path", "/browser", "renderer", "panels"), null, declaration);
     }
@@ -810,7 +750,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             Map.of("en", "Overview"), Map.of("en", "Explain the overview"),
             Map.of("term", Map.of("literal", "autumn")), "main");
         var metadata = new ApplicationCatalog.Declaration(Map.of("en", "Native example"), Map.of(), "pages",
-            List.of(new ApplicationCatalog.Group("main", Map.of("en", "Main"), 1)), List.of(), List.of(use));
+            List.of(new ApplicationCatalog.Group("main", Map.of("en", "Main"), 1)), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
             declared.rail(), declared.category(), declared.sort(), declared.entry(),
             declared.scheduleAdapter(), metadata)));
@@ -1031,32 +971,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         }
     }
 
-    @Test void upgradesStoredDefaultAgentTargetsWithoutChangingTheirMeaning() {
-        catalog.builtins("data-engine", List.of(builtin("ontology", "native")));
-        jdbc.update("UPDATE sys_application SET panel_uses=?::jsonb, page_skills=?::jsonb WHERE id='ontology'", """
-            [{"id":"use","pageKey":"page","panelId":"panel","path":"/ontology/page",
-              "access":{"permissionCode":"business-knowledge"},"defaultAgentId":"saved-agent"},
-             {"id":"other","pageKey":"other","panelId":"panel","path":"/ontology/other"}]
-            """, """
-            [{"permissionCode":"business-knowledge","skill":{"namespace":{"kind":"provider","provider":"ontology"},
-              "name":"knowledge-governance"},"defaults":[{"pageKey":"page","agentKey":"knowledge-governance"}]}]
-            """);
-
-        new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
-        var app = catalog.require("ontology");
-        var uses = app.getList("panelUses", ApplicationPanelUse.class);
-        assertEquals(new DefaultAgentTarget("id", "saved-agent", null), uses.getFirst().defaultAgent());
-        assertEquals("business-knowledge", jdbc.queryForObject(
-            "SELECT panel_uses->0->'access'->>'permissionCode' FROM sys_application WHERE id='ontology'", String.class));
-        assertNull(uses.get(1).defaultAgent());
-        var mapping = app.getList("pageSkills", PageSkills.Declaration.class).getFirst();
-        assertEquals(new DefaultAgentTarget("preset", null, "knowledge-governance"), mapping.defaults().getFirst().defaultAgent());
-        var upgraded = records();
-
-        new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
-        assertEquals(upgraded, records());
-    }
-
     @Test void mergesEditionBuiltinEntriesAndAdmitsNativeEntriesWithoutPanelGrantsOrSkills() throws Exception {
         var editionAuth = new ApplicationPanelUse("authorization", "authorization", null,
             "/settings/system-config/authorization",
@@ -1086,15 +1000,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertEquals(List.of("audit-log", "system-monitor", "authorization"),
             menu.panelUses().stream().map(ApplicationPanelUse::id).toList());
 
-        // Native entries have their own admission and never export a panel page skill.
+        // Native entries have their own admission and never expose panel operation placement.
         assertTrue(catalog.resolveEntry("/settings/records/system-monitor", user)
             .getObject("use", ApplicationPanelUse.class).nativeEntry());
         assertTrue(catalog.resolveEntry("/settings/system-config/authorization", user)
             .getObject("use", ApplicationPanelUse.class).nativeEntry());
-        assertTrue(catalog.panelSkillSources("domain-a").stream().noneMatch(src ->
-            "system-monitor".equals(src.useId()) || "authorization".equals(src.useId())));
-        assertTrue(catalog.pageSkills(user).admittedEntrances().stream().noneMatch(entrance ->
-            "system-monitor".equals(entrance.pageKey()) || "authorization".equals(entrance.pageKey())));
     }
 
 }

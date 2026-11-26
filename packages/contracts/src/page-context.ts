@@ -414,3 +414,99 @@ export function carriedTargetIn(
   }
   return null;
 }
+
+/* --- Run-level page placement and discovery --- */
+
+const entranceApplicationIdSchema = z.string().min(1);
+const entranceKeySchema = z.string().min(1);
+const entrancePageKeySchema = z.string().min(1);
+const localizedTextSchema = z.record(z.string(), z.string());
+
+export const pageEntranceSchema = z.object({
+  applicationId: entranceApplicationIdSchema,
+  entryKey: entranceKeySchema,
+  pageKey: entrancePageKeySchema,
+}).strict();
+export type PageEntrance = z.infer<typeof pageEntranceSchema>;
+
+/** Server-verified placement of the page that initiated one user turn. It deliberately carries no skill identity. */
+export const currentPageContextSchema = pageEntranceSchema.extend({
+  useId: z.string().min(1),
+  panelId: z.string().min(1),
+  path: z.string().min(1).startsWith("/"),
+  memberPath: panelMemberPathSchema,
+}).strict();
+export type CurrentPageContext = z.infer<typeof currentPageContextSchema>;
+
+/** The existing wire field keeps its name at host boundaries; its content is now the current page placement. */
+export const pageSkillContextSchema = currentPageContextSchema;
+export type PageSkillContext = CurrentPageContext;
+
+export const assistantAgentsQuerySchema = z.union([
+  z.object({}).strict(),
+  pageEntranceSchema,
+]);
+export type AssistantAgentsQuery = z.infer<typeof assistantAgentsQuerySchema>;
+
+export const pageCatalogApplicationSchema = z.object({
+  applicationId: entranceApplicationIdSchema,
+  names: localizedTextSchema.optional(),
+  descriptions: localizedTextSchema.optional(),
+}).strict();
+export type PageCatalogApplication = z.infer<typeof pageCatalogApplicationSchema>;
+
+export const pageCatalogEntrySchema = pageEntranceSchema.extend({
+  useId: entranceKeySchema,
+  panelId: z.string().min(1).nullable(),
+  kind: z.enum(["panel", "native", "frame-conversation"]),
+  path: z.string().min(1).startsWith("/"),
+  names: localizedTextSchema.optional(),
+  descriptions: localizedTextSchema.optional(),
+  groupKey: z.string().min(1).optional(),
+}).strict();
+export type PageCatalogEntry = z.infer<typeof pageCatalogEntrySchema>;
+
+export const pageCatalogGroupSchema = z.object({
+  key: z.string().min(1),
+  names: localizedTextSchema.optional(),
+  descriptions: localizedTextSchema.optional(),
+  entries: z.array(pageCatalogEntrySchema),
+}).strict();
+export type PageCatalogGroup = z.infer<typeof pageCatalogGroupSchema>;
+
+export const pageCatalogRequestSchema = z.object({
+  applicationId: entranceApplicationIdSchema.optional(),
+}).strict();
+export type PageCatalogRequest = z.infer<typeof pageCatalogRequestSchema>;
+
+export const pageCatalogResponseSchema = z.object({
+  applications: z.array(pageCatalogApplicationSchema),
+  groups: z.array(pageCatalogGroupSchema).optional(),
+  entries: z.array(pageCatalogEntrySchema).optional(),
+}).strict();
+export type PageCatalogResponse = z.infer<typeof pageCatalogResponseSchema>;
+
+export const pageSearchRequestSchema = z.object({
+  query: z.string().trim().min(1).max(200),
+}).strict();
+export type PageSearchRequest = z.infer<typeof pageSearchRequestSchema>;
+
+export const pageSearchResultSchema = z.object({
+  application: pageCatalogApplicationSchema,
+  entry: pageCatalogEntrySchema,
+  breadcrumb: z.array(z.string().min(1)).min(1),
+}).strict();
+export type PageSearchResult = z.infer<typeof pageSearchResultSchema>;
+
+export const pageSearchResponseSchema = z.object({
+  results: z.array(pageSearchResultSchema),
+}).strict();
+export type PageSearchResponse = z.infer<typeof pageSearchResponseSchema>;
+
+export const pageDescriptionRequestSchema = pageEntranceSchema;
+export type PageDescriptionRequest = z.infer<typeof pageDescriptionRequestSchema>;
+
+export const pageDescriptionResponseSchema = z.object({
+  markdown: z.string().min(1),
+}).strict();
+export type PageDescriptionResponse = z.infer<typeof pageDescriptionResponseSchema>;

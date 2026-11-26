@@ -2,10 +2,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import {
-  APPLICATION_ENTRY_PATH, applicationEntrySkill, currentSdk, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
+  APPLICATION_ENTRY_PATH, applicationEntryPageContext, currentSdk, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
   panelSnapshot, projections, type Sent,
 } from "./panel-frame";
 
@@ -55,7 +55,7 @@ async function openApplication(address: string) {
   return { ...page, router, sent, skills };
 }
 
-const member = (use: ApplicationPanelUse) => applicationEntrySkill(app, use);
+const member = (use: ApplicationPanelUse) => applicationEntryPageContext(app, use);
 const panelReads = (sent: Sent[], panelId: string) => sent.filter(request => request.path === `/api/product-panels/${panelId}`);
 const openings = (sent: Sent[]) => sent.filter(request => request.path === APPLICATION_ENTRY_PATH);
 
@@ -73,7 +73,7 @@ afterEach(() => {
   vi.resetModules();
 });
 
-it("obtains the page skill on opening and reads the definition and its members separately", async () => {
+it("obtains the current page placement on opening and reads the definition and its members separately", async () => {
   const { app: page, router, sent, skills } = await openApplication(tasks.path);
   try {
     await vi.waitFor(() => expect(skills).toEqual([member(tasks)]));
@@ -91,42 +91,6 @@ it("obtains the page skill on opening and reads the definition and its members s
     const checks = sent.filter(request => request.path === `/api/product-panels/${p.id}/snapshot`);
     expect(checks.at(-1)!.search).toBe("");
     expect(openings(sent).map(request => new URLSearchParams(request.search).get("path"))).toEqual([tasks.path, summary.path, tasks.path]);
-  } finally {
-    page.unmount();
-  }
-});
-
-it("passes on a null member as Node answers it, without inventing a public context", async () => {
-  const unavailable = { ...member(tasks), member: null };
-  override = request => asksToOpen(request, tasks) ? entryAnswer(tasks, unavailable) : undefined;
-  const { app: page, element, skills } = await openApplication(tasks.path);
-  try {
-    await vi.waitFor(() => expect(skills).toEqual([unavailable]));
-    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded > *")).not.toBeNull());
-  } finally {
-    page.unmount();
-  }
-});
-
-it("passes on the latest member on re-entry once the kept panel has checked its definition", async () => {
-  const unavailable = { ...member(tasks), member: null };
-  let granted = false;
-  override = request => asksToOpen(request, tasks)
-    ? entryAnswer(tasks, granted ? member(tasks) : unavailable) : undefined;
-  const { app: page, router, skills } = await openApplication(tasks.path);
-  try {
-    await vi.waitFor(() => expect(skills).toEqual([unavailable]));
-    await router.push(summary.path);
-    await vi.waitFor(() => expect(skills).toHaveLength(2));
-    granted = true;
-    let release!: () => void;
-    snapshotHold = new Promise(resolve => (release = resolve));
-    await router.push(tasks.path);
-    await new Promise(resolve => setTimeout(resolve, 20));
-    expect(skills).toHaveLength(2);
-    release();
-    await vi.waitFor(() => expect(skills).toHaveLength(3));
-    expect(skills.at(-1)).toEqual(member(tasks));
   } finally {
     page.unmount();
   }
