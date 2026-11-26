@@ -32,7 +32,7 @@ export default [
     "capability-map-graph",
     "Four-layer capability graph",
     "Interactive platform ontology graph across fact, capability, governance and product layers in type or instance mode.",
-    "OntologyGraph",
+    "InstanceGraph",
     {
       inputs: {
         mode: text,

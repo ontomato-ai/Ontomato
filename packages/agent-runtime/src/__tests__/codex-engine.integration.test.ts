@@ -27,9 +27,17 @@ if (!database || !binary) throw new Error("Set RUNTIME_TEST_DATABASE_URL and ONT
 const launcher = fileURLToPath(new URL("../adapters/codex/launch.mjs", import.meta.url));
 const host = { id: "fixture", token: "fixture-host", providers: [] };
 const scope = { hostId: host.id, domainId: "fixture-domain" };
+const tool = {
+  name: "fixture_tool",
+  description: "Read a test count",
+  inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
+};
 
-function reply(res: ServerResponse, n: number, model: string) {
-  const item = {
+function reply(res: ServerResponse, n: number, model: string, call: string | null) {
+  const item = call ? {
+    type: "function_call", id: `fc_${n}`, call_id: call, name: "fixture_tool",
+    arguments: '{"query":"fixture"}', status: "completed",
+  } : {
     type: "message", id: `msg_${n}`, role: "assistant", status: "completed", phase: "final_answer",
     content: [{ type: "output_text", text: `Answer ${n}`, annotations: [] }],
   };
@@ -39,7 +47,7 @@ function reply(res: ServerResponse, n: number, model: string) {
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   event("response.created", { response });
   event("response.output_item.added", { output_index: 0, item: { ...item, status: "in_progress" } });
-  event("response.output_text.delta", { output_index: 0, content_index: 0, item_id: item.id, delta: `Answer ${n}` });
+  if (!call) event("response.output_text.delta", { output_index: 0, content_index: 0, item_id: item.id, delta: `Answer ${n}` });
   event("response.output_item.done", { output_index: 0, item });
   event("response.completed", { response: {
     ...response, status: "completed", output: [item], usage: {
@@ -50,13 +58,14 @@ function reply(res: ServerResponse, n: number, model: string) {
   res.end();
 }
 
-it("uses the runtime session owner, Responses lease across a Codex process restart", async () => {
+it("uses the runtime session owner, Responses lease and MCP tool binding across a Codex process restart", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "codex-engine-test-"));
   const schema = "codex_engine_" + randomUUID().replaceAll("-", "");
   const admin = new pg.Pool({ connectionString: database });
   const engineLeases: string[] = [];
   const upstreamAuthorization: (string | undefined)[] = [];
-  const modelRequests: { model: string; input: unknown[]; tools?: { name: string }[] }[] = [];
+  const modelRequests: { model: string; input: unknown[]; tools: { name: string }[] }[] = [];
+  const toolRequests: { arguments: unknown; credential: string | string[] | undefined }[] = [];
   const logs: string[] = [];
   const upstream = createServer(async (req, res) => {
     const chunks = [];
@@ -67,7 +76,30 @@ it("uses the runtime session owner, Responses lease across a Codex process resta
       const body = JSON.parse(raw);
       modelRequests.push(body);
       const n = modelRequests.length;
-      reply(res, n, body.model);
+      reply(res, n, body.model, n % 2 === 1 ? `fixture-call-${n}` : null);
+    } else if (req.url === "/mcp" && req.method === "POST") {
+      const message = JSON.parse(raw);
+      if (message.method === "notifications/initialized") {
+        res.writeHead(202).end();
+        return;
+      }
+      let result;
+      if (message.method === "initialize") {
+        result = {
+          protocolVersion: message.params.protocolVersion,
+          capabilities: { tools: {} },
+          serverInfo: { name: "fixture", version: "1" },
+        };
+      } else if (message.method === "tools/list") {
+        result = { tools: [tool] };
+      } else if (message.method === "tools/call" && message.params.name === tool.name) {
+        toolRequests.push({ arguments: message.params.arguments, credential: req.headers["x-fixture-credential"] });
+        result = { content: [{ type: "text", text: '{"total":42}' }] };
+      }
+      const response = result
+        ? { jsonrpc: "2.0", id: message.id, result }
+        : { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "Method not found" } };
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(response));
     } else {
       res.writeHead(404).end();
     }
@@ -108,14 +140,15 @@ it("uses the runtime session owner, Responses lease across a Codex process resta
   });
   const sessionId = randomUUID();
   let runtime = createRuntime();
+  let serviceId: string;
 
   async function run(content: string, engine: string) {
     const id = randomUUID();
     const request: RuntimeStartRunRequest = {
       input: { role: "user", content, timestamp: Date.now() }, language: "en",
       definition: {
-        engine, systemPrompt: "Answer the user.", modelId: null, skills: [], externalMcp: [],
-        sandbox: { limits: codeLimitsSchema.parse({}) }, toolSurface: "product",
+        engine, systemPrompt: "Use fixture_tool for the test.", modelId: null, skills: [],
+        externalMcp: [{ id: serviceId }], sandbox: { limits: codeLimitsSchema.parse({}) },
       },
     };
     await runtime.start(host, scope, sessionId, id, id, request);
@@ -126,11 +159,15 @@ it("uses the runtime session owner, Responses lease across a Codex process resta
     expect(snapshot.messages.filter(message => message.message.role === "user")).toMatchObject([
       { contextSeq: expect.any(Number), message: { content } },
     ]);
+    expect(snapshot.toolExecutions).toMatchObject([{ toolName: "fixture_tool", status: "completed" }]);
     expect(snapshot.usageUpdate?.last.totalTokens).toBe(19);
   }
 
   try {
     await runtime.initialize();
+    ({ id: serviceId } = await runtime.mcp.create(scope, {
+      name: "fixture", url: base + "/mcp", headers: { "x-fixture-credential": "fixture-mcp-secret" },
+    }));
     await new RuntimeModelSettings(runtime.store, "fixture-runtime-token").save(scope.domainId, {
       connections: { native: { provider: "openai", apiBase: base + "/v1", apiKey: "host-only-upstream-key" } },
       models: { "fixture-model": { type: "chat", connection: "native", model: "gpt-5.5", maxRetries: 0 } },
@@ -150,15 +187,21 @@ it("uses the runtime session owner, Responses lease across a Codex process resta
     await runtime.initialize();
     await run("Codex input after restart", "pi");
     expect(await runtime.store.sessionEngine(scope, sessionId)).toEqual(binding);
-    expect(modelRequests).toHaveLength(2);
+    expect(modelRequests).toHaveLength(4);
     expect(modelRequests.every(request => request.model === "gpt-5.5")).toBe(true);
-    expect(upstreamAuthorization).toEqual(Array.from({ length: 2 }, () => "Bearer host-only-upstream-key"));
+    expect(upstreamAuthorization).toEqual(Array.from({ length: 4 }, () => "Bearer host-only-upstream-key"));
     expect(engineLeases).toHaveLength(2);
     expect(engineLeases[1]).not.toBe(engineLeases[0]);
-    expect(modelRequests.map(request => (request.tools ?? []).map(tool => tool.name)))
-      .toEqual(Array.from({ length: 2 }, () => []));
-    expect(JSON.stringify(modelRequests[1].input)).toContain("First Codex input");
+    for (const request of modelRequests) {
+      expect(request.tools.filter(tool => tool.name === "fixture_tool")).toHaveLength(1);
+    }
+    expect(JSON.stringify(modelRequests[2].input)).toContain("First Codex input");
+    expect(JSON.stringify(modelRequests[2].input)).toContain('fixture-call-1');
+    expect(JSON.stringify(modelRequests[2].input)).toContain('42');
     expect(JSON.stringify(modelRequests)).not.toContain("host-only-upstream-key");
+    expect(toolRequests).toEqual(Array.from({ length: 2 }, () => ({
+      arguments: { query: "fixture" }, credential: "fixture-mcp-secret",
+    })));
   } finally {
     await runtime.close();
     await gateway.stop();

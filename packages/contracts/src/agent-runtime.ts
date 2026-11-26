@@ -68,11 +68,8 @@ export const runtimeAgentDefinitionSchema = z
       .strict()
       .optional(),
     externalMcp: z.array(runtimeMcpRefSchema),
-    toolSurface:z.enum(['standard','product']).optional(),
   })
-  .strict().superRefine((definition,context)=>{
-    if(definition.toolSurface==='product'&&(definition.skills.length||definition.externalMcp.length))context.addIssue({code:'custom',message:'Product tool surfaces cannot include inherited skills or MCP tools'});
-  });
+  .strict();
 
 /** Stored definitions predate the engine's ownership of context compaction. */
 export const storedRuntimeAgentDefinitionSchema = z.preprocess(value => {

@@ -136,7 +136,7 @@
     },
     "members": {
       "graph": {
-        "component": "OntologyGraph",
+        "component": "InstanceGraph",
         "name": "Four-layer capability graph",
         "description": "Interactive platform ontology graph across fact, capability, governance and product layers in type or instance mode.",
         "type": "platform:OntologyType",

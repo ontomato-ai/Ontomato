@@ -1,6 +1,6 @@
 ---
 name: dashboard-pages
-description: Headless CLI skill for reading, linking, and updating saved dashboards in unattended or background runs without a live page.
+description: Headless CLI skill for reading, linking, creating, and updating saved dashboards in unattended or background runs without a live page.
 compatibility: Requires Node.js 24 or newer. API commands use ONTOMATO_WORKBENCH_URL and ONTOMATO_TK, ONTOMATO_API_KEY, or ONTOMATO_EXECUTION_CALLBACK.
 metadata:
   ontomato.title: Dashboard pages (CLI)
@@ -20,6 +20,7 @@ API commands use `ONTOMATO_WORKBENCH_URL` before `/api`, the supplied `ONTOMATO_
 | `read --dashboard-id ID` | Read the dashboard, groups and saved card identities. |
 | `card --dashboard-id ID --card-id ID` | Read the saved query, drawing, current columns/rows, MetricView description and truncation. |
 | `parameters --dashboard-id ID --card-id ID` | Read parameter fields, current values, readonly keys and revision. |
+| `create --name NAME` | Create an empty dashboard and print its `data.id` and `data.name`. Use the returned ID with `read`, `link` and `save`. |
 | `save --operation OP --form work/form.json` | Validate and send the dashboard update directly to the save API in headless runs without a live page. |
 
 ## Dashboard links in replies

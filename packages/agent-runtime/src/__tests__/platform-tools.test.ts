@@ -1,45 +1,14 @@
 import express from "express";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeAgentDefinition, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import type { HarnessTurnHost } from "../adapters/contract";
 import {
   bindPlatformTools,
   declarePlatformTools,
   type PlatformTool,
   registerSkillCallbackRoutes,
-  usesEngineTools,
 } from "../platform-tools";
 import { RuntimeError } from "../errors";
-
-function baseDefinition(overrides: Partial<RuntimeAgentDefinition> = {}): RuntimeAgentDefinition {
-  return {
-    systemPrompt: "Be helpful",
-    modelId: null,
-    skills: [],
-    sandbox: {
-      limits: {
-        memoryBytes: 1_000_000_000,
-        wallTimeMs: 60_000,
-        cpuSeconds: 60,
-        processCount: 64,
-        fileBytes: 10_000_000,
-        outputBytes: 1_000_000,
-      },
-    },
-    externalMcp: [],
-    toolSurface: "standard",
-    ...overrides,
-  };
-}
-
-function baseRequest(definition: RuntimeAgentDefinition): RuntimeStartRunRequest {
-  return {
-    language: "en",
-    definition,
-    input: { role: "user", content: "hi", timestamp: 1 },
-  };
-}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -48,7 +17,6 @@ afterEach(() => {
 describe("declarePlatformTools", () => {
   it("assembles session-open declarations once with engineTools=true for standard surfaces", () => {
     const surface = declarePlatformTools({
-      definition: baseDefinition(),
       mcpTools: [
         {
           name: "erp_lookup",
@@ -75,40 +43,26 @@ describe("declarePlatformTools", () => {
     }
   });
 
-  it("disables engine and MCP tools on product surfaces", () => {
-    const productDef = baseDefinition({
-      toolSurface: "product",
-    });
-    expect(usesEngineTools(productDef)).toBe(false);
-
-    const surface = declarePlatformTools({
-      definition: productDef,
-      mcpTools: [{ name: "ignored_mcp", description: "Should be ignored", parameters: { type: "object" } }],
-      hasChannel: false,
-      hasPresentation: true,
-    });
-
-    expect(surface.engineTools).toBe(false);
-    expect(surface.tools.map((tool) => tool.name)).toEqual([
-      "present",
-      "observe_display",
-      "fill_form",
-      "page_action",
-    ]);
-  });
-
   it("rejects duplicate platform tool names and collisions with built-in engine tools", () => {
-    const tool = (name: string) => ({ name, description: "MCP tool", parameters: { type: "object" } });
-    for (const mcpTools of [[tool("bash")], [tool("dup"), tool("dup")]]) {
-      expect(() => declarePlatformTools({
-        definition: baseDefinition(),
-        mcpTools,
+    expect(() =>
+      declarePlatformTools({
+        mcpTools: [{ name: "bash", description: "Collides with engine bash", parameters: { type: "object" } }],
         hasChannel: false,
         hasPresentation: false,
-      })).toThrow("Exposed tool names must be unique");
-    }
-  });
+      }),
+    ).toThrow("Exposed tool names must be unique");
 
+    expect(() =>
+      declarePlatformTools({
+        mcpTools: [
+          { name: "dup", description: "First", parameters: { type: "object" } },
+          { name: "dup", description: "Second", parameters: { type: "object" } },
+        ],
+        hasChannel: false,
+        hasPresentation: false,
+      }),
+    ).toThrow("Exposed tool names must be unique");
+  });
 });
 
 describe("bindPlatformTools", () => {
@@ -156,7 +110,6 @@ describe("bindPlatformTools", () => {
 
     const bound = bindPlatformTools({
       runId: "run-1",
-      request: baseRequest(baseDefinition()),
       mcpTools: [customMcpTool],
       authorize,
       onClose,
@@ -242,30 +195,6 @@ describe("bindPlatformTools", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("excludes MCP tools from bound run when toolSurface is product", async () => {
-    const mcpTool: PlatformTool = {
-      declaration: { name: "mcp_only", description: "MCP", parameters: { type: "object" } },
-      label: "MCP",
-      execute: vi.fn(),
-    };
-    const bound = bindPlatformTools({
-      runId: "run-2",
-      request: baseRequest(baseDefinition({ toolSurface: "product" })),
-      mcpTools: [mcpTool],
-    });
-    expect(bound.engineTools).toBe(false);
-    expect(bound.declarations).toEqual([]);
-    const res = await bound.invoke({
-      toolCallId: "tc-1",
-      toolName: "mcp_only",
-      args: {},
-      signal: new AbortController().signal,
-      onUpdate: () => {},
-    });
-    expect(res.isError).toBe(true);
-    expect(mcpTool.execute).not.toHaveBeenCalled();
-  });
-
   it("throws if a declared tool has no matching implementation", () => {
     const misnamedChannelTool: PlatformTool = {
       declaration: { name: "not_agent", description: "Wrong name", parameters: { type: "object" } },
@@ -275,7 +204,6 @@ describe("bindPlatformTools", () => {
     expect(() =>
       bindPlatformTools({
         runId: "run-3",
-        request: baseRequest(baseDefinition()),
         channelTool: misnamedChannelTool,
       }),
     ).toThrow('Missing platform tool implementation for "agent"');

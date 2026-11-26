@@ -340,7 +340,7 @@ describe("createPlatformOntologyReadAdapter", () => {
 
     const projections: Array<z.input<typeof directProjectionPortsSchema>> = [
       {
-        componentId: "@ontomato/sdk:OntologyGraph",
+        componentId: "@ontomato/sdk:InstanceGraph",
         inputs: {
           mode: { kind: "scalar", type: "string" },
           start: anyLayerObject,

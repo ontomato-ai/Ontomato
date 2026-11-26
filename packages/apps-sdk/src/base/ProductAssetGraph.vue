@@ -178,7 +178,6 @@ const KIND_LABELS: Record<string, readonly [string, string]> = {
   "action-view": ["ontology.productActionView", "Action View"],
   navigation: ["ontology.productNavigation", "Navigation"],
   application: ["ontology.productApplication", "Application"],
-  "agent-profile": ["ontology.productAgentProfile", "Agent Profile"],
   "object-type": ["ontology.productTargetObjectType", "Object type"],
   metric: ["ontology.productTargetMetricView", "Metric view"],
   action: ["ontology.productTargetAction", "Action"],

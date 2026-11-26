@@ -149,7 +149,7 @@
         "id": "builtin-product-cddb5180-ef56-46cc-a1b1-f933d08f904a"
       },
       "scope": {
-        "component": "ObjectGraph",
+        "component": "RecordGraph",
         "data": {
           "nodes": {
             "type": "platform:ObjectType",

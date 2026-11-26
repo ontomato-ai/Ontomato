@@ -59,10 +59,6 @@ export const ossIdentity: WorkbenchIdentity = {
 
   requireDeploymentMaintenance: platformService,
 
-  observeAccess: pass,
-
-  async assertObserveAccess() {},
-
   requireDomainId() {
     return "1";
   },

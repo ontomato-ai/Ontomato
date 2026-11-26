@@ -28,7 +28,7 @@ import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text
 import { noOperations } from "./panel-frame";
 
 /*
- * Component tests for OntologyGraph sampled overview, grouped headings, aggregated edges, deferred connections,
+ * Component tests for InstanceGraph sampled overview, grouped headings, aggregated edges, deferred connections,
  * paginated & filtered neighbor expansion, snapshot version-conflict recovery, per-person `positions`, toolbar /
  * overlay slots, and backward-compatible `type` / `instance` modes.
  */
@@ -143,7 +143,7 @@ function overviewProjection(id = "sampled-graph", config: ProductProjection["con
     ...meta,
     id,
     name: "Sampled Graph",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {
       mode: { kind: "scalar", type: "string" },
       start: domainNodeUnion,
@@ -740,7 +740,7 @@ it("keeps backward-compatible type and instance modes working without overview p
     ...meta,
     id: "legacy-graph",
     name: "Legacy Graph",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {
       mode: { kind: "scalar", type: "string" },
       selected: { kind: "object-union", layers: allLayers },

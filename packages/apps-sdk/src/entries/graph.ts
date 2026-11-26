@@ -11,7 +11,7 @@ export {
   type GraphCanvasTone,
   type GraphCanvasViewport,
 } from "@ontomato/foundation-ui/graph/g6";
-export { default as OntologyGraph } from "../base/OntologyGraph.vue";
+export { default as InstanceGraph } from "../base/InstanceGraph.vue";
 export type {
   PlatformGraphEdge,
   PlatformGraphNeighborsQuery,

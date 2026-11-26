@@ -70,5 +70,3 @@ export function governanceBusinessCallback(
   const callbackPath = `/api/assistant/sessions/${sessionId}/governance-window`;
   return sealedCallback(callbackPath, { purpose: "governance", sessionId }, runId, expiresAt, initiatorCredentials);
 }
-
-/** Declares the pinned product-profile tool callback under the tools prefix. */

@@ -9,14 +9,14 @@ import { tmpdir } from "node:os";
 import { installContentLayout } from "../../../content/layout";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(), agent: vi.fn(), session: vi.fn(), builderAccess: vi.fn(), observeAccess: vi.fn() }));
+const mocks = vi.hoisted(() => ({ post: vi.fn(), agent: vi.fn(), session: vi.fn(), builderAccess: vi.fn(), managementAccess: vi.fn() }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://query" } } }));
 vi.mock("../../../utils/backend-client", () => ({ backendPost: mocks.post, buildBackendHeaders: () => ({}) }));
 vi.mock("../store", () => ({ assistantStore: { agent: mocks.agent, findAgent: mocks.agent, session: mocks.session } }));
 
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: mocks.builderAccess }));
-vi.mock("../../../identity/installed", () => ({
-  workbenchIdentity: () => ({ assertObserveAccess: mocks.observeAccess }),
+vi.mock("../../../identity/management", () => ({
+  assertManagement: mocks.managementAccess,
 }));
 
 installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), runtimeResources: [] });
@@ -50,7 +50,7 @@ configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled:
 beforeEach(() => {
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "workbench-test-token");
   mocks.builderAccess.mockReset().mockResolvedValue(undefined);
-  mocks.observeAccess.mockReset().mockResolvedValue(undefined);
+  mocks.managementAccess.mockReset().mockResolvedValue(undefined);
   mocks.session.mockReset().mockResolvedValue({ agent_id: id });
   mocks.agent.mockReset().mockResolvedValue({
     id, domain_id: owner.domainId, owner_id: "author", kind: id, name: "Agent", description: "", icon: null, enabled: true,
@@ -125,17 +125,17 @@ it("projects the three policy levels and a separate non-revocable domain row", a
   }));
 });
 
-it.each(["app-builder", "ops-diagnosis"])("admits %s with object use even when its former gate would deny", async kind => {
+it.each(["app-builder", "ops-diagnosis"])("admits %s with an object use grant alone", async kind => {
   mocks.agent.mockResolvedValue({ id, domain_id: owner.domainId, owner_id: null, kind, enabled: true });
-  const gateRefusal = new HttpError(403, "Former gate denied", "FORBIDDEN");
+  const gateRefusal = new HttpError(403, "Management denied", "FORBIDDEN");
   mocks.builderAccess.mockRejectedValue(gateRefusal);
-  mocks.observeAccess.mockRejectedValue(gateRefusal);
+  mocks.managementAccess.mockRejectedValue(gateRefusal);
   await expect(assistantService.admitAgent(id, owner, credentials)).resolves.toMatchObject({ agent: { id } });
   expect(mocks.post).toHaveBeenCalledWith(decideBatch, "http://query/authorization/objects/decide-batch", {
     requests: [{ ...definition, ownerFacts: { ownerId: null, state: "PUBLISHED" }, verb: "USE" }],
   }, expect.anything());
   expect(mocks.builderAccess).not.toHaveBeenCalled();
-  expect(mocks.observeAccess).not.toHaveBeenCalled();
+  expect(mocks.managementAccess).not.toHaveBeenCalled();
 });
 
 it.each(["app-builder", "ops-diagnosis"])("refuses %s admission, creation, continuation and preparation after use is revoked", async kind => {
@@ -150,5 +150,5 @@ it.each(["app-builder", "ops-diagnosis"])("refuses %s admission, creation, conti
     requests: [{ ...definition, ownerFacts: { ownerId: null, state: "PUBLISHED" }, verb: "USE" }],
   }, expect.anything());
   expect(mocks.builderAccess).not.toHaveBeenCalled();
-  expect(mocks.observeAccess).not.toHaveBeenCalled();
+  expect(mocks.managementAccess).not.toHaveBeenCalled();
 });

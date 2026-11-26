@@ -93,7 +93,7 @@ const projections: Record<string, ProductProjection> = {
   "agent-skill-choice": referencePicker("agent-skill-choice", SKILL),
   "agent-model-choice": referencePicker("agent-model-choice", MODEL_OPTION),
   "agent-data-scope": projection("agent-data-scope", {
-    componentId: "@ontomato/sdk:ObjectGraph",
+    componentId: "@ontomato/sdk:RecordGraph",
     inputs: {},
     data: {
       nodes: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },

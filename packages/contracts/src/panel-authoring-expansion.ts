@@ -61,7 +61,7 @@ export function expandPanelAuthoringMember(
   const componentData = component.data ?? {};
   const componentId = qualifiedId(component);
   const isObjectRelations = componentId === "@ontomato/sdk:ObjectRelations";
-  const isOntologyGraph = componentId === "@ontomato/sdk:OntologyGraph";
+  const isOntologyGraph = componentId === "@ontomato/sdk:InstanceGraph";
   const allowsAgentTarget = componentId === "@ontomato/sdk:ConversationEntry" || componentId === "@ontomato/sdk:AgentChat";
   if (member.agent !== undefined && !allowsAgentTarget)
     return fail("agent", "The agent target belongs to the official ConversationEntry or AgentChat component");

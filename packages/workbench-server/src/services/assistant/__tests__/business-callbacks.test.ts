@@ -10,8 +10,6 @@ import { runtimeBusinessCallbacksSchema, type RuntimeBusinessCallbacks } from "@
 import { workbenchServerResourceRoot } from "../../../content/resources";
 
 const mocks = vi.hoisted(() => ({
-  profile: vi.fn(),
-  source: vi.fn(),
   record: vi.fn(),
   skills: vi.fn(),
   open: vi.fn(),
@@ -20,10 +18,7 @@ const mocks = vi.hoisted(() => ({
   authorize: vi.fn(),
 }));
 
-vi.mock("../../product-assets/agent-profile", () => ({
-  profileForSession: mocks.profile,
-  profileSourceForSession: mocks.source,
-}));
+
 vi.mock("../../../utils/backend-client", () => ({
   backendPost: vi.fn(),
   buildBackendHeaders: (_token: unknown, _user: unknown, _locale: unknown, _key: unknown, headers: unknown) => headers ?? {},
@@ -96,9 +91,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.source.mockResolvedValue(null);
   mocks.open.mockResolvedValue({ id: runId });
-  mocks.profile.mockResolvedValue(null);
   mocks.skills.mockResolvedValue({ skills: [{ skill: analyst, digest }], pageControl: true });
   mocks.overview.mockResolvedValue("Ontology");
   mocks.hasGovernance.mockReturnValue(false);
@@ -212,12 +205,14 @@ it("adds the governance callback only when a governance skill is loaded", async 
   await assertNarrowedCallbacks(run.businessCallbacks!);
 });
 
-
 it("declares workbench, ontology and authoring callbacks for app-builder runs without credentials in environment", async () => {
   const prep = basePreparation(null);
   prep.a.kind = "app-builder";
   const run = runtimeStartRunRequestSchema.parse(await prepareAppBuilderRun(prep));
   expect(run).not.toHaveProperty("environment");
+  expect(run.definition.skills).toContainEqual(expect.objectContaining({
+    skill: { namespace: { kind: "provider", provider: "workbench" }, name: "dashboard-pages" },
+  }));
   expect(Object.keys(run.businessCallbacks ?? {}).sort()).toEqual([
     "authoring",
     "ontology",

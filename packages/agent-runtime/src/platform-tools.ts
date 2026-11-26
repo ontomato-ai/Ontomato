@@ -6,8 +6,6 @@ import {
   type RuntimePresentationCallback,
 } from "@ontomato/contracts/agent-presentation";
 import type {
-  RuntimeAgentDefinition,
-  RuntimeStartRunRequest,
 } from "@ontomato/contracts/agent-runtime";
 import {
   runtimeToolDeclarationSchema,
@@ -53,22 +51,14 @@ export interface PlatformTool {
 /** Built-in engine tool names active when `engineTools` is enabled. */
 export const ENGINE_TOOL_NAMES = ["read", "write", "edit", "bash"] as const;
 
-/** Returns whether the engine's own file and command tools are enabled for this definition. */
-export function usesEngineTools(
-  definition: Pick<RuntimeAgentDefinition, "toolSurface">,
-): boolean {
-  return definition.toolSurface !== "product";
-}
-
-/** Rejects duplicate platform tool names and collisions with built-in engine tools when enabled. */
+/** Rejects duplicate platform tool names and collisions with built-in engine tools. */
 export function assertUniquePlatformToolNames(
   declarations: readonly RuntimeToolDeclaration[],
-  engineTools: boolean,
 ): void {
   const seen = new Set<string>();
-  const reserved = engineTools ? new Set<string>(ENGINE_TOOL_NAMES) : null;
+  const reserved = new Set<string>(ENGINE_TOOL_NAMES);
   for (const declaration of declarations) {
-    if (reserved?.has(declaration.name) || seen.has(declaration.name)) {
+    if (reserved.has(declaration.name) || seen.has(declaration.name)) {
       throw new Error("Exposed tool names must be unique");
     }
     seen.add(declaration.name);
@@ -375,7 +365,6 @@ export function createPresentationTools(
 }
 
 export interface DeclarePlatformToolsOptions {
-  readonly definition: RuntimeAgentDefinition;
   readonly mcpTools?: readonly RuntimeToolDeclaration[];
   readonly hasChannel: boolean;
   readonly hasPresentation: boolean;
@@ -386,21 +375,19 @@ export interface PlatformToolSurface {
   readonly engineTools: boolean;
 }
 
-/** Assembles the session-open tool declarations and `engineTools` switch from an agent definition. */
+/** Assembles the session-open tool declarations. */
 export function declarePlatformTools(options: DeclarePlatformToolsOptions): PlatformToolSurface {
-  const engineTools = usesEngineTools(options.definition);
   const tools = [
-    ...(engineTools ? (options.mcpTools ?? []) : []),
+    ...(options.mcpTools ?? []),
     ...(options.hasChannel ? [channelToolDeclaration()] : []),
     ...(options.hasPresentation ? presentationToolDeclarations() : []),
   ].map((declaration) => runtimeToolDeclarationSchema.parse(declaration));
-  assertUniquePlatformToolNames(tools, engineTools);
-  return { tools, engineTools };
+  assertUniquePlatformToolNames(tools);
+  return { tools, engineTools: true };
 }
 
 export interface BindPlatformToolsOptions {
   readonly runId: string;
-  readonly request: RuntimeStartRunRequest;
   readonly mcpTools?: readonly PlatformTool[];
   readonly channelTool?: PlatformTool;
   readonly presentationCallback?: RuntimePresentationCallback;
@@ -448,7 +435,6 @@ function toolErrorResult(message: string): HarnessToolCallResult {
 /** Binds platform tools to one active run and checks authorization and schema at invocation time. */
 export function bindPlatformTools(options: BindPlatformToolsOptions): BoundPlatformTools {
   const surface = declarePlatformTools({
-    definition: options.request.definition,
     mcpTools: options.mcpTools?.map((tool) => tool.declaration),
     hasChannel: Boolean(options.channelTool),
     hasPresentation: Boolean(options.presentationCallback),
@@ -457,7 +443,7 @@ export function bindPlatformTools(options: BindPlatformToolsOptions): BoundPlatf
     ? (options.presentationBatch ?? createPresentationBatchController())
     : undefined;
   const candidates: PlatformTool[] = [
-    ...(surface.engineTools ? (options.mcpTools ?? []) : []),
+    ...(options.mcpTools ?? []),
     ...(options.channelTool ? [options.channelTool] : []),
     ...(options.presentationCallback
       ? createPresentationTools(options.runId, options.presentationCallback, presentationBatch)

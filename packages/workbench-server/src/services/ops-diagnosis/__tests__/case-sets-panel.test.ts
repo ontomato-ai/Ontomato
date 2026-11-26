@@ -12,7 +12,6 @@ import {
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { installWorkbenchIdentity } from "../../../identity/installed";
-import type { WorkbenchIdentity } from "../../../identity/types";
 import { getCaseSet } from "../../../platform/diagnosis/autotest/cases/repository";
 import { HttpError } from "../../../utils/errors";
 import {
@@ -31,10 +30,6 @@ configureI18n({
 
 const mocks = vi.hoisted(() => ({
   assertManagement: vi.fn(),
-  assertObserveAccess: vi.fn<
-    Parameters<WorkbenchIdentity["assertObserveAccess"]>,
-    ReturnType<WorkbenchIdentity["assertObserveAccess"]>
-  >(async () => {}),
   autotestDataDir: "",
 }));
 
@@ -79,7 +74,6 @@ beforeEach(() => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ops-case-sets-panel-"));
   mocks.autotestDataDir = path.join(tempRoot, "autotest");
   mocks.assertManagement.mockReset().mockResolvedValue(undefined);
-  mocks.assertObserveAccess.mockReset().mockResolvedValue(undefined);
 
   installWorkbenchIdentity({
     authenticate: (_req, _res, next) => next(),
@@ -89,8 +83,6 @@ beforeEach(() => {
     requirePermission: () => (_req, _res, next) => next(),
     assertPermission: async () => {},
     requireDeploymentMaintenance: (_req, _res, next) => next(),
-    observeAccess: (_req, _res, next) => next(),
-    assertObserveAccess: mocks.assertObserveAccess,
     requireDomainId: ({ domainId }) => {
       if (!domainId) throw new HttpError(403, "Domain required");
       return domainId;
@@ -103,7 +95,7 @@ afterEach(() => {
 });
 
 describe("AutotestCaseSet panel reads and operations", () => {
-  it("enforces observe access and isolates case sets by domain", async () => {
+  it("enforces management access and isolates case sets by domain", async () => {
     const createOp = globalWrite(CREATE_AUTOTEST_CASE_SET);
     const createdA = await createOp.execute(makeHost("domain-a"), null, { name: "Domain A Suite" }, "intent-a");
     expect(createdA.kind).toBe("success");

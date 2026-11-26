@@ -419,12 +419,12 @@ it("attaches declarative rereadAfterMs directives only while scheduled tasks or 
   expect(unwrapReadDirective(await reads.record(task.id)).directive).toEqual({ rereadAfterMs: 5_000 });
   expect(unwrapReadDirective(await reads.runRecords(task.id)).directive).toEqual({ rereadAfterMs: 5_000 });
   expect(unwrapReadDirective(await reads.runRecord(task.id, runningRun.id)).directive).toEqual({ rereadAfterMs: 5_000 });
-  expect(unwrapReadDirective(await reads.latestRunRecord(task.id)).directive).toEqual({ rereadAfterMs: 5_000 });
+  expect(unwrapReadDirective(await reads.runRecord(task.id)).directive).toEqual({ rereadAfterMs: 5_000 });
 
   active = false;
   expect(unwrapReadDirective(await reads.list()).directive).toBeUndefined();
   expect(unwrapReadDirective(await reads.record(task.id)).directive).toBeUndefined();
   expect(unwrapReadDirective(await reads.runRecords(task.id)).directive).toBeUndefined();
   expect(unwrapReadDirective(await reads.runRecord(task.id, runningRun.id)).directive).toBeUndefined();
-  expect(unwrapReadDirective(await reads.latestRunRecord(task.id)).directive).toBeUndefined();
+  expect(unwrapReadDirective(await reads.runRecord(task.id)).directive).toBeUndefined();
 });

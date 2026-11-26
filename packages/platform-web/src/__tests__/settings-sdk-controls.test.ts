@@ -586,7 +586,7 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
   it("renders stacked OperationResult with banner, bordered fields, and compact record list (DA-06)", () => {
     const sqlWrapper = mount(OperationResult, {
       props: {
-        layout: "stack",
+        layout: "stacked",
         result: {
           kind: "sections",
           banner: { tone: "success", title: "Connection test succeeded" },
@@ -632,7 +632,7 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
 
     const searchWrapper = mount(OperationResult, {
       props: {
-        layout: "stack",
+        layout: "stacked",
         result: {
           kind: "sections",
           banner: { tone: "success", title: "Connection test succeeded" },
@@ -666,10 +666,10 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
 
     const errWrapper = mount(OperationResult, {
       props: {
-        layout: "stack",
+        layout: "stacked",
         result: {
           kind: "sections",
-          banner: { tone: "error", title: "Connection failed", detail: "ECONNREFUSED 127.0.0.1:5432" },
+          banner: { tone: "danger", title: "Connection failed", detail: "ECONNREFUSED 127.0.0.1:5432" },
           sections: [
             { id: "objects", label: "Tables and views (0)", kind: "records", columns: [{ key: "name", label: "Name" }], rows: [], emptyText: "No tables" },
           ],

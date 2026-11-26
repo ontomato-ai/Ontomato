@@ -56,7 +56,7 @@
     },
     "members": {
       "graph": {
-        "component": "VisualModelingGraph",
+        "component": "ModelingGraphEditor",
         "type": "platform:ObjectType",
         "data": {
           "nodes": {
