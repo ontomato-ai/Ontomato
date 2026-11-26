@@ -1521,7 +1521,6 @@ export default {
           "source": "Whether the application is declared by the platform or registered in a domain.",
           "canMaintain": "Whether the current caller may edit the identity or delete this domain application.",
           "canEditEntries": "Whether the current caller has maintenance authority to edit this domain panel application's entry table.",
-          "canGrant": "Whether the current caller may manage the application's sharing and grants under product edit authority.",
           "allowStandalone": "Whether this application can be opened standalone without the platform sidebar and expose an external link.",
           "externalLink": "The standalone entry link exposed when standalone opening is enabled; omitted when disabled.",
           "entry": "The application's landing path with an optional renderer and home path.",

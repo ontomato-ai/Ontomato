@@ -70,5 +70,5 @@ export const applicationTypeDetail = {
     },
   ],
   rules:
-    "The platform maintains built-in applications, and Java checks domain identity, assigned paths, and permission to use referenced panels during domain registration. Java checks entry admission and panel use before opening an entry. The application catalogue is visible to callers who can open an entry or edit the application. Java requires maintenance authority for edits and deletion.",
+    "The platform maintains built-in applications. The application catalogue is visible to callers who can open an entry or edit the application. Java lists and opens entries based solely on Entry permissions. Workbench checks panel USE when reading a panel and validates USE for referenced panels during registration. Java checks domain identity and assigned paths during registration and requires maintenance authority for edits and deletion.",
 } as const satisfies PlatformTypeDetailDeclaration;
