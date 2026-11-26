@@ -105,6 +105,7 @@ class TriggerUpgradePostgresTest extends PostgresTestDatabase {
             "frequency", object("kind", "weekly", "weekday", 3, "time", "11:00"), "timeZone", "Asia/Shanghai",
             "notifyEmail", "owner@example.test", "content", object("execution", "function:old-function", "parameter:former", "keep the snapshot")));
     insertRun(run, marked, before.toString(), "failed", "legacy_failure", "Exact cause");
+    jdbc.update("UPDATE platform_task_run SET execution_details='{\"legacyIdentity\":\"unknown\"}' WHERE id=?", run);
     String literal = object("literal", object("className", "platform:ScheduledTask", "primaryKey", marked)).toString();
     jdbc.update("INSERT INTO sys_application VALUES ('custom',?,?::jsonb,'{}')", D1,
         "[{\"panelId\":\"" + OLD_PANEL + "\",\"inputs\":{\"selection\":" + literal + "}}]");
@@ -130,6 +131,8 @@ class TriggerUpgradePostgresTest extends PostgresTestDatabase {
     assertEquals("trigger-author", original.get("creator_id"));
     assertEquals("executor", original.get("executor_id"));
     assertEquals("reviewer", original.get("reviewed_by"));
+    assertNull(original.get("notify_email"));
+    assertNull(original.get("notify_email_set_by"));
     assertEquals(8, original.get("version"));
     assertEquals(true, original.get("enabled"));
     assertEquals("Asia/Shanghai", original.get("time_zone"));
@@ -149,6 +152,7 @@ class TriggerUpgradePostgresTest extends PostgresTestDatabase {
     var agent = loadDefinition(agentTask.toString());
     assertEquals("credential_invalid", agent.get("pause_code"));
     assertEquals("owner@example.test", agent.get("notify_email"));
+    assertEquals("task-owner", agent.get("notify_email_set_by"));
     assertEquals("application", agent.get("target_kind"));
     assertEquals("form-a", agent.get("form_revision"));
     assertEquals("ciphertext", jdbc.queryForObject("SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND NOT valid", String.class, D2));
@@ -159,11 +163,14 @@ class TriggerUpgradePostgresTest extends PostgresTestDatabase {
     assertEquals("handle-1", parse(history.get("handle").toString()).path("id").textValue());
     var snapshot = parse(history.get("definition_snapshot").toString());
     assertTrue(snapshot.path("executorId").isNull());
+    assertTrue(snapshot.path("notifyEmailSetBy").isNull());
+    assertEquals("owner@example.test", snapshot.at("/definition/notifyEmail").textValue());
     assertEquals("Old failed execution", snapshot.at("/definition/title").textValue());
     assertEquals(before.at("/definition/content"), snapshot.at("/definition/content"));
     var restored = new TaskStore(jdbc, dataSource).run(run);
     assertEquals("flow-trigger", restored.taskId());
     assertNull(restored.snapshot().executorId());
+    assertNull(restored.snapshot().notifyEmailSetBy());
     assertEquals(before.at("/definition/content"), restored.snapshot().definition().content());
     assertEquals("/schedules?taskId=flow-trigger&runId=" + run, parse(history.get("result_link").toString()).path("path").textValue());
     var app = parse(jdbc.queryForObject("SELECT panel_uses::text FROM sys_application", String.class));
@@ -173,6 +180,34 @@ class TriggerUpgradePostgresTest extends PostgresTestDatabase {
     assertEquals("flow-trigger", workbench.queryForObject("SELECT pinned_objects->0->>'primaryKey' FROM platform_home_preferences", String.class));
     assertEquals("platform:ScheduledTask", workbench.queryForObject("SELECT definition->>'title' FROM product_panels", String.class));
     assertEquals(OLD_PANEL, workbench.queryForObject("SELECT panel_id FROM product_panel_entry_dependencies", String.class));
+  }
+
+  @Test
+  void attributesOnlyPreviouslyConfiguredRunMailToTheSnapshotOwner() {
+    var task = UUID.randomUUID();
+    var oldMail = UUID.randomUUID();
+    var noMail = UUID.randomUUID();
+    insertTask(task, D1, "agents", "{}", false, null);
+    jdbc.update("UPDATE platform_task SET notify_email='' WHERE id=?", task);
+    var oldBody = object("title", "Legacy", "appId", "agents", "formRevision", "form-a", "content", object(),
+        "frequency", object("kind", "daily", "time", "11:00"), "timeZone", "Asia/Shanghai", "notifyEmail", "old@example.test");
+    var old = object("creatorId", "historical-owner", "domainId", D1, "taskRevision", 3, "locale", "en",
+        "summary", ScheduleJson.array(), "definition", oldBody);
+    insertRun(oldMail, task, old.toString(), "completed", null, null);
+    oldBody.putNull("notifyEmail");
+    old.set("definition", oldBody);
+    insertRun(noMail, task, old.toString(), "completed", null, null);
+
+    upgrade.run(true);
+
+    var definition = loadDefinition(task.toString());
+    assertNull(definition.get("notify_email"));
+    assertNull(definition.get("notify_email_set_by"));
+    var store = new TaskStore(jdbc, dataSource);
+    var withMail = store.run(oldMail).snapshot();
+    assertEquals("old@example.test", withMail.definition().notifyEmail());
+    assertEquals("historical-owner", withMail.notifyEmailSetBy());
+    assertNull(store.run(noMail).snapshot().notifyEmailSetBy());
   }
 
   @Test
@@ -238,7 +273,7 @@ class TriggerUpgradePostgresTest extends PostgresTestDatabase {
     jdbc.update("""
         INSERT INTO platform_task_run(id,task_id,definition_snapshot,trigger,status,finished_at,handle,result_link,
           execution_details,result,error_code,error_message)
-        VALUES (?,?,?::jsonb,'manual',?,now(),'{"id":"handle-1"}',?::jsonb,'{"legacyIdentity":"unknown"}',
+        VALUES (?,?,?::jsonb,'manual',?,now(),'{"id":"handle-1"}',?::jsonb,NULL,
           'historical result',?,?)
         """, run, task, snapshot, status, link.toString(), code, message);
   }

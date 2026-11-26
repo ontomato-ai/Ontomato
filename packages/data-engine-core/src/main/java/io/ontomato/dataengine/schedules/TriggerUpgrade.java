@@ -333,8 +333,9 @@ public final class TriggerUpgrade {
       form = null;
       summary = array();
     }
+    String notifyEmail = value(row, "notify_email");
     var body = new TaskDefinition(value(row, "title"), app, content, form, parse(value(row, "frequency")),
-        zone, value(row, "notify_email"), null, kind, target);
+        zone, notifyEmail == null || notifyEmail.isBlank() ? null : notifyEmail, null, kind, target);
     body.validate();
     return new Definition(value(row, "id"), domain, creator, creator, array(), null, "PUBLISHED", 1, body,
         summary, ((Number) row.get("revision")).longValue(), (Boolean) row.get("enabled"), value(row, "pause_code"),
@@ -402,8 +403,10 @@ public final class TriggerUpgrade {
         || !key.domain().equals(text(old, "domainId")))
       throw new IllegalArgumentException("Invalid or cross-domain definition snapshot");
     String creator = text(snapshot, "creatorId");
-    if ("unknown".equals(value(row, "legacy_identity"))) snapshot.putNull("executorId");
-    else snapshot.put("executorId", creator);
+    boolean knownIdentity = !"unknown".equals(value(row, "legacy_identity"));
+    snapshot.put("executorId", knownIdentity ? creator : null);
+    String notifyEmail = optionalText(definition, "notifyEmail");
+    snapshot.put("notifyEmailSetBy", knownIdentity && notifyEmail != null && !notifyEmail.isBlank() ? creator : null);
     snapshot.put("version", 1);
     String app = text(definition, "appId");
     definition.putNull("description");
@@ -439,12 +442,12 @@ public final class TriggerUpgrade {
     db.update("""
         INSERT INTO trigger_def (id,domain_id,creator_id,executor_id,coauthor_ids,reviewed_by,status,version,
           target_kind,target_id,app_id,title,description,content,form_revision,summary,revision,frequency,time_zone,
-          enabled,pause_code,pause_message,next_run_at,last_fired_at,notify_email,locale,created_at,updated_at)
-        VALUES (?,?,?,?,?::jsonb,?,?,?,?,?,?,?,?,?::jsonb,?,?::jsonb,?,?::jsonb,?,?,?,?,?,?,?,?,?,?)
+          enabled,pause_code,pause_message,next_run_at,last_fired_at,notify_email,notify_email_set_by,locale,created_at,updated_at)
+        VALUES (?,?,?,?,?::jsonb,?,?,?,?,?,?,?,?,?::jsonb,?,?::jsonb,?,?::jsonb,?,?,?,?,?,?,?,?,?,?,?)
         """, d.id(), d.domain(), d.creator(), d.executor(), d.coauthors().toString(), d.reviewer(), d.status(), d.version(),
         b.targetKind(), b.targetId(), b.appId(), b.title(), b.description(), b.content().toString(), b.formRevision(),
         d.summary().toString(), d.revision(), b.frequency().toString(), b.timeZone(), d.enabled(), d.pause(), d.pauseMessage(),
-        d.next(), d.last(), b.notifyEmail(), d.locale(), d.created(), d.modified());
+        d.next(), d.last(), b.notifyEmail(), b.notifyEmail() == null ? null : d.creator(), d.locale(), d.created(), d.modified());
   }
 
   private void insertRun(Run run) {
