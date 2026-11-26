@@ -57,6 +57,7 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
         else if(operation==='invalidate')host.invalidateProductData!(source,appBridgeInvalidationSchema.parse(payload));
         else if(operation==='expand-page-composer')expandComposer(source,appBridgeExpandPageComposerSchema.parse(payload));
         else if(operation==='confirm-panel-operation')result=await confirmOperation(source,appBridgeConfirmPanelOperationSchema.parse(payload));
+        else throw new Error('Unsupported application bridge operation');
         current();port.postMessage({channel:APP_BRIDGE_CHANNEL,id,result});
       }catch(reason){port.postMessage({channel:APP_BRIDGE_CHANNEL,id,error:reason instanceof Error?reason.message:'Platform bridge failed'});}
     };
