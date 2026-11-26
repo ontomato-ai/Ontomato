@@ -1,7 +1,8 @@
 import { createScheduledTaskReads, type ScheduledApplicationsStatus } from "@ontomato/platform-schedules/panel-reads";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
+import { readPrincipalDirectory } from "../identity/principal-directory";
+import type { ProductOwner } from "../product-governance/grants";
 import { withReadDirective } from "../product-panels/read-directive";
 import { triggerClient } from "./trigger-client";
 
@@ -24,7 +25,7 @@ export function createScheduledTaskReadAdapter(
     ...client,
     applicationsStatus,
     async findMembers(keyword, limit) {
-      return (await searchProductGrantPrincipals("principal", keyword, limit, viewer)).options;
+      return (await readPrincipalDirectory(viewer, { kind: "member", keyword, limit })).options;
     },
     describeTargets: async (tasks, directory) => (await import("./applications")).describeTriggerTargets(tasks, directory, context),
     async targets() {

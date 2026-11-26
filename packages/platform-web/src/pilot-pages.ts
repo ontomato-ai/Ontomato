@@ -31,8 +31,9 @@ export function pilotPageResolver(
     // (without `panelUses`) are loaded, match the owning built-in address space and let `PanelApplicationRoute` resolve it.
     const owner = builtinApplicationForPath(path);
     const entry = panelEntryApplication(path)
-      // The standalone workbench can open Dashboards before loading the platform catalog.
+      // The standalone workbench can open these panels before loading the platform catalog.
       ?? (path === platformRoutes.dashboards.path ? "dashboards" : null)
+      ?? (path === platformRoutes.schedules.path ? "schedules" : null)
       ?? (owner && owner.panelUses === undefined && path !== platformRoutes.chat.path && path !== platformRoutes.home.path
         ? owner.id
         : null);

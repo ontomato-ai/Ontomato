@@ -51,6 +51,7 @@ export default {
     },
     frequency: schedulePanelText.frequency,
     card: {
+      scheduled: "Scheduled",
       switch: "Run “{title}” on its schedule",
       paused: "Paused: {reason}",
       review: "Check and save",

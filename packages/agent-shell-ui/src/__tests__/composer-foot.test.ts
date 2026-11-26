@@ -22,7 +22,7 @@ it("defines the room under the composer once, and both composers read it", () =>
   // The page's composer floats over the foot of the page (never sticky in flow or shortening the content box).
   expect(page).toMatch(/pointer-events:\s*none;/);
   expect(page).not.toMatch(/position:\s*sticky;/);
-  // Folded, its round button floats at the corner with the same room under it and leaves the page its whole height.
+  // Folded, its round button floats over the page while the foot owns no height.
   const unfold = [...style("../components/ShellComposer.vue").matchAll(/\n\.composer-unfold \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
   expect(unfold).toMatch(/pointer-events:\s*auto;/);
   expect(unfold).toMatch(/background:\s*var\(--el-color-primary\);/);
@@ -31,7 +31,8 @@ it("defines the room under the composer once, and both composers read it", () =>
   expect(unfold).not.toMatch(/box-shadow:\s*var\(--elevation-composer\);/);
   expect(style("../components/ShellComposer.vue")).toMatch(/\.composer-unfold:hover\s*\{[^}]*background:\s*var\(--brand-primary-hover\);/s);
   const pageFolded = style("../components/PageComposer.vue").split(".page-ask:has(.composer-unfold) {")[1]!.split("}")[0]!;
-  expect(pageFolded).toMatch(/padding:[^;]*var\(--shell-composer-foot\);/);
+  expect(pageFolded).toMatch(/height:\s*0;/);
+  expect(pageFolded).toMatch(/padding:\s*0;/);
   expect(style("../components/ShellPagePane.vue")).toContain(".pane-dock:has(> .composer-unfold:only-child)");
 });
 

@@ -9,6 +9,7 @@ await mountPanel({
     const values = instance.state.values;
     const selected = computed(() => values.value.selectedTask ?? null);
     const selectedId = computed(() => selected.value?.primaryKey ?? null);
+    const inline = computed(() => values.value.workspace === "agent");
     const runId = computed(() => values.value.runId ?? null);
 
     // Read-only outputs from official projections.
@@ -45,13 +46,15 @@ await mountPanel({
 
     // Assistants use page state (`compose: "new"` or `compose: "edit"`) to open the owner's form before calling `fill_form`.
     const mode = computed(() => {
-      if (values.value.compose === "new") return "create";
-      return values.value.compose === "edit" && selected.value ? "edit" : "view";
+      const compose = inline.value ? (values.value.workspaceCompose ?? values.value.compose) : values.value.compose;
+      if (compose === "new") return "create";
+      return compose === "edit" && selected.value ? "edit" : "view";
     });
     const formDialogOpen = computed(() => mode.value === "create" || mode.value === "edit");
 
     // Independent right-side run records drawer state (SC-11, SC-12).
     const runsDrawerOpen = ref(Boolean(selected.value && mode.value === "view"));
+    const recordsOpen = computed(() => inline.value ? Boolean(selected.value && !formDialogOpen.value) : runsDrawerOpen.value);
     const expandedRunIds = ref([]);
     const isRunning = computed(() => Boolean(detailRunning.value || focusRunning.value));
 
@@ -98,7 +101,8 @@ await mountPanel({
 
     function setMode(next) {
       const compose = next === "create" ? "new" : next === "edit" ? "edit" : null;
-      if ((values.value.compose ?? null) !== compose) instance.state.set("compose", compose);
+      const key = inline.value ? "workspaceCompose" : "compose";
+      if ((values.value[key] ?? null) !== compose) instance.state.set(key, compose);
     }
 
     // Keep runs drawer synced with deep-linked runId or mode switches.
@@ -131,7 +135,7 @@ await mountPanel({
     // Declarative auto-reread (SC-13): owners attach rereadAfterMs (30s for active catalog, 5s for active runs).
     // When an active run in the drawer finishes, sync the task cards and counts once.
     watch(isRunning, (active, previous) => {
-      if (previous && !active && runsDrawerOpen.value) {
+      if (previous && !active && recordsOpen.value) {
         instance.refresh({ objectTypes: [TASK], objects: [] });
       }
     });
@@ -266,7 +270,7 @@ await mountPanel({
         notify({ kind: "info", text: t("message.runStarted") });
       }
       instance.refreshObjects();
-      if (run?.id && runsDrawerOpen.value && selectedId.value === taskId) {
+      if (run?.id && recordsOpen.value && selectedId.value === taskId) {
         instance.state.set("runId", run.id);
       }
     }
@@ -287,7 +291,7 @@ await mountPanel({
       if (operation === "runNow") {
         const run = outcome.data;
         instance.refreshObjects();
-        if (run?.id && runsDrawerOpen.value && selectedId.value === taskId) {
+        if (run?.id && recordsOpen.value && selectedId.value === taskId) {
           instance.state.set("runId", run.id);
         }
         return;
@@ -455,7 +459,7 @@ await mountPanel({
       if (!canCreate.value) return;
       rememberFocus();
       runsDrawerOpen.value = false;
-      instance.state.set("compose", "new");
+      setMode("create");
     }
     function openEdit() {
       rememberFocus();
@@ -506,7 +510,7 @@ await mountPanel({
     function created(object) {
       const id = object?.primaryKey;
       instance.state.setState({
-        compose: null,
+        [inline.value ? "workspaceCompose" : "compose"]: null,
         newTask: null,
         ...(id ? { selectedTask: { className: TASK, primaryKey: id }, runId: null } : {}),
       });
@@ -526,6 +530,8 @@ await mountPanel({
       schedulePage,
       createButton,
       historyRecords,
+      inline,
+      recordsOpen,
       canCreate,
       createBlockedReason,
       renewalProblem,

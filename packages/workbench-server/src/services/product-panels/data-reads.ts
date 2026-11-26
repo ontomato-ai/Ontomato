@@ -703,11 +703,17 @@ function readAdapters(
     [TRIGGER]: {
       count: () => schedules.count(),
       list: () => schedules.list(),
-      catalogue: (_selection, params) => schedules.list({
-        scope: panelReadParameterSchemas.keyword.optional().parse(params.scope),
-        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
-        status: platformTaskStatusSchema.optional().parse(params.status),
-      }),
+      catalogue: (_selection, params) => {
+        const workspace = params.workspace === "agent";
+        const taskId = workspace ? panelReadParameterSchemas.triggerRef.nullish().parse(params.selectedTask)?.primaryKey : undefined;
+        return schedules.list({
+          scope: panelReadParameterSchemas.keyword.optional().parse(params.scope),
+          search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+          status: platformTaskStatusSchema.optional().parse(params.status),
+          taskId,
+          agentId: workspace && !taskId ? panelReadParameterSchemas.keyword.optional().parse(params.workspaceAgent) : undefined,
+        });
+      },
       counts: (_selection, params) => schedules.counts(panelReadParameterSchemas.keyword.optional().parse(params.by)),
       status: () => schedules.status(),
       record: selection => schedules.record(selection.primaryKey!),
@@ -720,7 +726,9 @@ function readAdapters(
       ),
       form: (selection, params) => schedules.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => schedules.createForm({
-        ...formParams(params), defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),
+        ...formParams(params),
+        defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),
+        defaultAgentId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAgentId),
       }),
       memberOptions: (_selection, params) => schedules.memberOptions({
         keyword: panelReadParameterSchemas.keyword.optional().parse(params.keyword),
