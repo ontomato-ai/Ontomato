@@ -72,7 +72,7 @@ const hiddenUse = { ...publicUse, id: "hidden", pageKey: "hidden", path: `${entr
 const draftId = "app-14d40829-d7d4-4b14-94bf-11c4c8b12e1b";
 const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pages", groups: [] };
 const initialCreateValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },
-  initialOpenEntryIds: [], panelUses: [], shared: false, allowStandalone: true };
+  initialOpenEntryIds: [], panelUses: [], allowStandalone: true };
 const entryValues = { entry, panelUses: [publicUse, hiddenUse], framePanelId: "catalogue-panel" };
 const identityValues = { names: { en: "Application", fr: "Application française" }, descriptions: { en: "Kept description" }, icon: "pages" };
 const writes: { path: string; actor?: string; body: unknown }[] = [];
