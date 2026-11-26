@@ -160,13 +160,14 @@ const executeAction = ({ kind, verb }: ItemKey) => kind === "ACTION" && verb ===
 async function entryContext(viewer: AssistantCredentials, domainId: string, policyId: string | undefined, entryIds: string[]) {
   const roots = await policyPost(viewer, "entry-roots", { policyId, entryIds }, entryRootsResultSchema);
   const client = getPostgresPool();
+  const includeAll = entryIds.length === 0;
   const selected = new Set(entryIds);
   const detailIds = new Set(entryIds.filter(id => id.startsWith(objectDetailPrefix)));
-  const details = detailIds.size ? await listObjectDetailPanelMappings(domainId, client) : [];
+  const details = includeAll || detailIds.size ? await listObjectDetailPanelMappings(domainId, client) : [];
   const detailPanels = new Map(details
     .map(({ className, panelId }) => [objectDetailPrefix + className, panelId] as const)
-    .filter(([entryId]) => detailIds.has(entryId)));
-  const entries = roots.entries.filter(entry => selected.has(entry.entryId)).map(entry => {
+    .filter(([entryId]) => includeAll || detailIds.has(entryId)));
+  const entries = roots.entries.filter(entry => includeAll || selected.has(entry.entryId)).map(entry => {
     const panelId = detailPanels.get(entry.entryId);
     return panelId ? { ...entry, panelIds: [...new Set([...entry.panelIds, panelId])] } : entry;
   });
@@ -241,6 +242,74 @@ function policyRecord(id: string, fields: Record<string, RuntimeJsonValue | unde
     recordFields[key] = typeof value === "object" ? { kind: "json", value } : value;
   }
   return panelRecordSchema.parse({ primaryKey: id, label: id, fields: recordFields });
+}
+
+function objectUsageKey(kind: string, objectId: string) {
+  return JSON.stringify([kind, objectId]);
+}
+
+function grantedEntryIds(context: EntryRootsResult) {
+  return new Set(context.existingGrants
+    .filter(grant => grant.kind === "ENTRY" && grant.verb === "ENTER")
+    .map(grant => grant.id));
+}
+
+function entryUsageByObject(context: Awaited<ReturnType<typeof entryContext>>) {
+  const grantedEntries = grantedEntryIds(context);
+  const usage = new Map<string, Array<{ id: string; label: string }>>();
+  for (const [entryId, objects] of context.entryObjects) {
+    if (!grantedEntries.has(entryId)) continue;
+    const label = context.entries.find(entry => entry.entryId === entryId)?.label ?? entryId;
+    for (const item of objects.values()) {
+      const key = objectUsageKey(item.kind, item.id);
+      const entries = usage.get(key) ?? [];
+      if (!entries.some(entry => entry.id === entryId)) entries.push({ id: entryId, label });
+      usage.set(key, entries);
+    }
+  }
+  return usage;
+}
+
+/** For every object this policy grants, which currently granted entries use it through the same dependency roots as the entry grant preview. */
+export async function policyObjectEntryUsagePayload(
+  viewer: AssistantCredentials, domainId: string, policyId: string,
+): Promise<RuntimeJsonObject> {
+  const context = await entryContext(viewer, domainId, policyId, []);
+  const usage = entryUsageByObject(context);
+  const seen = new Set<string>();
+  const items = [];
+  for (const grant of context.existingGrants) {
+    if (grant.kind === "ENTRY" || grant.verb === "CREATE") continue;
+    const key = objectUsageKey(grant.kind, grant.id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ kind: grant.kind, id: grant.id, entries: usage.get(key) ?? [] });
+  }
+  return { policyId, items };
+}
+
+/** Exact grants that only this entry uses among the policy's granted entries, plus the policy's current role impact. */
+export async function policyEntryRevokePreviewPayload(
+  viewer: AssistantCredentials, domainId: string, policyId: string, entryId: string,
+): Promise<RuntimeJsonObject> {
+  const context = await entryContext(viewer, domainId, policyId, []);
+  const usage = entryUsageByObject(context);
+  const objects = [];
+  for (const item of context.entryObjects.get(entryId)?.values() ?? []) {
+    const entries = usage.get(objectUsageKey(item.kind, item.id)) ?? [];
+    if (entries.some(entry => entry.id !== entryId)) continue;
+    for (const grant of context.existingGrants) {
+      if (grant.kind === item.kind && grant.id === item.id && grant.verb !== "CREATE" && grant.kind !== "ENTRY") {
+        objects.push({
+          kind: grant.kind, id: grant.id, verb: grant.verb, scope: grant.scope, label: grant.id,
+        });
+      }
+    }
+  }
+  return {
+    policyId, entryId, objects,
+    impact: { roleCount: context.targetPolicyRoleIds.length },
+  };
 }
 
 export async function previewEntryGrantPayload(

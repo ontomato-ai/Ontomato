@@ -20,7 +20,7 @@ import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
 import type { OwnerReadResult } from "../platform-ontology/owners";
-import { listPolicyEntries, readPolicyChangePermission } from "./policy-access";
+import { listPolicyEntries, policyObjectEntryUsagePayload, readPolicyChangePermission } from "./policy-access";
 import type { PolicyWorkbenchCatalog } from "./policy-catalog";
 
 /*
@@ -83,6 +83,7 @@ function formBody(id: string | undefined, { values, changedField }: GovernanceFo
 }
 
 export interface GovernanceReadOptions {
+  domainId?: string;
   loadPolicyCatalog?: () => Promise<PolicyWorkbenchCatalog>;
 }
 
@@ -170,12 +171,15 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       },
       async form(id: string, params: GovernanceFormParams): Promise<PanelFormDescription> {
         const workbenchCatalog = options.loadPolicyCatalog ? await options.loadPolicyCatalog() : undefined;
-        return owner(
+        const form = await owner(
           "governance-policy-form",
           "/panel/governance/policies/form",
           formBody(id, params, workbenchCatalog ? { workbenchCatalog } : undefined),
           panelFormDescriptionSchema,
         );
+        if (!options.domainId || form.values.postType !== 3) return form;
+        const usage = await policyObjectEntryUsagePayload(viewer, options.domainId, id);
+        return { ...form, values: { ...form.values, entryUsage: usage.items } };
       },
       createForm(params: GovernanceFormParams): Promise<PanelFormDescription> {
         return owner("governance-policy-create-form", "/panel/governance/policies/form", formBody(undefined, params), panelFormDescriptionSchema);

@@ -29,6 +29,8 @@ export const panelFormOptionSchema = formOptionShape.extend({
   icon: nonempty.optional(),
   tone: z.enum(["default", "info", "success", "warning", "danger"]).optional(),
   groupPath: z.array(nonempty).min(1).optional(),
+  /** For tiered choices, whether this tier makes the target visible to the grantee. */
+  visible: z.boolean().optional(),
 }).refine(optionAvailabilityMatches, optionAvailabilityMessage);
 export type PanelFormOption = z.infer<typeof panelFormOptionSchema>;
 
