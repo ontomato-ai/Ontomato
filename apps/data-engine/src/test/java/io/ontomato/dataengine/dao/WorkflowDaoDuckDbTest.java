@@ -409,7 +409,7 @@ class WorkflowDaoDuckDbTest {
         when(lookup.stepAdmissions("user","domain","w1",1)).thenReturn(Map.of(
             1, new CapabilityGrantLookup.Admission(false,List.of(new CapabilityGrantLookup.Match("docs","department",List.of("my-org")))),
             2, new CapabilityGrantLookup.Admission(false,List.of(new CapabilityGrantLookup.Match("docs","holder",List.of("user"))))));
-        var anonymous = new AnonymousAuthorization(mock(ProductGrantService.class), jdbc);
+        var anonymous = new AnonymousAuthorization(jdbc);
         var authorization = new AuthorizationService(anonymous, anonymous, new ManagementOperations(List.of()),
                 lookup, mock(DataPermissionLookup.class));
         ReflectionTestUtils.setField(manager, "definitions",
