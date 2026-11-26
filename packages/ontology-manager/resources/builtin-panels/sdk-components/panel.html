@@ -212,6 +212,12 @@
       </div>
       <div v-else class="sdk-detail-body">
         <div class="sdk-detail-card">
+          <section-group :title="t('components.section.meaning')">
+            <projection slot="meaningCard"></projection>
+          </section-group>
+        </div>
+
+        <div class="sdk-detail-card">
           <section-group :title="t('components.section.overview')">
             <projection slot="summary"></projection>
           </section-group>

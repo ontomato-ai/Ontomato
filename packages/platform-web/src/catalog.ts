@@ -1,5 +1,5 @@
 import { computed, shallowRef } from "vue";
-import { applicationCatalogSchema, navigationApplicationCatalogSchema, isPanelApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
+import { applicationCatalogSchema, navigationApplicationCatalogSchema, isPanelApplication, isPlatformCatalogApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
 import { isNativeApplicationEntry } from "@ontomato/contracts/product-panels";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
@@ -40,7 +40,7 @@ export async function readApplicationCatalog(purpose = "navigation") {
   const response = await nodeApiRequest(`/api/data-query/platform/applications?purpose=${purpose}`, {});
   const body = await response.json();
   if (!body.success) throw new Error(body.message);
-  return (purpose === "navigation" ? navigationApplicationCatalogSchema : applicationCatalogSchema).parse(body.data);
+  return (purpose === "navigation" ? navigationApplicationCatalogSchema : applicationCatalogSchema).parse(body.data).filter(isPlatformCatalogApplication);
 }
 
 export async function readApplication(id: string): Promise<CatalogApplication> {
@@ -51,6 +51,7 @@ export async function readApplication(id: string): Promise<CatalogApplication> {
 }
 
 function storeDetail(app: CatalogApplication): void {
+  if (!isPlatformCatalogApplication(app)) return;
   const next = new Map(details.value);
   next.set(app.id, app);
   details.value = next;

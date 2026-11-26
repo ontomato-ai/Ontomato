@@ -54,7 +54,6 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
           }
           try{result={status:response.status,statusText:response.statusText,headers:[...response.headers.entries()],body:await response.arrayBuffer()};}finally{requests.delete(id);}
         }else if(operation==='cancel'){const {requestId}=appBridgeCancelSchema.parse(payload);requests.get(requestId)?.abort();}
-        else if(operation==='navigateProduct')await host.navigateProduct!(source,payload as Parameters<NonNullable<AppHost['navigateProduct']>>[1]);
         else if(operation==='navigate')host.navigate(appBridgePathSchema.parse(payload));
         else if(operation==='pageContext')host.setPageContext(source,appBridgePageContextSchema.parse(payload));
         else if(operation==='authFailure')host.onAuthFailure(appBridgeAuthStatusSchema.parse(payload));
@@ -75,7 +74,7 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
           Object.assign(element.style,{left:`${bounds.left+left}px`,top:`${bounds.top+top}px`,width:`${width}px`,height:`${height}px`,display:input.visible&&width>0&&height>0?'block':'none'});
         }else if(operation==='unmount'){
           const {id}=appBridgeUnmountSchema.parse(payload);const element=mounts.get(id);if(element){render(null,element);element.remove();mounts.delete(id);}
-        }
+        }else throw new Error('Unsupported application bridge operation');
         current();port.postMessage({channel:APP_BRIDGE_CHANNEL,id,result});
       }catch(reason){port.postMessage({channel:APP_BRIDGE_CHANNEL,id,error:reason instanceof Error?reason.message:'Platform bridge failed'});}
     };
