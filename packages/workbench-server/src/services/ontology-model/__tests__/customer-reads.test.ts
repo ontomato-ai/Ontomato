@@ -243,6 +243,7 @@ it("reads an outgoing relationship's neighbors with the anchor's key, one row ov
   expect(pattern.objects[0].conditions.properties).toEqual({ field: "id", operator: "=", value: "p1" });
   expect(pattern.relationship).toEqual([{ from: 0, to: 1, type: ["person_to_org"] }]);
   expect(dslCalls[0].answer.steps[0].output.limit).toEqual({ count: 51, offset: 0 });
+  expect(dslCalls[0].answer.steps[0].output.fields[0]).toMatchObject({ field: "id", distinct: true });
   expect(dslCalls[0].answer.steps[0].output.sort).toEqual({ fields: [{ variable: "target", field: "id", order: "asc" }] });
 
   expect(result.node).toEqual({ className: "person", primaryKey: "p1", label: "Alice", typeLabel: "Person", layer: "fact" });
@@ -263,11 +264,18 @@ it("reads both directions of a self-loop and keeps a neighbor reached twice as o
   const attributeReads: string[] = [];
   stubNeighbors(() => Response.json(dslAnswer([{ id: "p2", name: "Bob" }])), dslCalls, attributeReads);
 
-  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_person", { node: anchor });
+  const reads = createCustomerOntologyReadAdapter(owner, viewer);
+  const result = await reads.neighbors("person_to_person", { node: anchor });
+  const first = await reads.neighbors("person_to_person", { node: anchor, limit: 1 });
+  const second = await reads.neighbors("person_to_person", { node: anchor, limit: 1, offset: first.nextOffset! });
 
   // The self-loop's target is the anchor's own class, read once.
-  expect(attributeReads).toEqual(["person"]);
-  expect(dslCalls.map(call => dslRoute(call).direction)).toEqual(["outgoing", "incoming"]);
+  expect(attributeReads).toEqual(["person", "person", "person"]);
+  expect(dslCalls.slice(0, 2).map(call => dslRoute(call).direction)).toEqual(["outgoing", "incoming"]);
+  expect(dslCalls.slice(4).map(call => call.answer.steps[0].output.limit))
+    .toEqual([{ count: 3, offset: 0 }, { count: 3, offset: 0 }]);
+  expect(first).toMatchObject({ edges: [{ direction: "outgoing" }], nextOffset: 1, total: null });
+  expect(second).toMatchObject({ edges: [{ direction: "incoming" }], nextOffset: null, total: 2 });
   expect(relationPattern(dslCalls[1]).relationship).toEqual([{ from: 1, to: 0, type: ["person_to_person"] }]);
   // An incoming edge keeps the relationship's own direction: the neighbor is its from end.
   expect(result.edges.map(edge => [edge.direction, edge.from.primaryKey, edge.to.primaryKey]))
@@ -320,13 +328,25 @@ it("marks the relationship failed when the owner's execution fails, with its rea
   }]);
 });
 
-it("caps the returned rows at the limit and reports the relationship as truncated by the extra row", async () => {
-  stubNeighbors(() => Response.json(dslAnswer([{ id: "o1", title: "Acme" }, { id: "o2", title: "Globex" }, { id: "o3", title: "Initech" }])));
+it("continues a relationship after the returned rows and reports the final page", async () => {
+  const rows = [{ id: "o1", title: "Acme" }, { id: "o2", title: "Globex" }, { id: "o3", title: "Initech" }];
+  const dslCalls: Record<string, any>[] = [];
+  stubNeighbors(() => {
+    const { offset, count } = dslCalls.at(-1)!.answer.steps[0].output.limit;
+    return Response.json(dslAnswer(rows.slice(offset, offset + count)));
+  }, dslCalls);
+  const reads = createCustomerOntologyReadAdapter(owner, viewer);
 
-  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor, limit: 2 });
+  const first = await reads.neighbors("person_to_org", { node: anchor, limit: 2 });
+  expect(first.relations).toEqual([{ relationKind: "person_to_org", label: "Belongs to", status: "ok", edgeCount: 2, truncated: true }]);
+  expect(first.neighbors.map(neighbor => neighbor.primaryKey)).toEqual(["o1", "o2"]);
+  expect(first).toMatchObject({ nextOffset: 2, total: null });
 
-  expect(result.relations).toEqual([{ relationKind: "person_to_org", label: "Belongs to", status: "ok", edgeCount: 2, truncated: true }]);
-  expect(result.neighbors.map(neighbor => neighbor.primaryKey)).toEqual(["o1", "o2"]);
+  const next = await reads.neighbors("person_to_org", { node: anchor, limit: 2, offset: first.nextOffset! });
+  expect(dslCalls[1].answer.steps[0].output.limit).toEqual({ count: 3, offset: 2 });
+  expect(next.neighbors.map(neighbor => neighbor.primaryKey)).toEqual(["o3"]);
+  expect(next.relations[0]).toMatchObject({ edgeCount: 1, truncated: false });
+  expect(next).toMatchObject({ nextOffset: null, total: 3 });
 });
 
 it("fails the whole neighbors read by the record's rule when the anchor is unreadable", async () => {

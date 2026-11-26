@@ -1350,7 +1350,7 @@ export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclarat
 };
 export const customerRelationReads: Readonly<Record<string, PlatformReadDeclaration>> = {
   neighbors: {
-    source: "type", parameterMode: "fixed", params: { node: "graphNode", relationKinds: "relationKinds", limit: "neighborsLimit" },
+    source: "type", parameterMode: "fixed", params: { node: "graphNode", relationKinds: "relationKinds", limit: "neighborsLimit", offset: "nonNegativeInt" },
     requiredParams: ["node"], result: "panelRelationNeighbors",
   },
 };

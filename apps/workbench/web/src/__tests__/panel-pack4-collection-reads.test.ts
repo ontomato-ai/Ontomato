@@ -367,7 +367,7 @@ it("GroupedGrid consumes customer ObjectType.query, preserves rowOperations, sho
   expect(element.querySelector(".sdk-grouped-grid")?.classList.contains("is-locked")).toBe(true);
 });
 
-it("OntologyGraph consumes customer Relationship.neighbors without offset/layers/foreign relationKinds, clamps limit <= 100, shows truncation notice, and hides load-more", async () => {
+it("OntologyGraph loads the next customer Relationship.neighbors page using the declared offset and capped limit", async () => {
   const projection: DirectProjection = {
     ...base,
     id: "prereq-graph",
@@ -402,30 +402,36 @@ it("OntologyGraph consumes customer Relationship.neighbors without offset/layers
     },
   });
 
+  const root = { className: "Course", primaryKey: "c-1", label: "Algorithms", layer: "fact" };
   const { instance, element, reads } = mountMember(
     projection,
     manifest,
-    async () => ({
-      status: "ready",
-      value: {
-        node: { className: "Course", primaryKey: "c-1", label: "Algorithms", layer: "fact" },
-        neighbors: [{ className: "Course", primaryKey: "c-2", label: "Data Structures", layer: "fact" }],
-        edges: [
-          {
-            id: "prereqOf:c-1->c-2",
+    async ({ runtimeParams }) => {
+      const offset = runtimeParams?.offset === 100 ? 100 : 0;
+      const truncated = offset === 0;
+      const neighbors = Array.from({ length: truncated ? 100 : 1 }, (_, index) => ({
+        className: "Course", primaryKey: `c-${offset + index + 2}`, label: `Course ${offset + index + 2}`, layer: "fact",
+      }));
+      return {
+        status: "ready",
+        value: {
+          node: root,
+          neighbors,
+          edges: neighbors.map(({ className, primaryKey }) => ({
+            id: `prereqOf:c-1->${primaryKey}`,
             relationKind: "prereqOf",
             label: "Requires",
-            from: { className: "Course", primaryKey: "c-1" },
-            to: { className: "Course", primaryKey: "c-2" },
+            from: { className: root.className, primaryKey: root.primaryKey },
+            to: { className, primaryKey },
             direction: "outgoing",
             derived: false,
-          },
-        ],
-        relations: [
-          { relationKind: "prereqOf", label: "Requires", status: "ok", edgeCount: 1, truncated: true },
-        ],
-      } as never,
-    }),
+          })),
+          relations: [{ relationKind: "prereqOf", label: "Requires", status: "ok", edgeCount: neighbors.length, truncated }],
+          nextOffset: truncated ? 100 : null,
+          total: truncated ? null : 101,
+        } as never,
+      };
+    },
     {
       course: { className: "Course", primaryKey: "c-1" },
       // Shared state holds both the bound relation and a foreign relation name; foreign relation must NOT be forwarded.
@@ -434,24 +440,28 @@ it("OntologyGraph consumes customer Relationship.neighbors without offset/layers
   );
 
   await vi.waitFor(() => {
-    expect(canvas.nodes).toHaveLength(2);
+    expect(canvas.nodes).toHaveLength(101);
     expect(element.querySelector("[data-graph-state='neighbors-truncated']")).toBeTruthy();
   }, { timeout: 4000 });
 
   expect(reads).toHaveLength(1);
-  const sent = reads[0]!.runtimeParams!;
-  expect(sent).toEqual({
+  expect(reads[0]!.runtimeParams).toEqual({
     node: { className: "Course", primaryKey: "c-1" },
     limit: 100,
+    offset: 0,
     relationKinds: ["prereqOf"],
   });
-  expect(sent).not.toHaveProperty("offset");
-  expect(sent).not.toHaveProperty("layers");
-  expect(sent).not.toHaveProperty("direction");
-  expect(sent).not.toHaveProperty("targetClass");
-  expect(sent.relationKinds).not.toContain("otherRelation");
-
-  // No continuation support on customer Relationship.neighbors -> no load-more button, complete === false.
-  expect(element.querySelector("[data-graph-action='load-more-neighbors']")).toBeNull();
   expect(instance.outputs.graph?.complete).toBe(false);
+  canvas.emit!("viewport", { x: -1200, y: -1200, width: 2400, height: 2400, zoom: 1 });
+  await vi.waitFor(() => expect(element.querySelector("[data-graph-action='load-more-neighbors']")).toBeTruthy());
+  const loadMore = element.querySelector<HTMLButtonElement>("[data-graph-action='load-more-neighbors']");
+  loadMore!.click();
+
+  await vi.waitFor(() => {
+    expect(canvas.nodes).toHaveLength(102);
+    expect(instance.outputs.graph?.complete).toBe(true);
+    expect(element.querySelector("[data-graph-action='load-more-neighbors']")).toBeNull();
+  });
+  expect(reads).toHaveLength(2);
+  expect(reads[1]!.runtimeParams).toEqual({ ...reads[0]!.runtimeParams, offset: 100 });
 });
