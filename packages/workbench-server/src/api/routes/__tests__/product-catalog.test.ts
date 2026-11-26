@@ -114,6 +114,17 @@ beforeAll(async () => {
         allowed(decision.target.id, decision.verb === "USE" ? "use" : "edit", caller));
     }));
   });
+  app.post(objectRoute + "/read-ranges", (req, res) => {
+    expect(req.get("X-Ontomato-Query-Service-Token")).toBe("governance");
+    const { kind, verbs } = req.body as { kind: "PANEL" | "PROJECTION"; verbs: ("USE" | "EDIT")[] };
+    const caller = req.get("tk")!;
+    const collection = kind === "PANEL" ? records.product_panels : records.product_projections;
+    res.json({ ranges: Object.fromEntries(verbs.map(verb => [verb, {
+      fixed: verb === "USE", authorId: caller, all: false,
+      objectIds: [...collection.values()].filter(row => row.ownerId !== caller
+        && allowed(row.id, verb === "USE" ? "use" : "edit", caller)).map(row => row.id),
+    }])) });
+  });
   app.post(objectRoute + "/first-publication", (req, res) => {
     checkDefinition(req, req.body, "DRAFT");
     res.json({ status: "granted" });
@@ -202,8 +213,6 @@ beforeEach(() => {
     const table = (sql.match(/(?:FROM|INTO) (product_panels|product_projections)/)?.[1]) as Table;
     const collection = records[table];
     const id = String(values[1]);
-    if (sql.includes('SELECT id, owner_id AS "ownerId"'))
-      return { rows: [...collection.values()].filter(row => row.domainId === values[0]) };
     if (sql.startsWith("SELECT id,domain_id")) {
       const ids = Array.isArray(values[1]) ? values[1] : [id];
       return { rows: ids.flatMap(key => {
@@ -219,21 +228,24 @@ beforeEach(() => {
     }
     if (sql.includes('AS "sortKey"') || sql.startsWith("SELECT COUNT(*)::int AS total")) {
       const projectionCatalog = table === "product_projections";
-      const [domain, usable, scope, caller, query, template] =
-        values as [string, string[], string, string, string, boolean | null];
-      const componentId = projectionCatalog ? (values[6] as string | null) : null;
-      const objectType = projectionCatalog ? (values[7] as string | null) : null;
-      const cursorOffset = projectionCatalog ? 10 : 6;
-      const [key, position, limit] = values.slice(cursorOffset) as [string | null, string | null, number];
+      const domain = values[0];
+      const filterStart = Number(/\$(\d+)='all'/.exec(sql)![1]) - 1;
+      const [scope, caller, query, template, component, type] = values.slice(filterStart) as
+        [string, string, string, boolean | null, string | null, string | null];
+      const componentId = projectionCatalog ? component : null;
+      const objectType = projectionCatalog ? type : null;
+      const [key, position, limit] = values.slice(-4) as [string | null, string | null, number];
       const sortByName = sql.includes("ORDER BY lower");
       const order = sortByName ? 1 : -1;
-      const rows = [...collection.values()].filter(row => row.domainId === domain && usable.includes(row.id))
+      const canEdit = (row: CurrentProductRow) => row.ownerId === caller || allowed(row.id, "edit", caller);
+      const rows = [...collection.values()].filter(row => row.domainId === domain &&
+        (row.ownerId === caller || allowed(row.id, "use", caller) || !projectionCatalog && canEdit(row)))
         .filter(row => template === null || Boolean(row.definition.template) === template)
         .filter(row => scope === "all" || (scope === "mine") === (row.ownerId === caller))
         .filter(row => componentId === null || row.definition.componentId === componentId)
         .filter(row => objectType === null || projectionBoundObjectTypes(row.definition).includes(objectType))
         .map(row => ({
-          id: row.id, ownerId: row.ownerId, revision: row.revision, updatedAt: row.updatedAt,
+          id: row.id, ownerId: row.ownerId, revision: row.revision, updatedAt: row.updatedAt, editable: canEdit(row),
           name: String(row.definition.name), description: String(row.definition.description), visibility: row.definition.visibility,
           ...(sql.includes('AS "componentId"') ? { componentId: row.definition.componentId, definition: row.definition } : {}),
           ...(sql.includes("AS binding") ? { binding: row.definition.binding ?? null } : {}),
