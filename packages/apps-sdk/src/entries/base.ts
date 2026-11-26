@@ -119,9 +119,8 @@ export type {
 } from "../base/scheduled-task-summary-types";
 export { default as EffectivePermissionsView } from "../base/EffectivePermissionsView.vue";
 export type {
-  EffectivePermissionApiItem,
+  EffectiveManagementOperationItem,
   EffectivePermissionDataRow,
-  EffectivePermissionMenuGroup,
   EffectivePermissionOrgRoleGrant,
   EffectivePermissionOrgShareItem,
   EffectivePermissionShareRole,

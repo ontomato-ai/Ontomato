@@ -2,6 +2,7 @@ import {
   createAgentHostClient,
   type AgentHostClientOptions,
   type AgentHostWorkspaceScope,
+  type ReadVectorResource,
   type ShellFeedbackPort,
   type ShellFeedbackTarget,
   type ShellFeedbackValue,
@@ -28,7 +29,15 @@ const workbenchRequest: AgentHostClientOptions["request"] = (path, init) =>
   nodeApiFetch(path, init.method ?? "GET", typeof init.body === "string" ? JSON.parse(init.body) : undefined, {
     headers: init.headers,
     signal: init.signal,
+    redirect: init.redirect,
   });
+
+function vectorResourceReader(request: AgentHostClientOptions["request"]): ReadVectorResource {
+  return async ({ indexName, fileName }, signal) => (await request(
+    `/data-query/vectorResource/resource/${encodeURIComponent(indexName)}/${encodeURIComponent(fileName)}`,
+    { method: "GET", signal, redirect: "error" },
+  )).blob();
+}
 
 /**
  * The shared shell client of the assistant's agents. `request` is an authenticated request to a path under the API
@@ -49,13 +58,18 @@ export function createAssistantClient(
       return request(`${PREFIX}${path}`, init);
     },
     workspaceIdForAgent,
+    readVectorResource: vectorResourceReader(request),
     tasks: true,
   });
 }
 
 /** The same client with its conversations bound to one workspace (the app builder's): made in it, listed from it. */
 export function createWorkspaceAssistantClient(workspace: AgentHostWorkspaceScope) {
-  return createAgentHostClient({ request: (path, init) => workbenchRequest(`${PREFIX}${path}`, init), workspace });
+  return createAgentHostClient({
+    request: (path, init) => workbenchRequest(`${PREFIX}${path}`, init),
+    readVectorResource: vectorResourceReader(workbenchRequest),
+    workspace,
+  });
 }
 
 /** Answer feedback, stored by the workbench, shown by the shell's rating buttons. */

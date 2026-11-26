@@ -28,6 +28,29 @@ describe("explicit frame execution bindings",()=>{
     await expect(host().request!(source,'//other-host/path',{},'/data-query')).rejects.toThrow('Invalid SDK request');
     await expect(host().request!(source,'/business-definitions/../admin/delete',{},'')).rejects.toThrow('Invalid SDK request');
   });
+  it("reads only the exact vector resource through the live frame host", async () => {
+    installAppHost({
+      credential: { type: "token", token: "current-domain" },
+      preferences: { locale: ref("en"), theme: ref("light") } as PlatformPreferences,
+      router: createRouter({ history: createMemoryHistory(), routes: [] }),
+      onAuthFailure: vi.fn(),
+    });
+    const source = frame();
+    registerLiveFrame(source, "published");
+    const preview = frame();
+    registerBuildPreview(preview, buildExecutionContext("workspace", null));
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("attachment"));
+    const path = "/vectorResource/resource/vector-Order-proof-domain/file.pdf";
+    const response = await host().request!(source, path, { method: "GET", headers: { tk: "forged" } }, "/data-query");
+    expect(await response.text()).toBe("attachment");
+    expect(String(request.mock.calls[0]![0]).endsWith(`/data-query${path}`)).toBe(true);
+    expect(new Headers(request.mock.calls[0]![1]?.headers).get("tk")).toBe("current-domain");
+    expect(request.mock.calls[0]![1]?.redirect).toBe("error");
+    await expect(host().request!(preview, path, { method: "GET" }, "/data-query")).rejects.toThrow("declared SDK capability");
+    await expect(host().request!(source, path, { method: "POST" }, "/data-query")).rejects.toThrow("declared SDK capability");
+    await expect(host().request!(source, `${path}/extra`, { method: "GET" }, "/data-query")).rejects.toThrow("declared SDK capability");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
   it('derives preview execution headers from the registered frame rather than trusting source headers',async()=>{
     const source=frame();const context=buildExecutionContext('workspace',null);registerBuildPreview(source,context);
     const request=vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({success:true,data:[]}));

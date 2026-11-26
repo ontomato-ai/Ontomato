@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
 import com.alibaba.fastjson2.JSON;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
+@Owned
 @RequestMapping("/ontology/build-tests")
 public class BuildTestController {
   private final DataSandboxService contexts;

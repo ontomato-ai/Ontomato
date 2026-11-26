@@ -101,7 +101,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     // retiredOntologyApplicationRefusesNewTasksAndKeepsExistingOnes), so it uses a copy that still accepts them.
     ontology =
         new OntologyScheduleApplication(
-            functions, actions, programs, identities, references, grantsForActions) {
+            actions, references, grantsForActions) {
           @Override
           public boolean acceptsNewTasks() {
             return true;
@@ -109,7 +109,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         };
     retiredOntology =
         new OntologyScheduleApplication(
-            functions, actions, programs, identities, references, grantsForActions);
+            actions, references, grantsForActions);
     wireActionExecutor();
     var remote = mock(WorkbenchScheduleApplications.class);
     applications = scheduleApplications(List.of(ontology), remote);
@@ -121,6 +121,19 @@ class PlatformScheduleTest extends PostgresTestDatabase {
             + " balances','sales',?,'[]',?)",
         Function.OPERATION_WRITE,
         "# ontomato-python:2\nprint('done')");
+    jdbc.update("INSERT INTO action VALUES('baseline')");
+    doAnswer(ignored -> baselineAction()).when(actions).queryById("baseline");
+    doAnswer(ignored -> List.of(baselineAction())).when(actions).queryList(Action.STATUS_PUBLISHED, null, null, "sales");
+  }
+
+  private Action baselineAction() {
+    var action = new Action();
+    action.setId("baseline");
+    action.setName("Post balances");
+    action.setDomainId("sales");
+    action.setStatus(Action.STATUS_PUBLISHED);
+    action.setFunction(functions.queryById("f"));
+    return action;
   }
 
   private void wireActionExecutor() {
@@ -153,7 +166,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         object("execution", execution),
         "formRevision",
         OntologyScheduleApplication.formRevision(
-            function, execution.startsWith("action:") ? "a" : null),
+            function, execution.startsWith("action:") ? execution.substring("action:".length()) : null),
         "frequency",
         object("kind", "interval", "every", 1, "unit", "hour"),
         "timeZone",
@@ -175,7 +188,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   @Test
   void privateOwnershipTypedHttpAndRevisionChecks() throws Exception {
     UUID id = UUID.randomUUID();
-    var definition = definition("function:f");
+    var definition = definition("action:baseline");
     var created =
         http.perform(
                 post("/platform/scheduled-tasks")
@@ -224,12 +237,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   @Test
   void localApplicationDenialsUseTheRequestAndPersistedRunLanguageWithoutPermissionCodes()
       throws Exception {
-    doThrow(
-            new org.springframework.web.server.ResponseStatusException(
-                org.springframework.http.HttpStatus.FORBIDDEN,
-                "Operation permission is required: /action/execute"))
-        .when(identities)
-        .requireActionExecutionAccess("alice", "sales");
+    when(grantsForActions.standalone(any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.DENIED);
     var registry = scheduleApplications(List.of(ontology), mockWorkbench());
     var service =
         new PlatformTasks(store, identities, identity, credentials, registry, transactions);
@@ -259,7 +267,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         assertTrue(reasons.add(expected), expected);
         var input =
             (com.fasterxml.jackson.databind.node.ObjectNode)
-                (app.equals("ontology") ? definition("function:f") : fixtureDefinition(app));
+                (app.equals("ontology") ? definition("action:baseline") : fixtureDefinition(app));
         UUID taskId = UUID.randomUUID();
         store.insert(
             taskId,
@@ -336,7 +344,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         new org.springframework.web.server.ResponseStatusException(
             org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
             "Identity service unavailable");
-    doThrow(unavailable).when(identities).requireActionExecutionAccess("alice", "sales");
+    doThrow(unavailable).when(grantsForActions).standalone(any(), any(), any());
     var actor =
         new ScheduleApplication.Actor(
             user, identity.dataPermission("sales", "alice"), null, null, "zh-CN");
@@ -350,7 +358,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   @Test
   void emptyObjectPostBodiesFromTheWorkbenchAreAccepted() throws Exception {
     UUID taskId = UUID.randomUUID();
-    tasks.create(taskId, definition("function:f"), "en", true);
+    tasks.create(taskId, definition("action:baseline"), "en", true);
     http.perform(get("/platform/scheduled-tasks").param("includeCredentialStatus", "true"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.credentialStatus").value("no-remote-tasks"));
@@ -385,7 +393,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     var form =
         ontology.form(
             new ScheduleApplication.FormInput(
-                object("execution", "function:f", "parameter:obsolete", "old"),
+                object("execution", "action:baseline", "parameter:obsolete", "old"),
                 "execution",
                 null,
                 "Asia/Shanghai"),
@@ -425,7 +433,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     var manual = actions;
     String current = "# ontomato-python:2\nprint('current')", legacy = "print('retired')";
     for (String locale : List.of("en", "zh-CN"))
-      for (String target : List.of("action:a", "function:f")) {
+      for (String target : List.of("action:a")) {
         jdbc.update("UPDATE function SET code=? WHERE id='f'", current);
         action.getFunction().setCode(current);
         var input = definition(target);
@@ -541,7 +549,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
             new java.net.http.HttpTimeoutException("X-API-Key: synthetic-secret"))) {
       cause.set(failure);
       for (String locale : List.of("en", "zh-CN"))
-        for (String target : List.of("action:a", "function:f")) {
+        for (String target : List.of("action:a")) {
           UUID task = UUID.randomUUID(), run = UUID.randomUUID();
           tasks.create(task, definition(target), locale, true);
           tasks.manual(task, run, locale);
@@ -691,7 +699,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
       when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
           .thenReturn(List.of(action));
       jdbc.update("INSERT INTO action VALUES('a')");
-      for (String target : List.of("function:f", "action:a")) {
+      for (String target : List.of("action:a")) {
         UUID id = UUID.randomUUID();
         var input = (com.fasterxml.jackson.databind.node.ObjectNode) definition(target);
         input.set(
@@ -760,7 +768,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
               + "ValueError: private-password\n");
       var manual = actions;
       for (String locale : List.of("en", "zh-CN"))
-        for (String target : List.of("action:a", "function:f")) {
+        for (String target : List.of("action:a")) {
           UUID task = UUID.randomUUID(), run = UUID.randomUUID();
           var input = (com.fasterxml.jackson.databind.node.ObjectNode) definition(target);
           input.set(
@@ -814,7 +822,6 @@ class PlatformScheduleTest extends PostgresTestDatabase {
           assertNull(direct.getResult());
           assertNull(fixtureError.get(), String.valueOf(fixtureError.get()));
         }
-      verify(identities, atLeastOnce()).requireActionExecutionAccess("alice", "sales");
       assertThrows(
           IllegalArgumentException.class,
           () ->
@@ -834,12 +841,12 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   @Test
   void liveRunsPreventEditingAndManualReplayKeepsTheSnapshot() {
     UUID id = UUID.randomUUID();
-    tasks.create(id, definition("function:f"), "en", true);
+    tasks.create(id, definition("action:baseline"), "en", true);
     UUID run = UUID.randomUUID();
     var first = tasks.manual(id, run, "en");
     assertEquals(first, tasks.manual(id, run, "en"));
     var update =
-        ((com.fasterxml.jackson.databind.node.ObjectNode) definition("function:f"))
+        ((com.fasterxml.jackson.databind.node.ObjectNode) definition("action:baseline"))
             .put("revision", 1);
     assertEquals(
         "TASK_RUNNING",
@@ -860,8 +867,6 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     doReturn(action).when(actions).queryById("a");
     doReturn(List.of(action)).when(actions).queryList(Action.STATUS_PUBLISHED, null, null, "sales");
     jdbc.update("INSERT INTO action VALUES('a')");
-    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
-        .when(identities).requireActionExecutionAccess("alice", "sales");
     var actor = new ScheduleApplication.Actor(user, identity.dataPermission("sales", "alice"), null, null, "en");
     ontology.authorize(actor);
     var choice = ontology.form(new ScheduleApplication.FormInput(object(), null, null, "UTC"), actor);
@@ -877,7 +882,6 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     var recorded = store.run(run);
     assertEquals("failed", recorded.status());
     assertEquals("Target is not readable or is outside the granted scope", recorded.error().message());
-    verify(identities, never()).requireActionExecutionAccess("alice", "sales");
     verify(targetQueries).actionTargetExists(eq(action.getTarget()), eq("001"), any(), any());
     verify(actions).executeScheduled(eq(action), any(), eq("en"), eq(user), any(), eq(60), eq(run));
   }
@@ -885,14 +889,10 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   @Test
   void revokedExecutionPermissionPausesWithoutNullUserExecution() {
     UUID id = UUID.randomUUID();
-    tasks.create(id, definition("function:f"), "en", true);
+    tasks.create(id, definition("action:baseline"), "en", true);
     UUID run = UUID.randomUUID();
     tasks.manual(id, run, "en");
-    doThrow(
-            new org.springframework.web.server.ResponseStatusException(
-                org.springframework.http.HttpStatus.FORBIDDEN, "No execution permission"))
-        .when(identities)
-        .requireActionExecutionAccess("alice", "sales");
+    when(grantsForActions.standalone(any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.DENIED);
     var scheduler =
         new PlatformScheduler(
             store, transactions, applications, credentials, identity, mock(TaskMail.class));
@@ -1247,7 +1247,7 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
   @Test
   void unavailableFunctionPausesForTheTargetRatherThanAFormVersionChange() {
     UUID task = UUID.randomUUID(), run = UUID.randomUUID();
-    tasks.create(task, definition("function:f"), "en", true);
+    tasks.create(task, definition("action:baseline"), "en", true);
     tasks.manual(task, run, "en");
     jdbc.update("UPDATE function SET operation=? WHERE id='f'", Function.OPERATION_READ);
     var scheduler =
@@ -1324,7 +1324,7 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
     var refused =
         assertThrows(
             ScheduleException.class,
-            () -> service.create(UUID.randomUUID(), definition("function:f"), "zh-CN", true));
+            () -> service.create(UUID.randomUUID(), definition("action:baseline"), "zh-CN", true));
     assertEquals(400, refused.getStatusCode().value());
     assertTrue(refused.getReason().contains("触发"));
     var mvc = MockMvcBuilders.standaloneSetup(new PlatformTaskController(service)).build();

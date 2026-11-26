@@ -1,5 +1,11 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+
+import org.springframework.stereotype.Component;
+
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +63,19 @@ import jakarta.servlet.http.HttpServletRequest;
 @RestController
 @RequestMapping("/ontology/model")
 public class OntologyModelController {
+
+    @Component
+    static final class Operations implements ManagementOperations.Contributor {
+        static final String READ = "ontology-model.read";
+        static final String CHANGE = "ontology-model.change";
+        @Override
+        public java.util.List<ManagementOperations.Operation> managementOperations() {
+            return java.util.List.of(
+                    new ManagementOperations.Operation(READ, "Read ontology model", ManagementOperations.Access.READ),
+                    new ManagementOperations.Operation(CHANGE, "Change ontology model", ManagementOperations.Access.CHANGE));
+        }
+    }
+
 
 	public record ObjectTypeUpdateRequest(String className, String showName, String classDesc) {
 	}
@@ -126,7 +145,7 @@ public class OntologyModelController {
 			code = "INVALID_REQUEST";
 			message = "Invalid request";
 		} else if (error instanceof org.springframework.web.ErrorResponse problem) {
-			// The deployment's API permission check refuses an ungranted reader with 403.
+			// The ontology model read operation refuses an ungranted reader with 403.
 			status = problem.getStatusCode().value();
 			code = switch (status) {
 				case 403 -> "FORBIDDEN";
@@ -142,16 +161,19 @@ public class OntologyModelController {
 						java.util.Objects.toString(ThreadContext.get("correlationId"), "ontology")));
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping(value = "/object-types", params = "countOnly=true")
 	public Map<String, Integer> countObjectTypes(HttpServletRequest request) {
 		return countMetadata("objectTypes", request);
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping(value = "/attributes", params = {"countOnly=true", "!className"})
 	public Map<String, Integer> countAttributes(HttpServletRequest request) {
 		return countMetadata("attributes", request);
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping(value = "/relationships", params = {"countOnly=true", "!className"})
 	public Map<String, Integer> countRelationships(HttpServletRequest request) {
 		return countMetadata("relationships", request);
@@ -163,6 +185,7 @@ public class OntologyModelController {
 		return Map.of("total", service.countMetadata(user, isClassScoped(target) ? target.classNames() : null).get(field));
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping("/object-types")
 	public List<ObjectTypeView> objectTypes(
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
@@ -176,6 +199,7 @@ public class OntologyModelController {
 		return types;
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping("/object-type")
 	public ObjectTypeView objectType(@RequestParam String className,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
@@ -185,6 +209,7 @@ public class OntologyModelController {
 		return service.objectType(className, user, lang);
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping("/object-type/deletion-impact")
 	public DeletionImpact deletionImpact(@RequestParam String className,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
@@ -194,6 +219,7 @@ public class OntologyModelController {
 		return service.deletionImpact(className, user, lang);
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping("/attributes")
 	public List<AttributeView> attributes(@RequestParam(required = false) String className,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
@@ -211,6 +237,7 @@ public class OntologyModelController {
 		return attrs;
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping("/relationships")
 	public List<RelationshipView> relationships(@RequestParam(required = false) String className,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
@@ -231,6 +258,7 @@ public class OntologyModelController {
 		return relations;
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping("/relationship")
 	public RelationshipView relationship(@RequestParam String relationship,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
@@ -243,11 +271,13 @@ public class OntologyModelController {
 	}
 
 	/** Field labels for catalogs that list model objects; readers get them under the same permission as the lists. */
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping("/field-labels")
 	public FieldLabels fieldLabels(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.fieldLabels(lang);
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/object-type/create")
 	public ResponseEntity<ObjectTypeView> createObjectType(@RequestBody ObjectTypeCreate body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
@@ -255,6 +285,7 @@ public class OntologyModelController {
 				.body(service.createObjectType(body, SystemUtils.getCurUser(), lang));
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/object-type/update")
 	public ObjectTypeView updateObjectType(@RequestBody ObjectTypeUpdateRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
@@ -262,12 +293,14 @@ public class OntologyModelController {
 				new ObjectTypeUpdate(body.showName(), body.classDesc()), SystemUtils.getCurUser(), lang);
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/object-type/delete")
 	public ClassDeletion deleteObjectType(@RequestBody ObjectTypeDeleteRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.deleteObjectType(body.className(), SystemUtils.getCurUser(), lang);
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/attribute/create")
 	public ResponseEntity<AttributeView> createAttribute(@RequestBody AttributeCreateRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
@@ -277,6 +310,7 @@ public class OntologyModelController {
 				SystemUtils.getCurUser(), lang));
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/attribute/update")
 	public AttributeView updateAttribute(@RequestBody AttributeUpdateRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
@@ -286,12 +320,14 @@ public class OntologyModelController {
 				SystemUtils.getCurUser(), lang);
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/attribute/primary-key")
 	public List<AttributeView> setPrimaryKey(@RequestBody PrimaryKeyRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.setPrimaryKey(body.className(), body.name(), SystemUtils.getCurUser(), lang);
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/attribute/delete")
 	public ResponseEntity<Map<String, Object>> deleteAttribute(@RequestBody AttributeDeleteRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
@@ -299,6 +335,7 @@ public class OntologyModelController {
 		return ResponseEntity.ok(Map.of());
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/relationship/create")
 	public ResponseEntity<RelationshipView> createRelationship(@RequestBody RelationshipCreate body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
@@ -306,6 +343,7 @@ public class OntologyModelController {
 				.body(service.createRelationship(body, SystemUtils.getCurUser(), lang));
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/relationship/update")
 	public RelationshipView updateRelationship(@RequestBody RelationshipUpdateRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
@@ -314,6 +352,7 @@ public class OntologyModelController {
 				SystemUtils.getCurUser(), lang);
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/relationship/delete")
 	public ResponseEntity<Map<String, Object>> deleteRelationship(@RequestBody RelationshipDeleteRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
@@ -321,6 +360,7 @@ public class OntologyModelController {
 		return ResponseEntity.ok(Map.of());
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@PostMapping("/object-type/form")
 	public FormDescription objectTypeForm(@RequestBody FormRequest body,
 			@RequestParam(value = "mode", required = false) String mode,
@@ -340,6 +380,7 @@ public class OntologyModelController {
 		return service.objectTypeForm(body, user, lang);
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@PostMapping("/attribute/form")
 	public FormDescription attributeForm(@RequestBody FormRequest body,
 			@RequestParam(value = "mode", required = false) String mode,
@@ -362,6 +403,7 @@ public class OntologyModelController {
 		return service.attributeForm(body, user, lang);
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@PostMapping("/relationship/form")
 	public FormDescription relationshipForm(@RequestBody FormRequest body,
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,

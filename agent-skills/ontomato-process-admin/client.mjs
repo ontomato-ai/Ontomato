@@ -406,38 +406,30 @@ if (cmd === 'login') {
   const body = readJsonArg(requireArg(args, 0, 'post-save <json>{id?,postName,postType,fullData,postDesc,sort,parentId}'));
   const id = await post('/post/saveOrUpdate', body);
   console.log(JSON.stringify({ postId: id }, null, 2));
-} else if (cmd === 'api-list') {
-  console.log(JSON.stringify(await get('/sysop/getAllApiPermission'), null, 2));
-} else if (cmd === 'menu-list') {
-  console.log(JSON.stringify(await get('/sysop/getAllMenus'), null, 2));
-} else if (cmd === 'post-api') {
-  const postId = requireArg(args, 0, 'post-api <postId> [apiIds逗号分隔]');
-  if (!args[1]) {
-    console.log(JSON.stringify(await post('/sysop/getAllApiPermissionByPostId', { id: postId }), null, 2));
+} else if (cmd === 'management-catalog') {
+  console.log(JSON.stringify(await get('/platform/governance/policy-configuration/management-catalog'), null, 2));
+} else if (cmd === 'post-management') {
+  const policyId = requireArg(args, 0, 'post-management <policyId> [operationIds逗号分隔]');
+  if (args[1] === undefined) {
+    console.log(JSON.stringify(await post('/platform/governance/policy-configuration/management', { policyId }), null, 2));
   } else {
-    const ids = args[1].split(',').map((s) => s.trim()).filter(Boolean);
-    await post('/post/replacePostApiPermission', { postId, ids });
-    console.log(JSON.stringify({ ok: true, postId, ids, note: 'replace 语义' }, null, 2));
+    const operationIds = args[1].split(',').map((s) => s.trim()).filter(Boolean);
+    await post('/platform/governance/policy-configuration/management/replace', { policyId, operationIds });
+    console.log(JSON.stringify({ ok: true, policyId, operationIds }, null, 2));
   }
-} else if (cmd === 'post-menu') {
-  const postId = requireArg(args, 0, 'post-menu <postId> [menuIds逗号分隔]');
-  if (!args[1]) {
-    console.log(JSON.stringify(await post('/sysop/getAllMenuPermissionByPostId', { id: postId }), null, 2));
-  } else {
-    const menuIds = args[1].split(',').map((s) => s.trim()).filter(Boolean);
-    await post('/sysop/replacePostMenuPermission', { postId, menuIds });
-    console.log(JSON.stringify({ ok: true, postId, menuIds, note: 'replace 语义' }, null, 2));
-  }
+} else if (cmd === 'post-objects') {
+  const policyId = requireArg(args, 0, 'post-objects <policyId>');
+  console.log(JSON.stringify(await post('/platform/governance/policy-configuration/objects', { policyId }), null, 2));
 } else if (cmd === 'post-data') {
   const postId = requireArg(args, 0, 'post-data <postId>');
-  console.log(JSON.stringify(await post('/sysop/getAllDataPermissionByPostId', { id: postId }), null, 2));
+  console.log(JSON.stringify(await post('/platform/governance/policy-configuration/data', { policyId: postId }), null, 2));
 } else if (cmd === 'data-permission-save') {
   const body = readJsonArg(requireArg(args, 0, 'data-permission-save <json>{id?,postId,dataType,className,permission}'));
-  const id = await post('/sysop/saveOrUpdateDataPermission', body);
+  const id = await post('/platform/governance/policy-configuration/data/save', body);
   console.log(JSON.stringify({ id }, null, 2));
 } else if (cmd === 'data-permission-delete') {
   const id = requireArg(args, 0, 'data-permission-delete <id>');
-  await post('/sysop/deleteDataPermissionById', { id });
+  await post('/platform/governance/policy-configuration/data/delete', { id });
   console.log(JSON.stringify({ ok: true, id }, null, 2));
 } else if (cmd === 'actions') {
   const data = await post('/action/queryList', { status: args[0] || null });
@@ -596,9 +588,9 @@ if (cmd === 'login') {
   role-posts-set <roleId> <postIds> 精确替换角色岗位（不保留旧值）
   posts / post-save <json>         岗位列表 / 新建或改名
   post-delete <id>                 删除岗位
-  api-list / menu-list             全部 API / 菜单权限项
-  post-api <postId> [apiIds]       看/替换岗位 API 权限
-  post-menu <postId> [menuIds]     看/替换岗位菜单权限
+  management-catalog              查看属主登记的管理操作
+  post-management <policyId> [operationIds] 查看/替换策略管理操作
+  post-objects <policyId>         查看策略的具体入口和对象授权
   post-data <postId>               看岗位数据权限
   data-permission-save <json>      建/改数据权限（dataType 1 行 / 2 字段）
   data-permission-delete <id>      删数据权限

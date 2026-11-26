@@ -7,8 +7,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
-import io.ontomato.dataengine.config.ServiceConst;
-import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.schedules.*;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.util.ErrorText;
@@ -31,10 +29,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
 
   private static final int EXECUTION_TIMEOUT_MINUTES = 60;
 
-  private final FunctionDao functions;
   private final ActionService actions;
-  private final ABCProgramService programs;
-  private final IdentityService identity;
   private final OntologyScheduleReferences references;
   private final io.ontomato.dataengine.service.authorization.ActionAuthorization authorization;
 
@@ -55,7 +50,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   public String description(String locale) {
-    return locale.startsWith("zh") ? "执行一个动作或函数" : "Execute an action or function";
+    return locale.startsWith("zh") ? "执行一个动作" : "Execute an action";
   }
 
   public void authorize(Actor actor) {
@@ -63,8 +58,6 @@ public class OntologyScheduleApplication implements ScheduleApplication {
       if (action.getFunction() != null && actor.domain().equals(action.getFunction().getDomainId())
           && unsupportedReason(action.getFunction(), actor.locale()) == null && permitted(action.getId(), actor)) return;
     }
-    if (permitted(null, actor) && functions.queryList(Function.OPERATION_WRITE, null, actor.domain()).stream()
-        .anyMatch(f -> unsupportedReason(f, actor.locale()) == null)) return;
     throw denied(actor);
   }
 
@@ -74,23 +67,16 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     if (selection.isBlank()) { authorize(actor); return; }
     int split = selection.indexOf(':');
     if (split < 1) throw unavailable();
-    String actionId = switch (selection.substring(0, split)) {
-      case "action" -> selection.substring(split + 1);
-      case "function" -> null;
-      default -> throw unavailable();
-    };
+    String actionId = actionId(selection, actor.locale());
     if (!permitted(actionId, actor)) throw denied(actor);
   }
 
   private boolean permitted(String actionId, Actor actor) {
     try {
-      if (actionId != null) {
-        var action = actions.queryById(actionId);
-        return action != null && Action.STATUS_PUBLISHED.equals(action.getStatus())
-            && authorization.standalone(authorization.subject(actor.domain(), actor.creator()), action, ExecutionTarget.LIVE).admitted();
-      }
-      identity.requireActionExecutionAccess(actor.creator(), actor.domain());
-      return true;
+      var action = actions.queryById(actionId);
+      return action != null && actor.domain().equals(action.getDomainId())
+          && Action.STATUS_PUBLISHED.equals(action.getStatus())
+          && authorization.standalone(authorization.subject(actor.domain(), actor.creator()), action, ExecutionTarget.LIVE).admitted();
     } catch (org.springframework.web.server.ResponseStatusException denied) {
       if (denied.getStatusCode().value() != 403) throw denied;
       return false;
@@ -99,7 +85,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
 
   private ScheduleException denied(Actor actor) {
     return new ScheduleException(403, "PERMISSION_DENIED", zh(actor)
-        ? "你没有执行动作或函数的权限" : "You do not have permission to execute actions or functions");
+        ? "你没有执行此动作的权限" : "You do not have permission to execute this action");
   }
 
   public boolean asynchronous() {
@@ -111,30 +97,31 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   private record Target(Action action, Function function, String label) {
-    String actionId() { return action == null ? null : action.getId(); }
+    String actionId() { return action.getId(); }
+  }
+
+  private static String bindActionMessage(String locale) {
+    return locale.startsWith("zh") ? "请将此任务改为绑定一个动作" : "Bind this task to an action before running it";
+  }
+
+  private static String actionId(String value, String locale) {
+    if (value.startsWith("function:"))
+      throw new ScheduleException(422, "TARGET_UNAVAILABLE", bindActionMessage(locale));
+    if (!value.startsWith("action:") || value.length() == "action:".length()) throw unavailable();
+    return value.substring("action:".length());
   }
 
   private Target target(String value, String domain, String locale) {
-    int split = value.indexOf(':');
-    if (split < 1) throw unavailable();
-    String kind = value.substring(0, split), id = value.substring(split + 1);
-    if (kind.equals("action")) {
-      var action = actions.queryById(id);
-      if (action == null
-          || !domain.equals(action.getDomainId())
-          || !Action.STATUS_PUBLISHED.equals(action.getStatus())
-          || action.getFunction() == null
-          || !domain.equals(action.getFunction().getDomainId())) throw unavailable();
-      String reason = unsupportedReason(action.getFunction(), locale);
-      if (reason != null) throw new ScheduleException(422, "TARGET_UNAVAILABLE", reason);
-      return new Target(action, action.getFunction(), label(action.getName(), id));
-    }
-    if (!kind.equals("function")) throw unavailable();
-    var function = functions.queryById(id);
-    if (function == null || !domain.equals(function.getDomainId())) throw unavailable();
-    String reason = unsupportedReason(function, locale);
+    String id = actionId(value, locale);
+    var action = actions.queryById(id);
+    if (action == null
+        || !domain.equals(action.getDomainId())
+        || !Action.STATUS_PUBLISHED.equals(action.getStatus())
+        || action.getFunction() == null
+        || !domain.equals(action.getFunction().getDomainId())) throw unavailable();
+    String reason = unsupportedReason(action.getFunction(), locale);
     if (reason != null) throw new ScheduleException(422, "TARGET_UNAVAILABLE", reason);
-    return new Target(null, function, label(function.getName(), id));
+    return new Target(action, action.getFunction(), label(action.getName(), id));
   }
 
   private static String unsupportedReason(Function function, String locale) {
@@ -181,7 +168,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
 
   private static ScheduleException unavailable() {
     return new ScheduleException(
-        422, "TARGET_UNAVAILABLE", "The action or write function is unavailable");
+        422, "TARGET_UNAVAILABLE", "The action is unavailable");
   }
 
   private static String label(String value, String id) {
@@ -230,17 +217,11 @@ public class OntologyScheduleApplication implements ScheduleApplication {
       options.add(option(value, candidate, reason, action.getDescription(), actor));
       if (selected.equals(value) && reason == null) selectedTarget = candidate;
     }
-    if (permitted(null, actor)) {
-      for (var function : functions.queryList(Function.OPERATION_WRITE, null, actor.domain())) {
-        String reason = unsupportedReason(function, actor.locale());
-        var candidate = new Target(null, function, label(function.getName(), function.getId()));
-        String value = "function:" + function.getId();
-        options.add(option(value, candidate, reason, function.getDescription(), actor));
-        if (selected.equals(value) && reason == null) selectedTarget = candidate;
-      }
+    if (!selected.isBlank() && !hasChoice(options, selected)) {
+      String reason = selected.startsWith("function:") ? bindActionMessage(actor.locale())
+          : zh(actor) ? "目标已不可用" : "Target unavailable";
+      options.add(FormFields.option(selected, selected, reason, null));
     }
-    if (!selected.isBlank() && !hasChoice(options, selected))
-      options.add(FormFields.option(selected, selected, zh(actor) ? "目标已不可用" : "Target unavailable", null));
     return targetForm(input, actor, options, selectedTarget);
   }
 
@@ -250,7 +231,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   private JsonNode option(String value, Target target, String reason, String description, Actor actor) {
-    String kind = target.action() == null ? (zh(actor) ? " · 函数" : " · Function") : (zh(actor) ? " · 动作" : " · Action");
+    String kind = zh(actor) ? " · 动作" : " · Action";
     return FormFields.option(value, target.label() + kind, reason, description);
   }
 
@@ -319,7 +300,6 @@ public class OntologyScheduleApplication implements ScheduleApplication {
             execution.definition().content().path("execution").asText(),
             actor.domain(),
             actor.locale());
-    if (target.action() == null && !permitted(null, actor)) throw denied(actor);
     if (!execution
         .definition()
         .formRevision()
@@ -352,17 +332,8 @@ public class OntologyScheduleApplication implements ScheduleApplication {
             "executionId",
             execution.runId()));
     try {
-      io.ontomato.dataengine.bean.PythonExecuteResult result;
-      if (target.action() != null) {
-        result = actions.executeScheduled(target.action(), values, actor.locale(), actor.user(), actor.permission(),
-            EXECUTION_TIMEOUT_MINUTES, execution.runId());
-      } else {
-        var function = MetricViewBindings.executionWriteFunction(target.function(), values);
-        var output = programs.execute(execution.runId().toString(), function, actor.creator(), actor.permission(),
-            ServiceConst.NOT_SANDBOX, actor.locale(), EXECUTION_TIMEOUT_MINUTES, actor.domain(),
-            new ABCProgramService.ExecutionContext(execution.runId(), null, ExecutionTarget.LIVE));
-        result = (io.ontomato.dataengine.bean.PythonExecuteResult) output[1];
-      }
+      var result = actions.executeScheduled(target.action(), values, actor.locale(), actor.user(), actor.permission(),
+          EXECUTION_TIMEOUT_MINUTES, execution.runId());
       state.put("result", result.getResult());
       state.set("spendTime", JSON.valueToTree(result.getSpendTime()));
       if (result.getError() != null && !result.getError().isBlank()) {

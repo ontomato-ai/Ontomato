@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.agent.*;
@@ -10,6 +12,7 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 public class OntologyRetrievalController {
   private final OntologyRetrievalService retrieval;
   private final OntologyAgentStore store;

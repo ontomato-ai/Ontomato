@@ -80,8 +80,6 @@ beforeEach(() => {
     resolveAutotestActor: async () => ({ userId: "user-1", domainId: "domain-a" }),
     resolveMcpCaller: async () => ({ userId: "user-1", domainId: "domain-a" }),
     resolveSkillResourceDomain: async () => ({ ok: true, domainId: "domain-a" }),
-    requirePermission: () => (_req, _res, next) => next(),
-    assertPermission: async () => {},
     requireDeploymentMaintenance: (_req, _res, next) => next(),
     requireDomainId: ({ domainId }) => {
       if (!domainId) throw new HttpError(403, "Domain required");

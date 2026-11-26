@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service.authorization;
 
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,6 +18,7 @@ import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.config.BaseControllerAdvice;
+import io.ontomato.dataengine.config.ManagementEndpointConfig;
 import io.ontomato.dataengine.controller.AuthorizationPolicyGovernanceController;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
@@ -32,10 +34,14 @@ import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.handler.MappedInterceptor;
 
 class AuthorizationPolicyGovernanceControllerTest {
     private static final String PREFIX = "/authorization/policies/";
@@ -61,8 +67,18 @@ class AuthorizationPolicyGovernanceControllerTest {
         var policies = new AuthorizationPolicies(store, operations, authorization, actions, admin);
         var inspector = new AuthorizationAccessInspector(authorization, store, subjects, policies, workflows, grants, actions);
         var controller = new AuthorizationPolicyGovernanceController(new WorkbenchServiceAuthentication("workbench"),
-                identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows);
-        http = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new BaseControllerAdvice()).build();
+                identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
+        var beans = new DefaultListableBeanFactory();
+        beans.registerSingleton("access", new ManagementRequestAccess(identity, authorization, operations));
+        var registry = new InterceptorRegistry() {
+            HandlerInterceptor[] interceptors() {
+                return getInterceptors().stream().map(value -> ((MappedInterceptor) value).getInterceptor())
+                        .toArray(HandlerInterceptor[]::new);
+            }
+        };
+        new ManagementEndpointConfig(beans.getBeanProvider(ManagementRequestAccess.class)).addInterceptors(registry);
+        http = MockMvcBuilders.standaloneSetup(controller).addInterceptors(registry.interceptors())
+                .setControllerAdvice(new BaseControllerAdvice()).build();
 
         when(identity.getCurrentUser()).thenReturn(user);
         when(user.getId()).thenReturn("login-id");
@@ -79,13 +95,13 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(status().isUnauthorized());
         when(user.getDomainId()).thenReturn("");
         http.perform(rpc("graph-facts", "{}")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(store, subjects, catalog, actions, workflows);
+        verifyNoInteractions(store, subjects, catalog, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
     }
 
     @Test
     void browsingTheEntryCatalogRequiresManagementReadWithoutAPolicyId() throws Exception {
         http.perform(rpc("entry-roots", "{}")).andExpect(status().isForbidden());
-        verifyNoInteractions(catalog, actions, workflows);
+        verifyNoInteractions(catalog, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
     }
 
     @Test
@@ -142,6 +158,80 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.entries[1].panelIds", containsInAnyOrder("same")))
                 .andExpect(jsonPath("$.existingGrants").isEmpty())
                 .andExpect(jsonPath("$.targetPolicyRoleIds").isEmpty());
+    }
+
+    @Test
+    void checksSnapshotGrantsWithoutTreatingSnapshotDefinitionsAsRegisteredTargets() throws Exception {
+        var grant = JSONObject.of("policyId", "selected", "kind", "ACTION", "key", "snapshot-approve",
+                "verb", "EXECUTE", "scope", JSONObject.of("kind", "assigned_to_self", "className", "Order", "field", "assignee"));
+        var action = JSONObject.of("id", "snapshot-approve", "status", Action.STATUS_PUBLISHED,
+                "target", JSONObject.of("className", "Order", "keyParameter", "orderId").toJSONString());
+        var selected = JSONObject.of("id", "selected", "type", PolicyTypes.OBJECT);
+        var management = JSONObject.of("policyId", "management", "operationId", AuthorizationPolicies.READ);
+        var snapshot = JSONObject.of("grants", List.of(grant), "actions", List.of(action),
+                "policies", List.of(selected, JSONObject.of("id", "management", "type", PolicyTypes.MANAGEMENT),
+                        JSONObject.of("id", "data", "type", PolicyTypes.BUSINESS_DATA)),
+                "policyLinks", List.of(JSONObject.of("policyId", "selected", "type", PolicyTypes.OBJECT)),
+                "managementGrants", List.of(management), "businessDataPolicyIds", List.of("data"),
+                "ontologyRule", JSONObject.of("classDef", List.of(JSONObject.of("className", "Order",
+                        "attrs", List.of(JSONObject.of("name", "assignee", "enable", true))))).toJSONString());
+        var input = JSONObject.of("targets", List.of(
+                JSONObject.of("kind", "ENTRY", "key", "app/main"),
+                JSONObject.of("kind", "APPLICATION", "key", "foreign")), "snapshot", snapshot);
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isForbidden());
+        permissions(true, false);
+        when(catalog.registeredEntryIds("domain", Set.of("app/main"))).thenReturn(Set.of("app/main"));
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Domain-Id", "other-domain").content(input.toJSONString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].kind").value("ENTRY"))
+                .andExpect(jsonPath("$.data[0].key").value("app/main"));
+        verify(catalog).registeredEntryIds("domain", Set.of("app/main"));
+        verify(catalog).registeredApplicationIds("domain", Set.of("foreign"));
+
+        snapshot.put("businessDataPolicyIds", List.of("selected"));
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Snapshot policy selected requires policy type " + PolicyTypes.BUSINESS_DATA)));
+        snapshot.put("businessDataPolicyIds", List.of("data"));
+        management.put("policyId", "data");
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Snapshot policy data requires policy type " + PolicyTypes.MANAGEMENT)));
+        management.put("policyId", "management");
+        grant.put("policyId", "data");
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Snapshot policy data requires policy type " + PolicyTypes.OBJECT)));
+        grant.put("policyId", "selected");
+        snapshot.put("policyLinks", List.of(JSONObject.of("policyId", "selected", "type", PolicyTypes.BUSINESS_DATA)));
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Snapshot policy selected requires policy type " + PolicyTypes.BUSINESS_DATA)));
+        snapshot.put("policyLinks", List.of(JSONObject.of("policyId", "selected", "type", PolicyTypes.OBJECT)));
+
+        for (var kind : List.of("PANEL", "SKILL")) {
+            snapshot.put("grants", List.of(JSONObject.of("policyId", "selected", "kind", kind,
+                    "key", "unapproved", "verb", "VIEW")));
+            http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message", containsString("policy selected, " + kind + ", key unapproved")));
+        }
+        snapshot.put("grants", List.of(grant));
+        for (var scope : List.of(JSONObject.of("kind", "made_up"),
+                JSONObject.of("kind", "all", "field", "assignee"),
+                JSONObject.of("kind", "assigned_to_self", "className", "Order", "field", 5),
+                JSONObject.of("kind", "assigned_to_self", "className", "Order", "field", "unknown"))) {
+            grant.put("scope", scope);
+            http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message", containsString("policy selected, ACTION, key snapshot-approve")));
+        }
+        verifyNoMoreInteractions(catalog);
+        verifyNoInteractions(actions, admin);
+        verify(store, never()).grantObject(any());
     }
 
     @Test
@@ -240,20 +330,21 @@ class AuthorizationPolicyGovernanceControllerTest {
                 grant(ACTION, Verb.EXECUTE, SELF),
                 grant(new ObjectTarget("domain", Kind.WORKFLOW, "one"), Verb.EDIT, null),
                 grant(new ObjectTarget("domain", Kind.WORKFLOW, ""), Verb.CREATE, null)));
-        when(store.policyRoleIds("domain", "selected")).thenReturn(Set.of("reviewer"));
-        when(workflows.queryList(null, "domain")).thenReturn(List.of(workflow("one"), workflow("two")));
+        when(store.domainRolePolicies("domain")).thenReturn(List.of(new PolicyRef("reviewer", "selected", PolicyKind.OBJECT)));
+        when(store.domainPolicy("domain")).thenReturn(new PolicyRef("member", "default", PolicyKind.OBJECT));
         var result = http.perform(post(PREFIX + "graph-facts").header(WorkbenchServiceAuthentication.HEADER, "workbench"));
         result.andExpect(status().isOk())
                 .andExpect(jsonPath("$.policyGrants[0].targetKind").value("ACTION"))
                 .andExpect(jsonPath("$.policyGrants[0].targetKey").value("approve"))
                 .andExpect(jsonPath("$.policyGrants[0].scope.field").value("assignee"))
-                .andExpect(jsonPath("$.roleActionGrants[0].scopeKind").value("assigned_to_self"))
-                .andExpect(jsonPath("$.roleActionGrants[0].roleId").value("reviewer"))
-                .andExpect(jsonPath("$.roleWorkflowAuthoring[?(@.verb == 'EDIT')].workflowId", containsInAnyOrder("one")))
-                .andExpect(jsonPath("$.roleWorkflowAuthoring[?(@.verb == 'CREATE')].workflowId", containsInAnyOrder("one", "two")));
+                .andExpect(jsonPath("$.policyGrants[1].targetKey").value("one"))
+                .andExpect(jsonPath("$.policyGrants[1].verb").value("EDIT"))
+                .andExpect(jsonPath("$.policyGrants[2].targetKey").value(""))
+                .andExpect(jsonPath("$.policyGrants[2].verb").value("CREATE"))
+                .andExpect(jsonPath("$.rolePolicies[0].roleId").value("reviewer"));
         verifyNoInteractions(subjects);
         verify(store).domainObjectGrants("domain");
-        verify(workflows).queryList(null, "domain");
+        verifyNoInteractions(workflows);
     }
 
     private void permissions(boolean read, boolean change) {

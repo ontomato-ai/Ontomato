@@ -18,6 +18,7 @@ import org.springframework.util.MultiValueMap;
 import java.util.*;
 
 @RestController
+@Owned
 @RequestMapping("/observe/logs")
 public class ObserveLogController {
 

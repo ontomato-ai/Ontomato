@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.QueryAccessService;
@@ -38,6 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RestController
+@Owned
 public class WriteFunctionOperationController {
 
     @Autowired private HttpServletRequest request;

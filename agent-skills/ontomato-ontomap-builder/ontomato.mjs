@@ -77,30 +77,6 @@ async function readResponseJson(res) {
 }
 
 // One resource: `text` is what is embedded and shown; `file` (optional) is the original file stored as the resource.
-async function uploadVector(cfg, argv) {
-  const arg = argv[0];
-  if (arg == null) die("upload-vector requires a JSON payload");
-  const payload = JSON.parse(readInput(arg));
-  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) die("upload-vector payload must be a JSON object");
-  const { className, attrName, objectId, text, file } = payload;
-  if (!className || !attrName || !objectId || !text) die("upload-vector payload requires className, attrName, objectId and text");
-  const form = new FormData();
-  form.append("content", text);
-  form.append("className", className);
-  form.append("attrName", attrName);
-  form.append("objectId", objectId);
-  if (file) {
-    form.append("suffix", path.extname(file).replace(/^\./, "").toLowerCase());
-    form.append("file", new Blob([fs.readFileSync(file)]), path.basename(file));
-  }
-  const res = await fetch(`${cfg.envUrl}/api/data-query/vectorResource/upload`, {
-    method: "POST",
-    body: form,
-  });
-  const json = await readResponseJson(res);
-  console.log(JSON.stringify(json.data, null, 2));
-}
-
 function takeOption(argv, name) {
   const i = argv.indexOf(name);
   if (i < 0) return null;
@@ -114,55 +90,6 @@ function nonNegative(value, name) {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 0) die(`${name} must be a non-negative integer`);
   return n;
-}
-
-// Text-only resources in batches through the `items` form of /vectorResource/upload. Each JSONL line is
-// {"className","attrName","objectId","text"}; every item succeeds or fails on its own.
-async function uploadVectors(cfg, argv) {
-  const from = nonNegative(takeOption(argv, "--from") ?? 0, "--from");
-  const batch = nonNegative(takeOption(argv, "--batch") ?? 100, "--batch") || 100;
-  if (argv.length !== 1) die("upload-vectors requires <file.jsonl>");
-  const file = argv[0].replace(/^@/, "");
-  const lines = fs.readFileSync(file, "utf8").split(/\r?\n/).filter((line) => line.trim());
-  const items = lines.map((line, i) => {
-    const item = JSON.parse(line);
-    if (!item.className || !item.attrName || !item.objectId || !item.text) die(`line ${i + 1} requires className, attrName, objectId and text`);
-    return { className: item.className, attrName: item.attrName, objectId: String(item.objectId), content: item.text };
-  });
-  const failedFile = `${file}.failed.jsonl`;
-  let ok = 0;
-  let failed = 0;
-  for (let start = from; start < items.length; start += batch) {
-    const part = items.slice(start, start + batch);
-    const form = new FormData();
-    form.append("items", JSON.stringify(part));
-    const res = await fetch(`${cfg.envUrl}/api/data-query/vectorResource/upload`, {
-      method: "POST",
-      body: form,
-    });
-    const text = await res.text();
-    const json = res.ok ? JSON.parse(text) : null;
-    if (!json || json.success !== true) {
-      die(`batch from line ${start + 1} failed: ${json ? json.message : `${res.status} ${text}`}\nResume with --from ${start} after checking which items of this batch were stored.`);
-    }
-    for (const result of json.data) {
-      if (result.success) ok++;
-      else {
-        failed++;
-        // result.index counts within this request.
-        fs.appendFileSync(failedFile, `${JSON.stringify({ line: start + result.index + 1, objectId: part[result.index]?.objectId, message: result.message })}\n`);
-      }
-    }
-    console.log(`${Math.min(start + batch, items.length)}/${items.length} ok=${ok} failed=${failed}`);
-  }
-  if (failed) console.log(`failed items: ${failedFile}`);
-}
-
-async function deleteVector(cfg, argv) {
-  if (argv.length !== 4) die("delete-vector requires <class> <attribute> <objectId> <path>");
-  const [className, attrName, objectId, resourcePath] = argv;
-  await requestJson(cfg, "POST", "/vectorResource/delete", { className, attrName, objectId, path: resourcePath });
-  console.log("vector deleted");
 }
 
 async function importTestData(cfg, argv) {
@@ -356,9 +283,6 @@ function usage() {
   ontomato.mjs propose-schema <json|@file>
   ontomato.mjs db-import <table> <file.csv> [--from <rows>] [--batch <rows>]
   ontomato.mjs import-test-data <file.zip>
-  ontomato.mjs upload-vector <json|@file>
-  ontomato.mjs upload-vectors <file.jsonl> [--from <lines>] [--batch <lines>]
-  ontomato.mjs delete-vector <class> <attribute> <objectId> <path>
   ontomato.mjs agent list|start|send|read|cancel [options]`);
 }
 
@@ -452,18 +376,6 @@ async function main() {
       { "Accept-Language": "en" },
     );
     console.log("knowledge deleted");
-    return;
-  }
-  if (cmd === "upload-vector") {
-    await uploadVector(cfg, argv.slice(1));
-    return;
-  }
-  if (cmd === "upload-vectors") {
-    await uploadVectors(cfg, argv.slice(1));
-    return;
-  }
-  if (cmd === "delete-vector") {
-    await deleteVector(cfg, argv.slice(1));
     return;
   }
   if (cmd === "import-test-data") {

@@ -20,6 +20,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 @RestController
+@Owned
 public class ApplicationController {
     static final String CONNECT_APPLICATION = "applications.connected.create";
 

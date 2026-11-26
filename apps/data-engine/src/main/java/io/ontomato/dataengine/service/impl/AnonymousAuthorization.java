@@ -97,7 +97,16 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     @Override public List<AgentPolicyGrant> agentPolicyGrants(ObjectTarget target) { return List.of(); }
     @Override public void replaceAgentLevel(String policyId, ObjectTarget target, Verb level) { throw noRolePolicies(); }
     @Override public List<ObjectGrant> policyObjectGrants(String domainId, String policyId) { return List.of(); }
-    @Override public List<ObjectGrant> domainObjectGrants(String domainId) { return List.of(); }
+    @Override public List<ObjectGrant> domainObjectGrants(String domainId) {
+        return jdbc.query("""
+                SELECT target_kind, target_key, verb FROM object_policy_grant WHERE domain_id=?
+                """, (row, index) -> new ObjectGrant(DOMAIN_POLICY,
+                new ObjectTarget(domainId, Kind.valueOf(row.getString("target_kind")), row.getString("target_key")),
+                Verb.valueOf(row.getString("verb")), null), domainId);
+    }
+
+    @Override public List<PolicyRef> domainRolePolicies(String domainId) { return List.of(); }
+    @Override public Map<String, Set<String>> domainManagementOperations(String domainId) { return Map.of(); }
     @Override public Set<String> managementOperations(String domainId, Set<String> policyIds) { return Set.of(); }
     @Override public Set<String> entryPolicies(ObjectTarget entry) { return Set.of(); }
     @Override public Set<String> policyRoleIds(String domainId, String policyId) { return Set.of(); }

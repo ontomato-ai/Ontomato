@@ -464,7 +464,7 @@ if (cmd === 'login') {
   praxis-health                    Praxis 健康
   org-graph                        我的组织子树：下级组织、成员、角色、可执行能力
   subjects / roles                 主体 / 角色
-  my-actions                       我的有效角色能执行的动作（含来源流程/手工授权）
+  my-actions                       当前主体可独立执行的已发布动作
   action <actionId>                看动作完整参数（类型/枚举/返回）
   find <需求> [className]          语义找动作，并标记我是否有权限
   dsl <json|@json>                 直接执行 DSL（用于读自己的数据/验证行权限）

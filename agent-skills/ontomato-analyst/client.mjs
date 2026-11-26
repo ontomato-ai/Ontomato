@@ -148,8 +148,6 @@ function explainActionError(message) {
     return "No current role grant allows this action. Check the direct grant or the active workflow revision.";
   if (/preconditions are not met/i.test(text))
     return "Business precondition failed: " + text.replace(/^.*?preconditions are not met:\s*/i, "");
-  if (text.includes("/action/execute") && /permission|无此权限/i.test(text))
-    return "This action has no capability grants; it requires the existing /action/execute permission.";
   if (/Action\.targetOutsideScope|not readable or is outside the granted scope/i.test(text))
     return "You cannot read this target or it is outside the scope granted to your role.";
   if (/class is outside the authorized scope|field is outside the authorized scope/i.test(text))

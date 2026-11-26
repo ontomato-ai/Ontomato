@@ -45,7 +45,7 @@ description: 以使用方主体身份在 Ontomato/Praxis 上办事：按需求�
    - `units`：我的组织及所有下级组织；
    - `members`：这些组织里的主体，以及他们的有效角色；
    - `roles[].capabilities`：这些角色能执行的 Action（含 `name`、`classNames`）；
-   - `roles[].canAuthorWorkflow`：该角色是否有保存/激活 Workflow 的平台权限；
+   - `roles[].canCreateWorkflow`：该角色的策略是否明确允许新建流程。用来筛选候选角色，实际操作由当前主体的权限裁决；
    - `caseClass` / `caseApi`：临时流程单的只读本体类（`workflow_case`）与读取入口。
 
 3. 先用 `node client.mjs find "<需求>"` 找已发布的 Action，再用 `node client.mjs action <actionId>` 看完整参数（类型/枚举/返回）。`denied` 里也会给出 `actionId/name`；**Action 已发布就可以用于临时 Workflow**，不要求当前角色已经持有它。Case 字段类型要与 Action 参数类型一致（例如 `amount` 是 `TYPE_STRING`，`caseFormSchema` 就写 `string`）。
@@ -56,8 +56,8 @@ description: 以使用方主体身份在 Ontomato/Praxis 上办事：按需求�
 5. 组装临时 Workflow：
    - 发起步用我有的 Action；办理步用目标角色的 Action；
    - `temp-save` 保存并激活，必要时 `start` 起 Run。
-6. 如果没有任何已发布 Action 能覆盖，或我自己没有 `/workflow/save` + `/workflow/activate`：
-   - 明确说明缺的是“可执行 Action”还是“流程保存/激活权限”；
+6. 如果没有任何已发布 Action 能覆盖，或Java 拒绝当前主体新建或激活流程：
+   - 说明缺的是可执行动作、流程新建权限还是生命周期管理操作权限；
    - 不要伪造能力，也不要用 `/role/getRoleInfoPage`、`/organization/snapshot` 等管理员接口代查。
 
 ---
@@ -331,8 +331,8 @@ node client.mjs temp-clean <workflowId>
 
 注意：
 
-- 先跑 `org-graph` 确认目标角色确实具备所需 Action，并确认自己的角色 `canAuthorWorkflow=true`。
-- **需要 `/workflow/save` 和 `/workflow/activate` 权限**；普通使用方没有时会失败，明确报缺哪个权限，再让管理员补授权或代建。
+- 先跑 `org-graph` 确认目标角色确实具备所需 Action。用 `canCreateWorkflow` 查询候选角色。
+- 新建草稿需流程对象的 `CREATE` 权限。编辑已有流程时，由 Java 对实际 `workflowId` 裁决 `EDIT`。激活和停用各自调用生命周期管理操作，由 Java 检查 `workflow.lifecycle.change`。
 - **临时流程用完必须 `temp-clean`。** 停用回收该版本的步骤授权，独立动作策略继续按自己的范围生效。
 - 激活冻结步骤和该步骤的角色、动作及作用范围。临时流程也会出现在 `workflow/query`、`grants` 里，直到停用或删除。
 - `temp-clean` 先失效（回收该版本授权）再删除；已经创建的 Run 模板是冻结的，账本记录不受影响。

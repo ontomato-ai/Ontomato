@@ -251,6 +251,20 @@ public class ApplicationCatalog {
     public boolean inDomain(JSONObject app, User user) {
         return app.getString("domainId") == null || Objects.equals(app.getString("domainId"), user.getDomainId());
     }
+    public record VisibleEntry(String id, String applicationId, Map<String, String> names, String pageKey) {}
+
+    public List<VisibleEntry> visibleEntries(User user) {
+        var subject = new ApplicationSubject(user);
+        return entriesInDomain(user.getDomainId()).stream().flatMap(application -> {
+            var app = application.application();
+            var appId = app.getString("id");
+            boolean maintain = subject.canEdit(app);
+            return application.entries().stream().filter(entry -> maintain || subject.decision(appId, entry.id()).allowed())
+                    .map(entry -> new VisibleEntry(ApplicationEntryEvents.entryId(appId, entry.id()),
+                            appId, entry.names(), entry.pageKey()));
+        }).toList();
+    }
+
     public List<JSONObject> visible(User user) {
         var apps = applicationsInDomain(user.getDomainId());
         var pageKeys = new BuiltinPageKeys(apps);
@@ -1083,10 +1097,19 @@ public class ApplicationCatalog {
     }
 
     public boolean ownsEntry(String domainId, String entryId) {
-        var apps = applicationsInDomain(domainId);
-        var pageKeys = new BuiltinPageKeys(apps);
-        return apps.stream().anyMatch(app -> actualEntries(app, pageKeys).stream().anyMatch(use ->
-            ApplicationEntryEvents.entryId(app.getString("id"), use.id()).equals(entryId)));
+        return registeredEntryIds(domainId, Set.of(entryId)).contains(entryId);
+    }
+
+    public Set<String> registeredApplicationIds(String domainId, Set<String> keys) {
+        return applicationsInDomain(domainId).stream().map(app -> app.getString("id"))
+                .filter(keys::contains).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    public Set<String> registeredEntryIds(String domainId, Set<String> entryIds) {
+        return entriesInDomain(domainId).stream().flatMap(application -> {
+            var appId = application.application().getString("id");
+            return application.entries().stream().map(entry -> ApplicationEntryEvents.entryId(appId, entry.id()));
+        }).filter(entryIds::contains).collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     public void deleteDomainApplication(String id, User user) {

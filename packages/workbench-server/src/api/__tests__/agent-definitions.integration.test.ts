@@ -107,8 +107,8 @@ describe("agent definitions on PostgreSQL", () => {
         } as typeof en },
       },
     });
-    const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
-    installWorkbenchIdentity({ requireDomainId: () => owner.domainId, requirePermission } as unknown as WorkbenchIdentity);
+
+    installWorkbenchIdentity({ requireDomainId: () => owner.domainId } as unknown as WorkbenchIdentity);
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {

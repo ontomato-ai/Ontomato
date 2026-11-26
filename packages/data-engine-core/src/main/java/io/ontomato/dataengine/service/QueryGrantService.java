@@ -358,6 +358,8 @@ public class QueryGrantService {
       case "package-read" -> operations.add(QueryGrantOperation.DATA_QUERY);
       case ACTION_EXECUTION -> {
         operations.addAll(QueryGrantOperation.WRITE);
+        operations.add(QueryGrantOperation.ATTACH_VECTOR_RESOURCE);
+        operations.add(QueryGrantOperation.DETACH_VECTOR_RESOURCE);
         operations.add(QueryGrantOperation.DATA_QUERY);
         operations.add(QueryGrantOperation.DATA_DISTINCT);
       }

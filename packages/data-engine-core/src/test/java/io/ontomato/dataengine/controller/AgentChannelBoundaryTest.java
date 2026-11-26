@@ -130,7 +130,7 @@ class AgentChannelBoundaryTest {
     var files=result.getJSONArray("files");assertEquals(SESSION+".dataset.json",files.getJSONObject(0).getString("name"));
     byte[] original="{\"execution\":{\"receiptId\":\"retriever-receipt\"},\"rows\":[[0,false,null]]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
     when(retrieval.datasetContent(SESSION,SESSION,owner)).thenReturn(original);
-    verify(callers).requireQuery(any());
+    verify(retrieval).requireUse(owner);
     input.put("fileId",SESSION);
     assertArrayEquals(original,(byte[])((org.springframework.http.ResponseEntity<?>)controller.read(input,request)).getBody());
   }

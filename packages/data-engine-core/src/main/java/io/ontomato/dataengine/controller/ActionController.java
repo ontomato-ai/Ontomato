@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import io.ontomato.dataengine.bean.function.Function;
 
 import java.io.File;
@@ -65,6 +67,7 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RestController
+@Owned
 public class ActionController {
     private final io.ontomato.dataengine.service.agent.AgentExecutionScope agentExecutionScope;
 
