@@ -1212,7 +1212,7 @@ export const components: readonly ComponentMetadata[] = [
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
           "agentId", "agentKind", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAgentId", "defaultAppId", "defaultCommit", "direction", "editMode",
-          "entryId", "favoritesOnly", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
+          "entryId", "favoritesOnly", "field", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
           "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
           "runId", "sampleToken", "scope", "search", "section", "selectedTask", "size", "sort", "source", "sourceType", "status",
           "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version", "workspace", "workspaceAgent",
