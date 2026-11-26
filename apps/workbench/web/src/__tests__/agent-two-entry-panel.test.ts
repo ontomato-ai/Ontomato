@@ -254,6 +254,7 @@ const field = (path: string, label: string, control: PanelFormDescription["field
 const fullFields: PanelFormDescription["fields"] = [
   field("/name", "Name", { kind: "text" }, { required: true, section: "basics" }),
   field("/description", "Description", { kind: "text", multiline: true }, { section: "basics" }),
+  field("/icon", "Icon", { kind: "avatar" }, { section: "basics" }),
   field("/enabled", "Enabled", { kind: "switch" }, { section: "basics" }),
   field("/modelSelection/modelId", "Model", { kind: "reference", objectType: "platform:ModelOption", multiple: false }, { section: "model" }),
   field("/systemPrompt", "Instructions", { kind: "text", presentation: "markdown" }, { section: "prompt" }),
@@ -824,6 +825,36 @@ const answerLeaveConfirm = async (choice: "keep" | "discard") => {
   }, { timeout: 5000 });
 };
 
+function detailSectionButton(page: { element: HTMLElement }, label: string): HTMLButtonElement {
+  const button = [...page.element.querySelectorAll<HTMLButtonElement>(".agent-detail-nav-item")]
+    .find((item) => item.textContent?.includes(label));
+  expect(button, `Expected section navigation item '${label}'`).toBeTruthy();
+  return button!;
+}
+
+async function openDetailSection(page: { element: HTMLElement }, label: string) {
+  detailSectionButton(page, label).click();
+  await nextTick();
+}
+
+function headerMoreButton(page: { element: HTMLElement }): HTMLButtonElement | undefined {
+  return [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
+    .find((button) => button.textContent?.trim() === "···");
+}
+
+async function clickHeaderDelete(page: { element: HTMLElement }) {
+  const more = headerMoreButton(page);
+  expect(more, "Expected header overflow menu button").toBeTruthy();
+  more!.click();
+  const item = await vi.waitFor(() => {
+    const found = [...document.querySelectorAll<HTMLElement>(".el-dropdown-menu__item")]
+      .find((candidate) => candidate.textContent?.trim() === "Delete");
+    if (!found) throw new Error("Expected Delete item in header overflow menu");
+    return found;
+  }, { timeout: 5000 });
+  item.click();
+}
+
 afterEach(() => {
   leaveFrame();
   useApplicationCatalog().applications.value = [];
@@ -850,17 +881,32 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     expect(catalogSource.manifest.state.detailPath.external).toBe(true);
     expect(Object.keys(detailSource.manifest.state).sort()).toEqual([
       "catalogPath",
+      "classChecked",
       "grantDialog",
       "grantPolicy",
       "grantPolicyId",
       "grantVerb",
       "selected",
+      "skillPickerOpen",
+      "skillPickerSelected",
       "tab",
+      "toolPickerOpen",
+      "toolPickerSelected",
     ]);
     expect(detailSource.manifest.state.selected.deepLink).toBe(true);
     expect(detailSource.manifest.state.tab.deepLink).toBe(true);
     expect(detailSource.manifest.state.catalogPath.external).toBe(true);
-    for (const key of ["grantDialog", "grantPolicy", "grantPolicyId", "grantVerb"] as const) {
+    for (const key of [
+      "classChecked",
+      "grantDialog",
+      "grantPolicy",
+      "grantPolicyId",
+      "grantVerb",
+      "skillPickerOpen",
+      "skillPickerSelected",
+      "toolPickerOpen",
+      "toolPickerSelected",
+    ] as const) {
       expect(detailSource.manifest.state[key]).not.toHaveProperty("deepLink", true);
     }
     expect(detailSource.manifest.members.policyPicker.type).toBe("platform:PermissionPolicy");
@@ -1015,17 +1061,29 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     const page = await app.open();
     try {
       await vi.waitFor(() => {
+        expect(page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Operations Diagnosis");
+      }, { timeout: 5000 });
+      expect([...page.element.querySelectorAll<HTMLElement>(".agent-detail-nav-item")]
+        .map((item) => item.textContent?.trim())).toEqual([
+        "Basic information",
+        "Model",
+        "Prompt",
+        "Capabilities",
+        "Data scope",
+        "Permissions & sharing",
+      ]);
+      expect(page.element.querySelector(".agent-detail-savebar")).toBeNull();
+
+      await openDetailSection(page, "Model");
+      await vi.waitFor(() => {
         expect(page.element.querySelector('[data-field="/modelSelection/modelId"]')).toBeTruthy();
       }, { timeout: 5000 });
       expect(page.element.textContent).toContain("Operations Diagnosis");
       expect(page.element.textContent).toContain("System");
       expect(page.element.textContent).toContain("only support changing their model configuration");
-      expect(page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
       expect(page.element.querySelector('[data-field="/systemPrompt"]')).toBeNull();
-      // Delete button is hidden for system built-in agents (hideWhenUnavailable: true).
-      const deleteButtons = [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
-        .filter((btn) => btn.textContent?.includes("Delete"));
-      expect(deleteButtons).toHaveLength(0);
+      // Delete is not offered in the header overflow menu for system built-in agents.
+      expect(headerMoreButton(page)).toBeUndefined();
     } finally {
       page.app.unmount();
     }
@@ -1039,14 +1097,21 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     const page = await app.open();
     try {
       await vi.waitFor(() => {
+        expect(page.element.querySelector('[data-field="/name"] input')).toBeTruthy();
+      }, { timeout: 5000 });
+      const iconField = page.element.querySelector<HTMLElement>('[data-field="/icon"]');
+      expect(iconField?.querySelector(".agent-detail-avatar-control")).toBeTruthy();
+      expect(iconField?.textContent).toContain("Icon");
+      expect(iconField?.textContent).toContain("Color");
+
+      await openDetailSection(page, "Prompt");
+      await vi.waitFor(() => {
         expect(page.element.querySelector('[data-field="/systemPrompt"]')).toBeTruthy();
       }, { timeout: 5000 });
       expect(page.element.textContent).toContain("Preset");
       // View class is only shown in ontology manager context, not under /agents/settings/detail.
       expect(page.element.textContent).not.toContain("View class");
-      const deleteButtons = [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
-        .filter((btn) => btn.textContent?.includes("Delete"));
-      expect(deleteButtons).toHaveLength(0);
+      expect(headerMoreButton(page)).toBeUndefined();
 
       // Back returns to /agents/settings (the wired catalogPath).
       const backBtn = page.element.querySelector<HTMLButtonElement>(".sdk-page-header-back");
@@ -1077,12 +1142,21 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
       await vi.waitFor(() => {
         expect(page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Sales Analyst");
       }, { timeout: 5000 });
+      expect(page.element.querySelector(".agent-detail-savebar")).toBeNull();
 
-      // Dirty edit guards Back navigation.
+      // Dirty edit appears in the sticky save bar and guards Back navigation.
       const nameInput = page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')!;
       nameInput.value = "Sales Analyst v2";
       nameInput.dispatchEvent(new Event("input"));
-      await nextTick();
+      const savebar = await vi.waitFor(() => {
+        const found = page.element.querySelector<HTMLElement>(".agent-detail-savebar");
+        if (!found) throw new Error("Expected sticky save bar for the dirty form");
+        return found;
+      }, { timeout: 5000 });
+      expect(savebar.textContent).toContain("1 unsaved changes");
+      expect(savebar.textContent).toContain("Name");
+      expect([...savebar.querySelectorAll<HTMLButtonElement>("button")].map((button) => button.textContent?.trim()))
+        .toEqual(expect.arrayContaining(["Discard", "Save"]));
 
       const backBtn = page.element.querySelector<HTMLButtonElement>(".sdk-page-header-back")!;
       backBtn.click();
@@ -1092,8 +1166,8 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
       expect(app.router.currentRoute.value.path).toBe("/ontology/agents/detail");
       expect(page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Sales Analyst v2");
 
-      // Discard via header draft bar so we can test View class and Delete cleanly.
-      const discardBtn = [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
+      // Discard through the save bar so we can test View class and Delete cleanly.
+      const discardBtn = [...savebar.querySelectorAll<HTMLButtonElement>("button")]
         .find((btn) => btn.textContent?.trim() === "Discard")!;
       expect(discardBtn).toBeTruthy();
       discardBtn.click();
@@ -1105,6 +1179,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
       [...discardBox.querySelectorAll<HTMLButtonElement>("button")].find((btn) => btn.textContent?.trim() === "Discard")!.click();
       await vi.waitFor(() => {
         expect(page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Sales Analyst");
+        expect(page.element.querySelector(".agent-detail-savebar")).toBeNull();
       }, { timeout: 5000 });
 
       // View class button is omitted from the editor header in both entries (AG-13).
@@ -1112,11 +1187,8 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         .find((btn) => btn.textContent?.trim() === "View class");
       expect(viewClassBtn).toBeUndefined();
 
-      // Delete custom agent -> returns to /ontology/agents.
-      const deleteBtn = [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
-        .find((btn) => btn.textContent?.includes("Delete"))!;
-      expect(deleteBtn).toBeTruthy();
-      deleteBtn.click();
+      // Delete lives in the header overflow menu and returns to /ontology/agents.
+      await clickHeaderDelete(page);
       await vi.waitFor(() => {
         expect(deletedId).toBe(CUSTOM_ID);
         expect(app.router.currentRoute.value.path).toBe("/ontology/agents");
@@ -1172,44 +1244,40 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
       await vi.waitFor(() => {
         expect(page.element.querySelector('[data-field="/name"] input')).toBeTruthy();
       }, { timeout: 5000 });
-      // Default config tab does not eagerly read grantRows before switching to Permissions & sharing.
+      // The default Basic information screen does not eagerly read grantRows before switching sections.
       expect(app.reads.some((r) => "dataName" in r && r.memberPath[0]?.member === "grantsList")).toBe(false);
 
-      // Switch to Permissions & sharing tab.
-      const grantsTab = [...page.element.querySelectorAll<HTMLElement>('[role="tab"]')]
-        .find((tab) => tab.textContent?.includes("Permissions & sharing"))!;
-      expect(grantsTab).toBeTruthy();
-      grantsTab.click();
-
+      await openDetailSection(page, "Permissions & sharing");
       await vi.waitFor(() => {
-        expect(page.element.querySelector('[data-tab="grants"]')).toBeTruthy();
+        expect(page.element.textContent).toContain("Who can use it");
         expect(page.element.textContent).toContain("Only the members and roles explicitly granted below");
         expect(page.element.textContent).toContain("Sales Owners");
-        expect(page.element.textContent).toContain("Add to a policy");
+        expect(page.element.textContent).toContain("Add to policy");
         expect(page.element.textContent).toContain("This adds the object to an object policy.");
         expect(page.element.textContent).toContain("Remove from policy");
+        expect(page.element.querySelector('[data-field="/executionUserId"]')).toBeTruthy();
       }, { timeout: 5000 });
+      expect(page.element.querySelector('[data-tab="grants"]')).toBeNull();
 
-      // Enable domain-wide sharing -> invokes agents.share({ shared: true }) and updates description + button.
-      const enableShareBtn = [...page.element.querySelectorAll<HTMLButtonElement>('[data-tab="grants"] button')]
-        .find((btn) => btn.textContent?.includes("Enable domain-wide use"))!;
-      expect(enableShareBtn).toBeTruthy();
-      enableShareBtn.click();
+      // Choosing the domain-wide audience segment invokes agents.share({ shared: true }) and updates the description.
+      const domainSegment = [...page.element.querySelectorAll<HTMLElement>(".el-segmented__item")]
+        .find((item) => item.textContent?.includes("Everyone in this domain"))!;
+      expect(domainSegment).toBeTruthy();
+      domainSegment.click();
 
       await vi.waitFor(() => {
         expect(shareCalls).toEqual([{ targetId: CUSTOM_ID, shared: true }]);
         expect(page.element.textContent).toContain("All members in this domain can use this agent.");
-        expect(page.element.textContent).toContain("Disable domain-wide use");
       }, { timeout: 5000 });
 
       // Open the add-to-policy dialog, pick the Analyst policy, choose View level, and submit.
-      const addGrantBtn = [...page.element.querySelectorAll<HTMLButtonElement>('[data-tab="grants"] button')]
+      const addGrantBtn = [...page.element.querySelectorAll<HTMLButtonElement>("button")]
         .find((btn) => btn.textContent?.includes("Add to policy"))!;
       expect(addGrantBtn).toBeTruthy();
       addGrantBtn.click();
 
       await vi.waitFor(() => {
-        expect(document.querySelector(".el-dialog")).toBeTruthy();
+        expect(document.querySelector(".el-dialog")?.textContent).toContain("Add to a policy");
       }, { timeout: 5000 });
 
       await vi.waitFor(() => {
@@ -1250,11 +1318,11 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
           targetId: CUSTOM_ID,
           input: { policyId: "analyst-policy", verb: "view" },
         }]);
-        expect(page.element.querySelector('[data-tab="grants"]')?.textContent).toContain("Analyst");
+        expect(page.element.textContent).toContain("Analyst");
       }, { timeout: 5000 });
 
-      // Remove the newly granted Analyst policy row from that policy -> dispatches agents.revoke with { policyId: "analyst-policy" }.
-      const analystRow = [...page.element.querySelectorAll<HTMLElement>('[data-tab="grants"] .sdk-object-list-table tbody tr')]
+      // Remove the newly granted Analyst policy row -> dispatches agents.revoke with { policyId: "analyst-policy" }.
+      const analystRow = [...page.element.querySelectorAll<HTMLElement>(".sdk-object-list-table tbody tr")]
         .find((row) => row.textContent?.includes("Analyst"))!;
       expect(analystRow).toBeTruthy();
       const revokeBtn = [...analystRow.querySelectorAll<HTMLButtonElement>("button")]
@@ -1267,14 +1335,14 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
           targetId: CUSTOM_ID,
           input: { policyId: "analyst-policy" },
         }]);
-        expect(page.element.querySelector('[data-tab="grants"]')?.textContent).not.toContain("Analyst");
+        expect(page.element.querySelector(".sdk-object-list-table")?.textContent).not.toContain("Analyst");
       }, { timeout: 5000 });
     } finally {
       page.app.unmount();
     }
   });
 
-  it("hides Permissions & sharing tab, falls back from ?tab=grants, and skips grantRows for view-only readers", { timeout: 20000 }, async () => {
+  it("opens legacy ?tab=grants as sharing but skips grantRows for view-only readers", { timeout: 20000 }, async () => {
     const app = mountTwoEntryApp({
       appId: "agents",
       agents: DEFAULT_AGENTS.map((agent) => ({ ...agent, canEdit: false, canGrant: false })),
@@ -1283,22 +1351,33 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     const page = await app.open();
     try {
       await vi.waitFor(() => {
-        expect(page.element.querySelector('[data-field="/name"] input')).toBeTruthy();
+        expect(page.element.querySelector('[data-field="/executionUserId"]')).toBeTruthy();
       }, { timeout: 5000 });
       expect(page.element.textContent).toContain("read-only access");
+      expect(page.element.querySelector('[data-field="/name"]')).toBeNull();
+      expect([...page.element.querySelectorAll<HTMLElement>(".agent-detail-nav-item")]
+        .map((item) => item.textContent?.trim())).toEqual([
+        "Basic information",
+        "Model",
+        "Prompt",
+        "Capabilities",
+        "Data scope",
+        "Permissions & sharing",
+      ]);
       expect(page.element.querySelector('[data-tab="grants"]')).toBeNull();
-      expect(page.element.querySelectorAll('[role="tab"]')).toHaveLength(0);
       expect(app.reads.some((r) => "dataName" in r && r.memberPath[0]?.member === "grantsList")).toBe(false);
-      expect(page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
-      const deleteButtons = [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
-        .filter((btn) => btn.textContent?.includes("Delete"));
-      expect(deleteButtons).toHaveLength(0);
+      expect(headerMoreButton(page)).toBeUndefined();
+
+      await openDetailSection(page, "Basic information");
+      await vi.waitFor(() => {
+        expect(page.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
+      }, { timeout: 5000 });
     } finally {
       page.app.unmount();
     }
   });
 
-  it("shows system business-gate notice inside Permissions & sharing tab for system built-in agents", { timeout: 20000 }, async () => {
+  it("shows system business-gate notice inside the sharing screen for system built-in agents", { timeout: 20000 }, async () => {
     const app = mountTwoEntryApp({
       appId: "ontology",
       initialPath: panelAddress("/ontology/agents/detail", { selected: SYSTEM_ID, tab: "grants" }),
@@ -1306,13 +1385,11 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     const page = await app.open();
     try {
       await vi.waitFor(() => {
-        expect(page.element.querySelector('[data-tab="grants"]')).toBeTruthy();
         expect(page.element.textContent).toContain("feature access gate");
         expect(page.element.textContent).toContain("Domain Admin");
       }, { timeout: 5000 });
-      // Deep-linking directly to the grants tab does not eagerly mount or read the heavy config form tab.
-      expect(page.element.querySelector('[data-tab="config"]')).toBeNull();
-      expect(app.reads.some((r) => "dataName" in r && r.memberPath[0]?.member === "form")).toBe(false);
+      expect(detailSectionButton(page, "Permissions & sharing").getAttribute("aria-current")).toBe("page");
+      expect(page.element.querySelector('[data-tab="grants"]')).toBeNull();
     } finally {
       page.app.unmount();
     }
