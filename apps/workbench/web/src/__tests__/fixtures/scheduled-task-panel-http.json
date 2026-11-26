@@ -3,43 +3,183 @@
     "status": "ready",
     "value": [
       {
-        "primaryKey": "10000000-0000-4000-8000-000000000004",
-        "label": "每周知识核对",
+        "primaryKey": "10000000-0000-4000-8000-000000000002",
+        "label": "每日库存摘要",
         "fields": {
-          "application": "governance",
-          "settings": "指令: 核对库存口径的相互冲突，给出建议和来源",
+          "application": "agents",
+          "targetKind": "application",
+          "targetId": "agents",
+          "targetName": "应用名称",
+          "targetIcon": "apps",
+          "status": "PUBLISHED",
+          "definitionStatus": "已发布",
+          "version": 1,
+          "creatorId": "member-a",
+          "executorId": "member-a",
+          "description": "",
+          "coauthorIds": "",
+          "reviewedBy": "",
+          "settings": "智能体: 20000000-0000-4000-8000-000000000001; 指令: 生成库存变化摘要",
           "state": "on",
-          "nextRun": "2026-11-09T01:00:00Z",
-          "lastRun": ""
+          "stateLabel": "已启用",
+          "enabled": true,
+          "scheduled": true,
+          "revision": 1,
+          "activeRunId": "30000000-0000-4000-8000-000000000002",
+          "pauseCode": "",
+          "nextRun": "2026-11-06T04:00:00Z",
+          "nextRunAt": "2026-11-06T04:00:00Z",
+          "lastRun": "running",
+          "lastRunStatus": "running",
+          "trigger": "manual",
+          "lastRunFinishedAt": "",
+          "frequency": "每 2 小时",
+          "timeZone": "Asia/Shanghai",
+          "notifyEmail": "owner@example.com",
+          "lastRunAt": "2026-11-06T02:01:00Z",
+          "lastRunStartedAt": "2026-11-06T02:01:00Z",
+          "lastRunSummary": "Last schedule summary",
+          "latestResultPath": "",
+          "hasLatestResult": false,
+          "hasEarlierResult": false,
+          "resultActionState": "none",
+          "resultStateLabel": "没有结果",
+          "latestRunId": "30000000-0000-4000-8000-000000000002",
+          "attentionGroup": "running",
+          "needsIntervention": false
         },
         "fieldLabels": {
           "application": "应用",
           "settings": "配置",
           "state": "状态",
           "nextRun": "下次运行",
-          "lastRun": "上次运行"
+          "lastRun": "上次运行",
+          "targetName": "目标",
+          "definitionStatus": "定义状态",
+          "version": "版本",
+          "executorId": "执行主体",
+          "coauthorIds": "协作者",
+          "reviewedBy": "最近发布人",
+          "stateLabel": "状态",
+          "pauseReason": "暂停原因",
+          "frequency": "频率",
+          "timeZone": "时区",
+          "notifyEmail": "通知邮箱",
+          "lastRunAt": "上次运行时间",
+          "lastRunSummary": "上次运行摘要",
+          "latestResultPath": "最近结果",
+          "resultStateLabel": "执行结果"
+        },
+        "tones": {
+          "state": "success",
+          "stateLabel": "success",
+          "lastRun": "info"
+        },
+        "outputs": {
+          "revision": 1,
+          "definitionStatus": "PUBLISHED",
+          "targetKind": "application",
+          "enabled": true,
+          "paused": false,
+          "pauseCode": "",
+          "latestResultPath": "",
+          "hasEarlierResult": false,
+          "lastRunStatus": "running",
+          "isRunning": true,
+          "needsIntervention": false,
+          "attentionGroup": "running",
+          "latestRunId": "30000000-0000-4000-8000-000000000002",
+          "openPath": "/schedules?taskId=10000000-0000-4000-8000-000000000002&runId=30000000-0000-4000-8000-000000000002"
         }
       }
-    ]
+    ],
+    "rereadAfterMs": 30000
   },
   "record": {
     "status": "ready",
     "value": {
-      "primaryKey": "10000000-0000-4000-8000-000000000004",
-      "label": "每周知识核对",
+      "primaryKey": "10000000-0000-4000-8000-000000000002",
+      "label": "每日库存摘要",
       "fields": {
-        "application": "governance",
-        "settings": "指令: 核对库存口径的相互冲突，给出建议和来源",
+        "application": "agents",
+        "targetKind": "application",
+        "targetId": "agents",
+        "targetName": "应用名称",
+        "targetIcon": "apps",
+        "status": "PUBLISHED",
+        "definitionStatus": "已发布",
+        "version": 1,
+        "creatorId": "member-a",
+        "executorId": "member-a",
+        "description": "",
+        "coauthorIds": "",
+        "reviewedBy": "",
+        "settings": "智能体: 20000000-0000-4000-8000-000000000001; 指令: 生成库存变化摘要",
         "state": "on",
-        "nextRun": "2026-11-09T01:00:00Z",
-        "lastRun": ""
+        "stateLabel": "已启用",
+        "enabled": true,
+        "scheduled": true,
+        "revision": 1,
+        "pauseCode": "",
+        "nextRun": "2026-11-06T04:00:00Z",
+        "nextRunAt": "2026-11-06T04:00:00Z",
+        "lastRun": "",
+        "lastRunFinishedAt": "",
+        "frequency": "每 2 小时",
+        "timeZone": "Asia/Shanghai",
+        "notifyEmail": "owner@example.com",
+        "lastRunAt": "",
+        "lastRunSummary": "",
+        "latestResultPath": "",
+        "hasLatestResult": false,
+        "hasEarlierResult": false,
+        "resultActionState": "none",
+        "resultStateLabel": "没有结果",
+        "latestRunId": "",
+        "attentionGroup": "idle",
+        "needsIntervention": false
       },
       "fieldLabels": {
         "application": "应用",
         "settings": "配置",
         "state": "状态",
         "nextRun": "下次运行",
-        "lastRun": "上次运行"
+        "lastRun": "上次运行",
+        "targetName": "目标",
+        "definitionStatus": "定义状态",
+        "version": "版本",
+        "executorId": "执行主体",
+        "coauthorIds": "协作者",
+        "reviewedBy": "最近发布人",
+        "stateLabel": "状态",
+        "pauseReason": "暂停原因",
+        "frequency": "频率",
+        "timeZone": "时区",
+        "notifyEmail": "通知邮箱",
+        "lastRunAt": "上次运行时间",
+        "lastRunSummary": "上次运行摘要",
+        "latestResultPath": "最近结果",
+        "resultStateLabel": "执行结果"
+      },
+      "tones": {
+        "state": "success",
+        "stateLabel": "success"
+      },
+      "outputs": {
+        "revision": 1,
+        "definitionStatus": "PUBLISHED",
+        "targetKind": "application",
+        "enabled": true,
+        "paused": false,
+        "pauseCode": "",
+        "latestResultPath": "",
+        "hasEarlierResult": false,
+        "lastRunStatus": "",
+        "isRunning": false,
+        "needsIntervention": false,
+        "attentionGroup": "idle",
+        "latestRunId": "",
+        "openPath": "/schedules?taskId=10000000-0000-4000-8000-000000000002"
       }
     }
   },
@@ -70,7 +210,8 @@
               "format": "uuid"
             },
             "taskId": {
-              "$ref": "#/properties/id"
+              "type": "string",
+              "minLength": 1
             },
             "trigger": {
               "type": "string",
@@ -171,8 +312,7 @@
                       "pattern": "^[a-z][a-z0-9-]{0,63}$"
                     },
                     "path": {
-                      "type": "string",
-                      "minLength": 1
+                      "$ref": "#/properties/taskId"
                     }
                   },
                   "required": [
@@ -201,90 +341,192 @@
             "snapshot": {
               "type": "object",
               "properties": {
-                "title": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 200
-                },
-                "appId": {
-                  "$ref": "#/properties/resultLink/anyOf/0/properties/appId"
-                },
-                "content": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "propertyNames": {
-                    "minLength": 1
-                  }
-                },
-                "formRevision": {
-                  "$ref": "#/properties/resultLink/anyOf/0/properties/path"
+                "frequency": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "interval"
+                        },
+                        "every": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1000
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "minute",
+                            "hour",
+                            "day"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "every",
+                        "unit"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "daily"
+                        },
+                        "time": {
+                          "type": "string",
+                          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "time"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "weekly"
+                        },
+                        "weekday": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 7
+                        },
+                        "time": {
+                          "$ref": "#/properties/snapshot/properties/frequency/anyOf/1/properties/time"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "weekday",
+                        "time"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "monthly"
+                        },
+                        "day": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 31
+                        },
+                        "time": {
+                          "$ref": "#/properties/snapshot/properties/frequency/anyOf/1/properties/time"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "day",
+                        "time"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "cron"
+                        },
+                        "expression": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "expression"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 },
                 "timeZone": {
-                  "$ref": "#/properties/resultLink/anyOf/0/properties/path"
+                  "$ref": "#/properties/taskId"
                 },
-                "creatorId": {
-                  "$ref": "#/properties/resultLink/anyOf/0/properties/path"
-                },
-                "summary": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "key": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256
-                      },
-                      "label": {
-                        "$ref": "#/properties/resultLink/anyOf/0/properties/path"
-                      },
-                      "value": {
-                        "type": "string"
-                      }
+                "notifyEmail": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 320,
+                      "format": "email"
                     },
-                    "required": [
-                      "key",
-                      "label",
-                      "value"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "maxItems": 100
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
-                "locale": {
-                  "$ref": "#/properties/resultLink/anyOf/0/properties/path"
+                "title": {
+                  "type": "string"
                 },
-                "taskRevision": {
+                "domainId": {
+                  "$ref": "#/properties/taskId"
+                },
+                "executorId": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/properties/taskId"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
                   "type": "integer",
                   "exclusiveMinimum": 0,
                   "minimum": -9007199254740991,
                   "maximum": 9007199254740991
-                }
-              },
-              "required": [
-                "title",
-                "appId",
-                "content",
-                "formRevision",
-                "timeZone",
-                "creatorId",
-                "summary",
-                "locale",
-                "taskRevision"
-              ],
-              "additionalProperties": false
-            },
-            "result": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "executionDetails": {
-              "anyOf": [
-                {
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "targetKind": {
+                  "type": "string",
+                  "enum": [
+                    "application",
+                    "action",
+                    "workflow"
+                  ]
+                },
+                "targetId": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/properties/taskId"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "appId": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/properties/resultLink/anyOf/0/properties/appId"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "content": {
                   "type": "object",
                   "additionalProperties": {
                     "anyOf": [
@@ -303,17 +545,95 @@
                       {
                         "type": "array",
                         "items": {
-                          "$ref": "#/properties/executionDetails/anyOf/0/additionalProperties"
+                          "$ref": "#/properties/snapshot/properties/content/additionalProperties"
                         }
                       },
                       {
                         "type": "object",
                         "additionalProperties": {
-                          "$ref": "#/properties/executionDetails/anyOf/0/additionalProperties"
+                          "$ref": "#/properties/snapshot/properties/content/additionalProperties"
                         }
                       }
                     ]
                   }
+                },
+                "formRevision": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/properties/taskId"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "creatorId": {
+                  "$ref": "#/properties/taskId"
+                },
+                "summary": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "label": {
+                        "$ref": "#/properties/taskId"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 100
+                },
+                "locale": {
+                  "$ref": "#/properties/taskId"
+                },
+                "taskRevision": {
+                  "$ref": "#/properties/snapshot/properties/version"
+                }
+              },
+              "required": [
+                "frequency",
+                "timeZone",
+                "notifyEmail",
+                "title",
+                "domainId",
+                "executorId",
+                "version",
+                "description",
+                "targetKind",
+                "targetId",
+                "appId",
+                "content",
+                "formRevision",
+                "creatorId",
+                "summary",
+                "locale",
+                "taskRevision"
+              ],
+              "additionalProperties": false
+            },
+            "result": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "executionDetails": {
+              "anyOf": [
+                {
+                  "$ref": "#/properties/snapshot/properties/content"
                 },
                 {
                   "type": "null"
@@ -351,7 +671,7 @@
       "message": "已开始运行。",
       "data": {
         "id": "30000000-0000-4000-8000-000000000002",
-        "taskId": "10000000-0000-4000-8000-000000000004",
+        "taskId": "10000000-0000-4000-8000-000000000002",
         "trigger": "manual",
         "status": "running",
         "scheduledAt": null,
@@ -365,14 +685,26 @@
         },
         "spendTime": null,
         "snapshot": {
+          "frequency": {
+            "kind": "interval",
+            "every": 2,
+            "unit": "hour"
+          },
+          "timeZone": "Asia/Shanghai",
+          "notifyEmail": null,
           "title": "每日库存摘要",
+          "domainId": "domain-a",
+          "executorId": "member-a",
+          "version": 1,
+          "description": null,
+          "targetKind": "application",
+          "targetId": null,
           "appId": "agents",
           "content": {
             "agentId": "20000000-0000-4000-8000-000000000001",
             "instruction": "生成库存变化摘要"
           },
           "formRevision": "agents-v1",
-          "timeZone": "Asia/Shanghai",
           "creatorId": "member-a",
           "summary": [
             {
@@ -391,7 +723,7 @@
         "objects": [
           {
             "objectType": "platform:Trigger",
-            "primaryKey": "10000000-0000-4000-8000-000000000004"
+            "primaryKey": "10000000-0000-4000-8000-000000000002"
           }
         ],
         "objectTypes": [
