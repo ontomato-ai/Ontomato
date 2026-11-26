@@ -10,6 +10,7 @@ const empty: AssetGraphSources = {
   objectTypeLabel: name => name,
 };
 
+/** A panel whose members are one fixed projection, one fixed nested panel and two switchable lists. */
 const mainPanel: AssetGraphSources["panels"][number] = {
   id: "main",
   name: "Main panel",
@@ -19,13 +20,28 @@ const mainPanel: AssetGraphSources["panels"][number] = {
     members: {
       fixedProjection: { target: { projectionId: "view" } },
       fixedPanel: { target: { panelId: "child" } },
-      switchProjection: { target: { fromState: "view", candidates: { projectionIds: ["view", "other-view", "hidden-view"] } } },
-      switchPanel: { target: { fromState: "panel", candidates: { panelIds: ["main", "frame", "hidden-panel"] } } },
+      switchProjection: { target: { fromState: "view", candidates: { projectionIds: ["view", "shared-view"] } } },
+      switchPanel: { target: { fromState: "panel", candidates: { panelIds: ["main", "child"] } } },
     },
   },
 };
 
-const view: AssetGraphSources["projections"][number] = {
+const childPanel: AssetGraphSources["panels"][number] = {
+  id: "child",
+  name: "Child panel",
+  revision: 1,
+  manifest: { members: { order: { target: { projectionId: "child-view" } } } },
+};
+
+/** Binds platform-owned objects only: it says nothing about the business ontology. */
+const platformPanel: AssetGraphSources["panels"][number] = {
+  id: "platform-panel",
+  name: "Platform panel",
+  revision: 1,
+  manifest: { members: { user: { target: { projectionId: "platform-view" } } } },
+};
+
+const memberView: AssetGraphSources["projections"][number] = {
   id: "view",
   name: "Order projection",
   revision: 1,
@@ -46,22 +62,31 @@ const sources: AssetGraphSources = {
   applications: [{
     id: "app",
     name: "Orders",
-    framePanelId: "frame",
-    panelIds: ["main", "missing-entry-panel"],
+    panelIds: ["main", "child", "platform-panel"],
     defaultAgentIds: ["assistant", "missing-agent"],
   }],
-  panels: [mainPanel, ...["frame", "child"].map(id => ({ id, name: "", revision: 1, manifest: { members: {} } }))],
-  projections: [view, { ...view, id: "other-view", name: "", data: {}, operations: undefined, metricId: undefined }],
+  panels: [mainPanel, childPanel, platformPanel],
+  projections: [
+    memberView,
+    { ...memberView, id: "shared-view", name: "", data: { order: memberView.data.order }, operations: undefined, metricId: undefined, shared: true },
+    { ...memberView, id: "child-view", name: "Child order projection", data: { order: memberView.data.order }, operations: undefined, metricId: undefined },
+    {
+      ...memberView, id: "platform-view", name: "Platform user projection", operations: undefined, metricId: undefined,
+      data: { platform: memberView.data.platform },
+    },
+  ],
   agents: [{ id: "assistant", name: "Orders assistant" }],
-  objectDetailMappings: [{ className: "Order", panelId: "main" }, { className: "HiddenClass", panelId: "hidden-panel" }],
+  objectDetailMappings: [{ className: "Order", panelId: "child" }, { className: "HiddenClass", panelId: "missing-panel" }],
   objectTypeLabel: name => name === "Order" ? "Orders" : name,
 };
 
 it.each([
   ["asset:app", "application", "bundle", "Orders"],
   ["asset:main", "page", "composition", "Main panel"],
-  ["asset:other-view", "object-projection", "element", "other-view"],
+  ["asset:child", "page", "composition", "Child panel"],
+  ["asset:shared-view", "object-projection", "element", "shared-view"],
   ["object-type:Order", "object-type", "ontology", "Orders"],
+  ["object-type:platform:User", "object-type", "ontology", "platform:User"],
   ["metric:order-count", "metric", "ontology", "order-count"],
   ["action:ApproveOrder", "action", "ontology", "ApproveOrder"],
   ["definition:OrderItems", "definition", "ontology", "OrderItems"],
@@ -74,22 +99,42 @@ it("keeps the panel template marker", () => {
   expect(buildProductAssetGraph(sources).nodes.find(node => node.id === "asset:main")).toMatchObject({ isTemplate: true });
 });
 
+it("draws a member projection as part of its panel, unless it is shared to the domain", () => {
+  const ids = buildProductAssetGraph(sources).nodes.map(node => node.id);
+  expect(ids).not.toContain("asset:view");
+  expect(ids).not.toContain("asset:child-view");
+  expect(ids).toContain("asset:shared-view");
+});
+
 it.each([
-  ["asset:app", "asset:frame", "navigates", "product-index"],
   ["asset:app", "asset:main", "navigates", "product-index"],
-  ["asset:main", "asset:view", "contains", "product-index"],
-  ["asset:main", "asset:other-view", "contains", "product-index"],
+  ["asset:app", "asset:child", "navigates", "product-index"],
   ["asset:main", "asset:child", "contains", "product-index"],
-  ["asset:main", "asset:frame", "contains", "product-index"],
+  ["asset:main", "asset:shared-view", "contains", "product-index"],
   ["asset:main", "object-type:Order", "renders", "ontology"],
-  ["asset:view", "object-type:Order", "renders", "ontology"],
-  ["asset:view", "object-type:platform:User", "depends-on", "ontology"],
-  ["asset:view", "metric:order-count", "renders", "ontology"],
-  ["asset:view", "action:ApproveOrder", "renders", "ontology"],
-  ["asset:view", "definition:OrderItems", "depends-on", "ontology"],
+  ["asset:main", "object-type:platform:User", "depends-on", "ontology"],
+  ["asset:main", "metric:order-count", "renders", "ontology"],
+  ["asset:main", "action:ApproveOrder", "renders", "ontology"],
+  ["asset:main", "definition:OrderItems", "depends-on", "ontology"],
+  ["asset:child", "object-type:Order", "renders", "ontology"],
+  ["asset:shared-view", "object-type:Order", "renders", "ontology"],
   ["asset:app", "agent:assistant", "identity", "product-index"],
 ])("links %s to %s through %s", (source, target, relation, storage) => {
   expect(buildProductAssetGraph(sources).edges).toContainEqual({ source, target, relation, storage });
+});
+
+it("folds a member projection into its panel once per target", () => {
+  const fromMain = buildProductAssetGraph(sources).edges.filter(edge => edge.source === "asset:main" && edge.target === "object-type:Order");
+  expect(fromMain).toEqual([{ source: "asset:main", target: "object-type:Order", relation: "renders", storage: "ontology" }]);
+});
+
+it("drops assets that reach no business object type or definition, and what only they use", () => {
+  const { nodes, edges } = buildProductAssetGraph(sources);
+  const ids = new Set(nodes.map(node => node.id));
+  expect(ids.has("asset:platform-panel")).toBe(false);
+  expect(ids.has("asset:platform-view")).toBe(false);
+  expect(ids.has("object-type:HiddenClass")).toBe(false);
+  expect(edges.some(edge => edge.source === "asset:app" && edge.target === "asset:platform-panel")).toBe(false);
 });
 
 it("excludes legacy nodes and relations outside the current reference graph", () => {
@@ -103,7 +148,6 @@ it("omits unavailable targets and panel self-references", () => {
   const { nodes, edges } = buildProductAssetGraph(sources);
   const ids = new Set(nodes.map(node => node.id));
   expect(edges.every(edge => ids.has(edge.source) && ids.has(edge.target) && edge.source !== edge.target)).toBe(true);
-  expect(ids.has("object-type:HiddenClass")).toBe(false);
 });
 
 it("deduplicates nodes and edges and rejects edges with either endpoint missing", () => {
