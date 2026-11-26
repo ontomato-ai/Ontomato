@@ -2,7 +2,6 @@ import { configuredAssistantSkills } from "./skill-selection";
 import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL, isAppBuilderKind } from "../app-builder/definition";
-import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import path from "node:path";
 import { runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import type { PageSkillContext, PageSkillLocator } from "@ontomato/contracts/page-skills";
@@ -135,17 +134,9 @@ export function effectiveAssistantSkills(
   agent: { kind: string; skills: readonly RuntimeSkillRef[] },
   view: Pick<AssistantSkillView, "pageSkills" | "hasSkill">,
 ): RuntimeSkillRef[] {
-  const presetPageSkills = (kind: string) => view.pageSkills.flatMap(group => {
-    const target = pageSkillDefaultAgent(group);
-    return target?.kind === "preset" && target.agentKind === kind ? group.skills : [];
-  });
-  const pageSkills = isOpsDiagnosisKind(agent.kind)
-    ? presetPageSkills(agent.kind)
-    : view.pageSkills.flatMap(group => group.skills);
   return configuredAssistantSkills(
     { kind: agent.kind, skills: agent.skills.filter(view.hasSkill) },
-    pageSkills,
-    isAppBuilderKind(agent.kind) ? presetPageSkills(agent.kind) : [],
+    view.pageSkills.map(group => ({ defaultAgent: pageSkillDefaultAgent(group), skills: group.skills })),
   );
 }
 
