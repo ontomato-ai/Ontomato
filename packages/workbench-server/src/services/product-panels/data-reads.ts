@@ -447,6 +447,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: selection => governance.roles.record(selection.primaryKey!),
       form: (selection, params) => governance.roles.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => governance.roles.createForm(formParams(params)),
+      contributionPolicies: selection => governance.roles.contributionPolicies(selection.primaryKey!),
+      contributionWorkflowSteps: selection => governance.roles.contributionWorkflowSteps(selection.primaryKey!),
     },
     [PERMISSION_POLICY]: {
       options: () => governance.policies.options(),

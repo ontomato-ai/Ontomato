@@ -659,6 +659,9 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
       ...modelReads,
+      // What this role brings to whoever holds it: the permission policies it uses, and the workflow steps it owns.
+      contributionPolicies: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
+      contributionWorkflowSteps: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: WORKFLOW },
     },
     operations: [`${ROLE}.save`, DELETE_ROLE],
   },
