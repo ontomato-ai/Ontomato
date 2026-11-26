@@ -6,6 +6,7 @@ import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversat
 import type { PanelRowActionTone } from "@ontomato/contracts/panel-projection";
 import { curatedIcon } from "@ontomato/platform-shell";
 import type { ObjectListRowActionPrefill } from "./object-list-types";
+import UnavailableTooltip from "./UnavailableTooltip.vue";
 
 export interface ResolvedRowActionItem {
   readonly key: string;
@@ -79,61 +80,66 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
 
 <template>
   <div v-if="items.length > 0" class="sdk-object-list-row-actions" @click.stop>
-    <button
+    <UnavailableTooltip
       v-for="item in inlineItems"
       :key="item.key"
-      type="button"
-      class="sdk-object-list-action-btn"
-      :class="{
-        'is-primary': item.tone === 'primary',
-        'is-success': item.tone === 'success',
-        'is-warning': item.tone === 'warning',
-        'is-danger': item.tone === 'danger',
-        'is-icon-only': item.iconOnly,
-        'is-bordered': item.iconOnly && iconVariant === 'bordered',
-        'is-active': item.active,
-        'is-busy': item.busy,
-      }"
-      :disabled="item.disabled || item.busy || item.running || busy"
-      :aria-busy="(item.busy || item.running) ? 'true' : undefined"
-      :aria-disabled="(busy || item.disabled || item.busy || item.running) ? 'true' : undefined"
-      :aria-label="item.iconOnly ? item.label : undefined"
-      :aria-pressed="item.active !== undefined ? item.active : undefined"
-      :title="item.reason ?? (item.iconOnly ? item.label : undefined)"
-      :data-action-kind="item.kind"
-      :data-operation="item.operation"
-      :data-local-action="item.id"
-      @click.stop="emit('trigger', item, $event)"
+      :reason="item.reason"
+      :label="item.label"
     >
-      <span
-        v-if="item.busy && !item.iconOnly"
-        class="sdk-object-list-action-spinner"
-        aria-hidden="true"
-      />
-      <svg
-        v-else-if="item.icon === 'star' || item.icon === 'star-filled'"
-        class="sdk-object-list-action-icon"
-        viewBox="0 0 24 24"
-        width="14"
-        height="14"
-        :fill="item.icon === 'star-filled' ? 'currentColor' : 'none'"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+      <button
+        type="button"
+        class="sdk-object-list-action-btn"
+        :class="{
+          'is-primary': item.tone === 'primary',
+          'is-success': item.tone === 'success',
+          'is-warning': item.tone === 'warning',
+          'is-danger': item.tone === 'danger',
+          'is-icon-only': item.iconOnly,
+          'is-bordered': item.iconOnly && iconVariant === 'bordered',
+          'is-active': item.active,
+          'is-busy': item.busy,
+        }"
+        :disabled="item.disabled || item.busy || item.running || busy"
+        :aria-busy="(item.busy || item.running) ? 'true' : undefined"
+        :aria-disabled="(busy || item.disabled || item.busy || item.running) ? 'true' : undefined"
+        :aria-label="item.iconOnly ? item.label : undefined"
+        :aria-pressed="item.active !== undefined ? item.active : undefined"
+        :title="!item.reason && item.iconOnly ? item.label : undefined"
+        :data-action-kind="item.kind"
+        :data-operation="item.operation"
+        :data-local-action="item.id"
+        @click.stop="emit('trigger', item, $event)"
       >
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-      </svg>
-      <component
-        :is="curatedIcon(item.icon)"
-        v-else-if="item.icon"
-        class="sdk-object-list-action-icon"
-        :size="14"
-        aria-hidden="true"
-      />
-      <span v-if="!item.iconOnly">{{ item.label }}</span>
-    </button>
+        <span
+          v-if="item.busy && !item.iconOnly"
+          class="sdk-object-list-action-spinner"
+          aria-hidden="true"
+        />
+        <svg
+          v-else-if="item.icon === 'star' || item.icon === 'star-filled'"
+          class="sdk-object-list-action-icon"
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          :fill="item.icon === 'star-filled' ? 'currentColor' : 'none'"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+        <component
+          :is="curatedIcon(item.icon)"
+          v-else-if="item.icon"
+          class="sdk-object-list-action-icon"
+          :size="14"
+          aria-hidden="true"
+        />
+        <span v-if="!item.iconOnly">{{ item.label }}</span>
+      </button>
+    </UnavailableTooltip>
     <el-dropdown
       v-if="overflowItems.length > 0"
       trigger="click"
@@ -173,9 +179,8 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
             :data-action-kind="item.kind"
             :data-operation="item.operation"
             :data-local-action="item.id"
-            :title="item.reason"
           >
-            <span class="sdk-object-list-more-item-body">
+            <UnavailableTooltip :reason="item.reason" :label="item.label" placement="left" block>
               <span class="sdk-object-list-more-row">
                 <component
                   :is="curatedIcon(item.icon)"
@@ -186,8 +191,7 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
                 />
                 <span class="sdk-object-list-more-label">{{ item.label }}</span>
               </span>
-              <span v-if="item.reason" class="sdk-object-list-more-reason">{{ item.reason }}</span>
-            </span>
+            </UnavailableTooltip>
           </el-dropdown-item>
         </el-dropdown-menu>
       </template>
@@ -374,11 +378,6 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
   opacity: 0.45;
   cursor: not-allowed;
 }
-.sdk-object-list-more-item-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
 .sdk-object-list-more-row {
   display: inline-flex;
   align-items: center;
@@ -386,10 +385,6 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
 }
 .sdk-object-list-more-icon {
   flex: 0 0 auto;
-}
-.sdk-object-list-more-reason {
-  color: var(--el-text-color-secondary);
-  font-size: var(--font-size-xs, 12px);
 }
 </style>
 

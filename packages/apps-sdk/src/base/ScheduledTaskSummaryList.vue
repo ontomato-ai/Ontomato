@@ -19,6 +19,7 @@ import { isActionValuesEnvelope, wrapActionOperationInput } from "./operation-in
 import type { ObjectListRef } from "./object-list-types";
 import { rawRecordField } from "./record-field";
 import type { ScheduledTaskCardActions, ScheduledTaskPresentation, ScheduledTaskSummaryItem } from "./scheduled-task-summary-types";
+import UnavailableTooltip from "./UnavailableTooltip.vue";
 
 /** The personal workspace attention summary and the full cards for the same task triggers. */
 const scheduledTaskType = "platform:Trigger";
@@ -503,18 +504,20 @@ async function dispatchCardOperation(task: ScheduledTaskSummaryItem, name: strin
               {{ task.stateLabel || statusText(task) }}
             </span>
             <span v-if="!task.statusCode || task.statusCode === 'PUBLISHED'" class="sdk-sts-card-switch" @click.stop>
-              <ElSwitch
-                :model-value="task.enabled"
-                :loading="switches.get(taskKey(task))?.busy"
-                :disabled="Boolean(switches.get(taskKey(task))?.reason || switches.get(taskKey(task))?.busy)"
-                :aria-label="t('platformSchedules.card.switch', { title: task.title })"
-                @update:model-value="dispatchCardOperation(task, toggleOperation, Boolean($event))"
-              />
+              <UnavailableTooltip
+                :reason="switches.get(taskKey(task))?.reason"
+                :label="t('platformSchedules.card.switch', { title: task.title })"
+              >
+                <ElSwitch
+                  :model-value="task.enabled"
+                  :loading="switches.get(taskKey(task))?.busy"
+                  :disabled="Boolean(switches.get(taskKey(task))?.reason || switches.get(taskKey(task))?.busy)"
+                  :aria-label="t('platformSchedules.card.switch', { title: task.title })"
+                  @update:model-value="dispatchCardOperation(task, toggleOperation, Boolean($event))"
+                />
+              </UnavailableTooltip>
             </span>
           </header>
-          <p v-if="switches.get(taskKey(task))?.reason" class="sdk-sts-card-operation-note">
-            {{ switches.get(taskKey(task))?.reason }}
-          </p>
           <h3 class="sdk-sts-card-title">
             <button type="button" class="sdk-sts-row-link" @click.stop="handleSelect(task)">{{ task.title }}</button>
           </h3>
@@ -719,7 +722,6 @@ async function dispatchCardOperation(task: ScheduledTaskSummaryItem, name: strin
 }
 
 .sdk-sts-card-description,
-.sdk-sts-card-operation-note,
 .sdk-sts-card-meta {
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm, 13px);
