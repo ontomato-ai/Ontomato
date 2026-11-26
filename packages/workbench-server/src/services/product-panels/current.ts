@@ -359,7 +359,7 @@ async function validateApplicationReferences(client: PoolClient,
 
     const ref = panelSkillRef(domainId, use.panelId);
     const key = runtimeSkillKey(ref);
-    if (!configuredAssistantSkills(choice.agent, [ref]).some(skill => runtimeSkillKey(skill) === key))
+    if (!configuredAssistantSkills(choice.agent, [{ defaultAgent, skills: [ref] }]).some(skill => runtimeSkillKey(skill) === key))
       throw unavailable("missingSkill");
   }
   for (const id of delivery.panels)

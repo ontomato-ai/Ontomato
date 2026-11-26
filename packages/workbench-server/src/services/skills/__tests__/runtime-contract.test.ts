@@ -341,7 +341,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
   expect(upstream).not.toHaveBeenCalled();
 });
 
-it("publishes one member across admitted entrances alongside the native entry skill", async () => {
+it("publishes one member reached through an admitted entrance, and no page another assistant registers", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const native = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" } as const;
   const entrances = ["knowledge", "alternate"].map(pageKey => ({ applicationId: "ontology", entryKey: pageKey, pageKey }));
@@ -393,7 +393,7 @@ it("publishes one member across admitted entrances alongside the native entry sk
   const prepared = await prepareAssistantSkills(domain, { kind: "regular", skills: [] }, credentials,
     { mode: "member", locator: second, member });
   expect(prepared.currentPage).toEqual({ entrance: second, member, path: "/ontology/alternate" });
-  expect(published).toEqual([native, ref]);
+  expect(published).toEqual([ref]);
   expect((await prepareAssistantSkills(domain, { kind: "custom", skills: [native] }, credentials,
     { mode: "member", locator: first, member: null })).currentPage).toBeNull();
   decideSkill.mockImplementationOnce(() => { throw new HttpError(502, "Object authorization unavailable", "OBJECT_AUTHORIZATION_UNAVAILABLE"); });

@@ -19,7 +19,7 @@ vi.mock("../../utils/backend-client", async original => {
 });
 vi.mock("../../services/assistant/execution-setting", () => ({ validateExecutionSetting: vi.fn() }));
 const governance = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "knowledge-governance" };
-const governanceDefault = { kind: "preset" as const, agentKind: "governance-report" };
+const governanceDefault = { kind: "preset" as const, agentKind: "knowledge-governance" };
 const fixture = {
   domainId: "panel-entry-domain", panelId: "settings", grants: new Set(["settings", "records"]), native: false,
   uses: [
@@ -139,7 +139,7 @@ it("publishes the panel skill for the authorized entry's wired state fields", as
   expect(published).not.toHaveBeenCalled();
 });
 
-it("keeps the native governance skill and preset alongside the protected panel at the same entry", async () => {
+it("keeps the native governance skill and the protected panel at the same entry, for the assistant that entry registers", async () => {
   const { effectiveAssistantSkills, readAssistantSkillView } = await import("../../services/assistant/skills");
   fixture.grants.add("records");
   fixture.native = true;
@@ -150,7 +150,10 @@ it("keeps the native governance skill and preset alongside the protected panel a
   expect(group).toMatchObject({ locator: entrance, skills: [governance, skill],
     defaults: [{ pageKey: entrance.pageKey, defaultAgent: governanceDefault }],
   });
-  expect(effectiveAssistantSkills({ kind: "regular", skills: [] }, view)).toHaveLength(2);
+  // This entry registers knowledge governance, so the assistant takes nothing from it; that preset takes both its own
+  // skill and the protected panel, and the other entry, which registers nobody, stays with the assistant.
+  expect(effectiveAssistantSkills({ kind: "regular", skills: [] }, view).map(ref => ref.name)).not.toContain(governance.name);
+  expect(effectiveAssistantSkills({ kind: "knowledge-governance", skills: [governance] }, view)).toEqual([governance, skill]);
 });
 
 it("opens registered panel entries, selects the regular assistant and installs the exact current page skill", async () => {

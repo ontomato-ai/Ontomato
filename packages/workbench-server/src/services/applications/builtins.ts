@@ -14,6 +14,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         id: "application-gallery",
         pageKey: "application-gallery",
         panelId: "builtin-product-application-gallery",
+        "defaultAgent": { "kind": "preset", "agentKind": "regular" },
         path: "/applications",
         icon: "gallery",
         names: {
@@ -63,6 +64,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "id": "home",
         "pageKey": "home",
         "panelId": "builtin-product-personal-workspace",
+        "defaultAgent": { "kind": "preset", "agentKind": "regular" },
         "path": "/home",
         "pageComposer": "none",
         "icon": "home",
@@ -84,6 +86,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "id": "home-object-detail-body",
         "pageKey": "home-object-detail-body",
         "panelId": "builtin-product-object-detail-body",
+        "defaultAgent": { "kind": "preset", "agentKind": "regular" },
         "path": "/home/object-detail",
       }]
     }
@@ -117,12 +120,14 @@ export const workbenchApplications: BuiltinApplication[] = [
         "id": "agents-agent-settings",
         "pageKey": "agents-agent-settings",
         "panelId": "builtin-product-agent-settings",
+        "defaultAgent": { "kind": "preset", "agentKind": "product-layer" },
         "path": "/agents/settings",
         "inputs": { "detailPath": { "literal": "/agents/settings/detail" } },
       }, {
         "id": "agents-agent-detail",
         "pageKey": "agents-agent-detail",
         "panelId": "builtin-product-agent-detail",
+        "defaultAgent": { "kind": "preset", "agentKind": "product-layer" },
         "path": "/agents/settings/detail",
         "inputs": { "catalogPath": { "literal": "/agents/settings" } },
       }],
@@ -158,6 +163,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "id": "dashboards-main",
         "pageKey": "dashboards",
         "panelId": "builtin-product-dashboards",
+        "defaultAgent": { "kind": "preset", "agentKind": "regular" },
         "path": "/dashboards",
         "icon": "dashboards",
         "names": {
@@ -213,6 +219,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "id": "schedules-tasks",
         "pageKey": "schedules",
         "panelId": "builtin-product-scheduled-tasks",
+        "defaultAgent": { "kind": "preset", "agentKind": "admin" },
         "path": "/schedules",
         "icon": "schedule",
         "inputs": { "schedulesApplication": { "literal": { "className": "platform:Application", "primaryKey": "schedules" } } },
@@ -445,6 +452,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "id": "user-feedback",
         "pageKey": "user-feedback",
         "panelId": "builtin-product-feedback",
+        "defaultAgent": { "kind": "preset", "agentKind": "knowledge-governance" },
         "path": "/ops/feedback",
         "icon": "thumbs-up",
         "names": {
