@@ -26,6 +26,7 @@ import {
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
   READ_MEMBER_ACCESS_CONTEXT,
+  READ_MEMBER_EFFECTIVE_ACCESS,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
   REMOVE_USER,
@@ -59,7 +60,7 @@ import {
   valuesForTarget,
   type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
-import { readMemberAccessContext } from "./panel-reads";
+import { readMemberAccessContext, readMemberEffectiveAccess } from "./panel-reads";
 import {
   grantMemberAccessInputSchema,
   grantPolicyEntries,
@@ -719,6 +720,26 @@ export const governanceServerOperations = [
         value: await readMemberAccessContext(
           host.executor.owner, host.executor.credentials, subjectId, inspectingPolicyId,
         ),
+      };
+    },
+  },
+  {
+    handlerRef: READ_MEMBER_EFFECTIVE_ACCESS,
+    labelKey: "panels.governance.user.operations.effectiveAccess",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: READ_MEMBER_EFFECTIVE_ACCESS },
+    effect: "read",
+    batch: false,
+    target: { source: "input", input: "member" },
+    targetType: USER,
+    targetSchema: objectTarget(USER),
+    inputSchema: z.object({}).strict(),
+    resultSchema: jsonReadResultSchema,
+    async execute(host: PanelOperationHost, call) {
+      const subjectId = memberReadTargetId(call.target);
+      return {
+        kind: "json" as const,
+        value: await readMemberEffectiveAccess(host.executor.owner, host.executor.credentials, subjectId),
       };
     },
   },
