@@ -14,7 +14,7 @@ const CATALOG_PATH = "/ontology/applications";
 
 const ApplicationDetailPanel = {
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const { instance, navigate, navigateBack, notify, t } = usePanelContext();
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
@@ -152,9 +152,8 @@ const ApplicationDetailPanel = {
       return mountedTabs.value.has(name);
     }
 
-    // Route back to the catalog entry so the platform's unified unsaved-changes guard intercepts dirty edits.
     function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     function retryRecord() {
@@ -201,7 +200,7 @@ const ApplicationDetailPanel = {
       notify({ kind: "success", text: t("notify.deleted") });
       if (selectedKey.value) instance.state.set("selected", null);
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function openApplication() {

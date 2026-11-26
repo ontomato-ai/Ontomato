@@ -102,7 +102,7 @@ function runtimeSkillKey(skill) {
  */
 await mountPanel({
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const { instance, navigateBack, notify, t } = usePanelContext();
     const state = instance.state;
     const values = state.values;
 
@@ -453,9 +453,8 @@ await mountPanel({
       { immediate: true, flush: "sync" },
     );
 
-    // Route back to the sibling catalog entry so the platform's unified unsaved-changes leave guard runs.
     function goBack() {
-      void navigate(catalogPath.value).catch(() => undefined);
+      void navigateBack(catalogPath.value);
     }
 
     function retry() {
@@ -471,7 +470,7 @@ await mountPanel({
       if (outcome?.kind !== "success") return;
       if (selectedKey.value) state.set("selected", null);
       await nextTick();
-      void navigate(catalogPath.value).catch(() => undefined);
+      void navigateBack(catalogPath.value);
     }
 
     function openGrantDialog() {
