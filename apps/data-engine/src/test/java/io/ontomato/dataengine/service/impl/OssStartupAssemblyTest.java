@@ -23,8 +23,7 @@ import io.ontomato.dataengine.service.IdentityRuntimeSettings;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OrganizationDirectory;
 import io.ontomato.dataengine.service.PermissionPolicyDirectory;
-import io.ontomato.dataengine.service.ProductGrants;
-import io.ontomato.dataengine.service.ProductPrincipalLookup;
+import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
 import io.ontomato.dataengine.service.SchemaImportAuthorization;
 import io.ontomato.dataengine.service.SchemaPermissionService;
 import io.ontomato.dataengine.service.authorization.PresetAgentPolicies;
@@ -151,7 +150,7 @@ class OssStartupAssemblyTest {
           OssIdentityRuntimeSettings.class,
           AnonymousOrganizationDirectory.class,
           AnonymousPermissionPolicyDirectory.class,
-          AnonymousProductPrincipalLookup.class);
+          AnonymousPrincipalDirectory.class);
             ctx.refresh();
 
             assertEquals(1, ctx.getBeansOfType(IdentityService.class).size());
@@ -178,12 +177,9 @@ class OssStartupAssemblyTest {
             assertEquals(List.of(), policies.listPolicies(user.getDomainId()));
             assertEquals(List.of(), policies.listRolePolicies(user.getDomainId()));
             assertEquals(List.of(), policies.listPolicyDataPermissions(user.getDomainId()));
-            var productPrincipals = ctx.getBean(ProductPrincipalLookup.class);
-            assertEquals(List.of(
-                new ProductGrants.Grant("principal", productPrincipals.productPrincipalId(user.getId()), "use"),
-                new ProductGrants.Grant("principal", productPrincipals.productPrincipalId(user.getId()), "view"),
-                new ProductGrants.Grant("principal", productPrincipals.productPrincipalId(user.getId()), "edit")
-            ), productPrincipals.defaultAdminGrants(user.getDomainId(), List.of("use", "view", "edit")));
+            var principals = ctx.getBean(IdentityPrincipalDirectory.class);
+            assertEquals(Map.of(), principals.principalNames(user.getDomainId(), List.of(user.getId())));
+            assertEquals(List.of(), principals.searchRoles(user.getDomainId(), "", 20));
 
             DomainSvc domains = ctx.getBean(DomainSvc.class);
             assertEquals("1", domains.list().get(0).getId());

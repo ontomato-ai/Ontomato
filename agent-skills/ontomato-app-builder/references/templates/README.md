@@ -13,8 +13,8 @@ For shared resources, keep the existing IDs and reference them from the consumin
 
 For a full-width catalog, use the two-entry template. Place the primary New button at the top right of the
 catalog header. Open a centered dialog with only the required fields, then navigate to the new object's
-full-width detail after save. The detail header links back with `navigate(CATALOG_PATH)`. The platform
-retains catalog state and refreshes the list on return.
+full-width detail after save. The detail header links back with `navigateBack(CATALOG_PATH)`. The host
+returns to the in-platform previous page (falling back to `CATALOG_PATH` on direct open) and refreshes the list on return.
 
 Ask for confirmation before leaving a dirty form, including on row switches, Back, Escape and dialog close.
 Keep lists and tabs mounted with `v-show` when they are merely off-screen. Use `v-if` for forms and actions

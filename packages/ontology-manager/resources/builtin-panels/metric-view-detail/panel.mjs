@@ -19,7 +19,7 @@ const CATALOG_PATH = "/ontology/assets/metrics";
 await mountPanel({
   setup() {
     const panel = usePanelContext();
-    const { instance, navigate, t } = panel;
+    const { instance, navigateBack, t } = panel;
     const state = instance.state.values;
 
     const selected = computed(() => state.value.selected ?? null);
@@ -39,9 +39,8 @@ await mountPanel({
 
     const detailDraft = usePanelFormDraft("definition", { when: formMounted });
 
-    // Route back to the catalog entry so the platform's unified unsaved-changes leave guard intercepts dirty edits.
     function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     function cloneJson(value) {
@@ -100,22 +99,22 @@ await mountPanel({
         return;
       }
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function onDiscarded() {
       if (!isCreateMode.value) return;
       instance.state.set("mode", null);
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function onRemoveDone(outcome) {
       if (outcome?.kind !== "success") return;
-      // Clear selection and wait a tick so any dirty form unmounts before navigating back to the catalog.
+      // Clear selection and wait a tick so any dirty form unmounts before navigating back.
       if (selectedKey.value) instance.state.set("selected", null);
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     // ---- Test current unsaved draft via declared OperationButton projections ----

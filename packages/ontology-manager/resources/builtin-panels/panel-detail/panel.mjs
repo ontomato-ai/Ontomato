@@ -35,7 +35,7 @@ const GRANT_DIALOG_RESET = {
 
 const PanelDetail = {
   setup() {
-    const { instance, navigate, notify, t, confirmLeaveUnsaved } = usePanelContext();
+    const { instance, navigate, navigateBack, notify, t, confirmLeaveUnsaved } = usePanelContext();
     const state = instance.state;
     const values = state.values;
 
@@ -636,7 +636,7 @@ ${gridItems}
       });
       instance.refreshObjects();
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     const deletePanelOp = usePanelOperation("deletePanel", "delete", {
@@ -964,7 +964,7 @@ ${gridItems}
 
     // Route back to the catalog entry so the platform's unified unsaved-changes guard intercepts dirty edits.
     function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function openAddress(address) {

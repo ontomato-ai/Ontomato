@@ -17,7 +17,7 @@ const FUNCTION = "platform:Function";
  */
 await mountPanel({
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const { instance, navigateBack, notify, t } = usePanelContext();
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
@@ -52,9 +52,8 @@ await mountPanel({
       { immediate: true },
     );
 
-    // Route back to the catalog entry so the platform's unified unsaved-changes leave guard intercepts dirty edits.
     function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     function retry() {
@@ -76,26 +75,26 @@ await mountPanel({
         return;
       }
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function onDiscarded() {
       if (!isCreate.value) return;
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function onCancel() {
       if (!isCreate.value) return;
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function onRemoveDone(outcome) {
       if (outcome?.kind !== "success") return;
       if (selectedKey.value) instance.state.set("selected", null);
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     return {

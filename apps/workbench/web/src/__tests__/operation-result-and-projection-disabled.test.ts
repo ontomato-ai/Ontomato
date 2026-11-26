@@ -359,6 +359,7 @@ describe("<Projection :values> and OperationButton draft read behavior", () => {
           projectionsChanged: () => () => {},
           t: (key: string) => key,
           navigate: async () => {},
+          navigateBack: async () => {},
           notify: () => {},
           holdUnsaved: () => () => {},
           expandPageComposer: async () => {},

@@ -54,6 +54,12 @@ interface PanelContext {
    */
   navigate(address: string): Promise<void>;
   /**
+   * Leaves the current detail panel by stepping back one entry in browser history when an in-platform previous page
+   * exists, otherwise navigating to `fallback` (typically the owning catalog path). Unsaved edits pass through the
+   * platform's unified leave guard automatically.
+   */
+  navigateBack(fallback: string): Promise<void>;
+  /**
    * Tells the reader briefly how something the page did went — "Exported", "Deleted", why a call failed — in the
    * platform's own message at the top of the window, as its pages do. It fades by itself and is available in panels
    * that run directly on the platform.
@@ -492,14 +498,17 @@ secret. Assistant observation hides the plaintext, and the assistant leaves secr
 
 Place the official presentational `<page-header>` component at the top of a panel's content when the page needs a
 header, and omit it for headerless pages. Pass `title` (or a `#title` slot with a projection-bound component such as
-`<projection>` / `ObjectSummary`), optional `description`, optional `back-label` + `@back` wired to `usePanelBack`
-or `navigate`, right-side controls in `#actions` (such as ordinary `<sdk-button>`, `<OperationButton>`, inline counts,
+`<projection>` / `ObjectSummary`), optional `description`, optional `back-label` + `@back` wired to
+`usePanelContext().navigateBack(CATALOG_PATH)` on detail entries or `usePanelBack` for panel-local views, right-side controls in `#actions` (such as ordinary `<sdk-button>`, `<OperationButton>`, inline counts,
 or search inputs), and optional `:draft` from `usePanelFormDraft` for Save/Discard/unsaved feedback. Buttons in
 `<page-header>` change declared panel state or call declared owner operations, so skills continue to produce valid
 deep-link addresses and `page_action` calls.
 
-For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
-from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
+For forward navigation from a button or component output, call `usePanelContext().navigate` with the registered path
+from `panel uses <application-id>` and, when needed, the destination's deep-linkable state. To leave a detail entry,
+call `usePanelContext().navigateBack(fallback)` with the owning catalog path: the host steps back one entry in
+browser history when an in-platform previous page exists and falls back to `fallback` when opened directly, applying
+the unified unsaved-changes guard automatically.
 
 On `ObjectForm`, set `config.actions` to `"footer"` (default, non-overlapping document-flow bar), `"create-only"`
 (Cancel/Create bar only in create mode when edit Save/Discard lives in `<page-header>` via `usePanelFormDraft`), or

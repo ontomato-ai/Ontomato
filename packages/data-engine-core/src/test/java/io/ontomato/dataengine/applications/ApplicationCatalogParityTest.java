@@ -12,7 +12,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.service.ProductPrincipalLookup;
+import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
 import io.ontomato.dataengine.service.QueryAccessService;
 import java.time.Instant;
 import java.util.List;
@@ -28,7 +28,7 @@ class ApplicationCatalogParityTest {
     void catalogueSupportsNumericPageAndMineSharedScopes() {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.allowEntries();
-        var grants = mock(ProductPrincipalLookup.class);
+        var grants = mock(IdentityPrincipalDirectory.class);
         var user = new QueryAccessService.GrantUser("alice", "domain-a");
 
         var mineApp = domainApp("app-mine", "domain-a", "alice", "Alpha Mine");
@@ -71,7 +71,7 @@ class ApplicationCatalogParityTest {
     void copyFormFiltersHiddenEntriesAndExposesPublicThemeOnRecord() {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.entries((actor, key) -> !key.equals("app-src/secret"));
-        var grants = mock(ProductPrincipalLookup.class);
+        var grants = mock(IdentityPrincipalDirectory.class);
         var user = new QueryAccessService.GrantUser("reader", "domain-a");
 
         var visibleUse = new ApplicationPanelUse("overview", "app-src:overview", "panel-visible",

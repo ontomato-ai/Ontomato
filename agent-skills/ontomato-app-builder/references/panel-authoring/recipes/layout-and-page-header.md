@@ -28,7 +28,7 @@
     and place descriptive content in `#description` with `TypedValue`. A value that never changes belongs in the
     member's `config` instead; no other attribute on `<Projection>` configures the component, and a value written in
     both places is an offline-check error.
-  - optional `back-label` + `@back` (wired to `navigate(CATALOG_PATH)` or `usePanelBack`)
+  - optional `back-label` + `@back` (wired to `navigateBack(CATALOG_PATH)` on detail entries or `usePanelBack` for panel-local views)
   - Always declare `<template #actions>` for custom actions and put visibility conditions inside. Unmount actions that
     are unavailable in the current view or mode with `v-if` (or gate them with `usePanelOperation(..., { available })`)
     so inactive entries do not remain registered for `page_action`. Use `v-show` only in the specific case where a
@@ -50,10 +50,10 @@ import { mountPanel, usePanelContext, usePanelFormDraft } from "@ontomato/sdk/pa
 
 await mountPanel({
   setup() {
-    const { navigate } = usePanelContext();
+    const { navigateBack } = usePanelContext();
     const formDraft = usePanelFormDraft("form");
-    // Routing back to the catalog entry triggers the platform's unified unsaved-changes leave guard automatically.
-    const goBack = () => navigate(CATALOG_PATH);
+    // Steps back to the in-platform previous page when available, else falls back to CATALOG_PATH, with unified unsaved-changes guard.
+    const goBack = () => navigateBack(CATALOG_PATH);
     return { formDraft, goBack };
   },
 });
@@ -63,5 +63,6 @@ await mountPanel({
   `panelUse`) and give the detail page its own non-menu entry (`names` omitted). Clicking a row (`@choose`) builds a
   flat URL with `panelAddress(DETAIL_PATH, { selected: item.primaryKey })` from `@ontomato/sdk/panel` and calls
   `navigate(address)`. Put New in the catalog header's top-right actions, open a centered dialog for required fields,
-  and use the saved identity to open the detail entry. Back calls `navigate(CATALOG_PATH)`; the platform retains the
-  catalog state and refreshes the list on return.
+  and use the saved identity to open the detail entry. Back calls `navigateBack(CATALOG_PATH)`; the host returns to
+  the in-platform previous page when available (falling back to `CATALOG_PATH` on direct open) and refreshes the list
+  on return.

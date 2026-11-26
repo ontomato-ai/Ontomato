@@ -99,6 +99,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       confirmOperation: options.confirmOperation,
       expandPageComposer: options.expandPageComposer,
       navigate: options.navigate,
+      ...(run.navigateBack ? { navigateBack: (fallback: string) => run.navigateBack!(fallback, options.navigate) } : {}),
       nested: options.nested,
       ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
       ...(run.frameState ? { frameState: run.frameState } : {}),

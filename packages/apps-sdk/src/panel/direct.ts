@@ -85,6 +85,11 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
    */
   navigate(address: string): Promise<void>;
   /**
+   * Leaves the current detail panel by stepping back one browser history entry when an in-platform previous page
+   * exists, otherwise navigating to `fallback`. Defaults to `navigate(fallback)` when omitted.
+   */
+  navigateBack?(fallback: string): Promise<void>;
+  /**
    * Runs the panel a member places from the panel's state (see the mount's options): `memberPath` is that member's
    * segment with the selection, relative to this instance; `run` is how the placed panel reports to this one.
    */
@@ -191,6 +196,8 @@ export interface DirectPanelInstance extends PanelInstance {
   expandPageComposer(entry: PageComposerRequest, click?: MouseEvent): void | Promise<void>;
   /** Opens one of the platform's addresses, or says on the page why it cannot (see the options). */
   navigate(address: string): Promise<void>;
+  /** Leaves the current detail panel using browser history when an in-platform previous page exists, else `fallback`. */
+  navigateBack(fallback: string): Promise<void>;
   /** The member's projection, read once for this instance: its fixed one, or the one the panel's state chose. */
   projectionOf(member: string): Promise<DirectProjection>;
   /** The member's projection and resolved Vue component, cached once per member and reused across all rows. */
@@ -618,6 +625,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       ...(direct.members[member]!.theme ? { theme: direct.members[member]!.theme } : {}),
       ...(options.frameState ? { frameState: options.frameState } : {}),
       ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
+      ...(options.navigateBack ? { navigateBack: (fallback: string) => options.navigateBack!(fallback) } : {}),
       ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
       ...(options.currentUser ? { currentUser: options.currentUser } : {}),
     };
@@ -720,6 +728,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       await options.expandPageComposer(entry);
     },
     navigate: options.navigate,
+    navigateBack: (fallback: string) => (options.navigateBack ? options.navigateBack(fallback) : options.navigate(fallback)),
     projectionOf(member: string) {
       let found = projections.get(member);
       if (!found) {
@@ -1192,6 +1201,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async (entry, click) => instance.expandPageComposer(entry, click),
     navigate: (address) => instance.navigate(address),
+    navigateBack: (fallback) => instance.navigateBack(fallback),
     notify: (message) => instance.notify(message),
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
