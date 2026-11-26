@@ -67,6 +67,11 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	private AuditLogDao auditLogDao;
 
 	@Override
+	public Map<String, Integer> countMetadata(User user, List<String> classScope) {
+		return adminService.countModelMetadata(user.getDomainId(), classScope);
+	}
+
+	@Override
 	public List<ObjectTypeView> objectTypes(User user, String lang) {
 		Map<String, Object> rule = rule(user);
 		Map<String, Map<String, String>> relationships = relationships(rule);

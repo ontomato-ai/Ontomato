@@ -47,14 +47,7 @@
         "component": "ObjectCount",
         "type": "platform:BusinessKnowledge",
         "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "size": {
-                "literal": 1
-              }
-            }
-          }
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -76,14 +69,7 @@
         "component": "ObjectCount",
         "type": "platform:Function",
         "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "size": {
-                "literal": 1
-              }
-            }
-          }
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -127,14 +113,7 @@
         "component": "ObjectCount",
         "type": "platform:Skill",
         "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "size": {
-                "literal": 1
-              }
-            }
-          }
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -214,17 +193,7 @@
         "component": "ObjectCount",
         "type": "platform:User",
         "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "page": {
-                "literal": {
-                  "number": 1,
-                  "size": 1
-                }
-              }
-            }
-          }
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -235,17 +204,7 @@
         "component": "ObjectCount",
         "type": "platform:Role",
         "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "page": {
-                "literal": {
-                  "number": 1,
-                  "size": 1
-                }
-              }
-            }
-          }
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -256,17 +215,7 @@
         "component": "ObjectCount",
         "type": "platform:PermissionPolicy",
         "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "page": {
-                "literal": {
-                  "number": 1,
-                  "size": 1
-                }
-              }
-            }
-          }
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -277,7 +226,7 @@
         "component": "ObjectCount",
         "type": "platform:OrgUnit",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"

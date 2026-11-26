@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   resolveRoot: vi.fn(),
   assertPermission: vi.fn(),
   query: vi.fn(),
-  listVisibleDomainComponents: vi.fn(),
 }));
 
 vi.mock("../member-path", () => ({
@@ -52,9 +51,6 @@ vi.mock("../../component-packages/store", () => ({
     name: "@acme/widgets",
     components: [{ componentId: "@ontomato/sdk:ObjectCount" }, { componentId: "@acme/widgets:Indicator" }],
   }],
-}));
-vi.mock("../../domain-components/store", () => ({
-  listVisibleDomainComponents: mocks.listVisibleDomainComponents,
 }));
 
 const owner = { domainId: "tenant", userId: "reader" };
@@ -117,24 +113,21 @@ describe("platform count reads", () => {
     className: "Device", name: "id", showName: "", type: "varchar",
     attrDesc: "", enable: true, businessKey: false, primaryKey: true,
   };
-  const relationship = {
-    relationship: "owns", fromclass: "Device", toclass: "Site", desc: "", fromField: "site", toField: "id",
-  };
-
   it.each([
-    { type: OBJECT_TYPE, path: "/ontology/model/object-types", rows: [objectType, { ...objectType, className: "Site" }] },
-    { type: ATTRIBUTE, path: "/ontology/model/attributes", rows: [attribute] },
-    { type: RELATIONSHIP, path: "/ontology/model/relationships", rows: [relationship] },
-  ])("$type counts only the records returned to the current viewer", async ({ type, path, rows }) => {
+    { type: OBJECT_TYPE, path: "/ontology/model/object-types", total: 2 },
+    { type: ATTRIBUTE, path: "/ontology/model/attributes", total: 1 },
+    { type: RELATIONSHIP, path: "/ontology/model/relationships", total: 1 },
+  ])("$type asks its owner to count as the current viewer", async ({ type, path, total }) => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
       expect(new URL(url).pathname).toBe(path);
+      expect(new URL(url).searchParams.get("countOnly")).toBe("true");
       expect(init.method).toBe("GET");
       const headers = new Headers(init.headers);
       expect(headers.get("tk")).toBe(viewer.token);
       expect(headers.get("x-scope")).toBe(viewer.headers["x-scope"]);
-      return Response.json(rows);
+      return Response.json({ total });
     }));
-    await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total: rows.length } });
+    await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total } });
   });
 
   it("counts actions through the same list URL without reading the list", async () => {
@@ -236,12 +229,33 @@ describe("platform count reads", () => {
     expect(classNames).toEqual(["Device"]);
   });
 
-  it("counts distinct SDK entries including visible domain registrations", async () => {
-    mocks.listVisibleDomainComponents.mockResolvedValue([
-      { declaration: { componentId: "domain:registered" }, name: "Registered" },
-    ]);
+  it("counts distinct releases and counts only authorised domain component IDs", async () => {
+    const visible = "domain-component:registered";
+    const hidden = "domain-component:private";
+    mocks.query.mockImplementation(async (sql: string, params: unknown[]) => {
+      expect(sql).toContain("domain_components");
+      if (sql.includes("COUNT(*)")) {
+        expect(params).toEqual([owner.domainId, [visible]]);
+        return { rows: [{ total: 1 }] };
+      }
+      expect(sql).not.toContain("definition,");
+      expect(params).toEqual([owner.domainId]);
+      return { rows: [visible, hidden].map(id => ({ id, domainId: owner.domainId, ownerId: "author" })) };
+    });
+    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
+    const decide = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/authorization/objects/decide-batch");
+      expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
+      expect(JSON.parse(String(init.body)).requests.map((request: { target: { id: string } }) => request.target.id))
+        .toEqual([visible, hidden]);
+      return Response.json({ decisions: [
+        { allowed: true, code: null, reason: null },
+        { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Use permission required" },
+      ] });
+    });
+    vi.stubGlobal("fetch", decide);
     await expect(readCount(SDK_COMPONENT)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
-    expect(mocks.listVisibleDomainComponents).toHaveBeenCalledWith(owner.domainId, viewer, false);
+    expect(decide).toHaveBeenCalledTimes(1);
   });
 
   it("counts only definitions with view, including visible system agents", async () => {

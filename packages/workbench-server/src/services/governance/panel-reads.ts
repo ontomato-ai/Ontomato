@@ -89,8 +89,14 @@ export interface GovernanceReadOptions {
 export function createGovernanceReadAdapters(viewer: AssistantCredentials, options: GovernanceReadOptions = {}) {
   const owner = governanceOwner(viewer);
 
+  async function count(name: string, path: string): Promise<PanelRecordQuery> {
+    const { total } = await owner(name, path, { countOnly: true }, z.object({ total: z.number().int().nonnegative() }));
+    return { rows: [], total };
+  }
+
   return {
     users: {
+      count: () => count("governance-users-count", "/panel/governance/users/query"),
       query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
         return owner("governance-users-query", "/panel/governance/users/query", pagedSearchBody(params), panelRecordQuerySchema);
       },
@@ -120,6 +126,7 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       },
     },
     roles: {
+      count: () => count("governance-roles-count", "/panel/governance/roles/query"),
       options(): Promise<PanelOptionList> {
         return owner("governance-roles-options", "/panel/governance/roles/options", {}, panelOptionListSchema);
       },
@@ -148,6 +155,7 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       },
     },
     policies: {
+      count: () => count("governance-policies-count", "/panel/governance/policies/query"),
       options(): Promise<PanelOptionList> {
         return owner("governance-policies-options", "/panel/governance/policies/options", {}, panelOptionListSchema);
       },
@@ -174,6 +182,7 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       },
     },
     orgUnits: {
+      count: () => count("governance-org-units-count", "/panel/governance/org-units/list"),
       list(): Promise<PanelRecord[]> {
         return owner("governance-org-units-list", "/panel/governance/org-units/list", {}, panelRecordListSchema);
       },

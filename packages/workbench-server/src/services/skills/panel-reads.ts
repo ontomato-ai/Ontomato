@@ -27,6 +27,7 @@ export interface SkillResolveRequest {
 }
 
 export type SkillReads = {
+  count(): Promise<PanelRecordQuery>;
   options(): Promise<PanelOptionList>;
   resolve(request: SkillResolveRequest): Promise<PanelOptionList>;
   query(params: Record<string, unknown>): Promise<PanelRecordQuery>;
@@ -99,6 +100,9 @@ export function createSkillReadAdapter(
   }
 
   return {
+    async count() {
+      return { rows: [], total: await skillManager.countSkills(owner.domainId, viewer) };
+    },
     async options() {
       const { skills, diagnostics } = await assistantSkillCatalog(owner.domainId, viewer);
       const messages = diagnosticText(diagnostics);

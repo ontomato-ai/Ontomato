@@ -374,6 +374,11 @@ public class AdminServiceImpl implements AdminService {
 		return requireInitializedRule(jsonRuleDao.countMetadata(domainId), domainId);
 	}
 
+	@Override
+	public Map<String, Integer> countModelMetadata(String domainId, List<String> classScope) {
+		return requireInitializedRule(jsonRuleDao.countModelMetadata(domainId, classScope), domainId);
+	}
+
 	private static <T> Map<String, T> requireInitializedRule(Map<String, T> rule, String domainId) {
 		if (rule == null) throw new IllegalStateException("Ontology rule is not initialized for domain " + domainId);
 		return rule;

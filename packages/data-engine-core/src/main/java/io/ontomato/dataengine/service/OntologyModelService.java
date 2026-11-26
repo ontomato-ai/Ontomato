@@ -138,6 +138,8 @@ public interface OntologyModelService {
 	record FormDescription(List<ObjectNode> fields, Map<String, Object> values, FormSave save) {
 	}
 
+	Map<String, Integer> countMetadata(User user, List<String> classScope);
+
 	List<ObjectTypeView> objectTypes(User user, String lang);
 
 	ObjectTypeView objectType(String className, User user, String lang);

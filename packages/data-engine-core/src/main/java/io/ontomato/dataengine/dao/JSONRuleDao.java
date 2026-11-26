@@ -84,28 +84,48 @@ public class JSONRuleDao {
 	}
 
 	public Map<String, Integer> countMetadata(String domainId) {
+		return countMetadata(domainId, null, true);
+	}
+
+	public Map<String, Integer> countModelMetadata(String domainId, List<String> classScope) {
+		return countMetadata(domainId, classScope, false);
+	}
+
+	private Map<String, Integer> countMetadata(String domainId, List<String> classScope, boolean namedOnly) {
 		return jdbcTemplate.query("""
 				WITH rule AS (
-					SELECT model.*
+					SELECT model.*, ?::text[] AS class_scope, ?::boolean AS named_only
 					FROM json_rule
 					CROSS JOIN LATERAL jsonb_to_record(content::jsonb) AS model("classDef" jsonb, relationship_rule jsonb)
 					WHERE id = ? AND content IS NOT NULL
 				), object_types AS (
 					SELECT item.value
 					FROM rule CROSS JOIN LATERAL jsonb_array_elements(rule."classDef") AS item(value)
-					WHERE jsonb_typeof(item.value->'className') = 'string' AND item.value->>'className' ~ '[^[:space:]]'
+					WHERE (NOT rule.named_only OR (jsonb_typeof(item.value->'className') = 'string'
+						AND item.value->>'className' ~ '[^[:space:]]'))
+						AND (rule.class_scope IS NULL OR item.value->>'className' = ANY(rule.class_scope))
 				)
 				SELECT (SELECT count(*) FROM object_types) AS object_types,
 					(SELECT count(*) FROM object_types o
 						CROSS JOIN LATERAL jsonb_array_elements(o.value->'attrs') AS attr(value)
-						WHERE jsonb_typeof(attr.value->'name') = 'string' AND attr.value->>'name' ~ '[^[:space:]]') AS attributes,
+						WHERE NOT rule.named_only OR (jsonb_typeof(attr.value->'name') = 'string'
+							AND attr.value->>'name' ~ '[^[:space:]]')) AS attributes,
 					(SELECT count(*) FROM jsonb_each(rule.relationship_rule) AS rel(key, value)
-						WHERE jsonb_typeof(rel.value) = 'object' AND (rel.key ~ '[^[:space:]]' OR
-							(jsonb_typeof(rel.value->'relationship') = 'string' AND rel.value->>'relationship' ~ '[^[:space:]]')))
-						AS relationships
+						WHERE (NOT rule.named_only OR (jsonb_typeof(rel.value) = 'object' AND (rel.key ~ '[^[:space:]]' OR
+							(jsonb_typeof(rel.value->'relationship') = 'string' AND rel.value->>'relationship' ~ '[^[:space:]]'))))
+						AND (rule.class_scope IS NULL OR (rel.value->>'fromclass' = ANY(rule.class_scope)
+							AND rel.value->>'toclass' = ANY(rule.class_scope)))) AS relationships
 				FROM rule
-				""", rs -> rs.next() ? Map.of("objectTypes", rs.getInt("object_types"),
-				"attributes", rs.getInt("attributes"), "relationships", rs.getInt("relationships")) : null, domainId);
+				""", statement -> {
+			if (classScope == null) {
+				statement.setNull(1, java.sql.Types.ARRAY);
+			} else {
+				statement.setArray(1, statement.getConnection().createArrayOf("text", classScope.toArray()));
+			}
+			statement.setBoolean(2, namedOnly);
+			statement.setString(3, domainId);
+		}, rs -> rs.next() ? Map.of("objectTypes", rs.getInt("object_types"),
+				"attributes", rs.getInt("attributes"), "relationships", rs.getInt("relationships")) : null);
 	}
 
 	public Map<String, Object> query(String domainId) {

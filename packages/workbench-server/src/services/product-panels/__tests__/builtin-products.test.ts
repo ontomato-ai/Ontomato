@@ -213,12 +213,6 @@ describe("readBuiltinProducts", () => {
       expect(frame!.content.module).toContain('"/permissions/policies": "policies"');
       expect(frame!.content.module).toContain('"/permissions/organization": "organizationUnits"');
 
-      const governanceQueryTypes: Record<string, string> = {
-        members: "platform:User",
-        roles: "platform:Role",
-        policies: "platform:PermissionPolicy",
-      };
-
       const expectedCountReads: Record<string, string> = {
         objectTypes: "platform:ObjectType",
         attributes: "platform:Attribute",
@@ -230,6 +224,13 @@ describe("readBuiltinProducts", () => {
         applications: "platform:Application",
         sdkComponents: "platform:SDKComponent",
         agents: "platform:AgentDefinition",
+        knowledge: "platform:BusinessKnowledge",
+        functions: "platform:Function",
+        skills: "platform:Skill",
+        members: "platform:User",
+        roles: "platform:Role",
+        policies: "platform:PermissionPolicy",
+        organizationUnits: "platform:OrgUnit",
       };
       for (const [memberKey, member] of countMembers) {
         const projectionId = "projectionId" in member.target ? member.target.projectionId : "";
@@ -240,18 +241,6 @@ describe("readBuiltinProducts", () => {
           expect(projection?.data.rows).toEqual({
             source: { type: { kind: "PlatformObjectType", id: expectedCountReads[memberKey] } },
             read: "count",
-            params: {},
-          });
-        } else if (Object.hasOwn(governanceQueryTypes, memberKey)) {
-          expect(projection?.data.rows).toEqual({
-            source: { type: { kind: "PlatformObjectType", id: governanceQueryTypes[memberKey] } },
-            read: "query",
-            params: { page: { literal: { number: 1, size: 1 } } },
-          });
-        } else if (memberKey === "organizationUnits") {
-          expect(projection?.data.rows).toEqual({
-            source: { type: { kind: "PlatformObjectType", id: "platform:OrgUnit" } },
-            read: "list",
             params: {},
           });
         } else {

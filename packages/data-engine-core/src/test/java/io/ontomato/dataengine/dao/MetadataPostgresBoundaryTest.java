@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.dao;
 
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import com.alibaba.fastjson2.JSON;
@@ -38,6 +39,14 @@ class MetadataPostgresBoundaryTest extends PostgresTestDatabase {
         assertEquals(Map.of("objectTypes", 2, "attributes", 3, "relationships", 1), dao.countMetadata("populated"));
         assertEquals(Map.of("objectTypes", 0, "attributes", 0, "relationships", 0), dao.countMetadata("empty"));
         assertNull(dao.countMetadata("missing"));
+        assertEquals(Map.of("objectTypes", 3, "attributes", 5, "relationships", 2),
+                dao.countModelMetadata("populated", null));
+        assertEquals(Map.of("objectTypes", 1, "attributes", 3, "relationships", 0),
+                dao.countModelMetadata("populated", List.of("Room")));
+        assertEquals(Map.of("objectTypes", 2, "attributes", 4, "relationships", 1),
+                dao.countModelMetadata("populated", List.of("Room", "Floor")));
+        assertEquals(Map.of("objectTypes", 0, "attributes", 0, "relationships", 0),
+                dao.countModelMetadata("populated", List.of()));
     }
 
     @Test
