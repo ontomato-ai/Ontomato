@@ -27,7 +27,7 @@ function hasStateQuery(address: string): boolean {
 
 /** Route registration, access and declared page state belong to the page resolver. */
 const presentTargetMessage = "Invalid present target: target must be either a registered site-relative page path starting with '/' "
-  + "(such as an entrance path listed under Available entrances in the panel skill, e.g. '/ontology/assets/actions') "
+  + "(such as an entrance path listed under Available entrances in the generated page description, e.g. '/ontology/assets/actions') "
   + "or an artifact file path under 'outputs/<relative-path>'.";
 const presentFields = z.object({
   target: z.string({ required_error: presentTargetMessage, invalid_type_error: presentTargetMessage }).refine(

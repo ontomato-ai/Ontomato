@@ -20,6 +20,7 @@ import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
 import { ensureAssistantDefaultPromptSchema } from "./20261105-assistant-default-prompts/schema";
 import { ASSISTANT_CHART_SKILLS_NAME, ASSISTANT_CHART_SKILLS_VERSION, migrateAssistantChartSkills } from "./20261118-assistant-chart-skills/migration";
+import { PAGE_OPERATOR_SKILL_NAME, PAGE_OPERATOR_SKILL_VERSION, migratePageOperatorSkill } from "./20261126-page-operator-skill/migration";
 import { GOVERNANCE_REPORT_SKILL_NAME, GOVERNANCE_REPORT_SKILL_VERSION, migrateGovernanceReportSkill } from "./20261121-governance-report-skill/migration";
 import {
   ASSISTANT_DEFAULT_PROMPTS_NAME,
@@ -128,6 +129,23 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
           await client.query(`DROP TABLE IF EXISTS ${qualifiedTable("product_subscriptions")}`);
           await recordMigration(client, migration.version, migration.name);
         });
+      },
+    },
+  },
+  {
+    directory: "20261126-page-operator-skill",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: PAGE_OPERATOR_SKILL_VERSION,
+      name: PAGE_OPERATOR_SKILL_NAME,
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        const result = await inMigrationTransaction(client, async () => {
+          const migrated = await migratePageOperatorSkill(client);
+          await recordMigration(client, migration.version, migration.name);
+          return migrated;
+        });
+        logger.info("Page operator skill presets migrated", { version: migration.version, ...result });
       },
     },
   },

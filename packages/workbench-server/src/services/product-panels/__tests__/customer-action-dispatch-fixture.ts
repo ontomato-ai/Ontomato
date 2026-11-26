@@ -17,8 +17,6 @@ const mocks = vi.hoisted(() => ({
   panel: vi.fn(),
   projection: vi.fn(),
   pages: vi.fn(),
-  resolveMember: vi.fn(),
-  loadedMember: vi.fn(),
   restore: vi.fn(),
   sessionActor: vi.fn(),
 }));
@@ -42,8 +40,6 @@ vi.mock("../../assistant/execution-setting", () => ({ resolveAgentExecution: moc
 vi.mock("../../assistant/store", () => ({ assistantStore: { turn: async () => ({}) } }));
 vi.mock("../../assistant/skills", () => ({
   readAssistantSkillView: mocks.pages,
-  resolvePageSkillSource: mocks.resolveMember,
-  loadedPageSkillVersion: mocks.loadedMember,
 }));
 vi.mock("../../agent-host/caller", () => ({
   restoreAgentCaller: mocks.restore,
@@ -186,9 +182,6 @@ export function customerActionDispatchFixture() {
     mocks.panel.mockResolvedValue(orderPanel);
     mocks.projection.mockResolvedValue(orderFormProjection);
     mocks.pages.mockResolvedValue({ byId: new Map() });
-    mocks.resolveMember.mockResolvedValue(skill);
-    mocks.loadedMember.mockImplementation((ref, loaded: RuntimeRun["resolvedSkills"]) =>
-      loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
     mocks.resolve.mockResolvedValue({ executionUserId: null, credentials });
     mocks.restore.mockResolvedValue({ owner });
     mocks.run.mockResolvedValue({

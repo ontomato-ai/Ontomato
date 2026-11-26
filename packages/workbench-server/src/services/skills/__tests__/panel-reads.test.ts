@@ -6,7 +6,6 @@ import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent
 import { panelOptionListSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { installContentLayout } from "../../../content/layout";
-import { registerSkillProvider } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
@@ -54,9 +53,6 @@ beforeEach(() => {
     if (url.endsWith("/authorization/objects/decide-batch")) {
       const { requests } = JSON.parse(String(init.body));
       return Response.json({ decisions: requests.map(() => ({ allowed: true })) });
-    }
-    if (url.endsWith("/platform/page-skills")) {
-      return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
     }
     throw new Error(`Unexpected upstream: ${url}`);
   }));
@@ -156,45 +152,23 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
     path.join(publicSkillDir, "SKILL.md"),
     "---\nname: builtin-guide\ndescription: Builtin guide skill\n---\nGuide body\n",
   );
-  registerSkillProvider({
-    id: "provider-ext",
-    name: "External Studio",
-    async list(context) {
-      return [
-        {
-          skill: { namespace: { kind: "domain", domainId: context.domainId }, name: "ext-provider-skill" },
-          manifest: { name: "ext-provider-skill", description: "Provided from external studio" },
-          async provide() {
-            return {
-              skill: { namespace: { kind: "domain" as const, domainId: context.domainId }, name: "ext-provider-skill" },
-              files: [
-                { path: "SKILL.md", content: "---\nname: ext-provider-skill\ndescription: Provided from external studio\n---\nExternal body\n" },
-              ],
-            };
-          },
-        },
-      ];
-    },
-  });
-
   const adapter = createSkillReadAdapter(owner, credentials);
 
   const page1 = panelRecordQuerySchema.parse(await adapter.query({ size: 2 }));
-  expect(page1.total).toBe(4);
+  expect(page1.total).toBe(3);
   expect(page1.nextCursor).toBe("2");
   expect(page1.rows).toHaveLength(2);
 
   const page2 = panelRecordQuerySchema.parse(await adapter.query({ cursor: "2", size: 2 }));
-  expect(page2.total).toBe(4);
+  expect(page2.total).toBe(3);
   expect(page2.nextCursor).toBeUndefined();
-  expect(page2.rows).toHaveLength(2);
+  expect(page2.rows).toHaveLength(1);
 
   const all = panelRecordQuerySchema.parse(await adapter.query({}));
   expect(all.rows.map(row => row.primaryKey)).toEqual([
     "builtin-guide",
     "alpha-helper",
     "domain-helper",
-    "ext-provider-skill",
   ]);
   expect(all.rows[0]).toEqual({
     primaryKey: "builtin-guide",
@@ -205,17 +179,6 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
       description: "Builtin guide skill",
       source: "Platform",
       writeRestriction: "Built-in skills come with the product and cannot be deleted",
-    },
-  });
-  expect(all.rows[3]).toEqual({
-    primaryKey: "ext-provider-skill",
-    label: "ext-provider-skill",
-    subtitle: "Provided from external studio",
-    fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
-    fields: {
-      description: "Provided from external studio",
-      source: "External Studio",
-      writeRestriction: "Provided by External Studio and cannot be deleted here",
     },
   });
   expect(all.rows.find(row => row.primaryKey === "alpha-helper")).toEqual({
@@ -230,9 +193,9 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
     },
   });
 
-  const searched = panelRecordQuerySchema.parse(await adapter.query({ search: "External" }));
+  const searched = panelRecordQuerySchema.parse(await adapter.query({ search: "Alpha" }));
   expect(searched).toEqual({
-    rows: [all.rows[3]],
+    rows: [all.rows.find(row => row.primaryKey === "alpha-helper")],
     total: 1,
   });
 });

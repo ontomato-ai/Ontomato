@@ -71,7 +71,7 @@ const uses = ["spring", "autumn"].map((name) => ({
 }));
 
 async function answer(request: Sent) {
-  // Node answers the frame for the entry with no page skill: the frame is no page of its own.
+  // Node answers the frame for the entry with no page placement: the frame is no page of its own.
   if (request.path === `/api/product-panels/${frame.id}/snapshot`) {
     const { pageSkillContext: _none, ...snapshot } = await (await panelSnapshot(frame, projections, request)).json();
     return Response.json(snapshot);

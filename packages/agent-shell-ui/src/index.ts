@@ -47,7 +47,7 @@ export {
   type SessionRunHandlers,
   type SessionRunPort,
 } from "./host";
-export type { PageSkillContext } from "@ontomato/contracts/page-skills";
+export type { PageSkillContext } from "@ontomato/contracts/page-context";
 export type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 export type {
   ArtifactPresentation,

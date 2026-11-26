@@ -1,6 +1,6 @@
 import { inject, type InjectionKey, type Ref } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import type { PageAgents } from "./host";
 
 /**

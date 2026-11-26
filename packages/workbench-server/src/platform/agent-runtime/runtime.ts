@@ -16,13 +16,13 @@ import { HttpError } from "../../utils/errors";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 export type { AssistantCredentials } from "../../utils/assistant-credentials";
 
-/** Guidance for runs that load a registered page skill. */
+/** Guidance for runs that carry the page operation skill. */
 const PAGE_CONTROL_RULE = [
   "Page operations:",
-  "A loaded panel skill works through two layers: read persisted data via `$ONTOMATO_PANEL_OPERATIONS_URL/read` (and `/nested`), and control the displayed page beside the conversation via the live display tools (`observe_display`, `present`, `fill_form`, `page_action`).",
+  "The page operation skill works through two layers: read persisted data via `$ONTOMATO_PANEL_OPERATIONS_URL/read` (and `/nested`), and control the displayed page beside the conversation via the live display tools (`observe_display`, `present`, `fill_form`, `page_action`).",
   "Use `present` to open a page or update declared public state in place, `fill_form` to edit fields directly in a mounted form (keeping it unsaved and marking changed fields), and `page_action` to invoke declared operations (including form save, button actions, row actions, batch actions, refresh, and discard) through the exact same UI entry a human clicks.",
   "Use `fill_form` for edits and let the page supply its current form values when saving. In default confirmation mode, `page_action` prepares the intent and returns `awaiting_confirmation` immediately while the confirmation prompt appears in the conversation; do not wait or poll. When the user confirms in the conversation, the page verifies that the instance, target, and form contents have not changed before dispatching. In full-auto sessions, `page_action` executes immediately.",
-  "Everything else — reading, retrieval, charts, reports, and data no page skill covers — keeps its own commands.",
+  "Everything else — reading, retrieval, charts, reports, and data outside page operations — keeps its own commands.",
 ].join("\n");
 export function runDefinition(
   systemPrompt: string,
@@ -30,7 +30,7 @@ export function runDefinition(
   skills: RuntimeStartRunRequest["definition"]["skills"],
   locale?: string,
   externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
-  /** The run loaded a registered page skill. */
+  /** The run carries the page operation skill. */
   pageControl = false,
 ): RuntimeStartRunRequest["definition"] {
   return {

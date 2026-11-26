@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { triggerFixture } from "../../scheduling/__tests__/fixtures";
-import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
   platformOntologyCountsResponseSchema,
   platformOntologyNeighborsResponseSchema,
@@ -41,7 +40,6 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
 import { METRIC_CHART_COMPONENT } from "@ontomato/contracts/product-panels";
-import { protectedSkillRef } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { assertManagement } from "../../../identity/management";
@@ -50,6 +48,7 @@ import { AuthFailedError, BackendResponseError, backendGet, backendPost } from "
 import { HttpError } from "../../../utils/errors";
 import type { AssistantCredentials } from "../../../platform/agent-runtime/runtime";
 import { countVisibleAgentDefinitions } from "../../assistant/definitions";
+import { PAGE_OPERATOR_SKILL } from "../../assistant/page-operator";
 import { listAgentDefinitionNodes, listAgentExecutionUserRelations, listAgentSkillRelations } from "../../assistant/definition-relations";
 import { assistantSkillCatalog, countAssistantSkills } from "../../assistant/skills";
 import { countPublishedDefinitions, listPublishedDefinitions } from "../../business-definitions/definitions";
@@ -120,8 +119,6 @@ const decideProductObjects = vi.fn<[readonly ObjectDecisionRequest[], AssistantC
 
 const owner = { domainId: "domain-1", userId: "user-1" };
 const credentials = { token: "tok-1", locale: "zh-CN" };
-const panelMainSkillRef = protectedSkillRef("product-panels", owner.domainId, "panel-main");
-const panelMainSkillKey = runtimeSkillKey(panelMainSkillRef);
 
 configureI18n({
   defaultLocale: "en",
@@ -380,7 +377,7 @@ describe("platform-ontology composite query", () => {
     expect(schema.relationKinds.every((r) => platformRelationGroups.includes(r.group))).toBe(true);
 
     const derivedIds = schema.relationKinds.filter((r) => r.derived).map((r) => r.id);
-    expect(derivedIds).toEqual(["role.owns-workflow-step", "panel.provides-skill"]);
+    expect(derivedIds).toEqual(["role.owns-workflow-step"]);
 
     expect(platformOntologySchemaResponseSchema.parse(schema)).toEqual(schema);
 
@@ -944,7 +941,7 @@ describe("platform-ontology composite query", () => {
     vi.mocked(assistantSkillCatalog).mockResolvedValue({
       skills: [
         {
-          skill: panelMainSkillRef,
+          skill: PAGE_OPERATOR_SKILL,
           title: "Main Workspace Skill",
           description: "Read and act on Main Workspace",
         },
@@ -1160,12 +1157,6 @@ describe("platform-ontology composite query", () => {
           to: { className: "platform:ProductPanel", primaryKey: "panel-order-detail" },
         }),
         expect.objectContaining({
-          relationKind: "panel.provides-skill",
-          direction: "outgoing",
-          derived: true,
-          to: { className: "platform:Skill", primaryKey: panelMainSkillKey },
-        }),
-        expect.objectContaining({
           relationKind: "application.uses-panel",
           direction: "incoming",
           from: { className: "platform:Application", primaryKey: "app-ops" },
@@ -1176,7 +1167,7 @@ describe("platform-ontology composite query", () => {
     expect(panelNeighbors.edges.some((e) => e.to.primaryKey === "proj-not-granted")).toBe(false);
     expect(panelNeighbors.edges.some((e) => e.to.primaryKey === "panel-not-granted")).toBe(false);
 
-    // 8. Child panel sees incoming panel.contains-panel; application sees outgoing application.uses-panel; skill sees incoming panel.provides-skill
+    // 8. Child panel sees incoming panel.contains-panel; application sees outgoing application.uses-panel
     const childPanelNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
       node: { className: "platform:ProductPanel", primaryKey: "panel-child" },
       relationKinds: ["panel.contains-panel"],
@@ -1199,27 +1190,6 @@ describe("platform-ontology composite query", () => {
     });
     expect(appNeighbors.node).toMatchObject({ label: "运营台", layer: "product" });
 
-    const skillNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: "platform:Skill", primaryKey: panelMainSkillKey },
-      relationKinds: ["panel.provides-skill"],
-    });
-    expect(skillNeighbors.edges).toHaveLength(1);
-    expect(skillNeighbors.edges[0]).toMatchObject({
-      relationKind: "panel.provides-skill",
-      direction: "incoming",
-      derived: true,
-      from: { className: "platform:ProductPanel", primaryKey: "panel-main" },
-    });
-
-    // 9. A refused skill library read isolates panel.provides-skill.
-    vi.mocked(assertManagement).mockRejectedValueOnce(new HttpError(403, "Cannot read the skill library", "PERMISSION_DENIED"));
-    const refusedSkillPanel = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: "platform:ProductPanel", primaryKey: "panel-main" },
-      relationKinds: ["panel.provides-skill"],
-    });
-    expect(refusedSkillPanel.relations).toEqual([
-      expect.objectContaining({ relationKind: "panel.provides-skill", status: "refused", edgeCount: 0 }),
-    ]);
   });
 
   it("retains builtin projection and child panel edges admitted by product USE", async () => {

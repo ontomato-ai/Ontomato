@@ -4,7 +4,7 @@ import { useConversationDisplay, type DisplayObjectChange, type DisplayPageContr
 import { useLeaveConfirmation, usePageAdmission } from "@ontomato/platform-shell";
 import type { DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 
 export interface DisplayedPanel {
   controller: DisplayPageController | null;

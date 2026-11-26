@@ -8,7 +8,7 @@ import { createWorkflowReadAdapter } from "../panel-reads";
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
 
 vi.mock("../../assistant/skills", () => ({
-  readAssistantSkillView: vi.fn(), resolvePageSkillSource: vi.fn(), loadedPageSkillVersion: vi.fn(),
+  readAssistantSkillView: vi.fn(), loadedSkillVersion: vi.fn(),
 }));
 
 configureI18n({
