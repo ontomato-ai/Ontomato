@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ref,createApp } from "vue";
+import { ref } from "vue";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createRouter, createMemoryHistory } from "vue-router";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { APP_HOST_GLOBAL, type AppHost } from "@ontomato/contracts/app-host";
 import { buildExecutionContext,BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
-import { installAppHost,installProductEmbedding, registerBuildPreview, registerLiveFrame } from "../app-host";
+import { installAppHost, registerBuildPreview, registerLiveFrame } from "../app-host";
 import ApplicationRoute from "../pages/ApplicationRoute.vue";
 import {installAuthHost} from '@ontomato/workbench-ui/utils/auth';
 const publication=vi.hoisted(()=>({assets:[] as unknown[],issues:[] as unknown[],contracts:[] as unknown[],triggers:[] as unknown[]}));
@@ -77,29 +77,11 @@ describe("explicit frame execution bindings",()=>{
     await expect(host().request!(source,'/assistant/sessions',{method:'POST',body:'{}'},'')).rejects.toMatchObject({code:'BUILD_TEST_UNSUPPORTED'});
     expect(request).not.toHaveBeenCalled();
   });
-  it('removes the published application identity when its frame is disposed',()=>{
-    const source=frame();const dispose=registerLiveFrame(source,'published');
-    installProductEmbedding(createApp({template:'<div />'}));
-    dispose();const element=(source as Window).document.createElement('div');
-    expect(()=>host().mountProductAsset!(source,element,'page')).toThrow('Published application identity');
-  });
   it('rejects typed product navigation from a preview or a frame without a published identity',async()=>{
     const preview=frame();registerBuildPreview(preview,buildExecutionContext('workspace',null));
     await expect(host().navigateProduct!(preview,{pageId:'page',params:{}})).rejects.toThrow('published application');
     const live=frame();registerLiveFrame(live);
     await expect(host().navigateProduct!(live,{pageId:'page',params:{}})).rejects.toThrow('Published application identity');
-  });
-  it('rejects product embedding for unregistered and build-test frames before mounting content',()=>{
-    const source=frame();const app=createApp({template:'<div />'});installProductEmbedding(app);
-    const element=(source as Window).document.createElement('div');
-    expect(()=>host().mountProductAsset!(source,element,'shared')).toThrow('not registered');
-    const binding=registerBuildPreview(source,buildExecutionContext('workspace',null));
-    expect(()=>host().mountProductAsset!(source,element,'shared')).toThrow('build-test');
-    expect(element.shadowRoot).toBeNull();binding.dispose();
-  });
-  it('rejects mounting into a container outside the registered source frame',()=>{
-    const source=frame();registerLiveFrame(source);installProductEmbedding(createApp({template:'<div />'}));
-    expect(()=>host().mountProductAsset!(source,document.createElement('div'),'shared')).toThrow('registered app frame');
   });
   it("throws for unregistered frames instead of selecting live",()=>{
     const source=frame();

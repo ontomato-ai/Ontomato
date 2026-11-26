@@ -1,11 +1,10 @@
 import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
 import {BUILD_TEST_HEADER,BUILD_TEST_UNSUPPORTED} from '@ontomato/contracts/build-tests';
-import { watch,createVNode,render,h,type App } from "vue";
+import { watch,h,type App } from "vue";
 import { confirmDanger } from "@ontomato/platform-shell";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { APPLICATION } from "@ontomato/contracts/platform-object-types";
 import { HOME_PREFERENCES_CHANGED } from "./features/home/api";
-import ProductRoute from './pages/ProductRoute.vue';
 import type { Router } from "vue-router";
 import {
   APP_HOST_GLOBAL,
@@ -111,31 +110,6 @@ export function installProductEmbedding(app:App){
   // The bridge answers a frame as the application it was registered under: a published application's, or a panel
   // application's.
   bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity,source=>panelFrames.get(source)?.open??true,expandPageComposer,confirmPanelOperation);
-  host.mountProductAsset=(source,target,assetId)=>{
-    const element=target as HTMLElement;
-    if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
-    if(!element?.ownerDocument?.defaultView||!(element instanceof element.ownerDocument.defaultView.HTMLElement)||element.ownerDocument.defaultView!==source)throw new Error('Product mount must belong to the registered app frame');
-    if(!assetId.trim()||assetId.length>200)throw new Error('Invalid product asset ID');
-    const applicationId=publishedFrames.get(source);
-    if(!applicationId)throw new Error('Published application identity is required for product embedding');
-    const shadow=element.shadowRoot??element.attachShadow({mode:'open'});
-    shadow.replaceChildren();
-    const syncStyles=()=>{
-      shadow.querySelectorAll('[data-product-style]').forEach(node=>node.remove());
-      for(const style of document.head.querySelectorAll('style,link[rel="stylesheet"]')){
-        const clone=style.cloneNode(true) as HTMLElement;
-        clone.setAttribute('data-product-style','');
-        if(clone.tagName==='LINK')clone.setAttribute('href',(style as HTMLLinkElement).href);
-        shadow.prepend(clone);
-      }
-    };
-    syncStyles();
-    const observer=new MutationObserver(syncStyles);observer.observe(document.head,{childList:true,subtree:true,characterData:true});
-    const container=element.ownerDocument.createElement('div');container.style.minWidth='0';shadow.append(container);
-    const vnode=createVNode(ProductRoute,{productAssetId:assetId,embedded:true,applicationId});vnode.appContext=app._context;
-    render(vnode,container);
-    return ()=>{observer.disconnect();render(null,container);shadow.replaceChildren();};
-  };
 }
 function assertFrameBinding(previous: AppExecutionContext | undefined, next: AppExecutionContext) {
   if(previous && (previous.kind!==next.kind || previous.kind==="build-test" && next.kind==="build-test" && (previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId)))
