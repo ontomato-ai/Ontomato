@@ -21,7 +21,6 @@ import type { AgentRow } from "../store";
 const mocks = vi.hoisted(() => ({
   agents: vi.fn<[], Promise<AgentRow[]>>(),
   opsDiagnosis: vi.fn<[], Promise<AgentRow | undefined>>(),
-  profile: vi.fn<[{ domainId: string; userId: string }, string[]], Promise<Map<string, string>>>(),
   findByUse: vi.fn(),
   managementAccess: vi.fn<[], Promise<void>>(),
   homePanelId: vi.fn<[], Promise<string | null>>(),
@@ -47,7 +46,6 @@ vi.mock("../authorization", () => ({
 vi.mock("../../../identity/management", () => ({
   assertManagement: mocks.managementAccess,
 }));
-vi.mock("../../product-assets/agent-profile", () => ({ agentsWithProductProfiles: mocks.profile }));
 vi.mock("../../product-panels/skill-provider", () => ({
   panelSkillProvider: { findByUse: mocks.findByUse },
 }));
@@ -101,7 +99,7 @@ const agentIds = {
   legacyOrderCustom: "44444444-4444-4444-8444-444444444444",
   invoiceCustom: "55555555-5555-4555-8555-555555555555",
   disabledOrder: "66666666-6666-4666-8666-666666666666",
-  productProfile: "77777777-7777-4777-8777-777777777777",
+  secondOrderCustom: "77777777-7777-4777-8777-777777777777",
 };
 
 function agentRow(
@@ -248,9 +246,6 @@ beforeEach(() => {
   mocks.findByUse.mockImplementation(async (_domain, { useId }) => offerings.find(offering =>
     offering.sourceKey === (useId === "ops-turn-evidence" ? "builtin-product-ops-turn-evidence" : "panel-order"),
   ) ?? null);
-  mocks.profile.mockImplementation(async (_domain, ids) => new Map(
-    ids.includes(agentIds.productProfile) ? [[agentIds.productProfile, "profile-1"]] : [],
-  ));
   mocks.opsDiagnosis.mockResolvedValue(undefined);
   mocks.managementAccess.mockReset().mockResolvedValue(undefined);
   mocks.homePanelId.mockResolvedValue(null);
@@ -261,7 +256,7 @@ beforeEach(() => {
     agentRow(agentIds.legacyOrderCustom, "custom-legacy", [legacyOrderRef], { sortOrder: 3 }),
     agentRow(agentIds.invoiceCustom, "custom-invoice", [panelInvoiceRef], { sortOrder: 4 }),
     agentRow(agentIds.disabledOrder, "custom-disabled", [panelOrderRef], { enabled: false, sortOrder: 5 }),
-    agentRow(agentIds.productProfile, "custom-profile", [panelOrderRef], { sortOrder: 6 }),
+    agentRow(agentIds.secondOrderCustom, "second-order-custom", [panelOrderRef], { sortOrder: 6 }),
   ]);
 
   vi.stubGlobal(
@@ -309,7 +304,6 @@ it("omits preset IDs from the unfiltered directory", async () => {
   expect(result.agents).toContainEqual(expect.objectContaining({ id: agentIds.regular, enabled: true }));
   expect(result).not.toHaveProperty("presetAgentIds");
   expect(pageSkillsFetches).toBe(0);
-  expect(mocks.profile).not.toHaveBeenCalled();
 });
 
 it("returns only agents that carry the requested public skill", async () => {
@@ -344,10 +338,11 @@ it("resolves application-use member queries through one view, filters by effecti
   expect(pageSkillsFetches).toBe(1);
   // Regular (admitted member) and the direct protected ref match. An agent that chose the old aggregate ref no longer
   // carries the panel's skill: that selection is void and is chosen again under the panel's own ref. Public-only, sibling
-  // protected, disabled, and product-profile agents are excluded.
+  // protected and disabled agents are excluded.
   expect(result.agents.map((agent) => agent.id)).toEqual([
     agentIds.regular,
     agentIds.orderCustom,
+    agentIds.secondOrderCustom,
   ]);
   expect(result.defaultAgentId).toBe(agentIds.orderCustom);
   expect(result.presetAgentIds).toEqual({ regular: agentIds.regular });
@@ -403,6 +398,7 @@ it("resolves dynamic-owner member queries on a shared entry to the exact protect
   expect(orderResult.agents.map((agent) => agent.id)).toEqual([
     agentIds.regular,
     agentIds.orderCustom,
+    agentIds.secondOrderCustom,
   ]);
   expect(orderResult.defaultAgentId).toBe(agentIds.regular);
 

@@ -513,7 +513,7 @@ it("advertises a declared operation without promising a draft when there is no f
 it("describes both named reads of the model graph", async () => {
   javaSources([uses[0]!]);
   extraProjections.set("graph-fixture", {
-    name: "Data scope", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectGraph",
+    name: "Data scope", description: "", visibility: "domain", componentId: "@ontomato/sdk:RecordGraph",
     inputs: {}, outputs: {}, config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
     data: {
       nodes: { source: { type: { kind: "PlatformObjectType", id: "platform:ObjectType" } }, read: "list", params: {} },
@@ -533,7 +533,7 @@ it("documents only the platform ontology reads declared on the projection", asyn
   javaSources([uses[0]!]);
   const source = { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } };
   extraProjections.set("ontology-graph", {
-    name: "Platform ontology", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
+    name: "Platform ontology", description: "", visibility: "domain", componentId: "@ontomato/sdk:InstanceGraph",
     inputs: { node: { kind: "json" }, type: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
     data: {
       schema: { source, read: "schema", params: {} },

@@ -2,7 +2,7 @@ import {expect,it} from 'vitest';
 import {productAssetInputSchema,productAssetSchema} from '@ontomato/contracts/product-assets';
 import {defaultPersonalWorkspace} from '@ontomato/contracts/personal-workspace';
 import {normalizeComposition,validateComposition,validateAffectedCompositions} from '../composition';
-import {captureProductTree,contractHash} from '../releases';
+import {contractHash} from '../releases';
 const base={ownerId:'alice',revision:1,editable:true,createdAt:'now',updatedAt:'now',visibility:'private',description:''};
 const asset=(id:string,document:unknown)=>productAssetSchema.parse({...base,id,name:id,document});
 it('extracts inline widgets into deterministic referenced assets while retaining the group ID',()=>{
@@ -19,15 +19,7 @@ it('rejects indirect cycles and Actions nested under an embeddable page',async()
   const action=asset('action',{kind:'widget',widget:{id:'action',kind:'action',title:'Edit',span:12,resourceId:'edit'}});
   await expect(validateComposition('root',{name:'Root',description:'',visibility:'private',document:page(['action'],true)},async()=>action)).rejects.toMatchObject({code:'INVALID_EMBEDDABLE_PAGE'});
 });
-it('captures immutable recursive definitions and canonical capability contracts',async()=>{
-  const leaf=asset('leaf',{kind:'widget',widget:{id:'text',kind:'text',title:'Text',span:12,text:'old'}});
-  const root=asset('root',{kind:'page',workspace:defaultPersonalWorkspace(),children:[{assetId:'leaf',column:'main'}]});
-  const assets=new Map([['leaf',leaf],['root',root]]);
-  const snapshot=await captureProductTree(['root'],async id=>assets.get(id)!);
-  assets.set('leaf',{...leaf,revision:2,name:'new'});
-  expect(snapshot.find(item=>item.id==='leaf')).toMatchObject({revision:1,name:'leaf',editable:false});
-  expect(snapshot.find(item=>item.id==='root')!.document).not.toHaveProperty('workspace');
-  expect(root.document).toHaveProperty('workspace');
+it('hashes capability contracts independently of field order',()=>{
   expect(contractHash({a:1,b:2})).toBe(contractHash({b:2,a:1}));
   expect(contractHash({a:1})).not.toBe(contractHash({a:2}));
 });
@@ -58,14 +50,6 @@ it('rejects nested Pages that would receive an object parameter of another ontol
   const parent=productAssetInputSchema.parse({name:'Parent',document:{kind:'page',params:{selected:{kind:'object',objectType:'Order'}},children:[{assetId:'child'}]}});
   await expect(validateComposition('parent',parent,async()=>child)).rejects.toMatchObject({code:'INVALID_PAGE_PARAMETER'});
 });
-it('allows a 3D ObjectView to serve as explicit Agent context without exposing undeclared fields',async()=>{
-  const view=asset('twin',{kind:'object-projection',renders:{kind:'ObjectType',id:'Machine'},renderer:'3d',fields:['name']});
-  const profile=productAssetInputSchema.parse({name:'Twin',document:{kind:'agent-profile',agentId:'agent',instructions:'',tools:[],contextViews:['twin']}});
-  await expect(validateComposition('profile',profile,async()=>view)).resolves.toBeUndefined();
-  if(view.document.kind!=='object-projection')throw new Error('Expected ObjectView');
-  view.document.fields=[];
-  await expect(validateComposition('profile',profile,async()=>view)).rejects.toMatchObject({code:'INVALID_AGENT_PROFILE'});
-});
 it('keeps Navigation at the application root and projections inside Pages',async()=>{
   const navigation=asset('nav',{kind:'navigation',entry:'home',nodes:[{id:'home',pageId:'home',label:'Home',path:'/'}]});
   const page=productAssetInputSchema.parse({name:'Page',document:{kind:'page',children:[{assetId:'nav'}]}});
@@ -76,10 +60,4 @@ it('keeps Navigation at the application root and projections inside Pages',async
   if(app.document.kind!=='application')throw new Error('Expected Application');
   delete app.document.navigationId;
   await expect(validateComposition('app',app,async()=>metric)).rejects.toMatchObject({code:'INVALID_PRODUCT_CHILD'});
-});
-it('rejects Actions exposed indirectly by an embedded AgentProfile on a display-only Page',async()=>{
-  const action=asset('action',{kind:'action-view',renders:{kind:'Action',id:'approve'},parameters:{}});
-  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['action'],contextViews:[]});
-  const page=productAssetInputSchema.parse({name:'Display',document:{kind:'page',embeddable:true,children:[{assetId:'profile'}]}});
-  await expect(validateComposition('page',page,async id=>id==='profile'?profile:action)).rejects.toMatchObject({code:'INVALID_EMBEDDABLE_PAGE'});
 });

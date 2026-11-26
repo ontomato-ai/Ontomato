@@ -14,7 +14,7 @@ import { HttpError } from "../../utils/errors";
 import { appBuilderProjectStore, type OwnedResourceRef } from "./project-store";
 import {
   applicationDirectPanelIds, panelDirectReferences,
-  type ApplicationSourceManifest, type LiveApplicationSnapshot,
+  type ApplicationSourceManifest,
   type LivePanelApplicationSnapshot, type LivePanelResource, type LiveProjectionResource,
 } from "./source-codec";
 
@@ -30,7 +30,7 @@ export interface ReadLiveSnapshotOptions {
 }
 
 export interface LiveSnapshotResult {
-  snapshot: LiveApplicationSnapshot;
+  snapshot: LivePanelApplicationSnapshot;
   /** Panels referenced by this app that belong to another application (excluded from this app's source & drift). */
   foreignPanelIds: string[];
   /** Projections referenced by this app that belong to another application (excluded from this app's source & drift). */
@@ -45,7 +45,6 @@ export interface LiveSnapshotResult {
     entryPath: string;
     entryHome?: string;
     renderer?: string;
-    releaseId?: string | null;
   };
 }
 
@@ -99,48 +98,6 @@ export async function readLiveApplicationSnapshot(
   const record = await applicationCatalogueClient(credentials).record(appId);
   if (!record.canMaintain || record.source === "builtin") {
     throw new HttpError(403, "Application edit permission required", "PRODUCT_FORBIDDEN");
-  }
-
-  // Legacy hosted application (`/apps/<appId>/...`).
-  if (record.entry.path.startsWith("/apps/")) {
-    const appResp = await backendGet(
-      "app-builder-hosted-record",
-      `${baseUrl}/platform/applications/${encodeURIComponent(appId)}`,
-      opts,
-    );
-    const { data: { releaseId } } = z.object({
-      success: z.literal(true),
-      data: z.object({ releaseId: z.string() }),
-    }).parse(JSON.parse(appResp.text));
-    return {
-      snapshot: {
-        kind: "hosted",
-        appId,
-        declaration: {
-          names: record.names,
-          descriptions: record.descriptions,
-          icon: record.icon,
-          groups: record.groups,
-        },
-        ...(record.allowStandalone !== undefined && { allowStandalone: record.allowStandalone }),
-        entryPath: record.entry.path,
-        releaseId,
-      },
-      foreignPanelIds: [],
-      foreignProjectionIds: [],
-      panelLabels: new Map(),
-      projectionLabels: new Map(),
-      applicationMeta: {
-        source: record.source,
-        canMaintain: record.canMaintain,
-        canEditEntries: record.canEditEntries,
-        canGrant: record.canGrant,
-        entryPath: record.entry.path,
-        entryHome: record.entry.home,
-        renderer: record.entry.renderer,
-        releaseId,
-      },
-    };
   }
 
   if (!record.canEditEntries) {
@@ -280,7 +237,6 @@ export async function readLiveApplicationSnapshot(
       entryPath: record.entry.path,
       entryHome: record.entry.home,
       renderer: record.entry.renderer,
-      releaseId: null,
     },
   };
 }

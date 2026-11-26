@@ -45,10 +45,15 @@ class TriggerServiceCredentialTest {
   void workflowTriggerUsesTheStoredCredentialAndNeverIssuesAKey() {
     when(credentials.forOwner("d1", "u1")).thenReturn("stored-key");
 
-    service.fire(workflowTrigger(), Instant.parse("2026-11-17T00:00:00Z"), "zh-CN");
+    var trigger = workflowTrigger();
+    service.fire(trigger, Instant.parse("2026-11-17T00:00:00Z"), "zh-CN");
 
     verify(credentials).forOwner("d1", "u1");
     verify(identity, never()).issueKey(any());
+
+    var request = service.praxisRunRequest(trigger, "u1", "{}");
+    assertEquals("d1", request.headers().firstValue("x-ontomato-domain-id").orElseThrow());
+    assertEquals("Bearer stored-key", request.headers().firstValue("authorization").orElseThrow());
   }
 
   @Test

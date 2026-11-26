@@ -8,7 +8,7 @@ import type { AgentRow } from "../store";
 type PageSkillRegistry = Pick<SkillRegistryManager, "getSkills" | "getSkillByRef" | "failedManifests">;
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(), post: vi.fn(), agents: vi.fn(), appBuilder: vi.fn(), builderAccess: vi.fn(), profile: vi.fn(),
+  get: vi.fn(), post: vi.fn(), agents: vi.fn(), appBuilder: vi.fn(), builderAccess: vi.fn(),
   publishGovernance: vi.fn(), managed: [] as { skill: RuntimeSkillRef; title: string; description: string }[],
   usableIds: [] as string[],
   allowed: true,
@@ -43,7 +43,6 @@ vi.mock("../authorization", () => ({
 }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: mocks.builderAccess }));
 vi.mock("../labels", () => ({ assistantName: (a: AgentRow) => a.name, assistantDescription: (a: AgentRow) => a.description }));
-vi.mock("../../product-assets/agent-profile", () => ({ agentsWithProductProfiles: mocks.profile }));
 import { assistantSkillCatalog, effectiveAssistantSkills, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills } from "../skills";
 import { listAssistantAgents } from "../agents";
 import { HttpError } from "../../../utils/errors";
@@ -77,7 +76,6 @@ beforeEach(() => {
   mocks.post.mockImplementation(async (operation: string) => ({
     text: JSON.stringify(operation === "product-grant-resources" ? { ids: mocks.usableIds } : { allowed: mocks.allowed }),
   }));
-  mocks.profile.mockResolvedValue(new Map());
   mocks.agents.mockResolvedValue([definition(0, "regular", [report]), definition(1, "custom")]);
 });
 
@@ -116,12 +114,11 @@ it("filters the configuration skill catalog and rejects a denied page skill on s
   await expect(listAssistantAgents(owner, credentials, query)).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
 });
 
-it("keeps ordinary native skills and excludes true product Profile skills from page candidates", async () => {
+it("lists eligible definitions and excludes disabled agents from page candidates", async () => {
   const native = definition(0, "regular", [report]);
-  mocks.agents.mockResolvedValue([native, definition(1, "custom"), definition(2, "product"), { ...definition(3, "disabled"), enabled: false }]);
-  mocks.profile.mockResolvedValue(new Map([[ids[2], "product-profile"]]));
+  mocks.agents.mockResolvedValue([native, definition(1, "custom"), definition(2, "second-custom"), { ...definition(3, "disabled"), enabled: false }]);
   const directory = await listAssistantAgents(owner, credentials, query);
-  expect(directory.agents.map(a => a.id)).toEqual([ids[0], ids[1]]);
+  expect(directory.agents.map(a => a.id)).toEqual([ids[0], ids[1], ids[2]]);
   expect(directory.defaultAgentId).toBe(native.id);
   expect((await listAssistantAgents(owner, credentials)).agents.find(a => a.id === ids[2])).toMatchObject({ id: ids[2], enabled: true });
   mocks.allowed = false;

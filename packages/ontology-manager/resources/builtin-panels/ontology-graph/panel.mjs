@@ -10,7 +10,7 @@ import {
 
 /*
  * The ontology graph: composes official projections for counts (`ObjectCount`), resource lists (`ObjectList`),
- * graph canvas & shortest-path finding (`OntologyModelGraph`), product asset overview (`ProductAssetGraph`),
+ * graph canvas & shortest-path finding (`OntologyTypeGraph`), product asset overview (`ProductAssetGraph`),
  * path pickers (`ReferencePicker`), and inspector details (`ObjectHeader`, `TypedValue`, `ObjectRefCard`,
  * `ObjectList`). Reads zero raw record fields and performs zero business calculations; coordinates only public
  * panel state, visual layout, and navigation.

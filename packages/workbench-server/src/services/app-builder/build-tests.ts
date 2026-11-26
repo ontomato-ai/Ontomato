@@ -1,6 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
-import { buildTestContextSchema, type BuildTestSdkUpgradeDetails, BUILD_TEST_SDK_CAPABILITY, BUILD_TEST_SAMPLE_DIRECTORY } from "@ontomato/contracts/build-tests";
+import { buildTestContextSchema, BUILD_TEST_SAMPLE_DIRECTORY } from "@ontomato/contracts/build-tests";
 import { workspacePathSchema } from "@ontomato/contracts/workspaces";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { backendGet, backendPost, backendDelete } from "../../utils/backend-client";
@@ -9,8 +9,6 @@ import { buildUrl, getApiConfig } from "../../config/data-query-api";
 import { assistantStore, type AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { HOSTED_SDK_MARKER, SDK_ASSET_PATH } from "../workspaces/hosted-sdk";
-import { readCurrentAppSdkRelease } from "./sdk";
 
 export async function sessionBuildTestWorkspace(owner: AssistantOwner, sessionId: string) {
   const session = await assistantStore.session(sessionId, owner);
@@ -85,26 +83,5 @@ export class WorkspaceBuildTests {
       form.set(file, new Blob([new Uint8Array(attachment)]), path.posix.basename(file));
     }
     return this.java("POST", "", form);
-  }
-  async requirePreviewSdk() {
-    await this.authorize();
-    const tree=z.object({files:z.array(z.object({path:workspacePathSchema}))}).parse(await this.runtime.request(`/v1/workspaces/${this.workspaceId}/tree`));
-    const files=tree.files.filter(file=>/\.(?:html|[cm]?js|tsx?|vue|css|json)$/i.test(file.path) && !file.path.startsWith(BUILD_TEST_SAMPLE_DIRECTORY+"/"));
-    const sources=await Promise.all(files.map(async file=>(await this.runtime.bytes(`/v1/workspaces/${this.workspaceId}/files/content?${new URLSearchParams({path:file.path})}`)).toString("utf8")));
-    const code=sources.join("\n");
-    const versions = [...new Set([...code.matchAll(SDK_ASSET_PATH)].map(match => match[1]!))];
-    const marked = code.includes(HOSTED_SDK_MARKER);
-    if (!marked && !versions.length && !code.includes("@ontomato/sdk")) return;
-    const sdk = await readCurrentAppSdkRelease();
-    if (!marked || versions.length || sdk.manifest.executionContext !== BUILD_TEST_SDK_CAPABILITY) {
-      const details:BuildTestSdkUpgradeDetails={
-        requiredVersion:sdk.build.version,
-        foundVersions:versions,
-        upgrade:{kind:"edit-workspace-references",currentCommand:"sdk current",readCommands:["sdk read sdk.json","sdk read docs/index.md","sdk read docs/reference.md"],
-          steps:["Read the current SDK version","Use the SDK marker in HTML and import public SDK module names","Read the current SDK interface documentation and adapt changed interfaces","Commit the workspace changes"]},
-      };
-      throw new HttpError(409,"Upgrade the workspace SDK references before previewing","BUILD_TEST_SDK_UPGRADE_REQUIRED",details);
-    }
-    return sdk;
   }
 }

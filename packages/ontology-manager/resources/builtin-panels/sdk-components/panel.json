@@ -85,6 +85,20 @@
         "description": "选中组件的名称、所属包与角色。",
         "id": "builtin-product-262fe906-356d-452b-a7ba-d856115e0cca"
       },
+      "meaningCard": {
+        "component": "ObjectTextReader",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "textField": "meaning",
+          "format": "markdown"
+        },
+        "name": "含义说明",
+        "description": "选中组件在自己声明里写下的含义说明，按 Markdown 排版。",
+        "id": "builtin-product-b68e3685-c2e9-471f-8ba3-c8d366ce4209"
+      },
       "summary": {
         "component": "ObjectSummary",
         "target": "selected",
@@ -102,15 +116,14 @@
             "group",
             "panelUsable",
             "bindsElement",
-            "meaning",
             "effects"
           ],
           "copyableFields": [
             "componentId"
           ]
         },
-        "name": "组件概览",
-        "description": "选中组件的标识、所属包、模块、导出名、角色、适用对象类型、含义与副作用。",
+        "name": "基础信息",
+        "description": "选中组件的标识、所属包、模块、导出名、角色、适用对象类型与副作用。",
         "id": "builtin-product-ac2947c3-7fa8-4586-9701-0eaeb6a84e9e"
       },
       "dataTable": {
@@ -325,7 +338,8 @@
         "panel.description": "查看当前 SDK 声明的基础组件目录与端口签名",
         "action.refresh": "刷新",
         "components.viewClass": "查看所属类",
-        "components.section.overview": "概览与含义",
+        "components.section.meaning": "含义说明",
+        "components.section.overview": "基础信息",
         "components.section.data": "数据和类型",
         "components.section.dataHint": "组件声明的数据：每个数据名要哪种读取结果、是否必需、它自己在运行时会给出哪些读取参数。",
         "components.data.uiOnly": "这个组件不读本体数据，只能当界面用。",
@@ -371,7 +385,8 @@
         "panel.description": "Browse the current SDK release's base components and their declared ports and signatures.",
         "action.refresh": "Refresh",
         "components.viewClass": "View its class",
-        "components.section.overview": "Overview and meaning",
+        "components.section.meaning": "Meaning",
+        "components.section.overview": "Basic information",
         "components.section.data": "Data and types",
         "components.section.dataHint": "The data each datum names: which read results it accepts, whether every placement must supply it, and the read parameters the component supplies at run time.",
         "components.data.uiOnly": "This component reads no ontology data; it is the interface only.",
@@ -417,7 +432,8 @@
         "panel.description": "檢視目前 SDK 宣告的基礎組件目錄與埠簽章",
         "action.refresh": "重新整理",
         "components.viewClass": "檢視所屬類",
-        "components.section.overview": "概覽與含義",
+        "components.section.meaning": "含義說明",
+        "components.section.overview": "基礎資訊",
         "components.section.data": "資料與類型",
         "components.section.dataHint": "組件宣告的資料：每個資料名接受的讀取結果、是否必需，以及執行時提供的讀取參數。",
         "components.data.uiOnly": "這個組件不讀取本體資料，僅作為介面使用。",

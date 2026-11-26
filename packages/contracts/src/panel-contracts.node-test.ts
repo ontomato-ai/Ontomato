@@ -278,7 +278,7 @@ test("short panel members can open the page composer with an explicit agent and 
 test("short members can name distinct data owners but need a read or operation", async () => {
   const { panelAuthoringMemberSchema } = await import("./panel-check");
   const graph = {
-    component: "ObjectGraph", type: "platform:ObjectType",
+    component: "RecordGraph", type: "platform:ObjectType",
     data: { nodes: "list", edges: { type: "platform:Relationship", read: "list" } },
   };
   assert.deepEqual(panelAuthoringMemberSchema.parse(graph), graph);
@@ -414,6 +414,17 @@ test("owner rows may give a status tone and a field's values as tags", async () 
   assert.deepEqual(panelRecordSchema.parse(toned), toned);
   assert.equal(panelRecordSchema.safeParse({ ...row, tones: { status: "green" } }).success, false);
   assert.equal(panelRecordSchema.safeParse({ ...row, tags: { knowledgeTags: "Business" } }).success, false);
+});
+
+test("owner rows may give a field's value a display text without changing the value", async () => {
+  const { panelRecordSchema } = await import("./panel-projection");
+  const row = { primaryKey: "k-1", label: "Order", fields: { status: "APPROVED", amount: "12.5" } };
+  const labelled = { ...row, valueLabels: { status: { APPROVED: "Approved" }, amount: { "12.5": "Twelve fifty" } } };
+  assert.deepEqual(panelRecordSchema.parse(labelled), labelled);
+  // The stored value stays as it is, so a mapped record still reads back the same value.
+  assert.equal(panelRecordSchema.parse(labelled).fields.status, "APPROVED");
+  assert.equal(panelRecordSchema.safeParse({ ...row, valueLabels: { status: { APPROVED: "" } } }).success, false);
+  assert.equal(panelRecordSchema.safeParse({ ...row, valueLabels: { status: "Approved" } }).success, false);
 });
 
 test("panel records carry optional className and strongly typed field values", async () => {
@@ -1877,7 +1888,7 @@ test("panel definition snapshots do not carry entry skill context", () => {
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
   const projection = productProjectionInputSchema.parse({
-    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectGraph",
+    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:RecordGraph",
     data: {
       nodes: { source: { type: platformType(OBJECT_TYPE) }, read: "list", params: {} },
       edges: { source: { type: platformType(RELATIONSHIP) }, read: "list", params: {} },
@@ -1910,7 +1921,7 @@ test("a graph has two admitted sources and can use either a form field or separa
 test("a named relationship is a binding identity and supplies no inferred edge selection type", () => {
   const relationship = { kind: "Relationship", id: "manages" };
   const projection = productProjectionInputSchema.parse({
-    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
+    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:InstanceGraph",
     inputs: { node: { kind: "object", objectType: "Employee" } }, outputs: {}, config: {},
     data: { neighbors: { source: { type: relationship }, read: "neighbors", params: { node: { input: "node" } } } },
   });
@@ -2492,7 +2503,7 @@ test("typed list state supports both object collections and string arrays, inclu
 test("mixed graphs declare selected node types separately from the read bindings", () => {
   const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers], objectTypes: [ONTOLOGY_TYPE] };
   const projection = productProjectionInputSchema.parse({
-    name: "Platform ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
+    name: "Platform ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:InstanceGraph",
     inputs: { start: nodeIdentity }, outputs: { selectedNode: nodeIdentity }, config: {},
     data: { neighbors: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "neighbors", params: { node: { input: "start" } } } },
   });
@@ -3281,6 +3292,19 @@ test("an object control must declare the child fields a reader fills", async () 
   assert.equal(parses({ kind: "object", fields: [child] }).success, true);
   // A whole JSON document a reader takes as source is a code control, not an object.
   assert.equal(parses({ kind: "code", language: "json" }).success, true);
+});
+
+test("a Markdown string is a text control in its Markdown presentation, with no kind of its own", async () => {
+  const { panelFormFieldSchema } = await import("./panel-projection");
+  const field = { ...editableField, path: "/prompt", label: "Prompt", valueSchema: { type: "string" } };
+  const parses = (control: unknown) => panelFormFieldSchema.safeParse({ ...field, control });
+
+  // The owner's value stays a plain string; only how it is drawn changes.
+  assert.equal(parses({ kind: "text", presentation: "markdown" }).success, true);
+  assert.equal(parses({ kind: "text" }).success, true);
+  // Markdown is no longer a control kind of its own.
+  assert.equal(parses({ kind: "markdown" }).success, false);
+  assert.equal(parses({ kind: "text", presentation: "rich-text" }).success, false);
 });
 
 test("object form fields declare discriminated variants, validate invariants, and prune inactive values recursively", () => {

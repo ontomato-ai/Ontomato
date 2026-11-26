@@ -39,7 +39,7 @@ const field = (path: string, label: string, control: PanelFormDescription["field
 const fields: PanelFormDescription["fields"] = [
   field("/name", "Name", { kind: "text" }, { required: true }),
   field("/enabled", "Enabled", { kind: "switch" }),
-  field("/systemPrompt", "Instructions", { kind: "markdown" }),
+  field("/systemPrompt", "Instructions", { kind: "text", presentation: "markdown" }),
   field("/modelSelection/modelId", "Model", reference(MODEL_OPTION, false)),
   field("/skills", "Skills", reference(SKILL, true)),
   field("/classNames", "Data scope", reference(OBJECT_TYPE, true), { help: "Nothing chosen keeps the default scope" }),
@@ -93,7 +93,7 @@ const projections: Record<string, ProductProjection> = {
   "agent-skill-choice": referencePicker("agent-skill-choice", SKILL),
   "agent-model-choice": referencePicker("agent-model-choice", MODEL_OPTION),
   "agent-data-scope": projection("agent-data-scope", {
-    componentId: "@ontomato/sdk:ObjectGraph",
+    componentId: "@ontomato/sdk:RecordGraph",
     inputs: {},
     data: {
       nodes: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },

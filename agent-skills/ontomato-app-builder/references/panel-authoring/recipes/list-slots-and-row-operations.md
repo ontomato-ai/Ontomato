@@ -84,7 +84,7 @@ the list without replacing the whole table.
 ```
 
 For `ObjectForm`, place field-level pickers or custom inputs inside `#field-<dotPath>` (for example `#field-skills`,
-`#field-modelSelection.modelId`, or `#field-items.*.skillId` for array rows). `ReferencePicker` and `ObjectGraph`
+`#field-modelSelection.modelId`, or `#field-items.*.skillId` for array rows). `ReferencePicker` and `RecordGraph`
 connect automatically to the enclosing form field; `ReferencePicker` also provides in-place Retry on choice-read
 failure and optional `refreshable: true` for manual choice refresh.
 

@@ -17,17 +17,10 @@ export async function validateComposition(rootId:string,input:ProductAssetInput,
       if(!document.nodes.some(node=>node.id===document.entry)||new Set(document.nodes.map(node=>node.id)).size!==document.nodes.length||new Set(document.nodes.map(node=>node.path)).size!==document.nodes.length)throw new HttpError(400,'Invalid navigation graph','INVALID_NAVIGATION');
       for(const node of document.nodes)if((await read(node.pageId)).document.kind!=='page')throw new HttpError(400,'Navigation nodes must reference Pages','INVALID_NAVIGATION');
     }
-    if(document.kind==='agent-profile'){
-      for(const reference of document.tools){const target=await read(reference);if(!['action-view','collection-view','metric-widget'].includes(target.document.kind))throw new HttpError(400,'Profile tools must reference projections','INVALID_AGENT_PROFILE');}
-      for(const reference of document.contextViews){const target=await read(reference);if(target.document.kind!=='object-projection'||!['text','3d'].includes(target.document.renderer)||!target.document.fields.length)throw new HttpError(400,'Profile context must reference text or 3D ObjectViews with explicit context fields','INVALID_AGENT_PROFILE');}
-    }
     for(const reference of productReferences(document).filter(reference=>reference.kind==='asset')){
       const child=reference.id===rootId?{document:input.document}:await read(reference.id);
       if(document.kind==='page'&&child.document.kind==='navigation')throw new HttpError(400,'Navigation belongs to the Application root, not a Page placement','INVALID_PRODUCT_CHILD');
       if(document.kind==='application'&&!document.workspaceId&&reference.id!==document.navigationId&&child.document.kind!=='page')throw new HttpError(400,'Declarative Applications compose Page roots and Navigation; place projections in a Page','INVALID_PRODUCT_CHILD');
-      if(document.kind==='page'&&child.document.kind==='agent-profile'){
-        for(const toolId of child.document.tools){const tool=await read(toolId);if('parameters' in tool.document)for(const binding of Object.values(tool.document.parameters))if(binding.source==='variable'&&!pageParameterAcceptsPath(document.params??{},binding.path))throw new HttpError(400,`Declare a typed Page parameter for Profile tool binding: ${binding.path}`,'INVALID_PAGE_PARAMETER');}
-      }
       if(document.kind==='page'&&['metric-widget','action-view','collection-view'].includes(child.document.kind)&&'parameters' in child.document){
         for(const binding of Object.values(child.document.parameters))if(binding.source==='variable'&&!pageParameterAcceptsPath(document.params??{},binding.path))throw new HttpError(400,`Declare a typed page parameter for: ${binding.path}`,'INVALID_PAGE_PARAMETER');
       }

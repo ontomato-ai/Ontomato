@@ -1,12 +1,19 @@
 package io.ontomato.dataengine.service.impl;
 
+import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.core.db.jdbc.SuperAdminSeed;
@@ -16,11 +23,12 @@ import io.ontomato.dataengine.service.IdentityRuntimeSettings;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OrganizationDirectory;
 import io.ontomato.dataengine.service.PermissionPolicyDirectory;
-import io.ontomato.dataengine.service.ProductGrants;
 import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.ProductGrants;
 import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import io.ontomato.dataengine.service.SchemaImportAuthorization;
 import io.ontomato.dataengine.service.SchemaPermissionService;
+import io.ontomato.dataengine.service.authorization.PresetAgentPolicies;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -29,6 +37,24 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
 class OssStartupAssemblyTest {
+    @Test
+    void presetInstallationPreservesAnonymousAgentAccessWithoutRolePolicies() {
+        var jdbc = mock(JdbcTemplate.class);
+        var legacy = mock(ProductGrantService.class);
+        var authorization = new AnonymousAuthorization(legacy, jdbc);
+        var presets = new PresetAgentPolicies(authorization, authorization);
+        var target = new ObjectTarget("1", Kind.AGENT, "preset");
+
+        presets.initialize("1", List.of(target.id()));
+
+        for (Verb verb : List.of(Verb.USE, Verb.VIEW, Verb.EDIT)) {
+            assertTrue(authorization.objectEntitlement("system", target, verb));
+        }
+        verify(jdbc).update(contains("INSERT INTO object_policy_grant"), eq("1"), eq("AGENT"), eq("preset"), eq("USE"));
+        verifyNoMoreInteractions(jdbc);
+        verifyNoInteractions(legacy);
+    }
+
     @Test
     void applicationEditUsesObjectPolicyAndKeepsLegacyUse() {
         var products = mock(ProductGrantService.class);

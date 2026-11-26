@@ -1,7 +1,6 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 import {defaultAssistantSkills} from '../../../config/assistant-defaults';
-const mocks=vi.hoisted(()=>({profile:vi.fn(),source:vi.fn(),record:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),overview:vi.fn()}));
-vi.mock('../../product-assets/agent-profile',()=>({profileForSession:mocks.profile,profileSourceForSession:mocks.source}));
+const mocks=vi.hoisted(()=>({record:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),overview:vi.fn()}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:vi.fn(),buildBackendHeaders:(_token:unknown,_user:unknown,_locale:unknown,_key:unknown,headers:unknown)=>headers??({})}));
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://ontology.test'}}}));
 vi.mock('../prompts',()=>({effectiveSystemPrompt:()=> 'Instructions'}));
@@ -20,24 +19,11 @@ const digest = 'a'.repeat(64);
 function request(executionUserId:string|null=null):AssistantPreparation {
  return {a:{id:'agent',kind:'regular',skills:[analyst],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'run',class_names:['Person']},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'},executionUserId,executionCredentials:executionUserId===null?{token:'human-secret',locale:'en'}:{apiKey:'executor-key',locale:'en',executionUserId}} as unknown as AssistantPreparation;
 }
-beforeEach(()=>{vi.resetAllMocks();mocks.source.mockResolvedValue(null);mocks.open.mockResolvedValue({id:"run"});mocks.profile.mockResolvedValue(null);mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:true});mocks.callback.mockReturnValue({value:'wbc2.sealed-callback'});mocks.overview.mockResolvedValue('Ontology');});
-it('limits a Profile run to frozen projection tools without inherited skills or model-readable human credentials',async()=>{
- mocks.source.mockResolvedValue({profileId:'profile'});
- mocks.profile.mockResolvedValue({id:'profile',agentId:'agent',releaseId:'release',instructions:'Instructions',tools:[],contextViews:[]});
- const run=await prepareAnalystRun(request());
- expect(run.definition.engine).toBe('pi');
- expect(run.definition.skills).toEqual([]);expect(run.definition.externalMcp).toEqual([]);expect(run.definition.toolSurface).toBe('product');
- expect(run).not.toHaveProperty("environment");
- expect(run.businessCallbacks).toEqual({
-   product:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/product-assets/profile/releases/release/tools').pathname, baseUrl:'http://workbench.test/api/product-assets/profile/releases/release/tools',credential:'wbc2.sealed-callback'},
- });
- expect(mocks.callback).toHaveBeenCalledWith(expect.objectContaining({scope:{purpose:'product-tool',profileId:'profile',releaseId:'release'},runId:'run',token:'human-secret'}));
- expect(mocks.skills).not.toHaveBeenCalled();
- expect(JSON.stringify(run)).not.toContain('human-secret');
-});
+beforeEach(()=>{vi.resetAllMocks();mocks.open.mockResolvedValue({id:"run"});mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:true});mocks.callback.mockReturnValue({value:'wbc2.sealed-callback'});mocks.overview.mockResolvedValue('Ontology');});
 it('keeps the initiator identity for caller ownership and native skills in self mode',async()=>{
  const input=request();const run=await prepareAnalystRun(input);
- expect(run.definition.skills).toEqual([{skill:analyst,digest}]);expect(run.definition.externalMcp).toEqual([{id:'external'}]);expect(run.definition.toolSurface).toBeUndefined();
+ expect(run.definition.engine).toBe('pi');
+ expect(run.definition.skills).toEqual([{skill:analyst,digest}]);expect(run.definition.externalMcp).toEqual([{id:'external'}]);
  expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials,undefined,input.owner.userId);
  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({executionUserId:null,classNames:['Person']}),input.credentials);
  expect(run).not.toHaveProperty("environment");
@@ -54,7 +40,6 @@ it('uses executor business credentials while page skills and caller ownership st
  const input=request('executor');const run=await prepareAnalystRun(input);
  expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials,undefined,input.owner.userId);
  expect(mocks.overview).toHaveBeenCalledWith(input.a,expect.objectContaining({apiKey:'executor-key',headers:{'X-Ontomato-Retrieval-Caller-Id':'run'}}));
- expect(mocks.profile).toHaveBeenCalledWith(input.owner,input.credentials,'session','agent',expect.objectContaining({apiKey:'executor-key'}),null);
  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({executionUserId:'executor'}),input.credentials);
  expect(run).not.toHaveProperty("environment");
  expect(run.businessCallbacks).toEqual({

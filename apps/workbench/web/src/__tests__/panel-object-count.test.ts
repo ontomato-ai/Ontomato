@@ -17,7 +17,7 @@ import { noOperations } from "./panel-frame";
  * - Single metric from `panelRecordList` (`rows.length`), `panelRecordQuery` (prefers `total`), and `panelOntologyObjects`.
  * - `sumField` across numbers, numeric strings, arrays, and `{ kind: "json", value: ... }` field wrappers.
  * - Multi-metric `items` evaluated against a single datum read (1 request for multiple stats).
- * - Localized labels via `labelKey` (panel.t / i18n), `labels` map, and `label` fallback.
+ * - Localized labels via `labelKey` (panel.t / i18n) and `label` fallback.
  * - Lightweight visual states: loading (`…`), empty (`0`), forbidden / error / awaiting (`—` + title).
  */
 
@@ -94,7 +94,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("counts panelRecordList rows with panel.t labelKey and falls back to labels map by locale", async () => {
+it("counts panelRecordList rows with the panel message key", async () => {
   const projection: DirectProjection = {
     ...meta,
     id: "object-type-count",
@@ -133,7 +133,7 @@ it("prefers query total over page rows length when sumField is omitted", async (
     componentId: "@ontomato/sdk:ObjectCount",
     inputs: {},
     outputs: {},
-    config: { labels: { "zh-CN": "条反馈", en: "feedback items" } },
+    config: { labelKey: "stats.feedback" },
     data: { rows: { source: { type: { kind: "PlatformObjectType", id: FEEDBACK_RECORD } }, read: "query", params: {} } },
   };
   const { container } = mountCount(
@@ -146,7 +146,7 @@ it("prefers query total over page rows length when sumField is omitted", async (
         ],
         total: 42,
       }),
-    { locale: "zh-CN" },
+    { locale: "zh-CN", messages: { "zh-CN": { "stats.feedback": "条反馈" } } },
   );
 
   await vi.waitFor(() => {

@@ -41,20 +41,14 @@ export function productGraph(assets:ProductAsset[]):ProductGraph{
       if(reference.kind==='asset'){
         const target=assetKey(reference.id);
         if(!nodes.has(target))continue;
-        const relation=document.kind==='navigation'||document.kind==='application'&&document.navigationId===reference.id?'navigates':document.kind==='agent-profile'?(document.tools.includes(reference.id)?'tools':'context'):'contains';
+        const relation=document.kind==='navigation'||document.kind==='application'&&document.navigationId===reference.id?'navigates':'contains';
         add(source,target,relation,'product-index');
-        if(document.kind==='agent-profile'&&document.tools.includes(reference.id)&&document.contextViews.includes(reference.id))add(source,target,'context','product-index');
       }else{
         const target=`${reference.kind}:${reference.id}`;
         if(!nodes.has(target))nodes.set(target,{id:target,name:reference.id,kind:reference.kind,category:'ontology'});
         const renders='renders' in document&&document.renders.id===reference.id&&({MetricView:'metric',Action:'action',Definition:'definition',ObjectType:'object-type'} as const)[document.renders.kind]===reference.kind;
         add(source,target,renders?'renders':document.kind==='application'&&reference.kind==='application'?'identity':'depends-on','product-index');
       }
-    }
-    if(document.kind==='agent-profile'){
-      const target=`agent:${document.agentId}`;
-      nodes.set(target,{id:target,name:document.agentId,kind:'AgentDefinition',category:'ontology'});
-      add(source,target,'embodies','product-index');
     }
   }
   return {nodes:[...nodes.values()],edges:[...edges.values()]};

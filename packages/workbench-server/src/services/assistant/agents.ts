@@ -6,7 +6,6 @@ import { HttpError } from "../../utils/errors";
 import { isAppBuilderKind } from "../app-builder/definition";
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import { allowedAgents } from "./authorization";
-import { agentsWithProductProfiles } from "../product-assets/agent-profile";
 import { assistantStore, type AgentRow, type AssistantOwner } from "./store";
 import { isPresetAgentKind } from "./preset-definitions";
 import { assistantDescription, assistantName } from "./labels";
@@ -42,9 +41,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
     hasSkill: (ref: typeof page.skill) => runtimeSkillKey(ref) === skillKey,
     pageSkills: page.pageSkills,
   };
-  const matching = definitions.filter(agent => agent.enabled && effectiveAssistantSkills(agent, view).some(view.hasSkill));
-  const profiles = await agentsWithProductProfiles(owner, matching.map(agent => agent.id));
-  const candidates = matching.filter(agent => !profiles.has(agent.id));
+  const candidates = definitions.filter(agent => agent.enabled && effectiveAssistantSkills(agent, view).some(view.hasSkill));
   const defaultAgent = page.defaultAgent ?? { kind: "preset", agentKind: "regular" };
   const selected = defaultAgent.kind === "id"
     ? candidates.find(agent => agent.id === defaultAgent.id)

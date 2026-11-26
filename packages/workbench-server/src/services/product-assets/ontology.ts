@@ -19,7 +19,6 @@ import {assistantName} from '../assistant/labels';
 export function ontologyRegistration(asset:ProductAsset){
   const document=asset.document;
   if('renders' in document)return {id:asset.id,kind:document.kind,name:asset.name,revision:asset.revision,targetKind:document.renders.kind,targetId:document.renders.id,isDefault:document.isDefault};
-  if(document.kind==='agent-profile')return {id:asset.id,kind:document.kind,name:asset.name,revision:asset.revision,targetKind:'AgentDefinition',targetId:document.agentId,isDefault:false};
   if(document.kind==='application')return {id:asset.id,kind:document.kind,name:asset.name,revision:asset.revision,targetKind:null,targetId:null,isDefault:false};
   return null;
 }
@@ -59,7 +58,7 @@ export async function registeredProductGraph(owner:ProductOwner,assets:ProductAs
     if(!registered.has(JSON.stringify([edge.source,edge.relation,edge.target])))throw new HttpError(409,'Product ontology relationship is not synchronized','PRODUCT_ONTOLOGY_PENDING');
     edge.storage='ontology';
   }
-  if(credentials)for(const asset of assets.filter(asset=>asset.editable&&['application','agent-profile'].includes(asset.document.kind))){
+  if(credentials)for(const asset of assets.filter(asset=>asset.editable&&asset.document.kind==='application')){
     const {grants}=await readProductGrantRecords(asset.id,credentials);
     for(const grant of grants){
       if (grant.verb === "view") continue;

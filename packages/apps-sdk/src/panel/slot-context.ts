@@ -18,7 +18,7 @@ export function hasDeclaredComponentAncestor(components: PanelDeclaredComponents
 
 /**
  * Context provided by `ObjectForm` inside `#field-<path>`, `#field-<arrayPath>/*<itemPath>`, and `#field` Vue slots.
- * Projection components (`ReferencePicker`, `ObjectGraph`) and custom author field components rendered inside a form
+ * Projection components (`ReferencePicker`, `RecordGraph`) and custom author field components rendered inside a form
  * field slot inject this automatically — no `formField` declaration in `panel.json` is needed.
  */
 export interface FormFieldSlotContext {

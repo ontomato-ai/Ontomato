@@ -27,7 +27,7 @@
 | 静态文案、分组标题、说明提示、纯样式修饰 | **能搬** | 直接留在 `panel.html`（多语言放 `panel.json` 的 `content.messages`），无需登记投影。 |
 | 自己 `fetch` / `axios` / `XMLHttpRequest` 请求业务接口 | **不能照搬** | 全部删掉。读数据走投影声明的读法，改数据走投影声明的已登记操作；`panel check` 会直接拦住直接网络调用。 |
 | 在前端自己求和、计数、拼业务结论（如“超过 3 天判超期”） | **不能照搬** | 全部移到能力层（指标 `MetricView` 或动作 `Action`）。组件只负责格式化已提供的值，不产出新的业务结论。 |
-| 在面板里直接手画 `<table>`、卡片、表单并读记录字段 | **不能照搬** | 改放官方基础组件投影（`ObjectList`、`ObjectSummary`、`ObjectForm`、`ObjectHeader`、`ObjectRefCard`、`MetricCard`、`RecordTemplate`、`ObjectGraph` 等）。 |
+| 在面板里直接手画 `<table>`、卡片、表单并读记录字段 | **不能照搬** | 改放官方基础组件投影（`ObjectList`、`ObjectSummary`、`ObjectForm`、`ObjectHeader`、`ObjectRefCard`、`MetricCard`、`RecordTemplate`、`RecordGraph` 等）。 |
 | 直接写第三方 UI 库标签或变量（`el-*`、`--el-*`、`v-loading`、`element-plus`） | **不能照搬** | 换成平台官方无数据界面件（`<page-header>`、`<sdk-*>`、`v-sdk-*`、`--sdk-*`）。 |
 
 ---

@@ -53,6 +53,8 @@ const { t, locale } = useI18n();
 const value = computed(() => valueAt(controls.values.value, props.path));
 const off = computed(() => props.disabled || props.field.readOnly || controls.busy.value);
 const control = computed(() => props.field.control);
+/** A text field drawn as the Markdown editor: multiline, at least six rows, counting its characters as the reader writes. */
+const markdown = computed(() => control.value.kind === "text" && control.value.presentation === "markdown");
 const set = (next: RuntimeJsonValue) => controls.set(props.path, next);
 const text = computed(() => (typeof value.value === "string" ? value.value : ""));
 const rows = computed<RuntimeJsonValue[]>(() => (Array.isArray(value.value) ? value.value : []));
@@ -189,23 +191,23 @@ function setFrequency(next: FrequencyDraft) {
     :disabled="disabled"
     :field-class="controls.changed.value.has(path) ? 'sdk-form-field sdk-owner-form-field-changed' : 'sdk-form-field'"
   >
-    <template v-if="control.kind === 'text' || control.kind === 'markdown'">
+    <template v-if="control.kind === 'text'">
       <el-input
         ref="textInput"
         :model-value="text"
-        :type="control.kind === 'markdown' || control.multiline ? 'textarea' : (control.kind === 'text' && control.secret ? 'password' : 'text')"
-        :show-password="control.kind === 'text' && control.secret === true && !control.multiline"
-        :clearable="control.kind === 'text' && control.clearable === true && !control.multiline && !off"
-        :rows="control.kind === 'text' && control.multiline && !control.rows ? 3 : undefined"
-        :autosize="control.kind === 'markdown' ? { minRows: 6 } : (control.kind === 'text' && control.multiline && control.rows ? { minRows: control.rows, maxRows: Math.max(control.rows, 24) } : undefined)"
-        :placeholder="control.kind === 'text' ? control.placeholder ?? undefined : undefined"
-        :maxlength="control.kind === 'text' ? control.maxLength : undefined"
-        :show-word-limit="control.kind === 'text' && control.maxLength !== undefined && !off"
+        :type="markdown || control.multiline ? 'textarea' : (control.secret ? 'password' : 'text')"
+        :show-password="control.secret === true && !control.multiline"
+        :clearable="control.clearable === true && !control.multiline && !off"
+        :rows="control.multiline && !control.rows ? 3 : undefined"
+        :autosize="markdown ? { minRows: 6 } : (control.multiline && control.rows ? { minRows: control.rows, maxRows: Math.max(control.rows, 24) } : undefined)"
+        :placeholder="control.placeholder ?? undefined"
+        :maxlength="control.maxLength"
+        :show-word-limit="control.maxLength !== undefined && !off"
         :disabled="off"
         @update:model-value="set($event)"
       ></el-input>
       <form-text-variables
-        v-if="control.kind === 'text' && control.variables?.length"
+        v-if="control.variables?.length"
         :groups="control.variables"
         :disabled="off"
         :collapsible="control.variablesCollapsible"
@@ -213,7 +215,7 @@ function setFrequency(next: FrequencyDraft) {
         @insert="insertVariable"
       ></form-text-variables>
       <!-- Markdown says how long it is as the reader writes it, as the agent settings page did for its prompt. -->
-      <p v-if="control.kind === 'markdown'" class="sdk-form-field-count">{{ t("platform.formCharacters", { count: text.length }) }} · Markdown</p>
+      <p v-if="markdown" class="sdk-form-field-count">{{ t("platform.formCharacters", { count: text.length }) }} · Markdown</p>
     </template>
     <form-select-choices
       v-else-if="control.kind === 'select'"

@@ -65,8 +65,8 @@ const DECLARED_DATA = {
     selected: ["panelOptionList", "panelRecord"],
     rows: ["panelRecordList", "panelRecordQuery"],
   },
-  ObjectGraph: { nodes: ["panelRecordList", "panelRecordQuery"], edges: ["panelRecordList", "panelRecordQuery"] },
-  OntologyGraph: {
+  RecordGraph: { nodes: ["panelRecordList", "panelRecordQuery"], edges: ["panelRecordList", "panelRecordQuery"] },
+  InstanceGraph: {
     schema: ["panelGraphSchema"],
     counts: ["panelGraphCounts"],
     start: ["panelGraphStart"],
@@ -240,7 +240,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const stringList = { kind: "list", items: { kind: "scalar", type: "string" } };
     const anyObject = { kind: "object", objectType: "@any" };
     const anyObjectList = { kind: "list", items: anyObject };
-    assert.deepEqual(declared.get("OntologyGraph").inputs, {
+    assert.deepEqual(declared.get("InstanceGraph").inputs, {
       mode: { kind: "scalar", type: "string" },
       start: anyObject,
       selected: anyObject,
@@ -252,7 +252,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       neighborFilter: { kind: "json" },
     });
     const platformRelationKindList = { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } };
-    assert.deepEqual(declared.get("OntologyGraph").outputs, {
+    assert.deepEqual(declared.get("InstanceGraph").outputs, {
       selectedNode: anyObject,
       selected: anyObject,
       selectedType: { kind: "scalar", type: "string" },
@@ -263,8 +263,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       neighborFilter: { kind: "json" },
       positions: { kind: "json" },
     });
-    assert.deepEqual(declared.get("OntologyGraph").data.connections.runtimeParams, ["version", "sampleToken"]);
-    assert.deepEqual(declared.get("OntologyGraph").data.neighbors.runtimeParams, [
+    assert.deepEqual(declared.get("InstanceGraph").data.connections.runtimeParams, ["version", "sampleToken"]);
+    assert.deepEqual(declared.get("InstanceGraph").data.neighbors.runtimeParams, [
       "node", "layers", "relationKinds", "targetClass", "direction", "limit", "offset",
     ]);
     const relationKindList = { kind: "list", items: { kind: "scalar", type: "string" } };
@@ -417,10 +417,10 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(Object.keys(declared.get("ObjectHeader").readOnlyOutputs ?? {}).sort(), [
       "errorMessage", "label", "status",
     ]);
-    assert.deepEqual(Object.keys(declared.get("ObjectGraph").readOnlyOutputs ?? {}).sort(), [
+    assert.deepEqual(Object.keys(declared.get("RecordGraph").readOnlyOutputs ?? {}).sort(), [
       "edgeCount", "error", "nodeCount", "pathHops", "pathMessage", "pathStatus", "status",
     ]);
-    assert.deepEqual(Object.keys(declared.get("OntologyGraph").readOnlyOutputs ?? {}).sort(), [
+    assert.deepEqual(Object.keys(declared.get("InstanceGraph").readOnlyOutputs ?? {}).sort(), [
       "activeMode",
       "complete",
       "drawingProgress",
@@ -492,7 +492,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
       }
     }
-for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "ScheduledTaskSummaryList", "EffectivePermissionsView", "TestcaseWorkbench", "ProductAssetGraph", "OntologyModelGraph", "VisualModelingGraph"]) {
+for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "ScheduledTaskSummaryList", "EffectivePermissionsView", "TestcaseWorkbench", "ProductAssetGraph", "OntologyTypeGraph", "ModelingGraphEditor"]) {
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
       assert.equal(entry?.config, undefined, `non-panel ${excluded} must not emit author-facing config`);
@@ -500,19 +500,19 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
     for (const removed of ["DashboardMetricPreview", "ScheduledTaskAppFilterBar", "ScheduledTaskRunDetail", "DataAdapterTestReport"]) {
       assert.equal(catalogue.components.find((c) => c.componentId === removed), undefined, `${removed} must be removed from the SDK catalogue`);
     }
-    const objectGraph = declared.get("ObjectGraph");
-    const objectGraphConfigNames = (objectGraph.config ?? []).map((prop) => prop.name);
+    const recordGraph = declared.get("RecordGraph");
+    const recordGraphConfigNames = (recordGraph.config ?? []).map((prop) => prop.name);
     for (const reclaimedGraphProp of ["node-size", "label-size", "highlight-banner", "show-focus-button", "export-background", "export-filename"]) {
       assert.equal(
-        objectGraphConfigNames.includes(reclaimedGraphProp),
+        recordGraphConfigNames.includes(reclaimedGraphProp),
         false,
-        `ObjectGraph must not emit reclaimed single-page prop '${reclaimedGraphProp}' in author-facing config`,
+        `RecordGraph must not emit reclaimed single-page prop '${reclaimedGraphProp}' in author-facing config`,
       );
     }
     assert.doesNotMatch(
-      objectGraph.meaning,
+      recordGraph.meaning,
       /exportBackground|exportFilename|export-background|export-filename/u,
-      "ObjectGraph meaning must not list single-page PNG export presentation attributes",
+      "RecordGraph meaning must not list single-page PNG export presentation attributes",
     );
     // Author-facing `config` is emitted strictly from explicit `catalogue.ts` declarations: host-only inputs,
     // platform-fixed styles, deleted props, and duplicate wiring/locale-map props stay out of `components.json`
@@ -528,7 +528,7 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
       ["FileUploadControl", ["overwrite-on"]],
       ["ReferencePicker", ["placeholders"]],
       ["InteractiveGraphCanvas", ["style-overrides"]],
-      ["OntologyGraph", ["mode", "start", "selected", "selected-type", "selected-group", "query", "layers", "show-layer-filter", "show-hint", "show-aggregate-toggle", "show-edge-label-toggle", "show-zoom-controls", "show-refresh-control", "neighbor-filter"]],
+      ["InstanceGraph", ["mode", "start", "selected", "selected-type", "selected-group", "query", "layers", "show-layer-filter", "show-hint", "show-aggregate-toggle", "show-edge-label-toggle", "show-zoom-controls", "show-refresh-control", "neighbor-filter"]],
       ["ObjectRelations", ["selected", "visible-relation-kinds"]],
       ["PageHeader", ["compact"]],
       ["RecordTemplate", ["templates", "record"]],
@@ -614,14 +614,14 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
     assert.match(declared.get("ReferencePicker").meaning, /\bMemberDataState\b/u, "ReferencePicker meaning documents MemberDataState retry");
     for (const forbidden of ["style-overrides", "toolbar-placement", "connect-ports", "show-pending-edge", "pending-edge"]) {
       assert.equal(
-        objectGraphConfigNames.includes(forbidden),
+        recordGraphConfigNames.includes(forbidden),
         false,
-        `ObjectGraph must not expose dedicated platform prop '${forbidden}'`,
+        `RecordGraph must not expose dedicated platform prop '${forbidden}'`,
       );
     }
     assert.ok(
-      (objectGraph.ports?.events ?? []).some((event) => event.name === "choose"),
-      "ObjectGraph declares the choose activation event matching ObjectList",
+      (recordGraph.ports?.events ?? []).some((event) => event.name === "choose"),
+      "RecordGraph declares the choose activation event matching ObjectList",
     );
     assert.deepEqual(
       declared.get("TestcaseWorkbench").bindsElement,
@@ -654,11 +654,11 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
       /Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `navigate`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
       "docs/components/ObjectRefCard.md must print both layers and objectTypes for object-union ports",
     );
-    const ontologyGraphDoc = readFileSync(join(out, version, "docs/components/OntologyGraph.md"), "utf8");
+    const instanceGraphDoc = readFileSync(join(out, version, "docs/components/InstanceGraph.md"), "utf8");
     assert.match(
-      ontologyGraphDoc,
+      instanceGraphDoc,
       /Inputs:\n\n[\s\S]*?- `selected`: any ontology object\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `selectedNode`: any ontology object\n/u,
-      "docs/components/OntologyGraph.md must print any ontology object for OntologyGraph @any node ports",
+      "docs/components/InstanceGraph.md must print any ontology object for InstanceGraph @any node ports",
     );
     const objectListDoc = readFileSync(join(out, version, "docs/components/ObjectList.md"), "utf8");
     assert.match(

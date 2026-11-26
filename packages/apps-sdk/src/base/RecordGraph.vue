@@ -22,23 +22,11 @@ withDefaults(defineProps<{
   categories?: readonly string[];
   /** On the page's canvas, a JSON Pointer into each node record's `fields` naming its category; one colour when absent. */
   nodeCategory?: string;
-  /** On the page's canvas, each node's diameter in screen pixels; the platform's own when absent. */
-  nodeSize?: number;
-  /** On the page's canvas, the size of each node's name in screen pixels; the platform's own when absent. */
-  labelSize?: number;
   /** Automatic placement algorithm for unplaced nodes: column-based `relations` (default) or radial `force`. */
   layout?: "relations" | "force";
-  /** Whether to show the inline search/path banner strip above the canvas (default true). */
-  highlightBanner?: boolean;
-  /** Whether to include the focus-selected action in the floating canvas toolbar (default true). */
-  showFocusButton?: boolean;
   /** Optional subtle operation hint shown at the bottom-right corner of the canvas. */
   hint?: string;
-  /** Single-page presentation option: background CSS colour composited behind exported PNG layers. */
-  exportBackground?: string;
-  /** Single-page presentation option: exported PNG filename template (`{date}` expands to local `YYYY-MM-DD`). */
-  exportFilename?: string;
-}>(), { editable: undefined, highlightBanner: undefined, showFocusButton: undefined, exportBackground: undefined, exportFilename: undefined });
+}>(), { editable: undefined });
 
 const emit = defineEmits<{
   /** Emitted when the reader explicitly activates a node or edge by double-clicking it. */
@@ -81,14 +69,8 @@ defineSlots<{
     :editable="editable"
     :categories="categories"
     :node-category="nodeCategory"
-    :node-size="nodeSize"
-    :label-size="labelSize"
     :layout="layout"
-    :highlight-banner="highlightBanner"
-    :show-focus-button="showFocusButton"
     :hint="hint"
-    :export-background="exportBackground"
-    :export-filename="exportFilename"
     @choose="emit('choose', $event)"
   >
     <template v-if="$slots.toolbar" #toolbar="scope">

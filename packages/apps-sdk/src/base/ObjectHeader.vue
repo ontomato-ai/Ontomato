@@ -14,6 +14,7 @@ import { matchesExpectedCheckedKeys, matchesExpectedTarget } from "../panel/oper
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { useDataStateLabels } from "./data-state-labels";
+import StatusDot from "./StatusDot.vue";
 import {
   filterAllowedOperationInput,
   formatOperationLabel,
@@ -75,6 +76,11 @@ const props = withDefaults(
     status?: string;
     /** Visual tone for the standalone status badge; ignored when reading tone from `record.tones`. */
     statusTone?: "info" | "success" | "warning" | "danger";
+    /**
+     * How the status reads: `"tag"` (default) draws the tinted text tag; `"dot"` draws the shared status dot
+     * followed by the status text in body color, the same dot `ObjectList` draws for `statusStyle: "dot"`.
+     */
+    statusStyle?: "tag" | "dot";
     /** Optional ordered list of projection operation local names (or `{ name, tone, label }` specs); defaults to all declared projection operations. */
     operations?: readonly ObjectHeaderOperationSpec[];
     /** Maximum number of operations exposed inline before overflowing to "More" (default 2; no upper limit). */
@@ -85,6 +91,7 @@ const props = withDefaults(
   {
     maxVisibleOperations: 2,
     fallbackTitle: undefined,
+    statusStyle: "tag",
   },
 );
 
@@ -413,13 +420,16 @@ onBeforeUnmount(clearHeaderActionHandlers);
         <div class="sdk-object-header-identity">
           <div class="sdk-object-header-title-line">
             <h2 v-if="resolvedTitle" class="sdk-object-header-title">{{ resolvedTitle }}</h2>
-            <span
-              v-if="resolvedStatus"
-              class="sdk-object-header-status"
-              :data-tone="resolvedStatusTone || undefined"
-            >
-              {{ resolvedStatus }}
-            </span>
+            <template v-if="resolvedStatus">
+              <StatusDot v-if="statusStyle === 'dot'" :tone="resolvedStatusTone || 'default'" />
+              <span
+                class="sdk-object-header-status"
+                :class="{ 'is-dot': statusStyle === 'dot' }"
+                :data-tone="statusStyle === 'dot' ? undefined : (resolvedStatusTone || undefined)"
+              >
+                {{ resolvedStatus }}
+              </span>
+            </template>
           </div>
           <p v-if="resolvedSubtitle" class="sdk-object-header-subtitle">{{ resolvedSubtitle }}</p>
         </div>
@@ -561,6 +571,12 @@ onBeforeUnmount(clearHeaderActionHandlers);
   color: var(--el-text-color-regular);
   font-size: var(--text-xs);
   line-height: var(--leading-sm);
+}
+.sdk-object-header-status.is-dot {
+  padding: 0;
+  background: none;
+  color: var(--el-text-color-regular);
+  font-weight: var(--font-semibold);
 }
 .sdk-object-header-status[data-tone="info"] {
   background: var(--el-color-info-light-9);

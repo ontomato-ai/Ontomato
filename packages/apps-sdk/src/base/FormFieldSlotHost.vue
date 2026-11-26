@@ -16,7 +16,7 @@ function hasRenderableVNodes(vnodes: readonly VNode[]): boolean {
 
 /**
  * Provides `formFieldSlotKey` around a custom `#field-<path>` / `#field` Vue slot rendered inside `ObjectForm` so
- * projection components (`ReferencePicker`, `ObjectGraph`) and custom author field components rendered in that slot
+ * projection components (`ReferencePicker`, `RecordGraph`) and custom author field components rendered in that slot
  * automatically connect to the enclosing form field at `path`. When the slot returns no renderable content (for
  * example a conditional `#field` slot that only handles specific paths), falls back to the default control.
  */

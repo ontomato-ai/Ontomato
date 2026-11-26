@@ -17,7 +17,7 @@ import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
-import { bindPlatformTools, usesEngineTools } from "./platform-tools";
+import { bindPlatformTools } from "./platform-tools";
 import path from "node:path";
 import {
   runtimeStartRunRequestSchema,
@@ -380,7 +380,7 @@ export class AgentRuntime {
     const { run, controller } = active;
     if (executionContext !== undefined || run.channel?.authority.executionKind === "build-test")
       throw new RuntimeError(422, BUILD_TEST_UNSUPPORTED, "The agent channel is not available in a build-test execution");
-    if (!run.channel || !usesEngineTools(run.definition))
+    if (!run.channel)
       throw new RuntimeError(403, "FORBIDDEN", "Skill commands are not authorized for this run");
     return this.trackSkillCommand(active, this.channel.execute(scope, run, agentChannelCommandSchema.parse(body), controller.signal));
   }
@@ -388,7 +388,7 @@ export class AgentRuntime {
   readonly withBusinessCallback: BusinessCallbackDispatcher["withBusinessCallback"] = async (scope, sessionId, kind, credential, forward) => {
     const active = this.activeForSkillCallback(scope, sessionId, credential);
     const target = active.businessCallbacks?.[kind];
-    if (!target || !usesEngineTools(active.run.definition))
+    if (!target)
       throw new RuntimeError(403, "FORBIDDEN", "Business callback is not authorized for this run");
     await this.trackSkillCommand(active, forward(target, active.run.id, active.controller.signal));
   };
@@ -648,14 +648,11 @@ export class AgentRuntime {
     try {
       signal.throwIfAborted();
       runtimeLogger.info("run started");
-      const engineTools = usesEngineTools(request.definition);
-      const mcp = await connectMcp(engineTools
-        ? await this.mcp.resolve(scope, request.definition.externalMcp.map(ref => ref.id))
-        : [], run.correlationId, signal);
+      const services = await this.mcp.resolve(scope, request.definition.externalMcp.map(ref => ref.id));
+      const mcp = await connectMcp(services, run.correlationId, signal);
       closeMcp = mcp.close;
       const bound = bindPlatformTools({
         runId: run.id,
-        request,
         mcpTools: mcp.tools,
         channelTool: run.channel ? this.channel.tool(scope, run) : undefined,
         presentationCallback,

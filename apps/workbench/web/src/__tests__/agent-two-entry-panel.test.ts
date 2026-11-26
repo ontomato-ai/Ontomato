@@ -256,7 +256,7 @@ const fullFields: PanelFormDescription["fields"] = [
   field("/description", "Description", { kind: "text", multiline: true }, { section: "basics" }),
   field("/enabled", "Enabled", { kind: "switch" }, { section: "basics" }),
   field("/modelSelection/modelId", "Model", { kind: "reference", objectType: "platform:ModelOption", multiple: false }, { section: "model" }),
-  field("/systemPrompt", "Instructions", { kind: "markdown" }, { section: "prompt" }),
+  field("/systemPrompt", "Instructions", { kind: "text", presentation: "markdown" }, { section: "prompt" }),
   field("/skills", "Skills", { kind: "reference", objectType: "platform:Skill", multiple: true }, { section: "capabilities" }),
   field("/enabledMcpServiceIds", "MCP services", { kind: "reference", objectType: "platform:ExternalMcpService", multiple: true }, { section: "capabilities" }),
   field("/executionUserId", "Runs as", { kind: "reference", objectType: "platform:User", multiple: false }, { section: "execution" }),

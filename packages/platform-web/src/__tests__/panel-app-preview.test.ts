@@ -3,7 +3,6 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { defineComponent, h, nextTick } from "vue";
 import elementEn from "element-plus/es/locale/lang/en";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PanelHostPort } from "@ontomato/platform-shell";
 import {
@@ -23,7 +22,6 @@ import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/p
 
 const mocks = vi.hoisted(() => ({
   nodeApiGet: vi.fn(),
-  registerBuildPreview: vi.fn(),
   appCandidatePanelHost: vi.fn(),
   panelHostHandlers: null as null | {
     emitContext: (ctx: PageContext) => void;
@@ -37,14 +35,9 @@ vi.mock("@ontomato/workbench-ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@ontomato/workbench-ui")>();
   return {
     ...actual,
-    apiUrl: (path: string) => `about:blank#${encodeURIComponent("/api" + path)}`,
     nodeApiGet: mocks.nodeApiGet,
   };
 });
-
-vi.mock("../app-host", () => ({
-  registerBuildPreview: mocks.registerBuildPreview,
-}));
 
 vi.mock("../panel-host", () => ({
   appCandidatePanelHost: mocks.appCandidatePanelHost,
@@ -462,62 +455,9 @@ describe("Platform createPanelPreviewHost", () => {
     expect(wrapper.find(".stub-panel-host").exists()).toBe(false);
   });
 
-  it("mounts legacy hosted preview iframe with registerBuildPreview registered strictly BEFORE iframe.src is assigned, and disposes on unmount", async () => {
-    const workspaceId = "11111111-1111-4111-8111-111111111111";
-    const disposeBinding = vi.fn();
-    mocks.registerBuildPreview.mockImplementation(() => {
-      // Security invariant: iframe must never have `src` set before build-test binding is registered.
-      const iframe = document.querySelector("iframe.platform-app-preview-hosted-frame");
-      expect(iframe).not.toBeNull();
-      expect(iframe?.hasAttribute("src")).toBe(false);
-      return { dispose: disposeBinding };
-    });
 
-    const executionContext = buildExecutionContext(workspaceId, {
-      contextId: "ctx-1",
-      workspaceId,
-      status: "READY",
-      expiresAt: 1795555555555,
-      classNames: [],
-      sampleSummary: { name: "test-data/sample.json", classes: 1, sha256: null },
-      resources: [],
-    });
-
-    const host = createPanelPreviewHost({
-      resolvePreview: vi.fn(async () => ({
-        kind: "hosted" as const,
-        src: `about:blank#${encodeURIComponent(`/api/workspaces/${workspaceId}/preview/tok-1/index.html`)}`,
-        executionContext,
-        page: "/",
-      })),
-    });
-
-    const wrapper = mountPreview({ appId: workspaceId }, { host });
-    await flushPromises();
-
-    expect(wrapper.attributes("data-preview-status")).toBe("ready");
-    expect(mocks.registerBuildPreview).toHaveBeenCalledTimes(1);
-    expect(mocks.registerBuildPreview).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({ kind: "build-test", workspaceId, contextId: "ctx-1" }),
-    );
-    const iframe = wrapper.get("iframe.platform-app-preview-hosted-frame");
-    expect(decodeURIComponent(iframe.attributes("src")!.split("#")[1]!)).toBe(
-      `/api/workspaces/${workspaceId}/preview/tok-1/index.html`,
-    );
-
-    // Status change payload never leaks preview token or raw iframe URL to panel scripts.
-    const statuses = (wrapper.emitted("statusChange") ?? []).flat() as AppPreviewStatusPayload[];
-    expect(JSON.stringify(statuses)).not.toContain("tok-1");
-
-    wrapper.unmount();
-    activeWrapper = null;
-    expect(disposeBinding).toHaveBeenCalledTimes(1);
-  });
-
-  it("defaultResolvePreview resolves application panel candidate, hosted preview, empty, legacy-sdk, and 403 error", async () => {
+  it("defaultResolvePreview resolves application panel candidate, empty, legacy-sdk, and 403 error", async () => {
     const appId = "app-demo";
-    const workspaceId = "22222222-2222-4222-8222-222222222222";
     const candidatePayload = {
       kind: "app-candidate" as const,
       app: { id: appId, ref: "working", entryId: "main" },
@@ -553,24 +493,7 @@ describe("Platform createPanelPreviewHost", () => {
     const deniedTarget = await defaultResolvePreview({ appId, revision: "working", entryId: null });
     expect(deniedTarget).toEqual({ kind: "error", message: "Forbidden" });
 
-    // 3. Hosted descriptor -> resolves kind="hosted" with build-test execution context.
-    mocks.nodeApiGet.mockResolvedValueOnce({
-      kind: "hosted",
-      appId,
-      workspaceId,
-      hostedPreviewUrl: `/api/workspaces/${workspaceId}/preview/tok-hosted/index.html`,
-      previewContext: { kind: "build-test", test: null },
-    });
-    const hostedTarget = await defaultResolvePreview({ appId, revision: "working", entryId: null });
-    expect(hostedTarget.kind).toBe("hosted");
-    if (hostedTarget.kind === "hosted") {
-      expect(hostedTarget.executionContext).toMatchObject({ kind: "build-test", workspaceId, status: "NONE" });
-      expect(decodeURIComponent(hostedTarget.src.split("#")[1]!)).toBe(
-        `/api/workspaces/${workspaceId}/preview/tok-hosted/index.html`,
-      );
-    }
-
-    // 4. 409 BUILD_TEST_SDK_UPGRADE_REQUIRED -> resolves kind="legacy-sdk".
+    // 3. 409 BUILD_TEST_SDK_UPGRADE_REQUIRED -> resolves kind="legacy-sdk".
     mocks.nodeApiGet.mockRejectedValueOnce(
       new ApiRequestError("Upgrade the workspace SDK references before previewing", 409, {
         code: "BUILD_TEST_SDK_UPGRADE_REQUIRED",
@@ -593,7 +516,7 @@ describe("Platform createPanelPreviewHost", () => {
       foundVersions: ["0.8.4"],
     });
 
-    // 5. Empty descriptor -> resolves kind="empty".
+    // 4. Empty descriptor -> resolves kind="empty".
     mocks.nodeApiGet.mockResolvedValueOnce({ kind: "empty", appId });
     const emptyTarget = await defaultResolvePreview({ appId, revision: "working", entryId: null });
     expect(emptyTarget).toEqual({ kind: "empty" });

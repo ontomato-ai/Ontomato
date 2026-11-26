@@ -36,7 +36,7 @@ const fields = [
     control: { kind: "select", options: assistantEngineSchema.options.map(value => ({ value, label: value === "pi" ? "PI" : "Codex", description: null, disabled: false, disabledReason: null })) }, section: "model" },
   { key: "modelSelection", path: "/modelSelection/modelId",
     schema: inputSchema.shape.modelSelection.removeDefault().shape.modelId, control: reference(MODEL_OPTION), section: "model" },
-  { key: "systemPrompt", path: "/systemPrompt", schema: inputSchema.shape.systemPrompt, control: { kind: "markdown" }, section: "prompt" },
+  { key: "systemPrompt", path: "/systemPrompt", schema: inputSchema.shape.systemPrompt, control: { kind: "text", presentation: "markdown" }, section: "prompt" },
   { key: "skills", path: "/skills", schema: inputSchema.shape.skills, control: reference(SKILL, true), section: "capabilities", help: true },
   { key: "enabledMcpServiceIds", path: "/enabledMcpServiceIds", schema: inputSchema.shape.enabledMcpServiceIds,
     control: reference(EXTERNAL_MCP_SERVICE, true), section: "capabilities", help: true },

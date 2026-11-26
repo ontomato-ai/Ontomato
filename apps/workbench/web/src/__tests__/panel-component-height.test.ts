@@ -33,7 +33,7 @@ import { directRun, noOperations } from "./panel-frame";
  * Regression tests for the official SDK component height convention:
  * - Member containers (<Projection> and <CurrentEntry>) forward placement class/style onto [data-member] without
  *   configuring the drawn component, and pass definite heights through without collapsing auto-height layouts.
- * - Graph components (ObjectGraph/ObjectGraphCanvas, OntologyGraph) fill definite boxes, fall back to a 420px minimum
+ * - Graph components (RecordGraph/ObjectGraphCanvas, InstanceGraph) fill definite boxes, fall back to a 420px minimum
  *   canvas height when no height is given, and re-fit cleanly on ResizeObserver size updates.
  * - ObjectList, ObjectForm, MetricChart, ObjectTree, ObjectTextReader, ObjectRelations, ObjectSummary and TwoPaneLayout
  *   each fill definite boxes with internal scrolling (or default height for charts) and flow naturally when height is auto.
@@ -340,14 +340,14 @@ it("wraps frame <Projection> in .sdk-panel-member and forwards class and style",
   expect(wrap.style.height).toBe("300px");
 });
 
-it("re-measures and re-fits ObjectGraph and OntologyGraph when their container size settles (including from 0x0)", async () => {
+it("re-measures and re-fits RecordGraph and InstanceGraph when their container size settles (including from 0x0)", async () => {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 0, height: 0 } as DOMRect);
 
-  const objectGraphProj: DirectProjection = {
+  const recordGraphProj: DirectProjection = {
     ...meta,
     id: "obj-graph",
     name: "Objects",
-    componentId: "@ontomato/sdk:ObjectGraph",
+    componentId: "@ontomato/sdk:RecordGraph",
     inputs: {},
     outputs: {},
     config: { edgeEnds: { source: "/source", target: "/target" } },
@@ -356,11 +356,11 @@ it("re-measures and re-fits ObjectGraph and OntologyGraph when their container s
       edges: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} },
     },
   };
-  const ontologyGraphProj: DirectProjection = {
+  const instanceGraphProj: DirectProjection = {
     ...meta,
     id: "onto-graph",
     name: "Ontology",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {},
     outputs: {},
     config: { mode: "type" },
@@ -374,14 +374,14 @@ it("re-measures and re-fits ObjectGraph and OntologyGraph when their container s
   const manifest = definePanel({
     state: {},
     members: {
-      obj: { target: { projectionId: objectGraphProj.id } },
-      onto: { target: { projectionId: ontologyGraphProj.id } },
+      obj: { target: { projectionId: recordGraphProj.id } },
+      onto: { target: { projectionId: instanceGraphProj.id } },
     },
   });
 
   const { element } = mountDirect(
     manifest,
-    { [objectGraphProj.id]: objectGraphProj, [ontologyGraphProj.id]: ontologyGraphProj },
+    { [recordGraphProj.id]: recordGraphProj, [instanceGraphProj.id]: instanceGraphProj },
     (req) => {
       if (req.dataName === "nodes") {
         return {
@@ -586,9 +586,9 @@ it("declares the height-fill and default-height CSS contract across member wrapp
   expect(objectGraphCss).toMatch(/\.sdk-object-graph-canvas\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*420px;/s);
   expect(objectGraphCss).toMatch(/\.sdk-object-graph-canvas\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s);
 
-  const ontologyGraphCss = readRepoFile("packages/apps-sdk/src/base/OntologyGraph.vue");
-  expect(ontologyGraphCss).toMatch(/\.sdk-ontology-graph\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*100%;/s);
-  expect(ontologyGraphCss).toMatch(/\.sdk-ontology-graph-frame\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*420px;/s);
+  const instanceGraphCss = readRepoFile("packages/apps-sdk/src/base/InstanceGraph.vue");
+  expect(instanceGraphCss).toMatch(/\.sdk-ontology-graph\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*100%;/s);
+  expect(instanceGraphCss).toMatch(/\.sdk-ontology-graph-frame\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*420px;/s);
 
   const objectListCss = readRepoFile("packages/apps-sdk/src/base/ObjectList.vue");
   expect(objectListCss).toMatch(/\.sdk-object-list\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*height:\s*100%;/s);
@@ -637,9 +637,9 @@ it("declares the height-fill and default-height CSS contract across member wrapp
     expect(readRepoFile(file)).toContain("align-self: flex-start;");
   }
 
-  const objectGraphMeta = sdkCatalogue.find((entry) => entry.componentId === "ObjectGraph");
-  expect(objectGraphMeta?.meaning).not.toContain("nothing is drawn");
-  expect(objectGraphMeta?.meaning).toContain("420px");
+  const recordGraphMeta = sdkCatalogue.find((entry) => entry.componentId === "RecordGraph");
+  expect(recordGraphMeta?.meaning).not.toContain("nothing is drawn");
+  expect(recordGraphMeta?.meaning).toContain("420px");
   const metricChartMeta = sdkCatalogue.find((entry) => entry.componentId === "MetricChart");
   expect(metricChartMeta?.meaning).toContain("320px");
 });

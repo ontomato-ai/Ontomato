@@ -27,7 +27,11 @@ if (!database || !binary) throw new Error("Set RUNTIME_TEST_DATABASE_URL and ONT
 const launcher = fileURLToPath(new URL("../adapters/codex/launch.mjs", import.meta.url));
 const host = { id: "fixture", token: "fixture-host", providers: [] };
 const scope = { hostId: host.id, domainId: "fixture-domain" };
-const productRoot = "/api/product-assets/fixture/releases/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const tool = {
+  name: "fixture_tool",
+  description: "Read a test count",
+  inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
+};
 
 function reply(res: ServerResponse, n: number, model: string, call: string | null) {
   const item = call ? {
@@ -54,14 +58,14 @@ function reply(res: ServerResponse, n: number, model: string, call: string | nul
   res.end();
 }
 
-it("uses the runtime session owner, Responses lease and product tool callback across a Codex process restart", async () => {
+it("uses the runtime session owner, Responses lease and MCP tool binding across a Codex process restart", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "codex-engine-test-"));
   const schema = "codex_engine_" + randomUUID().replaceAll("-", "");
   const admin = new pg.Pool({ connectionString: database });
   const engineLeases: string[] = [];
   const upstreamAuthorization: (string | undefined)[] = [];
   const modelRequests: { model: string; input: unknown[]; tools: { name: string }[] }[] = [];
-  const toolRequests: { body: unknown; credential: string | string[] | undefined }[] = [];
+  const toolRequests: { arguments: unknown; credential: string | string[] | undefined }[] = [];
   const logs: string[] = [];
   const upstream = createServer(async (req, res) => {
     const chunks = [];
@@ -73,9 +77,29 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
       modelRequests.push(body);
       const n = modelRequests.length;
       reply(res, n, body.model, n % 2 === 1 ? `fixture-call-${n}` : null);
-    } else if (req.url === productRoot + "/tools/read") {
-      toolRequests.push({ body: JSON.parse(raw), credential: req.headers["x-ontomato-callback-credential"] });
-      res.writeHead(200, { "Content-Type": "application/json" }).end('{"total":42}');
+    } else if (req.url === "/mcp" && req.method === "POST") {
+      const message = JSON.parse(raw);
+      if (message.method === "notifications/initialized") {
+        res.writeHead(202).end();
+        return;
+      }
+      let result;
+      if (message.method === "initialize") {
+        result = {
+          protocolVersion: message.params.protocolVersion,
+          capabilities: { tools: {} },
+          serverInfo: { name: "fixture", version: "1" },
+        };
+      } else if (message.method === "tools/list") {
+        result = { tools: [tool] };
+      } else if (message.method === "tools/call" && message.params.name === tool.name) {
+        toolRequests.push({ arguments: message.params.arguments, credential: req.headers["x-fixture-credential"] });
+        result = { content: [{ type: "text", text: '{"total":42}' }] };
+      }
+      const response = result
+        ? { jsonrpc: "2.0", id: message.id, result }
+        : { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "Method not found" } };
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(response));
     } else {
       res.writeHead(404).end();
     }
@@ -116,20 +140,16 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
   });
   const sessionId = randomUUID();
   let runtime = createRuntime();
+  let serviceId: string;
 
   async function run(content: string, engine: string) {
     const id = randomUUID();
     const request: RuntimeStartRunRequest = {
       input: { role: "user", content, timestamp: Date.now() }, language: "en",
       definition: {
-        engine, systemPrompt: "Use fixture_tool for the test.", modelId: null, skills: [], externalMcp: [],
-        sandbox: { limits: codeLimitsSchema.parse({}) }, toolSurface: "product",
-        productTools: [{
-          name: "fixture_tool", description: "Read a test count", path: productRoot + "/tools/read",
-          inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
-        }],
+        engine, systemPrompt: "Use fixture_tool for the test.", modelId: null, skills: [],
+        externalMcp: [{ id: serviceId }], sandbox: { limits: codeLimitsSchema.parse({}) },
       },
-      businessCallbacks: { product: { owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(base + productRoot + "/tools").pathname, baseUrl: base + productRoot + "/tools", credential: "wbc1.fixture" } },
     };
     await runtime.start(host, scope, sessionId, id, id, request);
     const stopped = await runtime.runStatus(scope, id, { timeoutMs: 25000, signal: new AbortController().signal });
@@ -145,6 +165,9 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
 
   try {
     await runtime.initialize();
+    ({ id: serviceId } = await runtime.mcp.create(scope, {
+      name: "fixture", url: base + "/mcp", headers: { "x-fixture-credential": "fixture-mcp-secret" },
+    }));
     await new RuntimeModelSettings(runtime.store, "fixture-runtime-token").save(scope.domainId, {
       connections: { native: { provider: "openai", apiBase: base + "/v1", apiKey: "host-only-upstream-key" } },
       models: { "fixture-model": { type: "chat", connection: "native", model: "gpt-5.5", maxRetries: 0 } },
@@ -169,14 +192,15 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
     expect(upstreamAuthorization).toEqual(Array.from({ length: 4 }, () => "Bearer host-only-upstream-key"));
     expect(engineLeases).toHaveLength(2);
     expect(engineLeases[1]).not.toBe(engineLeases[0]);
-    expect(modelRequests.map(request => request.tools.map(tool => tool.name)))
-      .toEqual(Array.from({ length: 4 }, () => ["fixture_tool"]));
+    for (const request of modelRequests) {
+      expect(request.tools.filter(tool => tool.name === "fixture_tool")).toHaveLength(1);
+    }
     expect(JSON.stringify(modelRequests[2].input)).toContain("First Codex input");
     expect(JSON.stringify(modelRequests[2].input)).toContain('fixture-call-1');
     expect(JSON.stringify(modelRequests[2].input)).toContain('42');
     expect(JSON.stringify(modelRequests)).not.toContain("host-only-upstream-key");
     expect(toolRequests).toEqual(Array.from({ length: 2 }, () => ({
-      body: { parameters: { query: "fixture" } }, credential: "wbc1.fixture",
+      arguments: { query: "fixture" }, credential: "fixture-mcp-secret",
     })));
   } finally {
     await runtime.close();

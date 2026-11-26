@@ -13,6 +13,7 @@ import ObjectGraphCanvas from "./ObjectGraphCanvas.vue";
  * - Top-left 4-action view toolbar (zoom in, zoom out, fit, relayout) with `#toolbar-actions` / `#toolbar-right` slots
  *   on the right, omitting focus-selected, PNG export, and the bottom-left floating toolbar.
  * - Independent node selection halo ring and capsule-shaped (pill) edge labels.
+ * - Radial force placement of unplaced nodes, as the page's relayout has always run (a reader's own places still win).
  * - Four-direction hover connection ports (top/right/bottom/left) with live drag-preview edge (alongside Shift+drag)
  *   handing endpoints to `connectFrom` / `connectTo`, plus a purely visual uncommitted pending edge while the create
  *   dialog is open.
@@ -100,6 +101,7 @@ const VISUAL_MODELING_STYLE: GraphCanvasStyleOverrides = {
     :node-category="nodeCategory"
     :node-size="62"
     :label-size="13"
+    layout="force"
     :highlight-banner="false"
     :show-focus-button="false"
     :hint="hint"

@@ -6,7 +6,7 @@ import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platfo
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberOutput } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
-import { readConfigString, readConfigStringMap, resolveLocalizedText } from "./localized-text";
+import { readConfigString, resolveLocalizedText } from "./localized-text";
 import type { ObjectCountItem } from "./object-count-types";
 
 type CountViewKind = "loading" | "empty" | "ready" | "forbidden" | "error" | "awaiting";
@@ -20,7 +20,6 @@ interface ParsedCountData {
 interface NormalizedCountItem {
   readonly label?: string;
   readonly labelKey?: string;
-  readonly labels?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -37,8 +36,6 @@ const props = withDefaults(
     label?: string;
     /** Panel message key (resolved via `panel.t`) or platform i18n key for the unit label in single-metric mode. */
     labelKey?: string;
-    /** Locale-keyed unit labels (e.g. `{ en: "Object types", de: "Objekttypen" }`) in single-metric mode. */
-    labels?: Readonly<Record<string, string>>;
     /** Optional item definitions rendered inline separated by a middot. */
     items?: readonly ObjectCountItem[];
     /**
@@ -55,7 +52,6 @@ const props = withDefaults(
   {
     label: undefined,
     labelKey: undefined,
-    labels: undefined,
     items: undefined,
     appearance: undefined,
     omitWhenUnavailable: undefined,
@@ -101,7 +97,6 @@ function normalizeItem(raw: unknown): NormalizedCountItem | null {
   return {
     label: readConfigString(record, "label"),
     labelKey: readConfigString(record, "labelKey", "label-key"),
-    labels: readConfigStringMap(record, "labels"),
   };
 }
 
@@ -115,7 +110,6 @@ const configuredItems = computed<readonly NormalizedCountItem[]>(() => {
     {
       label: props.label ?? readConfigString(rawConfig.value, "label"),
       labelKey: props.labelKey ?? readConfigString(rawConfig.value, "labelKey", "label-key"),
-      labels: props.labels ?? readConfigStringMap(rawConfig.value, "labels"),
     },
   ];
 });
@@ -184,7 +178,6 @@ const renderedItems = computed(() => {
   return configuredItems.value.map((item) => {
     const label = resolveLocalizedText({
       key: item.labelKey,
-      map: item.labels,
       fallback: item.label,
       locale: locale.value,
       panelText: panel.t,

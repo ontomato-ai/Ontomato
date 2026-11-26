@@ -322,7 +322,7 @@ function mountComponentsRoute(initialState: Record<string, unknown> = {}) {
           message: `SDK component '${targetKey}' is not in the current release.`,
         });
       }
-      if ((member === "header" || member === "summary") && body.dataName === "record") {
+      if ((member === "header" || member === "summary" || member === "meaningCard") && body.dataName === "record") {
         return Response.json({ status: "ready", value: record });
       }
       if (member === "dataTable" && body.dataName === "rows") {
@@ -434,10 +434,14 @@ describe("sdk-components builtin panel", () => {
       });
       expect(route.router.currentRoute.value.query.search).toBe("Object");
 
-      // Clicking a row shows full meaning, purpose group, and availability in the detail overview.
+      // Clicking a row shows the full meaning in the first card, then purpose group and availability in basic information.
       element.querySelector<HTMLElement>('.sdk-table-host tbody tr[data-row-item="true"]')!.click();
       await vi.waitFor(() => {
-        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain(LONG_LIST_MEANING);
+        const cards = Array.from(element.querySelectorAll(".sdk-detail-card"));
+        expect(cards[0]?.querySelector(".sdk-section-group-title")?.textContent?.trim()).toBe("Meaning");
+        expect(cards[1]?.querySelector(".sdk-section-group-title")?.textContent?.trim()).toBe("Basic information");
+        expect(cards[0]?.textContent).toContain(LONG_LIST_MEANING);
+        expect(cards[1]?.textContent).not.toContain(LONG_LIST_MEANING);
         expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("Lists");
         expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("Panel-usable");
       });
@@ -476,11 +480,11 @@ describe("sdk-components builtin panel", () => {
       const firstRow = element.querySelector<HTMLElement>('.sdk-table-host tbody tr[data-row-item="true"]')!;
       firstRow.click();
 
-      // Detail view mounts with ObjectHeader (name, role badge, package), summary, and all five detail tables.
+      // Detail view mounts with ObjectHeader (name, role badge, package), the meaning card, summary, and all five detail tables.
       await vi.waitFor(() => {
         expect(element.querySelector(".sdk-detail-view")).not.toBeNull();
         expect(element.querySelector(".sdk-detail-body")).not.toBeNull();
-        expect(element.querySelectorAll(".sdk-detail-card").length).toBe(6);
+        expect(element.querySelectorAll(".sdk-detail-card").length).toBe(7);
         expect(element.querySelector(".sdk-detail-body")?.textContent).toContain(LONG_LIST_MEANING);
         expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("panelRecordList");
         expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("filteredCount");
@@ -559,7 +563,7 @@ describe("sdk-components builtin panel", () => {
     try {
       await vi.waitFor(() => {
         expect(element.querySelector(".sdk-detail-body")).not.toBeNull();
-        expect(element.querySelectorAll(".sdk-detail-card").length).toBe(6);
+        expect(element.querySelectorAll(".sdk-detail-card").length).toBe(7);
         expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("Displays structured fields for one selected object.");
       });
 
