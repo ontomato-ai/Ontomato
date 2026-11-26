@@ -1942,6 +1942,18 @@ test("bridge and skill agree about the specific semantic reads", () => {
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
 });
 
+test("the agent definition listing admits only its own pagination query", () => {
+  const agents = binding(AGENT_DEFINITION);
+  const path = "/assistant/agent-definitions";
+  for (const search of ["", "?limit=20", "?cursor=opaque%2Bkey", "?cursor=opaque%2Bkey&limit=20", "?limit=20&cursor=opaque%2Bkey"])
+    assert.ok(clientSends([agents], "GET", "", path + search));
+  for (const search of ["?limit=20&domain=another", "?cursor=a&cursor=b", "?limit=20&limit=30", "?cursor=", "?cursor=a#fragment"])
+    assert.ok(!clientSends([agents], "GET", "", path + search));
+  assert.ok(!clientSends([agents], "GET", "", `${path}/form?cursor=a`));
+  assert.ok(!clientSends([agents], "POST", "", `${path}?cursor=a`));
+  assert.ok(!clientSends([agents], "GET", "/data-query", `${path}?cursor=a`));
+});
+
 test("Action definition reads and writes use distinct exact binding requests", () => {
   const definitions = binding(ACTION);
   const trial = bindingKey({ kind: "PlatformOperation", id: TRIAL_ACTION });

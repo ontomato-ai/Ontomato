@@ -14,8 +14,8 @@ Write a link in an answer as the page's path, for example `[Customer assistant](
 
 | Command | Interface | Returns |
 | --- | --- | --- |
-| `list` | `GET /api/assistant/agent-definitions` | `{"agents":[...]}` — every definition of the domain. |
-| `get <id>` | `GET /api/assistant/agent-definitions/<id>` | One definition with the fields in [forms](forms.md). |
+| `list` | `GET /api/assistant/agent-definitions` with `cursor` on subsequent pages | `{"agents":[...]}` — all summaries visible to the caller, each containing `id`, `name`, `description`, `icon`, and `enabled`. The command follows `nextCursor` until it is `null`. |
+| `get <id>` | `GET /api/assistant/agent-definitions/<id>` | The full definition, including the settings in [forms](forms.md) that are not in the list. |
 | `skills <id or draft>` | `GET /api/assistant/agent-skills?agentTarget=<id or draft>` | `{"skills":[{"skill":{"namespace":...,"name":...},"title":"...","description":"..."}]}` for the specified agent or a new agent. |
 | `models` | `GET /api/data-query/model-options` | `{"models":[{"ref":"<provider>/<model>","name":"...","type":"chat",...}],"defaultModelId":...,"embeddingModelId":...}`. |
 | `execution-users [keyword]` | `GET /api/data-query/platform/agent-execution/options` | `{"canSetExecutionUser":boolean,"users":[{"id":"...","name":"..."}]}` — the real domain users a governance administrator may choose. |

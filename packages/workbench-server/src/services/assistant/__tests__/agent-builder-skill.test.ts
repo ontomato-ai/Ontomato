@@ -98,12 +98,19 @@ it("lists the users a governance administrator may choose, and reports when none
   expect(seen).toEqual(["/platform/agent-execution/options?keyword=ali&pageNum=1&pageSize=100"]);
 });
 
-it.each([false, true])("authenticates agent settings reads for a callback base: %s", async (callback) => {
-  const seen: { url: string; headers: IncomingMessage["headers"] }[] = [];
+it.each([false, true])("lists both pages with the same credential for a callback base: %s", async (callback) => {
+  const seen: { method?: string; url: string; headers: IncomingMessage["headers"] }[] = [];
+  const agents = [
+    { id: agentId, name: "First agent", description: "", icon: null, enabled: true },
+    { id: "22222222-2222-4222-8222-222222222222", name: "Second agent", description: "", icon: null, enabled: false },
+  ];
+  const cursor = "opaque+next/&2";
   const base = await serve((url, _body, response, request) => {
-    seen.push({ url, headers: request.headers });
+    seen.push({ method: request.method, url, headers: request.headers });
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ agents: [] }));
+    response.end(JSON.stringify(seen.length === 1
+      ? { agents: agents.slice(0, 1), nextCursor: cursor }
+      : { agents: agents.slice(1), nextCursor: null }));
   });
   const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-callback-"));
   const prefix = callback ? "/api/assistant/executions/run-id/workbench" : "";
@@ -111,10 +118,16 @@ it.each([false, true])("authenticates agent settings reads for a callback base: 
     ONTOMATO_WORKBENCH_URL: base + prefix, ...(!callback && { ONTOMATO_TK: "session-token" }) };
   const result = await run(["list"], env, cwd);
   expect(result.code).toBe(0);
-  expect(seen).toHaveLength(1);
-  expect(seen[0].url).toBe(prefix + "/api/assistant/agent-definitions");
-  expect(seen[0].headers["x-ontomato-callback-credential"]).toBe(callback ? "wbc1-run" : undefined);
-  expect(seen[0].headers["x-ontomato-run-id"]).toBe("run-id");
-  expect(seen[0].headers.tk).toBe(callback ? undefined : "session-token");
-  expect(seen[0].headers["x-api-key"]).toBeUndefined();
+  expect(JSON.parse(result.stdout)).toEqual({ agents });
+  const listPath = prefix + "/api/assistant/agent-definitions";
+  expect(seen.map(({ method, url }) => ({ method, url }))).toEqual([
+    { method: "GET", url: listPath },
+    { method: "GET", url: `${listPath}?${new URLSearchParams({ cursor })}` },
+  ]);
+  for (const { headers } of seen) {
+    expect(headers["x-ontomato-callback-credential"]).toBe(callback ? "wbc1-run" : undefined);
+    expect(headers["x-ontomato-run-id"]).toBe("run-id");
+    expect(headers.tk).toBe(callback ? undefined : "session-token");
+    expect(headers["x-api-key"]).toBeUndefined();
+  }
 });
