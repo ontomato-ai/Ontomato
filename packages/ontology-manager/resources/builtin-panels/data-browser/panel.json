@@ -1,32 +1,48 @@
 {
   "manifest": {
     "state": {
+      "dataSource": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "external": true,
+        "deepLink": false,
+        "default": "business"
+      },
       "viewMode": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
         "deepLink": true,
-        "default": "graph"
+        "default": "graph",
+        "external": true
       },
       "selectedClass": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:ObjectType"
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:ObjectType",
+            "platform:OntologyType"
+          ]
         },
-        "deepLink": true
+        "deepLink": true,
+        "external": true
       },
       "selectedNode": {
         "type": {
           "kind": "object",
           "objectType": "@any"
-        }
+        },
+        "external": true
       },
       "graphStart": {
         "type": {
           "kind": "object",
           "objectType": "@any"
-        }
+        },
+        "external": true
       },
       "search": {
         "type": {
@@ -45,8 +61,11 @@
       },
       "graphSearchClass": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:ObjectType"
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:ObjectType",
+            "platform:OntologyType"
+          ]
         }
       },
       "graphSearchClassName": {
@@ -93,331 +112,388 @@
         "type": {
           "kind": "json"
         }
+      },
+      "businessClass": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "instanceGraphSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "graphSearchClassPickerSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "graphSearchResultsSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "nodeHeaderSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "nodeSummarySource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "classPickerSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "classCatalogProbeSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "classNamesProbeSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "classAttributesProbeSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "instanceTableSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "detailBindingSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "detailBindingSummarySource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "detailPanelFormSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "detailPanelPickerSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "clearDetailPanelSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
       }
     },
     "members": {
       "instanceGraph": {
-        "component": "InstanceGraph",
-        "name": "Instance relationship graph",
-        "description": "Sampled overview and paginated one-hop neighborhood graph of domain object instances with per-person saved node positions.",
-        "type": "platform:ObjectType",
-        "data": {
-          "overview": "instanceGraphOverview",
-          "connections": "instanceGraphConnections",
-          "counts": "instanceGraphStatistics",
-          "neighbors": "instanceNeighbors"
+        "target": {
+          "fromState": "instanceGraphSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001",
+              "builtin-product-db-capability-instance-graph"
+            ]
+          }
         },
         "inputs": {
           "selected": {
             "state": "selectedNode"
+          },
+          "start": {
+            "state": "graphStart"
+          },
+          "selectedGroup": {
+            "state": "graphSearchClassName"
+          },
+          "query": {
+            "state": "graphQuery"
+          },
+          "expandedNodes": {
+            "state": "expandedNodes"
+          },
+          "neighborFilter": {
+            "state": "neighborFilter"
           }
         },
-        "state": {
-          "start": "graphStart",
-          "selectedNode": "selectedNode",
-          "selectedGroup": "graphSearchClassName",
-          "query": "graphQuery",
-          "positions": "positions",
-          "expandedNodes": "expandedNodes",
-          "visibleRelationKinds": "visibleRelationKinds",
-          "neighborFilter": "neighborFilter"
-        },
-        "config": {
-          "fitMode": "fit",
-          "expandOn": "activate",
-          "showLayerFilter": false,
-          "showLegend": false,
-          "showToolbar": true,
-          "showNeighborControls": false
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001"
+        "outputs": {
+          "selectedNode": {
+            "state": "selectedNode"
+          },
+          "selectedGroup": {
+            "state": "graphSearchClassName"
+          },
+          "positions": {
+            "state": "positions"
+          },
+          "expandedNodes": {
+            "state": "expandedNodes"
+          },
+          "visibleRelationKinds": {
+            "state": "visibleRelationKinds"
+          },
+          "neighborFilter": {
+            "state": "neighborFilter"
+          }
+        }
       },
       "graphSearchClassPicker": {
-        "component": "ReferencePicker",
-        "name": "Graph search class filter",
-        "description": "Optional object type filter narrowing instance graph search results.",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "instanceGraphClasses"
+        "target": {
+          "fromState": "graphSearchClassPickerSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002",
+              "builtin-product-db-capability-search-class-filter"
+            ]
+          }
         },
-        "state": {
-          "selected": "graphSearchClass"
-        },
-        "config": {
-          "placeholderKey": "db.allClasses",
-          "clearable": true,
-          "size": "default",
-          "metaField": "instanceCount"
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002"
+        "outputs": {
+          "selected": {
+            "state": "graphSearchClass"
+          }
+        }
       },
       "graphSearchResults": {
-        "component": "ObjectList",
-        "name": "Instance graph search results",
-        "description": "Matches instances in the current graph snapshot by keyword and optional object type.",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": {
-            "read": "instanceGraphSearch",
-            "params": {
-              "search": {
-                "state": "graphQuery"
-              },
-              "className": {
-                "state": "graphSearchClassName"
-              },
-              "version": {
-                "output": {
-                  "member": "instanceGraph",
-                  "name": "graphVersion"
-                }
-              }
-            }
+        "target": {
+          "fromState": "graphSearchResultsSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000003",
+              "builtin-product-db-capability-search-results"
+            ]
           }
         },
-        "config": {
-          "layout": "list",
-          "subtitleField": "classLabel",
-          "searchable": false,
-          "showFooter": false,
-          "showChevron": false,
-          "emptyText": "db.graphSearchEmpty"
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000003"
+        "inputs": {
+          "search": {
+            "state": "graphQuery"
+          },
+          "className": {
+            "state": "graphSearchClassName"
+          },
+          "version": {
+            "output": {
+              "member": "instanceGraph",
+              "name": "graphVersion"
+            }
+          }
+        }
       },
       "nodeHeader": {
-        "component": "ObjectHeader",
-        "name": "Selected instance title",
-        "description": "Displays the selected graph instance's name in the inspector drawer.",
-        "type": "platform:ObjectType",
-        "data": {
-          "record": {
-            "read": "instanceRecord",
-            "params": {
-              "object": {
-                "state": "selectedNode"
-              }
-            }
+        "target": {
+          "fromState": "nodeHeaderSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000004",
+              "builtin-product-db-capability-instance-title"
+            ]
           }
         },
-        "config": {
-          "subtitle": "",
-          "fallbackTitle": ""
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000004"
+        "inputs": {
+          "object": {
+            "state": "selectedNode"
+          }
+        }
       },
       "nodeSummary": {
-        "component": "ObjectSummary",
-        "name": "Selected instance attributes",
-        "description": "Quick read-only attribute overview of the selected graph instance.",
-        "type": "platform:ObjectType",
-        "data": {
-          "record": {
-            "read": "instanceRecord",
-            "params": {
-              "object": {
-                "state": "selectedNode"
-              }
-            }
+        "target": {
+          "fromState": "nodeSummarySource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000005",
+              "builtin-product-db-capability-instance-summary"
+            ]
           }
         },
-        "config": {
-          "showTitle": false,
-          "density": "compact",
-          "emptyText": "db.nodeSummaryEmpty",
-          "missingText": "db.nodeSummaryMissing"
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000005"
+        "inputs": {
+          "object": {
+            "state": "selectedNode"
+          }
+        }
       },
       "classPicker": {
-        "component": "ReferencePicker",
-        "name": "Object type selector",
-        "description": "Searchable dropdown to switch the active object type in table mode.",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "list"
+        "target": {
+          "fromState": "classPickerSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000006",
+              "builtin-product-db-capability-class-picker"
+            ]
+          }
         },
-        "state": {
-          "selected": "selectedClass"
-        },
-        "config": {
-          "placeholderKey": "db.selectClass",
-          "clearable": false,
-          "size": "default"
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000006"
+        "outputs": {
+          "selected": {
+            "state": "selectedClass"
+          }
+        }
       },
       "classCatalogProbe": {
-        "component": "ObjectList",
-        "name": "Default object type selector probe",
-        "description": "Selects the first available object type automatically when entering table mode without a selected class.",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "list"
-        },
-        "state": {
-          "selected": "selectedClass"
-        },
-        "config": {
-          "layout": "list",
-          "fallbackToFirst": true,
-          "searchable": false,
-          "showFooter": false
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000007"
-      },
-      "classAttributesProbe": {
-        "component": "ObjectList",
-        "name": "Selected class attributes probe",
-        "description": "Loads the selected object type's attributes for filter and sort field selectors.",
-        "type": "platform:Attribute",
-        "data": {
-          "rows": {
-            "read": "list",
-            "params": {
-              "className": {
-                "state": "selectedClass",
-                "field": "primaryKey"
-              }
-            }
+        "target": {
+          "fromState": "classCatalogProbeSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000007",
+              "builtin-product-db-capability-class-catalog-probe"
+            ]
           }
         },
-        "config": {
-          "layout": "list",
-          "searchable": false,
-          "showFooter": false
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000008"
-      },
-      "instanceTable": {
-        "component": "ObjectList",
-        "name": "Object instance records table",
-        "description": "Server-filtered, server-sorted, paginated multi-column table of object instances with dynamic columns, column visibility toggle, and current-page CSV export.",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": {
-            "read": "instances",
-            "params": {
-              "className": {
-                "state": "selectedClass",
-                "field": "primaryKey"
-              },
-              "filters": {
-                "state": "filters"
-              },
-              "sort": {
-                "state": "sort"
-              }
-            }
+        "outputs": {
+          "selected": {
+            "state": "selectedClass"
           }
-        },
-        "state": {
-          "search": "search"
-        },
-        "config": {
-          "layout": "table",
-          "dynamicColumns": true,
-          "showColumnToggle": true,
-          "exportable": true,
-          "searchable": false,
-          "showChevron": false,
-          "showRowIndex": true,
-          "pinPrimaryColumn": true,
-          "rowActivation": "dblclick",
-          "showRangeBar": true,
-          "emptyText": "db.tableEmpty",
-          "noMatchText": "db.tableNoMatch",
-          "pagination": "pages",
-          "pageSizes": [
-            20,
-            50,
-            100
-          ]
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009"
-      },
-      "detailBinding": {
-        "component": "InfoBanner",
-        "name": "Detail panel permission probe",
-        "description": "Reads whether the current user can configure this object type's detail presentation.",
-        "target": "selectedClass",
-        "data": {
-          "record": "detailPanel"
-        },
-        "config": {
-          "field": "unavailableReason",
-          "hideWhenEmpty": true
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000010"
-      },
-      "detailBindingSummary": {
-        "component": "ObjectSummary",
-        "name": "Current detail panel binding",
-        "description": "Displays the currently configured detail panel status and name inside the presentation dialog.",
-        "target": "selectedClass",
-        "data": {
-          "record": "detailPanel"
-        },
-        "config": {
-          "showTitle": false,
-          "fields": [
-            "status",
-            "panelName",
-            "unavailableReason"
-          ]
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000011"
-      },
-      "detailPanelForm": {
-        "component": "ObjectForm",
-        "name": "Configure detail panel form",
-        "description": "Selects or clears the custom detail panel bound to this object type.",
-        "target": "selectedClass",
-        "data": {
-          "form": "detailPanelForm"
-        },
-        "operation": "platform:ObjectType.saveDetailPanel",
-        "config": {
-          "actions": "footer"
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000012"
-      },
-      "detailPanelPicker": {
-        "component": "ReferencePicker",
-        "name": "Detail panel picker",
-        "description": "Searches and picks a usable panel to bind as this object type's detail panel.",
-        "type": "platform:ProductPanel",
-        "data": {
-          "options": "options"
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000013"
-      },
-      "clearDetailPanel": {
-        "component": "OperationButton",
-        "name": "Restore default detail",
-        "description": "Clears the custom detail panel binding so the object type falls back to the built-in read-only detail.",
-        "operation": "objectTypes.clearDetailPanel",
-        "target": "selectedClass",
-        "config": {
-          "plain": true,
-          "labelKey": "db.restoreDefault"
-        },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000014"
+        }
       },
       "classNamesProbe": {
-        "component": "ObjectList",
-        "name": "Object type display labels probe",
-        "description": "Populates object type display names for graph inspector and class scope labels.",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "list"
+        "target": {
+          "fromState": "classNamesProbeSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000015",
+              "builtin-product-db-capability-class-labels-probe"
+            ]
+          }
+        }
+      },
+      "classAttributesProbe": {
+        "target": {
+          "fromState": "classAttributesProbeSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000008"
+            ]
+          }
         },
-        "config": {
-          "layout": "list",
-          "searchable": false,
-          "showFooter": false
+        "inputs": {
+          "className": {
+            "state": "selectedClass",
+            "field": "primaryKey"
+          }
+        }
+      },
+      "instanceTable": {
+        "target": {
+          "fromState": "instanceTableSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009",
+              "builtin-product-db-capability-instance-table"
+            ]
+          }
         },
-        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000015"
+        "inputs": {
+          "className": {
+            "state": "selectedClass",
+            "field": "primaryKey"
+          },
+          "filters": {
+            "state": "filters"
+          },
+          "sort": {
+            "state": "sort"
+          },
+          "search": {
+            "state": "search"
+          }
+        },
+        "outputs": {
+          "search": {
+            "state": "search"
+          }
+        }
+      },
+      "detailBinding": {
+        "target": {
+          "fromState": "detailBindingSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000010"
+            ]
+          }
+        },
+        "inputs": {
+          "target": {
+            "state": "businessClass"
+          }
+        }
+      },
+      "detailBindingSummary": {
+        "target": {
+          "fromState": "detailBindingSummarySource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000011"
+            ]
+          }
+        },
+        "inputs": {
+          "target": {
+            "state": "businessClass"
+          }
+        }
+      },
+      "detailPanelForm": {
+        "target": {
+          "fromState": "detailPanelFormSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000012"
+            ]
+          }
+        },
+        "inputs": {
+          "target": {
+            "state": "businessClass"
+          }
+        }
+      },
+      "detailPanelPicker": {
+        "target": {
+          "fromState": "detailPanelPickerSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000013"
+            ]
+          }
+        }
+      },
+      "clearDetailPanel": {
+        "target": {
+          "fromState": "clearDetailPanelSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000014"
+            ]
+          }
+        },
+        "inputs": {
+          "objectType": {
+            "state": "businessClass"
+          }
+        }
       }
     }
   },

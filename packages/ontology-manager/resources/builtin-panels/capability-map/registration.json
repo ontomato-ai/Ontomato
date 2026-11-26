@@ -4,7 +4,7 @@
       "id": "builtin-product-capability-map",
       "input": {
         "name": "Capability map",
-        "description": "Four-layer platform capability map: type mode with the read-only class catalogue and details, and instance mode for one-hop relation exploration."
+        "description": "Four-layer platform capability map: one header to switch between the ontology graph's type half and the object browser's instance half, both read from the platform ontology."
       }
     }
   ]

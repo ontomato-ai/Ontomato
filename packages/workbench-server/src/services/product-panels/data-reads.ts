@@ -6,7 +6,7 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import {
   AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/panel-client-requests";
-import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import { panelAddress, type ProductPanelReadRequest, type ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
@@ -513,10 +513,31 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [OBJECT_TYPE]: {
       ...modelReads,
-      instances: (_selection, params) => customer.query(readParams.className.parse(params.className), customerQueryParams(params)),
-      instanceRecord: (_selection, params) => {
+      record: async selection => ({
+        ...(await model.record(selection.typeId, selection.primaryKey!)),
+        outputs: { modelingPath: visualModelingPath("object", selection.primaryKey!) },
+      }),
+      instances: async (_selection, params) => {
+        const className = readParams.className.parse(params.className);
+        const page = await customer.query(className, customerQueryParams(params));
+        return {
+          ...page,
+          rows: page.rows.map(row => ({
+            ...row,
+            outputs: { detailPath: objectDetailPath(className, row.primaryKey) },
+          })),
+        };
+      },
+      instanceRecord: async (_selection, params) => {
         const { className, primaryKey } = readParams.graphNode.parse(params.object);
-        return customer.record(className, primaryKey);
+        const [record, objectType] = await Promise.all([
+          customer.record(className, primaryKey),
+          model.record(OBJECT_TYPE, className),
+        ]);
+        return {
+          ...record,
+          outputs: { typeLabel: objectType.label, detailPath: objectDetailPath(className, primaryKey) },
+        };
       },
       instanceNeighbors: (_selection, params) => graph.neighbors(readParams.graphNode.parse(params.node), {
         relationKinds: readParams.relationKinds.optional().parse(params.relationKinds),
@@ -581,7 +602,13 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ...modelReads,
       inlineForm: (selection, params) => model.inlineForm(selection.typeId, selection.primaryKey!, formParams(params)),
     },
-    [RELATIONSHIP]: modelReads,
+    [RELATIONSHIP]: {
+      ...modelReads,
+      record: async selection => ({
+        ...(await model.record(selection.typeId, selection.primaryKey!)),
+        outputs: { modelingPath: visualModelingPath("relation", selection.primaryKey!) },
+      }),
+    },
     [PRODUCT_PROJECTION]: {
       ...catalogueReads(projectionCatalogue),
       componentOptions: () => projectionCatalogue.componentOptions(),
@@ -752,6 +779,18 @@ async function resolveReadMember(
     return { ...placement, inputs, viewer };
   }
   return { ...placement, inputs: request.inputs, viewer };
+}
+
+/** Where the owner's own modeling editor opens one class or relation. */
+function visualModelingPath(focus: "object" | "relation", id: string) {
+  return panelAddress("/ontology/visual-modeling", focus === "relation"
+    ? { selectedEdge: id, back: "playground" }
+    : { selectedNode: id, back: "playground" });
+}
+
+/** The object browser's full detail view of one object. */
+function objectDetailPath(className: string, primaryKey: string) {
+  return panelAddress("/browser/views", { selected: { className, primaryKey } });
 }
 
 function effectiveInputs(

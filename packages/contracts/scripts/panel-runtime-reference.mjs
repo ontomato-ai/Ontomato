@@ -5,7 +5,6 @@ import ts from "typescript";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { referenceMarkdown, componentMetadata } from "../../apps-sdk/reference.mjs";
 import { ENTRIES } from "../../apps-sdk/release-entries.mjs";
-import capabilityMap from "../../apps-sdk/examples/panels/capability-map/declaration.mjs";
 import { panelAddress, PANEL_ADDRESS_RESERVED_QUERY_KEYS, panelDataStateSchema } from "../src/panel-host.ts";
 import { directPanelPortTypeSchema, panelChildObjectIdentitySchema, panelStateFieldSchema } from "../src/panel-manifest.ts";
 import { panelModuleSpecifiers } from "../src/panel-module.ts";
@@ -75,8 +74,11 @@ const graphState = {
   mode: "type",
   selectedType: SDK_COMPONENT,
 };
-assert.ok(Object.keys(graphState).every(name => capabilityMap.state[name].deepLink));
-const graphSelection = panelStateFieldSchema.parse(capabilityMap.state.selected);
+// The shape a type-graph panel publishes as its own selection: one type of the four layers, addressed by both halves.
+const graphSelection = panelStateFieldSchema.parse({
+  type: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+  deepLink: true,
+});
 const graphAddress = panelAddress("/destination", graphState);
 const graphQuery = new URL(graphAddress, "http://runtime-reference.invalid").search;
 
@@ -340,11 +342,11 @@ const contents = [
   "the parameter (`?tag=a&tag=b`). An empty list uses `?tag=`. Frame fields use the `frame.` prefix",
   "(`?frame.term=2026-fall`). Build in-app links with `panelAddress(path, state)` from `@ontomato/sdk/panel`.",
   `The shell owns ${inline(PANEL_ADDRESS_RESERVED_QUERY_KEYS)}.`,
-  `The capability-map type view uses ${asCode(JSON.stringify(graphState))} as state; the address contract encodes it as ${asCode(graphQuery)}.`,
+  `A type graph's view uses ${asCode(JSON.stringify(graphState))} as state; the address contract encodes it as ${asCode(graphQuery)}.`,
   "",
   "### Graph selection",
   "",
-  "The capability map uses this declaration for its public `selected` state:",
+  "A type graph declares its public `selected` state like this:",
   "",
   "```json",
   JSON.stringify(graphSelection, null, 2),

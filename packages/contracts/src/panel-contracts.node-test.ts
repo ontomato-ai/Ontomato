@@ -2611,12 +2611,17 @@ test("platform ontology catalogues publish standard list, record and required de
       directoryName: { kind: "scalar", type: "string" },
     },
   });
-  for (const name of ["properties", "typeRelations", "reads", "operations"]) {
+  for (const name of ["properties", "reads", "operations"]) {
     assert.deepEqual(typeReads[name], {
       source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
       requiredParams: ["type"], result: "panelRecordList",
     });
   }
+  // A type's relations are the expanded edges, one row per target rather than per relation kind.
+  assert.deepEqual(typeReads.typeRelations, {
+    source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
+    requiredParams: ["type"], result: "panelRecordList", rowType: ONTOLOGY_RELATION_KIND,
+  });
 });
 
 test("platform ontology reads preserve declared topology, owner status and scoped object identities", () => {

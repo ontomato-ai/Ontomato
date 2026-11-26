@@ -448,4 +448,61 @@ describe("readBuiltinProducts", () => {
       await rm(bundle, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("makes the capability map a shell that names neither half's projection nor its members", async () => {
+    const { readBuiltinProducts } = await import("../builtin-products");
+    const packagesRoot = path.resolve(__dirname, "../../../../..");
+    const bundle = await mkdtemp(path.join(tmpdir(), "builtin-capability-map-"));
+    try {
+      const entries: string[] = [];
+      for (const root of [path.join(packagesRoot, "ontology-manager/resources/builtin-panels")]) {
+        for (const dirent of await readdir(root, { withFileTypes: true })) {
+          if (!dirent.isDirectory()) continue;
+          const relative = `ontology-manager-${dirent.name}`;
+          await symlink(path.join(root, dirent.name), path.join(bundle, relative));
+          entries.push(relative);
+        }
+      }
+      await writeFile(path.join(bundle, "index.json"), JSON.stringify(entries));
+      const { panels, projections } = await readBuiltinProducts(bundle);
+
+      const map = panels.get("builtin-product-capability-map")!;
+      const graph = panels.get("builtin-product-ontology-graph")!;
+      const browser = panels.get("builtin-product-data-browser")!;
+
+      // Two fixed members, one per half, each handed only a source and the states it owns.
+      expect(Object.keys(map.manifest.members).sort()).toEqual(["instances", "types"]);
+      expect(map.manifest.members.types.target).toEqual({ panelId: "builtin-product-ontology-graph" });
+      expect(map.manifest.members.instances.target).toEqual({ panelId: "builtin-product-data-browser" });
+      expect(map.manifest.members.types.inputs).toHaveProperty("dataSource", { literal: "platform" });
+      expect(map.manifest.members.instances.inputs).toHaveProperty("dataSource", { literal: "platform" });
+
+      // Neither half's projection, nor the name of any member of theirs, appears in this panel's declaration.
+      const declared = JSON.stringify(map.manifest);
+      for (const id of projections.keys()) expect(declared).not.toContain(id);
+      const otherMembers = [...Object.keys(graph.manifest.members), ...Object.keys(browser.manifest.members)];
+      const declaredMembers = JSON.stringify(map.manifest.members);
+      for (const member of otherMembers) expect(declaredMembers).not.toContain(`"${member}"`);
+
+      // Each half opens four or five states and no switch of its own: no `embedded`, no projection choice.
+      const external = (panel: typeof graph) => Object.entries(panel.manifest.state)
+        .filter(([, field]) => field.external).map(([name]) => name).sort();
+      expect(external(graph)).toEqual(["dataSource", "exploreTypeRequest", "objectType", "relation"]);
+      expect(external(browser)).toEqual(["dataSource", "graphStart", "selectedClass", "selectedNode", "viewMode"]);
+      for (const panel of [map, graph, browser]) expect(panel.manifest.state).not.toHaveProperty("embedded");
+      // The halves' projection choices start empty: the panel writes them on its first frame.
+      const chosen = Object.entries(graph.manifest.state)
+        .filter(([name, field]) => name !== "dataSource" && name.endsWith("Source") && "external" in field && !field.external);
+      expect(chosen.length).toBeGreaterThan(0);
+      for (const [, field] of chosen) expect(field.default).toBeUndefined();
+
+      // Both halves register their own two sets; the shell registers none.
+      const owned = [...projections.keys()];
+      expect(owned.some(id => id.includes("capability"))).toBe(true);
+      expect(map.content.html).toContain("<projection v-if=\"mode === 'type'\" slot=\"types\">");
+      expect(graph.content.html).not.toContain("productGraph");
+    } finally {
+      await rm(bundle, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

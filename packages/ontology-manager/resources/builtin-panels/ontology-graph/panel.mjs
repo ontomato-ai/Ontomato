@@ -9,42 +9,96 @@ import {
 } from "@ontomato/sdk/panel";
 
 /*
- * The ontology graph: composes official projections for counts (`ObjectCount`), resource lists (`ObjectList`),
- * graph canvas & shortest-path finding (`OntologyTypeGraph`), product asset overview (`ProductAssetGraph`),
- * path pickers (`ReferencePicker`), and inspector details (`ObjectHeader`, `TypedValue`, `ObjectRefCard`,
- * `ObjectList`). Reads zero raw record fields and performs zero business calculations; coordinates only public
- * panel state, visual layout, and navigation.
+ * The ontology graph: composes official projections for counts (`ObjectCount`), resource lists (`ObjectList`), graph
+ * canvas & shortest-path finding (`OntologyTypeGraph`), path pickers (`ReferencePicker`), and inspector details
+ * (`ObjectHeader`, `TypedValue`, `ObjectRefCard`, `ObjectSummary`, `ObjectList`). It owns two sets of projections — the
+ * business ontology and the four-layer platform ontology — and chooses between them by the `dataSource` it is given;
+ * every member reads whichever set that source names. Visually it coordinates layout and navigation only: which
+ * actions it offers follows what the selected element's own read published.
  */
 
+const PROJECTION = "platform:ProductProjection";
 const OBJECT_TYPE = "platform:ObjectType";
-const PRODUCT_PROJECTION = "platform:ProductProjection";
-const PRODUCT_PANEL = "platform:ProductPanel";
-const APPLICATION = "platform:Application";
-const AGENT_DEFINITION = "platform:AgentDefinition";
+const ONTOLOGY_TYPE = "platform:OntologyType";
 
-function productAssetRoute(target) {
-  const id = target?.primaryKey || target?.assetId;
-  if (!id) return null;
-  if (target.className === PRODUCT_PROJECTION) {
-    return panelAddress("/ontology/projections/detail", { selected: id });
-  }
-  if (target.className === PRODUCT_PANEL) {
-    return panelAddress("/ontology/panels/detail", { selected: id });
-  }
-  if (target.className === APPLICATION) {
-    return panelAddress("/ontology/applications/detail", { selected: id });
-  }
-  if (target.className === AGENT_DEFINITION) {
-    return panelAddress("/ontology/agents/detail", { selected: id });
-  }
-  return null;
-}
+const BUSINESS_SOURCES = {
+  objectStats: "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a",
+  attributeStats: "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2b",
+  relationStats: "builtin-product-cd13e0f3-ab1f-497f-87bd-be1733fadb2a",
+  objectList: "builtin-product-26d935eb-01ee-44ba-a389-b5c4f9277740",
+  relationList: "builtin-product-9dc2abcb-1a64-4e1a-b919-0b8f69a02b65",
+  relationEdges: "builtin-product-og-business-relation-edges",
+  graph: "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378",
+  pathFromPicker: "builtin-product-2e8cd535-4d3c-4851-88a4-840db0692aef",
+  pathToPicker: "builtin-product-bcac70a2-e318-41b5-8d33-63014541076e",
+  objectHeader: "builtin-product-d900ed11-4e30-4d7c-821a-4d08e964e39d",
+  objectDesc: "builtin-product-ce68a32e-2c46-4b9a-a5ad-dd009a90594f",
+  objectSummaryExtra: null,
+  objectAttributes: "builtin-product-0e433496-05dc-41a6-8d22-696811abb84d",
+  objectRelations: "builtin-product-47e75f93-efeb-4227-9079-b312605fbc00",
+  objectReads: null,
+  objectOperations: null,
+  relationHeader: "builtin-product-a19a8a6e-cc18-41b7-bc42-a32cf61b3b6c",
+  relationFrom: "builtin-product-e8bef137-dffe-47a0-a9f6-ed8645b8a2ad",
+  relationName: "builtin-product-cc69b26b-9bc4-49e0-9400-66c5584e7606",
+  relationTo: "builtin-product-9067cae3-cf39-4263-bbea-61f92c6af4f9",
+};
+
+const PLATFORM_SOURCES = {
+  objectStats: "builtin-product-og-capability-type-count",
+  attributeStats: null,
+  relationStats: "builtin-product-og-capability-relation-count",
+  objectList: "builtin-product-og-capability-type-list",
+  relationList: "builtin-product-og-capability-relation-list",
+  relationEdges: "builtin-product-og-capability-relation-edges",
+  graph: "builtin-product-og-capability-graph",
+  pathFromPicker: "builtin-product-og-capability-path-from",
+  pathToPicker: "builtin-product-og-capability-path-to",
+  objectHeader: "builtin-product-og-capability-object-header",
+  objectDesc: "builtin-product-og-capability-object-description",
+  objectSummaryExtra: "builtin-product-og-capability-object-summary",
+  objectAttributes: "builtin-product-og-capability-object-properties",
+  objectRelations: "builtin-product-og-capability-object-relations",
+  objectReads: "builtin-product-og-capability-object-reads",
+  objectOperations: "builtin-product-og-capability-object-operations",
+  relationHeader: "builtin-product-og-capability-relation-header",
+  relationFrom: "builtin-product-og-capability-relation-source",
+  relationName: "builtin-product-og-capability-relation-name",
+  relationTo: "builtin-product-og-capability-relation-targets",
+};
+
+const SOURCES = { business: BUSINESS_SOURCES, platform: PLATFORM_SOURCES };
+
+const SELECTION_STATES = [
+  "objectType", "relation", "pathFrom", "pathTo", "draftPathFrom", "draftPathTo", "highlightedNodes", "highlightedEdges",
+  "platformObjectType",
+];
 
 await mountPanel({
   setup() {
     const { instance, refreshing, refreshObjects, t, notify } = usePanelContext();
     const rootRef = ref(null);
     const narrow = usePanelNarrow(rootRef, { token: "--og-narrow-breakpoint" });
+
+    // Which projections every member reads: the panel's own choice, written before the first frame is drawn.
+    function applySource(source) {
+      const chosen = SOURCES[source] ?? BUSINESS_SOURCES;
+      instance.state.setState(Object.fromEntries(Object.entries(chosen).map(([slot, id]) => [
+        `${slot}Source`, id === null ? null : { className: PROJECTION, primaryKey: id },
+      ])));
+    }
+    const dataSource = computed(() => instance.state.values.value.dataSource ?? "business");
+    watch(dataSource, source => applySource(source), { immediate: true });
+    // A selection of one ontology means nothing in the other: the reader's next click starts the other half clean.
+    watch(dataSource, (_source, previous) => {
+      if (previous === undefined) return;
+      instance.state.setState({
+        ...Object.fromEntries(SELECTION_STATES.map(name => [name, null])),
+        highlightedNodes: [],
+        highlightedEdges: [],
+      });
+    });
+    const sourceChosen = name => instance.state.values.value[`${name}Source`] !== null;
 
     // Read-only outputs published by official projections (no raw record reads).
     const graphStatus = usePanelOutput("graph", "status");
@@ -60,20 +114,23 @@ await mountPanel({
     const objectHeaderStatus = usePanelOutput("objectHeader", "status");
     const objectHeaderLabel = usePanelOutput("objectHeader", "label");
     const objectHeaderError = usePanelOutput("objectHeader", "errorMessage");
+    const objectHeaderModelingPath = usePanelOutput("objectHeader", "modelingPath");
+    const objectHeaderDirectoryPath = usePanelOutput("objectHeader", "directoryPath");
     const relationHeaderStatus = usePanelOutput("relationHeader", "status");
     const relationHeaderLabel = usePanelOutput("relationHeader", "label");
     const relationHeaderError = usePanelOutput("relationHeader", "errorMessage");
+    const relationHeaderModelingPath = usePanelOutput("relationHeader", "modelingPath");
     const objectAttributesTotal = usePanelOutput("objectAttributes", "total");
     const objectRelationsTotal = usePanelOutput("objectRelations", "total");
 
     const navigationError = ref("");
-    const productGraphOpen = ref(false);
     const listEl = ref(null);
 
     // Opaque object reference lists reported by official ObjectList projections for canvas browse highlighting
     // and known-membership checks when distinguishing missing deep links from general read failures.
     const listedObjects = shallowRef([]);
     const listedRelations = shallowRef([]);
+    const listedEdges = shallowRef([]);
     const knownObjectKeys = shallowRef(null);
     const knownRelationKeys = shallowRef(null);
     let browseHighlightActive = false;
@@ -98,8 +155,10 @@ await mountPanel({
       },
       set: (value) => instance.state.set("filter", value === "objects" || value === "relations" ? value : "all"),
     });
-    const requestedObjectKey = computed(() => instance.state.values.value.objectType?.primaryKey ?? "");
-    const requestedRelationKey = computed(() => instance.state.values.value.relation?.primaryKey ?? "");
+    const requestedObject = computed(() => instance.state.values.value.objectType ?? null);
+    const requestedRelation = computed(() => instance.state.values.value.relation ?? null);
+    const requestedObjectKey = computed(() => requestedObject.value?.primaryKey ?? "");
+    const requestedRelationKey = computed(() => requestedRelation.value?.primaryKey ?? "");
     const hasObjectSelection = computed(() => Boolean(requestedObjectKey.value));
     const hasRelationSelection = computed(() => !hasObjectSelection.value && Boolean(requestedRelationKey.value));
     const canFindPath = computed(() =>
@@ -190,6 +249,18 @@ await mountPanel({
     const isErrorObject = computed(
       () => hasObjectSelection.value && objectHeaderStatus.value === "error" && !isMissingObject.value,
     );
+    // The four-layer half's own reads ask for the selected four-layer type alone, never for a business class.
+    watch(
+      requestedObject,
+      (reference) => {
+        const next = reference?.className === ONTOLOGY_TYPE ? { className: ONTOLOGY_TYPE, primaryKey: reference.primaryKey } : null;
+        const current = instance.state.values.value.platformObjectType ?? null;
+        if ((current?.className ?? null) === (next?.className ?? null) && (current?.primaryKey ?? null) === (next?.primaryKey ?? null)) return;
+        instance.state.set("platformObjectType", next);
+      },
+      { immediate: true },
+    );
+
     const objectReady = computed(
       () => hasObjectSelection.value && (objectHeaderStatus.value === "ready" || objectEverReady.value) && !isForbiddenObject.value && !isMissingObject.value,
     );
@@ -302,6 +373,15 @@ await mountPanel({
       }
     });
 
+    // A relation kind that points at several types is drawn as one edge per target: choosing it on the left lights
+    // every one of those edges at once. A kind with one target is the edge the selection already highlights.
+    watch([requestedRelationKey, listedEdges], ([key, edges]) => {
+      if (!key || browseHighlightActive) return;
+      const matching = edges.filter(edge => edge.primaryKey === key || edge.primaryKey.startsWith(`${key}::`));
+      if (matching.length < 2) return;
+      instance.state.set("highlightedEdges", matching);
+    }, { immediate: true });
+
     function updateKnownObjectKeys() {
       if (search.value.trim() !== "") return;
       if (objectListStatus.value === "ready") {
@@ -323,16 +403,19 @@ await mountPanel({
     watch(objectListStatus, updateKnownObjectKeys, { immediate: true });
     watch(relationListStatus, updateKnownRelationKeys, { immediate: true });
 
+    // The lists' read-only `listed` outputs: the object references each currently shows, drawn or not.
     watch(usePanelOutput("objectList", "listed"), (refs) => {
       listedObjects.value = Array.isArray(refs) ? refs : [];
       updateKnownObjectKeys();
       if (browseHighlightActive) syncBrowseHighlight();
     });
-
     watch(usePanelOutput("relationList", "listed"), (refs) => {
       listedRelations.value = Array.isArray(refs) ? refs : [];
       updateKnownRelationKeys();
       if (browseHighlightActive) syncBrowseHighlight();
+    });
+    watch(usePanelOutput("relationEdges", "listed"), (refs) => {
+      listedEdges.value = Array.isArray(refs) ? refs : [];
     });
 
     const setFilter = (value) => {
@@ -430,30 +513,22 @@ await mountPanel({
       }
     }
 
-    // Esc or browser Back clears an active object/relation selection cleanly; closes the product graph dialog first.
+    // Esc or browser Back clears an active object/relation selection cleanly.
     usePanelBack(
       () => Boolean(requestedObjectKey.value || requestedRelationKey.value),
       clearSelection,
       { pushHistory: true },
     );
-    usePanelBack(
-      () => productGraphOpen.value,
-      () => {
-        productGraphOpen.value = false;
-      },
-      { pushHistory: false },
+
+    // Every address action below is offered only where the selected element's own read published one.
+    const modelingPath = computed(() =>
+      hasObjectSelection.value ? objectHeaderModelingPath.value : relationHeaderModelingPath.value,
     );
+    const directoryPath = computed(() => (hasObjectSelection.value ? objectHeaderDirectoryPath.value : null));
 
-    function openProductGraph() {
-      navigationError.value = "";
-      productGraphOpen.value = true;
-    }
-
-    async function onOpenProductAsset(target) {
-      const address = productAssetRoute(target);
+    async function followAddress(address) {
       if (!address) return;
       navigationError.value = "";
-      productGraphOpen.value = false;
       try {
         await instance.navigate(address);
       } catch {
@@ -461,25 +536,15 @@ await mountPanel({
       }
     }
 
-    async function openModeling() {
-      navigationError.value = "";
-      const target = requestedObjectKey.value
-        ? { focus: "object", id: requestedObjectKey.value }
-        : requestedRelationKey.value
-          ? { focus: "relation", id: requestedRelationKey.value }
-          : null;
+    /** Asks for this type's instances: the outer panel takes the request when it bound the output, else this panel goes. */
+    function exploreInstances() {
+      const target = requestedObject.value;
       if (!target) return;
-      const address = panelAddress(
-        "/ontology/visual-modeling",
-        target.focus === "relation"
-          ? { selectedEdge: target.id, back: "playground" }
-          : { selectedNode: target.id, back: "playground" },
-      );
-      try {
-        await instance.navigate(address);
-      } catch {
-        navigationError.value = t("ontologyGraph.navigationFailed");
+      if (instance.isOutputBound("exploreTypeRequest")) {
+        instance.state.set("exploreTypeRequest", target);
+        return;
       }
+      void followAddress(panelAddress("/browser/data", { viewMode: "table", selectedClass: target }));
     }
 
     return {
@@ -494,9 +559,6 @@ await mountPanel({
       showGraphWorkspace,
       safeObjectHeaderError,
       safeRelationHeaderError,
-      productGraphOpen,
-      openProductGraph,
-      onOpenProductAsset,
       search,
       setSearch,
       filter,
@@ -532,11 +594,19 @@ await mountPanel({
       relationHeaderError,
       objectReady,
       relationReady,
+      hasAttributeStats: computed(() => sourceChosen("attributeStats")),
+      hasObjectSummaryExtra: computed(() => sourceChosen("objectSummaryExtra")),
+      hasObjectReads: computed(() => sourceChosen("objectReads")),
+      hasObjectOperations: computed(() => sourceChosen("objectOperations")),
       objectAttributesTotal,
       objectRelationsTotal,
       canFindPath,
       findPath,
-      openModeling,
+      modelingPath,
+      directoryPath,
+      openModeling: () => followAddress(modelingPath.value),
+      openDirectory: () => followAddress(directoryPath.value),
+      exploreInstances,
       navigationError,
       refresh,
       retryDetail: () => void refreshObjects(),

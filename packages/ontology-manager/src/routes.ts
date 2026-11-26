@@ -39,7 +39,9 @@ function legacyDataBrowserClassRedirect(to: { params: Record<string, unknown>; q
   const className = typeof to.params.className === "string" ? to.params.className : "";
   const requestedViewMode = firstQueryString(to.query.viewMode);
   const viewMode = requestedViewMode === "graph" || requestedViewMode === "table" ? requestedViewMode : "table";
-  return className ? panelAddress(DATA_BROWSER_PATH, { selectedClass: className, viewMode }) : DATA_BROWSER_PATH;
+  return className
+    ? panelAddress(DATA_BROWSER_PATH, { selectedClass: { className: "platform:ObjectType", primaryKey: className }, viewMode })
+    : DATA_BROWSER_PATH;
 }
 
 /**
