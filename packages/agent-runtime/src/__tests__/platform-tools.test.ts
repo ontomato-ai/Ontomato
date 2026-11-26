@@ -29,7 +29,6 @@ function baseDefinition(overrides: Partial<RuntimeAgentDefinition> = {}): Runtim
     },
     externalMcp: [],
     toolSurface: "standard",
-    productTools: [],
     ...overrides,
   };
 }
@@ -39,7 +38,6 @@ function baseRequest(definition: RuntimeAgentDefinition): RuntimeStartRunRequest
     language: "en",
     definition,
     input: { role: "user", content: "hi", timestamp: 1 },
-    businessCallbacks: { product: { owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL("http://workbench.test/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools").pathname, baseUrl: "http://workbench.test/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools", credential: "wbc1.prod-secret" } },
   };
 }
 
@@ -50,16 +48,7 @@ afterEach(() => {
 describe("declarePlatformTools", () => {
   it("assembles session-open declarations once with engineTools=true for standard surfaces", () => {
     const surface = declarePlatformTools({
-      definition: baseDefinition({
-        productTools: [
-          {
-            name: "list_orders",
-            description: "List orders",
-            inputSchema: { type: "object", properties: { limit: { type: "number" } } },
-            path: "/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools/list",
-          },
-        ],
-      }),
+      definition: baseDefinition(),
       mcpTools: [
         {
           name: "erp_lookup",
@@ -74,7 +63,6 @@ describe("declarePlatformTools", () => {
     expect(surface.engineTools).toBe(true);
     expect(surface.tools.map((tool) => tool.name)).toEqual([
       "erp_lookup",
-      "list_orders",
       "agent",
       "present",
       "observe_display",
@@ -87,17 +75,9 @@ describe("declarePlatformTools", () => {
     }
   });
 
-  it("disables engine and MCP tools on product surfaces while allowing product tools named like built-ins", () => {
+  it("disables engine and MCP tools on product surfaces", () => {
     const productDef = baseDefinition({
       toolSurface: "product",
-      productTools: [
-        {
-          name: "read",
-          description: "Domain read",
-          inputSchema: { type: "object" },
-          path: "/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools/read",
-        },
-      ],
     });
     expect(usesEngineTools(productDef)).toBe(false);
 
@@ -110,7 +90,6 @@ describe("declarePlatformTools", () => {
 
     expect(surface.engineTools).toBe(false);
     expect(surface.tools.map((tool) => tool.name)).toEqual([
-      "read",
       "present",
       "observe_display",
       "fill_form",
@@ -119,46 +98,17 @@ describe("declarePlatformTools", () => {
   });
 
   it("rejects duplicate platform tool names and collisions with built-in engine tools", () => {
-    expect(() =>
-      declarePlatformTools({
-        definition: baseDefinition({
-          productTools: [
-            {
-              name: "bash",
-              description: "Collides with engine bash",
-              inputSchema: { type: "object" },
-              path: "/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools/bash",
-            },
-          ],
-        }),
+    const tool = (name: string) => ({ name, description: "MCP tool", parameters: { type: "object" } });
+    for (const mcpTools of [[tool("bash")], [tool("dup"), tool("dup")]]) {
+      expect(() => declarePlatformTools({
+        definition: baseDefinition(),
+        mcpTools,
         hasChannel: false,
         hasPresentation: false,
-      }),
-    ).toThrow("Exposed tool names must be unique");
-
-    expect(() =>
-      declarePlatformTools({
-        definition: baseDefinition({
-          productTools: [
-            {
-              name: "dup",
-              description: "First",
-              inputSchema: { type: "object" },
-              path: "/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools/a",
-            },
-            {
-              name: "dup",
-              description: "Second",
-              inputSchema: { type: "object" },
-              path: "/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools/b",
-            },
-          ],
-        }),
-        hasChannel: false,
-        hasPresentation: false,
-      }),
-    ).toThrow("Exposed tool names must be unique");
+      })).toThrow("Exposed tool names must be unique");
+    }
   });
+
 });
 
 describe("bindPlatformTools", () => {

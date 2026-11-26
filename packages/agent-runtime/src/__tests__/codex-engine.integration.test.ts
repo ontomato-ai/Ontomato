@@ -27,13 +27,9 @@ if (!database || !binary) throw new Error("Set RUNTIME_TEST_DATABASE_URL and ONT
 const launcher = fileURLToPath(new URL("../adapters/codex/launch.mjs", import.meta.url));
 const host = { id: "fixture", token: "fixture-host", providers: [] };
 const scope = { hostId: host.id, domainId: "fixture-domain" };
-const productRoot = "/api/product-assets/fixture/releases/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
-function reply(res: ServerResponse, n: number, model: string, call: string | null) {
-  const item = call ? {
-    type: "function_call", id: `fc_${n}`, call_id: call, name: "fixture_tool",
-    arguments: '{"query":"fixture"}', status: "completed",
-  } : {
+function reply(res: ServerResponse, n: number, model: string) {
+  const item = {
     type: "message", id: `msg_${n}`, role: "assistant", status: "completed", phase: "final_answer",
     content: [{ type: "output_text", text: `Answer ${n}`, annotations: [] }],
   };
@@ -43,7 +39,7 @@ function reply(res: ServerResponse, n: number, model: string, call: string | nul
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   event("response.created", { response });
   event("response.output_item.added", { output_index: 0, item: { ...item, status: "in_progress" } });
-  if (!call) event("response.output_text.delta", { output_index: 0, content_index: 0, item_id: item.id, delta: `Answer ${n}` });
+  event("response.output_text.delta", { output_index: 0, content_index: 0, item_id: item.id, delta: `Answer ${n}` });
   event("response.output_item.done", { output_index: 0, item });
   event("response.completed", { response: {
     ...response, status: "completed", output: [item], usage: {
@@ -54,14 +50,13 @@ function reply(res: ServerResponse, n: number, model: string, call: string | nul
   res.end();
 }
 
-it("uses the runtime session owner, Responses lease and product tool callback across a Codex process restart", async () => {
+it("uses the runtime session owner, Responses lease across a Codex process restart", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "codex-engine-test-"));
   const schema = "codex_engine_" + randomUUID().replaceAll("-", "");
   const admin = new pg.Pool({ connectionString: database });
   const engineLeases: string[] = [];
   const upstreamAuthorization: (string | undefined)[] = [];
-  const modelRequests: { model: string; input: unknown[]; tools: { name: string }[] }[] = [];
-  const toolRequests: { body: unknown; credential: string | string[] | undefined }[] = [];
+  const modelRequests: { model: string; input: unknown[]; tools?: { name: string }[] }[] = [];
   const logs: string[] = [];
   const upstream = createServer(async (req, res) => {
     const chunks = [];
@@ -72,10 +67,7 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
       const body = JSON.parse(raw);
       modelRequests.push(body);
       const n = modelRequests.length;
-      reply(res, n, body.model, n % 2 === 1 ? `fixture-call-${n}` : null);
-    } else if (req.url === productRoot + "/tools/read") {
-      toolRequests.push({ body: JSON.parse(raw), credential: req.headers["x-ontomato-callback-credential"] });
-      res.writeHead(200, { "Content-Type": "application/json" }).end('{"total":42}');
+      reply(res, n, body.model);
     } else {
       res.writeHead(404).end();
     }
@@ -122,14 +114,9 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
     const request: RuntimeStartRunRequest = {
       input: { role: "user", content, timestamp: Date.now() }, language: "en",
       definition: {
-        engine, systemPrompt: "Use fixture_tool for the test.", modelId: null, skills: [], externalMcp: [],
+        engine, systemPrompt: "Answer the user.", modelId: null, skills: [], externalMcp: [],
         sandbox: { limits: codeLimitsSchema.parse({}) }, toolSurface: "product",
-        productTools: [{
-          name: "fixture_tool", description: "Read a test count", path: productRoot + "/tools/read",
-          inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
-        }],
       },
-      businessCallbacks: { product: { owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(base + productRoot + "/tools").pathname, baseUrl: base + productRoot + "/tools", credential: "wbc1.fixture" } },
     };
     await runtime.start(host, scope, sessionId, id, id, request);
     const stopped = await runtime.runStatus(scope, id, { timeoutMs: 25000, signal: new AbortController().signal });
@@ -139,7 +126,6 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
     expect(snapshot.messages.filter(message => message.message.role === "user")).toMatchObject([
       { contextSeq: expect.any(Number), message: { content } },
     ]);
-    expect(snapshot.toolExecutions).toMatchObject([{ toolName: "fixture_tool", status: "completed" }]);
     expect(snapshot.usageUpdate?.last.totalTokens).toBe(19);
   }
 
@@ -164,20 +150,15 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
     await runtime.initialize();
     await run("Codex input after restart", "pi");
     expect(await runtime.store.sessionEngine(scope, sessionId)).toEqual(binding);
-    expect(modelRequests).toHaveLength(4);
+    expect(modelRequests).toHaveLength(2);
     expect(modelRequests.every(request => request.model === "gpt-5.5")).toBe(true);
-    expect(upstreamAuthorization).toEqual(Array.from({ length: 4 }, () => "Bearer host-only-upstream-key"));
+    expect(upstreamAuthorization).toEqual(Array.from({ length: 2 }, () => "Bearer host-only-upstream-key"));
     expect(engineLeases).toHaveLength(2);
     expect(engineLeases[1]).not.toBe(engineLeases[0]);
-    expect(modelRequests.map(request => request.tools.map(tool => tool.name)))
-      .toEqual(Array.from({ length: 4 }, () => ["fixture_tool"]));
-    expect(JSON.stringify(modelRequests[2].input)).toContain("First Codex input");
-    expect(JSON.stringify(modelRequests[2].input)).toContain('fixture-call-1');
-    expect(JSON.stringify(modelRequests[2].input)).toContain('42');
+    expect(modelRequests.map(request => (request.tools ?? []).map(tool => tool.name)))
+      .toEqual(Array.from({ length: 2 }, () => []));
+    expect(JSON.stringify(modelRequests[1].input)).toContain("First Codex input");
     expect(JSON.stringify(modelRequests)).not.toContain("host-only-upstream-key");
-    expect(toolRequests).toEqual(Array.from({ length: 2 }, () => ({
-      body: { parameters: { query: "fixture" } }, credential: "wbc1.fixture",
-    })));
   } finally {
     await runtime.close();
     await gateway.stop();

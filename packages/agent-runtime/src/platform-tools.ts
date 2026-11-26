@@ -26,7 +26,6 @@ import type {
   HarnessToolResult,
 } from "./adapters/contract";
 import { channelToolDeclaration } from "./channel";
-import { productToolDeclarations, productTools } from "./product-tools";
 import type { Scope } from "./store";
 
 export type PlatformToolPartialResult = HarnessToolPartialResult;
@@ -392,7 +391,6 @@ export function declarePlatformTools(options: DeclarePlatformToolsOptions): Plat
   const engineTools = usesEngineTools(options.definition);
   const tools = [
     ...(engineTools ? (options.mcpTools ?? []) : []),
-    ...productToolDeclarations(options.definition),
     ...(options.hasChannel ? [channelToolDeclaration()] : []),
     ...(options.hasPresentation ? presentationToolDeclarations() : []),
   ].map((declaration) => runtimeToolDeclarationSchema.parse(declaration));
@@ -460,7 +458,6 @@ export function bindPlatformTools(options: BindPlatformToolsOptions): BoundPlatf
     : undefined;
   const candidates: PlatformTool[] = [
     ...(surface.engineTools ? (options.mcpTools ?? []) : []),
-    ...productTools(options.request, options.runId),
     ...(options.channelTool ? [options.channelTool] : []),
     ...(options.presentationCallback
       ? createPresentationTools(options.runId, options.presentationCallback, presentationBatch)

@@ -13,7 +13,6 @@ export const executionCallbackPurpose = z.enum(["workbench", "ontology", "author
 const scopeSchema = z.discriminatedUnion("purpose", [
   z.object({ purpose: z.literal("execution"), capability: executionCallbackPurpose }).strict(),
   z.object({ purpose: z.literal("governance"), sessionId: z.string().uuid() }).strict(),
-  z.object({ purpose: z.literal("product-tool"), profileId: z.string(), releaseId: z.string() }).strict(),
   z.object({
     purpose: z.literal("presentation"),
     host: z.enum(["workbench", "observe"]),
@@ -73,8 +72,6 @@ function permits(scope: CallbackScope, runId: string, path: string): boolean {
     }
     case "governance":
       return path === `/api/assistant/sessions/${scope.sessionId}/governance-window`;
-    case "product-tool":
-      return path.startsWith(`/api/product-assets/${encodeURIComponent(scope.profileId)}/releases/${encodeURIComponent(scope.releaseId)}/tools/`);
     case "presentation":
       return path === `${presentationHostPaths[scope.host]}/sessions/${scope.sessionId}/runs/${runId}/presentation-call/${scope.viewId}`;
     case "diagnosis-evidence":

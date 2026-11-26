@@ -2,7 +2,7 @@ import {expect,it} from 'vitest';
 import {productAssetInputSchema,productAssetSchema} from '@ontomato/contracts/product-assets';
 import {defaultPersonalWorkspace} from '@ontomato/contracts/personal-workspace';
 import {normalizeComposition,validateComposition,validateAffectedCompositions} from '../composition';
-import {captureProductTree,contractHash} from '../releases';
+import {contractHash} from '../releases';
 const base={ownerId:'alice',revision:1,editable:true,createdAt:'now',updatedAt:'now',visibility:'private',description:''};
 const asset=(id:string,document:unknown)=>productAssetSchema.parse({...base,id,name:id,document});
 it('extracts inline widgets into deterministic referenced assets while retaining the group ID',()=>{
@@ -19,15 +19,7 @@ it('rejects indirect cycles and Actions nested under an embeddable page',async()
   const action=asset('action',{kind:'widget',widget:{id:'action',kind:'action',title:'Edit',span:12,resourceId:'edit'}});
   await expect(validateComposition('root',{name:'Root',description:'',visibility:'private',document:page(['action'],true)},async()=>action)).rejects.toMatchObject({code:'INVALID_EMBEDDABLE_PAGE'});
 });
-it('captures immutable recursive definitions and canonical capability contracts',async()=>{
-  const leaf=asset('leaf',{kind:'widget',widget:{id:'text',kind:'text',title:'Text',span:12,text:'old'}});
-  const root=asset('root',{kind:'page',workspace:defaultPersonalWorkspace(),children:[{assetId:'leaf',column:'main'}]});
-  const assets=new Map([['leaf',leaf],['root',root]]);
-  const snapshot=await captureProductTree(['root'],async id=>assets.get(id)!);
-  assets.set('leaf',{...leaf,revision:2,name:'new'});
-  expect(snapshot.find(item=>item.id==='leaf')).toMatchObject({revision:1,name:'leaf',editable:false});
-  expect(snapshot.find(item=>item.id==='root')!.document).not.toHaveProperty('workspace');
-  expect(root.document).toHaveProperty('workspace');
+it('hashes capability contracts independently of field order',()=>{
   expect(contractHash({a:1,b:2})).toBe(contractHash({b:2,a:1}));
   expect(contractHash({a:1})).not.toBe(contractHash({a:2}));
 });

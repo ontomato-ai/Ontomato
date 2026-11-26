@@ -14,7 +14,7 @@ it('bounds personal dynamic shortcuts while preserving the active application an
   expect(shown.map(item=>item.id)).toEqual(expect.arrayContaining(['home','application-gallery','app-11']));
   expect(shown.some(item=>item.id==='app-8')).toBe(false);
 });
-it('orders the permitted settings shortcut above App Builder and groups only published builder outputs with it',()=>{
+it('orders the permitted settings shortcut above App Builder and groups panel applications with it',()=>{
   const catalog = catalogFixture();
   const seed = catalog[0]!;
   const built = { ...seed, id: 'app-built', kind: 'hosted' as const, category: 'business' as const, releaseId: 'release-1' };
@@ -34,8 +34,8 @@ it('orders the permitted settings shortcut above App Builder and groups only pub
   applications.value = before;
   const ids = [built.id, connected.id];
   const shown = applicationShortcuts([...apps, allowed], ids, [connected.id], null);
-  expect(shown.filter(app => app.rail === 'builders').map(app => app.id)).toEqual(['agent-builder', 'app-builder', built.id, product.id, panels.id]);
-  expect(shown.find(app => app.id === built.id)?.built).toBe(true);
+  expect(shown.filter(app => app.rail === 'builders').map(app => app.id)).toEqual(['agent-builder', 'app-builder', panels.id]);
+  expect(shown.some(app => app.id === built.id || app.id === product.id)).toBe(false);
   expect(shown.find(app => app.id === connected.id)?.built).toBe(false);
 });
 

@@ -72,7 +72,7 @@ describe('product mutation boundary',()=>{
     }
   });
 
-  it('rejects direct old HTTP writes and publication for a panels application before legacy side effects',async()=>{
+  it('rejects direct old HTTP writes and has no publication route for a panels application',async()=>{
     mocks.query.mockImplementation(async(sql:string)=>({rows:sql==='SELECT id,document FROM product_assets WHERE domain_id=$1'?[{id:'old-root',document:{kind:'application',applicationId:'app-panel-a',children:[]}}]:[]}));
     mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{legacyWritable:false}})});
     const express=(await import('express')).default;
@@ -83,14 +83,15 @@ describe('product mutation boundary',()=>{
     await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
     const base=`http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}/api/product-assets/old-root`;
     try{
-      for(const [method,url,body] of [
-        ['PUT',base,{name:'Old application',description:'',revision:0,document:{kind:'application',applicationId:'app-panel-a',children:[]}}],
-        ['POST',base+'/publish',{revision:1}],
-      ] as const){
-        const response=await fetch(url,{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-        expect(response.status).toBe(409);
-        expect(await response.json()).toMatchObject({error:{code:'APPLICATION_MANAGED_BY_PANELS'}});
-      }
+      const write = await fetch(base, {
+        method: 'PUT',
+        headers: {'content-type':'application/json'},
+        body: JSON.stringify({name:'Old application',description:'',revision:0,document:{kind:'application',applicationId:'app-panel-a',children:[]}}),
+      });
+      expect(write.status).toBe(409);
+      expect(await write.json()).toMatchObject({error:{code:'APPLICATION_MANAGED_BY_PANELS'}});
+      const publish = await fetch(base+'/publish', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({revision:1})});
+      expect(publish.status).toBe(404);
       expect(mocks.query.mock.calls.some(([sql])=>/INSERT|UPDATE|DELETE/.test(sql))).toBe(false);
       expect(mocks.validate).not.toHaveBeenCalled();
     }finally{server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
