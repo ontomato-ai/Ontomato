@@ -33,7 +33,7 @@ import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
   ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, EXTERNAL_MCP_SERVICE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIAL_ACTION, TRIGGER, USER, WORKFLOW,
-  RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
+  RUN_NOW, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
   candidatePanelSourceSchema, panelFrameMessageSchema,
@@ -321,7 +321,7 @@ test("a short metric chart names its source card and takes the projection from t
 test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {
   const input = {
     name: "Task list", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
-    data: { items: { source: { type: platformType(SCHEDULED_TASK) }, read: "list", params: {} } },
+    data: { items: { source: { type: platformType(TRIGGER) }, read: "list", params: {} } },
   };
   for (const componentId of ["@school/panels:InventoryList", "local-kit:list-view"]) {
     assert.deepEqual(registerProductProjectionRequestSchema.parse({ ...input, componentId }), { ...input, componentId });
@@ -489,8 +489,8 @@ test("panelRecordObjectRef resolves record className with fallback and rejects m
     { className: "platform:Action", primaryKey: "act-1" },
   );
   assert.deepEqual(
-    panelRecordObjectRef({ primaryKey: "task-1" }, "platform:ScheduledTask"),
-    { className: "platform:ScheduledTask", primaryKey: "task-1" },
+    panelRecordObjectRef({ primaryKey: "task-1" }, "platform:Trigger"),
+    { className: "platform:Trigger", primaryKey: "task-1" },
   );
   assert.throws(
     () => panelRecordObjectRef({ primaryKey: "task-1" }),
@@ -500,7 +500,7 @@ test("panelRecordObjectRef resolves record className with fallback and rejects m
     () => panelRecordObjectRef({ primaryKey: "task-1" }, ""),
     /no className and no fallbackClassName/u,
   );
-  assert.throws(() => panelRecordObjectRef({ primaryKey: "", className: "platform:ScheduledTask" }));
+  assert.throws(() => panelRecordObjectRef({ primaryKey: "", className: "platform:Trigger" }));
 });
 
 test("panelRecordFieldText formats scalars, localized maps, references, arrays and json payloads", async () => {
@@ -1256,7 +1256,7 @@ test("direct task reads use the registered source, parameters and result envelop
   const { directProjectionDataSchema, directReadDeclaration } = await import("./panel-projection");
   const form = {
     name: "Task form", description: "", visibility: "domain", revision: 0, componentId: "@ontomato/sdk:ObjectForm",
-    inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+    inputs: { task: { kind: "object", objectType: "platform:Trigger" }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
     outputs: {}, config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
   };
@@ -1265,15 +1265,15 @@ test("direct task reads use the registered source, parameters and result envelop
   assert.deepEqual(registerDirectProjectionRequestSchema.parse({ ...projection, revision }), form);
   assert.equal(directReadDeclaration(projection, projection.data.form)?.source, "object");
   const declaredReads = [
-    [{ type: platformType("platform:ScheduledTask") }, "list", "type", "panelRecordList"],
-    [{ object: { literal: { className: "platform:ScheduledTask", primaryKey: "task-1" } } }, "record", "object", "panelRecord"],
+    [{ type: platformType("platform:Trigger") }, "list", "type", "panelRecordList"],
+    [{ object: { literal: { className: "platform:Trigger", primaryKey: "task-1" } } }, "record", "object", "panelRecord"],
   ] as const;
   for (const [source, read, kind, result] of declaredReads) {
     const declaration = directReadDeclaration(projection, directProjectionDataSchema.parse({ source, read, params: {} }));
     assert.equal(declaration?.source, kind);
     assert.equal(declaration?.result, result);
   }
-  for (const data of [{ source: { type: platformType("platform:ScheduledTask") }, read: "record" },
+  for (const data of [{ source: { type: platformType("platform:Trigger") }, read: "record" },
     { source: { object: { input: "changedField" } }, read: "record" }])
     assert.equal(directReadDeclaration(projection, directProjectionDataSchema.parse({ ...data, params: {} })), undefined);
   const read = form.data.form;
@@ -1283,7 +1283,7 @@ test("direct task reads use the registered source, parameters and result envelop
 
   const request = {
     source: { kind: "registered", applicationId: "app-trial", useId: "tasks" }, memberPath: [{ member: "form" }],
-    dataName: "form", inputs: { task: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
+    dataName: "form", inputs: { task: { className: "platform:Trigger", primaryKey: "task-1" } },
   };
   assert.deepEqual(productPanelReadRequestSchema.parse(request), request);
   const { dataName: _dataName, ...scope } = request;
@@ -1312,19 +1312,19 @@ test("the current projection response admits named direct reads through the fram
     id: "projection-schedules-summary", domainId: "domain", ownerId: "owner", revision: 1,
     createdAt: "2026-11-20T00:00:00.000Z", updatedAt: "2026-11-20T00:00:00.000Z", editable: false,
     name: "Task summary", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectSummary",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    inputs: { task: { kind: "object", objectType: TRIGGER } },
     outputs: {}, config: {},
   };
   const data = {
     record: { source: { object: { input: "task" } }, read: "record", params: {} },
-    fixedRecord: { source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: taskId } } }, read: "record", params: {} },
-    list: { source: { type: platformType(SCHEDULED_TASK) }, read: "list", params: {} },
+    fixedRecord: { source: { object: { literal: { className: TRIGGER, primaryKey: taskId } } }, read: "record", params: {} },
+    list: { source: { type: platformType(TRIGGER) }, read: "list", params: {} },
   };
   const operations = { run: { operation: platformOperation(RUN_NOW), target: { input: "task" } } };
   const response = (data: object, operations?: object) => productProjectionResponseSchema.parse({
     projection: { ...projection, data, ...(operations && { operations }) },
   });
-  const taskKey = binding(SCHEDULED_TASK);
+  const taskKey = binding(TRIGGER);
   const operationKey = bindingKey({ kind: "PlatformOperation", id: RUN_NOW });
   for (const read of [data.record, data.fixedRecord, data.list])
     assert.deepEqual(projectionBindingKeys(response({ read }).projection), [taskKey]);
@@ -1333,7 +1333,8 @@ test("the current projection response admits named direct reads through the fram
   assert.deepEqual(parsed.projection, { ...projection, data, operations });
   const keys = projectionBindingKeys(parsed.projection);
   assert.deepEqual(keys, [taskKey, operationKey]);
-  assert.equal(clientSends(keys, "GET", "/data-query", `/platform/scheduled-tasks/${taskId}`), true);
+  assert.equal(clientSends(keys, "GET", "/data-query", `/platform/triggers/${taskId}`), false);
+  assert.equal(clientSends(keys, "POST", "", "/panel-operations/intents"), true);
   assert.equal(clientSends(keys, "GET", "/data-query", "/platform-ontology/schema"), false);
 });
 
@@ -1418,11 +1419,11 @@ test("time controls and schedule frequencies accept local times at minute precis
 });
 
 test("explicit operation bindings use the owner's type and the admitted member target", () => {
-  const task = { kind: "object", objectType: SCHEDULED_TASK } as const;
+  const task = { kind: "object", objectType: TRIGGER } as const;
   const ownerType = { target: { source: "input", input: "object" }, batch: false } as const;
   const operations = {
     runNow: { operation: platformOperation(RUN_NOW), target: { input: "record" } },
-    save: { operation: platformOperation(SCHEDULED_TASK + ".save"), target: { input: "record" } },
+    save: { operation: platformOperation(TRIGGER + ".save"), target: { input: "record" } },
   };
   const projection = productProjectionInputSchema.parse({
     name: "Tasks", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectForm",
@@ -1430,7 +1431,7 @@ test("explicit operation bindings use the owner's type and the admitted member t
     data: { form: { source: { object: { input: "record" } }, read: "form", params: {} } },
   });
   const binding = projection.operations!.runNow;
-  assert.equal(projectionOperationTargetMatches(projection, binding, ownerType, SCHEDULED_TASK), true);
+  assert.equal(projectionOperationTargetMatches(projection, binding, ownerType, TRIGGER), true);
   assert.equal(projectionOperationTargetMatches(projection, binding, ownerType, BUSINESS_KNOWLEDGE), false);
   assert.equal(productProjectionInputSchema.safeParse({
     ...projection, operations: { runNow: { ...binding, target: { input: "missing" } } },
@@ -1450,11 +1451,11 @@ test("explicit operation bindings use the owner's type and the admitted member t
   assert.deepEqual(panelOperationSchema.parse(run).target, { source: "state", state: "selectedTask" });
   assert.deepEqual(run.inputSchema, { type: "object" });
   const save = projectionOperation(manifest, "list", "save", {
-    ...description, handlerRef: SCHEDULED_TASK + ".save", kind: "form.save", label: "Save",
+    ...description, handlerRef: TRIGGER + ".save", kind: "form.save", label: "Save",
   });
   assert.deepEqual(panelOperationSchema.parse(save).target, { source: "draft", slot: "list" });
-  assert.deepEqual(projectionBindingKeys(projection), [bindingKey(platformType(SCHEDULED_TASK)),
-    bindingKey(platformOperation(RUN_NOW)), bindingKey(platformOperation(SCHEDULED_TASK + ".save"))]);
+  assert.deepEqual(projectionBindingKeys(projection), [bindingKey(platformType(TRIGGER)),
+    bindingKey(platformOperation(RUN_NOW)), bindingKey(platformOperation(TRIGGER + ".save"))]);
 });
 
 test("an explicit batch operation can bind a checked object list", () => {
@@ -1965,23 +1966,18 @@ test("Action definition reads and writes use distinct exact binding requests", (
   assert.ok(platformObjectTypes[ACTION].operations?.includes(TRIAL_ACTION));
 });
 
-test("Trigger definition reads and writes use exact binding requests", () => {
+test("Trigger panel bindings do not bypass the owner projection and write coordinator", () => {
   const definitions = binding(TRIGGER);
   const deletion = bindingKey({ kind: "PlatformOperation", id: DELETE_TRIGGER });
   const status = bindingKey({ kind: "PlatformOperation", id: SET_TRIGGER_STATUS });
-  for (const path of ["/trigger/queryList", "/trigger/queryById", "/trigger/form"]) {
-    assert.ok(panelClientReads(definitions).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test(path)));
-    assert.ok(clientSends([definitions], "POST", "/data-query", path));
-  }
-  assert.ok(clientSends([definitions], "POST", "/data-query", "/trigger/save"));
-  assert.ok(!panelClientReads(definitions).some(read => read.path.test("/trigger/save")));
-  assert.ok(!clientSends([definitions], "POST", "/data-query", "/trigger/delete"));
-  assert.ok(clientSends([deletion], "POST", "/data-query", "/trigger/delete", { id: "tr-1" }));
-  assert.ok(clientSends([status], "POST", "/data-query", "/trigger/status", { id: "tr-1", status: "PUBLISHED" }));
-  assert.ok(!clientSends([status], "POST", "", "/trigger/status"));
-  assert.equal(platformObjectTypes[TRIGGER].reads?.count.result, "panelRecordQuery");
-  assert.equal(platformObjectTypes[TRIGGER].reads?.armedCount.result, "panelRecordQuery");
-  assert.deepEqual(platformObjectTypes[TRIGGER].operations, [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER]);
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/trigger/form"));
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/product-governance/principals"));
+  assert.ok(!clientSends([deletion], "DELETE", "/data-query", "/platform/triggers/tr-1"));
+  assert.ok(clientSends([deletion], "POST", "", "/panel-operations/inspect-impact"));
+  assert.ok(!clientSends([status], "PUT", "/data-query", "/platform/triggers/tr-1/status"));
+  assert.equal(platformObjectTypes[TRIGGER].reads?.memberResolve.result, "panelOptionList");
+  assert.ok(platformObjectTypes[TRIGGER].operations?.includes(SET_TRIGGER_STATUS));
+  assert.equal(platformObjectTypes["platform:ScheduledTask"], undefined);
 });
 
 test("Workflow definition reads and writes use exact binding requests", () => {
@@ -2019,7 +2015,7 @@ test("Workflow definition reads and writes use exact binding requests", () => {
 });
 
 test("a panel operation descriptor admits exactly the three use and operation query keys", () => {
-  const bindings = [bindingKey({ kind: "PlatformOperation", id: "schedules.runNow" })];
+  const bindings = [bindingKey({ kind: "PlatformOperation", id: "triggers.runNow" })];
   const path = "/panel-operations/descriptor";
   const valid = `${path}?useId=tasks&operationId=run%2Enow&applicationId=workbench`;
   assert.equal(clientSends(bindings, "GET", "", valid), true);
@@ -2032,7 +2028,7 @@ test("a panel operation descriptor admits exactly the three use and operation qu
   assert.deepEqual(panelOperationRefSchema.parse(query), query);
   assert.equal(panelOperationRefSchema.safeParse({ ...query, effect: "read" }).success, false);
   const description = {
-    handlerRef: "schedules.runNow", label: "Run now", kind: "action", effect: "write", target: { source: "input", input: "task" },
+    handlerRef: "triggers.runNow", label: "Run now", kind: "action", effect: "write", target: { source: "input", input: "task" },
     inputSchema: {}, resultSchema: {}, batch: false,
   };
   assert.deepEqual(panelOperationDescriptorResponseSchema.parse(description), description);
@@ -2327,12 +2323,12 @@ test("the author type table and live descriptions share operation declarations",
     id: RUN_NOW, kind: "action", effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
   });
   const save = panelOperationDeclarationSchema.parse({
-    id: SCHEDULED_TASK + ".save", kind: "form.save", effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
+    id: TRIGGER + ".save", kind: "form.save", effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
   });
-  const reads = platformObjectTypes[SCHEDULED_TASK].reads!;
+  const reads = platformObjectTypes[TRIGGER].reads!;
   const resultIds = new Set(Object.values(reads).map(read => read.result));
   const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, zodToJsonSchema(panelReadResultSchemas[id])]));
-  const table = { objectTypes: { [SCHEDULED_TASK]: { reads, operations: [run, save] } }, resultSchemas };
+  const table = { objectTypes: { [TRIGGER]: { reads, operations: [run, save] } }, resultSchemas };
   assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
   const { panelFormDescription: _form, ...incomplete } = resultSchemas;
   assert.equal(platformTypeTableResponseSchema.safeParse({ ...table, resultSchemas: incomplete }).success, false);
@@ -2920,7 +2916,7 @@ test("a state placement selects a product's kind and carries the complete nested
   assert.equal(productPanelNestedReadRequestSchema.safeParse({ ...nestedRequest, memberPath: [] }).success, false);
   const unresolvedDetail = {
     member: "objectDetails",
-    selection: { stateValue: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
+    selection: { stateValue: { className: "platform:Trigger", primaryKey: "task-1" } },
   };
   const unresolved = { ...nestedRequest, memberPath: [memberPath[0], unresolvedDetail] };
   assert.deepEqual(productPanelNestedReadRequestSchema.parse(unresolved), unresolved);
@@ -3038,7 +3034,7 @@ test("a component package declares a static release and inspection returns the i
   const component = {
     componentId: "@acme/widgets:SaveButton", module, exportName: "SaveButton", role: "control", meaning: "Shows a save button",
     ports: { props: [], events: [], slots: [] }, data: {},
-    operations: [{ name: "save", handlerRef: "platform:ScheduledTask.save" }],
+    operations: [{ name: "save", handlerRef: "platform:Trigger.save" }],
   };
   const response = { ...current, entries: manifest.ontomato.entries, styles: manifest.ontomato.styles, components: [component] };
   assert.deepEqual(componentPackageResponseSchema.parse(response), response);
@@ -3059,7 +3055,7 @@ test("a component package declares a static release and inspection returns the i
 test("a refused component package upgrade reports the changed shape and its affected records", () => {
   const change = {
     component: "@acme/widgets:SaveButton", field: "inputs.task",
-    before: { kind: "object", objectType: SCHEDULED_TASK },
+    before: { kind: "object", objectType: TRIGGER },
     projectionIds: ["save-task"], panelIds: ["manage-tasks"],
     projections: [{ id: "save-task", domainId: "domain" }], panels: [{ id: "manage-tasks", domainId: "domain" }],
   };
@@ -3077,7 +3073,7 @@ test("removed listColumn, listRowDetail, formField, and row input syntax are rej
   const { panelTemplatePlacedMemberKeys } = await import("./panel-manifest");
   const baseState = {
     filter: { type: { kind: "scalar" as const, type: "string" as const } },
-    selected: { type: { kind: "object" as const, objectType: SCHEDULED_TASK } },
+    selected: { type: { kind: "object" as const, objectType: TRIGGER } },
   };
   const cleanManifest = panelManifestSchema.parse({
     state: baseState,
@@ -3109,7 +3105,7 @@ test("removed listColumn, listRowDetail, formField, and row input syntax are rej
 
 test("operations support author-bound params and object-union targets for heterogeneous lists", async () => {
   const { panelOperationTargetPort, projectionOperationTargetMatches } = await import("./panel-projection");
-  const unionPort = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", objectTypes: [BUSINESS_KNOWLEDGE, SCHEDULED_TASK] });
+  const unionPort = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", objectTypes: [BUSINESS_KNOWLEDGE, TRIGGER] });
   const layerUnion = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", layers: ["capability"] });
   assert.deepEqual(panelOperationTargetPort(unionPort, BUSINESS_KNOWLEDGE, false), unionPort);
   assert.equal(panelOperationTargetPort(unionPort, "platform:Skill", false), undefined);
@@ -3169,13 +3165,13 @@ test("row operations reject legacy rowContext and omitted targets while list rea
 
   assert.equal(panelMemberItemKeySchema.parse("row-1"), "row-1");
   assert.deepEqual(
-    panelMemberItemKeySchema.parse({ className: SCHEDULED_TASK, primaryKey: "task-1" }),
-    { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    panelMemberItemKeySchema.parse({ className: TRIGGER, primaryKey: "task-1" }),
+    { className: TRIGGER, primaryKey: "task-1" },
   );
   assert.equal(panelMemberItemKeySchema.safeParse("").success, false);
   assert.equal(panelMemberItemKeySchema.safeParse(0).success, false);
 
-  const target = { kind: "object" as const, objectType: SCHEDULED_TASK, primaryKey: "task-1" };
+  const target = { kind: "object" as const, objectType: TRIGGER, primaryKey: "task-1" };
   const humanRowReq = {
     applicationId: "app-1", useId: "use-1", operationId: "list.delete",
     memberPath: [{ member: "list" }], call: { target, input: {} },
@@ -3195,7 +3191,7 @@ test("row operations reject legacy rowContext and omitted targets while list rea
     status: "ready" as const,
     value: { rows: [] },
     rowOperations: {
-      "platform:ScheduledTask:task-1": {
+      "platform:Trigger:task-1": {
         delete: { available: false, unavailable: { reason: "System task cannot be deleted" } },
         runNow: { available: true },
       },
@@ -3206,7 +3202,7 @@ test("row operations reject legacy rowContext and omitted targets while list rea
   const baseRead = {
     source: { kind: "registered" as const, applicationId: "app-1", useId: "use-1" },
     memberPath: [{ member: "rowDetail" }],
-    inputs: { target: { className: SCHEDULED_TASK, primaryKey: "task-1" } },
+    inputs: { target: { className: TRIGGER, primaryKey: "task-1" } },
     dataName: "record",
   };
   assert.equal(productPanelReadRequestSchema.safeParse(baseRead).success, true);
@@ -3221,8 +3217,8 @@ test("panelRecordItemKey and matchPanelRecordItemKey provide one shared contract
   assert.deepEqual(panelRecordItemKey(typedRow), { className: "platform:Action", primaryKey: "act-1" });
   assert.equal(panelRecordItemKey(typedRow, { heterogeneous: false }), "act-1");
   assert.deepEqual(
-    panelRecordItemKey(homogeneousRow, { heterogeneous: true, fallbackClassName: SCHEDULED_TASK }),
-    { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    panelRecordItemKey(homogeneousRow, { heterogeneous: true, fallbackClassName: TRIGGER }),
+    { className: TRIGGER, primaryKey: "task-1" },
   );
 
   assert.equal(matchPanelRecordItemKey(homogeneousRow, "task-1"), true);
@@ -3231,11 +3227,11 @@ test("panelRecordItemKey and matchPanelRecordItemKey provide one shared contract
   assert.equal(matchPanelRecordItemKey(typedRow, { className: "platform:Action", primaryKey: "act-1" }), true);
   assert.equal(matchPanelRecordItemKey(typedRow, { className: "platform:Skill", primaryKey: "act-1" }), false);
   assert.equal(
-    matchPanelRecordItemKey(homogeneousRow, { className: SCHEDULED_TASK, primaryKey: "task-1" }, SCHEDULED_TASK),
+    matchPanelRecordItemKey(homogeneousRow, { className: TRIGGER, primaryKey: "task-1" }, TRIGGER),
     true,
   );
   assert.equal(
-    matchPanelRecordItemKey(homogeneousRow, { className: SCHEDULED_TASK, primaryKey: "task-1" }),
+    matchPanelRecordItemKey(homogeneousRow, { className: TRIGGER, primaryKey: "task-1" }),
     false,
   );
 });

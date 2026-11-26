@@ -1,12 +1,11 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 import { dashboardMetricDescriptionSchema } from "./dashboard";
-import { platformSchedulesPath } from "./platform-schedules";
 import {
   DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, CHECK_EXTERNAL_MCP_SERVICE, EXTERNAL_MCP_SERVICE, FUNCTION,
-  METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
+  METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL,
   TRIGGER, WORKFLOW, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
-  RUN_NOW, SET_ACTION_STATUS, TRIAL_ACTION, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
+  SET_ACTION_STATUS, TRIAL_ACTION, DELETE_ACTION, DELETE_TRIGGER, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   IMPORT_SKILL, EXPORT_SKILL, EXPORT_FEEDBACK, DELETE_METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_METRIC_VIEW,
   TEST_EXECUTE_METRIC_VIEW, DELETE_FUNCTION,
   CHECK_DATA_ADAPTER_SANDBOX_PERMISSION, CHECK_ACTION_SANDBOX_PERMISSION,
@@ -14,9 +13,10 @@ import {
 
 export {
   DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, CHECK_EXTERNAL_MCP_SERVICE, EXTERNAL_MCP_SERVICE, FUNCTION,
-  METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
+  METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL,
   TRIGGER, WORKFLOW, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
-  RUN_NOW, SET_ACTION_STATUS, TRIAL_ACTION, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
+  RUN_NOW, CREATE_TRIGGER, SET_TRIGGER_ENABLED, SET_TRIGGER_STATUS, DELETE_TRIGGER, RENEW_TRIGGER_CREDENTIAL,
+  SET_ACTION_STATUS, TRIAL_ACTION, DELETE_ACTION, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   IMPORT_SKILL, EXPORT_SKILL, EXPORT_FEEDBACK, DELETE_METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_METRIC_VIEW,
   TEST_EXECUTE_METRIC_VIEW, DELETE_FUNCTION,
   CHECK_DATA_ADAPTER_SANDBOX_PERMISSION, CHECK_ACTION_SANDBOX_PERMISSION,
@@ -24,9 +24,8 @@ export {
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
- * projection binds a platform object type or a platform operation, and the client the SDK registers for that binding
- * (`apps-sdk/src/panel/schedules.ts`) is what a panel's components read and write through. This is the one place that
- * says which requests those clients make: the clients send nothing else, and the platform admits a panel frame's request
+ * projection binds a platform object type or a platform operation. This is the one place that says which requests
+ * the SDK's clients make: the clients send nothing else, and the platform admits a panel frame's request
  * only when a binding of one of the panel's own projections declares it (`platform-web/src/app-host.ts`).
  *
  * It is the wire agreement between the two ends of the bridge — the SDK in the frame and the platform's host — so it is
@@ -34,10 +33,7 @@ export {
  */
 
 
-/**
- * The gateway prefix the scheduled tasks' contract spells its paths with. A frame's request names the service and the
- * path inside it, as the platform's app host takes them, so the prefix becomes the service.
- */
+/** Gateway prefix for the DataRAG service. A frame names the service separately from its internal path. */
 export const DATA_QUERY_GATEWAY = "/api/data-query";
 
 /** One request a client sends: its method, the platform service it goes to and the path inside that service. */
@@ -47,13 +43,10 @@ export interface ClientRequest {
   path: RegExp;
 }
 
-/** A binding as a projection record names it, `<kind>:<id>`: `PlatformObjectType:platform:ScheduledTask`. */
+/** A binding as a projection record names it, `<kind>:<id>`: `PlatformObjectType:platform:Trigger`. */
 export const bindingKey = (binding: { kind: string; id: string }) => `${binding.kind}:${binding.id}`;
 
-const tasks = platformSchedulesPath.slice(DATA_QUERY_GATEWAY.length);
-/** Record routes accept UUIDs, never another named endpoint of the resource. */
 const uuidPattern = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
-const task = `${tasks}/${uuidPattern}`;
 
 interface PanelClientRead extends ClientRequest {
   template: string;
@@ -118,19 +111,6 @@ function boundMetricId(binding: string): string | undefined {
   return binding.startsWith(metricViewBindingPrefix) ? binding.slice(metricViewBindingPrefix.length) : undefined;
 }
 
-/** The owner reads shared by frames, the execution callback and the generated panel skill. */
-export const scheduledTaskReads = [
-  { method: "GET", service: "/data-query", path: new RegExp(`^${tasks}$`), template: tasks },
-  { method: "GET", service: "/data-query", path: new RegExp(`^${task}$`), template: `${tasks}/:id` },
-  {
-    method: "POST",
-    service: "/data-query",
-    path: new RegExp(`^${tasks}/applications/[^/?]+/form$`),
-    template: `${tasks}/applications/:appId/form`,
-    instructions: "POST JSON with `values`, `changedField`, `taskId`, and `timeZone`. Read the task first for its appId, content and timeZone. Start with the task's content as values and null as changedField, then use the returned fields and values. Request the form again when an edited field changes it.",
-  },
-] as const satisfies readonly PanelClientRead[];
-
 const agents = "/assistant/agent-definitions";
 const agent = `${agents}/${uuidPattern}`;
 const agentForm = `${agents}/form`;
@@ -180,12 +160,6 @@ const workflowDefinitionReads = [
   dataQueryPost("/workflow/subjects"),
   dataQueryPost("/action/queryList"),
 ] as const;
-
-const triggerDefinitionReads = [
-  dataQueryPost("/trigger/queryList"),
-  dataQueryPost("/trigger/queryById"),
-  { ...dataQueryPost("/trigger/form"), instructions: formReadInstructions },
-] as const satisfies readonly PanelClientRead[];
 
 const knowledgeReads = [
   { method: "POST", service: "/data-query", path: /^\/admin\/getBussinessKnowledge$/, template: "/admin/getBussinessKnowledge" },
@@ -245,7 +219,6 @@ const platformOntologyReads = [
 
 const objectBinding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
-  [objectBinding(SCHEDULED_TASK)]: scheduledTaskReads,
   [objectBinding(AGENT_DEFINITION)]: agentDefinitionReads,
   [objectBinding(SKILL)]: skillReads,
   [objectBinding(BUSINESS_KNOWLEDGE)]: knowledgeReads,
@@ -269,7 +242,6 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(METRIC_VIEW)]: metricViewDefinitionReads,
   [objectBinding(FUNCTION)]: functionDefinitionReads,
   [objectBinding(ACTION)]: actionDefinitionReads,
-  [objectBinding(TRIGGER)]: triggerDefinitionReads,
   [objectBinding(WORKFLOW)]: workflowDefinitionReads,
   [objectBinding(ONTOLOGY_TYPE)]: platformOntologyReads,
   [objectBinding(ONTOLOGY_RELATION_KIND)]: platformOntologyReads,
@@ -305,14 +277,6 @@ export const panelReadOperationRequest = {
 /** Each binding's requests: what its client sends, and nothing more. */
 export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
   ...readRequests,
-  [objectBinding(SCHEDULED_TASK)]: [
-    // The reader's tasks, one task, its application's form for given values, and the save at the task's revision.
-    ...scheduledTaskReads,
-    { method: "PUT", service: "/data-query", path: new RegExp(`^${task}$`) },
-  ],
-  [bindingKey({ kind: "PlatformOperation", id: RUN_NOW })]: [
-    { method: "POST", service: "/data-query", path: new RegExp(`^${task}/runs$`) },
-  ],
   [objectBinding(AGENT_DEFINITION)]: [
     ...agentDefinitionReads,
     { method: "POST", service: "", path: new RegExp(`^${agents}$`) },
@@ -325,7 +289,6 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [objectBinding(METRIC_VIEW)]: [...metricViewDefinitionReads, dataQueryPost("/metricView/save")],
   [objectBinding(FUNCTION)]: [...functionDefinitionReads, dataQueryPost("/function/save")],
   [objectBinding(ACTION)]: [...actionDefinitionReads, dataQueryPost("/action/save")],
-  [objectBinding(TRIGGER)]: [...triggerDefinitionReads, dataQueryPost("/trigger/save")],
   [objectBinding(WORKFLOW)]: [...workflowDefinitionReads, dataQueryPost("/workflow/save")],
   [bindingKey({ kind: "PlatformOperation", id: ACTIVATE_WORKFLOW })]: [dataQueryPost("/workflow/activate"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: DEACTIVATE_WORKFLOW })]: [dataQueryPost("/workflow/deactivate"), panelOperationImpactRequest],
@@ -339,8 +302,7 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [bindingKey({ kind: "PlatformOperation", id: SET_ACTION_STATUS })]: [dataQueryPost("/action/setStatus")],
   [bindingKey({ kind: "PlatformOperation", id: TRIAL_ACTION })]: [dataQueryPost("/action/trial")],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_ACTION })]: [dataQueryPost("/action/delete"), panelOperationImpactRequest],
-  [bindingKey({ kind: "PlatformOperation", id: SET_TRIGGER_STATUS })]: [dataQueryPost("/trigger/status")],
-  [bindingKey({ kind: "PlatformOperation", id: DELETE_TRIGGER })]: [dataQueryPost("/trigger/delete"), panelOperationImpactRequest],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_TRIGGER })]: [panelOperationImpactRequest],
   [objectBinding(BUSINESS_KNOWLEDGE)]: [
     ...knowledgeReads,
     { method: "POST", service: "/data-query", path: /^\/admin\/addBussinessKnowledge$/ },

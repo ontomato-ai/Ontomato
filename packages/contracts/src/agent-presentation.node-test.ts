@@ -31,7 +31,7 @@ import {
 
 const id = "a40cfd44-e82c-40f1-8f07-2c1591622381";
 const address = "/applications/scheduling/tasks";
-const state = { selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-1" } };
+const state = { selectedTask: { className: "platform:Trigger", primaryKey: "task-1" } };
 const presentationBinding = { viewId: id };
 
 test("present accepts only workspace outputs or a site-relative page and rejects conflicting state", () => {
@@ -58,10 +58,10 @@ test("pageContext carries declared public state and live form contents on every 
     url: address,
     label: "Tasks",
     selection: [],
-    state: { tab: "history", filter: "active", checked: [{ className: "platform:ScheduledTask", primaryKey: "t-1" }] },
+    state: { tab: "history", filter: "active", checked: [{ className: "platform:Trigger", primaryKey: "t-1" }] },
     forms: [{
       member: "taskForm",
-      target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "t-1" },
+      target: { kind: "object", objectType: "platform:Trigger", primaryKey: "t-1" },
       dirty: true,
       dirtyFields: ["/name"],
       values: { name: "Edited task name" },
@@ -156,7 +156,7 @@ test("a live display request is distinct from a lifecycle notice, and navigation
 test("object invalidations are live frames with a root session and object identity", () => {
   const change = {
     type: "object-changed", session: { providerId: "workbench", sessionId: id },
-    target: { objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+    target: { objectType: "platform:Trigger", primaryKey: "task-1" },
   };
   assert.deepEqual(agentHostSessionLiveFrameSchema.parse(change), change);
   assert.equal(agentHostSessionRunFrameSchema.safeParse(change).success, false);
@@ -315,8 +315,8 @@ test("fill_form and page_action requests, frames, and receipts validate on the s
   assert.throws(() => pageActionRequestSchema.parse({
     mode: "page_action",
     operation: "list.batchDelete",
-    expectedTarget: { kind: "draft", objectType: "platform:ScheduledTask" },
-    expectedCheckedKeys: ["platform:ScheduledTask:task-1"],
+    expectedTarget: { kind: "draft", objectType: "platform:Trigger" },
+    expectedCheckedKeys: ["platform:Trigger:task-1"],
   }));
 
   const boundFillFrame = {
@@ -333,7 +333,7 @@ test("fill_form and page_action requests, frames, and receipts validate on the s
       expectedPanelInstanceId: "panel-1",
       expectedMemberInstanceId: "nested-1",
       expectedFormInstanceId: "form-1",
-      expectedTarget: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+      expectedTarget: { kind: "object", objectType: "platform:Trigger", primaryKey: "task-1" },
       expectedDashboardId: "dash-1",
       expectedCardId: "card-1",
     },
@@ -348,13 +348,13 @@ test("fill_form and page_action requests, frames, and receipts validate on the s
     target: {
       kind: "page_action",
       operation: "list.batchDelete",
-      rowKey: "platform:ScheduledTask:task-1",
+      rowKey: "platform:Trigger:task-1",
       expectedPageInstanceId: "page-1",
       expectedPanelInstanceId: "panel-1",
       expectedMemberInstanceId: "nested-1",
       expectedEntryInstanceId: "entry-1",
-      expectedTarget: { kind: "draft", objectType: "platform:ScheduledTask" },
-      expectedCheckedKeys: ["platform:ScheduledTask:task-1", "platform:ScheduledTask:task-2"],
+      expectedTarget: { kind: "draft", objectType: "platform:Trigger" },
+      expectedCheckedKeys: ["platform:Trigger:task-1", "platform:Trigger:task-2"],
       expectedDashboardId: "dash-1",
       expectedCardId: "card-1",
     },
@@ -374,7 +374,7 @@ test("fill_form and page_action requests, frames, and receipts validate on the s
       panelInstanceId: "panel-1",
       memberInstances: { detail: "nested-1" },
       entryInstances: { "list.batchDelete": "entry-1" },
-      checkedKeys: { checked: ["platform:ScheduledTask:task-1"] },
+      checkedKeys: { checked: ["platform:Trigger:task-1"] },
       dashboardId: "dash-1",
       cardId: "card-1",
     },
@@ -449,8 +449,8 @@ test("shared panel operation classifier separates executed, failed (preserving c
     {
       kind: "batch",
       items: [
-        { target: { objectType: "platform:ScheduledTask", primaryKey: "t1" }, outcome: { kind: "success", data: {} } },
-        { target: { objectType: "platform:ScheduledTask", primaryKey: "t2" }, outcome: { kind: "refusal", code: "TASK_RUNNING", message: "Busy" } },
+        { target: { objectType: "platform:Trigger", primaryKey: "t1" }, outcome: { kind: "success", data: {} } },
+        { target: { objectType: "platform:Trigger", primaryKey: "t2" }, outcome: { kind: "refusal", code: "TASK_RUNNING", message: "Busy" } },
       ],
     },
     "intent-5",
@@ -465,8 +465,8 @@ test("shared panel operation classifier separates executed, failed (preserving c
     {
       kind: "batch",
       items: [
-        { target: { objectType: "platform:ScheduledTask", primaryKey: "t1" }, outcome: { kind: "success", data: {} } },
-        { target: { objectType: "platform:ScheduledTask", primaryKey: "t2" }, outcome: { kind: "unknown", message: "Timed out" } },
+        { target: { objectType: "platform:Trigger", primaryKey: "t1" }, outcome: { kind: "success", data: {} } },
+        { target: { objectType: "platform:Trigger", primaryKey: "t2" }, outcome: { kind: "unknown", message: "Timed out" } },
       ],
     },
     "intent-7",

@@ -128,7 +128,7 @@ test("platform products use a reserved identity and are read-only without a doma
   assert.equal(domainProductIdParamsSchema.safeParse({ id: panelId }).success, false);
   assert.equal(domainProductIdParamsSchema.safeParse({ id: "sales-panel" }).success, true);
   assert.equal(panelAuthoringMemberSchema.safeParse({
-    id: projectionId, component: "ObjectList", type: "platform:ScheduledTask", data: { rows: "list" },
+    id: projectionId, component: "ObjectList", type: "platform:Trigger", data: { rows: "list" },
   }).success, true);
   const use = { id: "sales", pageKey: "sales", path: "/sales", panelId };
   assert.deepEqual(builtinApplicationPanelUseSchema.parse(use), use);
@@ -136,7 +136,7 @@ test("platform products use a reserved identity and are read-only without a doma
 });
 
 test("platform projections bind declared types and runtime state instead of stored domain identities", () => {
-  const taskType = "platform:ScheduledTask";
+  const taskType = "platform:Trigger";
   const object = { className: taskType, primaryKey: "domain-task" };
   const base = {
     name: "Example", description: "", visibility: "platform", componentId: "@ontomato/sdk:PanelData",
@@ -159,7 +159,7 @@ test("platform projections bind declared types and runtime state instead of stor
     },
   };
   assert.equal(builtinProductProjectionInputSchema.safeParse(metricChartBuiltin).success, true);
-  const platformOperation = { operation: { kind: "PlatformOperation", id: "schedules.runNow" } };
+  const platformOperation = { operation: { kind: "PlatformOperation", id: "triggers.runNow" } };
   for (const [changes, field] of [
     [{ componentId: "domain-component:custom-list" }, "componentId"],
     [{ conversationEntry: { target: { kind: "id", id: "domain-agent" } } }, "conversationEntry.target.id"],
@@ -177,7 +177,7 @@ test("platform projections bind declared types and runtime state instead of stor
 });
 
 test("platform projections take a domain run identity from state, never as a stored literal", () => {
-  const taskType = "platform:ScheduledTask";
+  const taskType = "platform:Trigger";
   const projection = (runId: object) => ({
     name: "Task run", description: "", visibility: "platform", componentId: "@ontomato/sdk:PanelData",
     inputs: { task: { kind: "object", objectType: taskType }, runId: { kind: "scalar", type: "string" } },
@@ -193,7 +193,7 @@ test("platform projections take a domain run identity from state, never as a sto
 test("platform panels place only packaged products and do not pin domain object inputs", () => {
   const base = { name: "Example", description: "", visibility: "platform", content: { html: "", module: "" } };
   const projectionId = `${BUILTIN_PRODUCT_ID_PREFIX}related-tasks`;
-  const taskType = "platform:ScheduledTask";
+  const taskType = "platform:Trigger";
   const state = { selected: { type: { kind: "object", objectType: taskType } } };
   const member = { target: { projectionId }, inputs: { task: { state: "selected" } } };
   const manifest = { state, members: { related: member } };
@@ -456,7 +456,7 @@ test("declares grant reads for both resource classes and a panel-only template f
 
 test("declares projection-only componentId and objectType catalog filters and derives bound object types from existing facts", async () => {
   const { productPanelCatalogQuerySchema } = await import("./product-catalog-query");
-  const { METRIC_VIEW, ONTOLOGY_TYPE, PRODUCT_PROJECTION, SCHEDULED_TASK, SDK_COMPONENT, platformObjectTypes } = await import("./platform-object-types");
+  const { METRIC_VIEW, ONTOLOGY_TYPE, PRODUCT_PROJECTION, TRIGGER, SDK_COMPONENT, platformObjectTypes } = await import("./platform-object-types");
   const { panelReadParameterSchemas } = await import("./panel-projection");
 
   assert.equal(productPanelCatalogQuerySchema.safeParse({ componentId: "@ontomato/sdk:ObjectList" }).success, false);
@@ -464,7 +464,7 @@ test("declares projection-only componentId and objectType catalog filters and de
   assert.deepEqual(productProjectionCatalogQuerySchema.parse({
     q: " tasks ",
     componentId: " @ontomato/sdk:ObjectList ",
-    objectType: " platform:ScheduledTask ",
+    objectType: " platform:Trigger ",
     limit: "20",
   }), {
     q: "tasks",
@@ -472,7 +472,7 @@ test("declares projection-only componentId and objectType catalog filters and de
     sort: "updated",
     limit: 20,
     componentId: "@ontomato/sdk:ObjectList",
-    objectType: "platform:ScheduledTask",
+    objectType: "platform:Trigger",
   });
   assert.deepEqual(productProjectionCatalogQuerySchema.parse({ componentId: "   ", objectType: "" }), {
     q: "",
@@ -508,9 +508,9 @@ test("declares projection-only componentId and objectType catalog filters and de
     inputs: { target: { kind: "list", items: { kind: "object", objectType: "Order" } } },
     operations: {
       approve: { operation: { kind: "Action", id: "approveOrder" }, target: { input: "target" } },
-      runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } },
+      runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" } },
     },
-  }), ["Order", SCHEDULED_TASK]);
+  }), ["Order", TRIGGER]);
   assert.deepEqual(projectionBoundObjectTypes({
     data: {},
     inputs: { target: { kind: "object", objectType: "@any" } },
