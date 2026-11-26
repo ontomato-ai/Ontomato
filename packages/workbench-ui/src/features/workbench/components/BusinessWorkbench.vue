@@ -626,13 +626,19 @@ watch(
   },
 );
 
-/** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
+/** Open a board from the workbench's dashboard list. */
 function openDashboardApplication(dashboardId: string) {
-  closeDashboards();
   if (props.internalPages) {
+    closeDashboards();
     void display.navigate(panelAddress(props.internalPages.dashboard, { dashboardId }), { history: "push" });
     return;
   }
+  openDashboardPage(dashboardId);
+}
+
+/** The dashboard entry loads its own application before opening the saved board. */
+function openDashboardPage(dashboardId: string) {
+  closeDashboards();
   void router.push({ path: routes.dashboards.path, query: { dashboardId } });
 }
 
@@ -774,8 +780,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
     <template #artifact-actions="{ artifact, title, caption }">
       <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
            into cards there, a chart file is put on the board as it is. -->
-      <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
-      <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardApplication" />
+      <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardPage" />
+      <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardPage" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="!internalPages && sessionId && runId" :session-id="sessionId" :run-id="runId" />

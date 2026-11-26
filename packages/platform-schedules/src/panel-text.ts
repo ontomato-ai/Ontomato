@@ -28,7 +28,7 @@ export interface ScheduledTaskPanelText {
   runFields: {
     status: string; trigger: string; startedAt: string; scheduledAt: string; duration: string;
     error: string; resultSummary: string; snapshotSummary: string; result: string; executionDetails: string;
-    resultPath: string;
+    resultPath: string; timeZone: string;
   };
   trigger: { manual: string; schedule: string; unknown: string };
   runError: Record<
@@ -139,6 +139,7 @@ export const scheduledTaskPanelTextEn = {
     result: "Result",
     executionDetails: "Execution details",
     resultPath: "Result link",
+    timeZone: "Time zone",
   },
   trigger: {
     manual: "Manual",
@@ -250,6 +251,7 @@ export const scheduledTaskPanelTextZhCn = {
     result: "结果",
     executionDetails: "执行详情",
     resultPath: "结果链接",
+    timeZone: "时区",
   },
   trigger: {
     manual: "手动",
