@@ -4,12 +4,16 @@ import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.ontomato.dataengine.service.LangService;
 import jakarta.mail.Multipart;
 import jakarta.mail.Part;
 import jakarta.mail.internet.MimeMessage;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.env.MockEnvironment;
 
 class TaskMailTest {
@@ -27,12 +31,12 @@ class TaskMailTest {
     when(language.get("en", "scheduledTasks.mail.footer")).thenReturn("Sent by Ontomato");
     var mail = new TaskMail(environment(), language);
 
-    var completed = mail.compose(run("executor"), RESULT, null);
+    var completed = mail.compose(run("executor", "en"), RESULT, null);
     assertTrue(completed.getSubject().contains(TITLE));
     assertEquals(RESULT, body(completed, "text/plain"));
     assertTrue(body(completed, "text/html").contains("<strong>Private result</strong>"));
 
-    var failed = mail.compose(run("executor"), null, new TaskStore.Failure("run_failed", ERROR));
+    var failed = mail.compose(run("executor", "en"), null, new TaskStore.Failure("run_failed", ERROR));
     assertEquals("Execution failed\n" + ERROR, body(failed, "text/plain"));
     assertTrue(body(failed, "text/html").contains("Private failure &lt;details&gt;"));
   }
@@ -41,18 +45,48 @@ class TaskMailTest {
   void otherSetterAndUnknownAttributionReceiveOnlyStatusAndAuthorizedRunLink() throws Exception {
     var env = environment().withProperty("SMTP_PUBLIC_ORIGIN", "https://workbench.example.test:8443")
         .withProperty("PUBLIC_BASE_PATH", "/team");
-    var mail = new TaskMail(env, mock(LangService.class));
+    var language = mock(LangService.class);
+    when(language.get("fr", "scheduledTasks.mail.completedStatus")).thenReturn("Exécution terminée");
+    when(language.get("fr", "scheduledTasks.mail.failedStatus")).thenReturn("Échec de l’exécution");
+    var mail = new TaskMail(env, language);
     String link = "https://workbench.example.test:8443/team/#/schedules?taskId=task%2F%26%20old&runId=" + RUN_ID;
 
-    assertStatusMail(mail.compose(run("creator"), RESULT, null), "Task trigger completed", link);
-    assertStatusMail(mail.compose(run(null), null, new TaskStore.Failure("run_failed", ERROR)),
-        "Task trigger failed", link);
+    assertStatusMail(mail.compose(run("creator", "fr"), RESULT, null), "Exécution terminée", link);
+    assertStatusMail(mail.compose(run(null, "fr"), null, new TaskStore.Failure("run_failed", ERROR)),
+        "Échec de l’exécution", link);
   }
 
   @Test
-  void statusMailRequiresExternalOrigin() {
-    var mail = new TaskMail(environment(), mock(LangService.class));
-    assertThrows(IllegalArgumentException.class, () -> mail.compose(run("creator"), RESULT, null));
+  void badOriginSkipsStatusMailAndLogsSafeConfigurationGuidance() {
+    var logger = (Logger) LoggerFactory.getLogger(TaskMail.class);
+    var warnings = new ListAppender<ILoggingEvent>();
+    warnings.start();
+    logger.addAppender(warnings);
+    try {
+      var env = environment().withProperty("SMTP_HOST", "unused.example.test");
+      var language = mock(LangService.class);
+      var run = run("creator", "en");
+      new TaskMail(env, language).send(run, RESULT, null);
+
+      env.setProperty("SMTP_PUBLIC_ORIGIN", "https://user:secret@invalid host");
+      new TaskMail(env, language).send(run, null, new TaskStore.Failure("run_failed", ERROR));
+
+      assertEquals(2, warnings.list.size());
+      assertTrue(warnings.list.get(0).getFormattedMessage().contains("SMTP_PUBLIC_ORIGIN is unset"));
+      assertTrue(warnings.list.get(1).getFormattedMessage().contains("SMTP_PUBLIC_ORIGIN is invalid"));
+      for (var warning : warnings.list) {
+        String message = warning.getFormattedMessage();
+        assertTrue(message.contains("Status-only mail skipped"));
+        assertTrue(message.contains("external workbench HTTP(S) origin"));
+        assertFalse(message.contains("secret"));
+        assertFalse(message.contains(RESULT));
+        assertFalse(message.contains(ERROR));
+        assertNull(warning.getThrowableProxy());
+      }
+    } finally {
+      logger.detachAppender(warnings);
+      warnings.stop();
+    }
   }
 
   private static void assertStatusMail(MimeMessage message, String status, String link) throws Exception {
@@ -82,10 +116,10 @@ class TaskMailTest {
     return new MockEnvironment().withProperty("SMTP_FROM", "sender@example.test");
   }
 
-  private static TaskStore.Run run(String setter) {
+  private static TaskStore.Run run(String setter, String locale) {
     var definition = new TaskDefinition(TITLE, "agents", object(), "v1", object(), "UTC",
         "recipient@example.test", null, "application", null);
-    var snapshot = new TaskStore.Snapshot("domain", "creator", definition, array(), "en", 1, "executor", 1, setter);
+    var snapshot = new TaskStore.Snapshot("domain", "creator", definition, array(), locale, 1, "executor", 1, setter);
     return new TaskStore.Run(RUN_ID, "task/& old", snapshot, "manual", "running",
         null, null, null, null, null, null, null, null, null, null, null, null);
   }

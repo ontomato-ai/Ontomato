@@ -60,6 +60,10 @@ class TaskMail {
     }
     try {
       sender.send(compose(run, result, failure));
+    } catch (StatusMailConfigurationException e) {
+      log.warn("Status-only mail skipped for {}: {}. Set SMTP_PUBLIC_ORIGIN to the external workbench"
+              + " HTTP(S) origin (scheme, host and optional port)",
+          run.taskId(), e.getMessage());
     } catch (RuntimeException | MessagingException e) {
       log.warn("Mail delivery failed for {}: {}", run.taskId(), e.getClass().getSimpleName());
     }
@@ -67,13 +71,13 @@ class TaskMail {
 
   MimeMessage compose(TaskStore.Run run, String result, TaskStore.Failure failure) throws MessagingException {
     var snapshot = run.snapshot();
+    String locale = snapshot.locale();
     String setter = snapshot.notifyEmailSetBy();
     boolean completed = failure == null;
     String subject;
     String text;
     String html;
     if (setter != null && setter.equals(snapshot.executorId())) {
-      String locale = snapshot.locale();
       subject = language.get(locale, "scheduledTasks.mail." + (completed ? "completedSubject" : "failedSubject"))
           .replace("{title}", snapshot.definition().title().replaceAll("[\\r\\n]+", " "));
       String content = completed ? result : language.get(locale, "scheduledTasks.error." + failure.code())
@@ -83,8 +87,8 @@ class TaskMail {
           + (completed ? HTML.render(MARKDOWN.parse(text)) : "<pre>" + htmlEscape(text) + "</pre>")
           + "<hr><p>" + htmlEscape(language.get(locale, "scheduledTasks.mail.footer")) + "</p>";
     } else {
-      subject = completed ? "Task trigger completed" : "Task trigger failed";
       String link = runLink(run);
+      subject = language.get(locale, completed ? "scheduledTasks.mail.completedStatus" : "scheduledTasks.mail.failedStatus");
       text = subject + "\n\n" + link;
       html = "<p>" + htmlEscape(subject) + "</p><p><a href=\"" + htmlEscape(link)
           + "\">" + htmlEscape(link) + "</a></p>";
@@ -99,14 +103,30 @@ class TaskMail {
   }
 
   private String runLink(TaskStore.Run run) {
-    var origin = URI.create(publicOrigin);
-    if (!("https".equalsIgnoreCase(origin.getScheme()) || "http".equalsIgnoreCase(origin.getScheme()))
-        || origin.getHost() == null || origin.getRawUserInfo() != null
-        || !(origin.getRawPath().isEmpty() || "/".equals(origin.getRawPath()))
-        || origin.getRawQuery() != null || origin.getRawFragment() != null) {
-      throw new IllegalArgumentException("SMTP_PUBLIC_ORIGIN must be the external workbench HTTP(S) origin");
-    }
+    var origin = requirePublicOrigin();
     return origin.getScheme() + "://" + origin.getRawAuthority() + publicBasePath
         + "/#/schedules?taskId=" + UriUtils.encode(run.taskId(), UTF_8) + "&runId=" + run.id();
+  }
+
+  private URI requirePublicOrigin() {
+    if (publicOrigin.isBlank()) throw new StatusMailConfigurationException("SMTP_PUBLIC_ORIGIN is unset");
+    try {
+      var origin = URI.create(publicOrigin);
+      if (("https".equalsIgnoreCase(origin.getScheme()) || "http".equalsIgnoreCase(origin.getScheme()))
+          && origin.getHost() != null && origin.getRawUserInfo() == null
+          && (origin.getRawPath().isEmpty() || "/".equals(origin.getRawPath()))
+          && origin.getRawQuery() == null && origin.getRawFragment() == null) {
+        return origin;
+      }
+    } catch (IllegalArgumentException ignored) {
+      // The URI parser's error may include credentials from the configured value.
+    }
+    throw new StatusMailConfigurationException("SMTP_PUBLIC_ORIGIN is invalid");
+  }
+
+  private static final class StatusMailConfigurationException extends IllegalArgumentException {
+    StatusMailConfigurationException(String message) {
+      super(message);
+    }
   }
 }
