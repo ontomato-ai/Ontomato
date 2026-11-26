@@ -10,6 +10,7 @@ import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -74,6 +75,7 @@ public final class ObjectAuthorizationController {
         return new BatchResult(authorization.decideBatch(authorization.resolveSubject(actor), operations));
     }
 
+    @Owned
     @PostMapping(READ_RANGES)
     public RangesResult readRanges(HttpServletRequest request, @RequestBody RangesInput input) {
         var actor = actor(request);
