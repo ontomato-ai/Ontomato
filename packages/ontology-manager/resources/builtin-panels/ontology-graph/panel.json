@@ -370,6 +370,11 @@
           }
         }
       },
+      "productGraph": {
+        "target": {
+          "projectionId": "builtin-product-og-business-product-graph"
+        }
+      },
       "pathFromPicker": {
         "target": {
           "fromState": "pathFromPickerSource",
@@ -645,7 +650,9 @@
         "ontologyGraph.readFailedFallback": "暂时无法读取该元素的最新内容，请重试。",
         "ontologyGraph.navigationFailed": "暂时无法打开目标页面，请稍后重试。",
         "ontologyGraph.retry": "重试",
-        "ontologyGraph.clearSelection": "清除选择"
+        "ontologyGraph.clearSelection": "清除选择",
+        "ontologyGraph.productRelationGraph": "产品关系图谱",
+        "ontologyGraph.productGraphTitle": "产品资产关系图谱"
       },
       "en": {
         "panel.name": "Ontology graph",
@@ -696,7 +703,9 @@
         "ontologyGraph.readFailedFallback": "Unable to read the latest details for this element. Please retry.",
         "ontologyGraph.navigationFailed": "Unable to open the target page right now. Please try again.",
         "ontologyGraph.retry": "Retry",
-        "ontologyGraph.clearSelection": "Clear selection"
+        "ontologyGraph.clearSelection": "Clear selection",
+        "ontologyGraph.productRelationGraph": "Product relation graph",
+        "ontologyGraph.productGraphTitle": "Product asset relationship graph"
       }
     }
   }

@@ -18,8 +18,22 @@ import {
  */
 
 const PROJECTION = "platform:ProductProjection";
+const PRODUCT_PANEL = "platform:ProductPanel";
+const APPLICATION = "platform:Application";
+const AGENT_DEFINITION = "platform:AgentDefinition";
 const OBJECT_TYPE = "platform:ObjectType";
 const ONTOLOGY_TYPE = "platform:OntologyType";
+
+/** The detail page for a product asset the graph names, when the platform publishes one for its class. */
+function productAssetRoute(target) {
+  const id = target?.primaryKey || target?.assetId;
+  if (!id) return null;
+  if (target.className === PROJECTION) return panelAddress("/ontology/projections/detail", { selected: id });
+  if (target.className === PRODUCT_PANEL) return panelAddress("/ontology/panels/detail", { selected: id });
+  if (target.className === APPLICATION) return panelAddress("/ontology/applications/detail", { selected: id });
+  if (target.className === AGENT_DEFINITION) return panelAddress("/ontology/agents/detail", { selected: id });
+  return null;
+}
 
 const BUSINESS_SOURCES = {
   objectStats: "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a",
@@ -124,6 +138,7 @@ await mountPanel({
     const objectRelationsTotal = usePanelOutput("objectRelations", "total");
 
     const navigationError = ref("");
+    const productGraphOpen = ref(false);
     const listEl = ref(null);
 
     // Opaque object reference lists reported by official ObjectList projections for canvas browse highlighting
@@ -513,11 +528,18 @@ await mountPanel({
       }
     }
 
-    // Esc or browser Back clears an active object/relation selection cleanly.
+    // Esc or browser Back clears an active object/relation selection cleanly; closes the product graph dialog first.
     usePanelBack(
       () => Boolean(requestedObjectKey.value || requestedRelationKey.value),
       clearSelection,
       { pushHistory: true },
+    );
+    usePanelBack(
+      () => productGraphOpen.value,
+      () => {
+        productGraphOpen.value = false;
+      },
+      { pushHistory: false },
     );
 
     // Every address action below is offered only where the selected element's own read published one.
@@ -534,6 +556,20 @@ await mountPanel({
       } catch {
         navigationError.value = t("ontologyGraph.navigationFailed");
       }
+    }
+
+    /** Opens the product asset graph dialog; the dialog closes itself when the reader follows an asset. */
+    function openProductGraph() {
+      navigationError.value = "";
+      productGraphOpen.value = true;
+    }
+
+    /** Leaves the dialog for the asset the graph published, when that asset has a detail page. */
+    function onOpenProductAsset(target) {
+      const address = productAssetRoute(target);
+      if (!address) return;
+      productGraphOpen.value = false;
+      void followAddress(address);
     }
 
     /** Asks for this type's instances: the outer panel takes the request when it bound the output, else this panel goes. */
@@ -608,6 +644,9 @@ await mountPanel({
       openDirectory: () => followAddress(directoryPath.value),
       exploreInstances,
       navigationError,
+      productGraphOpen,
+      openProductGraph,
+      onOpenProductAsset,
       refresh,
       retryDetail: () => void refreshObjects(),
     };

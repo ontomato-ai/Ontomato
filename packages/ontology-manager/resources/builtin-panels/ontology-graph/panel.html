@@ -516,6 +516,19 @@
       padding-bottom: calc(var(--spacing-lg) + var(--pane-dock-space, 0px));
     }
   }
+  .og-product-graph-body {
+    height: calc(100dvh - 110px);
+    min-height: 360px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .og-product-graph-body > [data-member] {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   @container (max-width: 560px) {
     .og-summary {
       flex-wrap: wrap;
@@ -539,6 +552,10 @@
           <span class="og-summary-sep" aria-hidden="true">·</span>
           <projection slot="relationStats"></projection>
         </div>
+        <sdk-button
+          data-action="product-relation-graph"
+          @click="openProductGraph"
+        >{{ t("ontologyGraph.productRelationGraph") }}</sdk-button>
         <sdk-button
           text
           icon="refresh-cw"
@@ -888,5 +905,21 @@
       </aside>
     </div>
 
+    <sdk-dialog
+      v-model="productGraphOpen"
+      :title="t('ontologyGraph.productGraphTitle')"
+      fullscreen
+      append-to-body
+      destroy-on-close
+      data-product-graph-dialog
+    >
+      <div class="og-product-graph-body">
+        <projection
+          v-if="productGraphOpen"
+          slot="productGraph"
+          @open="onOpenProductAsset"
+        ></projection>
+      </div>
+    </sdk-dialog>
   </section>
 </div>
