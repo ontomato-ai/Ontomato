@@ -39,7 +39,6 @@
         "config": {
           "layout": "tabs",
           "tabsVariant": "pill",
-          "inlineRename": true,
           "inlineRenameOperation": "rename",
           "inlineRenameField": "name",
           "searchable": false,
@@ -108,29 +107,25 @@
         },
         "config": {
           "columns": 12,
-          "sectionColumns": {
-            "metric": 12,
-            "chart": 24
-          },
           "rowHeight": 102,
-          "sectionRowHeights": {
-            "metric": 102,
-            "chart": 360
-          },
           "minColSpan": 1,
-          "sectionMinColSpans": {
-            "metric": 1,
-            "chart": 4
-          },
-          "sectionResizeAxes": {
-            "metric": "horizontal",
-            "chart": "both"
-          },
           "gap": 14,
           "sectionField": "kind",
-          "sectionOrder": [
-            "metric",
-            "chart"
+          "sections": [
+            {
+              "key": "metric",
+              "columns": 12,
+              "rowHeight": 102,
+              "minColSpan": 1,
+              "resizeAxis": "horizontal"
+            },
+            {
+              "key": "chart",
+              "columns": 24,
+              "rowHeight": 360,
+              "minColSpan": 4,
+              "resizeAxis": "both"
+            }
           ],
           "editable": true,
           "collapsible": false,

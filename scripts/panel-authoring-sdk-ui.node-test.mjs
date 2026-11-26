@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -711,6 +711,84 @@ test("panel check accepts top-level targetless customer Actions on ObjectForm an
             affects: ["Order"],
           },
         ],
+      };
+      const res = await checkPanelWorkspace(${JSON.stringify(dir)}, { checks, catalogue: { version: "1.0.0", components }, version: "1.0.0", typeTable });
+      console.log(JSON.stringify({ status: res.status, unchecked: res.unchecked.length }));
+    `;
+    const res = JSON.parse(execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }));
+    assert.equal(res.status, "valid");
+    assert.equal(res.unchecked, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("panel check accepts standalone ordinary projections that omit data", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ontomato-optional-data-check-"));
+  try {
+    const panelDir = join(dir, "panels", "orders-page");
+    const projectionsDir = join(dir, "projections");
+    mkdirSync(panelDir, { recursive: true });
+    mkdirSync(projectionsDir, { recursive: true });
+    writeFileSync(join(dir, "application.json"), JSON.stringify({
+      declaration: { names: { en: "Orders" }, descriptions: { en: "" }, icon: "app-window", groups: [] },
+      entry: { path: "/applications/app-orders", renderer: "panels", home: "/applications/app-orders/orders" },
+      panelUses: [{
+        id: "orders",
+        pageKey: "orders",
+        panelId: "orders-page",
+        path: "/applications/app-orders/orders",
+        names: { en: "Orders" },
+      }],
+    }));
+    writeFileSync(join(panelDir, "panel.html"), `<div id="app"><projection slot="createBtn"></projection></div>\n`);
+    writeFileSync(join(panelDir, "panel.mjs"), `import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n`);
+    writeFileSync(join(panelDir, "panel.json"), JSON.stringify({
+      name: "Orders",
+      description: "",
+      visibility: "domain",
+      manifest: {
+        state: {},
+        members: {
+          createBtn: { target: { projectionId: "create-order-btn" }, inputs: {} },
+        },
+      },
+    }));
+    writeFileSync(join(projectionsDir, "create-order-btn.json"), JSON.stringify({
+      name: "Create order",
+      description: "",
+      visibility: "domain",
+      componentId: "@ontomato/sdk:OperationButton",
+      inputs: {},
+      outputs: {},
+      operations: { create: { operation: { kind: "Action", id: "action-create-order" } } },
+      config: { operation: "create" },
+    }));
+    const script = `
+      import { resolve } from "node:path";
+      import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+      import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+      import { componentMetadata } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/apps-sdk/reference.mjs")).href)};
+      const components = componentMetadata({
+        tsconfig: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/tsconfig.json"),
+        source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
+      }).map(({ metadata }) => ({ ...metadata, ports: { props: [], events: [], slots: [] } }));
+      const typeTable = {
+        resultSchemas: {},
+        objectTypes: { Order: { reads: {} } },
+        operations: [{
+          id: "action-create-order",
+          kind: "action",
+          effect: "write",
+          target: { source: "none" },
+          inputSchema: { type: "object", properties: {} },
+          batch: false,
+          affects: ["Order"],
+        }],
       };
       const res = await checkPanelWorkspace(${JSON.stringify(dir)}, { checks, catalogue: { version: "1.0.0", components }, version: "1.0.0", typeTable });
       console.log(JSON.stringify({ status: res.status, unchecked: res.unchecked.length }));

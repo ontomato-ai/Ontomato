@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
 import {
+  appIcon,
   mountPanel,
   usePanelContext,
   usePanelOperation,
@@ -437,6 +438,7 @@ await mountPanel({
 
     return {
       t,
+      appIcon,
       greetingText,
       preferencesOpen,
       resettingHome,

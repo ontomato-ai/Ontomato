@@ -87,7 +87,6 @@
         "config": {
           "layout": "list",
           "leadingIconField": "icon",
-          "leadingIconKind": "application",
           "statusField": "statusTag",
           "fallbackToFirst": true,
           "showFooter": false,

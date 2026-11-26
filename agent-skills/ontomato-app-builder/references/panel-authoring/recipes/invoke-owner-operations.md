@@ -7,8 +7,7 @@ operations) the target object or checked list.
 ### Wire a customer business `Action` on `OperationButton`
 
 - **Standalone projection file (`projections/<id>.json`):** set `"componentId": "@ontomato/sdk:OperationButton"`,
-  include `"data": {}` (required on non-chart projections even though `OperationButton` declares no data reads), declare
-  the object or object-list input under `inputs`, bind `operations.<localName>.operation` to
+  declare the object or object-list input under `inputs` (`"data"` may be omitted when the projection declares no data reads), bind `operations.<localName>.operation` to
   `{ "kind": "Action", "id": "<action-id>" }`, and point `config.operation` to `"<localName>"`:
 
 ```json
@@ -17,7 +16,7 @@ operations) the target object or checked list.
   "inputs": {
     "target": { "kind": "object", "objectType": "ExpenseClaim" }
   },
-  "data": {},
+  "outputs": {},
   "operations": {
     "approve": {
       "operation": { "kind": "Action", "id": "expense.approve" },

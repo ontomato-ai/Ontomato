@@ -15,7 +15,7 @@ Inside a registered panel, choose between two official projection members:
   in `content.messages`). The reader still sends the message.
 - **Inline composer (`ConversationEntry`, `presentation="inline"`):** When a page itself serves as a conversation entry (such as a workspace
   home), place a `ConversationEntry` member pointing to the target agent with `presentation="inline"` (supporting
-  `placeholderKey`, `minLines`, `agentPickerVariant`, `attachPage`, and `@sent`) and set `"pageComposer": "none"` on
+  `placeholderKey`, `minLines`, `attachPage`, and `@sent`) and set `"pageComposer": "none"` on
   that entry in `panelUses` so the host hides the bottom floating composer. While mounted, the inline
   `ConversationEntry` also serves sibling `ConversationEntry` buttons on the same page; submitting enters the platform
   conversation shell with that agent.

@@ -6,6 +6,7 @@ import type {
   GroupedGridLayoutChange,
   GroupedGridLayoutState,
   GroupedGridSection,
+  GroupedGridSectionConfig,
   GroupedGridStaticGroupConfig,
   GroupedGridStaticItemConfig,
 } from "./grouped-grid-types";
@@ -31,9 +32,7 @@ export interface BuildGroupedGridOptions {
   readonly rows: readonly PlatformObjectRecord[];
   readonly rowObjectType: string;
   readonly columns: number;
-  readonly sectionColumns?: Readonly<Record<string, number>>;
   readonly minColSpan: number;
-  readonly sectionMinColSpans?: Readonly<Record<string, number>>;
   readonly maxColSpan?: number;
   readonly minRowSpan: number;
   readonly maxRowSpan: number;
@@ -41,22 +40,30 @@ export interface BuildGroupedGridOptions {
   readonly groupKeyField: string;
   readonly groupTitleField: string;
   readonly sectionField?: string;
-  readonly sectionOrder?: readonly string[];
+  readonly sections?: readonly GroupedGridSectionConfig[];
   readonly colSpanField: string;
   readonly rowSpanField: string;
   readonly orderField: string;
   readonly fallbackGroupTitle?: string;
 }
 
+/** Look up the configured descriptor for an optional section track key. */
+export function findGroupedGridSectionConfig(
+  section: string | null | undefined,
+  sections?: readonly GroupedGridSectionConfig[],
+): GroupedGridSectionConfig | undefined {
+  if (!section || section === "__default__" || !sections?.length) return undefined;
+  return sections.find((entry) => entry.key === section);
+}
+
 /** Resolve the effective grid column count for an optional section track. */
 export function resolveSectionColumns(
   section: string | null | undefined,
   defaultColumns: number,
-  sectionColumns?: Readonly<Record<string, number>>,
+  sections?: readonly GroupedGridSectionConfig[],
 ): number {
   const base = Math.max(1, Math.min(24, Math.floor(defaultColumns || 12)));
-  if (!section || section === "__default__") return base;
-  const override = sectionColumns?.[section];
+  const override = findGroupedGridSectionConfig(section, sections)?.columns;
   return typeof override === "number" && Number.isFinite(override) && override > 0
     ? Math.max(1, Math.min(24, Math.floor(override)))
     : base;
@@ -67,9 +74,9 @@ export function resolveSectionMinColSpan(
   section: string | null | undefined,
   defaultMinColSpan: number,
   maxCols: number,
-  sectionMinColSpans?: Readonly<Record<string, number>>,
+  sections?: readonly GroupedGridSectionConfig[],
 ): number {
-  const override = section && section !== "__default__" ? sectionMinColSpans?.[section] : undefined;
+  const override = findGroupedGridSectionConfig(section, sections)?.minColSpan;
   const raw = typeof override === "number" && Number.isFinite(override) && override > 0
     ? Math.floor(override)
     : Math.floor(defaultMinColSpan || 1);
@@ -132,7 +139,7 @@ export function extractContainerGroups(
 export function buildGroupSections(
   items: readonly GroupedGridItem[],
   sectionField?: string,
-  sectionOrder?: readonly string[],
+  sections?: readonly GroupedGridSectionConfig[],
 ): GroupedGridSection[] {
   if (!sectionField) {
     return [{ key: "__default__", items }];
@@ -150,9 +157,9 @@ export function buildGroupSections(
     bucket.push(item);
   }
   const orderedKeys: string[] = [];
-  if (sectionOrder && sectionOrder.length > 0) {
-    for (const key of sectionOrder) {
-      if (bySection.has(key) && !orderedKeys.includes(key)) orderedKeys.push(key);
+  if (sections && sections.length > 0) {
+    for (const entry of sections) {
+      if (bySection.has(entry.key) && !orderedKeys.includes(entry.key)) orderedKeys.push(entry.key);
     }
   }
   for (const key of discoveredOrder) {
@@ -194,11 +201,11 @@ export function buildGroupedGridGroups(options: BuildGroupedGridOptions): Groupe
     }
 
     const section = options.sectionField ? (readStringField(row, options.sectionField) || undefined) : undefined;
-    const sectionCols = resolveSectionColumns(section, options.columns, options.sectionColumns);
+    const sectionCols = resolveSectionColumns(section, options.columns, options.sections);
     const sectionMaxCols = options.maxColSpan !== undefined
       ? Math.max(1, Math.min(sectionCols, Math.floor(options.maxColSpan)))
       : sectionCols;
-    const sectionMinCols = resolveSectionMinColSpan(section, options.minColSpan, sectionMaxCols, options.sectionMinColSpans);
+    const sectionMinCols = resolveSectionMinColSpan(section, options.minColSpan, sectionMaxCols, options.sections);
 
     const order = readNumericField(row, options.orderField) ?? rowIndex;
     const colSpan = clampGridSpan(
@@ -234,7 +241,7 @@ export function buildGroupedGridGroups(options: BuildGroupedGridOptions): Groupe
   const sortedGroups = [...groupMap.values()].sort((a, b) => a.order - b.order);
   return sortedGroups.map((group, index) => {
     const sortedItems = group.items.slice().sort((a, b) => a.order - b.order || a.rowIndex - b.rowIndex);
-    const sections = buildGroupSections(sortedItems, options.sectionField, options.sectionOrder);
+    const sections = buildGroupSections(sortedItems, options.sectionField, options.sections);
     return {
       id: group.id,
       title: group.title,
@@ -276,7 +283,7 @@ export function moveGridItem(
     targetItemKey?: string;
     position?: "before" | "after";
     sectionField?: string;
-    sectionOrder?: readonly string[];
+    sections?: readonly GroupedGridSectionConfig[];
   },
 ): GroupedGridGroup[] | null {
   let sourceGroupIndex = -1;
@@ -306,7 +313,7 @@ export function moveGridItem(
       return {
         ...group,
         items: reindexed,
-        sections: buildGroupSections(reindexed, options?.sectionField, options?.sectionOrder),
+        sections: buildGroupSections(reindexed, options?.sectionField, options?.sections),
       };
     }
 
@@ -324,7 +331,7 @@ export function moveGridItem(
     }
 
     // Reassign deterministic order per section (or overall when unsectioned).
-    const sections = buildGroupSections(updated, options?.sectionField, options?.sectionOrder).map((section) => ({
+    const sections = buildGroupSections(updated, options?.sectionField, options?.sections).map((section) => ({
       ...section,
       items: section.items.map((item, idx) => ({ ...item, order: idx })),
     }));

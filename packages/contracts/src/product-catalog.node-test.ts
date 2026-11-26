@@ -23,6 +23,7 @@ import {
   productCurrentIdParamsSchema,
   productPanelInUseErrorSchema,
   productPanelListResponseSchema,
+  productProjectionInputSchema,
   productPanelUsedBySchema,
   productProjectionInUseErrorSchema,
   productProjectionListResponseSchema,
@@ -93,6 +94,18 @@ test("platform products use a reserved identity and are read-only without a doma
   };
   assert.equal(builtinProductPanelInputSchema.safeParse(panelInput).success, true);
   assert.equal(builtinProductProjectionInputSchema.safeParse(projectionInput).success, true);
+  // Ordinary and platform projections may omit `data` when they declare no data reads; it normalizes to `{}`.
+  const { data: _omittedData, ...projectionWithoutData } = projectionInput;
+  const parsedBuiltinWithoutData = builtinProductProjectionInputSchema.parse(projectionWithoutData);
+  assert.deepEqual(parsedBuiltinWithoutData.data, {});
+  const parsedDomainWithoutData = productProjectionInputSchema.parse({
+    ...projectionWithoutData,
+    visibility: "domain",
+    componentId: "@ontomato/sdk:OperationButton",
+    operations: { approve: { operation: { kind: "Action", id: "order.approve" } } },
+    config: { operation: "approve" },
+  });
+  assert.deepEqual(parsedDomainWithoutData.data, {});
   const panel = { ...panelInput, ...record, id: panelId };
   const projection = { ...projectionInput, ...record, id: projectionId };
   assert.equal(currentPanelRecordSchema.safeParse(panel).success, true);

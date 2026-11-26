@@ -105,7 +105,7 @@ test("buildGroupedGridGroups partitions items into ordered section tracks", () =
     groupKeyField: "groupId",
     groupTitleField: "groupTitle",
     sectionField: "section",
-    sectionOrder: ["summary", "visual"],
+    sections: [{ key: "summary" }, { key: "visual" }],
     colSpanField: "colSpan",
     rowSpanField: "rowSpan",
     orderField: "order",
@@ -304,7 +304,7 @@ test("serializeStaticGridLayout and setStaticGridItemHidden preserve hidden item
   assert.equal(afterUnhide.groups[0].items[1].rowSpan, 3);
 });
 
-test("buildGroupedGridGroups honors sectionColumns so 12-col metric and 24-col chart tracks clamp independently", () => {
+test("buildGroupedGridGroups honors ordered sections so 12-col metric and 24-col chart tracks clamp independently", () => {
   const rows = [
     makeItem("m1", "g1", { section: "metric", colSpan: 3, rowSpan: 1, order: 0 }),
     makeItem("m2", "g1", { section: "metric", colSpan: 18, rowSpan: 1, order: 1 }),
@@ -312,25 +312,27 @@ test("buildGroupedGridGroups honors sectionColumns so 12-col metric and 24-col c
     makeItem("c2", "g1", { section: "chart", colSpan: 20, rowSpan: 3, order: 1 }),
   ];
 
-  assert.equal(resolveSectionColumns("metric", 12, { metric: 12, chart: 24 }), 12);
-  assert.equal(resolveSectionColumns("chart", 12, { metric: 12, chart: 24 }), 24);
-  assert.equal(resolveSectionColumns("other", 12, { metric: 12, chart: 24 }), 12);
+  const sections = [
+    { key: "metric", columns: 12, minColSpan: 1 },
+    { key: "chart", columns: 24, minColSpan: 4 },
+  ];
+  assert.equal(resolveSectionColumns("metric", 12, sections), 12);
+  assert.equal(resolveSectionColumns("chart", 12, sections), 24);
+  assert.equal(resolveSectionColumns("other", 12, sections), 12);
 
   const groups = buildGroupedGridGroups({
     record: null,
     rows,
     rowObjectType: "test:Item",
     columns: 12,
-    sectionColumns: { metric: 12, chart: 24 },
     minColSpan: 1,
-    sectionMinColSpans: { metric: 1, chart: 4 },
     minRowSpan: 1,
     maxRowSpan: 6,
     groupsField: "groups",
     groupKeyField: "groupId",
     groupTitleField: "groupTitle",
     sectionField: "section",
-    sectionOrder: ["metric", "chart"],
+    sections,
     colSpanField: "colSpan",
     rowSpanField: "rowSpan",
     orderField: "order",

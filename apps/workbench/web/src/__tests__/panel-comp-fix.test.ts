@@ -320,8 +320,11 @@ describe("official component generality fixes (Items 1-4)", () => {
     });
 
     await vi.waitFor(() => expect(container.querySelector(".probe-ref")?.textContent).toBe("rel-1"));
-    // #item-leading receives no business row payload.
-    expect(observedLeadingArgs).toEqual([{}]);
+    // #item-leading receives only { ref, index, icon } without raw business row payload.
+    expect(observedLeadingArgs).toEqual([
+      { ref: { className: RELATIONSHIP, primaryKey: "rel-1" }, index: 0, icon: null },
+    ]);
+    expect("row" in (observedLeadingArgs![0] as Record<string, unknown>)).toBe(false);
     // #actions receives ref/index/operations/runOperation without raw row.
     expect(observedActionsScope).not.toBeNull();
     expect("row" in observedActionsScope!).toBe(false);

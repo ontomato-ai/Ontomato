@@ -286,7 +286,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       assert.match(prop?.type ?? "", /boolean/, `ObjectRelations.${propName} is boolean`);
       assert.equal(prop?.default, "false", `ObjectRelations.${propName} defaults to false`);
     }
-    // The upload control runs its operation through the platform's upload contract; platform-specific overwrite flow stays out of author config.
+    // The upload control runs its operation through the platform's upload contract without baking in domain-specific overwrite flows.
     assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "operation")?.required, true);
     assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on"), undefined);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
@@ -565,9 +565,22 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const objectListConfigNames = (declared.get("ObjectList").config ?? []).map((prop) => prop.name);
     assert.equal(objectListConfigNames.includes("row-tone-map"), false, "ObjectList must not expose row-tone-map");
     assert.equal(objectListConfigNames.includes("row-tone-field"), true, "ObjectList retains row-tone-field");
+    for (const removed of ["search-submit", "leading-icon-kind", "inline-rename"]) {
+      assert.equal(objectListConfigNames.includes(removed), false, `ObjectList must not expose removed prop ${removed}`);
+    }
     const infoBannerConfigNames = (declared.get("InfoBanner").config ?? []).map((prop) => prop.name);
     assert.equal(infoBannerConfigNames.includes("tone-map"), false, "InfoBanner must not expose tone-map");
     assert.equal(infoBannerConfigNames.includes("tone-field"), true, "InfoBanner retains tone-field");
+    const conversationConfigNames = (declared.get("ConversationEntry").config ?? []).map((prop) => prop.name);
+    assert.equal(conversationConfigNames.includes("agent-picker-variant"), false, "ConversationEntry must not expose agent-picker-variant");
+    assert.equal(groupedGridConfigNames.includes("sections"), true, "GroupedGrid exposes unified ordered sections prop");
+    for (const removed of ["section-order", "section-columns", "section-row-heights", "section-min-col-spans", "section-resize-axes"]) {
+      assert.equal(groupedGridConfigNames.includes(removed), false, `GroupedGrid must not expose removed prop ${removed}`);
+    }
+    const objectHeaderConfigNames = (declared.get("ObjectHeader").config ?? []).map((prop) => prop.name);
+    for (const removed of ["danger-operations", "primary-operation"]) {
+      assert.equal(objectHeaderConfigNames.includes(removed), false, `ObjectHeader must not expose removed prop ${removed}`);
+    }
     // Verify Group F public general capabilities are reflected in catalogue metadata and config.
     assert.match(declared.get("ObjectForm").meaning, /\bsubmitOn\b/u, "ObjectForm meaning documents submitOn");
     assert.doesNotMatch(

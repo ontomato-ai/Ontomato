@@ -83,8 +83,8 @@ through the platform's generic `form` / `createForm` reads paired with published
 ```
 
 - **Example C — `OperationButton` bound to an object-targeted `Action` (standalone projection file):**
-  Include `"data": {}`, declare the target input, bind `operations.<localName>.operation` to
-  `{ "kind": "Action", "id": "<action-id>" }`, and reference `"<localName>"` in `config.operation`:
+  Declare the target input, bind `operations.<localName>.operation` to
+  `{ "kind": "Action", "id": "<action-id>" }`, and reference `"<localName>"` in `config.operation` (`"data"` is optional when a projection declares no data reads):
 
 ```json
 {
@@ -92,7 +92,7 @@ through the platform's generic `form` / `createForm` reads paired with published
   "inputs": {
     "target": { "kind": "object", "objectType": "Order" }
   },
-  "data": {},
+  "outputs": {},
   "operations": {
     "approve": {
       "operation": { "kind": "Action", "id": "action-approve-order" },

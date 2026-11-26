@@ -115,6 +115,12 @@
     min-width: 0;
     --shell-composer-shadow: var(--elevation-composer, 0 6px 20px rgba(0, 0, 0, 0.08));
   }
+  .pw-app-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--sdk-color-primary);
+    margin-top: 3px;
+  }
   .pw-quick-links {
     display: flex;
     flex-wrap: wrap;
@@ -519,6 +525,12 @@
                 :ref="bindProjection('favoriteApps')"
                 class="pw-block-list pw-apps-list"
               >
+                <template #item-leading="{ ref, icon }">
+                  <agent-avatar v-if="ref.className === 'platform:AgentDefinition'" :icon="icon" :size="22"></agent-avatar>
+                  <span v-else class="pw-app-icon">
+                    <component :is="appIcon(icon ?? 'app-window')" :size="16"></component>
+                  </span>
+                </template>
                 <template #empty>
                   <div class="pw-empty">
                     <p>{{ t("empty.apps") }}</p>

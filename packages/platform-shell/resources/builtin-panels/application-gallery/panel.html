@@ -83,6 +83,12 @@
   .gallery-list {
     height: auto;
   }
+  .gallery-app-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--sdk-color-primary);
+    margin-top: 3px;
+  }
   .gallery-list .sdk-object-list-diagnostics {
     display: flex;
     flex-direction: column;
@@ -161,6 +167,12 @@
           class="gallery-list"
           @clear-filters="clearFilters"
         >
+          <template #item-leading="{ ref, icon }">
+            <agent-avatar v-if="ref.className === 'platform:AgentDefinition'" :icon="icon" :size="22"></agent-avatar>
+            <span v-else class="gallery-app-icon">
+              <component :is="appIcon(icon ?? 'app-window')" :size="16"></component>
+            </span>
+          </template>
           <template #empty>
             <div class="gallery-empty">
               <svg v-if="filtered" class="gallery-empty-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

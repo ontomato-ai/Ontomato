@@ -340,18 +340,18 @@ function checkOperations(id, projection, typeTable, placements, state, checks) {
 }
 
 function checkProjectionData(id, projection, component, checks) {
-  if (!("data" in projection)) return;
+  const projectionData = projection.data ?? {};
   const { data } = component;
   if (data === undefined) {
-    if (Object.keys(projection.data).length === 0) return;
+    if (Object.keys(projectionData).length === 0) return;
     throw new Error(`projection ${id}: component ${projection.componentId} does not declare projection data`);
   }
   for (const [name, declaration] of Object.entries(data)) {
-    if (declaration.required && !Object.hasOwn(projection.data, name)) {
+    if (declaration.required && !Object.hasOwn(projectionData, name)) {
       throw new Error(`projection ${id}: data.${name} is required by ${projection.componentId}`);
     }
   }
-  for (const [name, read] of Object.entries(projection.data)) {
+  for (const [name, read] of Object.entries(projectionData)) {
     const datum = checks.appsSdkComponentDatum(data, name);
     if (!datum) throw new Error(`projection ${id}: data.${name} is not declared by ${projection.componentId}`);
     const { result } = checks.directReadDeclaration(projection, read);
@@ -507,9 +507,6 @@ async function readApplicationWorkspace(directory, checks) {
     const rawProjection = await readJson(file);
     const result = checks.productProjectionInputSchema.safeParse(rawProjection);
     if (!result.success) {
-      if (rawProjection && typeof rawProjection === "object" && !Array.isArray(rawProjection) && rawProjection.data === undefined) {
-        throw new Error(`${file}: projection is missing required "data" field (use "data": {} for components such as OperationButton that declare no data reads)`);
-      }
       throw new Error(`${file}: ${result.error.message}`);
     }
     projections.set(id, result.data);

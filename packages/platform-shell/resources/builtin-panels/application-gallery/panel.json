@@ -49,7 +49,6 @@
           "searchable": false,
           "showFooter": false,
           "leadingIconField": "icon",
-          "leadingIconKind": "auto",
           "openOutput": "openPath",
           "subtitleLines": 2,
           "skeletonCount": 6,

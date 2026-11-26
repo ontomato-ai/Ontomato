@@ -24,6 +24,7 @@ import {
   buildLayoutChangePayload,
   buildStaticGroupedGridState,
   clampGridSpan,
+  findGroupedGridSectionConfig,
   moveGridItem,
   reorderGridGroups,
   resizeGridItem,
@@ -47,6 +48,7 @@ import type {
   GroupedGridLayoutState,
   GroupedGridResizeAxis,
   GroupedGridRowSizing,
+  GroupedGridSectionConfig,
   GroupedGridStaticGroupConfig,
   GroupedGridStaticItemConfig,
 } from "./grouped-grid-types";
@@ -84,12 +86,8 @@ const props = withDefaults(
   defineProps<{
     /** Number of CSS grid columns (default `12`). */
     columns?: number;
-    /** Optional per-section CSS grid column count overrides, keyed by section value (for example `{ metric: 12, chart: 24 }`). */
-    sectionColumns?: Readonly<Record<string, number>>;
     /** Base height in pixels for one grid row track (default `160`). */
     rowHeight?: number;
-    /** Optional per-section row track height overrides in pixels, keyed by section value. */
-    sectionRowHeights?: Readonly<Record<string, number>>;
     /** Grid gap in pixels between cells (default `16`). */
     gap?: number;
     /** Item record field holding the group identifier (default `"groupId"`). */
@@ -100,8 +98,8 @@ const props = withDefaults(
     groupsField?: string;
     /** Optional item record field that partitions items into separate stacked grid tracks inside each group. */
     sectionField?: string;
-    /** Optional explicit ordering of section track keys when `sectionField` is set. */
-    sectionOrder?: readonly string[];
+    /** Ordered per-section grid track descriptors (`key`, optional `columns`, `rowHeight`, `minColSpan`, `resizeAxis`) used when `sectionField` is set. */
+    sections?: readonly GroupedGridSectionConfig[];
     /** Item record field holding the column span (default `"colSpan"`). */
     colSpanField?: string;
     /** Item record field holding the row span (default `"rowSpan"`). */
@@ -110,16 +108,12 @@ const props = withDefaults(
     orderField?: string;
     /** Minimum column span allowed when resizing (default `2`). */
     minColSpan?: number;
-    /** Optional per-section minimum column span overrides, keyed by section value (for example `{ metric: 1, chart: 4 }`). */
-    sectionMinColSpans?: Readonly<Record<string, number>>;
     /** Maximum column span allowed when resizing; omitted defaults to each section's column count. */
     maxColSpan?: number;
     /** Minimum row span allowed when resizing (default `1`). */
     minRowSpan?: number;
     /** Maximum row span allowed when resizing (default `6`). */
     maxRowSpan?: number;
-    /** Optional per-section resize axis constraint (`"both" | "horizontal" | "vertical" | "none"`). */
-    sectionResizeAxes?: Readonly<Record<string, GroupedGridResizeAxis>>;
     /** Enable drag-and-drop reordering and cell resize handles (default `true`). */
     editable?: boolean;
     /** Lock drag reordering and resizing while keeping read/view controls usable (default `false`). */
@@ -163,24 +157,20 @@ const props = withDefaults(
   }>(),
   {
     columns: 12,
-    sectionColumns: undefined,
     rowHeight: 160,
-    sectionRowHeights: undefined,
     gap: 16,
     groupKeyField: "groupId",
     groupTitleField: "groupTitle",
     groupsField: "groups",
     sectionField: undefined,
-    sectionOrder: undefined,
+    sections: undefined,
     colSpanField: "colSpan",
     rowSpanField: "rowSpan",
     orderField: "order",
     minColSpan: 2,
-    sectionMinColSpans: undefined,
     maxColSpan: undefined,
     minRowSpan: 1,
     maxRowSpan: 6,
-    sectionResizeAxes: undefined,
     editable: true,
     locked: false,
     lockReason: undefined,
@@ -248,18 +238,17 @@ const layoutParam = !isRecordMode ? useMemberParam("layout") : null;
 
 const effectiveColumns = computed(() => Math.max(1, Math.min(24, Math.floor(props.columns || 12))));
 function sectionColumnCount(sectionKey: string | null | undefined): number {
-  return resolveSectionColumns(sectionKey, effectiveColumns.value, props.sectionColumns);
+  return resolveSectionColumns(sectionKey, effectiveColumns.value, props.sections);
 }
 const effectiveRowHeight = computed(() => Math.max(48, Math.floor(props.rowHeight || 160)));
 function sectionRowHeight(sectionKey: string | null | undefined): number {
-  const override = sectionKey && sectionKey !== "__default__" ? props.sectionRowHeights?.[sectionKey] : undefined;
+  const override = findGroupedGridSectionConfig(sectionKey, props.sections)?.rowHeight;
   return typeof override === "number" && Number.isFinite(override) && override > 0
     ? Math.max(48, Math.floor(override))
     : effectiveRowHeight.value;
 }
 function sectionResizeAxis(sectionKey: string | null | undefined): GroupedGridResizeAxis {
-  const override = sectionKey && sectionKey !== "__default__" ? props.sectionResizeAxes?.[sectionKey] : undefined;
-  return override ?? "both";
+  return findGroupedGridSectionConfig(sectionKey, props.sections)?.resizeAxis ?? "both";
 }
 function sectionHeaderDivider(sectionKey: string | null | undefined): GroupedGridDividerStyle {
   const divider = props.itemHeaderDivider;
@@ -360,9 +349,7 @@ const sourceGroups = computed<GroupedGridGroup[]>(() => {
     rows: rawRows.value,
     rowObjectType,
     columns: effectiveColumns.value,
-    sectionColumns: props.sectionColumns,
     minColSpan: effectiveMinColSpan.value,
-    sectionMinColSpans: props.sectionMinColSpans,
     maxColSpan: props.maxColSpan,
     minRowSpan: effectiveMinRowSpan.value,
     maxRowSpan: effectiveMaxRowSpan.value,
@@ -370,7 +357,7 @@ const sourceGroups = computed<GroupedGridGroup[]>(() => {
     groupKeyField: props.groupKeyField,
     groupTitleField: props.groupTitleField,
     sectionField: props.sectionField,
-    sectionOrder: props.sectionOrder,
+    sections: props.sections,
     colSpanField: props.colSpanField,
     rowSpanField: props.rowSpanField,
     orderField: props.orderField,
@@ -1202,7 +1189,7 @@ function onGroupDrop(targetGroupId: string, event: DragEvent) {
     const next = dragPreviewGroups.value
       ?? moveGridItem(baseGroups, draggingItemKey.value, targetGroupId, {
         sectionField: props.sectionField,
-        sectionOrder: props.sectionOrder,
+        sections: props.sections,
       });
     clearDragState();
     commitLayoutChange(next);
@@ -1243,7 +1230,7 @@ function onItemDragOver(groupId: string, targetItem: GroupedGridItem, event: Dra
     targetItemKey: targetItem.key,
     position,
     sectionField: props.sectionField,
-    sectionOrder: props.sectionOrder,
+    sections: props.sections,
   });
   if (preview) {
     dragPreviewGroups.value = preview;
@@ -1261,7 +1248,7 @@ function onItemDrop(groupId: string, targetItem: GroupedGridItem, event: DragEve
       targetItemKey: targetItem.key,
       position,
       sectionField: props.sectionField,
-      sectionOrder: props.sectionOrder,
+      sections: props.sections,
     });
   clearDragState();
   commitLayoutChange(next);
@@ -1309,7 +1296,7 @@ function startItemResize(item: GroupedGridItem, event: PointerEvent) {
     : sectionMaxCols;
   const itemMinCol = item.minColSpan !== undefined
     ? Math.max(1, Math.min(itemMaxCol, Math.floor(item.minColSpan)))
-    : resolveSectionMinColSpan(item.section, effectiveMinColSpan.value, itemMaxCol, props.sectionMinColSpans);
+    : resolveSectionMinColSpan(item.section, effectiveMinColSpan.value, itemMaxCol, props.sections);
   const itemMaxRow = item.maxRowSpan !== undefined
     ? Math.max(1, Math.min(24, Math.floor(item.maxRowSpan)))
     : effectiveMaxRowSpan.value;
