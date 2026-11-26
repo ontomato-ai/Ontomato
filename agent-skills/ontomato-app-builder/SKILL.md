@@ -44,7 +44,7 @@ structure, allowed imports, CSS/UI guardrails, and bindings automatically):
 
 ```text
 sdk current                              # current SDK release info
-sdk read docs/components.md              # grouped overview of panel-usable components (a few KB)
+sdk read docs/components.md              # grouped overview: one line per panel-usable component
 sdk read docs/components/<Name>.md       # one component's full data, config, slots, and events
 panel type <id> [--read <name>]          # object type reads, parameters, resultSchema, and operations
 panel projections [--component <id>] [--object-type <typeId>] [--q <text>]  # find reusable projections
