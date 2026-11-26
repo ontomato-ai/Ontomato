@@ -751,6 +751,7 @@ export const en = {
   "panels.governance.user.operations.revokeApiKey": "Revoke API key",
   "panels.governance.user.operations.issueApiKeyBatch": "Generate and export API keys",
   "panels.governance.user.operations.accessContext": "Read member access options",
+  "panels.governance.user.operations.effectiveAccess": "Read member effective permissions",
   "panels.governance.user.operations.inspectAccess": "Check member access",
   "panels.governance.user.operations.grantAccess": "Grant missing access to a policy",
   "panels.governance.user.removed": "Member “{name}” removed",

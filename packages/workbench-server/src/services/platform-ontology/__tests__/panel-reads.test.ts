@@ -21,7 +21,6 @@ import {
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
   ROLE,
-  SCHEDULED_TASK,
   SDK_COMPONENT,
   TRIGGER,
   USER,
@@ -37,6 +36,7 @@ import { assistantSkillCatalog, countAssistantSkills } from "../../assistant/ski
 import { countPublishedDefinitions, listPublishedDefinitions } from "../../business-definitions/definitions";
 import { countUsableCurrentDefinitions } from "../../product-panels/access";
 import { readPanelComponentCatalogue } from "../../product-panels/component-catalogue";
+import { triggerFixture } from "../../scheduling/__tests__/fixtures";
 import { createPlatformOntologyReadAdapter } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({
@@ -119,6 +119,11 @@ function stubOwnerHttp(overrides: Partial<Record<string, () => Response>> = {}) 
     const override = overrides[path];
     if (override) return override();
 
+    if (path === "/platform/triggers") return Response.json(countOnly
+      ? { total: 1 }
+      : { tasks: [triggerFixture], timeZone: "UTC" });
+    if (path === `/platform/triggers/${triggerFixture.id}`) return Response.json(triggerFixture);
+    if (path.startsWith("/platform/triggers/")) return Response.json({ error: { code: "TASK_NOT_FOUND", message: "Trigger not found" } }, { status: 404 });
     if (countOnly) {
       if (path === "/admin/getMetas") return jsonResponse({ objectTypes: 2, attributes: 2, relationships: 1 });
       if (path === "/platform/governance/organization") return jsonResponse({ units: 0, positions: 0, grants: 0 });
@@ -200,7 +205,6 @@ function stubOwnerHttp(overrides: Partial<Record<string, () => Response>> = {}) 
       path === "/metricView/queryList"
       || path === "/function/queryList"
       || path === "/workflow/query"
-      || path === "/trigger/queryList"
       || path === "/admin/getBussinessKnowledge"
       || path === "/platform/applications"
     ) {
@@ -406,7 +410,7 @@ describe("platform ontology catalogue reads", () => {
     });
     expect(countRow(FUNCTION).fields).toMatchObject({ count: 0, countStatus: "ok", countDisplay: "0" });
     for (const [type, status, tone] of [
-      [ACTION, "refused", "warning"], [USER, "failed", "danger"], [SCHEDULED_TASK, "unavailable", "info"],
+      [ACTION, "refused", "warning"], [USER, "failed", "danger"],
     ]) {
       const record = panelReadResultSchemas.panelRecord.parse(await reads.record(type));
       for (const fields of [countRow(type).fields, record.fields]) {
@@ -486,8 +490,8 @@ describe("platform ontology catalogue reads", () => {
     const optionalProp = properties.find(row => row.fields.optional === true);
     if (optionalProp) expect(optionalProp.tones).toEqual({ optional: "info" });
     const signatures = panelReadResultSchemas.panelRecordList.parse(await reads.reads(TRIGGER));
-    expect(signatures.find(row => row.primaryKey === "query")?.fields).toMatchObject({
-      name: "query", parameters: expect.arrayContaining(["search"]), result: "panelRecordQuery", source: "type",
+    expect(signatures.find(row => row.primaryKey === "catalogue")?.fields).toMatchObject({
+      name: "catalogue", parameters: expect.arrayContaining(["scope", "search", "status"]), result: "panelRecordList", source: "type",
     });
     const operations = panelReadResultSchemas.panelRecordList.parse(await reads.operations(AGENT_DEFINITION));
     const id = `${AGENT_DEFINITION}.save`;
@@ -597,7 +601,7 @@ describe("platform ontology catalogue reads", () => {
     );
   });
 
-  it("keeps counts and graph labels distinct for readable, refused, failed and unavailable owners", async () => {
+  it("keeps counts and graph labels distinct for readable, refused and failed owners", async () => {
     stubOwnerHttp({
       "/action/queryList": () => jsonResponse({}, 403),
       "/workflow/subjects": () => jsonResponse({}, 500),
@@ -609,7 +613,8 @@ describe("platform ontology catalogue reads", () => {
       const row = (type: string) => rows.find(entry => entry.primaryKey === type)!;
       expect(row(OBJECT_TYPE).fields).toMatchObject({ countDisplay: "2", countStatus: "ok", layerId: "fact" });
       expect(row(FUNCTION).fields).toMatchObject({ countDisplay: "0", countStatus: "ok" });
-      for (const [type, status] of [[ACTION, "refused"], [USER, "failed"], [SCHEDULED_TASK, "unavailable"]]) {
+      expect(row(TRIGGER).fields).toMatchObject({ countDisplay: "1", countStatus: "ok" });
+      for (const [type, status] of [[ACTION, "refused"], [USER, "failed"]]) {
         expect(row(type).fields.countStatus).toBe(status);
         expect(row(type).fields).not.toHaveProperty("count");
         expect(row(type).fields.countDisplay).toMatch(/^\D+$/);
@@ -628,7 +633,7 @@ describe("platform ontology catalogue reads", () => {
     });
     const boundEdges = edges.filter(row => row.fields.relationKind === multi);
     expect(boundEdges.map(row => row.fields.toclass).sort()).toEqual(
-      [PRODUCT_PANEL, PRODUCT_PROJECTION, SDK_COMPONENT, AGENT_DEFINITION, "platform:MetricView", FUNCTION, "platform:Workflow"]
+      [PRODUCT_PANEL, PRODUCT_PROJECTION, SDK_COMPONENT, AGENT_DEFINITION, "platform:MetricView", FUNCTION, "platform:Workflow", TRIGGER]
         .sort(),
     );
     // A kind declared to collapse on the type graph draws no type edges at all
@@ -672,8 +677,10 @@ describe("platform ontology catalogue reads", () => {
       .rejects.toMatchObject({ status: 404 });
     await expect(reads.instanceRecord({ object: { className: USER, primaryKey: owner.userId } }))
       .rejects.toMatchObject({ status: 502 });
-    await expect(reads.instanceRecord({ object: { className: SCHEDULED_TASK, primaryKey: "timer" } }))
-      .rejects.toMatchObject({ status: 503 });
+    await expect(reads.instanceRecord({ object: { className: TRIGGER, primaryKey: "missing" } }))
+      .rejects.toMatchObject({ status: 404 });
+    await expect(reads.instanceRecord({ object: { className: TRIGGER, primaryKey: triggerFixture.id } }))
+      .resolves.toMatchObject({ outputs: { detailPath: "/schedules?taskId=tr-1" } });
   });
 
   it("preserves real instance targets, owner fields and detail navigation through pagination", async () => {

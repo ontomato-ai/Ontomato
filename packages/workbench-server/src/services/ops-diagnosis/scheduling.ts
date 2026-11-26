@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
+import type { FormField } from "@ontomato/contracts/form-fields";
 import type { PlatformScheduleExecutionState, PlatformScheduleExecutionRequest, PlatformScheduleExecutionStatusRequest, PlatformScheduleFormRequest } from "@ontomato/contracts/platform-schedules";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { assistantService } from "../assistant/service";
 import { assistantStore } from "../assistant/store";
 import { diagnosisService } from "./service";
 import { withScheduledUserActivity } from "../assistant/scheduled-activity";
-import { checkedForm, completeForm, emptyExecution, instruction, option, scheduledSessionId, select, type ScheduleApplication, type ScheduleContext } from "../scheduling/application";
+import { checkedForm, completeForm, emptyExecution, instruction, option, scheduledSessionId, select, summarizeFields, type ScheduleApplication, type ScheduleContext } from "../scheduling/application";
 import { scheduledConversationStatus } from "../scheduling/conversation";
 import { listCaseSets } from "../../platform/diagnosis/autotest/cases/repository";
 import { getActiveRun, isRunActive, startRun } from "../../platform/diagnosis/autotest/runner/run-controller";
@@ -83,6 +84,20 @@ async function refused(check: Promise<void>): Promise<HttpError | undefined> {
   }
 }
 
+function operationField(zh: boolean | undefined, autotestReason: string | null, inspectionReason: string | null, defaultOperation: string | null = null) {
+  return select("operation", zh ? "做什么" : "Operation", [
+    option("autotest", zh ? "跑自动测试" : "Run automated tests", autotestReason),
+    option("inspection", zh ? "巡检" : "Inspection", inspectionReason),
+  ], true, defaultOperation);
+}
+
+function caseSetField(domainId: string, zh: boolean | undefined, current?: string) {
+  const cases = listCaseSets(domainId);
+  const options = cases.map(set => option(set.id, `${set.name} (${set.caseCount})`, set.caseCount ? null : zh ? "用例集没有题目" : "Case set has no cases"));
+  if (current && !cases.some(set => set.id === current)) options.push(option(current, current, zh ? "用例集已不存在" : "Case set no longer exists"));
+  return select("caseSetId", zh ? "用例集" : "Case set", options);
+}
+
 async function operationForm(
   input: PlatformScheduleFormRequest,
   context: ScheduleContext,
@@ -100,18 +115,10 @@ async function operationForm(
   if (operation === "inspection") await assertManagement(inspectionOperation, owner, credentials);
   const diagnosis = await assistantStore.opsDiagnosis(owner.domainId);
   const canInspect = Boolean(diagnosis?.enabled && await agentAllowed(diagnosis, "USE", credentials));
-  const fields = [select("operation", zh ? "做什么" : "Operation", [
-    option("autotest", zh ? "跑自动测试" : "Run automated tests", autotestRefusal?.message ?? null),
-    option("inspection", zh ? "巡检" : "Inspection", canInspect ? null : zh ? "无权使用运维诊断智能体" : "Operations diagnosis use permission required"),
-  ], true, defaultOperation)];
+  const fields: FormField[] = [operationField(zh, autotestRefusal?.message ?? null,
+    canInspect ? null : zh ? "无权使用运维诊断智能体" : "Operations diagnosis use permission required", defaultOperation)];
   if (operation === "inspection") fields.push(instruction(zh ? "指令" : "Instruction"));
-  else {
-    const cases = listCaseSets(owner.domainId);
-    const options = cases.map((set) => option(set.id, `${set.name} (${set.caseCount})`, set.caseCount ? null : zh ? "用例集没有题目" : "Case set has no cases"));
-    const current = input.values.caseSetId;
-    if (current && !cases.some((set) => set.id === current)) options.push(option(current, current, zh ? "用例集已不存在" : "Case set no longer exists"));
-    fields.push(select("caseSetId", zh ? "用例集" : "Case set", options));
-  }
+  else fields.push(caseSetField(owner.domainId, zh, input.values.caseSetId));
   const values = input.changedField === "operation" ? { operation } : { ...input.values, operation };
   return completeForm("operations", operation === "inspection" ? "inspection-v1" : "autotest-v1", fields, values);
 }
@@ -127,6 +134,21 @@ export const operationsScheduleApplication: ScheduleApplication = {
       const [inspection, autotest] = error.errors;
       throw inspection instanceof HttpError && inspection.status === 403 ? autotest : inspection;
     }
+  },
+  async describeTargets(contents, context) {
+    const zh = context.credentials.locale?.startsWith("zh");
+    const operations = operationField(zh, null, null);
+    const caseSets = contents.some(content => content.operation === "autotest")
+      && !(await refused(requireAutotestFormAccess(context)))
+      ? caseSetField(context.owner.domainId, zh) : undefined;
+    const inspection = instruction(zh ? "指令" : "Instruction");
+    return contents.map(content => ({
+      name: (content.operation === "autotest" && caseSets
+        ? caseSets.options.find(item => item.value === content.caseSetId)
+        : operations.options.find(item => item.value === content.operation))?.label ?? null,
+      summary: summarizeFields(content.operation === "autotest"
+        ? (caseSets ? [operations, caseSets] : [operations]) : [operations, inspection], content),
+    }));
   },
   form(input, context) {
     return operationForm(input, context, workbenchManagement.opsInspectionRead);

@@ -510,6 +510,34 @@ export const components: readonly ComponentMetadata[] = [
     ],
   }),
   defineComponentMeta({
+    componentId: "PickerDialog",
+    module: "@ontomato/sdk/base",
+    exportName: "PickerDialog",
+    role: "control",
+    group: "form",
+    meaning:
+      "Picks multiple items to add from the bound type's options or records inside a centered dialog with search, checkboxes and a count-bearing confirm button; use for every 'pick items to add' flow instead of hand-writing a dialog.\n\n- Search is automatic with no configuration: a complete list returned by the owner is filtered in memory, while a truncated list (`total > loaded`, `hasMore`, or `nextCursor`) sends the query to the owner (`keyword` on `options`, or `keyword`/`search` on `rows`) and shows a notice asking the reader to search to narrow results.\n- Items already in `selected` are pre-checked on open, unavailable items stay listed with disabled checkboxes and their `disabledReason` inline in the secondary description (never a hover tooltip), and Confirm stays disabled until the selection differs from when the dialog opened.\n- Agents share the same path (standard 2.4.2): `open` and `selected` bind to public panel state so an agent can inspect or update them; when confirming triggers an owner write (such as adding members or policies), the panel invokes a registered panel operation whose parameter reads from `selected` so human confirm and agent `page_action` run the same operation (`PickerDialog` never calls owners directly); when confirming writes into a form field (such as agent skills), agents fill the form directly without going through the dialog.\n- Placement-specific controls (such as a shared grant level) go in `#extra`, backed by the panel's own state. No pagination, inline creation, or tree view.",
+    effects:
+      "Reads the bound type's `options` or `rows` datum as the reader when opened (and on owner search when truncated), writes only the bound `open` and `selected` panel states on close/confirm, and never invokes owner write operations directly.",
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    data: {
+      options: { results: ["panelOptionList"], required: false, runtimeParams: ["keyword", "page"] },
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["keyword", "search", "page", "size"] },
+    },
+    inputs: {
+      open: { kind: "scalar", type: "boolean" },
+      selected: { kind: "list", items: { kind: "scalar", type: "string" } },
+    },
+    outputs: {
+      open: { kind: "scalar", type: "boolean" },
+      selected: { kind: "list", items: { kind: "scalar", type: "string" } },
+    },
+    configProps: [
+      "title", "titleKey", "confirmLabel", "confirmLabelKey", "searchPlaceholder", "searchPlaceholderKey",
+      "emptyText", "width", "options",
+    ],
+  }),
+  defineComponentMeta({
     componentId: "RecordGraph",
     module: "@ontomato/sdk/base",
     exportName: "RecordGraph",
@@ -1183,11 +1211,11 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "agentId", "agentKind", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAppId", "defaultCommit", "direction", "editMode",
+          "agentId", "agentKind", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAgentId", "defaultAppId", "defaultCommit", "direction", "editMode",
           "entryId", "favoritesOnly", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
           "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
-          "runId", "sampleToken", "scope", "search", "section", "size", "sort", "source", "sourceType", "status",
-          "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version",
+          "runId", "sampleToken", "scope", "search", "section", "selectedTask", "size", "sort", "source", "sourceType", "status",
+          "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version", "workspace", "workspaceAgent",
         ],
       },
     },

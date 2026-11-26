@@ -27,6 +27,7 @@ export const baseComponents = {
   WorkbenchLayout: () => import("./base/WorkbenchLayout.vue").then(module => module.default),
   SectionGroup: () => import("./base/SectionGroup.vue").then(module => module.default),
   ReferencePicker: () => import("./base/ReferencePicker.vue").then(module => module.default),
+  PickerDialog: () => import("./base/PickerDialog.vue").then(module => module.default),
   RecordGraph: () => import("./base/RecordGraph.vue").then(module => module.default),
   ProductAssetGraph: () => import("./base/ProductAssetGraph.vue").then(module => module.default),
   OntologyTypeGraph: () => import("./base/OntologyTypeGraph.vue").then(module => module.default),

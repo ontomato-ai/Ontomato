@@ -9,9 +9,11 @@ import { scheduledTaskPanelTextEn as schedulePanelText } from "../panel-text";
 export default {
   platformSchedules: {
     panelFields: schedulePanelText.panelFields,
+    targetKind: schedulePanelText.targetKind,
+    definitionStatus: schedulePanelText.definitionStatus,
     panelRunStarted: schedulePanelText.panelRunStarted,
-    title: "Scheduled tasks",
-    intro: "Schedule application tasks and review their execution history",
+    title: "Task triggers",
+    intro: "Configure task triggers for actions, workflows, agents, operations diagnosis, and knowledge governance, and review execution history",
     newTask: "New task",
     retry: "Retry",
     loadFailed: "Couldn't load the scheduled tasks.",
@@ -30,7 +32,7 @@ export default {
       applicationsFailed: "The applications that can run on a schedule could not be read, so new tasks are unavailable for now.",
       applicationsMissing:
         "This page has no name for the application {ids} the service declares, so new tasks are switched off. Ask an administrator to check the installation.",
-      noApplication: "No application can run on a schedule for you right now.",
+      noApplication: "No target is available to schedule for you right now.",
       loading: "Still loading; try again in a moment.",
       credentialRefused:
         "Your background credential was not renewed ({reason}), so tasks paused on it stay paused. Open this page again after signing in with your account.",
@@ -49,6 +51,7 @@ export default {
     },
     frequency: schedulePanelText.frequency,
     card: {
+      scheduled: "Scheduled",
       switch: "Run “{title}” on its schedule",
       paused: "Paused: {reason}",
       review: "Check and save",

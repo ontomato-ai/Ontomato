@@ -4,7 +4,7 @@
  */
 export default {
   state: {
-    selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" }, deepLink: true },
+    selectedTask: { type: { kind: "object", objectType: "platform:Trigger" }, deepLink: true },
   },
   members: {
     summary: { target: { projectionId: "projection-schedules-summary" }, inputs: { task: { state: "selectedTask" } } },

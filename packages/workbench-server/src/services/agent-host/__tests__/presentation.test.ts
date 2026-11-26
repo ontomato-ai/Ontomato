@@ -350,8 +350,8 @@ it("forwards fill_form and recovers page_action intent status when receipt is lo
     const batchPartial = {
       kind: "batch",
       items: [
-        { target: { objectType: "platform:ScheduledTask", primaryKey: "t1" }, outcome: { kind: "success" } },
-        { target: { objectType: "platform:ScheduledTask", primaryKey: "t2" }, outcome: { kind: "refusal", code: "TASK_RUNNING", message: "Task t2 is running" } },
+        { target: { objectType: "platform:Trigger", primaryKey: "t1" }, outcome: { kind: "success" } },
+        { target: { objectType: "platform:Trigger", primaryKey: "t2" }, outcome: { kind: "refusal", code: "TASK_RUNNING", message: "Task t2 is running" } },
       ],
     };
     const recoveredBatch = await abortRecover("act-batch-partial", {
@@ -367,7 +367,7 @@ it("forwards fill_form and recovers page_action intent status when receipt is lo
     const batchSkipped = {
       kind: "batch",
       items: [
-        { target: { objectType: "platform:ScheduledTask", primaryKey: "t1" }, outcome: { kind: "skipped", reason: "Already running" } },
+        { target: { objectType: "platform:Trigger", primaryKey: "t1" }, outcome: { kind: "skipped", reason: "Already running" } },
       ],
     };
     expect(presentationResultSchema.parse(await abortRecover("act-batch-skipped", {
@@ -504,7 +504,7 @@ it("rejects fill_form and page_action without prior observation and auto-injects
         "list.batchDelete": "batch-entry-1",
         "detail.form.save": "form-entry-1",
       },
-      checkedKeys: { checked: ["platform:ScheduledTask:task-1", "platform:ScheduledTask:task-2"] },
+      checkedKeys: { checked: ["platform:Trigger:task-1", "platform:Trigger:task-2"] },
       dashboardId: "dash-a",
       cardId: "card-1",
       forms: [
@@ -512,7 +512,7 @@ it("rejects fill_form and page_action without prior observation and auto-injects
           member: "form",
           memberPath: [{ member: "detail" }] as [{ member: string }],
           formInstanceId: "form-inst-1",
-          target: { kind: "object" as const, objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+          target: { kind: "object" as const, objectType: "platform:Trigger", primaryKey: "task-1" },
           dirty: false,
           values: {},
         },
@@ -653,7 +653,7 @@ it("rejects fill_form and page_action without prior observation and auto-injects
         input: {
           mode: "page_action",
           operation: "list.batchDelete",
-          rowKey: "platform:ScheduledTask:task-1",
+          rowKey: "platform:Trigger:task-1",
         },
       },
       new AbortController().signal,
@@ -670,7 +670,7 @@ it("rejects fill_form and page_action without prior observation and auto-injects
           expectedPanelInstanceId: "panel-inst-1",
           expectedMemberInstanceId: "nested-inst-1",
           expectedFormInstanceId: "form-inst-1",
-          expectedTarget: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+          expectedTarget: { kind: "object", objectType: "platform:Trigger", primaryKey: "task-1" },
           expectedDashboardId: "dash-a",
           expectedCardId: "card-1",
         },
@@ -683,7 +683,7 @@ it("rejects fill_form and page_action without prior observation and auto-injects
           expectedPageInstanceId: "page-inst-1",
           expectedPanelInstanceId: "panel-inst-1",
           expectedEntryInstanceId: "batch-entry-1",
-          expectedCheckedKeys: ["platform:ScheduledTask:task-1", "platform:ScheduledTask:task-2"],
+          expectedCheckedKeys: ["platform:Trigger:task-1", "platform:Trigger:task-2"],
           expectedDashboardId: "dash-a",
           expectedCardId: "card-1",
         },
@@ -693,7 +693,7 @@ it("rejects fill_form and page_action without prior observation and auto-injects
         target: {
           kind: "page_action",
           operation: "list.batchDelete",
-          rowKey: "platform:ScheduledTask:task-1",
+          rowKey: "platform:Trigger:task-1",
           expectedPageInstanceId: "page-inst-1",
           expectedPanelInstanceId: "panel-inst-1",
           expectedEntryInstanceId: "list-entry-1",

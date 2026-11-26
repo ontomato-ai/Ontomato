@@ -83,7 +83,7 @@ describe("host content-box height stylesheets", () => {
     const composerCss = stylesOf("../../../../../packages/agent-shell-ui/src/components/PageComposer.vue");
     expect(composerCss).toMatch(/\.page-ask\s*\{[^}]*pointer-events:\s*none;/s);
     expect(composerCss).not.toMatch(/\.page-ask\s*\{[^}]*position:\s*sticky;/s);
-    expect(composerCss).toMatch(/\.page-ask:has\(\.composer-unfold\)\s*\{[^}]*padding:[^;]*var\(--shell-composer-foot\);/s);
+    expect(composerCss).toMatch(/\.page-ask:has\(\.composer-unfold\)\s*\{[^}]*height:\s*0;[^}]*padding:\s*0;/s);
 
     const layoutCss = stylesOf("../../../../../packages/platform-web/src/PlatformLayout.vue");
     // Conventional pages keep body scrolling and vertical padding.

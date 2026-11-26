@@ -10,7 +10,7 @@ import type { ProductPanelOperationsReadResponse, ProductPanelReadResponse } fro
 import type { PanelFormDescription, PanelFormField } from "@ontomato/contracts/panel-projection";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { APPLICATION } from "@ontomato/contracts/platform-object-types";
 import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
@@ -229,11 +229,11 @@ describe("Item 2.1 & 3.1: ObjectList row action conditions and busy rejection", 
       },
     },
     data: {
-      rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
     },
     operations: {
       remove: {
-        operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
+        operation: { kind: "PlatformOperation", id: "triggers.delete" },
         target: { row: true },
       },
     },
@@ -241,7 +241,7 @@ describe("Item 2.1 & 3.1: ObjectList row action conditions and busy rejection", 
 
   const removeDescriptor: PanelOwnerOperationDescriptor = {
     kind: "action",
-    handlerRef: "schedules.deleteTask",
+    handlerRef: "triggers.delete",
     label: "Remove entry",
     effect: "write",
     batch: false,
@@ -360,14 +360,14 @@ describe("Item 2.1, 2.2 & 2.6: ObjectForm save gates, no binding.invoke fallback
     id,
     name: id,
     componentId: "@ontomato/sdk:ObjectForm",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    inputs: { task: { kind: "object", objectType: TRIGGER } },
     outputs: {},
     config: {},
     data: {
       form: { source: { object: { input: "task" } }, read: "form", params: {} },
     },
     operations: {
-      save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } },
+      save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } },
     },
   });
 
@@ -393,16 +393,16 @@ describe("Item 2.1, 2.2 & 2.6: ObjectForm save gates, no binding.invoke fallback
     const harness = mountDirectPanel({
       manifest: {
         state: {
-          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
         },
         members: {
           form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
         },
       },
       projections: { "task-form": taskFormProjection("task-form") },
-      initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: { selectedTask: { className: TRIGGER, primaryKey: "t-1" } },
       read: async (req) => {
-        if (req.operations) return ready({ save: platformSaveDescriptor(SCHEDULED_TASK) });
+        if (req.operations) return ready({ save: platformSaveDescriptor(TRIGGER) });
         return ready({
           fields: [
             { path: "/name", label: "Name", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false },
@@ -523,8 +523,8 @@ describe("Item 2.1, 2.2 & 2.6: ObjectForm save gates, no binding.invoke fallback
     const harness = mountDirectPanel({
       manifest: {
         state: {
-          selectedTaskA: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
-          selectedTaskB: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTaskA: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
+          selectedTaskB: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
         },
         members: {
           formA: { target: { projectionId: "form-a" }, inputs: { task: { state: "selectedTaskA" } } },
@@ -536,11 +536,11 @@ describe("Item 2.1, 2.2 & 2.6: ObjectForm save gates, no binding.invoke fallback
         "form-b": taskFormProjection("form-b"),
       },
       initial: {
-        selectedTaskA: { className: SCHEDULED_TASK, primaryKey: "t-1" },
-        selectedTaskB: { className: SCHEDULED_TASK, primaryKey: "t-2" },
+        selectedTaskA: { className: TRIGGER, primaryKey: "t-1" },
+        selectedTaskB: { className: TRIGGER, primaryKey: "t-2" },
       },
       read: async (req) => {
-        if (req.operations) return ready({ save: platformSaveDescriptor(SCHEDULED_TASK) });
+        if (req.operations) return ready({ save: platformSaveDescriptor(TRIGGER) });
         return ready({
           fields: [
             { path: "/name", label: "Name", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false },
@@ -851,7 +851,7 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
       id: "restricted-form",
       name: "Restricted form",
       componentId: "@ontomato/sdk:ObjectForm",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+      inputs: { task: { kind: "object", objectType: TRIGGER } },
       outputs: {},
       config: {
         fixedFields: { "/profile/org": { literal: "HQ" } },
@@ -868,23 +868,23 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
         form: { source: { object: { input: "task" } }, read: "form", params: {} },
       },
       operations: {
-        save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } },
+        save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } },
       },
     };
 
     const harness = mountDirectPanel({
       manifest: {
         state: {
-          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
         },
         members: {
           form: { target: { projectionId: "restricted-form" }, inputs: { task: { state: "selectedTask" } } },
         },
       },
       projections: { "restricted-form": formProjection },
-      initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: { selectedTask: { className: TRIGGER, primaryKey: "t-1" } },
       read: async (req) => {
-        if (req.operations) return ready({ save: platformSaveDescriptor(SCHEDULED_TASK) });
+        if (req.operations) return ready({ save: platformSaveDescriptor(TRIGGER) });
         return ready({
           fields,
           values: {
@@ -997,30 +997,30 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
       id: "refresh-form",
       name: "Refresh form",
       componentId: "@ontomato/sdk:ObjectForm",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+      inputs: { task: { kind: "object", objectType: TRIGGER } },
       outputs: {},
       config: {},
       data: {
         form: { source: { object: { input: "task" } }, read: "form", params: {} },
       },
       operations: {
-        save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } },
+        save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } },
       },
     };
 
     const harness = mountDirectPanel({
       manifest: {
         state: {
-          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
         },
         members: {
           form: { target: { projectionId: "refresh-form" }, inputs: { task: { state: "selectedTask" } } },
         },
       },
       projections: { "refresh-form": formProjection },
-      initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: { selectedTask: { className: TRIGGER, primaryKey: "t-1" } },
       read: async (req) => {
-        if (req.operations) return ready({ save: platformSaveDescriptor(SCHEDULED_TASK) });
+        if (req.operations) return ready({ save: platformSaveDescriptor(TRIGGER) });
         if (req.runtimeParams?.changedField === "/category") {
           return ready(await refreshDeferred.promise);
         }
@@ -1064,28 +1064,28 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
       id: "nosave-platform-form",
       name: "No-save platform form",
       componentId: "@ontomato/sdk:ObjectForm",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+      inputs: { task: { kind: "object", objectType: TRIGGER } },
       outputs: {},
       config: {},
       data: {
         form: { source: { object: { input: "task" } }, read: "form", params: {} },
       },
       operations: {
-        save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } },
+        save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } },
       },
     };
 
     const harness = mountDirectPanel({
       manifest: {
         state: {
-          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
         },
         members: {
           form: { target: { projectionId: "nosave-platform-form" }, inputs: { task: { state: "selectedTask" } } },
         },
       },
       projections: { "nosave-platform-form": formProjection },
-      initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: { selectedTask: { className: TRIGGER, primaryKey: "t-1" } },
       read: async (req) => {
         if (req.operations) return ready({});
         return ready({
@@ -1216,30 +1216,30 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
       id: "switch-form",
       name: "Switch form",
       componentId: "@ontomato/sdk:ObjectForm",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+      inputs: { task: { kind: "object", objectType: TRIGGER } },
       outputs: {},
       config: {},
       data: {
         form: { source: { object: { input: "task" } }, read: "form", params: {} },
       },
       operations: {
-        save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } },
+        save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } },
       },
     };
 
     const harness = mountDirectPanel({
       manifest: {
         state: {
-          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
         },
         members: {
           form: { target: { projectionId: "switch-form" }, inputs: { task: { state: "selectedTask" } } },
         },
       },
       projections: { "switch-form": formProjection },
-      initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: { selectedTask: { className: TRIGGER, primaryKey: "t-1" } },
       read: async (req) => {
-        if (req.operations) return ready({ save: platformSaveDescriptor(SCHEDULED_TASK) });
+        if (req.operations) return ready({ save: platformSaveDescriptor(TRIGGER) });
         const pk = (req.inputs.task as { primaryKey: string }).primaryKey;
         if (req.runtimeParams?.changedField === "/category") {
           return ready(await refreshDeferred.promise);
@@ -1257,7 +1257,7 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
 
       // Switch selected object to t-2 (discarding t-1 via confirmLeaveUnsaved or direct discard) while refresh is pending.
       harness.instance.forms.discard("form");
-      harness.instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-2" });
+      harness.instance.state.set("selectedTask", { className: TRIGGER, primaryKey: "t-2" });
       await nextTick();
       refreshDeferred.resolve(descriptionFor("t-1", "tech"));
 
@@ -1307,11 +1307,11 @@ describe("Item 3.4: Distinguish loading (action_not_ready) from unauthorized mis
           rowActions: { items: [{ kind: "operation", operation: "remove", label: "Remove" }] },
         },
         data: {
-          rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+          rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
         },
         operations: {
           remove: {
-            operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
+            operation: { kind: "PlatformOperation", id: "triggers.delete" },
             target: { row: true },
           },
         },
@@ -1321,14 +1321,14 @@ describe("Item 3.4: Distinguish loading (action_not_ready) from unauthorized mis
         id: "task-form",
         name: "Task form",
         componentId: "@ontomato/sdk:ObjectForm",
-        inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+        inputs: { task: { kind: "object", objectType: TRIGGER } },
         outputs: {},
         config: {},
         data: {
           form: { source: { object: { input: "task" } }, read: "form", params: {} },
         },
         operations: {
-          save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } },
+          save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } },
         },
       },
     };
@@ -1337,7 +1337,7 @@ describe("Item 3.4: Distinguish loading (action_not_ready) from unauthorized mis
       manifest: {
         state: {
           selectedApp: { type: { kind: "object", objectType: APPLICATION }, personal: false, deepLink: false, external: false },
-          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+          selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
         },
         members: {
           deleteBtn: { target: { projectionId: "delete-btn" }, inputs: { app: { state: "selectedApp" } } },
@@ -1348,7 +1348,7 @@ describe("Item 3.4: Distinguish loading (action_not_ready) from unauthorized mis
       projections,
       initial: {
         selectedApp: { className: APPLICATION, primaryKey: "app-1" },
-        selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" },
+        selectedTask: { className: TRIGGER, primaryKey: "t-1" },
       },
       read: async (req) => {
         const member = req.memberPath.at(-1)?.member;

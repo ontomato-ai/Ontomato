@@ -23,6 +23,7 @@ import {
   type PlatformRelationKindDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
+import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { tForLocale } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -30,6 +31,7 @@ import { HttpError } from "../../utils/errors";
 import type { AuthorizationGraphFacts } from "../governance/policy-access";
 import type { ProductOwner } from "../product-governance/grants";
 import { panelSkillRef } from "../product-panels/skill-identity";
+import { triggerClient } from "../scheduling/trigger-client";
 import {
   PlatformOntologyOwnerReaders,
   type OwnerReadResult,
@@ -343,6 +345,7 @@ const POLICY_OBJECT_KINDS: Readonly<Record<string, string>> = {
   READ_FUNCTION: FUNCTION,
   WRITE_FUNCTION: FUNCTION,
   WORKFLOW: WORKFLOW,
+  TRIGGER: TRIGGER,
 };
 
 function verbLabel(locale: string | undefined, verb: string): string {
@@ -620,16 +623,7 @@ async function readObjectsOfType(
     }
     case TRIGGER: {
       const res = await readers.triggers();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((tr) => ({
-          node: { className: TRIGGER, primaryKey: tr.id },
-          label: tr.name,
-          detail: tr.effectKind ?? undefined,
-          ...(tr.enabled !== undefined && { metadata: { enabled: tr.enabled } }),
-        })),
-      };
+      return res.ok ? { ok: true, data: res.data.map(triggerObject) } : res;
     }
     case SKILL: {
       const res = await readers.skills();
@@ -1073,6 +1067,15 @@ export async function readPlatformOntologyInstancePage(
   };
 }
 
+function triggerObject(tr: PlatformTask): SearchableOntologyObjectItem {
+  return {
+    node: { className: TRIGGER, primaryKey: tr.id },
+    label: tr.title,
+    detail: tr.targetKind,
+    metadata: { enabled: tr.enabled, status: tr.status, version: tr.version },
+  };
+}
+
 export async function readPlatformOntologyInstance(
   owner: ProductOwner,
   credentials: AssistantCredentials,
@@ -1080,6 +1083,7 @@ export async function readPlatformOntologyInstance(
 ): Promise<SearchableOntologyObjectItem> {
   const spec = PLATFORM_ONTOLOGY_TYPE_MAP.get(node.className);
   if (!spec) throw new HttpError(404, `Unknown platform ontology type: ${node.className}`, "OBJECT_NOT_FOUND");
+  if (node.className === TRIGGER) return triggerObject(await triggerClient(credentials).task(node.primaryKey));
   const readers = new PlatformOntologyOwnerReaders(owner, credentials);
   const result = await readObjectsOfType(readers, spec.id);
   if (!result.ok) throw platformOntologyOwnerReadError(result.status, result.reason);
@@ -1283,15 +1287,15 @@ async function evaluateRelationKind(
       if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
       const edges: RawEdgeCandidate[] = [];
       for (const tr of res.data) {
-        if (!tr.workflowId) continue;
+        if (tr.targetKind !== "workflow") continue;
         if (
           (node.className === TRIGGER && tr.id === node.primaryKey) ||
-          (node.className === WORKFLOW && tr.workflowId === node.primaryKey)
+          (node.className === WORKFLOW && tr.targetId === node.primaryKey)
         ) {
           edges.push({
             from: { className: TRIGGER, primaryKey: tr.id },
-            to: { className: WORKFLOW, primaryKey: tr.workflowId },
-            fromLabel: tr.name,
+            to: { className: WORKFLOW, primaryKey: tr.targetId },
+            fromLabel: tr.title,
           });
         }
       }
@@ -1303,15 +1307,15 @@ async function evaluateRelationKind(
       if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
       const edges: RawEdgeCandidate[] = [];
       for (const tr of res.data) {
-        if (!tr.actionId) continue;
+        if (tr.targetKind !== "action") continue;
         if (
           (node.className === TRIGGER && tr.id === node.primaryKey) ||
-          (node.className === ACTION && tr.actionId === node.primaryKey)
+          (node.className === ACTION && tr.targetId === node.primaryKey)
         ) {
           edges.push({
             from: { className: TRIGGER, primaryKey: tr.id },
-            to: { className: ACTION, primaryKey: tr.actionId },
-            fromLabel: tr.name,
+            to: { className: ACTION, primaryKey: tr.targetId },
+            fromLabel: tr.title,
           });
         }
       }

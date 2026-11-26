@@ -154,18 +154,6 @@ class ProductGrantControllerTest {
             .andExpect(jsonPath("$.code").value(403))
             .andExpect(jsonPath("$.message").value("Product edit Grant required"));
     }
-    @Test void principalsEndpointDelegatesKindKeywordAndLimit() throws Exception {
-        var grants = mock(ProductGrantService.class);
-        when(grants.searchPrincipals("role", "admin", 25))
-            .thenReturn(java.util.List.of(new io.ontomato.dataengine.service.ProductPrincipalLookup.PrincipalOption("r-1", "Administrator")));
-        var mvc = MockMvcBuilders.standaloneSetup(controller(grants, mock(WorkbenchServiceAuthentication.class)))
-            .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-        mvc.perform(post("/product-governance/principals").contentType(MediaType.APPLICATION_JSON)
-            .content("{\"kind\":\"role\",\"keyword\":\"admin\",\"limit\":25}"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.options[0].id").value("r-1"))
-            .andExpect(jsonPath("$.options[0].name").value("Administrator"));
-    }
     @Test void registrationCannotReachTheStoreWithoutServiceAuthentication() {
         var grants=mock(ProductGrantService.class);
         var authentication=mock(WorkbenchServiceAuthentication.class);

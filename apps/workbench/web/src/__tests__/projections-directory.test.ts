@@ -679,11 +679,11 @@ async function mountProjectionsApp(options: MountOptions = {}) {
               fields: { typeId: "Student", group: "Business object types" },
             },
             {
-              primaryKey: "platform:ScheduledTask",
+              primaryKey: "platform:Trigger",
               className: "platform:OntologyType",
-              label: "Scheduled task",
-              subtitle: "platform:ScheduledTask",
-              fields: { typeId: "platform:ScheduledTask", group: "Capability" },
+              label: "Task trigger",
+              subtitle: "platform:Trigger",
+              fields: { typeId: "platform:Trigger", group: "Capability" },
             },
             {
               primaryKey: "platform:MetricView",
@@ -710,8 +710,8 @@ async function mountProjectionsApp(options: MountOptions = {}) {
             fixture: FIXTURES["proj-b"]!,
             componentId: "@ontomato/sdk:ObjectSummary",
             component: "ObjectSummary",
-            objectTypeIds: ["platform:ScheduledTask"],
-            objectTypes: "Scheduled task",
+            objectTypeIds: ["platform:Trigger"],
+            objectTypes: "Task trigger",
           },
           {
             fixture: FIXTURES["proj-chart"]!,
@@ -724,8 +724,8 @@ async function mountProjectionsApp(options: MountOptions = {}) {
             fixture: FIXTURES["proj-readonly"]!,
             componentId: "@ontomato/sdk:ObjectList",
             component: "ObjectList",
-            objectTypeIds: ["platform:ScheduledTask"],
-            objectTypes: "Scheduled task",
+            objectTypeIds: ["platform:Trigger"],
+            objectTypes: "Task trigger",
           },
         ];
         const matched = allCatalogRows.filter((entry) =>
@@ -1020,7 +1020,7 @@ describe("projections two-entry catalog & detail panels", () => {
       // Both ReferencePickers render in the toolbar filters slot.
       expect(mounted.element.querySelectorAll(".proj-filter-picker").length).toBe(2);
       expect(mounted.element.textContent).toContain("Student");
-      expect(mounted.element.textContent).toContain("Scheduled task");
+      expect(mounted.element.textContent).toContain("Task trigger");
 
       // Single component filter via public state drives owner catalogue read and updates URL deep link.
       await present({ componentId: "@ontomato/sdk:ObjectList" });

@@ -302,6 +302,8 @@ onBeforeUnmount(() => {
           <span class="nav-label">{{ labels.newConversation }}</span>
         </button>
       </header>
+      <div class="history-content" :class="{ 'history-scroll': $slots['before-history'] }">
+      <slot name="before-history" />
       <div class="section-title"><span v-if="splitNavigation" class="history-list-marker" aria-hidden="true" />{{ labels.sessions }}</div>
       <div v-if="sessionsState === 'loading' && sessions.length === 0" class="session-skeleton" aria-busy="true">
         <span /><span /><span />
@@ -371,6 +373,7 @@ onBeforeUnmount(() => {
           </button>
         </li>
       </ul>
+      </div>
       </slot>
     </div>
 
@@ -569,6 +572,14 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
 }
+.history-content { display: contents; }
+.history-scroll {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.history-scroll > .session-list { overflow: visible; }
 .section-title {
   padding: 14px 10px 4px;
   font-size: var(--text-xs);

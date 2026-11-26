@@ -2,9 +2,10 @@ import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { platformTaskStatusSchema } from "@ontomato/contracts/platform-schedules";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
-  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
+  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SKILL, USER,
 } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress, type ProductPanelReadRequest, type ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
@@ -25,7 +26,8 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
-import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
+import { readPrincipalDirectory } from "../identity/principal-directory";
+import type { ProductOwner } from "../product-governance/grants";
 import { addAuthorizationEdges } from "../product-assets/ontology";
 import { readProductAssetGraph } from "./asset-graph-read";
 
@@ -129,7 +131,7 @@ function readAdapters(
   owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation,
   batchCache?: PanelReadBatchCache,
 ): Record<string, Record<string, ReadAdapter>> {
-  const schedules = createScheduledTaskReadAdapter(viewer, undefined,
+  const schedules = createScheduledTaskReadAdapter(owner, viewer, undefined,
     batchCache && (load => batchCache.scheduleApplications(viewer.headers?.[BUILD_TEST_HEADER], load)));
   const governance = createGovernanceReadAdapters(viewer, {
     loadPolicyCatalog: () => loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale),
@@ -149,10 +151,6 @@ function readAdapters(
   const actions = async () => {
     const { createActionReadAdapter } = await import("../action/panel-reads");
     return createActionReadAdapter(owner, viewer, callerUserName);
-  };
-  const triggers = async () => {
-    const { createTriggerReadAdapter } = await import("../trigger/panel-reads");
-    return createTriggerReadAdapter(owner, viewer, callerUserName);
   };
   const workflows = async () => {
     const { createWorkflowReadAdapter } = await import("../workflow/panel-reads");
@@ -327,15 +325,6 @@ function readAdapters(
       derivedConditions: async selection => (await actions()).derivedConditions(selection.primaryKey!),
       annotatedExplanation: async selection => (await actions()).annotatedExplanation(selection.primaryKey!),
     },
-    [TRIGGER]: {
-      count: async () => (await triggers()).count(),
-      armedCount: async () => (await triggers()).armedCount(),
-      list: async () => (await triggers()).list(),
-      query: async (_selection, params) => (await triggers()).query(params),
-      record: async selection => (await triggers()).record(selection.primaryKey!),
-      form: async (selection, params) => (await triggers()).form(selection.primaryKey!, formParams(params)),
-      createForm: async (_selection, params) => (await triggers()).createForm(formParams(params)),
-    },
     [WORKFLOW]: {
       count: async () => (await workflows()).count(),
       list: async () => (await workflows()).list(),
@@ -437,12 +426,14 @@ function readAdapters(
       options: async (_selection, params) => {
         const keyword = panelReadParameterSchemas.keyword.optional().parse(params.keyword);
         const page = panelReadParameterSchemas.page.optional().parse(params.page);
-        const { options: items } = await searchProductGrantPrincipals("role", keyword, page?.size ?? 100, viewer);
+        const { options: items } = await readPrincipalDirectory(viewer, {
+          kind: "role", ...(keyword ? { keyword } : {}), limit: page?.size ?? 100,
+        });
         return { options: items.map(({ id, name }) => ({ primaryKey: id, value: id, label: name })) };
       },
       resolve: async (_selection, params) => {
         const values = panelReadParameterSchemas.optionValues.parse(params.values);
-        const { options: items } = await searchProductGrantPrincipals("role", undefined, 100, viewer);
+        const { options: items } = await readPrincipalDirectory(viewer, { kind: "role", limit: 100 });
         const byId = new Map(items.map(item => [item.id, item.name]));
         return {
           options: values
@@ -713,12 +704,20 @@ function readAdapters(
       graphEdges: async () => (await ontology()).graphEdges(),
       record: async selection => (await ontology()).relationRecord(selection.primaryKey!),
     },
-    [SCHEDULED_TASK]: {
+    [TRIGGER]: {
+      count: () => schedules.count(),
       list: () => schedules.list(),
-      catalogue: (_selection, params) => schedules.list({
-        application: panelReadParameterSchemas.keyword.optional().parse(params.scope),
-        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
-      }),
+      catalogue: (_selection, params) => {
+        const workspace = params.workspace === "agent";
+        const taskId = workspace ? panelReadParameterSchemas.triggerRef.nullish().parse(params.selectedTask)?.primaryKey : undefined;
+        return schedules.list({
+          scope: panelReadParameterSchemas.keyword.optional().parse(params.scope),
+          search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+          status: platformTaskStatusSchema.optional().parse(params.status),
+          taskId,
+          agentId: workspace && !taskId ? panelReadParameterSchemas.keyword.optional().parse(params.workspaceAgent) : undefined,
+        });
+      },
       counts: (_selection, params) => schedules.counts(panelReadParameterSchemas.keyword.optional().parse(params.by)),
       status: () => schedules.status(),
       record: selection => schedules.record(selection.primaryKey!),
@@ -731,8 +730,15 @@ function readAdapters(
       ),
       form: (selection, params) => schedules.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => schedules.createForm({
-        ...formParams(params), defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),
+        ...formParams(params),
+        defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),
+        defaultAgentId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAgentId),
       }),
+      memberOptions: (_selection, params) => schedules.memberOptions({
+        keyword: panelReadParameterSchemas.keyword.optional().parse(params.keyword),
+        page: panelReadParameterSchemas.page.optional().parse(params.page),
+      }),
+      memberResolve: (_selection, params) => schedules.memberResolve(panelReadParameterSchemas.optionValues.parse(params.values)),
     },
     [BUSINESS_KNOWLEDGE]: {
       count: () => knowledge.count(),

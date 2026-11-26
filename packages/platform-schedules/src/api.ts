@@ -1,5 +1,4 @@
 import {
-  platformScheduleApplicationsSchema,
   platformScheduleErrorSchema,
   platformScheduleFormRequestSchema,
   platformScheduleFormSchema,
@@ -12,6 +11,7 @@ import {
   platformTaskRunPageSchema,
   platformTaskRunSchema,
   platformTaskSchema,
+  platformTaskStatusUpdateSchema,
   platformTaskUpdateSchema,
   type PlatformScheduleError,
   type PlatformScheduleFormRequest,
@@ -19,6 +19,7 @@ import {
   type PlatformTaskInput,
   type PlatformTaskUpdate,
 } from "@ontomato/contracts/platform-schedules";
+import type { z } from "zod";
 import type { PlatformSchedulesHost } from "./host";
 
 const base = platformSchedulesPath;
@@ -79,7 +80,7 @@ const json = (method: string, body: unknown, headers: Record<string, string> = {
  * parsed with the contract and every request body is checked against it before it leaves, so a service or a page that
  * drifted from the contract fails here instead of half-rendering a card.
  */
-export function createSchedulesApi(host: PlatformSchedulesHost) {
+export function createSchedulesApi(host: Pick<PlatformSchedulesHost, "request">) {
   async function send(path: string, init: RequestInit = {}): Promise<{ status: number; body: unknown }> {
     let response: Response;
     try {
@@ -108,8 +109,6 @@ export function createSchedulesApi(host: PlatformSchedulesHost) {
     async renewCredential(): Promise<void> {
       await send(`${base}/credential/renew`, { method: "POST" });
     },
-    /** The applications that declare a schedule form, whether each is usable now, and the caller's task counts. */
-    applications: () => read(platformScheduleApplicationsSchema, `${base}/applications`),
     /** The caller's tasks in the service's order, optionally of one application. */
     list: (appId?: string | null) =>
       read(platformTaskListSchema, appId ? `${base}?${new URLSearchParams({ appId })}` : base),
@@ -124,11 +123,11 @@ export function createSchedulesApi(host: PlatformSchedulesHost) {
         `${base}/applications/${encodeURIComponent(appId)}/form`,
         json("POST", platformScheduleFormRequestSchema.parse(request)),
       ),
-    /** Registers a task, switched on; the service replays a repeated key instead of creating the task twice. */
-    create: (input: PlatformTaskInput, idempotencyKey: string) =>
+    /** Creates a published trigger or a definition pending review, using the operation intent as its key. */
+    create: (input: PlatformTaskInput, idempotencyKey: string, enabled: boolean) =>
       read(
         platformTaskSchema,
-        base,
+        `${base}?enabled=${enabled}`,
         json("POST", platformTaskInputSchema.parse(input), {
           "Idempotency-Key": platformScheduleIdempotencyKeySchema.parse(idempotencyKey),
         }),
@@ -137,6 +136,8 @@ export function createSchedulesApi(host: PlatformSchedulesHost) {
       read(platformTaskSchema, task(id), json("PUT", platformTaskUpdateSchema.parse(input))),
     setEnabled: (id: string, change: PlatformTaskEnabled) =>
       read(platformTaskSchema, `${task(id)}/enabled`, json("PUT", platformTaskEnabledSchema.parse(change))),
+    setStatus: (id: string, change: z.input<typeof platformTaskStatusUpdateSchema>) =>
+      read(platformTaskSchema, `${task(id)}/status`, json("PUT", platformTaskStatusUpdateSchema.parse(change))),
     async remove(id: string, revision: number): Promise<void> {
       await send(task(id), { method: "DELETE", headers: { "If-Match": platformTaskIfMatchSchema.parse(`"${revision}"`) } });
     },

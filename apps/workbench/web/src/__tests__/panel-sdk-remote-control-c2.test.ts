@@ -17,7 +17,7 @@ import type {
 } from "@ontomato/contracts/panel-host";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import { applicationPanelUseSchema, type DirectProjection, type ProductProjection } from "@ontomato/contracts/product-panels";
@@ -220,7 +220,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
 
     const descriptor: PanelOwnerOperationDescriptor = {
       kind: "action",
-      handlerRef: "platform:ScheduledTask.approve",
+      handlerRef: "fixture:approve",
       label: "Approve task",
       effect: "write",
       batch: false,
@@ -238,7 +238,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
 
     const manifest: DirectPanelManifest = {
       state: {
-        selected: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true, personal: false, external: false },
+        selected: { type: { kind: "object", objectType: TRIGGER }, deepLink: true, personal: false, external: false },
       },
       members: {
         customOp: {
@@ -253,13 +253,13 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
         id: "proj-custom",
         name: "CustomOp",
         componentId: "@ontomato/sdk:PanelData",
-        inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+        inputs: { task: { kind: "object", objectType: TRIGGER } },
         data: {},
         outputs: {},
         config: {},
         operations: {
           approve: {
-            operation: { kind: "PlatformOperation", id: "platform:ScheduledTask.approve" },
+            operation: { kind: "PlatformOperation", id: "fixture:approve" },
             params: { mode: { literal: "strict" } },
           },
         },
@@ -276,7 +276,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
     const harness = mountHarness({
       manifest,
       projections,
-      initial: { selected: { className: SCHEDULED_TASK, primaryKey: "task-1" } },
+      initial: { selected: { className: TRIGGER, primaryKey: "task-1" } },
       autoMode: true,
       read: async (req) => {
         if (req.operations) return { status: "ready", value: { approve: descriptor } };
@@ -306,13 +306,13 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       const executed = await harness.instance.executeAction({
         operation: "customOp.approve",
         input: { reason: "looks good", mode: "override-attempt", admin: true },
-        expectedTarget: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" },
+        expectedTarget: { kind: "object", objectType: TRIGGER, primaryKey: "task-1" },
         agentRun: AGENT_RUN,
       });
       expect(executed).toMatchObject({ ok: true, kind: "executed", operation: "customOp.approve" });
       expect(harness.prepared[0]!.invocation).toEqual({
         call: {
-          target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" },
+          target: { kind: "object", objectType: TRIGGER, primaryKey: "task-1" },
           input: { reason: "looks good", mode: "strict" },
         },
       });
@@ -352,7 +352,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       expect(await harness.instance.executeAction({
         operation: "customOp.approve",
         input: { reason: "x" },
-        expectedTarget: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-other" },
+        expectedTarget: { kind: "object", objectType: TRIGGER, primaryKey: "task-other" },
         agentRun: AGENT_RUN,
       })).toMatchObject({ ok: false, reason: "stale" });
 
@@ -394,7 +394,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
     const confirmHarness = mountHarness({
       manifest,
       projections,
-      initial: { selected: { className: SCHEDULED_TASK, primaryKey: "task-1" } },
+      initial: { selected: { className: TRIGGER, primaryKey: "task-1" } },
       autoMode: false,
       read: async (req) => {
         if (req.operations) return { status: "ready", value: { approve: descriptor } };
@@ -420,7 +420,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       if (!awaitingStaleTarget.ok || awaitingStaleTarget.kind !== "awaiting_confirmation") throw new Error("expected awaiting");
 
       // Switch selected task before user approves -> 4-tuple check rejects as stale and cancels intent!
-      confirmHarness.instance.state.set("selected", { className: SCHEDULED_TASK, primaryKey: "task-2" });
+      confirmHarness.instance.state.set("selected", { className: TRIGGER, primaryKey: "task-2" });
       await nextTick();
       const staleResult = await awaitingStaleTarget.confirmation.dispatch();
       expect(staleResult).toMatchObject({ ok: false, reason: "stale" });
@@ -440,7 +440,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       expect(confirmed).toMatchObject({ ok: true, intentId: awaitingValid.intentId });
       expect(settled).toHaveLength(1);
       expect(settled[0]).toMatchObject({
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-2" },
         input: { reason: "confirm task-2", mode: "strict" },
       });
     } finally {
@@ -500,7 +500,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       platformTypeTableEntrySchema.parse({
         ...entry,
         operations: entry.operations?.map((id) => {
-          const form = id === "platform:ScheduledTask.save" || id === "platform:ScheduledTask.create";
+          const form = id === "platform:Trigger.save" || id === "triggers.create";
           return {
             id,
             kind: form ? "form.save" : "action",
@@ -580,7 +580,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
             return {
               setEnabled: {
                 kind: "action",
-                handlerRef: "platform:ScheduledTask.setEnabled",
+                handlerRef: "triggers.setEnabled",
                 effect: "write",
                 label: "Set enabled",
                 batch: false,
@@ -598,7 +598,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
             return {
               runNow: {
                 kind: "action",
-                handlerRef: "schedules.runNow",
+                handlerRef: "triggers.runNow",
                 effect: "write",
                 label: "Run now",
                 batch: false,
@@ -612,7 +612,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
             return {
               delete: {
                 kind: "action",
-                handlerRef: "platform:ScheduledTask.delete",
+                handlerRef: "triggers.delete",
                 effect: "write",
                 label: "Delete task",
                 batch: false,
@@ -630,7 +630,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
             return {
               renewCredential: {
                 kind: "action",
-                handlerRef: "schedules.renewCredential",
+                handlerRef: "triggers.renewCredential",
                 effect: "write",
                 label: "Renew credential",
                 batch: false,
@@ -759,7 +759,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       }
 
       // 2. Select task-1 via live state controller (same as `present`).
-      controller!.applyState({ selectedTask: { className: SCHEDULED_TASK, primaryKey: taskId } });
+      controller!.applyState({ selectedTask: { className: TRIGGER, primaryKey: taskId } });
 
       // Wait for detailHeader and operations read on selected task to settle.
       await vi.waitFor(async () => {
@@ -780,7 +780,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       expect(enabledRes).toMatchObject({ ok: true, kind: "executed", operation: "opEnable.setEnabled" });
       expect(dispatchedOps.at(-1)).toMatchObject({
         operationId: "opEnable.setEnabled",
-        call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: taskId }, input: { enabled: true, revision: 1 } },
+        call: { target: { kind: "object", objectType: TRIGGER, primaryKey: taskId }, input: { enabled: true, revision: 1 } },
       });
 
       // 4. opRunNow.runNow succeeds and triggers panel settlement toast.
@@ -792,7 +792,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       expect(runNowRes).toMatchObject({ ok: true, kind: "executed", operation: "opRunNow.runNow" });
       expect(dispatchedOps.at(-1)).toMatchObject({
         operationId: "opRunNow.runNow",
-        call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: taskId }, input: {} },
+        call: { target: { kind: "object", objectType: TRIGGER, primaryKey: taskId }, input: {} },
       });
 
       // 5. opRunNow.runNow when owner refuses with TASK_RUNNING -> reports failed with TASK_RUNNING code AND runs panel settlement setting runId.
@@ -839,7 +839,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
     let nextResponse!: (prep: PanelHumanOperationPreparation) => PanelHumanOperationDispatchResponse;
     const batchDescriptor: PanelOwnerOperationDescriptor = {
       kind: "action",
-      handlerRef: "platform:ScheduledTask.batchStatus",
+      handlerRef: "fixture:batchStatus",
       label: "Update status",
       effect: "write",
       batch: true,
@@ -849,7 +849,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
     };
     const singleDescriptor: PanelOwnerOperationDescriptor = {
       kind: "action",
-      handlerRef: "platform:ScheduledTask.archive",
+      handlerRef: "fixture:archive",
       label: "Archive",
       effect: "write",
       batch: false,
@@ -860,8 +860,8 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
 
     const manifest: DirectPanelManifest = {
       state: {
-        selected: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true, personal: false, external: false },
-        checked: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } }, deepLink: false, personal: false, external: false },
+        selected: { type: { kind: "object", objectType: TRIGGER }, deepLink: true, personal: false, external: false },
+        checked: { type: { kind: "list", items: { kind: "object", objectType: TRIGGER } }, deepLink: false, personal: false, external: false },
       },
       members: {
         batchBtn: {
@@ -884,12 +884,12 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
         id: "proj-batch",
         name: "BatchBtn",
         componentId: "@ontomato/sdk:OperationButton",
-        inputs: { tasks: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+        inputs: { tasks: { kind: "list", items: { kind: "object", objectType: TRIGGER } } },
         data: {},
         outputs: {},
         config: { operation: "batchStatus" },
         operations: {
-          batchStatus: { operation: { kind: "PlatformOperation", id: "platform:ScheduledTask.batchStatus" } },
+          batchStatus: { operation: { kind: "PlatformOperation", id: "fixture:batchStatus" } },
         },
       },
       "proj-single": {
@@ -897,12 +897,12 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
         id: "proj-single",
         name: "SingleBtn",
         componentId: "@ontomato/sdk:OperationButton",
-        inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+        inputs: { task: { kind: "object", objectType: TRIGGER } },
         data: {},
         outputs: {},
         config: { operation: "archive" },
         operations: {
-          archive: { operation: { kind: "PlatformOperation", id: "platform:ScheduledTask.archive" } },
+          archive: { operation: { kind: "PlatformOperation", id: "fixture:archive" } },
         },
       },
       "proj-header": {
@@ -910,12 +910,12 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
         id: "proj-header",
         name: "Header",
         componentId: "@ontomato/sdk:ObjectHeader",
-        inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+        inputs: { task: { kind: "object", objectType: TRIGGER } },
         data: {},
         outputs: {},
         config: { title: "Task Header", maxVisibleOperations: 0 },
         operations: {
-          archive: { operation: { kind: "PlatformOperation", id: "platform:ScheduledTask.archive" } },
+          archive: { operation: { kind: "PlatformOperation", id: "fixture:archive" } },
         },
       },
     };
@@ -924,10 +924,10 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
       manifest,
       projections,
       initial: {
-        selected: { className: SCHEDULED_TASK, primaryKey: "t-1" },
+        selected: { className: TRIGGER, primaryKey: "t-1" },
         checked: [
-          { className: SCHEDULED_TASK, primaryKey: "t-1" },
-          { className: SCHEDULED_TASK, primaryKey: "t-2" },
+          { className: TRIGGER, primaryKey: "t-1" },
+          { className: TRIGGER, primaryKey: "t-2" },
         ],
       },
       autoMode: true,
@@ -974,8 +974,8 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
         outcome: {
           kind: "batch",
           items: [
-            { target: { objectType: SCHEDULED_TASK, primaryKey: "t-1" }, outcome: { kind: "success", data: {} } },
-            { target: { objectType: SCHEDULED_TASK, primaryKey: "t-2" }, outcome: { kind: "unknown", message: "Connection reset on t-2" } },
+            { target: { objectType: TRIGGER, primaryKey: "t-1" }, outcome: { kind: "success", data: {} } },
+            { target: { objectType: TRIGGER, primaryKey: "t-2" }, outcome: { kind: "unknown", message: "Connection reset on t-2" } },
           ],
         },
       });
@@ -1034,7 +1034,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
   it("reports unknown honestly on ObjectList row action, ObjectForm save, and deferred confirmation dispatch", async () => {
     const saveDescriptor: PanelOwnerOperationDescriptor = {
       kind: "form.save",
-      handlerRef: `${SCHEDULED_TASK}.save`,
+      handlerRef: `${TRIGGER}.save`,
       label: "Save",
       effect: "write",
       batch: false,
@@ -1044,7 +1044,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
     };
     const rowOpDescriptor: PanelOwnerOperationDescriptor = {
       kind: "action",
-      handlerRef: `${SCHEDULED_TASK}.delete`,
+      handlerRef: `triggers.delete`,
       label: "Delete",
       effect: "write",
       batch: false,
@@ -1062,7 +1062,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
 
     const manifest: DirectPanelManifest = {
       state: {
-        selected: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true, personal: false, external: false },
+        selected: { type: { kind: "object", objectType: TRIGGER }, deepLink: true, personal: false, external: false },
       },
       members: {
         list: { target: { projectionId: "proj-list" } },
@@ -1078,7 +1078,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
         inputs: {},
         data: {
           rows: {
-            source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+            source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
             read: "list",
             params: {},
           },
@@ -1091,7 +1091,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
         },
         operations: {
           delete: {
-            operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.delete` },
+            operation: { kind: "PlatformOperation", id: `triggers.delete` },
             target: { row: true },
           },
         },
@@ -1101,7 +1101,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
         id: "proj-form",
         name: "Form",
         componentId: "@ontomato/sdk:ObjectForm",
-        inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+        inputs: { task: { kind: "object", objectType: TRIGGER } },
         data: {
           form: {
             source: { object: { input: "task" } },
@@ -1112,7 +1112,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
         outputs: {},
         config: {},
         operations: {
-          save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } },
+          save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } },
         },
       },
     };
@@ -1121,7 +1121,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
     const autoHarness = mountHarness({
       manifest,
       projections,
-      initial: { selected: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: { selected: { className: TRIGGER, primaryKey: "t-1" } },
       autoMode: true,
       read: async (req) => {
         if (req.operations) {
@@ -1183,7 +1183,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
     const confirmHarness = mountHarness({
       manifest,
       projections,
-      initial: { selected: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: { selected: { className: TRIGGER, primaryKey: "t-1" } },
       autoMode: false,
       read: async (req) => {
         if (req.operations) {

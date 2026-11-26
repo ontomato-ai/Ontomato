@@ -8,10 +8,18 @@
         },
         "deepLink": true
       },
+      "status": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "",
+        "deepLink": true
+      },
       "selectedTask": {
         "type": {
           "kind": "object",
-          "objectType": "platform:ScheduledTask"
+          "objectType": "platform:Trigger"
         },
         "deepLink": true
       },
@@ -28,10 +36,22 @@
           "type": "string"
         }
       },
+      "workspaceCompose": {
+        "type": { "kind": "scalar", "type": "string" },
+        "deepLink": true
+      },
+      "workspace": {
+        "type": { "kind": "scalar", "type": "string" },
+        "deepLink": true
+      },
+      "workspaceAgent": {
+        "type": { "kind": "scalar", "type": "string" },
+        "deepLink": true
+      },
       "newTask": {
         "type": {
           "kind": "object",
-          "objectType": "platform:ScheduledTask"
+          "objectType": "platform:Trigger"
         }
       },
       "schedulesApplication": {
@@ -74,7 +94,7 @@
     "members": {
       "pageNotice": {
         "component": "InfoBanner",
-        "type": "platform:ScheduledTask",
+        "type": "platform:Trigger",
         "data": {
           "record": "status"
         },
@@ -87,13 +107,13 @@
       },
       "appFilter": {
         "component": "SegmentedControl",
-        "type": "platform:ScheduledTask",
+        "type": "platform:Trigger",
         "data": {
           "counts": {
             "read": "counts",
             "params": {
               "by": {
-                "literal": "application"
+                "literal": "targetKind"
               }
             }
           }
@@ -110,7 +130,7 @@
       },
       "tasks": {
         "component": "ScheduledTaskSummaryList",
-        "type": "platform:ScheduledTask",
+        "type": "platform:Trigger",
         "data": {
           "rows": {
             "read": "catalogue",
@@ -120,7 +140,13 @@
               },
               "search": {
                 "state": "search"
-              }
+              },
+              "status": {
+                "state": "status"
+              },
+              "workspace": { "state": "workspace" },
+              "workspaceAgent": { "state": "workspaceAgent" },
+              "selectedTask": { "state": "selectedTask" }
             }
           }
         },
@@ -129,15 +155,45 @@
         },
         "operations": {
           "setEnabled": {
-            "operation": "platform:ScheduledTask.setEnabled",
+            "operation": "triggers.setEnabled",
             "target": "row"
           },
+          "publish": {
+            "operation": "triggers.setStatus",
+            "target": "row",
+            "params": {
+              "status": {
+                "literal": "PUBLISHED"
+              },
+              "enabled": {
+                "literal": true
+              },
+              "revision": {
+                "rowField": "revision"
+              }
+            }
+          },
+          "unuse": {
+            "operation": "triggers.setStatus",
+            "target": "row",
+            "params": {
+              "status": {
+                "literal": "UNUSED"
+              },
+              "enabled": {
+                "literal": false
+              },
+              "revision": {
+                "rowField": "revision"
+              }
+            }
+          },
           "runNow": {
-            "operation": "schedules.runNow",
+            "operation": "triggers.runNow",
             "target": "row"
           },
           "delete": {
-            "operation": "platform:ScheduledTask.delete",
+            "operation": "triggers.delete",
             "target": "row",
             "params": {
               "revision": {
@@ -159,6 +215,16 @@
                 "when": {
                   "field": "pauseCode",
                   "equals": "definition_changed"
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "publish",
+                "labelKey": "action.publish",
+                "tone": "primary",
+                "when": {
+                  "field": "status",
+                  "notEquals": "PUBLISHED"
                 }
               },
               {
@@ -205,6 +271,15 @@
                 "labelKey": "action.edit"
               },
               {
+                "kind": "operation",
+                "operation": "unuse",
+                "labelKey": "action.unuse",
+                "when": {
+                  "field": "status",
+                  "equals": "PUBLISHED"
+                }
+              },
+              {
                 "kind": "local",
                 "id": "records",
                 "labelKey": "action.records",
@@ -234,7 +309,7 @@
           "record": "record"
         },
         "config": {
-          "subtitleField": "applicationName",
+          "subtitleField": "targetName",
           "statusField": "stateLabel"
         },
         "id": "builtin-product-80bea445-8596-42d6-b866-bc4956e8ffad"
@@ -263,6 +338,12 @@
         "config": {
           "showTitle": false,
           "fields": [
+            "targetName",
+            "definitionStatus",
+            "version",
+            "reviewedBy",
+            "executorId",
+            "coauthorIds",
             "settings",
             "frequency",
             "timeZone",
@@ -306,6 +387,15 @@
               "key": "duration"
             },
             {
+              "key": "executorId"
+            },
+            {
+              "key": "version"
+            },
+            {
+              "key": "workflowRunId"
+            },
+            {
               "key": "error"
             },
             {
@@ -341,6 +431,9 @@
         "config": {
           "showTitle": false,
           "fields": [
+            "executorId",
+            "version",
+            "workflowRunId",
             "snapshotSummary",
             "result",
             "executionDetails"
@@ -379,7 +472,7 @@
           "form": "form",
           "createForm": "createForm"
         },
-        "operation": "platform:ScheduledTask.save",
+        "operation": "platform:Trigger.save",
         "config": {
           "showToc": false
         },
@@ -395,32 +488,63 @@
             "params": {
               "defaultAppId": {
                 "state": "app"
-              }
+              },
+              "defaultAgentId": { "state": "workspaceAgent" }
             }
           }
         },
-        "operation": "platform:ScheduledTask.create",
+        "operation": "triggers.create",
         "config": {
           "showToc": false
         },
         "id": "builtin-product-81d6942e-922d-4964-a998-b48dbd0ec7c3"
       },
+      "executorPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:Trigger",
+        "data": {
+          "options": "memberOptions",
+          "selected": "memberResolve"
+        },
+        "config": {
+          "refreshable": true
+        },
+        "id": "builtin-product-d3e5f8a2-7b14-4c92-8e61-4a7b9c2d5e30"
+      },
+      "coauthorsPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:Trigger",
+        "data": {
+          "options": "memberOptions",
+          "selected": "memberResolve"
+        },
+        "config": {
+          "refreshable": true
+        },
+        "id": "builtin-product-e4f6a9b3-8c25-4d03-9f72-5b8c0d3e6f41"
+      },
       "opEnable": {
         "component": "OperationButton",
         "target": "selectedTask",
-        "operation": "platform:ScheduledTask.setEnabled",
+        "operation": "triggers.setEnabled",
         "id": "builtin-product-cc431561-faab-4244-ab89-d4e1465ce208"
+      },
+      "opSetStatus": {
+        "component": "OperationButton",
+        "target": "selectedTask",
+        "operation": "triggers.setStatus",
+        "id": "builtin-product-7a4b9c2d-3e5f-4a18-9b6c-2d8e0f4a1b3c"
       },
       "opRunNow": {
         "component": "OperationButton",
         "target": "selectedTask",
-        "operation": "schedules.runNow",
+        "operation": "triggers.runNow",
         "id": "builtin-product-8e1a6e5f-988e-42ac-8acb-aacefceea339"
       },
       "opDelete": {
         "component": "OperationButton",
         "target": "selectedTask",
-        "operation": "platform:ScheduledTask.delete",
+        "operation": "triggers.delete",
         "config": {
           "type": "danger"
         },
@@ -429,7 +553,7 @@
       "renew": {
         "component": "PanelData",
         "target": "schedulesApplication",
-        "operation": "schedules.renewCredential",
+        "operation": "triggers.renewCredential",
         "id": "builtin-product-c533fb06-5286-495f-95f1-304b5752a802"
       }
     }
@@ -437,60 +561,72 @@
   "content": {
     "messages": {
       "zh-CN": {
-        "panel.name": "定时任务",
-        "intro": "让应用按计划运行，并查看每次执行记录",
-        "newTask": "新建任务",
+        "panel.name": "任务触发",
+        "intro": "按计划运行动作、流程与应用任务，并查看每次运行记录",
+        "newTask": "新建任务触发",
         "retry": "重试",
-        "filter.label": "按应用筛选",
-        "filter.search": "搜索任务",
-        "empty.none": "还没有定时任务",
-        "empty.app": "这个应用下还没有定时任务",
-        "empty.search": "没有标题包含「{query}」的任务",
-        "empty.noMatch": "没有符合当前筛选条件的定时任务",
+        "filter.label": "按目标类型筛选",
+        "filter.status": "按状态筛选",
+        "filter.statusAll": "全部状态",
+        "filter.statusPending": "待审核",
+        "filter.statusPublished": "已发布",
+        "filter.statusUnused": "未使用",
+        "filter.search": "搜索任务触发",
+        "empty.none": "还没有任务触发",
+        "empty.app": "这个分类下还没有任务触发",
+        "empty.search": "没有包含「{query}」的任务触发",
+        "empty.noMatch": "没有符合当前筛选条件的任务触发",
         "empty.clearFilters": "清除筛选",
         "state.paused": "已暂停",
         "card.review": "核对并保存",
         "card.viewResult": "查看结果",
         "card.viewEarlierResult": "查看上一次结果",
         "card.noResult": "没有结果",
-        "action.toggle": "按计划运行此任务",
+        "action.toggle": "按计划运行此任务触发",
         "action.enable": "启用",
         "action.disable": "停用",
+        "action.publish": "发布",
+        "action.unuse": "设为未使用",
         "action.runNow": "立即运行",
         "action.edit": "编辑",
         "action.records": "运行记录",
         "action.delete": "删除",
         "action.close": "关闭",
         "action.viewResult": "查看结果",
-        "form.newTitle": "新建定时任务",
-        "form.editTitle": "编辑定时任务",
-        "form.subtitle": "填写标题、选择应用与频率，再补齐应用所需内容。新建的任务保存后会直接启用。",
+        "form.newTitle": "新建任务触发",
+        "form.editTitle": "编辑任务触发",
+        "form.subtitle": "选择触发目标（应用、动作或流程）、频率与执行人；可立即发布启用，或先保存为待审核。",
         "form.appPlaceholder": "请选择应用",
+        "form.targetPlaceholder": "请选择目标",
         "form.notifyEmail": "通知邮箱",
         "form.notifyPlaceholder": "选填。跑完发一封信，成功、失败都发",
-        "form.identity": "按你的身份和权限运行；如果你失去了所需权限，任务会暂停，并在卡片上说明原因。",
+        "form.identity": "到点按所选执行人身份运行（留空则按创建人）；手动运行按点击者身份。若执行人缺少权限或凭证失效，触发会暂停并在卡片上说明原因。",
         "form.cancel": "取消",
         "form.save": "保存",
+        "form.create": "保存",
         "form.createAndEnable": "保存并启用",
         "form.loadLatest": "载入最新",
         "form.reloadForm": "重算表单",
-        "form.formChanged": "打开期间应用表单已变更，请点击“重算表单”采纳最新声明，核对后再保存。",
-        "form.changedElsewhere": "任务刚刚在别处被修改，请点击“载入最新”采纳最新内容与修订，核对后再保存。",
-        "message.saved": "已保存任务。",
-        "message.created": "已创建并启用任务。",
-        "message.enabled": "已启用任务。",
-        "message.disabled": "已停用任务。",
+        "form.formChanged": "打开期间目标表单已变更，请点击“重算表单”采纳最新声明，核对后再保存。",
+        "form.changedElsewhere": "任务触发刚刚在别处被修改，请点击“载入最新”采纳最新内容与修订，核对后再保存。",
+        "message.saved": "已保存任务触发。",
+        "message.created": "已创建任务触发。",
+        "message.published": "已发布任务触发。",
+        "message.unused": "已设为未使用。",
+        "message.enabled": "已启用任务触发。",
+        "message.disabled": "已停用任务触发。",
         "message.stillPaused": "仍处于暂停状态：{reason}",
         "message.runStarted": "已开始运行，结束后在记录中查看结果。",
+        "message.runWorkflowStarted": "已启动流程，流程进展请在工作流记录中查看。",
         "message.runCompleted": "运行已完成。",
         "message.runSkipped": "本次运行已跳过：{reason}",
         "message.runFailed": "运行失败：{reason}",
-        "message.runActive": "这个任务正在运行，已打开它的记录。",
+        "message.runActive": "这个任务触发正在运行，已打开它的记录。",
         "message.refused": "操作未完成：{reason}",
-        "message.unconfirmed": "没有收到明确结果，请稍后确认任务状态。",
-        "message.conflict": "任务刚刚在别处被修改，已刷新列表，请核对后再操作。",
-        "message.gone": "这个任务已不存在，已从列表移除。",
-        "message.notReady": "任务还在加载，请稍后再试。",
+        "message.unconfirmed": "没有收到明确结果，请稍后确认状态。",
+        "message.conflict": "任务触发刚刚在别处被修改，已刷新列表，请核对后再操作。",
+        "message.gone": "这个任务触发已不存在，已从列表移除。",
+        "message.notReady": "正在加载，请稍后再试。",
         "message.linkUnavailable": "链接指向的运行记录不可用。",
         "runs.title": "运行记录",
         "runs.titleFor": "运行记录 · {title}",
@@ -502,11 +638,12 @@
         "runs.viewResult": "查看结果",
         "runStatus.running": "运行中",
         "runStatus.completed": "完成",
+        "runStatus.workflowStarted": "已启动流程",
         "runStatus.failed": "失败",
         "runStatus.skipped": "已跳过",
         "runError.credential_invalid": "后台凭证已失效",
-        "runError.creator_unavailable": "创建人已停用或不在本域",
-        "runError.permission_denied": "创建人缺少所需权限",
+        "runError.creator_unavailable": "执行人已停用或不在本域",
+        "runError.permission_denied": "执行人缺少所需权限",
         "runError.target_unavailable": "要运行的对象已不可用",
         "runError.definition_changed": "要运行的内容已变更，需要核对",
         "runError.application_unavailable": "应用未安装",
@@ -516,65 +653,77 @@
         "runError.cancelled": "已取消",
         "runError.interrupted": "运行被中断，请核对后再运行",
         "runError.autotest_busy": "上一批自动测试仍在运行",
-        "runError.prior_run_active": "这个任务的上一次运行仍在进行",
+        "runError.prior_run_active": "上一次运行仍在进行",
         "runError.legacy_failure": "升级前失败",
-        "notice.credentialRefused": "后台凭证没有续期（{reason}），因凭证暂停的任务会继续暂停。请重新登录后打开此页。"
+        "notice.credentialRefused": "后台凭证没有续期（{reason}），因凭证暂停的任务触发会继续暂停。请重新登录后打开此页。"
       },
       "en": {
-        "panel.name": "Scheduled tasks",
-        "intro": "Schedule application tasks and review their execution history",
-        "newTask": "New task",
+        "panel.name": "Task triggers",
+        "intro": "Schedule actions, workflows, and application tasks and review their execution history",
+        "newTask": "New trigger",
         "retry": "Retry",
-        "filter.label": "Filter by application",
-        "filter.search": "Search tasks",
-        "empty.none": "No scheduled tasks yet",
-        "empty.app": "No scheduled tasks in this application yet",
-        "empty.search": "No task title contains “{query}”",
-        "empty.noMatch": "No scheduled tasks match the current filter",
+        "filter.label": "Filter by target type",
+        "filter.status": "Filter by status",
+        "filter.statusAll": "All statuses",
+        "filter.statusPending": "Pending review",
+        "filter.statusPublished": "Published",
+        "filter.statusUnused": "Unused",
+        "filter.search": "Search task triggers",
+        "empty.none": "No task triggers yet",
+        "empty.app": "No task triggers in this category yet",
+        "empty.search": "No task trigger matches “{query}”",
+        "empty.noMatch": "No task triggers match the current filter",
         "empty.clearFilters": "Clear filters",
         "state.paused": "Paused",
         "card.review": "Check and save",
         "card.viewResult": "View result",
         "card.viewEarlierResult": "View earlier result",
         "card.noResult": "No result yet",
-        "action.toggle": "Run this task on its schedule",
+        "action.toggle": "Run this task trigger on its schedule",
         "action.enable": "Enable",
         "action.disable": "Disable",
+        "action.publish": "Publish",
+        "action.unuse": "Mark unused",
         "action.runNow": "Run now",
         "action.edit": "Edit",
         "action.records": "Run records",
         "action.delete": "Delete",
         "action.close": "Close",
         "action.viewResult": "View result",
-        "form.newTitle": "New scheduled task",
-        "form.editTitle": "Edit scheduled task",
-        "form.subtitle": "Give it a title, choose the application and the time, then fill in what the application needs.",
+        "form.newTitle": "New task trigger",
+        "form.editTitle": "Edit task trigger",
+        "form.subtitle": "Choose what runs (application, action, or workflow), its schedule, and its executor. Publish immediately or save pending review.",
         "form.appPlaceholder": "Choose an application",
+        "form.targetPlaceholder": "Choose a target",
         "form.notifyEmail": "Email",
         "form.notifyPlaceholder": "Optional. One message after each run, success or failure.",
-        "form.identity": "Runs as you, within your permissions; if you lose a permission it needs, the task pauses and its card says why.",
+        "form.identity": "Scheduled runs use the selected executor (or the creator if left blank); manual runs use the person clicking. Missing permissions or expired credentials pause the trigger.",
         "form.cancel": "Cancel",
         "form.save": "Save",
+        "form.create": "Save",
         "form.createAndEnable": "Save and enable",
         "form.loadLatest": "Load latest",
         "form.reloadForm": "Reload form",
-        "form.formChanged": "The application's form changed while you were editing. Reload the form, check the fields, and save again.",
-        "form.changedElsewhere": "This task was changed elsewhere. Load the latest version, check it, and save again.",
-        "message.saved": "The task was saved.",
-        "message.created": "The task was created and switched on.",
-        "message.enabled": "The task was switched on.",
-        "message.disabled": "The task was switched off.",
+        "form.formChanged": "The target form changed while you were editing. Reload the form, check the fields, and save again.",
+        "form.changedElsewhere": "This task trigger was changed elsewhere. Load the latest version, check it, and save again.",
+        "message.saved": "The task trigger was saved.",
+        "message.created": "The task trigger was created.",
+        "message.published": "The task trigger was published.",
+        "message.unused": "The task trigger was marked unused.",
+        "message.enabled": "The task trigger was switched on.",
+        "message.disabled": "The task trigger was switched off.",
         "message.stillPaused": "Still paused: {reason}",
         "message.runStarted": "The run started; its result shows in the records when it ends.",
+        "message.runWorkflowStarted": "Workflow started; follow its progress in workflow runs.",
         "message.runCompleted": "The run completed.",
         "message.runSkipped": "This run was skipped: {reason}",
         "message.runFailed": "The run failed: {reason}",
-        "message.runActive": "This task is already running; its record is open.",
+        "message.runActive": "This task trigger is already running; its record is open.",
         "message.refused": "Not done: {reason}",
-        "message.unconfirmed": "No clear result came back; check the task's state shortly.",
-        "message.conflict": "This task was just changed elsewhere and has been refreshed; try again.",
-        "message.gone": "This task is no longer available.",
-        "message.notReady": "The task is still loading; try again in a moment.",
+        "message.unconfirmed": "No clear result came back; check the trigger's state shortly.",
+        "message.conflict": "This task trigger was just changed elsewhere and has been refreshed; try again.",
+        "message.gone": "This task trigger is no longer available.",
+        "message.notReady": "Still loading; try again in a moment.",
         "message.linkUnavailable": "The run record this link points to is not available.",
         "runs.title": "Run records",
         "runs.titleFor": "Run records · {title}",
@@ -586,11 +735,12 @@
         "runs.viewResult": "View result",
         "runStatus.running": "Running",
         "runStatus.completed": "Completed",
+        "runStatus.workflowStarted": "Workflow started",
         "runStatus.failed": "Failed",
         "runStatus.skipped": "Skipped",
         "runError.credential_invalid": "The background credential no longer works",
-        "runError.creator_unavailable": "The creator is disabled or no longer in this domain",
-        "runError.permission_denied": "The creator lacks a permission it needs",
+        "runError.creator_unavailable": "The executor is disabled or no longer in this domain",
+        "runError.permission_denied": "The executor lacks a permission it needs",
         "runError.target_unavailable": "What it runs is no longer available",
         "runError.definition_changed": "What it runs has changed and needs checking",
         "runError.application_unavailable": "The application is not installed",
@@ -600,9 +750,27 @@
         "runError.cancelled": "It was cancelled",
         "runError.interrupted": "It was interrupted; check what it did before running it again",
         "runError.autotest_busy": "The previous test batch was still running",
-        "runError.prior_run_active": "The previous run of this task was still going",
+        "runError.prior_run_active": "The previous run of this trigger was still going",
         "runError.legacy_failure": "It failed before the upgrade",
-        "notice.credentialRefused": "Your background credential was not renewed ({reason}), so tasks paused on it stay paused. Open this page again after signing in with your account."
+        "notice.credentialRefused": "Your background credential was not renewed ({reason}), so triggers paused on it stay paused. Open this page again after signing in with your account."
+      },
+      "zh-TW": {
+        "panel.name": "任務觸發"
+      },
+      "ja": {
+        "panel.name": "タスクトリガー"
+      },
+      "ar": {
+        "panel.name": "مشغّلات المهام"
+      },
+      "fr": {
+        "panel.name": "Déclencheurs de tâches"
+      },
+      "de": {
+        "panel.name": "Aufgabenauslöser"
+      },
+      "it": {
+        "panel.name": "Trigger delle attività"
       }
     }
   }

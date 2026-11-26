@@ -220,6 +220,17 @@ explicit same-session replies; automatic next-chat-message routing is batch 3.
 Compose sets a stable `NODE_ID` for ontology job recovery. If overridden or deployed
 with multiple ontology nodes, use a stable unique ID for each node.
 
+## Task trigger email
+
+Set `SMTP_HOST` and the SMTP connection options in `.env` to enable completion and
+failure emails. For status-only emails, set `SMTP_PUBLIC_ORIGIN` to the workbench
+origin reachable by recipients, such as `https://workbench.example.com`. Use the
+scheme, host and port if needed. The workbench path prefix comes from
+`PUBLIC_BASE_PATH`. The email opens the specific run in Task triggers and access
+follows the workbench's run permissions. Without a valid origin, status-only
+emails cannot be sent. Full result or error emails to an address set by the
+actual executor require only the SMTP connection settings.
+
 ## Gateway migration and reverse proxies
 
 The workbench is at `<origin><PUBLIC_BASE_PATH>/`, and the Manager at

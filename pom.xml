@@ -206,6 +206,9 @@
                                 <include>**/WorkflowCountBoundaryTest.java</include>
                                 <include>**/GovernanceDirectoryControllerTest.java</include>
                                 <include>**/PlatformScheduleTest.java</include>
+                                <include>**/TaskMailTest.java</include>
+                                <include>**/TriggerUpgradePostgresTest.java</include>
+                                <include>**/TriggerUpgradeReferencesTest.java</include>
                                 <include>**/PageSkillsContractTest.java</include>
                                 <include>**/ApplicationCatalogReconciliationTest.java</include>
                                 <include>**/TriggerServiceCredentialTest.java</include>

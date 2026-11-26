@@ -1,7 +1,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { mountPanel, usePanelContext, usePanelOperation, usePanelOutput } from "@ontomato/sdk/panel";
 
-const TASK = "platform:ScheduledTask";
+const TASK = "platform:Trigger";
 
 await mountPanel({
   setup() {
@@ -9,6 +9,7 @@ await mountPanel({
     const values = instance.state.values;
     const selected = computed(() => values.value.selectedTask ?? null);
     const selectedId = computed(() => selected.value?.primaryKey ?? null);
+    const inline = computed(() => values.value.workspace === "agent");
     const runId = computed(() => values.value.runId ?? null);
 
     // Read-only outputs from official projections.
@@ -45,23 +46,29 @@ await mountPanel({
 
     // Assistants use page state (`compose: "new"` or `compose: "edit"`) to open the owner's form before calling `fill_form`.
     const mode = computed(() => {
-      if (values.value.compose === "new") return "create";
-      return values.value.compose === "edit" && selected.value ? "edit" : "view";
+      const compose = inline.value ? (values.value.workspaceCompose ?? values.value.compose) : values.value.compose;
+      if (compose === "new") return "create";
+      return compose === "edit" && selected.value ? "edit" : "view";
     });
     const formDialogOpen = computed(() => mode.value === "create" || mode.value === "edit");
 
     // Independent right-side run records drawer state (SC-11, SC-12).
     const runsDrawerOpen = ref(Boolean(selected.value && mode.value === "view"));
+    const recordsOpen = computed(() => inline.value ? Boolean(selected.value && !formDialogOpen.value) : runsDrawerOpen.value);
     const expandedRunIds = ref([]);
     const isRunning = computed(() => Boolean(detailRunning.value || focusRunning.value));
 
+    const statusModel = computed({
+      get: () => (typeof values.value.status === "string" ? values.value.status : ""),
+      set: (next) => instance.state.set("status", typeof next === "string" ? next : ""),
+    });
     const searchModel = computed({
       get: () => (typeof values.value.search === "string" ? values.value.search : ""),
       set: (next) => instance.state.set("search", typeof next === "string" ? next : ""),
     });
-    const hasActiveFilters = computed(() => Boolean(values.value.app || searchModel.value.trim()));
+    const hasActiveFilters = computed(() => Boolean(values.value.app || statusModel.value || searchModel.value.trim()));
     function clearFilters() {
-      instance.state.setState({ app: "", search: "" });
+      instance.state.setState({ app: "", status: "", search: "" });
     }
 
     const runsDrawerTitle = computed(() => {
@@ -94,7 +101,8 @@ await mountPanel({
 
     function setMode(next) {
       const compose = next === "create" ? "new" : next === "edit" ? "edit" : null;
-      if ((values.value.compose ?? null) !== compose) instance.state.set("compose", compose);
+      const key = inline.value ? "workspaceCompose" : "compose";
+      if ((values.value[key] ?? null) !== compose) instance.state.set(key, compose);
     }
 
     // Keep runs drawer synced with deep-linked runId or mode switches.
@@ -127,7 +135,7 @@ await mountPanel({
     // Declarative auto-reread (SC-13): owners attach rereadAfterMs (30s for active catalog, 5s for active runs).
     // When an active run in the drawer finishes, sync the task cards and counts once.
     watch(isRunning, (active, previous) => {
-      if (previous && !active && runsDrawerOpen.value) {
+      if (previous && !active && recordsOpen.value) {
         instance.refresh({ objectTypes: [TASK], objects: [] });
       }
     });
@@ -252,7 +260,8 @@ await mountPanel({
     function notifyRunNowOutcome(outcome, taskId) {
       const run = outcome.data;
       if (run?.status === "completed") {
-        notify({ kind: "success", text: t("message.runCompleted") });
+        const key = run.snapshot?.targetKind === "workflow" ? "message.runWorkflowStarted" : "message.runCompleted";
+        notify({ kind: "success", text: t(key) });
       } else if (run?.status === "skipped") {
         notify({ kind: "warning", text: t("message.runSkipped", { reason: runReason(run.error) }) });
       } else if (run?.status === "failed") {
@@ -261,7 +270,7 @@ await mountPanel({
         notify({ kind: "info", text: t("message.runStarted") });
       }
       instance.refreshObjects();
-      if (run?.id && runsDrawerOpen.value && selectedId.value === taskId) {
+      if (run?.id && recordsOpen.value && selectedId.value === taskId) {
         instance.state.set("runId", run.id);
       }
     }
@@ -282,12 +291,12 @@ await mountPanel({
       if (operation === "runNow") {
         const run = outcome.data;
         instance.refreshObjects();
-        if (run?.id && runsDrawerOpen.value && selectedId.value === taskId) {
+        if (run?.id && recordsOpen.value && selectedId.value === taskId) {
           instance.state.set("runId", run.id);
         }
         return;
       }
-      if (operation === "setEnabled") {
+      if (operation === "setEnabled" || operation === "publish" || operation === "unuse") {
         const task = outcome.data;
         if (task?.enabled && task.pause) {
           notify({ kind: "warning", text: t("message.stillPaused", { reason: task.pause.message }) });
@@ -318,6 +327,25 @@ await mountPanel({
           notify({ kind: "warning", text: t("message.stillPaused", { reason: task.pause.message }) });
         } else {
           notify({ kind: "success", text: task?.enabled ? t("message.enabled") : t("message.disabled") });
+        }
+        instance.refreshObjects();
+      },
+      onError: notifyActionError,
+    });
+    const opSetStatus = usePanelOperation("opSetStatus", "setStatus", {
+      available: canOperateSelected,
+      onSettled(receipt) {
+        const outcome = outcomeOf(receipt);
+        if (outcome.kind !== "success") return refused(outcome, selectedId.value);
+        const task = outcome.data;
+        if (task?.enabled && task.pause) {
+          notify({ kind: "warning", text: t("message.stillPaused", { reason: task.pause.message }) });
+        } else if (task?.status === "PUBLISHED") {
+          notify({ kind: "success", text: t("message.published") });
+        } else if (task?.status === "UNUSED") {
+          notify({ kind: "success", text: t("message.unused") });
+        } else {
+          notify({ kind: "success", text: t("message.saved") });
         }
         instance.refreshObjects();
       },
@@ -431,7 +459,7 @@ await mountPanel({
       if (!canCreate.value) return;
       rememberFocus();
       runsDrawerOpen.value = false;
-      instance.state.set("compose", "new");
+      setMode("create");
     }
     function openEdit() {
       rememberFocus();
@@ -482,7 +510,7 @@ await mountPanel({
     function created(object) {
       const id = object?.primaryKey;
       instance.state.setState({
-        compose: null,
+        [inline.value ? "workspaceCompose" : "compose"]: null,
         newTask: null,
         ...(id ? { selectedTask: { className: TASK, primaryKey: id }, runId: null } : {}),
       });
@@ -493,6 +521,7 @@ await mountPanel({
     // Keep refs referenced cleanly if inspected by tooling.
     void detailRevision;
     void opEnable;
+    void opSetStatus;
     void opRunNow;
     void opDelete;
 
@@ -501,6 +530,8 @@ await mountPanel({
       schedulePage,
       createButton,
       historyRecords,
+      inline,
+      recordsOpen,
       canCreate,
       createBlockedReason,
       renewalProblem,
@@ -516,6 +547,7 @@ await mountPanel({
       focusResultPath,
       isRunning,
       tasksStatus,
+      statusModel,
       searchModel,
       hasActiveFilters,
       clearFilters,

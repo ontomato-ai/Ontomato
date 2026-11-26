@@ -9,7 +9,7 @@ import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilo
 import {
   sentPanelReadItems,
   formSaveCalls, humanIntents, installPlatform, leaveFrame, manifestP, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
-  panelSnapshot, panelUse, projections, READER, SCHEDULED_TASK, task, type Sent,
+  panelSnapshot, panelUse, projections, READER, TRIGGER, task, type Sent,
 } from "./panel-frame";
 
 /*
@@ -30,12 +30,12 @@ const panel = panelRecord("panel-coded-tasks", "Tasks", manifestP);
 const useA = panelUse("use-coded-a", "coded-a", panel.id, `/applications/${appA}/tasks`);
 const useB = panelUse("use-coded-b", "coded-b", panel.id, `/applications/${appB}/tasks`);
 const secondTask = { ...task, id: "ac186b00-a3dd-46d2-b404-72065d877a34", title: "Second scheduled task" };
-const selected = { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } };
+const selected = { selectedTask: { className: TRIGGER, primaryKey: task.id } };
 const field = (path: string, label: string) => ({ path, label, control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false });
 
 type Read = { source: unknown; dataName: string; inputs: { task?: { primaryKey: string } }; runtimeParams?: { values?: { name: string } } };
 const intents = humanIntents(() => ({
-  kind: "success", data: {}, affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] },
+  kind: "success", data: {}, affected: { objects: [{ objectType: TRIGGER, primaryKey: task.id }], objectTypes: [TRIGGER] },
 }));
 function answer(request: Sent) {
   const prepared = intents(request);
@@ -53,7 +53,7 @@ function answer(request: Sent) {
     const value = dataName === "rows" ? [task, secondTask].map(one => ({ primaryKey: one.id, label: one.title, fields: {} }))
       : dataName === "record" ? { primaryKey: inputs.task!.primaryKey, label: task.title, fields: {} }
       : dataName === "operation"
-        ? { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false }
+        ? { handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false }
         : {
           fields: [field("/name", "Name")], values: runtimeParams?.values ?? { name: "Nightly" }, errors: [], revision: 3,
           save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
@@ -103,7 +103,7 @@ it("reads its members within the use the page opened, as the reader, and saves t
     const before = formReads();
     save.click();
     await vi.waitFor(() => expect(formSaveCalls(sent)).toEqual([
-      expect.objectContaining({ target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: task.id } }),
+      expect.objectContaining({ target: { kind: "object", objectType: TRIGGER, primaryKey: task.id } }),
     ]));
     // What the owner reports changed is read again.
     await vi.waitFor(() => expect(formReads()).toBeGreaterThan(before));

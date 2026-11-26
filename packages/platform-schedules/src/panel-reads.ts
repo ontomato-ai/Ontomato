@@ -1,25 +1,26 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldKey, formFieldPointer, type FormField, type FormFieldError, type FormValues } from "@ontomato/contracts/form-fields";
-import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
+import { USER } from "@ontomato/contracts/platform-object-types";
 import type {
   PanelFieldTone,
   PanelFormDescription,
   PanelFormField,
   PanelFormValues,
   PanelGroupCounts,
+  PanelOptionList,
   PanelRecord,
   PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import {
-  PLATFORM_SCHEDULE_TITLE_MAX, platformScheduleTimeZoneSchema, platformTaskFrequencySchema,
-  type PlatformScheduleApplication, type PlatformScheduleForm, type PlatformTask, type PlatformTaskList, type PlatformTaskRun,
+  PLATFORM_SCHEDULE_TITLE_MAX, platformTaskFrequencySchema, platformTaskInputSchema,
+  type PlatformScheduleApplication, type PlatformTask, type PlatformTaskList, type PlatformTaskRun, type PlatformTriggerTargets,
 } from "@ontomato/contracts/platform-schedules";
 import type { SchedulesApi } from "./api";
-import { scheduledTaskCreateDescription, scheduledTaskSaveDescription } from "./panel-operations";
-import { scheduledTaskRunNowOperation } from "./panel-server-operations";
+import { applicationDraftErrors, applicationFormErrors, scheduledTaskCreateDescription, scheduledTaskSaveDescription, taskInput, taskInputField } from "./panel-operations";
+import { taskRunStatusKey } from "./run-status";
 import { scheduledTaskFieldLabels, scheduledTaskFrequencyText } from "./panel-text";
-import { parseScheduledTaskPanelDraft, scheduledTaskPanelSettings, type ScheduledTaskPanelSettings } from "./panel-task-values";
+import { memberIdsSchema, mergeTaskSettings, parseScheduledTaskPanelDraft, scheduledTaskPanelSettings, targetKinds, type ScheduledTaskPanelSettings } from "./panel-task-values";
 
 type NamedApplication = PlatformScheduleApplication & { name: string; icon?: string };
 export interface ScheduledApplicationsStatus {
@@ -28,8 +29,10 @@ export interface ScheduledApplicationsStatus {
 }
 type TaskReadApi = Pick<SchedulesApi, "task" | "form" | "runs" | "run"> & {
   list(includeCredentialStatus?: boolean): Promise<PlatformTaskList>;
-  applications(): Promise<NamedApplication[]>;
-  applicationsStatus?(): Promise<ScheduledApplicationsStatus>;
+  applicationsStatus(): Promise<ScheduledApplicationsStatus>;
+  targets(): Promise<PlatformTriggerTargets & { applications: NamedApplication[] }>;
+  describeTargets(tasks: readonly PlatformTask[], directory: ScheduledApplicationsStatus): Promise<PlatformTask[]>;
+  findMembers(keyword: string | undefined, limit: number): Promise<{ id: string; name: string }[]>;
 };
 type Translate = (key: string, values?: Record<string, string | number>) => string;
 const taskFieldPath = (key: string) => formFieldPointer("/", key);
@@ -41,6 +44,7 @@ interface TaskFormParams {
 
 interface TaskCreateFormParams extends TaskFormParams {
   defaultAppId?: string;
+  defaultAgentId?: string;
 }
 
 function runStatusTone(status: PlatformTaskRun["status"]): PanelFieldTone {
@@ -98,13 +102,13 @@ function taskRecord(
   task: PlatformTask,
   locale: string,
   translate: Translate,
-  appMeta?: ReadonlyMap<string, { name: string; icon?: string }>,
+  applicationIcon?: string,
 ): PanelRecord {
   const stateLabel = task.enabled
     ? (task.pause === null ? translate("platformSchedules.panelFields.stateOn") : translate("platformSchedules.panelFields.statePaused"))
     : translate("platformSchedules.panelFields.stateOff");
   const stateTone: PanelFieldTone = task.enabled ? (task.pause === null ? "success" : "warning") : "info";
-  const scheduled = task.enabled && task.pause === null;
+  const scheduled = task.status === "PUBLISHED" && task.enabled && task.pause === null;
   const hasLatestResult = task.latestResult !== null;
   const hasEarlierResult = task.latestResult !== null && task.latestResult.runId !== task.lastRun?.id;
   const resultActionState = !hasLatestResult ? "none" : hasEarlierResult ? "earlier" : "latest";
@@ -146,7 +150,12 @@ function taskRecord(
     label: task.title,
     fieldLabels: {
       ...scheduledTaskFieldLabels(translate),
-      applicationName: translate("platformSchedules.form.app"),
+      targetName: translate("platformSchedules.panelFields.targetName"),
+      definitionStatus: translate("platformSchedules.panelFields.definitionStatus"),
+      version: translate("platformSchedules.panelFields.version"),
+      executorId: translate("platformSchedules.panelFields.executorId"),
+      coauthorIds: translate("platformSchedules.panelFields.coauthorIds"),
+      reviewedBy: translate("platformSchedules.panelFields.reviewedBy"),
       stateLabel: translate("platformSchedules.panelFields.state"),
       pauseReason: translate("platformSchedules.panelFields.pauseReason"),
       frequency: translate("platformSchedules.panelSettings.frequency"),
@@ -158,9 +167,19 @@ function taskRecord(
       resultStateLabel: translate("platformSchedules.panelFields.resultStateLabel"),
     },
     fields: {
-      application: task.appId,
-      applicationName: appMeta?.get(task.appId)?.name ?? task.appId,
-      ...(appMeta?.get(task.appId)?.icon ? { applicationIcon: appMeta.get(task.appId)!.icon } : {}),
+      application: task.appId ?? "",
+      targetKind: task.targetKind,
+      targetId: (task.targetKind === "application" ? task.appId : task.targetId),
+      targetName: task.targetName ?? (task.targetKind === "application" ? task.appId : task.targetId),
+      ...(applicationIcon && { targetIcon: applicationIcon }),
+      status: task.status,
+      definitionStatus: translate(`platformSchedules.definitionStatus.${task.status}`),
+      version: task.version,
+      creatorId: task.creatorId,
+      executorId: task.executorId,
+      description: task.description ?? "",
+      coauthorIds: task.coauthorIds.join(", "),
+      reviewedBy: task.reviewedBy ?? "",
       settings: task.summary.map(item => `${item.label}: ${item.value}`).join("; "),
       state: task.enabled ? (task.pause === null ? "on" : `paused: ${task.pause.message}`) : "off",
       stateLabel,
@@ -199,6 +218,8 @@ function taskRecord(
     },
     outputs: {
       revision: task.revision,
+      definitionStatus: task.status,
+      targetKind: task.targetKind,
       enabled: task.enabled,
       paused: task.pause !== null,
       pauseCode: task.pause?.code ?? "",
@@ -215,7 +236,8 @@ function taskRecord(
 }
 
 function runRecord(run: PlatformTaskRun, translate: Translate): PanelRecord {
-  const statusLabel = translate(`platformSchedules.runStatus.${run.status}`);
+  const statusLabel = translate(taskRunStatusKey(run));
+  const workflowRunId = run.executionDetails?.workflowRunId;
   const triggerLabel = translate(`platformSchedules.trigger.${run.trigger}`);
   const errorText = run.error ? formatRunError(run.error, translate) : undefined;
   const summaryPreview = run.resultSummary ? previewMarkdownText(run.resultSummary) : undefined;
@@ -238,9 +260,18 @@ function runRecord(run: PlatformTaskRun, translate: Translate): PanelRecord {
       result: translate("platformSchedules.runFields.result"),
       executionDetails: translate("platformSchedules.runFields.executionDetails"),
       resultPath: translate("platformSchedules.runFields.resultPath"),
+      executorId: translate("platformSchedules.runFields.executorId"),
+      version: translate("platformSchedules.runFields.version"),
+      workflowRunId: translate("platformSchedules.runFields.workflowRunId"),
+      timeZone: translate("platformSchedules.runFields.timeZone"),
     },
     fields: {
       status: statusLabel,
+      executorId: run.snapshot.executorId ?? translate("platformSchedules.runFields.unknownExecutor"),
+      version: run.snapshot.version,
+      ...(typeof workflowRunId === "string" && { workflowRunId }),
+      timeZone: run.snapshot.timeZone,
+      ...(run.finishedAt && { finishedAt: run.finishedAt }),
       trigger: triggerLabel,
       startedAt: run.startedAt,
       ...(run.scheduledAt && run.trigger === "schedule" ? { scheduledAt: run.scheduledAt } : {}),
@@ -255,8 +286,10 @@ function runRecord(run: PlatformTaskRun, translate: Translate): PanelRecord {
     },
     tones: {
       status: runStatusTone(run.status),
+      ...(errorText && { error: run.status === "skipped" ? "warning" : "danger" }),
     },
     outputs: {
+      status: run.status,
       resultPath: run.resultLink?.path ?? "",
       isRunning: run.status === "running",
     },
@@ -273,74 +306,55 @@ function typedField(field: FormField): PanelFormField {
       valueSchema: { type: "string", maxLength: field.maxLength } };
 }
 
-const runNowRead = `${scheduledTaskRunNowOperation.handlerRef}.describe` as const;
-const scheduledTaskRunNowDescription = {
-  kind: "action",
-  handlerRef: scheduledTaskRunNowOperation.handlerRef,
-  effect: scheduledTaskRunNowOperation.effect,
-  target: { source: "input", input: scheduledTaskRunNowOperation.targetInput },
-  inputSchema: zodToJsonSchema(scheduledTaskRunNowOperation.inputSchema, { effectStrategy: "input" }),
-  resultSchema: zodToJsonSchema(scheduledTaskRunNowOperation.resultSchema, { effectStrategy: "input" }),
-  batch: scheduledTaskRunNowOperation.batch,
-};
-
-type FormReader = (values: FormValues, changedField: string | null) => Promise<PlatformScheduleForm>;
-
-async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: FormValues): Promise<PlatformScheduleForm> {
-  const baseline = await readForm(savedValues, null);
-  const changed = baseline.fields.find(field => field.type === "select" && field.refreshOnChange
-    && Object.hasOwn(draft, field.key) && draft[field.key] !== baseline.values[field.key]);
-  const effective = changed ? await readForm({ ...baseline.values, ...draft }, changed.key) : baseline;
-  const allowed = new Set(effective.fields.map(field => field.key));
-  const submitted: FormValues = {};
-  const errors: FormFieldError[] = [];
-  for (const [key, value] of Object.entries(draft)) {
-    if (allowed.has(key)) {
-      submitted[key] = value;
-    } else {
-      errors.push({
-        field: formFieldPointer("/values/", key), code: "invalid_object", message: "Not a field of this form",
-      });
-    }
-  }
-  // A selector can reset dependent fields while resolving the form. Validate after applying the draft to that form.
-  const answer = await readForm({ ...effective.values, ...submitted }, null);
-  // The owner marks an incomplete draft un-submittable without listing missing required values.
-  for (const { key, required, label } of answer.fields) {
-    if (required && !answer.values[key].trim()) {
-      errors.push({
-        field: formFieldPointer("/values/", key), code: "required", message: `${label} is required`,
-      });
-    }
-  }
-  return { ...answer, values: { ...answer.values, ...submitted }, errors: [...answer.errors, ...errors] };
-}
-
 const taskFrequencyValueSchema = runtimeJsonObjectSchema.parse(zodToJsonSchema(platformTaskFrequencySchema));
+const stringArraySchema = { type: "array", items: { type: "string", minLength: 1 } };
+const option = (value: string, label: string, description: string | null = null, reason: string | null = null) => ({
+  value, label, description, disabled: reason !== null, disabledReason: reason,
+});
+
+const memberOption = ({ id, name }: { id: string; name: string }) => ({ primaryKey: id, value: id, label: name, description: id });
 
 function settingsFields(
-  applications: readonly NamedApplication[], frequencyHelp: string, translate: Translate,
+  targetKind: PlatformTask["targetKind"], options: ReturnType<typeof option>[], creating: boolean,
+  frequencyHelp: string, translate: Translate,
 ): PanelFormField[] {
-  const field = (key: keyof ScheduledTaskPanelSettings, required = true) => ({
-    path: formFieldPointer("/task/", key), label: translate(key === "appId" ? "platformSchedules.form.app" : `platformSchedules.panelSettings.${key}`), required,
+  const field = (key: keyof ScheduledTaskPanelSettings, required = false) => ({
+    path: formFieldPointer("/task/", key), label: translate(`platformSchedules.panelSettings.${key}`), required,
     readOnly: false, valueSchema: { type: "string" },
   });
+  const capability = (key: string) => ({
+    path: formFieldPointer("/task/capabilityContent/", key), label: translate(`platformSchedules.panelSettings.${key}`),
+    required: false, readOnly: false, valueSchema: { type: "string" },
+  });
+  const jsonObject = (key: string): PanelFormField => ({
+    ...capability(key), valueSchema: { type: "object" }, control: { kind: "code", language: "json" },
+  });
   return [
-    { ...field("title"), control: { kind: "text", maxLength: PLATFORM_SCHEDULE_TITLE_MAX } },
-    {
-      ...field("appId"), refreshOnChange: true,
-      control: {
-        kind: "select",
-        options: applications.map(app => ({
-          value: app.id, label: app.name, description: app.description, disabled: !app.available,
-          disabledReason: app.unavailableReason,
-          ...(app.icon ? { icon: app.icon } : {}),
-        })),
-      },
+    { ...field("title", true), control: { kind: "text", maxLength: targetKind === "application" ? PLATFORM_SCHEDULE_TITLE_MAX : 255 } },
+    { ...field("description"), control: { kind: "text", multiline: true } },
+    { ...field("targetKind", true), refreshOnChange: true, control: {
+      kind: "select", options: targetKinds.map(kind => option(kind, translate(`platformSchedules.targetKind.${kind}`))),
+    } },
+    { ...field(targetKind === "application" ? "appId" : "targetId", true), refreshOnChange: true,
+      control: { kind: "select", options },
     },
-    { ...field("frequency"), control: { kind: "frequency" }, valueSchema: taskFrequencyValueSchema, help: frequencyHelp },
-    { ...field("timeZone", false), readOnly: true, control: { kind: "text" }, help: frequencyHelp },
-    { ...field("notifyEmail", false), section: "notifications", control: { kind: "text", maxLength: 320 },
+    ...(targetKind === "action" ? [
+      jsonObject("parameters"),
+      { ...capability("runStartParameters"), control: { kind: "string-array" as const }, valueSchema: stringArraySchema,
+        help: translate("platformSchedules.panelSettings.runStartParametersHelp") },
+    ] : targetKind === "workflow" ? [
+      jsonObject("inputs"),
+      { ...capability("requester"), control: { kind: "text" as const }, help: translate("platformSchedules.panelSettings.requesterHelp") },
+      { ...capability("goalText"), control: { kind: "text" as const, multiline: true } },
+    ] : []),
+    { ...field("executorId"), control: { kind: "reference", objectType: USER, multiple: false },
+      valueSchema: { type: ["string", "null"] }, help: translate("platformSchedules.panelSettings.executorHelp") },
+    { ...field("coauthorIds"), control: { kind: "reference", objectType: USER, multiple: true }, valueSchema: stringArraySchema },
+    { ...field("frequency", true), control: { kind: "frequency" }, valueSchema: taskFrequencyValueSchema, help: frequencyHelp },
+    { ...field("timeZone"), readOnly: true, control: { kind: "text" }, help: frequencyHelp },
+    ...(creating ? [{ ...field("enabled"), control: { kind: "switch" as const }, valueSchema: { type: "boolean" },
+      help: translate("platformSchedules.panelSettings.createEnabledHelp") }] : []),
+    { ...field("notifyEmail"), section: "notifications", control: { kind: "text", maxLength: 320 },
       help: translate("platformSchedules.form.notifyPlaceholder") },
   ];
 }
@@ -350,8 +364,9 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     task: PlatformTask | undefined, serviceZone: string, params: TaskCreateFormParams,
   ): Promise<PanelFormDescription> {
     const current = scheduledTaskPanelSettings(task, serviceZone);
+    const { applications, actions, workflows } = await api.targets();
     const draft = parseScheduledTaskPanelDraft(params.values ?? {});
-    const provided = draft.success ? draft.data.task : {};
+    const supplied = draft.success ? draft.data.task : {};
     const errors: FormFieldError[] = draft.success ? [] : draft.error.issues.map(issue => {
       const isParameter = issue.path[0] === "parameters";
       const path = isParameter ? issue.path.slice(1) : issue.path;
@@ -359,124 +374,103 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       const messageKey = isParameter ? "invalidDraftParameter" : "invalidDraftField";
       return { field, code: "invalid_format", message: translate(`platformSchedules.panelErrors.${messageKey}`, { field }) };
     });
-    const applications = await api.applications();
-    if (!task && provided.appId === undefined && params.defaultAppId) {
-      const initial = applications.find(app => app.id === params.defaultAppId && app.available);
-      if (initial) current.appId = initial.id;
+    const changed = params.changedField;
+    const validate = draft.success && params.values !== undefined && changed == null;
+    if (!task && supplied.appId === undefined && params.defaultAppId && applications.some(app => app.id === params.defaultAppId && app.available))
+      current.appId = params.defaultAppId;
+    const resetTarget = changed === "/task/targetKind";
+    const resetContent = resetTarget || changed === "/task/appId" || changed === "/task/targetId";
+    const settings = mergeTaskSettings(current, {
+      ...supplied,
+      ...(resetTarget && { appId: "", targetId: "" }),
+      ...(resetContent && { capabilityContent: {} }),
+      timeZone: current.timeZone,
+    }, resetContent);
+    const isApp = settings.targetKind === "application";
+    const selectedId = isApp ? settings.appId : settings.targetId;
+    const targetPath = isApp ? "/task/appId" : "/task/targetId";
+    const options = isApp ? applications.map(app => ({
+      ...option(app.id, app.name, app.description, app.unavailableReason), ...(app.icon && { icon: app.icon }),
+    })) : (settings.targetKind === "action" ? actions : workflows).map(target => option(target.id, target.name, target.description));
+    const selected = options.find(entry => entry.value === selectedId);
+    const unavailable = translate(isApp ? "platformSchedules.form.appUnknown" : "platformSchedules.form.targetUnavailable");
+    if (selectedId && !selected) options.push(option(selectedId, selectedId, null, unavailable));
+    if ((selectedId && (!selected || selected.disabled)) || (validate && !selectedId)) {
+      errors.push({ field: targetPath, code: selectedId ? "invalid_option" : "required",
+        message: selected?.disabledReason ?? (selectedId ? unavailable : translate("platformSchedules.notice.noApplication")) });
     }
-    const settings = { ...current, ...provided };
-    const selectedApplication = applications.find(app => app.id === settings.appId);
-    const missingApplication = translate("platformSchedules.form.appUnknown");
-    const appOptions = task && !applications.some(app => app.id === task.appId) ? [
-      ...applications, { id: task.appId, name: task.appId, description: null, available: false,
-        unavailableReason: missingApplication, taskCount: 0 },
-    ] : applications;
-    if (settings.appId && !selectedApplication)
-      errors.push({ field: "/task/appId", code: "invalid_option", message: missingApplication });
-    const field = draft.success ? params.changedField : null;
-    const changedApplication = field === "/task/appId";
-    const sameApp = settings.appId === current.appId;
-    const stored = sameApp ? task?.content ?? {} : {};
-    const zone = platformScheduleTimeZoneSchema.safeParse(settings.timeZone);
-    if (!zone.success) errors.push({ field: "/task/timeZone", code: "invalid_time", message: zone.error.issues[0]!.message });
-    const readForm: FormReader = (values, changedField) => api.form(settings.appId, {
-      values, changedField, taskId: sameApp ? task?.id ?? null : null, timeZone: zone.success ? zone.data : current.timeZone,
-    });
-    const readApplicationForm = () => {
-      if (!selectedApplication) return undefined;
-      if (!draft.success) return readForm(stored, null);
-      const { parameters } = draft.data;
-      if (params.values !== undefined && field == null) return checkDraft(readForm, stored, parameters);
-      const changedKey = field == null || field.startsWith("/task/") ? null : formFieldKey(field, "/");
-      return readForm(changedApplication ? {} : params.values === undefined ? stored : parameters, changedKey);
-    };
-    const form = await readApplicationForm();
-    const frequencyHelp = translate(task ? "platformSchedules.form.taskZone" : "platformSchedules.form.serviceZone", {
-      zone: settings.timeZone,
-    });
+
+    const sameApp = task?.targetKind === "application" && task.appId === settings.appId;
+    const stored = sameApp ? task.content : {};
+    const parameters: FormValues = draft.success ? draft.data.parameters : {};
+    const form = isApp && selected && !selected.disabled ? await api.form(settings.appId, {
+      values: resetContent ? {} : {
+         ...(!task && settings.appId === "agents" && params.defaultAgentId ? { agentId: params.defaultAgentId } : {}),
+         ...stored, ...parameters,
+       },
+      changedField: changed != null && !changed.startsWith("/task/") ? formFieldKey(changed, "/") : null,
+      taskId: sameApp ? task.id : null,
+      timeZone: settings.timeZone,
+    }) : undefined;
+    if (validate) {
+      if (!isApp || form) {
+        const parsed = platformTaskInputSchema.safeParse(taskInput(settings, form));
+        if (!parsed.success) errors.push(...parsed.error.issues.map(issue => ({
+          field: taskInputField(issue.path, settings.targetKind), code: "invalid_format" as const, message: issue.message,
+        })));
+      }
+      if (form) errors.push(...applicationDraftErrors(form, parameters));
+    }
+    const frequencyHelp = translate(task ? "platformSchedules.form.taskZone" : "platformSchedules.form.serviceZone", { zone: settings.timeZone });
     return {
-      fields: [...settingsFields(appOptions, frequencyHelp, translate), ...(form?.fields.map(typedField) ?? [])],
+      fields: [...settingsFields(settings.targetKind, options, task === undefined, frequencyHelp, translate), ...(form?.fields.map(typedField) ?? [])],
       sections: [
-        ...(settings.appId ? [{
-          key: "application",
-          title: translate("platformSchedules.form.content", { app: selectedApplication?.name ?? settings.appId }),
-          ...(!selectedApplication ? { hint: missingApplication }
-            : form?.fields.length === 0 ? { hint: translate("platformSchedules.form.noFields") } : {}),
-        }] : []),
+        ...(form ? [{ key: "application", title: translate("platformSchedules.form.content", { app: selected!.label }),
+          ...(form.fields.length === 0 && { hint: translate("platformSchedules.form.noFields") }) }] : []),
         { key: "notifications", title: translate("platformSchedules.form.after") },
       ],
       values: { ...form?.values, task: settings },
-      errors: [
-        ...errors,
-        ...(form?.errors.map(error => ({ ...error, field: error.field.replace(/^\/values\//, "/") })) ?? []),
-      ],
+      errors: form ? [...errors, ...applicationFormErrors(form)] : errors,
       ...(task && { revision: task.revision }),
-      save: task ? scheduledTaskSaveDescription(task.id) : scheduledTaskCreateDescription,
+      save: task ? scheduledTaskSaveDescription(task.id) : scheduledTaskCreateDescription(settings.enabled!),
     };
   }
 
-  async function readApplicationsStatus(): Promise<ScheduledApplicationsStatus> {
-    if (api.applicationsStatus) return api.applicationsStatus();
-    return { applications: await api.applications(), missingIds: [] };
-  }
-
-  async function resolveAppMeta(): Promise<ReadonlyMap<string, { name: string; icon?: string }>> {
-    try {
-      const { applications } = await readApplicationsStatus();
-      return new Map(applications.map(app => [app.id, { name: app.name, ...(app.icon ? { icon: app.icon } : {}) }]));
-    } catch {
-      return new Map();
-    }
+  async function describeRows(tasks: PlatformTask[]) {
+    if (!tasks.some(task => task.targetKind === "application")) return tasks.map(task => taskRecord(task, locale, translate));
+    const directory = await api.applicationsStatus();
+    const icons = new Map(directory.applications.map(app => [app.id, app.icon]));
+    return (await api.describeTargets(tasks, directory)).map(task => taskRecord(task, locale, translate,
+      task.targetKind === "application" ? icons.get(task.appId) : undefined));
   }
 
   return {
-    async list(params?: { application?: string; search?: string }) {
-      const [{ tasks }, appMeta] = await Promise.all([api.list(), resolveAppMeta()]);
-      const application = params?.application?.trim() ?? "";
-      const query = params?.search?.trim().toLowerCase() ?? "";
-      const filtered = tasks.filter(task => {
-        if (application && task.appId !== application) return false;
-        if (query && !task.title.toLowerCase().includes(query)) return false;
-        return true;
-      });
-      return filtered.map(task => taskRecord(task, locale, translate, appMeta));
+    async list(params?: { scope?: string; search?: string; status?: PlatformTask["status"]; agentId?: string; taskId?: string }) {
+      const { tasks } = await api.list();
+      const scope = params?.scope?.trim();
+      const status = params?.status;
+      const query = params?.search?.trim().toLowerCase();
+      const rows = await describeRows(tasks.filter(task => (!status || task.status === status)
+        && (!scope || task.targetKind === scope || task.appId === scope)
+        && (!params?.taskId || task.id === params.taskId)
+        && (!params?.agentId || (task.targetKind === "application" && task.appId === "agents" && task.content.agentId === params.agentId))));
+      return query ? rows.filter(row => [row.label, row.fields.targetName, row.fields.settings, row.fields.frequency]
+        .some(value => String(value).toLowerCase().includes(query))) : rows;
     },
     async status(): Promise<PanelRecord> {
-      const [listResult, appsResult] = await Promise.allSettled([api.list(true), readApplicationsStatus()]);
-      const applicationsFailed = appsResult.status === "rejected";
-      const missingIds = appsResult.status === "fulfilled" ? appsResult.value.missingIds : [];
-      const applications = appsResult.status === "fulfilled" ? appsResult.value.applications : [];
-      const applicationsProblem = applicationsFailed
-        ? translate("platformSchedules.notice.applicationsFailed")
-        : missingIds.length > 0
-          ? translate("platformSchedules.notice.applicationsMissing", { ids: missingIds.join(", ") })
-          : !applications.some(app => app.available)
-            ? translate("platformSchedules.notice.noApplication")
-            : "";
-      const hasCredentialPaused = listResult.status === "fulfilled"
-        && listResult.value.tasks.some(task => task.pause?.code === "credential_invalid");
-      const credentialStatus = listResult.status === "fulfilled" ? listResult.value.credentialStatus : undefined;
-      const createBlockedReason = applicationsProblem
-        || (listResult.status === "rejected" ? translate("platformSchedules.loadFailed") : "");
+      const { tasks, credentialStatus } = await api.list(true);
       return {
         primaryKey: "schedules-status",
         label: translate("platformSchedules.title"),
-        fields: {
-          ...(applicationsProblem ? { applicationsProblem } : {}),
-          ...(createBlockedReason ? { createBlockedReason } : {}),
-        },
+        fields: {},
         outputs: {
-          canCreate: createBlockedReason === "",
-          createBlockedReason,
-          applicationsProblem,
-          applicationsFailed,
-          hasCredentialPaused,
+          hasCredentialPaused: tasks.some(task => task.pause?.code === "credential_invalid"),
           ...(credentialStatus && { credentialStatus }),
         },
       };
     },
     async counts(by?: string): Promise<PanelGroupCounts> {
-      const [{ tasks }, appMeta] = await Promise.all([api.list(), resolveAppMeta()]);
+      const { tasks } = await api.list();
       if (by === "attention") {
         let issues = 0;
         let running = 0;
@@ -493,17 +487,15 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
           { key: "running", label: translate("platformSchedules.attention.running"), count: running },
         ];
       }
-      const byApp = new Map<string, number>();
-      for (const task of tasks) byApp.set(task.appId, (byApp.get(task.appId) ?? 0) + 1);
-      const orderedIds = [...new Set([...appMeta.keys(), ...byApp.keys()])].filter(id => byApp.has(id));
       return [
         { key: "", label: translate("platformSchedules.panelFields.allApplications"), count: tasks.length },
-        ...orderedIds.map(id => ({ key: id, label: appMeta.get(id)?.name ?? id, count: byApp.get(id) ?? 0 })),
+        ...targetKinds.map(kind => ({ key: kind, label: translate(`platformSchedules.targetKind.${kind}`),
+          count: tasks.filter(task => task.targetKind === kind).length })),
       ];
     },
     async record(primaryKey: string) {
-      const [task, appMeta] = await Promise.all([api.task(primaryKey), resolveAppMeta()]);
-      return taskRecord(task, locale, translate, appMeta);
+      const [row] = await describeRows([await api.task(primaryKey)]);
+      return row!;
     },
     async form(primaryKey: string, params: TaskFormParams) {
       const task = await api.task(primaryKey);
@@ -511,6 +503,20 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     },
     async createForm(params: TaskCreateFormParams) {
       return describe(undefined, (await api.list()).timeZone, params);
+    },
+    async memberOptions({ keyword, page }: { keyword?: string; page?: { number: number; size: number } }): Promise<PanelOptionList> {
+      const size = page?.size ?? 50;
+      const end = (page?.number ?? 1) * size;
+      const members = await api.findMembers(keyword, Math.min(end, 100));
+      return { options: members.slice(end - size, end).map(memberOption) };
+    },
+    async memberResolve(values: readonly unknown[]): Promise<PanelOptionList> {
+      const ids = memberIdsSchema.parse(values);
+      return { options: await Promise.all(ids.map(async id => {
+        const member = (await api.findMembers(id, 100)).find(candidate => candidate.id === id);
+        return member ? memberOption(member)
+          : { primaryKey: id, value: id, label: id, unavailable: { reason: translate("platformSchedules.form.memberUnavailable") } };
+      })) };
     },
     runs: api.runs,
     run: api.run,
@@ -522,91 +528,25 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       };
     },
     async runRecord(primaryKey: string, requestedRunId?: string): Promise<PanelRecord> {
-      const task = await api.task(primaryKey);
-      const explicitRunId = requestedRunId?.trim() || null;
-      const resolvedRunId = explicitRunId ?? task.activeRunId ?? task.lastRun?.id ?? null;
-      let run: PlatformTaskRun | null = null;
-      if (resolvedRunId) {
-        if (explicitRunId) {
-          run = await api.run(primaryKey, explicitRunId);
-        } else {
-          try {
-            run = await api.run(primaryKey, resolvedRunId);
-          } catch {
-            run = null;
-          }
-        }
-      }
-      const fallback = explicitRunId ? null : task.lastRun;
-      const rawStatus = run?.status ?? fallback?.status ?? (!explicitRunId && task.activeRunId ? "running" : undefined);
-      const rawTrigger = run?.trigger ?? fallback?.trigger;
-      const statusLabel = rawStatus ? translate(`platformSchedules.runStatus.${rawStatus}`) : undefined;
-      const triggerLabel = rawTrigger ? translate(`platformSchedules.trigger.${rawTrigger}`) : undefined;
-      const startedAt = run?.startedAt ?? fallback?.startedAt;
-      const finishedAt = run?.finishedAt ?? fallback?.finishedAt ?? undefined;
-      const scheduledAt = run?.scheduledAt && run.trigger === "schedule" ? run.scheduledAt : undefined;
-      const duration = run && run.spendTime !== null ? formatDuration(run.spendTime, translate) : undefined;
-      const timeZone = run?.snapshot.timeZone ?? task.timeZone;
-      const error = run?.error ?? fallback?.error ?? null;
-      const errorText = error ? formatRunError(error, translate) : undefined;
-      const snapshotSummary = run && run.snapshot.summary.length > 0
-        ? run.snapshot.summary.map(item => `${item.label}: ${item.value}`).join("; ")
-        : undefined;
-      const rawOutput = run?.result ?? run?.resultSummary ?? fallback?.resultSummary ?? undefined;
-      const cleanedResult = rawOutput ? cleanMarkdownParagraphs(rawOutput) : undefined;
-      const resultSummary = run?.resultSummary ?? fallback?.resultSummary ?? undefined;
-      const resultPath = run?.resultLink?.path ?? (explicitRunId ? "" : task.latestResult?.link.path ?? "");
-      return {
-        primaryKey: resolvedRunId ?? task.id,
-        // The run header in the small panel draws the dot, the status and the trigger itself; a label or a
-        // subtitle here would print the status, the trigger or a summary line a second time.
-        label: "",
-        fieldLabels: {
-          status: translate("platformSchedules.runFields.status"),
-          trigger: translate("platformSchedules.runFields.trigger"),
-          startedAt: translate("platformSchedules.runFields.startedAt"),
-          scheduledAt: translate("platformSchedules.runFields.scheduledAt"),
-          duration: translate("platformSchedules.runFields.duration"),
-          timeZone: translate("platformSchedules.runFields.timeZone"),
-          error: translate("platformSchedules.runFields.error"),
-          resultSummary: translate("platformSchedules.runFields.resultSummary"),
-          snapshotSummary: translate("platformSchedules.runFields.snapshotSummary"),
-          result: translate("platformSchedules.runFields.result"),
-          executionDetails: translate("platformSchedules.runFields.executionDetails"),
-          resultPath: translate("platformSchedules.runFields.resultPath"),
-        },
-        fields: {
-          ...(task.pause ? { pauseMessage: task.pause.message } : {}),
-          ...(statusLabel ? { status: statusLabel } : {}),
-          ...(triggerLabel ? { trigger: triggerLabel } : {}),
-          ...(startedAt ? { startedAt } : {}),
-          ...(finishedAt ? { finishedAt } : {}),
-          ...(scheduledAt ? { scheduledAt } : {}),
-          ...(duration ? { duration } : {}),
-          ...(timeZone ? { timeZone } : {}),
-          ...(errorText ? { error: errorText } : {}),
-          ...(snapshotSummary ? { snapshotSummary } : {}),
-          ...(cleanedResult ? { result: cleanedResult } : {}),
-          ...(resultSummary ? { resultSummary } : {}),
-          ...(run && run.executionDetails !== null ? { executionDetails: { kind: "json" as const, value: run.executionDetails } } : {}),
-          ...(resultPath ? { resultPath } : {}),
-          ...(run ? { hasResultLink: run.resultLink !== null } : {}),
-        },
-        tones: {
-          ...(rawStatus ? { status: runStatusTone(rawStatus) } : {}),
-          ...(errorText ? { error: rawStatus === "skipped" ? "warning" as const : "danger" as const } : {}),
-        },
-        outputs: {
-          status: rawStatus ?? "",
-          resultPath,
-          isRunning: rawStatus === "running",
-        },
+      const focused = (run: PlatformTaskRun): PanelRecord => {
+        const { label: _label, subtitle: _subtitle, ...record } = runRecord(run, translate);
+        const output = run.result ?? run.resultSummary;
+        // The small panel draws status and trigger in its header.
+        return { ...record, label: "", fields: { ...record.fields, ...(output !== null && { result: cleanMarkdownParagraphs(output) }) } };
       };
-    },
-    [runNowRead]() {
-      return panelOwnerOperationDescriptorSchema.parse({
-        ...scheduledTaskRunNowDescription, label: translate("platformSchedules.action.runNow"),
-      });
+      if (requestedRunId) return focused(await api.run(primaryKey, requestedRunId));
+      const [task, { runs: [latest] }] = await Promise.all([api.task(primaryKey), api.runs(primaryKey)]);
+      const pause: Record<string, string> = task.pause ? { pauseMessage: task.pause.message } : {};
+      if (latest) {
+        const record = focused(latest);
+        return { ...record, fields: { ...record.fields, ...pause } };
+      }
+      return {
+        primaryKey,
+        label: "",
+        fields: { ...pause, timeZone: task.timeZone },
+        outputs: { status: "", resultPath: "", isRunning: false },
+      };
     },
   };
 }

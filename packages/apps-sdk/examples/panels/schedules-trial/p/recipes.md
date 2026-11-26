@@ -11,7 +11,7 @@ application declares, save it, and run it now. It does not create, delete, enabl
 
 ## How a task is chosen
 
-The list is the platform's own `platform:ScheduledTask` objects — the reader's tasks in the service's order. Choosing a
+The list is the platform's own `platform:Trigger` objects — the reader's tasks in the service's order. Choosing a
 row writes that task into the panel's `selectedTask`, and the summary, the form and the button take it from there. A
 second click on the chosen row lets go of it.
 

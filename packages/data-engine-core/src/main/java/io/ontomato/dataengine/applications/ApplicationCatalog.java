@@ -251,7 +251,11 @@ public class ApplicationCatalog {
     public boolean inDomain(JSONObject app, User user) {
         return app.getString("domainId") == null || Objects.equals(app.getString("domainId"), user.getDomainId());
     }
-    public record VisibleEntry(String id, String applicationId, Map<String, String> names, String pageKey) {}
+    public record VisibleEntry(String id, String applicationId, Map<String, String> names, String pageKey) {
+        public VisibleEntry {
+            names = Objects.requireNonNullElse(names, Map.of());
+        }
+    }
 
     public List<VisibleEntry> visibleEntries(User user) {
         var subject = new ApplicationSubject(user);
@@ -775,6 +779,17 @@ public class ApplicationCatalog {
     public boolean canEnter(String id, User user) {
         var apps = all();
         return canEnter(require(apps, id), new ApplicationSubject(user), new BuiltinPageKeys(apps));
+    }
+
+    public List<JSONObject> scheduleTargets(User user) {
+        var apps = applicationsInDomain(user.getDomainId());
+        var subject = new ApplicationSubject(user);
+        var pageKeys = new BuiltinPageKeys(apps);
+        return apps.stream().filter(app -> app.getString("scheduleAdapter") != null).map(app -> {
+            var row = new JSONObject(app);
+            row.put("entryAvailable", canEnter(app, subject, pageKeys));
+            return row;
+        }).toList();
     }
 
     JSONObject proxyApplication(String id, User user) {

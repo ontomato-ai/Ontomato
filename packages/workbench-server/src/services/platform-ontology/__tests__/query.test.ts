@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { triggerFixture } from "../../scheduling/__tests__/fixtures";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
   platformOntologyCountsResponseSchema,
@@ -26,7 +27,7 @@ import {
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
   ROLE,
-  SCHEDULED_TASK,
+  TRIGGER,
   SDK_COMPONENT,
   USER,
   WORKFLOW,
@@ -235,6 +236,12 @@ beforeEach(() => {
     if (url.includes("/platform/applications?purpose=navigation")) {
       return okJson([]);
     }
+    if (url.endsWith("/platform/triggers")) return {
+      ...okJson(null), text: JSON.stringify({ timeZone: "UTC", tasks: [
+        triggerFixture,
+        { ...triggerFixture, id: "tr-2", title: "Immediate Approve", targetKind: "action", targetId: "act-1", content: { parameters: {} } },
+      ] }),
+    };
     throw new Error(`Unexpected GET URL: ${url}`);
   });
 
@@ -306,12 +313,6 @@ beforeEach(() => {
           createdBy: "user-1",
           reviewedBy: "user-2",
         },
-      ]);
-    }
-    if (url.endsWith("/trigger/queryList")) {
-      return okJson([
-        { id: "tr-1", name: "Daily Order Check", effectKind: "workflow", effect: { workflowId: "wf-1" }, enabled: true },
-        { id: "tr-2", name: "Immediate Approve", effectKind: "action", effect: { actionId: "act-1" }, enabled: true },
       ]);
     }
     if (url.endsWith("/admin/getBussinessKnowledge")) {
@@ -460,6 +461,7 @@ describe("platform-ontology composite query", () => {
       return { rows: [{ total: granted.length }] };
     });
     vi.mocked(backendGet).mockImplementation(async (_endpoint, url) => {
+      if (url.endsWith("/platform/triggers?countOnly=true")) throw new BackendResponseError(503, JSON.stringify({ error: { message: "Trigger store down" } }));
       expect(url).toContain("/platform/applications?purpose=navigation&countOnly=true");
       return okJson({ total: 1 });
     });
@@ -472,9 +474,6 @@ describe("platform-ontology composite query", () => {
       }
       expect(body).toEqual({ countOnly: true });
       if (url.endsWith("/action/queryList") || url.endsWith("/metricView/queryList")) return okJson({ total: size });
-      if (url.endsWith("/trigger/queryList")) {
-        return { text: JSON.stringify({ success: false, message: "Trigger store down" }), headers: new Headers(), status: 200, statusText: "OK" };
-      }
       if (url.endsWith("/admin/getMetas")) return okJson({ objectTypes: 1, attributes: 2, relationships: 3 });
       if (url.endsWith("/platform/governance/organization")) return okJson({ units: 4, positions: 5, grants: 6 });
       if (url.endsWith("/workflow/grants")) return okJson({ total: 2, outsideDirectory: 1 });
@@ -592,10 +591,13 @@ describe("platform-ontology composite query", () => {
     })).rejects.toMatchObject({ status, code });
   });
 
-  it("rejects a center whose type has no owner adapter", async () => {
-    await expect(readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: SCHEDULED_TASK, primaryKey: "task-1" },
-    })).rejects.toMatchObject({ status: 503, code: "SERVICE_UNAVAILABLE" });
+  it("reads a textual trigger ID and links to its workflow in the capability graph", async () => {
+    const node = { className: TRIGGER, primaryKey: triggerFixture.id };
+    const neighbors = await readPlatformOntologyNeighbors(owner, credentials, { node });
+    expect(neighbors.edges).toContainEqual(expect.objectContaining({
+      from: node, to: { className: "platform:Workflow", primaryKey: triggerFixture.targetId },
+      relationKind: "trigger.targets-workflow",
+    }));
   });
 
   it.each(["refused", "unavailable"] as const)("keeps the caller's start and relations when subjects are %s", async (status) => {
@@ -833,7 +835,7 @@ describe("platform-ontology composite query", () => {
           inputs: {},
           outputs: {},
           data: {
-            tasks: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+            tasks: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
           },
           config: {},
         },
@@ -1072,7 +1074,7 @@ describe("platform-ontology composite query", () => {
     });
     expect(taskNeighbors.edges).toHaveLength(1);
     expect(taskNeighbors.edges[0]).toMatchObject({
-      to: { className: ONTOLOGY_TYPE, primaryKey: SCHEDULED_TASK },
+      to: { className: ONTOLOGY_TYPE, primaryKey: TRIGGER },
       binding: { reads: ["list"] },
     });
 
@@ -1881,6 +1883,7 @@ describe("platform-ontology composite query", () => {
             { policyId: "pol-1", targetKind: "PANEL", targetKey: "panel-1", verb: "USE", scope: null },
             { policyId: "pol-1", targetKind: "PROJECTION", targetKey: "proj-1", verb: "EDIT", scope: null },
             { policyId: "pol-1", targetKind: "WORKFLOW", targetKey: "wf-1", verb: "EDIT", scope: null },
+            { policyId: "pol-1", targetKind: "TRIGGER", targetKey: triggerFixture.id, verb: "EDIT", scope: null },
             // A CREATE grant names no record: it is creation authority for that class, so it stays off the graph.
             { policyId: "pol-1", targetKind: "WORKFLOW", targetKey: "", verb: "CREATE", scope: null },
             { policyId: "pol-2", targetKind: "AGENT", targetKey: "agent-1", verb: "USE", scope: null },
@@ -1892,7 +1895,8 @@ describe("platform-ontology composite query", () => {
       }
       return baseImpl(endpoint, url, body, opts);
     });
-    vi.mocked(backendGet).mockImplementation(async (_endpoint, url) => {
+    const readOwner = vi.mocked(backendGet).getMockImplementation()!;
+    vi.mocked(backendGet).mockImplementation(async (endpoint, url, options) => {
       if (url.includes("/platform/applications?purpose=navigation")) {
         return okJson([
           {
@@ -1910,7 +1914,7 @@ describe("platform-ontology composite query", () => {
           },
         ]);
       }
-      throw new Error(`Unexpected GET URL: ${url}`);
+      return readOwner(endpoint, url, options);
     });
 
     const policyCenter = platformOntologyNeighborsResponseSchema.parse(
@@ -1925,6 +1929,7 @@ describe("platform-ontology composite query", () => {
       "permission-policy.can-execute-action:act-1",
       "permission-policy.can-use-object:panel-1",
       "permission-policy.can-use-object:proj-1",
+      "permission-policy.can-use-object:tr-1",
       "permission-policy.can-use-object:wf-1",
     ]);
     expect(policyCenter.edges.find((edge) => edge.relationKind === "permission-policy.can-enter-application")

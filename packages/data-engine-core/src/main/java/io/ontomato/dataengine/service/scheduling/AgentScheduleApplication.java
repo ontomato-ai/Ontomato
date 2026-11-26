@@ -17,24 +17,12 @@ public class AgentScheduleApplication implements ScheduleApplication {
     return delegate.id();
   }
 
-  public String description(String locale) {
-    return delegate.description(locale);
-  }
-
   public boolean remote() {
     return true;
   }
 
   public int creatorLimit() {
     return 50;
-  }
-
-  public void authorize(Actor actor) {
-    delegate.authorize(actor);
-  }
-
-  public JsonNode describe(Actor actor) {
-    return delegate.describe(actor);
   }
 
   public JsonNode form(FormInput input, Actor actor) {

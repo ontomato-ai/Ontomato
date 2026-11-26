@@ -3,7 +3,7 @@
     "selectedTask": {
       "type": {
         "kind": "object",
-        "objectType": "platform:ScheduledTask"
+        "objectType": "platform:Trigger"
       },
       "deepLink": true,
       "external": true,

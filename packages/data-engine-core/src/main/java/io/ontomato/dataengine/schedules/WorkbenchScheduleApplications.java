@@ -95,30 +95,8 @@ public class WorkbenchScheduleApplications {
       return id;
     }
 
-    public String description(String locale) {
-      return null;
-    }
-
     public boolean remote() {
       return true;
-    }
-
-    public void authorize(Actor actor) {
-      var descriptor = describe(actor);
-      if (!descriptor.path("available").asBoolean())
-        throw new ScheduleException(
-            403, "PERMISSION_DENIED", descriptor.path("unavailableReason").asText());
-    }
-
-    public JsonNode describe(Actor actor) {
-      var request = http.get().uri(path(id)).header("Accept-Language", actor.locale());
-      if (actor.apiKey() != null) request.header("X-API-Key", actor.apiKey());
-      else if (actor.token() != null) request.header("tk", actor.token());
-      try {
-        return request.retrieve().body(JsonNode.class);
-      } catch (RestClientResponseException failure) {
-        throw translated(failure);
-      }
     }
 
     public JsonNode form(FormInput input, Actor actor) {
@@ -173,7 +151,7 @@ public class WorkbenchScheduleApplications {
                   "domainId",
                   execution.domainId(),
                   "userId",
-                  identity.hostOwner(execution.creatorId())),
+                  identity.hostOwner(execution.executorId())),
               "handle",
               handle),
           null);

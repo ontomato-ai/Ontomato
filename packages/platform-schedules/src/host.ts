@@ -9,15 +9,12 @@ export interface PlatformSchedulesHostApp {
 }
 
 /**
- * What a host supplies to show the scheduled tasks page. The page keeps no global state, reads no credential and knows
- * no router: the host answers every request, names the applications and opens results. Which applications can run on a
- * schedule, which tasks exist and what each application's form holds are the service's answers, so a host neither
- * filters nor vouches for any of them.
+ * The authenticated request port for task trigger operations.
  */
 export interface PlatformSchedulesHost {
   /**
    * Authenticated request to a path the contracts already spell in full, e.g.
-   * `GET /api/data-query/platform/scheduled-tasks?appId=agents`. The path starts at the gateway's API root
+   * `GET /api/data-query/platform/triggers`. The path starts at the gateway's API root
    * (`platformSchedulesPath` includes `/api/data-query`), so the host adds only its deployment prefix — the page's base
    * path and any tenant segment — and never a second `/api/data-query`.
    *

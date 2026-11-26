@@ -23,12 +23,14 @@ import io.ontomato.dataengine.controller.AuthorizationPolicyGovernanceController
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.WorkflowDao;
+import io.ontomato.dataengine.schedules.TaskStore;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.DataPermissionLookup;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Decision;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +38,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.http.MediaType;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -54,6 +57,7 @@ class AuthorizationPolicyGovernanceControllerTest {
     private final AuthorizationStore store = mock(AuthorizationStore.class);
     private final ApplicationCatalog catalog = mock(ApplicationCatalog.class);
     private final WorkflowDao workflows = mock(WorkflowDao.class);
+    private final TaskStore triggers = mock(TaskStore.class);
     private final ActionDao actions = mock(ActionDao.class);
     private final AdminService admin = mock(AdminService.class);
     private final User user = mock(User.class);
@@ -67,7 +71,7 @@ class AuthorizationPolicyGovernanceControllerTest {
         var policies = new AuthorizationPolicies(store, operations, authorization, actions, admin);
         var inspector = new AuthorizationAccessInspector(authorization, store, subjects, policies, workflows, grants, actions);
         var controller = new AuthorizationPolicyGovernanceController(new WorkbenchServiceAuthentication("workbench"),
-                identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
+                identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows, triggers);
         var beans = new DefaultListableBeanFactory();
         beans.registerSingleton("access", new ManagementRequestAccess(identity, authorization, operations));
         var registry = new InterceptorRegistry() {
@@ -95,13 +99,13 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(status().isUnauthorized());
         when(user.getDomainId()).thenReturn("");
         http.perform(rpc("graph-facts", "{}")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(store, subjects, catalog, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
+        verifyNoInteractions(store, subjects, catalog, actions, workflows, triggers);
     }
 
     @Test
     void browsingTheEntryCatalogRequiresManagementReadWithoutAPolicyId() throws Exception {
         http.perform(rpc("entry-roots", "{}")).andExpect(status().isForbidden());
-        verifyNoInteractions(catalog, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
+        verifyNoInteractions(catalog, actions, workflows, triggers);
     }
 
     @Test
@@ -158,6 +162,25 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.entries[1].panelIds", containsInAnyOrder("same")))
                 .andExpect(jsonPath("$.existingGrants").isEmpty())
                 .andExpect(jsonPath("$.targetPolicyRoleIds").isEmpty());
+    }
+
+    @Test
+    void registeredTriggerTargetsUseTheCurrentCredentialDomain() throws Exception {
+        var targets = """
+                {"targets":[{"kind":"TRIGGER","key":"registered"},{"kind":"TRIGGER","key":"foreign"}]}
+                """;
+        var request = post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON)
+                .header("X-Domain-Id", "other-domain").content(targets);
+        http.perform(request).andExpect(status().isForbidden());
+        verifyNoInteractions(triggers);
+
+        permissions(true, false);
+        when(triggers.registeredIds("domain", Set.of("registered", "foreign"))).thenReturn(Set.of("registered"));
+        http.perform(request)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].kind").value("TRIGGER"))
+                .andExpect(jsonPath("$.data[0].key").value("registered"));
     }
 
     @Test
@@ -326,10 +349,24 @@ class AuthorizationPolicyGovernanceControllerTest {
 
     @Test
     void ordinaryDomainMembersCanReadOnlyTheirDomainGraphFacts() throws Exception {
+        var entryAuthorization = mock(AuthorizationService.class);
+        ReflectionTestUtils.setField(catalog, "authorization", entryAuthorization);
+        when(entryAuthorization.resolveSubject(any())).thenReturn(mock(AuthorizationService.SubjectContext.class));
+        when(entryAuthorization.decide(any(), any())).thenReturn(Decision.denied("FORBIDDEN", "Access denied"));
+        when(entryAuthorization.decide(any(), eq(new AuthorizationService.Entry(ENTRY)))).thenReturn(Decision.ALLOWED);
+        var app = application("app", "domain", "panel", "frame", null);
+        app.put("panelUses", List.of(
+                new ApplicationPanelUse("main", "landing", "panel", "/applications/app", null, null),
+                new ApplicationPanelUse("private", "private", "panel", "/applications/app/private", null, Map.of("en", "Private"))));
+        when(catalog.all()).thenReturn(List.of(app, application("foreign", "other", "panel", "frame", null)));
+        when(catalog.entriesInDomain("domain")).thenCallRealMethod();
+        when(catalog.visibleEntries(user)).thenCallRealMethod();
+
         when(store.domainObjectGrants("domain")).thenReturn(List.of(
                 grant(ACTION, Verb.EXECUTE, SELF),
                 grant(new ObjectTarget("domain", Kind.WORKFLOW, "one"), Verb.EDIT, null),
-                grant(new ObjectTarget("domain", Kind.WORKFLOW, ""), Verb.CREATE, null)));
+                grant(new ObjectTarget("domain", Kind.WORKFLOW, ""), Verb.CREATE, null),
+                grant(ENTRY, Verb.ENTER, null)));
         when(store.domainRolePolicies("domain")).thenReturn(List.of(new PolicyRef("reviewer", "selected", PolicyKind.OBJECT)));
         when(store.domainPolicy("domain")).thenReturn(new PolicyRef("member", "default", PolicyKind.OBJECT));
         var result = http.perform(post(PREFIX + "graph-facts").header(WorkbenchServiceAuthentication.HEADER, "workbench"));
@@ -341,7 +378,15 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.policyGrants[1].verb").value("EDIT"))
                 .andExpect(jsonPath("$.policyGrants[2].targetKey").value(""))
                 .andExpect(jsonPath("$.policyGrants[2].verb").value("CREATE"))
-                .andExpect(jsonPath("$.rolePolicies[0].roleId").value("reviewer"));
+                .andExpect(jsonPath("$.policyGrants[3].targetKey").value("app/main"))
+                .andExpect(jsonPath("$.policyGrants[3].verb").value("ENTER"))
+                .andExpect(jsonPath("$.rolePolicies[0].roleId").value("reviewer"))
+                .andExpect(jsonPath("$.entries.length()").value(1))
+                .andExpect(jsonPath("$.entries[0].id").value("app/main"))
+                .andExpect(jsonPath("$.entries[0].applicationId").value("app"))
+                .andExpect(jsonPath("$.entries[0].pageKey").value("landing"))
+                .andExpect(jsonPath("$.entries[0].names").isMap())
+                .andExpect(jsonPath("$.entries[0].names").isEmpty());
         verifyNoInteractions(subjects);
         verify(store).domainObjectGrants("domain");
         verifyNoInteractions(workflows);

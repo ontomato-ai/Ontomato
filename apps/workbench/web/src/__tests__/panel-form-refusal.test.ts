@@ -3,8 +3,8 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
-  SCHEDULED_TASK,
+import { confirmDiscard, formSaveCalls, isPanelDatum, triggerForm, humanIntents, ignoreChanges,
+  TRIGGER,
   inside,
   installPlatform,
   leaveFrame,
@@ -33,12 +33,11 @@ const panel = panelRecord(
   "panel-schedules-form",
   "Task form",
   definePanel({
-    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
     members: { form: { target: { projectionId: formProjection.id }, inputs: { task: { state: "selectedTask" } } } },
   }),
 );
 const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panel.id, "/applications/app-panels-trial-a/tasks");
-const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;
 
 const conflict = {
   kind: "refusal", code: "REVISION_CONFLICT", message: "This task was changed by someone else; reopen it to see their change.",
@@ -71,14 +70,13 @@ describe("a panel's form when the owner refuses a save", () => {
     const intents = humanIntents(() => refusals.shift()!);
     const sent = installPlatform((request: Sent) => {
       if (request.path === `/api/product-projections/${formProjection.id}`) return Response.json({ projection: formProjection });
-      if (request.path === taskPath && request.method === "GET") return Response.json(task);
-      if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`) return Response.json(taskForm);
+      if (isPanelDatum(request, "form")) return Response.json({ status: "ready", value: triggerForm(taskForm) });
       return intents(request) ?? nothingAt(request);
     });
     const frame = panelFrame();
     platformPanelHost("app-panels-trial-a", use, ignoreChanges).frame(frame, registered("app-panels-trial-a", use, panel), true);
     writePanelDocument(registered("app-panels-trial-a", use, panel), "/applications/app-panels-trial-a/tasks", {
-      selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
+      selectedTask: { className: TRIGGER, primaryKey: task.id },
     });
     inside(frame);
     const { context } = await mountPanel(panelOf("form"));
@@ -135,6 +133,6 @@ describe("a panel's form when the owner refuses a save", () => {
     await vi.waitFor(() => expect(discard.disabled).toBe(false));
     discard.click();
     await confirmDiscard();
-    await vi.waitFor(() => expect(sent.slice(beforeDiscard)).toContainEqual(expect.objectContaining({ path: taskPath, method: "GET" })));
+    await vi.waitFor(() => expect(sent.slice(beforeDiscard).some(request => isPanelDatum(request, "form"))).toBe(true));
   });
 });

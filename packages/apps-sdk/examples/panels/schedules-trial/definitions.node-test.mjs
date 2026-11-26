@@ -47,7 +47,7 @@ test("every trial projection names the owner's registered reads under the data n
   assert.deepEqual(answer, {
     "projection-schedules-summary": { data: ["record"], operations: {} },
     "projection-schedules-tasks": { data: ["rows"], operations: {} },
-    "projection-schedules-form": { data: ["form"], operations: { save: "platform:ScheduledTask.save" } },
-    "projection-schedules-run": { data: [], operations: { runNow: "schedules.runNow" } },
+    "projection-schedules-form": { data: ["form"], operations: { save: "platform:Trigger.save" } },
+    "projection-schedules-run": { data: [], operations: { runNow: "triggers.runNow" } },
   });
 });

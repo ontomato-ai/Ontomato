@@ -9,6 +9,7 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { backendGet } from "../../../utils/backend-client";
+import { readPrincipalDirectory } from "../../identity/principal-directory";
 import { createApplicationReadAdapter, toApplicationPanelRecord } from "../application-catalogue";
 import { currentProductGrants, currentProductUsedBy, listCurrentProductNames, listCurrentProducts } from "../catalog";
 import { createProductProjectionReadAdapter, toProductProjectionPanelRecord } from "../catalog-reads";
@@ -32,6 +33,7 @@ vi.mock("../../../utils/backend-client", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../utils/backend-client")>(),
   backendGet: vi.fn(),
 }));
+vi.mock("../../identity/principal-directory", () => ({ readPrincipalDirectory: vi.fn() }));
 vi.mock("../catalog", async (importOriginal) => ({
   ...await importOriginal<typeof import("../catalog")>(),
   listCurrentProducts: vi.fn(),
@@ -237,6 +239,9 @@ it("maps projection summaries and details to standard PanelRecord records with o
   });
 
   vi.mocked(readCurrentProjection).mockResolvedValue(sampleProjection);
+  vi.mocked(readPrincipalDirectory).mockResolvedValue({
+    options: [{ id: sampleProjection.ownerId, name: "Projection author", kind: "member" }],
+  });
   vi.mocked(currentProductGrants).mockResolvedValue({
     grants: [{ policyId: "policy-edit", name: "Editors", verb: "EDIT" }],
     shared: true,
@@ -247,11 +252,13 @@ it("maps projection summaries and details to standard PanelRecord records with o
   });
 
   const detail = panelRecordSchema.parse(await adapter.record("proj-sample"));
+  expect(readPrincipalDirectory).toHaveBeenCalledWith(viewer, { kind: "member", ids: [sampleProjection.ownerId] });
   expect(detail).toMatchObject({
     primaryKey: "proj-sample",
     label: "Orders list",
     fields: {
       component: { kind: "reference", className: "platform:SDKComponent", primaryKey: "@ontomato/sdk:Example", label: "Example" },
+      owner: "Projection author",
       domainShared: true,
     },
     outputs: {

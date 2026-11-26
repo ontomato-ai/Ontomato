@@ -23,7 +23,7 @@ import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.WorkflowDao;
-import io.ontomato.dataengine.dao.TriggerDao;
+import io.ontomato.dataengine.schedules.TaskStore;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.service.IdentityService;
@@ -95,12 +95,12 @@ public class AuthorizationPolicyGovernanceController {
     private final AuthorizationStore store;
     private final ActionDao actions;
     private final WorkflowDao workflows;
-    private final TriggerDao triggers;
+    private final TaskStore triggers;
 
     public AuthorizationPolicyGovernanceController(WorkbenchServiceAuthentication workbench, IdentityService identity,
             AuthorizationService authorization, AuthorizationPolicies policies, AuthorizationAccessInspector inspector,
             ApplicationCatalog catalog, AuthorizationSubjects subjects, AuthorizationStore store,
-            ActionDao actions, WorkflowDao workflows, TriggerDao triggers) {
+            ActionDao actions, WorkflowDao workflows, TaskStore triggers) {
         this.workbench = workbench;
         this.identity = identity;
         this.authorization = authorization;
@@ -234,8 +234,7 @@ public class AuthorizationPolicyGovernanceController {
                 case APPLICATION -> catalog.registeredApplicationIds(domainId, keys);
                 case WORKFLOW -> workflows.queryList(null, domainId).stream().map(Workflow::getId)
                         .filter(keys::contains).collect(Collectors.toSet());
-                case TRIGGER -> triggers.queryList(domainId, null).stream().map(trigger -> trigger.getId())
-                        .filter(keys::contains).collect(Collectors.toSet());
+                case TRIGGER -> triggers.registeredIds(domainId, keys);
                 case AGENT -> keys.contains(OntologyAgentStore.RETRIEVER) ? Set.of(OntologyAgentStore.RETRIEVER) : Set.<String>of();
                 default -> throw badRequest("This runtime does not own registrations for " + group.getKey());
             };

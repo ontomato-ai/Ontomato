@@ -227,9 +227,9 @@ it("the platform knowledge page read outside the governance Grant uses V",async(
 });
 
 it.each([
-  ["GET", "/platform/scheduled-tasks"],
-  ["GET", `/platform/scheduled-tasks/${other}`],
-  ["POST", "/platform/scheduled-tasks/applications/agents/form"],
+  ["GET", "/platform/triggers"],
+  ["GET", `/platform/triggers/${other}`],
+  ["POST", "/platform/triggers/applications/agents/form"],
   ["POST", "/ontology/query/metrics/describe"],
   ["POST", "/ontology/query/metrics/execute"],
 ])("forwards %s %s with the executor credential", async (method, path) => {

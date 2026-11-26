@@ -1,8 +1,7 @@
 package io.ontomato.dataengine.schedules;
 
-import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
-
 import com.fasterxml.jackson.databind.JsonNode;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -11,12 +10,16 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @Owned
-@RequestMapping("/platform/scheduled-tasks")
+@RequestMapping("/platform/triggers")
 @RequiredArgsConstructor
 public class PlatformTaskController {
   private final PlatformTasks service;
 
-  @ExceptionHandler(Exception.class)
+  @ExceptionHandler({io.ontomato.dataengine.service.agent.AgentHttpException.class,
+      org.springframework.web.server.ResponseStatusException.class, IllegalArgumentException.class,
+      org.springframework.http.converter.HttpMessageNotReadableException.class,
+      org.springframework.beans.TypeMismatchException.class,
+      org.springframework.web.bind.ServletRequestBindingException.class})
   public ResponseEntity<?> failure(Exception error) {
     int status =
         error instanceof io.ontomato.dataengine.service.agent.AgentHttpException credential
@@ -69,17 +72,20 @@ public class PlatformTaskController {
   @GetMapping
   public JsonNode list(
       @RequestParam(required = false) String appId,
+      @RequestParam(required = false) String targetKind,
+      @RequestParam(required = false) String status,
+      @RequestParam(defaultValue = "false") boolean countOnly,
       @RequestParam(defaultValue = "false") boolean includeCredentialStatus,
       jakarta.servlet.http.HttpServletRequest request) {
     if (request.getParameterMap().keySet().stream()
-        .anyMatch(key -> !key.equals("appId") && !key.equals("includeCredentialStatus")))
+        .anyMatch(key -> !java.util.Set.of("appId", "targetKind", "status", "countOnly", "includeCredentialStatus").contains(key)))
       throw ScheduleJson.bad("Unknown list filter");
-    return service.list(appId, includeCredentialStatus);
+    return service.list(appId, targetKind, status, includeCredentialStatus, countOnly);
   }
 
-  @GetMapping("/applications")
-  public JsonNode applications(Locale locale) {
-    return service.applications(locale.toLanguageTag());
+  @GetMapping("/targets")
+  public JsonNode targets() {
+    return service.targets();
   }
 
   @PostMapping("/applications/{appId}/form")
@@ -104,41 +110,46 @@ public class PlatformTaskController {
   }
 
   @GetMapping("/{id}")
-  public JsonNode task(@PathVariable UUID id) {
+  public JsonNode task(@PathVariable String id) {
     return service.detail(id);
   }
 
   @GetMapping("/{id}/runs/{runId}")
-  public JsonNode getRun(@PathVariable UUID id, @PathVariable UUID runId) {
+  public JsonNode getRun(@PathVariable String id, @PathVariable UUID runId) {
     return service.detail(id, runId);
   }
 
   @PutMapping("/{id}")
-  public JsonNode update(@PathVariable UUID id, @RequestBody JsonNode input, Locale locale) {
+  public JsonNode update(@PathVariable String id, @RequestBody JsonNode input, Locale locale) {
     return service.update(id, input, locale.toLanguageTag());
   }
 
   @PutMapping("/{id}/enabled")
-  public JsonNode enabled(@PathVariable UUID id, @RequestBody JsonNode input, Locale locale) {
+  public JsonNode enabled(@PathVariable String id, @RequestBody JsonNode input, Locale locale) {
     return service.enabled(id, input, locale.toLanguageTag());
+  }
+
+  @PutMapping("/{id}/status")
+  public JsonNode status(@PathVariable String id, @RequestBody JsonNode input, Locale locale) {
+    return service.status(id, input, locale.toLanguageTag());
   }
 
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(
-      @PathVariable UUID id, @RequestHeader("If-Match") String revision) {
+      @PathVariable String id, @RequestHeader("If-Match") String revision) {
     service.delete(id, revision);
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/{id}/runs")
   public ResponseEntity<JsonNode> run(
-      @PathVariable UUID id, @RequestHeader("Idempotency-Key") UUID key, Locale locale) {
+      @PathVariable String id, @RequestHeader("Idempotency-Key") UUID key, Locale locale) {
     return ResponseEntity.accepted().body(service.manual(id, key, locale.toLanguageTag()));
   }
 
   @GetMapping("/{id}/runs")
   public JsonNode history(
-      @PathVariable UUID id,
+      @PathVariable String id,
       @RequestParam(required = false) String cursor,
       @RequestParam(defaultValue = "20") int limit) {
     return service.history(id, cursor, limit);

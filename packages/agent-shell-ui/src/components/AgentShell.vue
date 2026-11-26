@@ -101,6 +101,8 @@ const props = withDefaults(
      */
     agentPicker?: boolean;
     splitNavigation?: boolean;
+    /** The selected feature is an item in the history column and takes the place of the conversation. */
+    historyPageSelected?: boolean;
     /** An editor shown over the conversation, with its own form actions. */
     editorTitle?: string;
     formatSessionDate?: (date: string) => string;
@@ -165,9 +167,20 @@ const currentFeature = display.feature;
  * The page skill of the page shown: what its own snapshot named for the instance shown, else the page's declaration. It
  * narrows who may take a message, and it travels with every message sent while that page is shown.
  */
-const pageSkill = computed(() => props.editorTitle ? null : (display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null));
+const pageSkill = computed(() => props.editorTitle || props.historyPageSelected
+  ? null
+  : (display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null));
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
+async function selectNavSession(id: string) {
+  if (props.historyPageSelected && !(await display.close())) return;
+  nav.selectSession(id);
+}
+async function startNavConversation() {
+  if (props.historyPageSelected && !(await display.close())) return;
+  nav.startNew();
+  closeNav(true);
+}
 const pageFull = computed(() => !props.editorTitle && pairedPage.value && display.view.value === "full");
 let closingEditor = false;
 async function closeEditor() {
@@ -313,7 +326,8 @@ function chooseAgent(id: string) {
   agentId.value = id;
 }
 
-function selectRailAgent(id: string) {
+async function selectRailAgent(id: string) {
+  if (props.historyPageSelected && !conversation.busy.value && !(await display.close())) return;
   if (id === agentId.value || !conversation.busy.value) emit("railAgentSelected");
   chooseAgent(id);
 }
@@ -521,7 +535,7 @@ onMounted(() => {
           :sessions="nav.sessions.value"
           :sessions-state="nav.sessionsState.value"
           :has-more="nav.nextCursor.value !== null"
-          :session-id="sessionId"
+          :session-id="historyPageSelected ? null : sessionId"
           :feature-id="display.page.value?.featureId ?? null"
           :bottom="bottom"
           :conversations="conversations"
@@ -531,11 +545,11 @@ onMounted(() => {
           :format-session-date="formatSessionDate"
           :agent-actions="agentActions"
           :labels="labels"
-          @new-conversation="nav.startNew(); closeNav(true)"
+          @new-conversation="startNavConversation"
           @select-feature="display.openFeature($event)"
           @feature-action="emit('featureAction', $event)"
           @select-agent="selectRailAgent"
-          @select-session="nav.selectSession($event)"
+          @select-session="selectNavSession"
           @delete-session="(id) => nav.removeSession(id).catch(report)"
           @rename-session="(id, title) => nav.renameSession(id, title).catch(report)"
           @set-panel-confirmation="setPanelConfirmation"
@@ -546,6 +560,7 @@ onMounted(() => {
           <template v-if="slots.brand" #brand><slot name="brand" /></template>
           <template v-if="slots.account" #account><slot name="account" /></template>
           <template v-if="slots.shortcuts" #shortcuts><slot name="shortcuts" /></template>
+          <template v-if="slots['before-history']" #before-history><slot name="before-history" /></template>
           <template v-if="slots['session-list']" #session-list><slot name="session-list" /></template>
         </ShellNavBody>
       </slot>

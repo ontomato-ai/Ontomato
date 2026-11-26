@@ -195,7 +195,7 @@ beforeAll(async () => {
     await register("product-projections", projectionId, {
       name: "Task list", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
       inputs: {}, outputs: {}, config: {}, data: {
-        rows: { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} },
+        rows: { source: { type: { kind: "PlatformObjectType", id: "platform:Trigger" } }, read: "list", params: {} },
       },
     });
     await register("product-panels", entry.panelId, {

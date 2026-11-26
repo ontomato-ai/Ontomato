@@ -71,7 +71,11 @@ const row = {
   label: "Nightly test",
   fields: {
     application: "agents",
-    applicationName: "Agents",
+    targetKind: "application",
+    targetName: "Agents",
+    status: "PUBLISHED",
+    definitionStatus: "Published",
+    version: 1,
     settings: "Agent: Daily helper",
     frequency: "Every Monday",
     state: "off",
@@ -90,6 +94,8 @@ const row = {
   tones: { state: "info" as const, stateLabel: "info" as const, lastRun: "success" as const },
   outputs: {
     revision: 1,
+    definitionStatus: "PUBLISHED",
+    targetKind: "application",
     enabled: false,
     paused: false,
     pauseCode: "",
@@ -101,7 +107,7 @@ const operationsRow = {
   ...row,
   primaryKey: "10000000-0000-4000-8000-000000000002",
   label: "Operations test",
-  fields: { ...row.fields, application: "operations", applicationName: "Operations", lastRunSummary: "" },
+  fields: { ...row.fields, application: "operations", targetName: "Operations", lastRunSummary: "" },
 };
 const pausedRow = {
   ...operationsRow,
@@ -128,7 +134,7 @@ const otherApplications = Array.from({ length: 4 }, (_, index) => ({
   fields: {
     ...row.fields,
     application: `app-schedule-fixture-${index + 1}`,
-    applicationName: `app-schedule-fixture-${index + 1}`,
+    targetName: `app-schedule-fixture-${index + 1}`,
     lastRunSummary: "",
   },
 }));
@@ -137,13 +143,13 @@ const countsFixture = [
   { key: "", label: "All", count: allTaskRows.length },
   { key: "agents", label: "Agents", count: 1 },
   { key: "operations", label: "Operations", count: 1 },
-  ...otherApplications.map(item => ({ key: item.fields.application, label: item.fields.applicationName, count: 1 })),
+  ...otherApplications.map(item => ({ key: item.fields.application, label: item.fields.targetName, count: 1 })),
 ];
 const target = { kind: "object", objectType: "platform:Application", primaryKey: "schedules" };
 const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
   type,
   platformTypeTableEntrySchema.parse({ ...entry, operations: entry.operations?.map(id => {
-    const form = id === "platform:ScheduledTask.save" || id === "platform:ScheduledTask.create";
+    const form = id === "platform:Trigger.save" || id === "triggers.create";
     return {
       id, kind: form ? "form.save" : "action", effect: "write", batch: false, inputSchema: {},
       target: form ? { source: "draft" } : { source: "input", input: type === "platform:Application" ? "application" : "task" },
@@ -209,7 +215,8 @@ it.each([
   { scenario: "keeps the schedule panel open when renewal is refused", credentialStatus: "renewal-required", refused: true },
   { scenario: "opens without renewing a valid credential", credentialStatus: "valid", refused: false },
   { scenario: "opens without renewing when there are no remote tasks", credentialStatus: "no-remote-tasks", refused: false },
-])("$scenario", async ({ credentialStatus, refused }) => {
+  { scenario: "shows the selected task, its history and editing inline in the agent workspace", credentialStatus: "valid", refused: false, inline: true },
+])("$scenario", async ({ credentialStatus, refused, inline }) => {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
   ] });
@@ -225,7 +232,7 @@ it.each([
     admitted(member, inputs) {
       if ((member === "tasks" || member === "opDelete") && inputs.task) return {
         delete: {
-          kind: "action", handlerRef: "platform:ScheduledTask.delete", effect: "write", label: "Delete task", batch: false,
+          kind: "action", handlerRef: "triggers.delete", effect: "write", label: "Delete task", batch: false,
           target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {},
         },
       };
@@ -256,15 +263,23 @@ it.each([
           status: "ready",
           value: {
             setEnabled: {
-              kind: "action", handlerRef: "platform:ScheduledTask.setEnabled", effect: "write", label: "Toggle task", batch: false,
+              kind: "action", handlerRef: "triggers.setEnabled", effect: "write", label: "Toggle task", batch: false,
+              target: { source: "row" }, inputSchema: {}, resultSchema: {},
+            },
+            publish: {
+              kind: "action", handlerRef: "triggers.setStatus", effect: "write", label: "Publish", batch: false,
+              target: { source: "row" }, inputSchema: {}, resultSchema: {},
+            },
+            unuse: {
+              kind: "action", handlerRef: "triggers.setStatus", effect: "write", label: "Mark unused", batch: false,
               target: { source: "row" }, inputSchema: {}, resultSchema: {},
             },
             runNow: {
-              kind: "action", handlerRef: "schedules.runNow", effect: "write", label: "Run now", batch: false,
+              kind: "action", handlerRef: "triggers.runNow", effect: "write", label: "Run now", batch: false,
               target: { source: "row" }, inputSchema: {}, resultSchema: {},
             },
             delete: {
-              kind: "action", handlerRef: "platform:ScheduledTask.delete", effect: "write", label: "Delete task", batch: false,
+              kind: "action", handlerRef: "triggers.delete", effect: "write", label: "Delete task", batch: false,
               target: { source: "row" }, inputSchema: {}, resultSchema: {},
             },
           },
@@ -273,7 +288,7 @@ it.each([
       if ("operations" in body && body.memberPath[0].member === "opDelete") return writes(request)!;
       if ("operations" in body) return Response.json({ status: "ready", value: body.memberPath[0].member === "renew" ? {
         renewCredential: {
-          kind: "action", label: "Renew background credential", handlerRef: "schedules.renewCredential",
+          kind: "action", label: "Renew background credential", handlerRef: "triggers.renewCredential",
           effect: "write", batch: false, target: { source: "input", input: "application" }, inputSchema: {}, resultSchema: {},
         },
       } : {} });
@@ -300,7 +315,11 @@ it.each([
       if (member === "tasks" && body.dataName === "rows") {
         const app = typeof body.inputs.scope === "string" ? body.inputs.scope : "";
         const search = typeof body.inputs.search === "string" ? body.inputs.search.trim().toLowerCase() : "";
+        const selected = body.inputs.workspace === "agent" && typeof body.inputs.selectedTask === "object"
+          ? (body.inputs.selectedTask as { primaryKey?: string } | null)?.primaryKey
+          : undefined;
         const filtered = allTaskRows.filter((item) => {
+          if (selected && item.primaryKey !== selected) return false;
           if (app && item.fields.application !== app) return false;
           if (search && !item.label.toLowerCase().includes(search)) return false;
           return true;
@@ -345,7 +364,7 @@ it.each([
       ownerCredentialStatus = "valid";
       return Response.json({
         kind: "dispatched", intentId: id,
-        outcome: { kind: "success", data: {}, affected: { objects: [], objectTypes: ["platform:ScheduledTask"] } },
+        outcome: { kind: "success", data: {}, affected: { objects: [], objectTypes: ["platform:Trigger"] } },
       });
     }
     if (path.startsWith("/api/panel-operation-intents/") || path.startsWith("/api/panel-operations/intents/")) {
@@ -354,13 +373,28 @@ it.each([
     return nothingAt(request);
   }, router);
   useApplicationCatalog().applications.value = catalogFixture();
-  await router.push(shouldRenew && !refused ? `/schedules?app=agents&taskId=${taskId}&runId=${runId}` : "/schedules");
+  await router.push(inline
+    ? `/schedules?workspace=agent&app=agents&selectedTask=${taskId}`
+    : shouldRenew && !refused ? `/schedules?app=agents&taskId=${taskId}&runId=${runId}` : "/schedules");
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {
     const noticeReads = () => sentPanelReadItems(sent).filter(({ body }) => {
       const read = body as ProductPanelReadRequest;
       return read.memberPath[0].member === "pageNotice" && "dataName" in read && read.dataName === "record";
     });
+    if (inline) {
+      await vi.waitFor(() => {
+        expect(element.querySelectorAll(".schedules-list-col .sdk-sts-card")).toHaveLength(1);
+        expect(element.querySelector(".schedules-inline-section .schedules-runs .sdk-object-list-card")).not.toBeNull();
+      });
+      expect(document.querySelector(".el-drawer")).toBeNull();
+      expect(element.querySelector(".schedules-toolbar")).toBeNull();
+
+      await router.push(`/schedules?workspace=agent&app=agents&selectedTask=${taskId}&workspaceCompose=edit`);
+      await vi.waitFor(() => expect(element.querySelector('.schedules-inline-section [data-form="edit"]')).not.toBeNull());
+      expect(document.querySelector(".el-dialog")).toBeNull();
+      return;
+    }
     if (!shouldRenew) {
       await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-sts-card")?.textContent).toContain("Finished"));
       expect(noticeReads()).toHaveLength(1);
@@ -379,7 +413,7 @@ it.each([
       await vi.waitFor(() => expect(sentPanelReadItems(sent)).toContainEqual(expect.objectContaining({
         body: expect.objectContaining({
           memberPath: [{ member: "focus" }, { member: "summary" }], dataName: "record",
-          inputs: { target: { className: "platform:ScheduledTask", primaryKey: taskId }, runId },
+          inputs: { target: { className: "platform:Trigger", primaryKey: taskId }, runId },
         }),
       })));
       await vi.waitFor(() => expect(router.currentRoute.value.query.taskId).toBeUndefined());
@@ -434,7 +468,7 @@ it.each([
         const trigger = element.querySelector<HTMLButtonElement>('[data-overflow-trigger="true"]');
         expect(trigger?.classList.contains("active")).toBe(true);
         expect(trigger?.getAttribute("data-value")).toBe(other.fields.application);
-        expect(trigger?.textContent).toContain(other.fields.applicationName);
+        expect(trigger?.textContent).toContain(other.fields.targetName);
       });
       await vi.waitFor(() => {
         const cards = element.querySelectorAll(".schedules-list-col .sdk-sts-card");
@@ -495,7 +529,7 @@ it.each([
           useId: use.id,
           operationId: "tasks.setEnabled",
           call: {
-            target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: taskId },
+            target: { kind: "object", objectType: "platform:Trigger", primaryKey: taskId },
             input: { enabled: true, revision: 1 },
           },
         },
@@ -523,7 +557,7 @@ it.each([
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
         path: "/api/panel-operations/intents",
         body: { applicationId: "schedules", useId: use.id, operationId: deleteOperation,
-          call: { target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: taskId }, input: { revision: 1 } } },
+          call: { target: { kind: "object", objectType: "platform:Trigger", primaryKey: taskId }, input: { revision: 1 } } },
       })));
       await vi.waitFor(() => expect([...document.querySelectorAll(".el-message__content")].map(item => item.textContent)).toContain(deleteMessage));
     }
