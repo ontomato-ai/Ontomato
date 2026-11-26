@@ -1,7 +1,5 @@
 package io.ontomato.dataengine.controller;
 
-import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
-
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import com.fasterxml.jackson.annotation.JsonProperty;

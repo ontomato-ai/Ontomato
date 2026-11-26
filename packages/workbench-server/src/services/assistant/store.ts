@@ -124,7 +124,7 @@ export const assistantStore = {
   },
   async registeredAgentIds(domainId: string, ids: readonly string[]): Promise<string[]> {
     const { rows } = await db().query<{ id: string }>(
-      `SELECT id FROM ${table("assistant_agents")} WHERE domain_id=$1 AND id=ANY($2::text[])`, [domainId, ids],
+      `SELECT id FROM ${table("assistant_agents")} WHERE domain_id=$1 AND id::text=ANY($2::text[])`, [domainId, ids],
     );
     return rows.map(row => row.id);
   },
