@@ -57,6 +57,39 @@ test("all original owner operations remain declared", () => {
   }
 });
 
+
+test("capabilities use shared picker dialogs while the owner form still carries both fields", () => {
+  assert.equal(html.includes("agent-detail-skill-card"), false);
+  assert.equal(moduleSource.includes("toggleSkill"), false);
+  assert.equal(moduleSource.includes("selectedSkillCount"), false);
+
+  const members = panel.manifest.members;
+  for (const [memberName, type] of [["skillPicker", "platform:Skill"], ["toolPicker", "platform:ExternalMcpService"]]) {
+    const member = members[memberName];
+    assert.equal(member.component, "PickerDialog", `${memberName} component`);
+    assert.equal(member.type, type, `${memberName} owner type`);
+    const options = member.data.options;
+    const optionsRead = typeof options === "string" ? options : options.read;
+    assert.equal(optionsRead, "options", `${memberName} options read`);
+    assert.equal(typeof member.config.titleKey, "string");
+    assert.equal(typeof member.config.confirmLabelKey, "string");
+    assert.equal(typeof member.config.searchPlaceholderKey, "string");
+  }
+  assert.equal(members.skillPicker.state.open, "skillPickerOpen");
+  assert.equal(members.skillPicker.state.selected, "skillPickerSelected");
+  assert.equal(members.toolPicker.state.open, "toolPickerOpen");
+  assert.equal(members.toolPicker.state.selected, "toolPickerSelected");
+  assert.equal(members.skills.component, "ReferencePicker");
+  assert.equal(members.tools.component, "ReferencePicker");
+  assert.equal(html.includes('slot="skills"'), false);
+  assert.equal(html.includes('slot="tools"'), false);
+
+  assert.match(html, /<template #field-skills="/u);
+  assert.match(html, /<template #field-enabledMcpServiceIds="/u);
+  assert.match(html, /slot="skillPicker"/u);
+  assert.match(html, /slot="toolPicker"/u);
+});
+
 test("all panel messages keep the same keys in every locale", () => {
   const messages = panel.content.messages;
   const locales = Object.keys(messages);

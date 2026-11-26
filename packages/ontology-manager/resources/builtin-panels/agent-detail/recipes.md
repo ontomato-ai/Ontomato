@@ -16,6 +16,9 @@ via application entry `inputs`.
   (`grantVerb` is one of `"use"`, `"view"`, or `"edit"`; `grantPolicyId` mirrors the chosen object policy).
 - `classChecked` (`platform:ObjectType[]`, `deepLink: false`): transient checked rows of the by-name data-scope list;
   the panel script mirrors it into the owner form's `/classNames` field and back.
+- `skillPickerOpen` / `skillPickerSelected` and `toolPickerOpen` / `toolPickerSelected` (`deepLink: false`): the shared
+  `PickerDialog` open flag and primary-key draft for skills and external MCP tools. Agents normally fill the owner form
+  fields directly rather than driving these dialogs.
 
 ## Six sections and saving
 
@@ -61,10 +64,13 @@ and at which level is decided in that policy.
 - Remove access via the row action `grantsList.revoke`.
 - `/executionUserId` renders below the sharing controls through the owner form's `#field-executionUserId` slot.
 
-## Capabilities and data scope in this batch
+## Capabilities and data scope
 
-Skills and external MCP tools intentionally keep the previous card-wall/reference-picker presentation inside the
-capabilities screen; replacing them with the shared selected-table-plus-add-dialog picker is a separate later batch.
+Skills and external MCP tools are selected tables inside the owner form's capability fields. Each table lists the
+current rows with name, description, and a remove action; its add button opens the shared `PickerDialog` bound to the
+owner's `options` read. Confirming the dialog writes `/skills` or `/enabledMcpServiceIds` through the owner form; the
+dialog never invokes the owner directly. Skill catalogue loading, error, and diagnostic states are shown with standard
+banners rather than a second card presentation.
 
 Data scope is one form field with two modes: the existing relationship graph (`scope`) and a by-name multi-select
 `ObjectList` (`classPicker`). The list's checked object references are only panel state; the form field remains the

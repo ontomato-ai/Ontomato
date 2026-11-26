@@ -58,6 +58,44 @@
           }
         },
         "default": []
+      },
+      "skillPickerOpen": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": false
+      },
+      "skillPickerSelected": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        },
+        "default": [],
+        "deepLink": false
+      },
+      "toolPickerOpen": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": false
+      },
+      "toolPickerSelected": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        },
+        "default": [],
+        "deepLink": false
       }
     },
     "members": {
@@ -165,6 +203,33 @@
         "description": "选择智能体使用的对话模型。",
         "id": "builtin-product-cc37f7cd-0a61-4b15-a2a1-64b2d571dc08"
       },
+      "skillPicker": {
+        "component": "PickerDialog",
+        "type": "platform:Skill",
+        "data": {
+          "options": {
+            "read": "options",
+            "params": {
+              "agentTarget": {
+                "state": "selected",
+                "field": "primaryKey"
+              }
+            }
+          }
+        },
+        "state": {
+          "open": "skillPickerOpen",
+          "selected": "skillPickerSelected"
+        },
+        "config": {
+          "titleKey": "skills.addTitle",
+          "confirmLabelKey": "skills.addConfirm",
+          "searchPlaceholderKey": "skills.searchPlaceholder"
+        },
+        "name": "添加技能选择弹窗",
+        "description": "从属主技能 options 读中挑选要写入智能体 skills 表单字段的技能。",
+        "id": "builtin-product-4dc1fe9b-d6e9-4f3a-9319-e7d1b6d4fd9c"
+      },
       "skills": {
         "component": "ReferencePicker",
         "type": "platform:Skill",
@@ -191,6 +256,25 @@
         "name": "技能选择",
         "description": "选择智能体可加载的技能。",
         "id": "builtin-product-b79c7ca3-8287-4fd7-97d5-94c27a818455"
+      },
+      "toolPicker": {
+        "component": "PickerDialog",
+        "type": "platform:ExternalMcpService",
+        "data": {
+          "options": "options"
+        },
+        "state": {
+          "open": "toolPickerOpen",
+          "selected": "toolPickerSelected"
+        },
+        "config": {
+          "titleKey": "tools.addTitle",
+          "confirmLabelKey": "tools.addConfirm",
+          "searchPlaceholderKey": "tools.searchPlaceholder"
+        },
+        "name": "添加外部工具选择弹窗",
+        "description": "从属主外部工具 options 读中挑选要写入智能体 enabledMcpServiceIds 表单字段的服务。",
+        "id": "builtin-product-40742009-8808-4ade-b5e3-bc214e1ee6ed"
       },
       "tools": {
         "component": "ReferencePicker",
@@ -524,11 +608,24 @@
         "sectionHint.model": "Choose the execution engine first, then the model.",
         "sectionHint.prompt": "Write the system prompt and preview it in place.",
         "sectionHint.sharing": "Manage audience, policy access and unattended execution identity.",
-        "skills.empty": "No available skills.",
         "skills.loadError": "Failed to load skills.",
         "skills.loading": "Loading skills…",
-        "skills.selectedCount": "{count} selected",
-        "skills.unavailable": "Unavailable"
+        "capabilities.actionsColumn": "Actions",
+        "capabilities.descriptionColumn": "Description",
+        "capabilities.nameColumn": "Name",
+        "capabilities.unavailable": "Unavailable",
+        "capabilities.noDescription": "No description",
+        "capabilities.remove": "Remove",
+        "skills.addConfirm": "Add selected ({count})",
+        "skills.addTitle": "Add skills",
+        "skills.emptySelected": "No skills selected.",
+        "skills.searchPlaceholder": "Search skills",
+        "tools.addConfirm": "Add selected ({count})",
+        "tools.addTitle": "Add external tools",
+        "tools.emptySelected": "No external tools selected.",
+        "tools.loading": "Loading external tools…",
+        "tools.loadError": "Failed to load external tools.",
+        "tools.searchPlaceholder": "Search external tools"
       },
       "zh-CN": {
         "action.cancel": "取消",
@@ -614,11 +711,24 @@
         "sectionHint.model": "先选执行引擎，再选模型。",
         "sectionHint.prompt": "编写系统提示词，并原地预览。",
         "sectionHint.sharing": "管理谁能用、策略授权和无人值守执行身份。",
-        "skills.empty": "暂无可用技能。",
         "skills.loadError": "加载技能失败。",
         "skills.loading": "正在加载技能…",
-        "skills.selectedCount": "已选 {count} 项",
-        "skills.unavailable": "不可用"
+        "capabilities.actionsColumn": "操作",
+        "capabilities.descriptionColumn": "说明",
+        "capabilities.nameColumn": "名称",
+        "capabilities.unavailable": "不可用",
+        "capabilities.noDescription": "无说明",
+        "capabilities.remove": "移除",
+        "skills.addConfirm": "添加所选（{count}）",
+        "skills.addTitle": "添加技能",
+        "skills.emptySelected": "尚未选择技能。",
+        "skills.searchPlaceholder": "搜索技能",
+        "tools.addConfirm": "添加所选（{count}）",
+        "tools.addTitle": "添加外部工具",
+        "tools.emptySelected": "尚未选择外部工具。",
+        "tools.loading": "正在加载外部工具…",
+        "tools.loadError": "加载外部工具失败。",
+        "tools.searchPlaceholder": "搜索外部工具"
       },
       "zh-TW": {
         "action.cancel": "取消",
@@ -704,11 +814,24 @@
         "sectionHint.model": "先選執行引擎，再選模型。",
         "sectionHint.prompt": "撰寫系統提示詞，並原地預覽。",
         "sectionHint.sharing": "管理誰能用、策略授權和無人值守執行身份。",
-        "skills.empty": "暫無可用技能。",
         "skills.loadError": "載入技能失敗。",
         "skills.loading": "正在載入技能…",
-        "skills.selectedCount": "已選 {count} 項",
-        "skills.unavailable": "不可用"
+        "capabilities.actionsColumn": "操作",
+        "capabilities.descriptionColumn": "說明",
+        "capabilities.nameColumn": "名稱",
+        "capabilities.unavailable": "不可用",
+        "capabilities.noDescription": "無說明",
+        "capabilities.remove": "移除",
+        "skills.addConfirm": "加入所選（{count}）",
+        "skills.addTitle": "加入技能",
+        "skills.emptySelected": "尚未選擇技能。",
+        "skills.searchPlaceholder": "搜尋技能",
+        "tools.addConfirm": "加入所選（{count}）",
+        "tools.addTitle": "加入外部工具",
+        "tools.emptySelected": "尚未選擇外部工具。",
+        "tools.loading": "正在載入外部工具…",
+        "tools.loadError": "載入外部工具失敗。",
+        "tools.searchPlaceholder": "搜尋外部工具"
       },
       "ja": {
         "action.cancel": "キャンセル",
@@ -794,11 +917,24 @@
         "sectionHint.model": "実行エンジンを先に選び、次にモデルを選びます。",
         "sectionHint.prompt": "システムプロンプトを書き、その場でプレビューします。",
         "sectionHint.sharing": "利用対象、ポリシー権限、無人実行時の実行ユーザーを管理します。",
-        "skills.empty": "利用可能なスキルがありません。",
         "skills.loadError": "スキルの読み込みに失敗しました。",
         "skills.loading": "スキルを読み込み中…",
-        "skills.selectedCount": "{count} 件選択中",
-        "skills.unavailable": "利用不可"
+        "capabilities.actionsColumn": "操作",
+        "capabilities.descriptionColumn": "説明",
+        "capabilities.nameColumn": "名前",
+        "capabilities.unavailable": "利用不可",
+        "capabilities.noDescription": "説明なし",
+        "capabilities.remove": "削除",
+        "skills.addConfirm": "選択した{count}件を追加",
+        "skills.addTitle": "スキルを追加",
+        "skills.emptySelected": "スキルが選択されていません。",
+        "skills.searchPlaceholder": "スキルを検索",
+        "tools.addConfirm": "選択した{count}件を追加",
+        "tools.addTitle": "外部ツールを追加",
+        "tools.emptySelected": "外部ツールが選択されていません。",
+        "tools.loading": "外部ツールを読み込み中…",
+        "tools.loadError": "外部ツールの読み込みに失敗しました。",
+        "tools.searchPlaceholder": "外部ツールを検索"
       },
       "ar": {
         "action.cancel": "إلغاء",
@@ -884,11 +1020,24 @@
         "sectionHint.model": "اختر محرك التنفيذ أولاً ثم النموذج.",
         "sectionHint.prompt": "اكتب موجه النظام وعاينه في مكانه.",
         "sectionHint.sharing": "إدارة من يمكنه الاستخدام ووصول السياسة وهوية التشغيل غير المراقب.",
-        "skills.empty": "لا توجد مهارات متاحة.",
         "skills.loadError": "تعذر تحميل المهارات.",
         "skills.loading": "جارٍ تحميل المهارات…",
-        "skills.selectedCount": "تم اختيار {count}",
-        "skills.unavailable": "غير متاح"
+        "capabilities.actionsColumn": "الإجراءات",
+        "capabilities.descriptionColumn": "الوصف",
+        "capabilities.nameColumn": "الاسم",
+        "capabilities.unavailable": "غير متاح",
+        "capabilities.noDescription": "لا يوجد وصف",
+        "capabilities.remove": "إزالة",
+        "skills.addConfirm": "إضافة المحدد ({count})",
+        "skills.addTitle": "إضافة المهارات",
+        "skills.emptySelected": "لم يتم اختيار مهارات.",
+        "skills.searchPlaceholder": "البحث في المهارات",
+        "tools.addConfirm": "إضافة المحدد ({count})",
+        "tools.addTitle": "إضافة أدوات خارجية",
+        "tools.emptySelected": "لم يتم اختيار أدوات خارجية.",
+        "tools.loading": "جارٍ تحميل الأدوات الخارجية…",
+        "tools.loadError": "تعذر تحميل الأدوات الخارجية.",
+        "tools.searchPlaceholder": "البحث في الأدوات الخارجية"
       },
       "fr": {
         "action.cancel": "Annuler",
@@ -974,11 +1123,24 @@
         "sectionHint.model": "Choisissez d’abord le moteur d’exécution, puis le modèle.",
         "sectionHint.prompt": "Rédigez le prompt système et prévisualisez-le sur place.",
         "sectionHint.sharing": "Gérez qui peut l’utiliser, les accès par politique et l’identité d’exécution sans opérateur.",
-        "skills.empty": "Aucune compétence disponible.",
         "skills.loadError": "Échec du chargement des compétences.",
         "skills.loading": "Chargement des compétences…",
-        "skills.selectedCount": "{count} sélectionnée(s)",
-        "skills.unavailable": "Indisponible"
+        "capabilities.actionsColumn": "Actions",
+        "capabilities.descriptionColumn": "Description",
+        "capabilities.nameColumn": "Nom",
+        "capabilities.unavailable": "Indisponible",
+        "capabilities.noDescription": "Aucune description",
+        "capabilities.remove": "Retirer",
+        "skills.addConfirm": "Ajouter la sélection ({count})",
+        "skills.addTitle": "Ajouter des compétences",
+        "skills.emptySelected": "Aucune compétence sélectionnée.",
+        "skills.searchPlaceholder": "Rechercher des compétences",
+        "tools.addConfirm": "Ajouter la sélection ({count})",
+        "tools.addTitle": "Ajouter des outils externes",
+        "tools.emptySelected": "Aucun outil externe sélectionné.",
+        "tools.loading": "Chargement des outils externes…",
+        "tools.loadError": "Échec du chargement des outils externes.",
+        "tools.searchPlaceholder": "Rechercher des outils externes"
       },
       "de": {
         "action.cancel": "Abbrechen",
@@ -1064,11 +1226,24 @@
         "sectionHint.model": "Wählen Sie zuerst die Ausführungs-Engine und dann das Modell.",
         "sectionHint.prompt": "Schreiben Sie den Systemprompt und zeigen Sie die Vorschau direkt an.",
         "sectionHint.sharing": "Verwalten Sie Nutzungsberechtigte, Richtlinienzugriff und die Identität für unbeaufsichtigte Ausführung.",
-        "skills.empty": "Keine Skills verfügbar.",
         "skills.loadError": "Skills konnten nicht geladen werden.",
         "skills.loading": "Skills werden geladen…",
-        "skills.selectedCount": "{count} ausgewählt",
-        "skills.unavailable": "Nicht verfügbar"
+        "capabilities.actionsColumn": "Aktionen",
+        "capabilities.descriptionColumn": "Beschreibung",
+        "capabilities.nameColumn": "Name",
+        "capabilities.unavailable": "Nicht verfügbar",
+        "capabilities.noDescription": "Keine Beschreibung",
+        "capabilities.remove": "Entfernen",
+        "skills.addConfirm": "Auswahl hinzufügen ({count})",
+        "skills.addTitle": "Skills hinzufügen",
+        "skills.emptySelected": "Keine Skills ausgewählt.",
+        "skills.searchPlaceholder": "Skills suchen",
+        "tools.addConfirm": "Auswahl hinzufügen ({count})",
+        "tools.addTitle": "Externe Werkzeuge hinzufügen",
+        "tools.emptySelected": "Keine externen Werkzeuge ausgewählt.",
+        "tools.loading": "Externe Werkzeuge werden geladen…",
+        "tools.loadError": "Externe Werkzeuge konnten nicht geladen werden.",
+        "tools.searchPlaceholder": "Externe Werkzeuge suchen"
       },
       "it": {
         "action.cancel": "Annulla",
@@ -1154,11 +1329,24 @@
         "sectionHint.model": "Scegli prima il motore di esecuzione, poi il modello.",
         "sectionHint.prompt": "Scrivi il prompt di sistema e visualizzalo in anteprima nello stesso punto.",
         "sectionHint.sharing": "Gestisci chi può usarlo, gli accessi di policy e l’identità di esecuzione non presidiata.",
-        "skills.empty": "Nessuna skill disponibile.",
         "skills.loadError": "Impossibile caricare le skill.",
         "skills.loading": "Caricamento skill…",
-        "skills.selectedCount": "{count} selezionate",
-        "skills.unavailable": "Non disponibile"
+        "capabilities.actionsColumn": "Azioni",
+        "capabilities.descriptionColumn": "Descrizione",
+        "capabilities.nameColumn": "Nome",
+        "capabilities.unavailable": "Non disponibile",
+        "capabilities.noDescription": "Nessuna descrizione",
+        "capabilities.remove": "Rimuovi",
+        "skills.addConfirm": "Aggiungi selezionate ({count})",
+        "skills.addTitle": "Aggiungi skill",
+        "skills.emptySelected": "Nessuna skill selezionata.",
+        "skills.searchPlaceholder": "Cerca skill",
+        "tools.addConfirm": "Aggiungi selezionate ({count})",
+        "tools.addTitle": "Aggiungi strumenti esterni",
+        "tools.emptySelected": "Nessuno strumento esterno selezionato.",
+        "tools.loading": "Caricamento strumenti esterni…",
+        "tools.loadError": "Impossibile caricare gli strumenti esterni.",
+        "tools.searchPlaceholder": "Cerca strumenti esterni"
       }
     }
   }
