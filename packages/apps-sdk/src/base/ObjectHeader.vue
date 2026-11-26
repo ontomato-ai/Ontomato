@@ -70,6 +70,12 @@ const props = withDefaults(
     subtitle?: string;
     /** Field name on the bound `record` to show as the one-line subtitle beneath or beside the title. */
     subtitleField?: string;
+    /**
+     * How the subtitle reads: `"text"` (default) uses the body font in the secondary colour, the way ordinary
+     * prose, summaries, sources and counts read; `"identifier"` uses the monospace font for identifiers, codes
+     * and keys.
+     */
+    subtitleStyle?: "text" | "identifier";
     /** Field name on the bound `record` to show as the status badge (using `record.tones[statusField]`). */
     statusField?: string;
     /** Standalone status badge text when not reading from a bound record. */
@@ -92,6 +98,7 @@ const props = withDefaults(
     maxVisibleOperations: 2,
     fallbackTitle: undefined,
     statusStyle: "tag",
+    subtitleStyle: "text",
   },
 );
 
@@ -431,7 +438,11 @@ onBeforeUnmount(clearHeaderActionHandlers);
               </span>
             </template>
           </div>
-          <p v-if="resolvedSubtitle" class="sdk-object-header-subtitle">{{ resolvedSubtitle }}</p>
+          <p
+            v-if="resolvedSubtitle"
+            class="sdk-object-header-subtitle"
+            :class="{ 'is-identifier': subtitleStyle === 'identifier' }"
+          >{{ resolvedSubtitle }}</p>
         </div>
         <div v-if="$slots.actions || inlineOperations.length > 0 || moreOperations.length > 0" class="sdk-object-header-actions">
           <slot name="actions"></slot>
@@ -556,10 +567,12 @@ onBeforeUnmount(clearHeaderActionHandlers);
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.sdk-object-header-subtitle.is-identifier {
+  font-family: var(--font-mono);
 }
 .sdk-object-header-status {
   display: inline-flex;
