@@ -1335,13 +1335,15 @@ describe("projections two-entry catalog & detail panels", () => {
       const grantsPanel = mounted.element.querySelector<HTMLElement>('[data-tab="grants"]')!;
       expect(grantsPanel.style.display).not.toBe("none");
 
-      // Domain share toggle & Add grant dialog work inside grants tab.
+      // Domain share toggle & add-to-policy dialog work inside grants tab.
       await waitFor(() => Boolean(findButton(grantsPanel, "Enable domain sharing")), "shareEnable button ready");
+      expect(grantsPanel.textContent).toContain("Add to a policy");
+      expect(grantsPanel.textContent).toContain("This adds the object to an object policy.");
       const shareBtn = findButton(grantsPanel, "Enable domain sharing");
       expect(shareBtn).toBeTruthy();
       shareBtn!.click();
       await waitFor(() => dispatchedIntents.some((i) => i.operationId === "shareEnable.share"), "shareEnable dispatched");
-      findButton(grantsPanel, "Add grant")!.click();
+      findButton(grantsPanel, "Add to policy")!.click();
       await waitFor(() => observed.context?.state?.grantDialog === true && Boolean(document.querySelector(".el-dialog")), "add grant dialog opened");
       findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Cancel")!.click();
       await waitFor(() => observed.context?.state?.grantDialog === false, "add grant dialog closed");
@@ -1351,14 +1353,17 @@ describe("projections two-entry catalog & detail panels", () => {
       }));
       await waitFor(() => Boolean(findButton(grantsPanel, "Disable domain sharing")), "share status refreshed");
 
-      findButton(grantsPanel, "Add grant")!.click();
+      findButton(grantsPanel, "Add to policy")!.click();
       const pickerSelector = ".el-dialog .sdk-inline-reference-picker-select .el-select__wrapper";
       await waitFor(() => Boolean(document.querySelector(pickerSelector)), "policy picker ready");
+      // The level choices are the same inline switcher on every detail page.
+      expect([...document.querySelectorAll<HTMLElement>(".el-dialog .el-segmented__item")]
+        .map((option) => option.textContent?.trim())).toEqual(["Use", "Edit"]);
       document.querySelector<HTMLElement>(pickerSelector)!.click();
       const options = () => [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")];
       await waitFor(() => options().some(option => option.textContent?.trim() === "Analysts"), "policy option visible");
       options().find(option => option.textContent?.trim() === "Analysts")!.click();
-      const grantButton = () => findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Grant");
+      const grantButton = () => findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Add to policy");
       await waitFor(() => grantButton()?.disabled === false, "grant enabled after policy selection");
       grantButton()!.click();
       await waitFor(() => observed.context?.state?.grantDialog === false, "grant submitted");
@@ -1372,8 +1377,9 @@ describe("projections two-entry catalog & detail panels", () => {
         && [...row.querySelectorAll("td")].some(cell => cell.textContent?.trim() === verb),
       );
       await waitFor(() => Boolean(grantRow("Analysts", "Use")), "independent use row added");
-      expect(findButton(grantRow("Domain", "Use")!, "Revoke")).toBeUndefined();
-      findButton(grantRow("Analysts", "Edit")!, "Revoke")!.click();
+      expect(grantsPanel.textContent).toContain("Remove from policy");
+      expect(findButton(grantRow("Domain", "Use")!, "Remove from policy")).toBeUndefined();
+      findButton(grantRow("Analysts", "Edit")!, "Remove from policy")!.click();
       await waitFor(() => !grantRow("Analysts", "Edit"), "edit grant revoked");
       expect(grantRow("Analysts", "Use")).toBeTruthy();
       expect(dispatchedIntents).toContainEqual(expect.objectContaining({
