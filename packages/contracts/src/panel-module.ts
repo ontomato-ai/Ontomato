@@ -143,7 +143,8 @@ export type SdkAuthoringViolationKind =
   | "forbidden-direct-api"
   | "projection-inputs-outside-slot"
   | "projection-placement-attribute"
-  | "projection-config-duplicate";
+  | "projection-config-duplicate"
+  | "projection-config-literal";
 
 export interface SdkAuthoringViolation {
   readonly file: string;
@@ -456,11 +457,20 @@ function isPlacementAttribute(name: string): boolean {
   return placementAttributeName.test(bound ? bound[1]! : name);
 }
 
+/** Whether the text is a value written as it is, rather than something the page computes. */
+function isConstantLiteral(value: string): boolean {
+  const text = value.trim();
+  if (/^(?:true|false|null)$/u.test(text)) return true;
+  if (/^-?\d+(?:\.\d+)?$/u.test(text)) return true;
+  if (/^'(?:[^'\\]|\\.)*'$/u.test(text) || /^"(?:[^"\\]|\\.)*"$/u.test(text)) return true;
+  return /^`[^`$]*`$/u.test(text);
+}
+
 /**
- * The statically written keys of an object literal, or `null` when the expression does not show them (a reference to
- * another value, a spread, a computed key).
+ * The statically written entries of an object literal, or `null` when the expression does not show them (a reference
+ * to another value, a spread, a computed key).
  */
-function objectLiteralKeys(expression: string): string[] | null {
+function objectLiteralEntries(expression: string): { key: string; value: string }[] | null {
   const text = expression.trim();
   if (!text.startsWith("{") || !text.endsWith("}")) return null;
   const body = text.slice(1, -1);
@@ -484,21 +494,20 @@ function objectLiteralKeys(expression: string): string[] | null {
     }
   }
   segments.push(body.slice(start));
-  const keys: string[] = [];
+  const entries: { key: string; value: string }[] = [];
   for (const segment of segments) {
     const entry = segment.trim();
     if (!entry) continue;
     if (entry.startsWith("...") || entry.startsWith("[")) return null;
-    const quoted = /^(?:"([^"]*)"|'([^']*)'|`([^`]*)`)\s*(?::|$)/u.exec(entry);
-    if (quoted) {
-      keys.push(quoted[1] ?? quoted[2] ?? quoted[3]!);
-      continue;
-    }
-    const bare = /^([A-Za-z_$][\w$]*)\s*(?::|$)/u.exec(entry);
-    if (!bare) return null;
-    keys.push(bare[1]!);
+    const quoted = /^(?:"([^"]*)"|'([^']*)'|`([^`]*)`)\s*(?::|$)([\s\S]*)$/u.exec(entry);
+    const bare = quoted ? null : /^([A-Za-z_$][\w$]*)\s*(?::|$)([\s\S]*)$/u.exec(entry);
+    if (!quoted && !bare) return null;
+    entries.push({
+      key: quoted ? (quoted[1] ?? quoted[2] ?? quoted[3]!) : bare![1]!,
+      value: quoted ? quoted[4]! : bare![2]!,
+    });
   }
-  return keys;
+  return entries;
 }
 
 function makeViolation(
@@ -618,8 +627,8 @@ export function checkProjectionConfigSources(
     for (const attr of tag.attributes) {
       const bound = /^(?::|v-bind:)(inputs|values)$/u.exec(attr.name);
       if (!bound || attr.value === undefined) continue;
-      const written = objectLiteralKeys(attr.value);
-      for (const name of written ?? []) {
+      const written = objectLiteralEntries(attr.value);
+      for (const { key: name, value } of written ?? []) {
         if (Object.hasOwn(declaration.config ?? {}, name)) {
           violations.push(makeViolation(
             template, file, tag.tagStart + attr.nameOffset, "projection-config-duplicate", name, null,
@@ -631,6 +640,12 @@ export function checkProjectionConfigSources(
           violations.push(makeViolation(
             template, file, tag.tagStart + attr.nameOffset, "projection-config-duplicate", name, null,
             `Member '${member}' binds input '${name}' in its declaration and again in the placement's :${bound[1]}; one input has one source.`,
+          ));
+        }
+        if (bound[1] === "values" && isConstantLiteral(value)) {
+          violations.push(makeViolation(
+            template, file, tag.tagStart + attr.nameOffset, "projection-config-literal", name, null,
+            `Member '${member}' writes '${name}' as a fixed value where the member is placed; a value that never changes belongs in the member's config, and :values carries only the ones that follow the page.`,
           ));
         }
       }

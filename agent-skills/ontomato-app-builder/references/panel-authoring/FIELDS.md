@@ -76,6 +76,18 @@ input sources such as another member's read-only output. The inline shorthand ac
 | `name` | No | Projection display name. Defaults to the member name. |
 | `description` | No | Projection description. Defaults to the member name. |
 
+## Where a member's value is written
+
+| Written at | It holds |
+| --- | --- |
+| the member's `config` in `panel.json` | the fixed configuration: columns, labels, layout, sizes |
+| `:values` where the member is placed | the same configuration keys, for the ones that change with the page (disabled while the draft is dirty, the title being edited); a key written in both places fails the offline check |
+| `:inputs` where the member is placed | only the ports the component catalogue lists as inputs, and only inside another component's scoped slot |
+
+A placement that carries `:inputs` is drawn as an instance of its own: it does not share the member's registration,
+form draft or published outputs with the rest of the panel. That is how a row's detail or an array item gets its own
+data, and it is not a way to pass a value — a value that follows the page goes in `:values`.
+
 ## Form controls and operation inputs
 
 - `choice-matrix` locks individual rows with `disabled: boolean` and `disabledReason: string | null`. Supply a reason for a disabled row and `null` for an enabled row. Field-level `readOnly` applies to the whole field.
