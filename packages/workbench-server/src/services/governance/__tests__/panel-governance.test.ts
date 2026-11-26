@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../assistant/skills", () => ({}));
 import {
   ADD_ORG_UNIT_MEMBER,
+  ADD_ROLE_MEMBERS,
+  ADD_ROLE_POLICIES,
   ADD_USER_MEMBER,
   DELETE_ORG_GRANT,
   DELETE_ORG_POSITION,
@@ -20,6 +22,8 @@ import {
   PERMISSION_POLICY,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
+  REMOVE_ROLE_MEMBERS,
+  REMOVE_ROLE_POLICIES,
   REMOVE_USER,
   RESET_USER_PASSWORD,
   REVOKE_USER_API_KEY,
@@ -762,5 +766,67 @@ describe("governance panel server operations", () => {
     expect(withoutPositions).not.toBeNull();
     expect(withoutPositions!.summary).toContain("no positions held");
     expect(withoutPositions!.summary).toContain("other organizations are kept");
+  });
+
+  it("reads role assignment record lists and enforces owner unavailable checks on role relation writes", async () => {
+    const memberRow = { primaryKey: "u-1", className: USER, label: "Alice", fields: { loginCode: "alice" } };
+    const policyRow = { primaryKey: "p-1", className: PERMISSION_POLICY, label: "Entries", fields: { grantSummary: "Entries 2" } };
+    const { requests } = await startBackend((path) => {
+      if (path.endsWith("/panel/governance/roles/members") || path.endsWith("/panel/governance/roles/member-candidates")) {
+        return { success: true, data: [memberRow] };
+      }
+      if (path.endsWith("/panel/governance/roles/policies") || path.endsWith("/panel/governance/roles/policy-candidates")) {
+        return { success: true, data: [policyRow] };
+      }
+      return { success: true, data: [] };
+    });
+
+    const reads = createGovernanceReadAdapters({ token: "tok", locale: "en" });
+    expect(await reads.roles.members("r-1")).toHaveLength(1);
+    expect(await reads.roles.memberCandidates("r-1")).toHaveLength(1);
+    expect(await reads.roles.policies("r-1")).toHaveLength(1);
+    expect(await reads.roles.policyCandidates("r-1")).toHaveLength(1);
+    expect(requests.map((r) => r.path)).toEqual([
+      "/panel/governance/roles/members",
+      "/panel/governance/roles/member-candidates",
+      "/panel/governance/roles/policies",
+      "/panel/governance/roles/policy-candidates",
+    ]);
+
+    const { host, sent } = hostWith((path) => {
+      if (path.endsWith("/panel/governance/roles/assign/unavailable")) {
+        return new Response(
+          JSON.stringify({ success: true, data: { reason: "Managed by domain lifecycle" } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ success: true, data: { id: "r-1" } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    for (const opId of [ADD_ROLE_MEMBERS, REMOVE_ROLE_MEMBERS, ADD_ROLE_POLICIES, REMOVE_ROLE_POLICIES]) {
+      const op = targetedActionOp(opId);
+      expect(op).toBeDefined();
+      const unavailable = await op.unavailable!(host, { kind: "object", objectType: ROLE, primaryKey: "r-member" });
+      expect(unavailable).toEqual({ reason: "Managed by domain lifecycle" });
+    }
+
+    const addPoliciesResult = await targetedActionOp(ADD_ROLE_POLICIES).execute(
+      host,
+      { kind: "object", objectType: ROLE, primaryKey: "r-1" },
+      { policyIds: ["p-1", "p-2"] },
+      "intent-add-policies",
+    );
+    expect(addPoliciesResult).toMatchObject({
+      kind: "success",
+      data: { id: "r-1" },
+      affected: {
+        objects: [{ objectType: ROLE, primaryKey: "r-1" }],
+        objectTypes: [ROLE, USER, PERMISSION_POLICY],
+      },
+    });
+    expect(sent.some((req) => req.path.endsWith("/panel/governance/roles/add-policies"))).toBe(true);
   });
 });

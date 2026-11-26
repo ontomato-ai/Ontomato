@@ -154,22 +154,12 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
         return owner("governance-role-policies", "/panel/governance/roles/policies", { id }, panelRecordListSchema);
       },
       /** Domain members not yet assigned to this role. */
-      memberCandidates(id: string, keyword?: string): Promise<PanelOptionList> {
-        return owner(
-          "governance-role-member-candidates",
-          "/panel/governance/roles/member-candidates",
-          { id, ...(keyword !== undefined && { keyword }) },
-          panelOptionListSchema,
-        );
+      memberCandidates(id: string): Promise<PanelRecord[]> {
+        return owner("governance-role-member-candidates", "/panel/governance/roles/member-candidates", { id }, panelRecordListSchema);
       },
       /** Domain permission policies not yet assigned to this role. */
-      policyCandidates(id: string, keyword?: string): Promise<PanelOptionList> {
-        return owner(
-          "governance-role-policy-candidates",
-          "/panel/governance/roles/policy-candidates",
-          { id, ...(keyword !== undefined && { keyword }) },
-          panelOptionListSchema,
-        );
+      policyCandidates(id: string): Promise<PanelRecord[]> {
+        return owner("governance-role-policy-candidates", "/panel/governance/roles/policy-candidates", { id }, panelRecordListSchema);
       },
       /** The permission policies this role uses: each policy's name and type. */
       contributionPolicies(id: string): Promise<PanelRecord[]> {

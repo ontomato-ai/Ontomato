@@ -697,8 +697,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       // The role's current assignments and the candidates not yet assigned to it.
       members: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: USER },
       policies: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
-      memberCandidates: { source: "object", parameterMode: "fixed", params: { keyword: "keyword" }, result: "panelOptionList" },
-      policyCandidates: { source: "object", parameterMode: "fixed", params: { keyword: "keyword" }, result: "panelOptionList" },
+      memberCandidates: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: USER },
+      policyCandidates: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
       // What this role brings to whoever holds it: the permission policies it uses, and the workflow steps it owns.
       contributionPolicies: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
       contributionWorkflowSteps: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: WORKFLOW },

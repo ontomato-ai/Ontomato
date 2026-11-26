@@ -433,6 +433,8 @@ function roleRelationOperation(options: {
     targetInput: "role",
     targetLabel: (host: Host, target: PanelRecordTarget) =>
       governanceTargetLabel(host, target, "/panel/governance/roles/record", "ROLE_UNAVAILABLE"),
+    unavailable: (host: Host, target: PanelRecordTarget) =>
+      ownerDeleteUnavailable(host, "/panel/governance/roles/assign/unavailable", { id: target.primaryKey }, "ROLE_UNAVAILABLE"),
     execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return writeRoleRelation(
         host,
