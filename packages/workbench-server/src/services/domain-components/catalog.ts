@@ -60,9 +60,7 @@ export async function registerDomainComponent(
     const { rows: collisions } = await client.query(
       `SELECT id FROM ${t("domain_components")} WHERE domain_id=$1 AND id=$2
        UNION ALL SELECT id FROM ${t("product_projections")} WHERE domain_id=$1 AND id=$2
-       UNION ALL SELECT id FROM ${t("product_panels")} WHERE domain_id=$1 AND id=$2
-       UNION ALL SELECT id FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2
-       UNION ALL SELECT asset_id FROM ${t("product_asset_revisions")} WHERE domain_id=$1 AND asset_id=$2 LIMIT 1`,
+       UNION ALL SELECT id FROM ${t("product_panels")} WHERE domain_id=$1 AND id=$2 LIMIT 1`,
       [owner.domainId, id],
     );
     if (collisions.length) throw new HttpError(409, "Component ID already belongs to a current definition", "PRODUCT_ID_CONFLICT");

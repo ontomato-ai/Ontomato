@@ -1,9 +1,8 @@
-import { migrateProductGrants, type RegisterProductAssetGrant } from "./20261125-product-asset-grants/migration";
 import { ensureDomainComponentsSchema } from "./20261122-domain-components/schema";
 import { ensurePanelOperationsSchema } from "./20261118-panel-operations/schema";
 import { ensurePanelOperationUploadsSchema } from "./20261122-panel-operation-uploads/schema";
 import { ensureAgentExecutionSchema } from "./20261117-agent-execution/schema";
-import { ensureProductAssetsSchema } from "./20261112-product-assets/schema";
+import { ensureBusinessDefinitionsSchema } from "./20261119-business-definitions/schema";
 import { ensureProductPanelsSchema } from "./20261118-product-panels/schema";
 import { ensureAppBuilderProjectsSchema } from "./20261125-app-builder-projects/schema";
 import { ensureWorkspacesSchema } from "./20261109-workspaces/schema";
@@ -109,7 +108,6 @@ type MigrationRegistration = {
     run: (
       client: QueryableClient,
       migration: MigrationIdentity,
-      registerProductAssetGrant: RegisterProductAssetGrant,
     ) => Promise<void>;
   };
 };
@@ -118,7 +116,7 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261118-panel-operations", ensureSchema: ensurePanelOperationsSchema },
   { directory: "20261122-domain-components", ensureSchema: ensureDomainComponentsSchema },
   { directory: "20261122-panel-operation-uploads", ensureSchema: ensurePanelOperationUploadsSchema },
-  { directory: "20261112-product-assets", ensureSchema: ensureProductAssetsSchema },
+  { directory: "20261119-business-definitions", ensureSchema: ensureBusinessDefinitionsSchema },
   {
     directory: "20261125-retired-product-subscriptions",
     ensureSchema: () => Promise.resolve(),
@@ -129,21 +127,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
         if (await isMigrationApplied(client, migration.version)) return;
         await inMigrationTransaction(client, async () => {
           await client.query(`DROP TABLE IF EXISTS ${qualifiedTable("product_subscriptions")}`);
-          await recordMigration(client, migration.version, migration.name);
-        });
-      },
-    },
-  },
-  {
-    directory: "20261125-product-asset-grants",
-    ensureSchema: () => Promise.resolve(),
-    migration: {
-      version: "20261125_product_asset_grants_v1",
-      name: "register legacy product assets before serving requests",
-      run: async (client, migration, register) => {
-        if (await isMigrationApplied(client, migration.version)) return;
-        await inMigrationTransaction(client, async () => {
-          await migrateProductGrants(client, register);
           await recordMigration(client, migration.version, migration.name);
         });
       },
@@ -368,7 +351,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
 
 export async function runPostgresBusinessMigrations(
   client: QueryableClient,
-  registerProductAssetGrant: RegisterProductAssetGrant,
 ): Promise<void> {
   await client.query("SELECT pg_advisory_lock(hashtext($1::text))", [
     workbenchProduct().migrationLockKey,
@@ -380,7 +362,7 @@ export async function runPostgresBusinessMigrations(
       await registration.ensureSchema(client);
     }
     for (const { migration } of POSTGRES_MIGRATION_REGISTRY) {
-      if (migration) await migration.run(client, migration, registerProductAssetGrant);
+      if (migration) await migration.run(client, migration);
     }
   } finally {
     await client.query("SELECT pg_advisory_unlock(hashtext($1::text))", [

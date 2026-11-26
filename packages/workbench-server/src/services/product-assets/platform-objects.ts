@@ -2,11 +2,6 @@ import {z} from 'zod';
 import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
-import {AsyncLocalStorage} from 'node:async_hooks';
-import type {PersonalWorkspace} from '@ontomato/contracts/personal-workspace';
-const preferencesContext=new AsyncLocalStorage<PersonalWorkspace>();
-export function platformProjectionPreferences(){return preferencesContext.getStore();}
-export function withPlatformProjectionPreferences<T>(preferences:PersonalWorkspace|undefined,read:()=>Promise<T>){return preferences?preferencesContext.run(structuredClone(preferences),read):read();}
 
 export interface PlatformObjectProvider {
   objectType:string;
@@ -21,7 +16,6 @@ export function registerPlatformObject(provider:PlatformObjectProvider){
   if(!provider.objectType.startsWith('platform:')||providers.has(provider.objectType))throw new Error('Invalid or duplicate platform ObjectType');
   providers.set(provider.objectType,provider);
 }
-export function platformObjectTypes(){return [...providers.values()].map(({objectType,name,fields})=>({objectType,name,fields}));}
 export function platformObjectProvider(objectType:string){
   const provider=providers.get(objectType);if(!provider)throw new HttpError(404,'Platform ObjectType unavailable','PLATFORM_OBJECT_UNAVAILABLE');return provider;
 }

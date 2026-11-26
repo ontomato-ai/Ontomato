@@ -30,7 +30,6 @@ import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgre
 import { ensureAssistantPresetUpgradesSchema } from "../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
 import { ensureWorkspacesSchema } from "../../infrastructure/postgres-migrations/20261109-workspaces/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { agentObjectDecisions } from "./agent-object-decisions";
 import { writeBundledAppSdkFixture } from "./bundled-app-sdk";
@@ -103,7 +102,6 @@ export async function startPanelSkillEntryServer(options: {
   await ensureAgentExecutionSchema(pool);
   await ensureOpsDiagnosisSchema(pool);
   await ensureWorkspacesSchema(pool);
-  await ensureProductAssetsSchema(pool);
   await ensureProductPanelsSchema(pool);
   await pool.query(`INSERT INTO ${store.table("assistant_agents")} (id,domain_id,kind,name,system_prompt,skills)
     VALUES($1,$2,'regular','Assistant',NULL,'[]')`, [regularAgentId, domainId]);

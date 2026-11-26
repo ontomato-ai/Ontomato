@@ -33,7 +33,7 @@ watch(()=>props.asset,async asset=>{
  try{
   let name='';
   if(document.renders.kind==='ObjectType'){const ontology=await client.loadOntology();name=ontology.objects.find(object=>object.className===document.renders.id)?.showName??'';}
-  else if(document.renders.kind==='Definition'){const response=await client.request(`/product-assets/definitions/${encodeURIComponent(document.renders.id)}`,{},'');name=(await response.json()).definition?.name??'';}
+  else if(document.renders.kind==='Definition'){const response=await client.request(`/business-definitions/${encodeURIComponent(document.renders.id)}`,{},'');name=(await response.json()).definition?.name??'';}
   else {const result=await client.requestSmartAsset(document.renders.kind==='Action'?'actions':'metrics','queryById',{id:document.renders.id});name=result.data?.name??'';}
   if(current===generation)targetName.value=name||ot('productNameUnavailable');
  }catch{if(current===generation)targetName.value=ot('productNameUnavailable');}

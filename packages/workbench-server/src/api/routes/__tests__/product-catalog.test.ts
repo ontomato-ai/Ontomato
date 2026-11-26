@@ -67,7 +67,6 @@ function panelDefinition(projectionId?: string) {
 let records: Record<Table, Map<string, CurrentProductRow>>;
 let grants: Map<string, Grant[]>;
 let locations: Map<string, Location[]>;
-let legacyRevisions: Set<string>;
 let deregistered: string[];
 let server: Server;
 let base: string;
@@ -189,7 +188,6 @@ beforeEach(() => {
   records = { product_panels: new Map(), product_projections: new Map() };
   grants = new Map();
   locations = new Map();
-  legacyRevisions = new Set();
   deregistered = [];
   db.query.mockReset().mockImplementation((sql: string, values: unknown[] = []) => {
     if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql) || sql.includes("pg_advisory_xact_lock"))
@@ -252,8 +250,8 @@ beforeEach(() => {
         .filter(row => key === null || order * (row.sortKey.localeCompare(key) || row.id.localeCompare(position!)) > 0)
         .sort((a, b) => order * (a.sortKey.localeCompare(b.sortKey) || a.id.localeCompare(b.id))).slice(0, limit) };
     }
-    if (sql.startsWith("SELECT id FROM") && sql.includes("UNION ALL"))
-      return { rows: collection.has(id) || sql.includes("product_asset_revisions") && legacyRevisions.has(id) ? [{ id }] : [] };
+    if (sql.startsWith("SELECT id FROM") && sql.includes("LIMIT 1"))
+      return { rows: collection.has(id) ? [{ id }] : [] };
     if (sql.startsWith("INSERT INTO")) {
       const timestamp = new Date("2026-11-20T00:00:00Z");
       const row = { id, ownerId: String(values[2]), domainId: String(values[0]), definition: JSON.parse(values[3] as string),
@@ -477,10 +475,6 @@ it("copies from use alone as a new private record owned by the copier and refuse
   const collision = await request("product-projections/metric/copy", "POST", proposed);
   expect(collision.status).toBe(409);
   expect(await collision.json()).toMatchObject({ error: { code: "PRODUCT_ID_CONFLICT" } });
-  legacyRevisions.add("retired");
-  const legacy = await request("product-projections/metric/copy", "POST", { id: "retired", name: "Legacy identity" });
-  expect(legacy.status).toBe(409);
-  expect(await legacy.json()).toMatchObject({ error: { code: "PRODUCT_ID_CONFLICT" } });
   const chart = await request("product-projections/chart/copy", "POST", { id: "chart-copy", name: "Chart copy" });
   expect(chart.status).toBe(400);
   expect(await chart.json()).toMatchObject({ error: { code: "CHART_SOURCE_REGISTRATION_REQUIRED" } });

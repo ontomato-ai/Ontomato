@@ -18,7 +18,6 @@ import { installWorkbenchIdentity } from "../../identity/installed";
 import type { WorkbenchIdentity } from "../../identity/types";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { ensureAssistantPresetUpgradesSchema } from "../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
@@ -173,7 +172,6 @@ beforeAll(async () => {
   await ensureAssistantDefaultPromptSchema(state.pool);
   await ensureAssistantPresetUpgradesSchema(state.pool);
   await ensureAgentExecutionSchema(state.pool);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
 
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "gov-preset-panel-"));

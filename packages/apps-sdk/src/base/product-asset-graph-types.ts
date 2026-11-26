@@ -3,7 +3,6 @@ import {
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
 } from "@ontomato/contracts/platform-object-types";
-import { productTypes } from "@ontomato/contracts/product-assets";
 import type { ProductGraph } from "@ontomato/contracts/product-graph";
 import { unwrapJsonField } from "./display-value";
 import type { ObjectListRef } from "./object-list-types";
@@ -55,7 +54,6 @@ export const PRODUCT_ASSET_COLUMN_ORDER: readonly ProductAssetGraphCategory[] = 
   "composition",
   "element",
   "ontology",
-  "legacy",
 ];
 
 export const PRODUCT_ASSET_CARD_WIDTH = 220;
@@ -112,11 +110,6 @@ export function extractProductAssetGraph(raw: unknown): ProductAssetGraphData | 
   return null;
 }
 
-function kindRank(kind: string): number {
-  const index = productTypes.findIndex((type) => type.kind === kind);
-  return index < 0 ? productTypes.length : index;
-}
-
 /** Computes column card coordinates, SVG dimensions, and drawable edges for a product asset graph. */
 export function computeProductAssetGraphLayout(graph: ProductAssetGraphData): ProductAssetGraphLayout {
   const visibleColumns: ProductAssetGraphColumn[] = [];
@@ -126,7 +119,7 @@ export function computeProductAssetGraphLayout(graph: ProductAssetGraphData): Pr
     const nodes = graph.nodes
       .filter((node) => node.category === category)
       .slice()
-      .sort((a, b) => kindRank(a.kind) - kindRank(b.kind) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
     if (!nodes.length) continue;
     const columnIndex = visibleColumns.length;
     visibleColumns.push({ id: category, nodes });

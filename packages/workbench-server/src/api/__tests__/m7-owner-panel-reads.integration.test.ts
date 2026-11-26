@@ -24,7 +24,6 @@ import { registerSkillProvider } from "../../core/skills/providers";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { HttpError } from "../../utils/errors";
 
@@ -261,7 +260,6 @@ beforeAll(async () => {
   state.schema = `panel_m7_owners_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   await ensureAssistantSchema(state.pool);
 

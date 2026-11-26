@@ -153,7 +153,7 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
   );
   const ownership = target === "workbench" && (
     (req.method === "GET" && path === "/api/assistant/agents") ||
-    /^\/api\/(?:panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path)
+    /^\/api\/(?:panel-operation-intents|feedback|query-history|business-definitions|business-definition-triggers|memories|preferences|personal-workspace)(?:\/|$)/u.test(path)
   );
   const { owner, credentials: initiatorCredentials } = context(req);
   const businessGrant = target === "ontology" && governanceAction.test(path) ? callback.businessGrant : undefined;
