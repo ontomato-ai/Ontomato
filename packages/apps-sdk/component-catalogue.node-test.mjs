@@ -492,7 +492,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
       }
     }
-for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "ScheduledTaskSummaryList", "EffectivePermissionsView", "TestcaseWorkbench", "ProductAssetGraph", "OntologyTypeGraph", "ModelingGraphEditor"]) {
+for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "Projection", "ScheduledTaskSummaryList", "EffectivePermissionsView", "TestcaseWorkbench", "ProductAssetGraph", "OntologyTypeGraph", "ModelingGraphEditor"]) {
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
       assert.equal(entry?.config, undefined, `non-panel ${excluded} must not emit author-facing config`);

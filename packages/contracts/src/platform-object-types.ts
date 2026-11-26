@@ -236,7 +236,13 @@ const ontologyTypeDetailList = {
   source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
   requiredParams: ["type"], result: "panelRecordList",
 } as const satisfies PlatformReadDeclaration;
+/** Every expanded edge that starts at or ends on the type, one row per edge rather than per relation kind. */
+const ontologyTypeRelationList = {
+  ...ontologyTypeDetailList, rowType: ONTOLOGY_RELATION_KIND,
+} as const satisfies PlatformReadDeclaration;
 const ontologyInstanceDetailPath = { kind: "scalar", type: "string" } as const;
+/** Where the owner's own modeling editor opens the selected class or relation. */
+const modelingPathOutput = { kind: "scalar", type: "string" } as const;
 /** A catalogue searched and paged like the business knowledge list, for definitions with no further filter. */
 const definitionQuery = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
@@ -369,10 +375,14 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("objectType", "fact"),
     reads: {
       ...modelReads, ...metadataList, ...referenceReads, count: countRead,
-      instances: { ...customerQuery, params: { className: "className", ...customerQueryParams }, requiredParams: ["className"] },
+      instances: {
+        ...customerQuery, params: { className: "className", ...customerQueryParams }, requiredParams: ["className"],
+        outputs: { detailPath: ontologyInstanceDetailPath },
+      },
       instanceRecord: {
         source: "type", parameterMode: "fixed", params: { object: "graphNode" },
         requiredParams: ["object"], result: "panelRecord",
+        outputs: { typeLabel: { kind: "scalar", type: "string" }, detailPath: ontologyInstanceDetailPath },
       },
       instanceNeighbors: {
         source: "type", parameterMode: "fixed",
@@ -406,6 +416,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       record: {
         ...modelReads.record,
         outputs: {
+          modelingPath: modelingPathOutput,
           className: { kind: "scalar", type: "string" },
           primaryKeyStatus: { kind: "scalar", type: "string" },
           primaryKeyName: { kind: "scalar", type: "string" },
@@ -436,7 +447,10 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [RELATIONSHIP]: {
     ...describeType("relationship", "fact"),
-    reads: { ...modelReads, list: modelListByClass, count: countRead },
+    reads: {
+      ...modelReads, list: modelListByClass, count: countRead,
+      record: { ...modelReads.record, outputs: { modelingPath: modelingPathOutput } },
+    },
     operations: [`${RELATIONSHIP}.save`, DELETE_RELATIONSHIP],
   },
   [METRIC_VIEW]: {
@@ -1052,7 +1066,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
       properties: ontologyTypeDetailList,
-      typeRelations: ontologyTypeDetailList,
+      typeRelations: ontologyTypeRelationList,
       reads: ontologyTypeDetailList,
       operations: ontologyTypeDetailList,
     },

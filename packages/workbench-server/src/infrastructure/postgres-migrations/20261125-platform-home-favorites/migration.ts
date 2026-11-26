@@ -59,11 +59,7 @@ function favoritesFromWorkspace(raw: unknown): { favorites: HomeItemRef[]; dashb
   return { favorites, dashboardIds: parsed.data.dashboardIds };
 }
 
-/**
- * Copies legacy personal workspace favorites and followed dashboards stored in `product_user_overlays`,
- * `product_assets`, and `user_preferences` into `platform_home_preferences` once during startup migration,
- * so reading or updating home favorites never reads or recreates legacy product assets.
- */
+/** Copies favorites and followed dashboards from personal workspace preferences during startup. */
 export async function migratePlatformHomeFavorites(client: QueryableClient): Promise<{ migrated: number }> {
   const buckets = new Map<string, { domainId: string; userId: string; favorites: HomeItemRef[]; dashboardIds: string[] }>();
   const bucketFor = (domainId: string, userId: string) => {
@@ -75,22 +71,6 @@ export async function migratePlatformHomeFavorites(client: QueryableClient): Pro
     }
     return entry;
   };
-
-  const overlays = await client.query<{ domain_id: string; user_id: string; overlay_prefs: unknown; doc_workspace: unknown }>(
-    `SELECT h.domain_id, h.user_id, o.preferences AS overlay_prefs, a.document->'workspace' AS doc_workspace
-     FROM ${t("product_home")} h
-     LEFT JOIN ${t("product_user_overlays")} o
-       ON o.domain_id = h.domain_id AND o.principal_id = h.user_id AND o.page_id = h.asset_id
-     LEFT JOIN ${t("product_assets")} a
-       ON a.domain_id = h.domain_id AND a.id = h.asset_id`,
-  );
-  for (const row of overlays.rows) {
-    const extracted = favoritesFromWorkspace(row.overlay_prefs ?? row.doc_workspace);
-    if (!extracted.favorites.length && !extracted.dashboardIds.length) continue;
-    const entry = bucketFor(row.domain_id, row.user_id);
-    entry.favorites = mergeFavorites(entry.favorites, extracted.favorites);
-    entry.dashboardIds = mergeDashboards(entry.dashboardIds, extracted.dashboardIds);
-  }
 
   const legacyPrefs = await client.query<{ user_id: string; key: string; value: unknown }>(
     `SELECT user_id, key, value FROM ${t("user_preferences")}
@@ -118,7 +98,6 @@ export async function migratePlatformHomeFavorites(client: QueryableClient): Pro
     const existingDashboards = current.rows[0]
       ? homeDashboardsSchema.shape.ids.catch([]).parse(current.rows[0].dashboard_ids)
       : [];
-    // Legacy overlay takes precedence when it has records; preserve any newer entries already in platform_home_preferences.
     const nextFavorites = mergeFavorites(entry.favorites, existingFavorites);
     const nextDashboards = mergeDashboards(entry.dashboardIds, existingDashboards);
     await client.query(
@@ -197,11 +176,7 @@ function workspaceDetailsFromRaw(raw: unknown): {
   return { dashboardCards, pinnedSessions, pinnedObjects };
 }
 
-/**
- * One-time startup migration that copies legacy dashboard card selections, pinned sessions, and pinned objects
- * from `product_user_overlays`, `product_assets`, and `user_preferences` into `platform_home_preferences`
- * without performing any write during reads.
- */
+/** Copies dashboard cards, pinned sessions, and pinned objects from personal workspace preferences. */
 export async function migratePlatformHomeWorkspaceFavoritesV2(client: QueryableClient): Promise<{ migrated: number }> {
   const buckets = new Map<string, {
     domainId: string;
@@ -219,23 +194,6 @@ export async function migratePlatformHomeWorkspaceFavoritesV2(client: QueryableC
     }
     return entry;
   };
-
-  const overlays = await client.query<{ domain_id: string; user_id: string; overlay_prefs: unknown; doc_workspace: unknown }>(
-    `SELECT h.domain_id, h.user_id, o.preferences AS overlay_prefs, a.document->'workspace' AS doc_workspace
-     FROM ${t("product_home")} h
-     LEFT JOIN ${t("product_user_overlays")} o
-       ON o.domain_id = h.domain_id AND o.principal_id = h.user_id AND o.page_id = h.asset_id
-     LEFT JOIN ${t("product_assets")} a
-       ON a.domain_id = h.domain_id AND a.id = h.asset_id`,
-  );
-  for (const row of overlays.rows) {
-    const extracted = workspaceDetailsFromRaw(row.overlay_prefs ?? row.doc_workspace);
-    if (!Object.keys(extracted.dashboardCards).length && !extracted.pinnedSessions.length && !extracted.pinnedObjects.length) continue;
-    const entry = bucketFor(row.domain_id, row.user_id);
-    entry.dashboardCards = mergeDashboardCards(entry.dashboardCards, extracted.dashboardCards);
-    entry.pinnedSessions = mergePinnedSessions(entry.pinnedSessions, extracted.pinnedSessions);
-    entry.pinnedObjects = mergePinnedObjects(entry.pinnedObjects, extracted.pinnedObjects);
-  }
 
   const legacyPrefs = await client.query<{ user_id: string; key: string; value: unknown }>(
     `SELECT user_id, key, value FROM ${t("user_preferences")}

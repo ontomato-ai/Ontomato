@@ -173,6 +173,34 @@ export const skillServerOperations = [
           : tForLocale(host.locale, "panels.skill.readOnlyProvider", { provider: restriction.providerName }),
       };
     },
+    async unavailableBatch(host: PanelOperationHost, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
+      const skillManager = await loadSkillManager();
+      const { owner, credentials } = host.initiator;
+      let restrictions;
+      try {
+        restrictions = await skillManager.getDeleteSkillRestrictions(
+          owner.domainId,
+          targets.map(({ target }) => target.primaryKey),
+          credentials,
+        );
+      } catch (error) {
+        if (error instanceof HttpError && error.code === "PERMISSION_DENIED") {
+          return new Map(targets.map(({ rowKey }) => [rowKey, { reason: error.message }]));
+        }
+        throw error;
+      }
+      const reasons = new Map<string, { reason: string } | undefined>();
+      for (const { target, rowKey } of targets) {
+        const restriction = restrictions.get(target.primaryKey);
+        if (!restriction) continue;
+        reasons.set(rowKey, {
+          reason: restriction.kind === "public"
+            ? tForLocale(host.locale, "panels.skill.readOnlyPublic")
+            : tForLocale(host.locale, "panels.skill.readOnlyProvider", { provider: restriction.providerName }),
+        });
+      }
+      return reasons;
+    },
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected skill");
       const { owner, credentials } = host.executor;

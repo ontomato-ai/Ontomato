@@ -47,15 +47,6 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["MetricView:*"],
   }),
   defineComponentMeta({
-    componentId: "ProductAsset",
-    module: "@ontomato/sdk",
-    exportName: "ProductAsset",
-    role: "presentation",
-    group: "layout",
-    meaning:
-      "Embeds an existing product asset as the application's pinned release draws it; an unavailable asset or an unsupported host is reported instead of drawing another page.",
-  }),
-  defineComponentMeta({
     componentId: "EChart",
     module: "@ontomato/sdk/chart",
     exportName: "EChart",
@@ -807,7 +798,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Fills a fixed `{fieldKey}` sentence with values from one record or one metric row; use for summary text a page must not compute itself.\n\n- Each placeholder is drawn by `TypedValue`, so a reference stays clickable, a name is localized and a number is tabular; the sentence is all the placement writes.\n- No expressions, no calculation and no conditional branching: a derived value or a business condition belongs in the owner's MetricView, action or read.\n- A per-field format applies to that field alone; a field left unformatted keeps its own type's drawing.",
+      "Fills a fixed `{fieldKey}` sentence with values from one record or one metric row; use for summary text a page must not compute itself.\n\n- Each placeholder is drawn by `TypedValue`, so a reference stays clickable, a name is localized and a number is tabular; the sentence is all the placement writes.\n- No expressions, no calculation and no conditional branching: a derived value or a business condition belongs in the owner's MetricView, action or read.\n- A per-field format applies to that field alone; a field left unformatted keeps its own type's drawing.\n- One read per display: a template told its `record` or `values` by a parent draws that snapshot alone and its placeholders do not read the member again; only a template with nothing passed reads its own `record` or `result` datum. Never add the second read back, since two reads of one datum can disagree.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -826,7 +817,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Draws one callout — information, reminder, warning, success or danger — from the page's own copy, a record, or a metric result; use for a notice in a detail card or a block of guidance.\n\n- Its tone is the placement's, a field of the record, or an exact-match mapping of the value: nothing is inferred from the wording.\n- The words are static or localized, or already-provided values filled into a fixed `{fieldKey}` sentence — no calculation, thresholds or branching.\n- Asked to, it hides itself when it has nothing to say, so a card never carries an empty frame.",
+      "Draws one callout — information, reminder, warning, success or danger — from the page's own copy, a record, or a metric result; use for a notice in a detail card or a block of guidance.\n\n- Its tone is the placement's, a field of the record, or an exact-match mapping of the value: nothing is inferred from the wording.\n- The words are static or localized, or already-provided values filled into a fixed `{fieldKey}` sentence — no calculation, thresholds or branching.\n- When the banner relies on a record field (`field` for the body, or `toneField` when there is no body field), an empty field hides the entire banner, including any static title. Banners containing only static content still render.\n- For other banners, `hideWhenEmpty` can hide an empty frame.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {

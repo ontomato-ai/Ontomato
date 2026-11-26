@@ -197,13 +197,14 @@ public class ApplicationController {
     }
     @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping(value = "/platform/applications", params = "purpose=navigation")
-    public R<?> navigation() {
-        return R.of(catalog.visible(current()));
+    public R<?> navigation(@RequestParam(defaultValue = "false") boolean countOnly) {
+        var user = current();
+        return R.of(countOnly ? catalog.navigationCount(user) : catalog.visible(user));
     }
 
     @GetMapping("/platform/applications")
     public R<?> list(@RequestParam(defaultValue="navigation") String purpose) {
-        if (!purpose.equals("schedules")) return navigation();
+        if (!purpose.equals("schedules")) return navigation(false);
         var user = current();
         return R.of(catalog.all().stream().filter(a -> catalog.inDomain(a,user) && a.getString("scheduleAdapter") != null).toList());
     }

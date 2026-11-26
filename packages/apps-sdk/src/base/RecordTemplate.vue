@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { computed, inject, provide } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import type { PanelFieldTone, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
@@ -85,7 +85,12 @@ const panel = inject(panelContextKey, null);
 const slot = inject(projectionKey, null);
 const memberGetter = inject(panelMemberKey, null);
 const member = memberGetter?.() ?? null;
-const boundDatum = useOptionalMemberDatum(member, ["record", "result"] as const);
+// A template given its data by a parent only renders that snapshot. Its TypedValue children always
+// render the values selected by the template, including empty placeholders, without starting their own reads.
+const boundDatum = props.record === undefined && props.values === undefined
+  ? useOptionalMemberDatum(member, ["record", "result"] as const)
+  : null;
+provide<typeof memberGetter>(panelMemberKey, null);
 
 interface ResolvedTemplateData {
   readonly state: DisplayDataStateKind;

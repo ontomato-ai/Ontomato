@@ -21,7 +21,7 @@ import type { SkillEntry, SkillMeta, SkillSource } from "../types";
 function refLabel(ref: RuntimeSkillRef) {
   return ref.namespace.kind === "provider" ? `${ref.namespace.provider}/${ref.name}` : `${ref.namespace.domainId}/${ref.name}`;
 }
-function sourceLabel(source: SkillSource) {
+export function skillSourceLabel(source: SkillSource) {
   if (source.kind === "public") return "the public skill packages";
   if (source.kind === "domain") return "the domain skill packages";
   return `provider "${source.providerName}" (${source.providerId})`;
@@ -106,8 +106,8 @@ export class SkillRegistryManager {
       const existing = byName.get(skill.name);
       if (existing)
         throw new InvalidSkillPackageError(protectedSource ? "Protected skill identities conflict"
-          : `Skill name "${skill.name}" (${refLabel(skill)}) from ${sourceLabel(source)} conflicts with `
-            + `${sourceLabel(existing.source)} (${refLabel(existing.skill)}); names are unique across all manageable sources`);
+          : `Skill name "${skill.name}" (${refLabel(skill)}) from ${skillSourceLabel(source)} conflicts with `
+            + `${skillSourceLabel(existing.source)} (${refLabel(existing.skill)}); names are unique across all manageable sources`);
       byName.set(skill.name, { skill, source });
     };
     for (const { skill, source } of entries) reserveName(skill, source, false);

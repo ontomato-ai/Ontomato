@@ -26,7 +26,7 @@ describe("explicit frame execution bindings",()=>{
     await expect(host().request!(source,'/dsl/executeV1',{method:'POST'},'/data-query')).rejects.toThrow('declared SDK capability');
     await expect(host().request!(source,'/admin/delete',{method:'POST'},'')).rejects.toThrow('declared SDK product');
     await expect(host().request!(source,'//other-host/path',{},'/data-query')).rejects.toThrow('Invalid SDK request');
-    await expect(host().request!(source,'/product-assets/../admin/delete',{},'')).rejects.toThrow('Invalid SDK request');
+    await expect(host().request!(source,'/business-definitions/../admin/delete',{},'')).rejects.toThrow('Invalid SDK request');
   });
   it('derives preview execution headers from the registered frame rather than trusting source headers',async()=>{
     const source=frame();const context=buildExecutionContext('workspace',null);registerBuildPreview(source,context);

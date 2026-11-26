@@ -1,5 +1,6 @@
-import { findCurrentProducts, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
 import { tForLocale } from "../../i18n";
+import { getPostgresPool } from "../../infrastructure/postgres";
+import { currentProductRows, findCurrentProducts, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { decideObjects, requireAllowed, type ObjectDefinition } from "../product-governance/authorization";
@@ -27,6 +28,28 @@ export async function currentDefinitionAccess(
   ], credentials);
   const editable = new Set(edits.filter((_, index) => decisions[requested.length + index].allowed).map(({ target }) => target.id));
   return { decisions: decisions.slice(0, requested.length), editable };
+}
+
+export async function usableCurrentDefinitionIds(
+  kind: CurrentProductKind, domainId: string, credentials: AssistantCredentials,
+) {
+  const { rows } = await getPostgresPool().query<DefinitionFacts>(
+    `SELECT id, domain_id AS "domainId", owner_id AS "ownerId"
+     FROM ${currentProductRows(kind)} AS definitions WHERE domain_id IS NULL OR domain_id=$1`, [domainId],
+  );
+  const { decisions } = await currentDefinitionAccess(kind, rows, domainId, credentials, false);
+  return rows.filter((_, index) => decisions[index].allowed).map(({ id }) => id);
+}
+
+export async function countUsableCurrentDefinitions(
+  kind: CurrentProductKind, domainId: string, credentials: AssistantCredentials,
+): Promise<number> {
+  const ids = await usableCurrentDefinitionIds(kind, domainId, credentials);
+  const { rows: [result] } = await getPostgresPool().query<{ total: number }>(
+    `SELECT COUNT(*)::int AS total FROM ${currentProductRows(kind)} AS definitions
+     WHERE (domain_id IS NULL OR domain_id=$1) AND id=ANY($2::text[])`, [domainId, ids],
+  );
+  return result.total;
 }
 
 export async function requireCurrentDefinitionUse(

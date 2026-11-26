@@ -89,13 +89,16 @@ describe("action catalog reads", () => {
       expect.objectContaining({ method: "GET" }));
   });
 
-  it("lists the actions with the owner's display names, status tones, and this owner's column names", async () => {
+  it.each([3, 80])("lists %i actions with owner display fields in at most one owner RPC", async size => {
     const pending = { ...approve, id: "review-order", name: "Review order", status: "PENDING_REVIEW", statusLabel: "Pending review" };
     const unused = { ...approve, id: "legacy-order", name: "Legacy order", status: "UNUSED", statusLabel: "Unused" };
-    ownerAnswering({ "/action/queryList": ok([approve, pending, unused]) });
+    const extra = Array.from({ length: size - 3 }, (_, i) => ({ ...approve, id: `action-${i}`, createdBy: `user-${i}` }));
+    const sent = ownerAnswering({ "/action/queryList": ok([approve, pending, unused, ...extra]) });
 
     const records = await createActionReadAdapter(owner, viewer).list();
 
+    expect(records).toHaveLength(size);
+    expect(sent.length).toBeLessThanOrEqual(1);
     expect(panelRecordListSchema.parse(records)).toEqual(records);
     expect(records[0]).toEqual({
       primaryKey: "approve-order", label: "Approve order", subtitle: "Approve a pending order",

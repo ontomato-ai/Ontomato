@@ -31,9 +31,10 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
-import { listAgentDefinitions } from "../../assistant/definitions";
-import { assistantSkillCatalog } from "../../assistant/skills";
-import { listPublishedDefinitions } from "../../business-definitions/definitions";
+import { countVisibleAgentDefinitions, listAgentDefinitions } from "../../assistant/definitions";
+import { assistantSkillCatalog, countAssistantSkills } from "../../assistant/skills";
+import { countPublishedDefinitions, listPublishedDefinitions } from "../../business-definitions/definitions";
+import { countUsableCurrentDefinitions } from "../../product-panels/access";
 import { readPanelComponentCatalogue } from "../../product-panels/component-catalogue";
 import { createPlatformOntologyReadAdapter } from "../panel-reads";
 
@@ -46,13 +47,20 @@ vi.mock("../../../config/environment", () => ({
   environment: { agentRuntime: () => ({ queryServiceToken: "service-token-1" }) },
 }));
 vi.mock("../../assistant/definitions", () => ({
+  countVisibleAgentDefinitions: vi.fn(),
   listAgentDefinitions: vi.fn(),
 }));
 vi.mock("../../assistant/skills", () => ({
   assistantSkillCatalog: vi.fn(),
+  countAssistantSkills: vi.fn(),
 }));
 vi.mock("../../business-definitions/definitions", () => ({
+  countPublishedDefinitions: vi.fn(),
   listPublishedDefinitions: vi.fn(),
+}));
+vi.mock("../../product-panels/access", async original => ({
+  ...await original<typeof import("../../product-panels/access")>(),
+  countUsableCurrentDefinitions: vi.fn(),
 }));
 vi.mock("../../product-panels/component-catalogue", () => ({
   readPanelComponentCatalogue: vi.fn(),
@@ -101,13 +109,23 @@ function stubOwnerHttp(overrides: Partial<Record<string, () => Response>> = {}) 
   const seenRequests: Array<{ path: string; token: string | null }> = [];
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: Parameters<typeof fetch>[1]) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-    const path = new URL(url).pathname;
+    const { pathname: path, searchParams } = new URL(url);
+    const countOnly = searchParams.get("countOnly") === "true"
+      || (typeof init?.body === "string" && JSON.parse(init.body).countOnly === true);
     const headers = new Headers(init?.headers);
     seenRequests.push({ path, token: headers.get("tk") });
 
     const override = overrides[path];
     if (override) return override();
 
+    if (countOnly) {
+      if (path === "/admin/getMetas") return jsonResponse({ objectTypes: 2, attributes: 2, relationships: 1 });
+      if (path === "/platform/governance/organization") return jsonResponse({ units: 0, positions: 0, grants: 0 });
+      if (path === "/workflow/grants") return jsonResponse({ total: 1, outsideDirectory: 0 });
+      return jsonResponse({ total: path === "/action/queryList" ? 3 : 0 });
+    }
+
+    if (path === "/internal/workbench-management/require") return jsonResponse({});
     if (path === "/admin/getMetas") {
       return jsonResponse({
         classDef: [
@@ -208,6 +226,10 @@ beforeEach(() => {
   vi.mocked(listPublishedDefinitions).mockResolvedValue([]);
   vi.mocked(assistantSkillCatalog).mockResolvedValue({ skills: [] });
   vi.mocked(listAgentDefinitions).mockResolvedValue({ agents: [] });
+  vi.mocked(countPublishedDefinitions).mockResolvedValue(0);
+  vi.mocked(countAssistantSkills).mockResolvedValue(0);
+  vi.mocked(countVisibleAgentDefinitions).mockResolvedValue(0);
+  vi.mocked(countUsableCurrentDefinitions).mockResolvedValue(0);
   vi.mocked(readPanelComponentCatalogue).mockResolvedValue({
     version: "1.0.0",
     digest: "sha256:test",

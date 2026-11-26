@@ -14,7 +14,6 @@ import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -92,7 +91,6 @@ beforeAll(async () => {
   state.schema = `m2_catalogue_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);

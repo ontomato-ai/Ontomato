@@ -1,19 +1,47 @@
 {
   "manifest": {
     "state": {
+      "dataSource": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "external": true,
+        "deepLink": false,
+        "default": "business"
+      },
       "objectType": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:ObjectType"
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:ObjectType",
+            "platform:OntologyType"
+          ]
         },
+        "external": true,
         "deepLink": true
       },
       "relation": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:Relationship"
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:Relationship",
+            "platform:OntologyRelationKind"
+          ]
         },
+        "external": true,
         "deepLink": true
+      },
+      "exploreTypeRequest": {
+        "type": {
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:ObjectType",
+            "platform:OntologyType"
+          ]
+        },
+        "external": true,
+        "deepLink": false
       },
       "search": {
         "type": {
@@ -41,8 +69,11 @@
         "type": {
           "kind": "list",
           "items": {
-            "kind": "object",
-            "objectType": "platform:ObjectType"
+            "kind": "object-union",
+            "objectTypes": [
+              "platform:ObjectType",
+              "platform:OntologyType"
+            ]
           }
         }
       },
@@ -50,349 +81,521 @@
         "type": {
           "kind": "list",
           "items": {
-            "kind": "object",
-            "objectType": "platform:Relationship"
+            "kind": "object-union",
+            "objectTypes": [
+              "platform:Relationship",
+              "platform:OntologyRelationKind"
+            ]
           }
         }
       },
       "draftPathFrom": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:ObjectType"
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:ObjectType",
+            "platform:OntologyType"
+          ]
         }
       },
       "draftPathTo": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:ObjectType"
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:ObjectType",
+            "platform:OntologyType"
+          ]
         }
       },
       "pathFrom": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:ObjectType"
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:ObjectType",
+            "platform:OntologyType"
+          ]
         }
       },
       "pathTo": {
         "type": {
+          "kind": "object-union",
+          "objectTypes": [
+            "platform:ObjectType",
+            "platform:OntologyType"
+          ]
+        }
+      },
+      "objectStatsSource": {
+        "type": {
           "kind": "object",
-          "objectType": "platform:ObjectType"
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "attributeStatsSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "relationStatsSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "objectListSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "relationListSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "relationEdgesSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "graphSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "pathFromPickerSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "pathToPickerSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "objectHeaderSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "objectDescSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "objectSummaryExtraSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "objectAttributesSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "objectRelationsSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "objectReadsSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "objectOperationsSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "relationHeaderSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "relationFromSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "relationNameSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "relationToSource": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        }
+      },
+      "platformObjectType": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
         }
       }
     },
     "members": {
       "objectStats": {
-        "component": "ObjectCount",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "count"
-        },
-        "config": {
-          "labelKey": "ontologyGraph.objectTypes"
-        },
-        "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a"
+        "target": {
+          "fromState": "objectStatsSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a",
+              "builtin-product-og-capability-type-count"
+            ]
+          }
+        }
       },
       "attributeStats": {
-        "component": "ObjectCount",
-        "type": "platform:Attribute",
-        "data": {
-          "rows": "count"
-        },
-        "config": {
-          "labelKey": "ontologyGraph.attributes"
-        },
-        "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2b"
+        "target": {
+          "fromState": "attributeStatsSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2b"
+            ]
+          }
+        }
       },
       "relationStats": {
-        "component": "ObjectCount",
-        "type": "platform:Relationship",
-        "data": {
-          "rows": "count"
-        },
-        "config": {
-          "labelKey": "ontologyGraph.relationTypes"
-        },
-        "id": "builtin-product-cd13e0f3-ab1f-497f-87bd-be1733fadb2a"
+        "target": {
+          "fromState": "relationStatsSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-cd13e0f3-ab1f-497f-87bd-be1733fadb2a",
+              "builtin-product-og-capability-relation-count"
+            ]
+          }
+        }
       },
       "objectList": {
-        "component": "ObjectList",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "list"
+        "target": {
+          "fromState": "objectListSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-26d935eb-01ee-44ba-a389-b5c4f9277740",
+              "builtin-product-og-capability-type-list"
+            ]
+          }
         },
-        "state": {
-          "selected": "objectType",
-          "search": "search"
-        },
-        "config": {
-          "layout": "list",
-          "subtitleField": "className",
-          "searchable": false,
-          "showFooter": false,
-          "showChevron": true,
-          "searchFields": [
-            "label",
-            "primaryKey",
-            "className",
-            "showName",
-            "classDesc",
-            "searchableAttributes"
-          ],
-          "emptyText": ""
-        },
-        "id": "builtin-product-26d935eb-01ee-44ba-a389-b5c4f9277740"
+        "outputs": {
+          "selected": {
+            "state": "objectType"
+          },
+          "search": {
+            "state": "search"
+          }
+        }
       },
       "relationList": {
-        "component": "ObjectList",
-        "type": "platform:Relationship",
-        "data": {
-          "rows": "list"
+        "target": {
+          "fromState": "relationListSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9dc2abcb-1a64-4e1a-b919-0b8f69a02b65",
+              "builtin-product-og-capability-relation-list"
+            ]
+          }
         },
-        "state": {
-          "selected": "relation",
-          "search": "search"
-        },
-        "config": {
-          "layout": "list",
-          "subtitleField": "",
-          "searchable": false,
-          "showFooter": false,
-          "showChevron": true,
-          "searchFields": [
-            "label",
-            "primaryKey",
-            "desc",
-            "fromclass",
-            "toclass"
-          ],
-          "emptyText": ""
-        },
-        "id": "builtin-product-9dc2abcb-1a64-4e1a-b919-0b8f69a02b65"
+        "outputs": {
+          "selected": {
+            "state": "relation"
+          },
+          "search": {
+            "state": "search"
+          }
+        }
+      },
+      "relationEdges": {
+        "target": {
+          "fromState": "relationEdgesSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-og-business-relation-edges",
+              "builtin-product-og-capability-relation-edges"
+            ]
+          }
+        }
       },
       "graph": {
-        "component": "OntologyTypeGraph",
-        "data": {
-          "nodes": {
-            "type": "platform:ObjectType",
-            "read": "list"
-          },
-          "edges": {
-            "type": "platform:Relationship",
-            "read": "list"
+        "target": {
+          "fromState": "graphSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378",
+              "builtin-product-og-capability-graph"
+            ]
           }
         },
-        "state": {
-          "selectedNode": "objectType",
-          "selectedEdge": "relation",
-          "positions": "positions",
-          "highlightedNodes": "highlightedNodes",
-          "highlightedEdges": "highlightedEdges",
-          "pathFrom": "pathFrom",
-          "pathTo": "pathTo"
-        },
-        "config": {
-          "edgeEnds": {
-            "source": "/fromclass",
-            "target": "/toclass"
+        "inputs": {
+          "highlightedNodes": {
+            "state": "highlightedNodes"
           },
-          "nodeCategory": "/className"
+          "highlightedEdges": {
+            "state": "highlightedEdges"
+          },
+          "pathFrom": {
+            "state": "pathFrom"
+          },
+          "pathTo": {
+            "state": "pathTo"
+          }
         },
-        "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"
+        "outputs": {
+          "selectedNode": {
+            "state": "objectType"
+          },
+          "selectedEdge": {
+            "state": "relation"
+          },
+          "positions": {
+            "state": "positions"
+          }
+        }
       },
       "productGraph": {
-        "component": "ProductAssetGraph",
-        "type": "platform:ObjectType",
-        "data": {
-          "graph": "productGraph"
-        },
-        "config": {
-          "expanded": true
-        },
-        "id": "builtin-product-d5a7982b-81f6-4319-b51b-910c3e7f8412"
+        "target": {
+          "projectionId": "builtin-product-og-business-product-graph"
+        }
       },
       "pathFromPicker": {
-        "component": "ReferencePicker",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "list"
+        "target": {
+          "fromState": "pathFromPickerSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-2e8cd535-4d3c-4851-88a4-840db0692aef",
+              "builtin-product-og-capability-path-from"
+            ]
+          }
         },
-        "state": {
-          "selected": "draftPathFrom"
-        },
-        "config": {
-          "placeholderKey": "ontologyGraph.sourceObject",
-          "size": "default",
-          "clearable": true
-        },
-        "id": "builtin-product-2e8cd535-4d3c-4851-88a4-840db0692aef"
+        "outputs": {
+          "selected": {
+            "state": "draftPathFrom"
+          }
+        }
       },
       "pathToPicker": {
-        "component": "ReferencePicker",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "list"
+        "target": {
+          "fromState": "pathToPickerSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-bcac70a2-e318-41b5-8d33-63014541076e",
+              "builtin-product-og-capability-path-to"
+            ]
+          }
         },
-        "state": {
-          "selected": "draftPathTo"
-        },
-        "config": {
-          "placeholderKey": "ontologyGraph.targetObject",
-          "size": "default",
-          "clearable": true
-        },
-        "id": "builtin-product-bcac70a2-e318-41b5-8d33-63014541076e"
+        "outputs": {
+          "selected": {
+            "state": "draftPathTo"
+          }
+        }
       },
       "objectHeader": {
-        "component": "ObjectHeader",
-        "target": "objectType",
-        "data": {
-          "record": "record"
+        "target": {
+          "fromState": "objectHeaderSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-d900ed11-4e30-4d7c-821a-4d08e964e39d",
+              "builtin-product-og-capability-object-header"
+            ]
+          }
         },
-        "config": {
-          "subtitleField": "className"
-        },
-        "id": "builtin-product-d900ed11-4e30-4d7c-821a-4d08e964e39d"
+        "inputs": {
+          "target": {
+            "state": "objectType"
+          }
+        }
       },
       "objectDesc": {
-        "component": "TypedValue",
-        "target": "objectType",
-        "data": {
-          "record": "record"
+        "target": {
+          "fromState": "objectDescSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-ce68a32e-2c46-4b9a-a5ad-dd009a90594f",
+              "builtin-product-og-capability-object-description"
+            ]
+          }
         },
-        "config": {
-          "field": "classDesc",
-          "emptyText": ""
+        "inputs": {
+          "target": {
+            "state": "objectType"
+          }
+        }
+      },
+      "objectSummaryExtra": {
+        "target": {
+          "fromState": "objectSummaryExtraSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-og-capability-object-summary"
+            ]
+          }
         },
-        "id": "builtin-product-ce68a32e-2c46-4b9a-a5ad-dd009a90594f"
+        "inputs": {
+          "target": {
+            "state": "platformObjectType"
+          }
+        }
       },
       "objectAttributes": {
-        "component": "ObjectList",
-        "type": "platform:Attribute",
-        "data": {
-          "rows": {
-            "read": "list",
-            "params": {
-              "className": {
-                "state": "objectType",
-                "field": "primaryKey"
-              }
-            }
+        "target": {
+          "fromState": "objectAttributesSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-0e433496-05dc-41a6-8d22-696811abb84d",
+              "builtin-product-og-capability-object-properties"
+            ]
           }
         },
-        "config": {
-          "layout": "table",
-          "showHeader": false,
-          "showFooter": false,
-          "searchable": false,
-          "emptyText": "ontologyGraph.noAttributes",
-          "columns": [
-            {
-              "key": "label",
-              "subtitleKey": "name"
-            },
-            {
-              "key": "type",
-              "kind": "tag",
-              "width": "96px",
-              "align": "right"
-            }
-          ]
-        },
-        "id": "builtin-product-0e433496-05dc-41a6-8d22-696811abb84d"
+        "inputs": {
+          "className": {
+            "state": "objectType",
+            "field": "primaryKey"
+          },
+          "type": {
+            "state": "platformObjectType",
+            "field": "primaryKey"
+          }
+        }
       },
       "objectRelations": {
-        "component": "ObjectList",
-        "type": "platform:Relationship",
-        "data": {
-          "rows": {
-            "read": "list",
-            "params": {
-              "className": {
-                "state": "objectType",
-                "field": "primaryKey"
-              }
-            }
+        "target": {
+          "fromState": "objectRelationsSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-47e75f93-efeb-4227-9079-b312605fbc00",
+              "builtin-product-og-capability-object-relations"
+            ]
           }
         },
-        "state": {
-          "selected": "relation"
+        "inputs": {
+          "className": {
+            "state": "objectType",
+            "field": "primaryKey"
+          },
+          "type": {
+            "state": "platformObjectType",
+            "field": "primaryKey"
+          }
         },
-        "config": {
-          "layout": "table",
-          "showHeader": false,
-          "showFooter": false,
-          "searchable": false,
-          "emptyText": "ontologyGraph.noRelations",
-          "columns": [
-            {
-              "key": "fromclassLabel",
-              "align": "left"
-            },
-            {
-              "key": "label",
-              "align": "center",
-              "shrink": true
-            },
-            {
-              "key": "toclassLabel",
-              "align": "right"
-            }
-          ]
+        "outputs": {
+          "selected": {
+            "state": "relation"
+          }
+        }
+      },
+      "objectReads": {
+        "target": {
+          "fromState": "objectReadsSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-og-capability-object-reads"
+            ]
+          }
         },
-        "id": "builtin-product-47e75f93-efeb-4227-9079-b312605fbc00"
+        "inputs": {
+          "type": {
+            "state": "platformObjectType",
+            "field": "primaryKey"
+          }
+        }
+      },
+      "objectOperations": {
+        "target": {
+          "fromState": "objectOperationsSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-og-capability-object-operations"
+            ]
+          }
+        },
+        "inputs": {
+          "type": {
+            "state": "platformObjectType",
+            "field": "primaryKey"
+          }
+        }
       },
       "relationHeader": {
-        "component": "ObjectHeader",
-        "target": "relation",
-        "data": {
-          "record": "record"
+        "target": {
+          "fromState": "relationHeaderSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-a19a8a6e-cc18-41b7-bc42-a32cf61b3b6c",
+              "builtin-product-og-capability-relation-header"
+            ]
+          }
         },
-        "config": {
-          "subtitle": ""
-        },
-        "id": "builtin-product-a19a8a6e-cc18-41b7-bc42-a32cf61b3b6c"
+        "inputs": {
+          "target": {
+            "state": "relation"
+          }
+        }
       },
       "relationFrom": {
-        "component": "ObjectRefCard",
-        "target": "relation",
-        "data": {
-          "record": "record"
+        "target": {
+          "fromState": "relationFromSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-e8bef137-dffe-47a0-a9f6-ed8645b8a2ad",
+              "builtin-product-og-capability-relation-source"
+            ]
+          }
         },
-        "config": {
-          "field": "fromObject",
-          "appearance": "button",
-          "buttonType": "default",
-          "buttonSize": "default",
-          "compact": true
-        },
-        "id": "builtin-product-e8bef137-dffe-47a0-a9f6-ed8645b8a2ad"
+        "inputs": {
+          "target": {
+            "state": "relation"
+          }
+        }
       },
       "relationName": {
-        "component": "TypedValue",
-        "target": "relation",
-        "data": {
-          "record": "record"
+        "target": {
+          "fromState": "relationNameSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-cc69b26b-9bc4-49e0-9400-66c5584e7606",
+              "builtin-product-og-capability-relation-name"
+            ]
+          }
         },
-        "config": {
-          "field": "label",
-          "emptyText": ""
-        },
-        "id": "builtin-product-cc69b26b-9bc4-49e0-9400-66c5584e7606"
+        "inputs": {
+          "target": {
+            "state": "relation"
+          }
+        }
       },
       "relationTo": {
-        "component": "ObjectRefCard",
-        "target": "relation",
-        "data": {
-          "record": "record"
+        "target": {
+          "fromState": "relationToSource",
+          "candidates": {
+            "projectionIds": [
+              "builtin-product-9067cae3-cf39-4263-bbea-61f92c6af4f9",
+              "builtin-product-og-capability-relation-targets"
+            ]
+          }
         },
-        "config": {
-          "field": "toObject",
-          "appearance": "button",
-          "buttonType": "default",
-          "buttonSize": "default",
-          "compact": true
-        },
-        "id": "builtin-product-9067cae3-cf39-4263-bbea-61f92c6af4f9"
+        "inputs": {
+          "target": {
+            "state": "relation"
+          }
+        }
       }
     }
   },
@@ -402,8 +605,6 @@
         "panel.name": "本体图谱",
         "ontologyGraph.description": "探索本体中对象类型、属性与关系的结构",
         "ontologyGraph.statsLabel": "本体资源统计",
-        "ontologyGraph.productRelationGraph": "产品关系图谱",
-        "ontologyGraph.productGraphTitle": "产品资产关系图谱",
         "ontologyGraph.refresh": "刷新",
         "ontologyGraph.searchPlaceholder": "搜索 本体模型",
         "ontologyGraph.filterByType": "按类型筛选",
@@ -424,8 +625,17 @@
         "ontologyGraph.pathFound": "已找到 {count} 跳路径",
         "ontologyGraph.pathNotFound": "在当前可见范围内未找到可达路径",
         "ontologyGraph.goModeling": "去建模",
+        "ontologyGraph.viewInstances": "浏览该类实例",
+        "ontologyGraph.viewDirectory": "查看实例目录",
         "ontologyGraph.noAttributes": "暂无属性",
         "ontologyGraph.noRelations": "暂无关联关系",
+        "ontologyGraph.noReads": "该类型没有登记具名读法",
+        "ontologyGraph.noOperations": "该类型没有登记可发起的操作",
+        "ontologyGraph.reads": "具名读法",
+        "ontologyGraph.operations": "可发起的操作",
+        "ontologyGraph.noneDash": "—",
+        "ontologyGraph.optionalYes": "可选",
+        "ontologyGraph.optionalNo": "必填",
         "ontologyGraph.selectGraphElement": "选择一个图谱元素",
         "ontologyGraph.inspectorEmptyDesc": "对象属性、业务描述和关联关系将在这里展示。",
         "ontologyGraph.objectMissing": "对象类型不存在或已删除",
@@ -440,14 +650,14 @@
         "ontologyGraph.readFailedFallback": "暂时无法读取该元素的最新内容，请重试。",
         "ontologyGraph.navigationFailed": "暂时无法打开目标页面，请稍后重试。",
         "ontologyGraph.retry": "重试",
-        "ontologyGraph.clearSelection": "清除选择"
+        "ontologyGraph.clearSelection": "清除选择",
+        "ontologyGraph.productRelationGraph": "产品关系图谱",
+        "ontologyGraph.productGraphTitle": "产品资产关系图谱"
       },
       "en": {
         "panel.name": "Ontology graph",
         "ontologyGraph.description": "Explore object types, attributes, and relationships in the ontology",
         "ontologyGraph.statsLabel": "Ontology summary",
-        "ontologyGraph.productRelationGraph": "Product relation graph",
-        "ontologyGraph.productGraphTitle": "Product asset relationship graph",
         "ontologyGraph.refresh": "Refresh",
         "ontologyGraph.searchPlaceholder": "Search ontology model",
         "ontologyGraph.filterByType": "Filter by type",
@@ -468,8 +678,17 @@
         "ontologyGraph.pathFound": "Found a {count}-hop path",
         "ontologyGraph.pathNotFound": "No reachable path found in the current visible graph",
         "ontologyGraph.goModeling": "Open modeling",
+        "ontologyGraph.viewInstances": "Browse instances",
+        "ontologyGraph.viewDirectory": "Open instance directory",
         "ontologyGraph.noAttributes": "No attributes",
         "ontologyGraph.noRelations": "No related relations",
+        "ontologyGraph.noReads": "This type registers no named read",
+        "ontologyGraph.noOperations": "This type registers no operation",
+        "ontologyGraph.reads": "Named reads",
+        "ontologyGraph.operations": "Operations",
+        "ontologyGraph.noneDash": "—",
+        "ontologyGraph.optionalYes": "Optional",
+        "ontologyGraph.optionalNo": "Required",
         "ontologyGraph.selectGraphElement": "Select a graph element",
         "ontologyGraph.inspectorEmptyDesc": "Object attributes, business description, and relations will appear here.",
         "ontologyGraph.objectMissing": "Object type does not exist or has been deleted",
@@ -484,51 +703,9 @@
         "ontologyGraph.readFailedFallback": "Unable to read the latest details for this element. Please retry.",
         "ontologyGraph.navigationFailed": "Unable to open the target page right now. Please try again.",
         "ontologyGraph.retry": "Retry",
-        "ontologyGraph.clearSelection": "Clear selection"
-      },
-      "en-US": {
-        "panel.name": "Ontology graph",
-        "ontologyGraph.description": "Explore object types, attributes, and relationships in the ontology",
-        "ontologyGraph.statsLabel": "Ontology summary",
+        "ontologyGraph.clearSelection": "Clear selection",
         "ontologyGraph.productRelationGraph": "Product relation graph",
-        "ontologyGraph.productGraphTitle": "Product asset relationship graph",
-        "ontologyGraph.refresh": "Refresh",
-        "ontologyGraph.searchPlaceholder": "Search ontology model",
-        "ontologyGraph.filterByType": "Filter by type",
-        "ontologyGraph.filterAll": "All",
-        "ontologyGraph.objectTypes": "Object types",
-        "ontologyGraph.attributes": "Attributes",
-        "ontologyGraph.relationTypes": "Relation types",
-        "ontologyGraph.relatedRelations": "Relations",
-        "ontologyGraph.noMatchingResources": "No matching resources found",
-        "ontologyGraph.noObjects": "No object types yet",
-        "ontologyGraph.createObjectsFirst": "Create object types in the Object Types page first.",
-        "ontologyGraph.graphHint": "Click a node to inspect details, drag to adjust the layout",
-        "ontologyGraph.pathFinder": "Path finder",
-        "ontologyGraph.pathFinderDesc": "Find the shortest path along relation direction between two object types",
-        "ontologyGraph.sourceObject": "Source object",
-        "ontologyGraph.targetObject": "Target object",
-        "ontologyGraph.findPath": "Find path",
-        "ontologyGraph.pathFound": "Found a {count}-hop path",
-        "ontologyGraph.pathNotFound": "No reachable path found in the current visible graph",
-        "ontologyGraph.goModeling": "Open modeling",
-        "ontologyGraph.noAttributes": "No attributes",
-        "ontologyGraph.noRelations": "No related relations",
-        "ontologyGraph.selectGraphElement": "Select a graph element",
-        "ontologyGraph.inspectorEmptyDesc": "Object attributes, business description, and relations will appear here.",
-        "ontologyGraph.objectMissing": "Object type does not exist or has been deleted",
-        "ontologyGraph.relationMissing": "Relation type does not exist or has been deleted",
-        "ontologyGraph.objectForbiddenTitle": "No permission to view this object type",
-        "ontologyGraph.relationForbiddenTitle": "No permission to view this relation type",
-        "ontologyGraph.forbiddenDesc": "Your account does not have permission to read this element.",
-        "ontologyGraph.graphReadFailedTitle": "Failed to load ontology graph",
-        "ontologyGraph.graphReadFailedDesc": "Unable to read the ontology graph right now. Please try again.",
-        "ontologyGraph.objectReadFailedTitle": "Failed to load object type",
-        "ontologyGraph.relationReadFailedTitle": "Failed to load relation type",
-        "ontologyGraph.readFailedFallback": "Unable to read the latest details for this element. Please retry.",
-        "ontologyGraph.navigationFailed": "Unable to open the target page right now. Please try again.",
-        "ontologyGraph.retry": "Retry",
-        "ontologyGraph.clearSelection": "Clear selection"
+        "ontologyGraph.productGraphTitle": "Product asset relationship graph"
       }
     }
   }

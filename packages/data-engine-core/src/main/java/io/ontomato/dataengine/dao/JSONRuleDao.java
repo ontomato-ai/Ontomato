@@ -83,6 +83,31 @@ public class JSONRuleDao {
 				domainId, JSON.toJSONString(jsonRule, Feature.WriteMapNullValue));
 	}
 
+	public Map<String, Integer> countMetadata(String domainId) {
+		return jdbcTemplate.query("""
+				WITH rule AS (
+					SELECT model.*
+					FROM json_rule
+					CROSS JOIN LATERAL jsonb_to_record(content::jsonb) AS model("classDef" jsonb, relationship_rule jsonb)
+					WHERE id = ? AND content IS NOT NULL
+				), object_types AS (
+					SELECT item.value
+					FROM rule CROSS JOIN LATERAL jsonb_array_elements(rule."classDef") AS item(value)
+					WHERE jsonb_typeof(item.value->'className') = 'string' AND item.value->>'className' ~ '[^[:space:]]'
+				)
+				SELECT (SELECT count(*) FROM object_types) AS object_types,
+					(SELECT count(*) FROM object_types o
+						CROSS JOIN LATERAL jsonb_array_elements(o.value->'attrs') AS attr(value)
+						WHERE jsonb_typeof(attr.value->'name') = 'string' AND attr.value->>'name' ~ '[^[:space:]]') AS attributes,
+					(SELECT count(*) FROM jsonb_each(rule.relationship_rule) AS rel(key, value)
+						WHERE jsonb_typeof(rel.value) = 'object' AND (rel.key ~ '[^[:space:]]' OR
+							(jsonb_typeof(rel.value->'relationship') = 'string' AND rel.value->>'relationship' ~ '[^[:space:]]')))
+						AS relationships
+				FROM rule
+				""", rs -> rs.next() ? Map.of("objectTypes", rs.getInt("object_types"),
+				"attributes", rs.getInt("attributes"), "relationships", rs.getInt("relationships")) : null, domainId);
+	}
+
 	public Map<String, Object> query(String domainId) {
 		String content;
 		try {

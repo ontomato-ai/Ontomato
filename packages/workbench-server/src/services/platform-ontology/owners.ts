@@ -1,5 +1,6 @@
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
+import { z } from "zod";
 import {
   domainProductGrantsResponseSchema,
   type DomainProductGrantEntry,
@@ -18,22 +19,37 @@ import { config } from "../../config/application";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { assertManagement } from "../../identity/management";
 import { getPostgresPool } from "../../infrastructure/postgres";
-import { currentProductRows, type CurrentProductRow } from "../../infrastructure/product-current";
+import { currentProductRows } from "../../infrastructure/product-current";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { AuthFailedError, BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { readAuthorizationGraphFacts, type AuthorizationGraphFacts } from "../governance/policy-access";
 import { HttpError } from "../../utils/errors";
-import { listAgentDefinitions } from "../assistant/definitions";
-import { assistantSkillCatalog } from "../assistant/skills";
-import { listPublishedDefinitions } from "../business-definitions/definitions";
+import { countVisibleAgentDefinitions, listAgentDefinitions } from "../assistant/definitions";
+import { assistantSkillCatalog, countAssistantSkills } from "../assistant/skills";
+import { countPublishedDefinitions, listPublishedDefinitions } from "../business-definitions/definitions";
 import type { ProductOwner } from "../product-governance/grants";
-import { currentDefinitionAccess } from "../product-panels/access";
+import { countUsableCurrentDefinitions, usableCurrentDefinitionIds } from "../product-panels/access";
 import { readPanelComponentCatalogue } from "../product-panels/component-catalogue";
 import { listObjectDetailPanelMappings } from "../product-panels/object-detail";
 
+import {
+  ACTION, AGENT_DEFINITION, APPLICATION, ATTRIBUTE, BUSINESS_KNOWLEDGE, DEFINITION, FUNCTION, METRIC_VIEW,
+  OBJECT_TYPE, ORG_GRANT, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL, PRODUCT_PROJECTION,
+  RELATIONSHIP, ROLE, SDK_COMPONENT, SKILL, TRIGGER, USER, WORKFLOW,
+} from "./schema";
+
 const logger = createLogger("platform-ontology-owners");
+const countSchema = z.number().int().nonnegative();
+const totalSchema = z.object({ total: countSchema });
+const metaCountsSchema = z.object({ objectTypes: countSchema, attributes: countSchema, relationships: countSchema });
+const organizationCountsSchema = z.object({ units: countSchema, positions: countSchema, grants: countSchema });
+const grantRoleCountsSchema = totalSchema.extend({ outsideDirectory: countSchema });
+
+function ownerCountField<K extends string>(result: OwnerReadResult<Record<K, number>>, field: K): OwnerReadResult<number> {
+  return result.ok ? { ok: true, data: result.data[field] } : result;
+}
 
 export type OwnerFailureStatus = "refused" | "failed";
 
@@ -374,6 +390,74 @@ export class PlatformOntologyOwnerReaders {
       { headers: this.headers, retries: 1, timeoutMs: 30_000 },
     );
     return this.parseDataEngineResponse(endpoint, response.text);
+  }
+
+  private postCounts<T>(endpoint: string, schema: z.ZodType<T>): Promise<OwnerReadResult<T>> {
+    return this.memo(`java:${endpoint}:count`, async () => schema.parse(
+      await this.postDataEngine(endpoint, { countOnly: true }),
+    ));
+  }
+
+  private async postTotal(endpoint: string): Promise<OwnerReadResult<number>> {
+    return ownerCountField(await this.postCounts(endpoint, totalSchema), "total");
+  }
+
+  private async countRoles(): Promise<OwnerReadResult<number>> {
+    const [directory, grants] = await Promise.all([
+      this.postTotal("/workflow/platform-access"),
+      this.postCounts("/workflow/grants", grantRoleCountsSchema),
+    ]);
+    if (directory.ok) return { ok: true, data: directory.data + (grants.ok ? grants.data.outsideDirectory : 0) };
+    if (grants.ok && grants.data.total > 0) return ownerCountField(grants, "total");
+    return directory;
+  }
+
+  count(type: string): Promise<OwnerReadResult<number> | { ok: false; status: "unavailable"; reason: string }> {
+    switch (type) {
+      case OBJECT_TYPE:
+      case ATTRIBUTE:
+      case RELATIONSHIP:
+        return this.postCounts("/admin/getMetas", metaCountsSchema).then(result => ownerCountField(result, ({
+          [OBJECT_TYPE]: "objectTypes", [ATTRIBUTE]: "attributes", [RELATIONSHIP]: "relationships",
+        } as const)[type]));
+      case ORG_UNIT:
+      case ORG_POSITION:
+      case ORG_GRANT:
+        return this.postCounts("/platform/governance/organization", organizationCountsSchema).then(result => ownerCountField(result, ({
+          [ORG_UNIT]: "units", [ORG_POSITION]: "positions", [ORG_GRANT]: "grants",
+        } as const)[type]));
+      case ACTION: return this.postTotal("/action/queryList");
+      case METRIC_VIEW: return this.postTotal("/metricView/queryList");
+      case FUNCTION: return this.postTotal("/function/queryList");
+      case TRIGGER: return this.postTotal("/trigger/queryList");
+      case WORKFLOW: return this.postTotal("/workflow/query");
+      case USER: return this.postTotal("/workflow/subjects");
+      case PERMISSION_POLICY: return this.postTotal("/platform/governance/policies");
+      case BUSINESS_KNOWLEDGE: return this.postTotal("/admin/getBussinessKnowledge");
+      case ROLE: return this.countRoles();
+      case APPLICATION:
+        return this.memo("java:/platform/applications:count", async () => totalSchema.parse(
+          await this.getDataEngine("/platform/applications?purpose=navigation&countOnly=true"),
+        ).total);
+      case DEFINITION:
+        return this.memo("node:business-definitions:count", () => countPublishedDefinitions(this.owner));
+      case AGENT_DEFINITION:
+        return this.memo("node:agent-definitions:count", () => countVisibleAgentDefinitions(this.owner, this.credentials));
+      case SKILL:
+        return this.memo("node:assistant-skills:count", async () => {
+          await assertManagement(workbenchManagement.skillLibraryRead, this.owner, this.credentials);
+          return countAssistantSkills(this.owner.domainId, this.credentials);
+        });
+      case SDK_COMPONENT:
+        return this.memo("node:sdk-components:count", async () => (await readPanelComponentCatalogue()).components.size);
+      case PRODUCT_PANEL:
+      case PRODUCT_PROJECTION: {
+        const kind = type === PRODUCT_PANEL ? "panel" : "projection";
+        return this.memo(`node:product-${kind}:count`, () => countUsableCurrentDefinitions(kind, this.owner.domainId, this.credentials));
+      }
+      default:
+        return Promise.resolve({ ok: false, status: "unavailable", reason: `No owner adapter registered for ${type}` });
+    }
   }
 
   ontologyMeta(): Promise<OwnerReadResult<RawOntologyMeta>> {
@@ -807,15 +891,8 @@ export class PlatformOntologyOwnerReaders {
 
   grantedUseIds(): Promise<OwnerReadResult<ReadonlySet<string>>> {
     return this.memo("node:product-definition-use", async () => {
-      const domainId = this.owner.domainId;
-      const usable = await Promise.all((["panel", "projection"] as const).map(async kind => {
-        const { rows } = await getPostgresPool().query<Pick<CurrentProductRow, "id" | "domainId" | "ownerId">>(
-          `SELECT id,domain_id AS "domainId",owner_id AS "ownerId" FROM ${currentProductRows(kind)} AS definitions
-           WHERE domain_id IS NULL OR domain_id=$1`, [domainId],
-        );
-        const { decisions } = await currentDefinitionAccess(kind, rows, domainId, this.credentials, false);
-        return rows.filter((_, index) => decisions[index].allowed).map(({ id }) => id);
-      }));
+      const usable = await Promise.all((["panel", "projection"] as const)
+        .map(kind => usableCurrentDefinitionIds(kind, this.owner.domainId, this.credentials)));
       return new Set(usable.flat());
     });
   }

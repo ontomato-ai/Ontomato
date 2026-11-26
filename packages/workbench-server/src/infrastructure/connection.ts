@@ -1,9 +1,8 @@
-import type { RegisterProductAssetGrant } from "./postgres-migrations/20261125-product-asset-grants/migration";
 import { initializePostgres, closePostgres } from "./postgres";
 let initialized = false;
-export async function initializeConnection(registerProductAssetGrant: RegisterProductAssetGrant) {
+export async function initializeConnection() {
   if (!initialized) {
-    await initializePostgres(registerProductAssetGrant);
+    await initializePostgres();
     initialized = true;
   }
 }

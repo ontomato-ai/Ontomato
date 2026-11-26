@@ -65,7 +65,7 @@ function openSkillZip(bytes: Buffer) {
   return { id, manifest: parsed.manifest, entries, prefix };
 }
 class SkillManager {
-  private info(skill: SkillEntry, locale?: string): SkillInfo {
+  describeSkill(skill: SkillEntry, locale?: string): SkillInfo {
     const labelPath = publicSkillLabelsPath();
     const isPublic = skill.source.kind === "public";
     const labels = isPublic && labelPath && resolveLocale(locale).toLowerCase().startsWith("zh")
@@ -76,7 +76,7 @@ class SkillManager {
       title: labels?.title ?? skill.skill.name, description: labels?.description ?? skill.manifest.description };
   }
   describeSkills(entries: readonly SkillEntry[], locale?: string): SkillInfo[] {
-    return entries.map((entry) => this.info(entry, locale));
+    return entries.map((entry) => this.describeSkill(entry, locale));
   }
   async getAllSkills(domainId: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
     await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);
@@ -84,7 +84,7 @@ class SkillManager {
     return { skills: this.describeSkills(registry.getSkills(), credentials.locale), ...(diagnostics && { diagnostics }) };
   }
   async getSkillInfo(domainId: string, id: string, credentials: AssistantCredentials) {
-    return this.info(await this.requireReadableSkill(domainId, id, credentials), credentials.locale);
+    return this.describeSkill(await this.requireReadableSkill(domainId, id, credentials), credentials.locale);
   }
   async requireReadableSkill(domainId: string, id: string, credentials: AssistantCredentials) {
     await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);
@@ -122,6 +122,18 @@ class SkillManager {
   }
   async getDeleteSkillRestriction(domainId: string, id: string, credentials: AssistantCredentials) {
     return skillWriteRestriction(await this.requireSkillForChange(domainId, id, credentials));
+  }
+  async getDeleteSkillRestrictions(domainId: string, ids: readonly string[], credentials: AssistantCredentials) {
+    await assertManagement(workbenchManagement.skillLibraryChange, { domainId }, credentials);
+    const view = await readSkillView(domainId, credentials);
+    return new Map(ids.map(id => {
+      try {
+        return [id, skillWriteRestriction(view.requireSkillById(id))] as const;
+      } catch (error) {
+        if (error instanceof HttpError && error.code === "SKILL_NOT_FOUND") return [id, null] as const;
+        throw error;
+      }
+    }));
   }
   async getDeleteSkillReferences(domainId: string, id: string, access: ReferenceAccess) {
     const skill = await this.requireSkillForChange(domainId, id, access.credentials);
@@ -172,7 +184,7 @@ class SkillManager {
         if (previousPath) fs.renameSync(backup, destination);
         throw error;
       }
-      return this.info({ skill, manifest, source: { kind: "domain", path: destination },
+      return this.describeSkill({ skill, manifest, source: { kind: "domain", path: destination },
         provide: () => readSkillPackage(destination, skill) });
     } finally {
       try { fs.rmSync(stage, { recursive: true, force: true }); }
@@ -218,7 +230,7 @@ class SkillManager {
     const existing = (await readSkillView(domainId, credentials)).registry.getSkillById(id);
     if (!existing) return null;
     requireWritable(existing);
-    return this.info(existing, credentials.locale);
+    return this.describeSkill(existing, credentials.locale);
   }
   async importSkill(domainId: string, bytes: Buffer, credentials: AssistantCredentials, overwrite = false) {
     return withDomainSkills(domainId, async () => {

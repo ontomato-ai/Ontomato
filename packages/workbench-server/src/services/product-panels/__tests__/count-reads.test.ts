@@ -125,16 +125,14 @@ describe("platform count reads", () => {
     { type: OBJECT_TYPE, path: "/ontology/model/object-types", rows: [objectType, { ...objectType, className: "Site" }] },
     { type: ATTRIBUTE, path: "/ontology/model/attributes", rows: [attribute] },
     { type: RELATIONSHIP, path: "/ontology/model/relationships", rows: [relationship] },
-    { type: WORKFLOW, path: "/workflow/query", rows: [{ id: "w", name: "Restock" }], post: true },
-  ])("$type counts only the records returned to the current viewer", async ({ type, path, rows, post }) => {
+  ])("$type counts only the records returned to the current viewer", async ({ type, path, rows }) => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
       expect(new URL(url).pathname).toBe(path);
-      expect(init.method).toBe(post ? "POST" : "GET");
-      if (post) expect(init.body).toBe("{}");
+      expect(init.method).toBe("GET");
       const headers = new Headers(init.headers);
       expect(headers.get("tk")).toBe(viewer.token);
       expect(headers.get("x-scope")).toBe(viewer.headers["x-scope"]);
-      return Response.json(post ? { success: true, data: rows } : rows);
+      return Response.json(rows);
     }));
     await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total: rows.length } });
   });
@@ -301,6 +299,43 @@ describe("platform count reads", () => {
   it("returns forbidden when Java denies the viewer", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "FORBIDDEN" } }, { status: 403 })));
     await expect(readCount(OBJECT_TYPE)).resolves.toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
+  });
+
+  it("counts graph agent definitions in the database after deciding VIEW from access facts", async () => {
+    const { countVisibleAgentDefinitions } = await import("../../assistant/definitions");
+    const visible = "10000000-0000-4000-a000-000000000001";
+    const hidden = "10000000-0000-4000-a000-000000000002";
+    mocks.query.mockResolvedValueOnce({ rows: [
+      { id: visible, domain_id: owner.domainId, owner_id: "author" },
+      { id: hidden, domain_id: owner.domainId, owner_id: "another-author" },
+    ] }).mockResolvedValueOnce({ rows: [{ total: 1 }] });
+    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
+    const decide = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/authorization/objects/decide-batch");
+      expect(JSON.parse(String(init.body)).requests).toMatchObject([
+        { target: { id: visible }, verb: "VIEW" }, { target: { id: hidden }, verb: "VIEW" },
+      ]);
+      return Response.json({ decisions: [
+        { allowed: true }, { allowed: false, code: "FORBIDDEN", reason: "View permission required" },
+      ] });
+    });
+    vi.stubGlobal("fetch", decide);
+    await expect(countVisibleAgentDefinitions(owner, viewer)).resolves.toBe(1);
+    expect(mocks.query).toHaveBeenNthCalledWith(1, expect.stringMatching(/^SELECT id, domain_id, owner_id FROM/), [owner.domainId]);
+    expect(mocks.query).toHaveBeenNthCalledWith(2, expect.stringMatching(/^SELECT COUNT\(\*\)/), [owner.domainId, [visible]]);
+    expect(decide).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts workflows through the owner without loading the list", async () => {
+    const ownerRead = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/workflow/query");
+      expect(JSON.parse(String(init.body))).toEqual({ countOnly: true });
+      expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
+      return Response.json({ success: true, data: { total: 3 } });
+    });
+    vi.stubGlobal("fetch", ownerRead);
+    await expect(readCount(WORKFLOW)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
+    expect(ownerRead).toHaveBeenCalledTimes(1);
   });
 
   it("returns an error when the workflow owner cannot read the count", async () => {

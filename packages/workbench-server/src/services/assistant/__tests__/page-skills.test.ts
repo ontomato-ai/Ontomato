@@ -1,15 +1,16 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { PageSkillEntrance, PageSkillsProjection } from "@ontomato/contracts/page-skills";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
 import type { DomainSkillRegistryManager, SkillRegistryManager } from "../../../core/skills/registry/manager";
+import type { SkillEntry } from "../../../core/skills/types";
 import type { AgentRow } from "../store";
 
 type PageSkillRegistry = Pick<SkillRegistryManager, "getSkills" | "getSkillByRef" | "failedManifests">;
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), agents: vi.fn(), appBuilder: vi.fn(), builderAccess: vi.fn(),
-  publishGovernance: vi.fn(), managed: [] as { skill: RuntimeSkillRef; title: string; description: string }[],
+  publishGovernance: vi.fn(), managed: [] as SkillEntry[],
   usableIds: [] as string[],
   allowed: true,
 }));
@@ -24,10 +25,13 @@ vi.mock("../../../core/skills/manifest", () => ({
 vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: {
   forDomain: async (...[, admit]: Parameters<DomainSkillRegistryManager["forDomain"]>): Promise<PageSkillRegistry> => {
     await admit?.([], []);
-    return { getSkills: () => [], getSkillByRef: () => null, failedManifests: new Map() };
+    return { getSkills: () => mocks.managed, failedManifests: new Map(),
+      getSkillByRef: ref => mocks.managed.find(entry => runtimeSkillKey(entry.skill) === runtimeSkillKey(ref)) ?? null };
   },
 } }));
-vi.mock("../../skills/skill-manager", () => ({ skillManager: { describeSkills: () => mocks.managed } }));
+vi.mock("../../skills/skill-manager", () => ({ skillManager: {
+  describeSkill: ({ skill, manifest }: SkillEntry) => ({ skill, title: skill.name, description: manifest.description }),
+} }));
 vi.mock("../../agent-runtime/skills", () => ({
   workbenchBuiltinSkillRoot: () => "/resources",
   publishSkill: vi.fn(async (_root: string, skill: RuntimeSkillRef) => ({ skill, digest: "a".repeat(64) })),
@@ -80,7 +84,8 @@ beforeEach(() => {
 });
 
 it("removes denied page identities while preserving non-page skills, including the same name in another namespace", async () => {
-  mocks.managed.push({ skill: sameName, title: sameName.name, description: "Available from a different provider" });
+  mocks.managed.push({ skill: sameName, manifest: { name: sameName.name, description: "Available from a different provider" },
+    source: { kind: "provider", providerId: "test", providerName: "Test" }, provide: vi.fn() });
   current = projection(false);
   const denied = await readAssistantSkillView(owner.domainId, credentials);
   for (const kind of ["regular", "custom"])

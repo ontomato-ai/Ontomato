@@ -46,7 +46,7 @@ import { searchProductGrantPrincipals, type ProductOwner } from "../product-gove
 import { readHomePanel } from "../platform-home/service";
 import { platformHomeStore } from "../platform-home/store";
 import {
-  currentProductGrants, currentProductUsedBy, listCurrentProducts, listProjectionFilterFacets, listUnavailablePanels,
+  currentProductGrants, currentProductUsedBy, listCurrentProductNames, listCurrentProductRecords, listCurrentProducts, listProjectionFilterFacets, listUnavailablePanels,
   readCataloguePanel,
 } from "./catalog";
 import { readAuthorComponentCatalogue } from "./component-catalogue";
@@ -487,21 +487,14 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
     },
     async memberRows(primaryKey: string): Promise<PanelRecord[]> {
       const panel = await rawRecord(primaryKey);
-      let projectionsById = new Map<string, { name: string; description: string; componentId?: string }>();
-      let panelNames = new Map<string, string>();
-      try {
-        const [projections, panels] = await Promise.all([
-          listCurrentProducts(owner, viewer, "projection", { q: "", scope: "all", sort: "name", limit: 100 }),
-          listCurrentProducts(owner, viewer, "panel", { q: "", scope: "all", sort: "name", limit: 100 }),
-        ]);
-        projectionsById = new Map(projections.items.map(item => [
-          item.id,
-          { name: item.name || item.id, description: item.description, componentId: item.componentId },
-        ]));
-        panelNames = new Map(panels.items.map(item => [item.id, item.name || item.id]));
-      } catch {
-        // Keep IDs as labels when auxiliary lookup is unavailable.
-      }
+      const [projections, panelNames] = await Promise.all([
+        listCurrentProductRecords(owner, viewer, "projection"),
+        listCurrentProductNames(owner, viewer, "panel"),
+      ]);
+      const projectionsById = new Map([...projections].map(([id, item]) => [
+        id,
+        { name: item.name || id, description: item.description, componentId: item.componentId },
+      ] as const));
       const fieldLabels = {
         slot: appWord("memberSlot"),
         kindLabel: appWord("memberKind"),
@@ -671,18 +664,10 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
         })),
       ]);
       const usage = productPanelUsedBySchema.parse(rawUsage);
-      let projectionNames = new Map<string, string>();
-      let panelNames = new Map<string, string>();
-      try {
-        const [projections, panels] = await Promise.all([
-          listCurrentProducts(owner, viewer, "projection", { q: "", scope: "all", sort: "name", limit: 100 }),
-          listCurrentProducts(owner, viewer, "panel", { q: "", scope: "all", sort: "name", limit: 100 }),
-        ]);
-        projectionNames = new Map(projections.items.map(item => [item.id, item.name || item.id]));
-        panelNames = new Map(panels.items.map(item => [item.id, item.name || item.id]));
-      } catch {
-        // Keep IDs as labels when auxiliary lookup is unavailable.
-      }
+      const [projectionNames, panelNames] = await Promise.all([
+        listCurrentProductNames(owner, viewer, "projection"),
+        listCurrentProductNames(owner, viewer, "panel"),
+      ]);
       const graph = createAssetGraph();
       const center = assetGraphNode("panel", panel);
       graph.addNode(center);

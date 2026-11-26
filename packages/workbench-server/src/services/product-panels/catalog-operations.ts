@@ -311,7 +311,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     inputSchema: z.ZodType<Input, z.ZodTypeDef, unknown>,
     resultSchema: z.ZodTypeAny,
     run: (actor: PanelOperationHost["executor"], primaryKey: string, input: Input) => Promise<{ primaryKey: string; data: OutcomeData }>,
-    extra?: Pick<PanelWriteServerOperation, "unavailable" | "inspectImpact">,
+    extra?: Pick<PanelWriteServerOperation, "unavailable" | "unavailableBatch" | "inspectImpact">,
   ): PanelWriteServerOperation {
     const handlerRef = `${collection}.${name}`;
     return {
@@ -490,7 +490,7 @@ function applicationAction<Input extends Record<string, unknown>>(
   name: "delete" | "grant" | "share" | "addEntry" | "updateEntry" | "deleteEntry",
   inputSchema: z.ZodType<Input>,
   run: (actor: PanelOperationHost["executor"], id: string, input: Input) => Promise<void>,
-  extra?: Pick<PanelWriteServerOperation, "unavailable" | "inspectImpact">,
+  extra?: Pick<PanelWriteServerOperation, "unavailable" | "unavailableBatch" | "inspectImpact">,
 ): PanelWriteServerOperation {
   const handlerRef = `applications.${name}`;
   return {
@@ -651,6 +651,16 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
           // while isolating sibling operations on the same projection from this failure.
           return { reason: tForLocale(locale, "panels.productCatalog.application.availabilityUnavailable") };
         }
+      },
+      async unavailableBatch(host, targets) {
+        const locale = host.locale ?? host.initiator.credentials.locale;
+        const reasons = new Map<string, { reason: string }>();
+        for (const { rowKey, row } of targets) {
+          if (row!.fields.canMaintain !== true) {
+            reasons.set(rowKey, { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") });
+          }
+        }
+        return reasons;
       },
     },
   ),

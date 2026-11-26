@@ -14,7 +14,6 @@ beforeEach(() => {
   mountedApps = [];
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     requests.push({ url, headers: init.headers as Record<string, string> });
-    if (url.endsWith("/product-assets/counts")) return new Response(JSON.stringify({ counts: { dashboard: 2, report: 1 } }), { status });
     if (url.endsWith("/workflow/query")) return new Response(JSON.stringify({ success: true, data: [{ id: "wf-1" }, { id: "wf-2" }] }), { status });
     if (url.endsWith("/trigger/queryList")) return new Response(JSON.stringify({ success: true, data: [{ id: "tr-1" }] }), { status });
     return new Response(JSON.stringify({ success: true, data: [] }), { status });

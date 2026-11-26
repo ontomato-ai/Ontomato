@@ -25,6 +25,11 @@ description: Build an Ontomato application panel from declared read functions, o
      `presentation`/`groups`), then standard Vue slots (`#cell-<key>`, `#actions`, `#row-detail`, `#field-<dotPath>`)
      with a slot-only domain component in `manifest.components` or nested `<projection :inputs="{ target: ref }">`, and
      author a dedicated component only as a last resort.
+   - **Write a member's values in their one place**: its fixed configuration in the member's `config`, and the values
+     that follow the page as `:values` where the member is placed. `:inputs` carries only the ports the catalogue lists
+     as inputs, and a placement that carries it is drawn as an instance of its own (a row's detail, an array item) —
+     it does not share the member's registration, form draft or outputs with the rest of the panel. See
+     [where a member's value is written](FIELDS.md#where-a-members-value-is-written).
    - **Logic belongs to the capability layer**: calculations and business judgments come from MetricViews (reads),
      Actions (writes), or platform built-in reads. Base components may only fill already-provided numbers into a fixed
      sentence template (`RecordTemplate`), map raw values with exact-match `valueMap`, or do local text matching on a

@@ -20,7 +20,6 @@ import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-depend
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
@@ -214,7 +213,6 @@ beforeAll(async () => {
   state.schema = `ontology_model_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "ontology-model-panel-"));
   await writeBundledAppSdkFixture(contentRoot);

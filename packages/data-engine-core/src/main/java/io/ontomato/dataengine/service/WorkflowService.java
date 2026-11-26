@@ -15,6 +15,8 @@ public interface WorkflowService {
 
     List<Workflow> queryList(String status, String domainId);
 
+    long count(String id, String status, String domainId);
+
     /**
      * Make the workflow's current steps effective: freeze them as a new version, write its grants, and
      * append the activation event.

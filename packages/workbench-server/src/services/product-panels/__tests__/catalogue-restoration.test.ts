@@ -10,7 +10,7 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { backendGet } from "../../../utils/backend-client";
 import { createApplicationReadAdapter, toApplicationPanelRecord } from "../application-catalogue";
-import { currentProductGrants, currentProductUsedBy, listCurrentProducts } from "../catalog";
+import { currentProductGrants, currentProductUsedBy, listCurrentProductNames, listCurrentProducts } from "../catalog";
 import { createProductProjectionReadAdapter, toProductProjectionPanelRecord } from "../catalog-reads";
 import { readCurrentProjection } from "../current";
 
@@ -35,6 +35,7 @@ vi.mock("../../../utils/backend-client", async (importOriginal) => ({
 vi.mock("../catalog", async (importOriginal) => ({
   ...await importOriginal<typeof import("../catalog")>(),
   listCurrentProducts: vi.fn(),
+  listCurrentProductNames: vi.fn(),
   currentProductUsedBy: vi.fn(),
   currentProductGrants: vi.fn(),
 }));
@@ -335,9 +336,9 @@ it("builds local referenceGraph payload for an application with its entry panels
   vi.mocked(backendGet).mockResolvedValueOnce({
     text: JSON.stringify({ success: true, data: row }),
   } as Awaited<ReturnType<typeof backendGet>>);
-  vi.mocked(listCurrentProducts)
-    .mockResolvedValueOnce({ items: [{ id: "panel-frame", name: "Frame" }, { id: "panel-orders", name: "Orders page" }] } as never)
-    .mockResolvedValueOnce({ items: [] } as never);
+  vi.mocked(listCurrentProductNames)
+    .mockResolvedValueOnce(new Map([["panel-frame", "Frame"], ["panel-orders", "Orders page"]]))
+    .mockResolvedValueOnce(new Map());
   const adapter = createApplicationReadAdapter(owner, viewer);
   const graphRecord = panelRecordSchema.parse(await adapter.referenceGraph(row.id));
   const graph = (graphRecord.fields.graph as { kind: "json"; value: { nodes: Array<{ id: string }>; edges: Array<{ source: string; target: string }> } }).value;

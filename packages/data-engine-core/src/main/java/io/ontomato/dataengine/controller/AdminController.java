@@ -192,6 +192,10 @@ public class AdminController {
 	@PostMapping("/admin/getMetas")
     @ResponseBody
     public JSONObject getMetas(@RequestBody JSONObject param) {
+		if (param.getBooleanValue("countOnly")) {
+			User user = SystemUtils.getCurUser();
+			return JSONObject.of("success", true, "data", adminService.countOntologyMetadata(user.getDomainId()));
+		}
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
@@ -414,6 +418,11 @@ public class AdminController {
 	@PostMapping("/admin/getBussinessKnowledge")
     @ResponseBody
     public JSONObject getBussinessKnowledge(@RequestBody JSONObject param) {
+		if (param.getBooleanValue("countOnly")) {
+			User user = SystemUtils.getCurUser();
+			return JSONObject.of("success", true, "data",
+					JSONObject.of("total", knowledgeService.countBusinessKnowledge(user.getDomainId())));
+		}
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
