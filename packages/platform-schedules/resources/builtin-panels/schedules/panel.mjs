@@ -59,8 +59,8 @@ await mountPanel({
     const isRunning = computed(() => Boolean(detailRunning.value || focusRunning.value));
 
     const statusModel = computed({
-      get: () => (typeof values.value.status === "string" ? values.value.status : ""),
-      set: (next) => instance.state.set("status", typeof next === "string" ? next : ""),
+      get: () => values.value.status,
+      set: (next) => instance.state.set("status", next === "" ? null : next),
     });
     const searchModel = computed({
       get: () => (typeof values.value.search === "string" ? values.value.search : ""),
@@ -68,7 +68,7 @@ await mountPanel({
     });
     const hasActiveFilters = computed(() => Boolean(values.value.app || statusModel.value || searchModel.value.trim()));
     function clearFilters() {
-      instance.state.setState({ app: "", status: "", search: "" });
+      instance.state.setState({ app: "", status: null, search: "" });
     }
 
     const runsDrawerTitle = computed(() => {
