@@ -650,21 +650,36 @@ describe("builtin-product-data-adapters panel", () => {
           return Response.json({ message: "Connection refused by host" }, { status: 422 });
         }
         return Response.json({
-          kind: "json",
-          value: {
-            kind: "catalog",
-            elapsedMs: 14,
-            databaseProduct: "PostgreSQL",
-            databaseVersion: "16.2",
-            driverName: "PostgreSQL JDBC Driver",
-            driverVersion: "42.7.3",
-            catalog: "app",
-            schema: "public",
-            tables: [
-              { name: "orders", type: "TABLE" },
-              { name: "active_orders", type: "VIEW" },
-            ],
-          },
+          kind: "sections",
+          banner: { tone: "success", title: "Connection test succeeded" },
+          sections: [
+            {
+              id: "summary",
+              label: "Summary",
+              kind: "fields",
+              items: [
+                { label: "Duration", value: "14 ms" },
+                { label: "Database", value: "PostgreSQL 16.2" },
+                { label: "Driver", value: "PostgreSQL JDBC Driver 42.7.3" },
+                { label: "Catalog", value: "app" },
+                { label: "Schema", value: "public" },
+              ],
+            },
+            {
+              id: "objects",
+              label: "Tables and views (2)",
+              kind: "records",
+              columns: [
+                { key: "name", label: "Name" },
+                { key: "type", label: "Type" },
+              ],
+              rows: [
+                { name: "orders", type: "TABLE" },
+                { name: "active_orders", type: "VIEW" },
+              ],
+              emptyText: "No tables or views visible to this connection.",
+            },
+          ],
         });
       },
     });
@@ -692,7 +707,7 @@ describe("builtin-product-data-adapters panel", () => {
 
     await vi.waitFor(() => {
       expect(readOpCalls).toHaveLength(1);
-      const report = document.querySelector(".sdk-adapter-test-result");
+      const report = document.querySelector(".da-test-report");
       expect(report).not.toBeNull();
       expect(report!.textContent).toContain("14 ms");
       expect(report!.textContent).toContain("PostgreSQL 16.2");
@@ -723,14 +738,14 @@ describe("builtin-product-data-adapters panel", () => {
     urlInput!.dispatchEvent(new Event("input", { bubbles: true }));
 
     await vi.waitFor(() => {
-      expect(document.querySelector(".sdk-adapter-test-result")).toBeNull();
+      expect(document.querySelector(".da-test-report")).toBeNull();
     }, { timeout: 3000 });
 
-    // Failed test renders the error alert inside <data-adapter-test-report>.
+    // Failed test renders the error alert inside the inline test report region.
     failNextTest = true;
     testBtn!.click();
     await vi.waitFor(() => {
-      const report = document.querySelector(".sdk-adapter-test-result");
+      const report = document.querySelector(".da-test-report");
       expect(report).not.toBeNull();
       expect(report!.querySelector(".el-alert--error")).not.toBeNull();
       expect(report!.textContent).toContain("Connection refused by host");
@@ -759,30 +774,58 @@ describe("builtin-product-data-adapters panel", () => {
         const sourceId = ((body.call as { input?: { parameters?: { sourceId?: string } } })?.input?.parameters?.sourceId) ?? "";
         if (sourceId === "graph") {
           return Response.json({
-            kind: "json",
-            value: {
-              kind: "search",
-              elapsedMs: 9,
-              databaseProduct: "OpenSearch",
-              databaseVersion: "2.13.0",
-              clusterName: "prod-es",
-              indices: ["orders-2026"],
-            },
+            kind: "sections",
+            banner: { tone: "success", title: "Connection test succeeded" },
+            sections: [
+              {
+                id: "summary",
+                label: "Summary",
+                kind: "fields",
+                items: [
+                  { label: "Duration", value: "9 ms" },
+                  { label: "Search engine", value: "OpenSearch 2.13.0" },
+                  { label: "Cluster", value: "prod-es" },
+                ],
+              },
+              {
+                id: "objects",
+                label: "Indices (1)",
+                kind: "records",
+                columns: [{ key: "name", label: "Name" }],
+                rows: [{ name: "orders-2026" }],
+                emptyText: "No indices visible to this connection.",
+              },
+            ],
           });
         }
         return Response.json({
-          kind: "json",
-          value: {
-            kind: "catalog",
-            elapsedMs: 11,
-            databaseProduct: "PostgreSQL",
-            databaseVersion: "16.2",
-            driverName: "PostgreSQL JDBC Driver",
-            driverVersion: "42.7.3",
-            catalog: "crm",
-            schema: "public",
-            tables: [{ name: "orders", type: "TABLE" }],
-          },
+          kind: "sections",
+          banner: { tone: "success", title: "Connection test succeeded" },
+          sections: [
+            {
+              id: "summary",
+              label: "Summary",
+              kind: "fields",
+              items: [
+                { label: "Duration", value: "11 ms" },
+                { label: "Database", value: "PostgreSQL 16.2" },
+                { label: "Driver", value: "PostgreSQL JDBC Driver 42.7.3" },
+                { label: "Catalog", value: "crm" },
+                { label: "Schema", value: "public" },
+              ],
+            },
+            {
+              id: "objects",
+              label: "Tables and views (1)",
+              kind: "records",
+              columns: [
+                { key: "name", label: "Name" },
+                { key: "type", label: "Type" },
+              ],
+              rows: [{ name: "orders", type: "TABLE" }],
+              emptyText: "No tables or views visible to this connection.",
+            },
+          ],
         });
       },
     });
@@ -807,16 +850,16 @@ describe("builtin-product-data-adapters panel", () => {
 
     card0Btn.click();
     await vi.waitFor(() => {
-      expect(footers[0]!.querySelector(".sdk-adapter-test-result")?.textContent).toContain("PostgreSQL 16.2");
-      expect(footers[1]!.querySelector(".sdk-adapter-test-result")).toBeNull();
+      expect(footers[0]!.querySelector(".da-test-report")?.textContent).toContain("PostgreSQL 16.2");
+      expect(footers[1]!.querySelector(".da-test-report")).toBeNull();
     }, { timeout: 3000 });
 
     card1Btn.click();
     await vi.waitFor(() => {
-      expect(footers[1]!.querySelector(".sdk-adapter-test-result")?.textContent).toContain("OpenSearch 2.13.0");
-      expect(footers[1]!.querySelector(".sdk-adapter-test-result")?.textContent).toContain("prod-es");
+      expect(footers[1]!.querySelector(".da-test-report")?.textContent).toContain("OpenSearch 2.13.0");
+      expect(footers[1]!.querySelector(".da-test-report")?.textContent).toContain("prod-es");
       // Card 0's report stays visible alongside card 1's report.
-      expect(footers[0]!.querySelector(".sdk-adapter-test-result")?.textContent).toContain("PostgreSQL 16.2");
+      expect(footers[0]!.querySelector(".da-test-report")?.textContent).toContain("PostgreSQL 16.2");
     }, { timeout: 3000 });
 
     expect(readOpCalls.map((c) => (c.call as { input: { parameters: { sourceId: string } } }).input.parameters.sourceId))
@@ -1075,18 +1118,33 @@ describe("builtin-product-data-adapters panel", () => {
       },
       readOp() {
         return Response.json({
-          kind: "json",
-          value: {
-            kind: "catalog",
-            elapsedMs: 8,
-            databaseProduct: "PostgreSQL",
-            databaseVersion: "16.2",
-            driverName: "PostgreSQL JDBC Driver",
-            driverVersion: "42.7.3",
-            catalog: "crm",
-            schema: "public",
-            tables: [],
-          },
+          kind: "sections",
+          banner: { tone: "success", title: "Connection test succeeded" },
+          sections: [
+            {
+              id: "summary",
+              label: "Summary",
+              kind: "fields",
+              items: [
+                { label: "Duration", value: "8 ms" },
+                { label: "Database", value: "PostgreSQL 16.2" },
+                { label: "Driver", value: "PostgreSQL JDBC Driver 42.7.3" },
+                { label: "Catalog", value: "crm" },
+                { label: "Schema", value: "public" },
+              ],
+            },
+            {
+              id: "objects",
+              label: "Tables and views (0)",
+              kind: "records",
+              columns: [
+                { key: "name", label: "Name" },
+                { key: "type", label: "Type" },
+              ],
+              rows: [],
+              emptyText: "No tables or views visible to this connection.",
+            },
+          ],
         });
       },
     });
@@ -1101,7 +1159,7 @@ describe("builtin-product-data-adapters panel", () => {
     await vi.waitFor(() => expect(card0Btn.disabled).toBe(false), { timeout: 3000 });
     card0Btn.click();
     await vi.waitFor(() => {
-      expect(document.querySelector(".sdk-adapter-test-result")).not.toBeNull();
+      expect(document.querySelector(".da-test-report")).not.toBeNull();
     }, { timeout: 3000 });
 
     // Dirty BOTH adapterForm and routingForm.
@@ -1143,7 +1201,7 @@ describe("builtin-product-data-adapters panel", () => {
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect([...document.querySelectorAll<HTMLInputElement>("input")].some((el) => el.value === "CRM Edited")).toBe(true);
     expect([...document.querySelectorAll<HTMLInputElement>("input")].some((el) => el.value === "mounted_edited")).toBe(true);
-    expect(document.querySelector(".sdk-adapter-test-result")).not.toBeNull();
+    expect(document.querySelector(".da-test-report")).not.toBeNull();
 
     // 2. Click Discard again and confirm -> ONLY ONE more confirmation prompt, both forms reset & test report clears!
     discardBtn!.click();
@@ -1152,7 +1210,7 @@ describe("builtin-product-data-adapters panel", () => {
     await vi.waitFor(() => {
       expect([...document.querySelectorAll<HTMLInputElement>("input")].some((el) => el.value === "CRM DB")).toBe(true);
       expect([...document.querySelectorAll<HTMLInputElement>("input")].some((el) => el.value === "mounted_in_rack")).toBe(true);
-      expect(document.querySelector(".sdk-adapter-test-result")).toBeNull();
+      expect(document.querySelector(".da-test-report")).toBeNull();
     }, { timeout: 3000 });
     expect(confirmSpy).toHaveBeenCalledTimes(2);
   });

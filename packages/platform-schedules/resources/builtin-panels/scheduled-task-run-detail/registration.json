@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-scheduled-task-run-detail",
+      "input": {
+        "name": "定时任务运行详情",
+        "description": "展示单条定时任务运行的暂停与异常提示、状态、起止时间与结果摘要，并支持刷新状态。"
+      }
+    }
+  ]
+}

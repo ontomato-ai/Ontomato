@@ -1,0 +1,70 @@
+<style>
+  [v-cloak] { display: none; }
+  .strd-root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    width: 100%;
+  }
+  .strd-overview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--sdk-border-color-lighter, var(--sdk-border-color));
+    min-width: 0;
+  }
+  .strd-times {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-md);
+    margin: 0;
+    font-size: var(--text-xs);
+  }
+  .strd-times dt {
+    color: var(--sdk-text-color-secondary);
+    margin-bottom: 4px;
+  }
+  .strd-times dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--sdk-text-color-primary);
+  }
+  .strd-actions {
+    display: flex;
+    align-items: center;
+  }
+</style>
+
+<div id="app" v-cloak class="strd-root">
+  <projection slot="pauseNotice"></projection>
+
+  <section class="strd-overview">
+    <projection slot="header"></projection>
+    <dl class="strd-times">
+      <div>
+        <dt>{{ t("startedAt") }}</dt>
+        <dd><projection slot="startedAt"></projection></dd>
+      </div>
+      <div>
+        <dt>{{ t("finishedAt") }}</dt>
+        <dd><projection slot="finishedAt"></projection></dd>
+      </div>
+    </dl>
+  </section>
+
+  <projection slot="errorNotice"></projection>
+
+  <projection slot="summary"></projection>
+
+  <div class="strd-actions">
+    <sdk-button
+      size="small"
+      data-testid="scheduled-task-run-refresh"
+      @click="refreshRun"
+    >
+      {{ t("refresh") }}
+    </sdk-button>
+  </div>
+</div>

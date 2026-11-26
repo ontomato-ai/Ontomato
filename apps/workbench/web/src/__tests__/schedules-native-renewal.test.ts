@@ -19,6 +19,9 @@ import { catalogFixture } from "../../../../../packages/platform-web/src/__tests
 import source from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.json";
 import html from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.html?raw";
 import module from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.mjs?raw";
+import runDetailSource from "../../../../../packages/platform-schedules/resources/builtin-panels/scheduled-task-run-detail/panel.json";
+import runDetailHtml from "../../../../../packages/platform-schedules/resources/builtin-panels/scheduled-task-run-detail/panel.html?raw";
+import runDetailModule from "../../../../../packages/platform-schedules/resources/builtin-panels/scheduled-task-run-detail/panel.mjs?raw";
 import { sentPanelReadItems, humanIntents, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot } from "./panel-frame";
 
 const application = catalogFixture().find(app => app.id === "schedules")!;
@@ -153,7 +156,7 @@ const catalogue = components.map(component => appsSdkComponentCatalogEntrySchema
 }));
 const projections = new Map<string, ProductProjection>();
 const members = Object.fromEntries(Object.entries(authoring).map(([name, definition]) => {
-  if (!("component" in definition)) throw new Error(`Expected an authored projection for ${name}`);
+  if (!("component" in definition)) return [name, definition];
   const { projection, placement } = expandPanelAuthoringMember(name, definition, { state: manifest.state, typeTable: { objectTypes }, components: catalogue });
   projections.set(definition.id!, {
     ...projection, id: definition.id!, name, description: name, visibility: "platform",
@@ -162,6 +165,23 @@ const members = Object.fromEntries(Object.entries(authoring).map(([name, definit
   });
   return [name, { ...placement, target: { projectionId: definition.id! } }];
 }));
+const runDetailPanelId = "builtin-product-scheduled-task-run-detail";
+const { members: runDetailAuthoring, ...runDetailManifest } = panelAuthoringManifestSchema.parse(runDetailSource.manifest);
+const runDetailMembers = Object.fromEntries(Object.entries(runDetailAuthoring).map(([name, definition]) => {
+  if (!("component" in definition)) return [name, definition];
+  const { projection, placement } = expandPanelAuthoringMember(name, definition, { state: runDetailManifest.state, typeTable: { objectTypes }, components: catalogue });
+  projections.set(definition.id!, {
+    ...projection, id: definition.id!, name: definition.name ?? name, description: definition.description ?? name, visibility: "platform",
+    domainId: null, ownerId: null, editable: false, revision: 1,
+    createdAt: "2026-11-21T00:00:00Z", updatedAt: "2026-11-21T00:00:00Z",
+  });
+  return [name, { ...placement, target: { projectionId: definition.id! } }];
+}));
+const runDetailPanel = {
+  ...panelRecord(runDetailPanelId, "Scheduled task run detail", definePanel({ ...runDetailManifest, members: runDetailMembers })),
+  visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
+  content: { html: runDetailHtml, module: runDetailModule, messages: runDetailSource.content.messages },
+};
 const panel = {
   ...panelRecord(use.panelId, "Scheduled tasks", definePanel({ ...manifest, members })),
   visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
@@ -210,7 +230,17 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
     if (path === "/api/data-query/platform/applications/schedules/panel-uses")
       return Response.json({ data: { applicationId: application.id, entry: application.entry, panelUses: [use] } });
     if (path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    if (path === `/api/product-panels/${runDetailPanel.id}`) return panelAnswer(runDetailPanel, request);
     if (path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, Object.fromEntries(projections), request);
+    if (path === `/api/product-panels/${runDetailPanel.id}/snapshot`) return panelSnapshot(runDetailPanel, Object.fromEntries(projections), request);
+    if (path === "/api/product-panels/nested") return Response.json({
+      panel: {
+        id: runDetailPanel.id,
+        revision: runDetailPanel.revision,
+        manifest: runDetailPanel.manifest,
+        content: runDetailPanel.content,
+      },
+    });
     if (path.startsWith("/api/product-projections/")) return Response.json({ projection: projections.get(path.split("/").at(-1)!) });
     if (path === "/api/product-panels/read") {
       const body = request.body as ProductPanelReadRequest;
@@ -324,7 +354,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({ path: `/api/panel-operations/intents/${id}/dispatch` })));
       await vi.waitFor(() => expect(sentPanelReadItems(sent)).toContainEqual(expect.objectContaining({
         body: expect.objectContaining({
-          memberPath: [{ member: "focus" }], dataName: "record",
+          memberPath: [{ member: "focus" }, { member: "summary" }], dataName: "record",
           inputs: { target: { className: "platform:ScheduledTask", primaryKey: taskId }, runId },
         }),
       })));
@@ -374,7 +404,12 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
 
       const other = otherApplications.at(-1)!;
       await router.push(`/schedules?app=${other.fields.application}`);
-      await vi.waitFor(() => expect(element.querySelector(`.sdk-segmented-option[data-value="${other.fields.application}"]`)?.getAttribute("aria-checked")).toBe("true"));
+      await vi.waitFor(() => {
+        const trigger = element.querySelector<HTMLButtonElement>('[data-overflow-trigger="true"]');
+        expect(trigger?.classList.contains("active")).toBe(true);
+        expect(trigger?.getAttribute("data-value")).toBe(other.fields.application);
+        expect(trigger?.textContent).toContain(other.fields.applicationName);
+      });
       await vi.waitFor(() => {
         const cards = element.querySelectorAll(".schedules-list-col .sdk-sts-card");
         expect(cards).toHaveLength(1);

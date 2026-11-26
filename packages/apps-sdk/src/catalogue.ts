@@ -477,18 +477,8 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "action",
     meaning:
-      "Displays the result of a read-only panel operation (`markdown`, `json`, `file`, or tabbed `sections`). When bound to an operation descriptor via `operationSlot` and `operationName`, renders owner-declared `resultSections` tabs (respecting `defaultSectionId`) even before the operation has executed, showing `emptyText` inside empty tabs until execution populates them. Pure presentation: reads and writes nothing itself.",
-    configProps: ["result", "operationSlot", "operationName", "emptyText"],
-  }),
-  defineComponentMeta({
-    componentId: "DataAdapterTestReport",
-    module: "@ontomato/sdk/base",
-    exportName: "DataAdapterTestReport",
-    role: "presentation",
-    group: "action",
-    panelUsable: false,
-    meaning:
-      "Structured report for a data adapter connection test outcome (alert, metadata descriptions, and table or index lists). Pure presentation: reads and writes nothing itself.",
+      "Displays the result of a read-only panel operation (`markdown`, `json`, `file`, or `sections` with optional status banner and `fields`, `records`, `code`, or `json` sections). Renders sections as tabs (`layout: 'tabs'`, default) or vertically stacked (`layout: 'stack'`). When bound to an operation descriptor via `operationSlot` and `operationName`, renders owner-declared `resultSections` tabs (respecting `defaultSectionId`) even before the operation has executed, showing `emptyText` inside empty tabs until execution populates them. Pure presentation: reads and writes nothing itself.",
+    configProps: ["result", "operationSlot", "operationName", "emptyText", "layout"],
   }),
   defineComponentMeta({
     componentId: "FileUploadControl",
@@ -728,10 +718,10 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "form",
     meaning:
-      "Switches one declared scalar panel state between mutually exclusive options supplied by the owner's `counts` datum (`[{key, label, count}]`) or static configuration. It binds no ontology element.",
+      "Switches one declared scalar panel state between mutually exclusive options supplied by the owner's `counts` datum (`[{key, label, count}]`) or static configuration. When `maxVisible` is set and options exceed it, remaining options collapse into a 'More' dropdown whose trigger displays the selected overflow option's label and count. It binds no ontology element.",
     data: { counts: { results: ["panelGroupCounts"], required: false } },
     outputs: { value: { kind: "scalar", type: "string" } },
-    configProps: ["options", "state", "modelValue", "defaultValue", "ariaLabel", "ariaLabelKey", "disabled"],
+    configProps: ["options", "state", "modelValue", "defaultValue", "ariaLabel", "ariaLabelKey", "maxVisible", "disabled"],
   }),
   defineComponentMeta({
     componentId: "TwoPaneLayout",
@@ -1017,42 +1007,6 @@ export const components: readonly ComponentMetadata[] = [
     ],
   }),
   defineComponentMeta({
-    componentId: "DashboardMetricPreview",
-    module: "@ontomato/sdk/base",
-    exportName: "DashboardMetricPreview",
-    role: "control",
-    group: "chart",
-    panelUsable: false,
-    meaning:
-      "Workspace dashboard KPI and chart preview. Renders scalar KPI tiles (3-column grid) above thumbnail charts (2-column grid, 220px height) from `rows` (`platform:DashboardCard`) or direct `cards`, selecting clicked items into `selected` state.",
-    effects: "Reads its bound `rows` datum as the reader and writes the panel's `selected` state on click.",
-    bindsElement: ["PlatformObjectType:*"],
-    data: {
-      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
-    },
-    inputs: {
-      selected: { kind: "object", objectType: "@data:rows" },
-    },
-    outputs: {
-      selected: { kind: "object", objectType: "@data:rows" },
-    },
-  }),
-  defineComponentMeta({
-    componentId: "ScheduledTaskAppFilterBar",
-    module: "@ontomato/sdk/base",
-    exportName: "ScheduledTaskAppFilterBar",
-    role: "control",
-    group: "form",
-    panelUsable: false,
-    meaning:
-      "Filters scheduled tasks by application. Shows the owner's total and counts from the counts datum or standalone items, displays up to maxVisible applications (five by default), and shows the selected overflow application's name and count on the More trigger.",
-    effects: "Writes the selected application key to selected, using an empty string for all applications.",
-    bindsElement: ["PlatformObjectType:platform:ScheduledTask"],
-    data: { counts: { results: ["panelGroupCounts"], required: false } },
-    inputs: { selected: { kind: "scalar", type: "string" } },
-    outputs: { selected: { kind: "scalar", type: "string" } },
-  }),
-  defineComponentMeta({
     componentId: "ScheduledTaskSummaryList",
     module: "@ontomato/sdk/base",
     exportName: "ScheduledTaskSummaryList",
@@ -1077,21 +1031,6 @@ export const components: readonly ComponentMetadata[] = [
       issueCount: { kind: "scalar", type: "number" },
       resultCount: { kind: "scalar", type: "number" },
       runningCount: { kind: "scalar", type: "number" },
-    },
-  }),
-  defineComponentMeta({
-    componentId: "ScheduledTaskRunDetail",
-    module: "@ontomato/sdk/base",
-    exportName: "ScheduledTaskRunDetail",
-    role: "presentation",
-    group: "detail",
-    panelUsable: false,
-    meaning:
-      "Scheduled task recent-run detail view. Renders pause/failure callout banners, status dot and trigger strip, two-column Started/Finished timestamp `<dl>`, cleaned multi-paragraph execution output, and a Refresh button.",
-    effects: "Reads its bound `record` datum as the reader and refreshes it when the reader clicks Refresh.",
-    bindsElement: ["PlatformObjectType:*"],
-    data: {
-      record: { results: ["panelRecord", "scheduledTaskRun"], required: false },
     },
   }),
   defineComponentMeta({

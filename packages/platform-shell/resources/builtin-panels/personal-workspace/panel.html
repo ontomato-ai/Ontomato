@@ -565,10 +565,32 @@
                 <projection
                   slot="favoriteDashboardCards"
                   :ref="bindProjection('favoriteDashboardCards')"
-                  class="pw-block-list"
-                  :empty-text="t('empty.dashboardCards')"
+                  class="pw-block-list pw-dashboard-preview-grid"
                   @select="onSelectCard"
-                ></projection>
+                >
+                  <template #item="{ row, itemRef, title }">
+                    <div class="pw-preview-card-body" :data-card-kind="rememberPreviewCard(itemRef, row, title)">
+                      <projection
+                        v-if="row.fields && row.fields.kind === 'chart'"
+                        slot="previewChartCard"
+                        :inputs="{ target: itemRef }"
+                        :title="title || row.label"
+                        min-height="220px"
+                      ></projection>
+                      <projection
+                        v-else
+                        slot="previewMetricCard"
+                        :inputs="{ target: itemRef }"
+                      ></projection>
+                    </div>
+                  </template>
+                </projection>
+                <div v-show="missingDashboardCardsCount > 0" class="pw-dashboard-missing">
+                  <projection
+                    slot="favoriteDashboardCardsNotice"
+                    :ref="bindProjection('favoriteDashboardCardsNotice')"
+                  ></projection>
+                </div>
               </div>
             </div>
 
@@ -855,7 +877,6 @@
         <object-title
           tag="h2"
           class="pw-drawer-title"
-          slot="taskSummary"
           :target="selectedTaskTarget"
           fallback-key="drawer.taskTitle"
         ></object-title>

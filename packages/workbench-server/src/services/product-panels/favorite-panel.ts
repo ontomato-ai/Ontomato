@@ -142,6 +142,82 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
     title: favoriteText(viewer.locale, "title"),
   };
 
+  const DEFAULT_PREVIEW_METRICS_PER_BOARD = 3;
+  const DEFAULT_PREVIEW_CHARTS_PER_BOARD = 2;
+  const MAX_PREVIEW_METRICS = 6;
+  const MAX_PREVIEW_CHARTS = 4;
+
+  type SelectedPreviewEntry = {
+    dashboardId: string;
+    dashboardName: string;
+    cardId: string;
+    kind: "metric" | "chart";
+    entry: MetricReferenceEntry;
+  };
+
+  async function selectFollowedDashboardCards(state: Awaited<ReturnType<typeof readAllFavoriteState>>) {
+    const boardDetails = new Map<string, Awaited<ReturnType<typeof getOwnedDashboard>> | null>();
+    await Promise.all(state.dashboardIds.map(async dashboardId => {
+      try {
+        boardDetails.set(dashboardId, await getOwnedDashboard(owner.userId, owner.domainId, dashboardId));
+      } catch {
+        boardDetails.set(dashboardId, null);
+      }
+    }));
+
+    const metrics: SelectedPreviewEntry[] = [];
+    const charts: SelectedPreviewEntry[] = [];
+    let missingCount = 0;
+
+    for (const dashboardId of state.dashboardIds) {
+      const explicitIds = state.dashboardCards[dashboardId] ?? [];
+      const detail = boardDetails.get(dashboardId);
+      if (!detail) {
+        missingCount += explicitIds.length;
+        continue;
+      }
+      const allMetrics = detail.groups.flatMap(g => g.metrics);
+      const allCharts = detail.groups.flatMap(g => g.charts);
+      const cardsById = new Map<string, MetricReferenceEntry>([
+        ...allMetrics.map(card => [card.id, card] as const),
+        ...allCharts.map(card => [card.id, card] as const),
+      ]);
+      const chosenIds = explicitIds.length > 0
+        ? explicitIds
+        : [
+            ...allMetrics.slice(0, DEFAULT_PREVIEW_METRICS_PER_BOARD).map(c => c.id),
+            ...allCharts.slice(0, DEFAULT_PREVIEW_CHARTS_PER_BOARD).map(c => c.id),
+          ];
+      for (const cardId of chosenIds) {
+        const entry = cardsById.get(cardId);
+        if (!entry) {
+          if (explicitIds.length > 0) missingCount += 1;
+          continue;
+        }
+        const kind: "metric" | "chart" = "chartFile" in entry ? "chart" : "metric";
+        const item: SelectedPreviewEntry = {
+          dashboardId,
+          dashboardName: detail.name,
+          cardId,
+          kind,
+          entry,
+        };
+        if (kind === "metric") {
+          if (metrics.length < MAX_PREVIEW_METRICS) metrics.push(item);
+        } else if (charts.length < MAX_PREVIEW_CHARTS) {
+          charts.push(item);
+        }
+      }
+    }
+
+    return {
+      items: [...metrics, ...charts],
+      metricCount: metrics.length,
+      chartCount: charts.length,
+      missingCount,
+    };
+  }
+
   return {
     async list(params: { targetGroup?: FavoriteTargetGroup } = {}): Promise<PanelRecord[]> {
       const group = favoriteTargetGroupSchema.parse(params.targetGroup ?? "all");
@@ -271,17 +347,7 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
       }
 
       if (needDashboardCards) {
-        const DEFAULT_PREVIEW_METRICS_PER_BOARD = 3;
-        const DEFAULT_PREVIEW_CHARTS_PER_BOARD = 2;
-        const boardDetails = new Map<string, Awaited<ReturnType<typeof getOwnedDashboard>> | null>();
-        await Promise.all(state.dashboardIds.map(async dashboardId => {
-          try {
-            boardDetails.set(dashboardId, await getOwnedDashboard(owner.userId, owner.domainId, dashboardId));
-          } catch {
-            boardDetails.set(dashboardId, null);
-          }
-        }));
-
+        const { items: selectedEntries } = await selectFollowedDashboardCards(state);
         const metricClient = new DashboardMetricClient(owner.domainId, viewer);
         const metricSpecs = new Map<string, Promise<Awaited<ReturnType<DashboardMetricClient["describe"]>>>>();
         const describeMetric = (metricId: string) => {
@@ -293,77 +359,35 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
           return pending;
         };
 
-        type SelectedPreviewEntry = {
-          dashboardId: string;
-          dashboardName: string;
-          cardId: string;
-          index: number;
-          total: number;
-          entry: MetricReferenceEntry | undefined;
-        };
-
-        const selectedEntries: SelectedPreviewEntry[] = [];
-        for (const dashboardId of state.dashboardIds) {
-          const detail = boardDetails.get(dashboardId);
-          if (!detail) continue;
-          const allMetrics = detail.groups.flatMap(g => g.metrics);
-          const allCharts = detail.groups.flatMap(g => g.charts);
-          const cardsById = new Map<string, MetricReferenceEntry>([
-            ...allMetrics.map(card => [card.id, card] as const),
-            ...allCharts.map(card => [card.id, card] as const),
-          ]);
-          const chosenIds = state.dashboardCards[dashboardId]?.length
-            ? state.dashboardCards[dashboardId]!
-            : [
-                ...allMetrics.slice(0, DEFAULT_PREVIEW_METRICS_PER_BOARD).map(c => c.id),
-                ...allCharts.slice(0, DEFAULT_PREVIEW_CHARTS_PER_BOARD).map(c => c.id),
-              ];
-          chosenIds.forEach((cardId, index) => {
-            selectedEntries.push({
-              dashboardId,
-              dashboardName: detail.name,
-              cardId,
-              index,
-              total: chosenIds.length,
-              entry: cardsById.get(cardId),
-            });
-          });
-        }
-
-        const previewRows = await Promise.all(selectedEntries.map(async item => {
-          const { dashboardId, dashboardName, cardId, index, total, entry } = item;
-          const available = Boolean(entry);
+        const total = selectedEntries.length;
+        const previewRows = await Promise.all(selectedEntries.map(async (item, index) => {
+          const { dashboardId, dashboardName, cardId, kind, entry } = item;
           const pk = dashboardCardPrimaryKey({ dashboardId, cardId });
-          const isChart = Boolean(entry && "chartFile" in entry);
-          const kind = isChart ? "chart" : "metric";
+          const isChart = kind === "chart";
 
           let output: DashboardMetricOutput | null = null;
           let valueText: string | undefined;
           let errorText: string | undefined;
-          if (entry) {
-            try {
-              const spec = await describeMetric(entry.query.metricId);
-              const executed = await metricClient.execute(entry.query, spec.revision);
-              requireMatchingOutput(entry, executed);
-              output = executed;
-              if (!("chartFile" in entry) && executed.rows.length > 0) {
-                valueText = chartValueText(
-                  executed.rows[0]?.[entry.valueField],
-                  entry.formats?.[entry.valueField],
-                  language,
-                );
-              }
-            } catch (failure) {
-              errorText = failure instanceof Error ? failure.message : String(failure);
+          try {
+            const spec = await describeMetric(entry.query.metricId);
+            const executed = await metricClient.execute(entry.query, spec.revision);
+            requireMatchingOutput(entry, executed);
+            output = executed;
+            if (!("chartFile" in entry) && executed.rows.length > 0) {
+              valueText = chartValueText(
+                executed.rows[0]?.[entry.valueField],
+                entry.formats?.[entry.valueField],
+                language,
+              );
             }
-          } else {
-            errorText = unavailableLabel;
+          } catch (failure) {
+            errorText = failure instanceof Error ? failure.message : String(failure);
           }
 
           const record: PanelRecord = {
             className: DASHBOARD_CARD,
             primaryKey: pk,
-            label: available ? entry!.name : unavailableLabel,
+            label: entry.name,
             subtitle: dashboardName,
             fields: {
               className: DASHBOARD_CARD,
@@ -371,28 +395,32 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
               dashboardId,
               dashboardName,
               cardId,
+              groupId: "preview",
               kind,
               cardKind: kind,
-              title: available ? entry!.name : unavailableLabel,
-              ...(entry && !("chartFile" in entry) ? { valueField: entry.valueField } : {}),
-              ...(entry && !("chartFile" in entry) && entry.unit ? { unit: entry.unit } : {}),
-              ...(entry && !("chartFile" in entry) && entry.formats ? { formats: { kind: "json", value: entry.formats } } : {}),
-              ...(entry && "chartFile" in entry ? { chartFile: { kind: "json", value: entry.chartFile } } : {}),
+              colSpan: isChart ? 6 : 4,
+              rowSpan: isChart ? 2 : 1,
+              order: index,
+              title: entry.name,
+              ...(!("chartFile" in entry) ? { valueField: entry.valueField } : {}),
+              ...(!("chartFile" in entry) && entry.unit ? { unit: entry.unit } : {}),
+              ...(!("chartFile" in entry) && entry.formats ? { formats: { kind: "json", value: entry.formats } } : {}),
+              ...("chartFile" in entry ? { chartFile: { kind: "json", value: entry.chartFile } } : {}),
               ...(valueText !== undefined ? { value: valueText } : {}),
               ...(output ? { output: { kind: "json", value: output }, partial: Boolean(output.truncation) } : {}),
               ...(errorText ? { error: errorText } : {}),
               favorite: true,
               canMoveUp: index > 0,
               canMoveDown: index < total - 1,
-              unavailable: !available,
+              unavailable: false,
             },
             fieldLabels,
             outputs: {
-              openPath: available ? dashboardOpenPath(dashboardId, cardId) : "",
+              openPath: dashboardOpenPath(dashboardId, cardId),
               favorited: true,
               canMoveUp: index > 0,
               canMoveDown: index < total - 1,
-              unavailable: !available,
+              unavailable: false,
             },
           };
           return record;
@@ -473,6 +501,26 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
       }
 
       return rows;
+    },
+
+    async dashboardCardsStatus(): Promise<PanelRecord> {
+      const state = await readAllFavoriteState(owner);
+      const { metricCount, chartCount, missingCount } = await selectFollowedDashboardCards(state);
+      return {
+        className: FAVORITE,
+        primaryKey: "dashboardCardsStatus",
+        label: "dashboardCardsStatus",
+        fields: {
+          ...(missingCount > 0 ? { missingCount } : {}),
+          metricCount,
+          chartCount,
+        },
+        outputs: {
+          missingCount,
+          metricCount,
+          chartCount,
+        },
+      };
     },
 
     async status(params: {

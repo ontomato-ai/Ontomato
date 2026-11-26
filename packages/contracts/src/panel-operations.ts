@@ -69,7 +69,7 @@ const panelReadOperationSectionBaseShape = {
 
 export const panelReadOperationSectionDeclarationSchema = z.object({
   ...panelReadOperationSectionBaseShape,
-  kind: z.enum(["records", "code", "json"]),
+  kind: z.enum(["records", "code", "json", "fields"]),
   language: z.string().min(1).max(60).optional(),
 }).strict();
 export type PanelReadOperationSectionDeclaration = z.infer<typeof panelReadOperationSectionDeclarationSchema>;
@@ -190,6 +190,19 @@ export const panelReadOperationRecordColumnSchema = z.object({
 }).strict();
 export type PanelReadOperationRecordColumn = z.infer<typeof panelReadOperationRecordColumnSchema>;
 
+export const panelReadOperationFieldItemSchema = z.object({
+  label: z.string().min(1).max(200),
+  value: z.string(),
+}).strict();
+export type PanelReadOperationFieldItem = z.infer<typeof panelReadOperationFieldItemSchema>;
+
+export const panelReadOperationBannerSchema = z.object({
+  tone: z.enum(["success", "info", "warning", "error"]),
+  title: z.string().min(1).max(300),
+  detail: z.string().optional(),
+}).strict();
+export type PanelReadOperationBanner = z.infer<typeof panelReadOperationBannerSchema>;
+
 /** One titled section of a multi-section read-only operation result. */
 export const panelReadOperationSectionSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -197,6 +210,11 @@ export const panelReadOperationSectionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("records"),
     columns: z.array(panelReadOperationRecordColumnSchema),
     rows: z.array(z.record(z.string(), panelReadOperationRecordCellSchema)),
+  }).strict(),
+  z.object({
+    ...panelReadOperationSectionBaseShape,
+    kind: z.literal("fields"),
+    items: z.array(panelReadOperationFieldItemSchema),
   }).strict(),
   z.object({
     ...panelReadOperationSectionBaseShape,
@@ -215,6 +233,7 @@ export type PanelReadOperationSection = z.infer<typeof panelReadOperationSection
 
 export const panelReadOperationSectionsResultSchema = z.object({
   kind: z.literal("sections"),
+  banner: panelReadOperationBannerSchema.optional(),
   sections: z.array(panelReadOperationSectionSchema).nonempty(),
   defaultSectionId: z.string().min(1).max(120).optional(),
   message: z.string().min(1).optional(),

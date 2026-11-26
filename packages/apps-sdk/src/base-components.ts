@@ -18,7 +18,6 @@ export const baseComponents = {
   TestcaseWorkbench: () => import("./base/TestcaseWorkbench.vue").then(module => module.default),
   OperationButton: () => import("./base/OperationButton.vue").then(module => module.default),
   OperationResult: () => import("./base/OperationResult.vue").then(module => module.default),
-  DataAdapterTestReport: () => import("./base/DataAdapterTestReport.vue").then(module => module.default),
   FileUploadControl: () => import("./base/FileUploadControl.vue").then(module => module.default),
   SegmentedControl: () => import("./base/SegmentedControl.vue").then(module => module.default),
   GraphCanvas: () => import("@ontomato/foundation-ui/graph").then(module => module.GraphCanvas),
@@ -49,9 +48,6 @@ export const baseComponents = {
   PanelData: () => import("./base/PanelData.vue").then(module => module.default),
   CurrentEntry: () => import("./base/CurrentEntry.vue").then(module => module.default),
   MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),
-  DashboardMetricPreview: () => import("./base/DashboardMetricPreview.vue").then(module => module.default),
-  ScheduledTaskAppFilterBar: () => import("./base/ScheduledTaskAppFilterBar.vue").then(module => module.default),
   ScheduledTaskSummaryList: () => import("./base/ScheduledTaskSummaryList.vue").then(module => module.default),
-  ScheduledTaskRunDetail: () => import("./base/ScheduledTaskRunDetail.vue").then(module => module.default),
   EffectivePermissionsView: () => import("./base/EffectivePermissionsView.vue").then(module => module.default),
 };

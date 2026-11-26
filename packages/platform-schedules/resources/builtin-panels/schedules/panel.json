@@ -48,6 +48,27 @@
           "type": "string"
         },
         "default": ""
+      },
+      "focusResultPath": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": ""
+      },
+      "focusRunning": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false
+      },
+      "focusLoadStatus": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": ""
       }
     },
     "members": {
@@ -82,7 +103,8 @@
         },
         "config": {
           "ariaLabelKey": "filter.label",
-          "defaultValue": ""
+          "defaultValue": "",
+          "maxVisible": 6
         },
         "id": "builtin-product-206cd648-2af3-4d9c-a69c-153ecb4952e3"
       },
@@ -327,34 +349,28 @@
         "id": "builtin-product-6c8e4b19-2d7a-4f31-9e50-8b2d6a4c1e97"
       },
       "focus": {
-        "component": "ObjectSummary",
-        "target": "selectedTask",
-        "data": {
-          "record": {
-            "read": "runRecord",
-            "params": {
-              "runId": {
-                "state": "runId"
-              }
-            }
+        "target": {
+          "panelId": "builtin-product-scheduled-task-run-detail"
+        },
+        "inputs": {
+          "task": {
+            "state": "selectedTask"
+          },
+          "runId": {
+            "state": "runId"
           }
         },
-        "config": {
-          "showTitle": true,
-          "fields": [
-            "status",
-            "trigger",
-            "startedAt",
-            "scheduledAt",
-            "duration",
-            "error",
-            "resultSummary",
-            "snapshotSummary",
-            "result",
-            "executionDetails"
-          ]
-        },
-        "id": "builtin-product-003dc4a7-ce06-4b82-93f7-edb8e907d574"
+        "outputs": {
+          "resultPath": {
+            "state": "focusResultPath"
+          },
+          "isRunning": {
+            "state": "focusRunning"
+          },
+          "loadStatus": {
+            "state": "focusLoadStatus"
+          }
+        }
       },
       "editForm": {
         "component": "ObjectForm",

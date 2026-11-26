@@ -199,8 +199,25 @@ await mountPanel({
     const gridHiddenCount = usePanelOutput("workspaceGrid", "hiddenCount");
     const favoriteDashboardsLoaded = usePanelOutput("favoriteDashboards", "loadedCount");
     const hasFavoriteDashboards = computed(() => (favoriteDashboardsLoaded.value ?? 0) > 0);
+    const missingDashboardCardsOutput = usePanelOutput("favoriteDashboardCardsNotice", "missingCount");
+    const missingDashboardCardsCount = computed(() =>
+      typeof missingDashboardCardsOutput.value === "number" ? missingDashboardCardsOutput.value : 0,
+    );
     const pinnedSessionsLoaded = usePanelOutput("pinnedSessions", "loadedCount");
     const hasPinnedSessions = computed(() => (pinnedSessionsLoaded.value ?? 0) > 0);
+    const previewCardMeta = new Map();
+
+    function rememberPreviewCard(itemRef, row, title) {
+      const kind = inferCardKind({ row });
+      if (itemRef?.primaryKey) {
+        previewCardMeta.set(itemRef.primaryKey, {
+          kind,
+          label: typeof title === "string" && title ? title : (typeof row?.label === "string" ? row.label : ""),
+          openPath: typeof row?.outputs?.openPath === "string" ? row.outputs.openPath : "",
+        });
+      }
+      return kind;
+    }
 
     const currentLayout = computed(() => {
       const value = values.value.layout;
@@ -406,14 +423,19 @@ await mountPanel({
     }
 
     function onSelectCard(card) {
-      const ref = card?.ref ?? (card?.id ? { className: "platform:DashboardCard", primaryKey: card.id } : null);
+      const ref = card?.className && card?.primaryKey
+        ? card
+        : (card?.ref ?? (card?.id ? { className: "platform:DashboardCard", primaryKey: card.id } : null));
       if (!ref?.className || !ref?.primaryKey) return;
+      const meta = previewCardMeta.get(ref.primaryKey);
       if (openModeMetrics.value === "page") {
-        openPath(card?.row?.outputs?.openPath || cardPathFromPrimaryKey(ref.primaryKey));
+        openPath(card?.row?.outputs?.openPath || meta?.openPath || cardPathFromPrimaryKey(ref.primaryKey));
         return;
       }
-      selectedCardLabel.value = typeof card?.name === "string" ? card.name : "";
-      selectedCardKind.value = inferCardKind(card);
+      selectedCardLabel.value = typeof card?.name === "string" && card.name
+        ? card.name
+        : (meta?.label ?? "");
+      selectedCardKind.value = meta?.kind ?? inferCardKind(card);
       instance.state.set("selectedCard", { className: ref.className, primaryKey: ref.primaryKey });
     }
 
@@ -447,6 +469,8 @@ await mountPanel({
       hiddenCount,
       hiddenItems,
       hasFavoriteDashboards,
+      missingDashboardCardsCount,
+      rememberPreviewCard,
       hasPinnedSessions,
       activePresetId,
       presets: PRESET_LIST,
