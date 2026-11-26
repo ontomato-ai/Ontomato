@@ -4,7 +4,7 @@ import {HttpError} from '../../utils/errors';
 import {backendPost,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
-import type {ProductOwner} from '../product-governance/grants';
+import type {ProductOwner} from '../product-governance/service-authentication';
 import {assertAppBuilderAccess} from '../app-builder/access';
 import {platformObjectProvider,readPlatformObjects} from '../product-assets/platform-objects';
 

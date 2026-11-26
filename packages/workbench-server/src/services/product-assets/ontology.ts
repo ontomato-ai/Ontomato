@@ -1,6 +1,6 @@
 import { productGraphSchema } from "@ontomato/contracts/product-graph";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { readProductAssetGraph } from "../product-panels/asset-graph-read";
 import { addProductGraphAuthorization, type EditableGraphTarget } from "./authorization-edges";
 

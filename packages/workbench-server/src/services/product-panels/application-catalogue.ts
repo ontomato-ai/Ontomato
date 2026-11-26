@@ -18,7 +18,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { createLogger } from "../../logging/logger";
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { listDefaultAgentOptions } from "../assistant/default-agents";
 import { listCurrentProductNames } from "./catalog";
 import { readCurrentPanel } from "./current";

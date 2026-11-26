@@ -18,7 +18,7 @@ import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
 import type { OwnerReadResult } from "../platform-ontology/owners";
 import { listPolicyEntries, policyObjectEntryUsagePayload, readPolicyChangePermission } from "./policy-access";

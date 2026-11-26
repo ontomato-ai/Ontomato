@@ -29,7 +29,7 @@ import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { AuthorizationGraphFacts } from "../governance/policy-access";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { panelSkillRef } from "../product-panels/skill-identity";
 import { triggerClient } from "../scheduling/trigger-client";
 import {

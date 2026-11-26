@@ -10,7 +10,7 @@ import { assertManagement } from "../../identity/management";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { PanelReadServerOperation } from "../product-panels/server-operations";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { countFeedback, listFeedback } from "./feedback-store";
 import { exportFeedback, feedbackExportTimeZone } from "./feedback-export";
 

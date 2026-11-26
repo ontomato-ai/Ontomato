@@ -12,14 +12,13 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
-import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
-import { HttpError } from "../../utils/errors";
 import { installContentLayout } from "../../content/layout";
 import { config } from "../../config/application";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../../services/product-panels/catalog-reads";
@@ -38,18 +37,6 @@ vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
-vi.mock("../../services/product-governance/grants", async original => ({
-  ...await original<typeof import("../../services/product-governance/grants")>(),
-  grantedProductIds: async (verb: "use" | "edit") => verb === "use" ? state.use : state.edit,
-  productGrantAllowed: async (id: string, verb: "use" | "edit") => (verb === "use" ? state.use : state.edit).includes(id),
-  productManagementAccess: async (target: { id: string; kind: string }, ownerFacts: { ownerId: string | null }) =>
-    productGrantCheck({ target, ownerFacts }, "viewer", (id, verb) => (verb === "use" ? state.use : state.edit).includes(id)),
-  requireProductGrant: async (id: string, verb: "use" | "edit") => {
-    if (!(verb === "use" ? state.use : state.edit).includes(id))
-      throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
-  },
-}));
-
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: () => "domain",

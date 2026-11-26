@@ -11,7 +11,7 @@ import type { SkillCatalogDiagnostics, SkillInfo, SkillWriteRestriction } from "
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { assistantSkillCatalog } from "../assistant/skills";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { skillManager } from "./skill-manager";
 
 /*

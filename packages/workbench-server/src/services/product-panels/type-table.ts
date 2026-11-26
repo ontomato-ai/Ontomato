@@ -9,7 +9,7 @@ import { createActionReadAdapter } from "../action/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { registeredPanelOperation } from "./server-operations";
 import { allowsOperationDraft, boundProjectionOperations } from "./operation-bindings";
 

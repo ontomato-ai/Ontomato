@@ -33,7 +33,7 @@ import {
 import { loadEvaluationProtocol } from "../../platform/diagnosis/autotest/evaluation/conclusion-parser";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type {
   PanelImpactInspector,
   PanelOperationHost,

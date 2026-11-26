@@ -17,7 +17,7 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { ChangeProductObjectGrant } from "@ontomato/contracts/object-policy-access";
 import {
   changeProductObjectAccess, readProductObjectAccess, retireObject, setProductDomainUse,

@@ -44,7 +44,7 @@ import {
 import { getCollectingTurnWorkspace, listCollectingTurnWorkspaces } from "../../platform/diagnosis/observe/workspaces/builder";
 import { listWorkspaces, loadManifest } from "../../platform/diagnosis/observe/workspaces/store";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { withReadDirective } from "../product-panels/read-directive";
 
 const CASE_ARTIFACT_KEY_SEPARATOR = "::";

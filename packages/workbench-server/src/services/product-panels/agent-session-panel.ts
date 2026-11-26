@@ -7,7 +7,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { assistantStore } from "../assistant/store";
 import { favoriteTargetKey, isFavoriteTarget, readFavoriteKeySet } from "../platform-home/service";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
 const sessionTargetSchema = z.object({

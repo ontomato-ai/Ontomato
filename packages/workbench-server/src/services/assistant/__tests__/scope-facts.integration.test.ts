@@ -5,7 +5,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 const state=vi.hoisted(()=>({pool:undefined as pg.Pool|undefined,schema:""}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>state.pool,qualifiedTable:(name:string)=>`"${state.schema}"."${name}"`}));
 const publication = vi.hoisted(() => vi.fn());
-vi.mock("../../product-governance/grants", () => ({
+vi.mock("../../product-governance/service-authentication", () => ({
   productGovernanceServiceHeaders: () => ({ "X-Ontomato-Query-Service-Token": "fixture-service" }),
 }));
 vi.mock("../../../utils/backend-client", async original => ({

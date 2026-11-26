@@ -4,7 +4,7 @@ import { RECENT_VISIT } from "@ontomato/contracts/platform-object-types";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { personalWorkspaceStore } from "../personal-workspace/store";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { applicationCatalogueClient } from "./application-catalogue";
 import { formatShortDateTime } from "./agent-session-panel";
 

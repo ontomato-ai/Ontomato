@@ -5,7 +5,7 @@ import { config } from "../../config/application";
 import { isQueryRuntimeGrant, type AssistantCredentials } from "../../utils/assistant-credentials";
 import { backendPost } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import { productDefinitionOwnerHeaders } from "./grants";
+import { productDefinitionOwnerHeaders } from "./service-authentication";
 
 export type ObjectKind = "AGENT" | "PANEL" | "PROJECTION" | "COMPONENT" | "METRIC" | "READ_FUNCTION" | "WRITE_FUNCTION" | "TRIGGER" | "SKILL";
 export type ObjectVerb = "USE" | "VIEW" | "EDIT";

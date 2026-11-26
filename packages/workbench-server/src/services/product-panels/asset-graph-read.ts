@@ -10,7 +10,7 @@ import { assistantName } from "../assistant/labels";
 import { assistantStore } from "../assistant/store";
 import { readDefinition } from "../business-definitions/definitions";
 import { DashboardMetricClient } from "../dashboard/metric-client";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { applicationCatalogueClient } from "./application-catalogue";
 import { buildProductAssetGraph, resolveObjectTypeLabel } from "./asset-graph";
 import { readAccessibleCurrentDefinitions } from "./current";
