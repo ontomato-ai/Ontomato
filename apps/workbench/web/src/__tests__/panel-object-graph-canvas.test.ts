@@ -78,7 +78,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 const graph = (editable: boolean, look: Record<string, unknown> = {}): DirectProjection => ({
-  ...record, id: editable ? "model-graph-editable" : "model-graph", name: "Model graph", componentId: "@ontomato/sdk:ObjectGraph",
+  ...record, id: editable ? "model-graph-editable" : "model-graph", name: "Model graph", componentId: "@ontomato/sdk:RecordGraph",
   inputs: {
     highlightedNodes: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } },
     highlightedEdges: { kind: "list", items: { kind: "object", objectType: RELATIONSHIP } },
@@ -300,12 +300,12 @@ it("colours each class by the category its record names, in the order the projec
   expect(canvas.nodes.map(({ id, category }) => [id, category])).toEqual([["org", "fact"], ["person", "capability"]]);
 });
 
-// A page that draws its graph as the ontology graph always did sets its nodes' and names' sizes (原页面对照《本体图谱》:
-// 62 and 13); the rows of the layout make room for them.
-it("draws its nodes and names at the sizes the projection sets, with rows to fit them", async () => {
+// A page can no longer size its nodes or their names: the canvas draws them at the platform's own sizes, and the dedicated
+// ontology type graph fixes 62 and 13 inside the component instead.
+it("ignores node and label sizes named in the projection config", async () => {
   mount(false, {}, { nodeSize: 62, labelSize: 13 });
   await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
-  expect(canvas.look).toEqual({ nodeSize: 62, labelSize: 13 });
+  expect(canvas.look).toEqual({ nodeSize: undefined, labelSize: undefined });
 });
 
 // A graph larger than the canvas at a readable size is shown in part (panelisation lead, 2026-11-22: never shrunk until its
@@ -565,11 +565,9 @@ it("dims non-adjacent nodes and edges on selection without showing any highlight
   }
 });
 
-it("keeps unrelated nodes undimmed on editable canvases and supports force layout, hidden banners, compact toolbar, and hint", async () => {
+it("keeps unrelated nodes undimmed on editable canvases and supports force layout and hint", async () => {
   const { instance, element } = mount(true, {}, {
     layout: "force",
-    highlightBanner: false,
-    showFocusButton: false,
     hint: "Click a node to inspect",
   });
   await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
@@ -582,18 +580,16 @@ it("keeps unrelated nodes undimmed on editable canvases and supports force layou
     ["person", "default"],
   ]);
 
-  // Compact toolbar hides focus-selected; hint renders cleanly.
-  expect(element.querySelector('[data-graph-action="focus-selected"]')).toBeNull();
+  // Hint renders cleanly and the canvas keeps its relayout action.
   expect(element.querySelector('[data-graph-action="relayout"]')).not.toBeNull();
   expect(element.querySelector("[data-graph-op-hint]")?.textContent?.trim()).toBe("Click a node to inspect");
 
-  // With highlightBanner disabled, path highlights still report to pageContext without rendering the inline banner.
+  // Path highlights report to pageContext.
   instance.state.setState({
     pathFrom: { className: OBJECT_TYPE, primaryKey: "person" } as never,
     pathTo: { className: OBJECT_TYPE, primaryKey: "org" } as never,
   });
   await nextTick();
-  expect(element.querySelector("[data-graph-path-banner]")).toBeNull();
   expect(instance.pageContext.value.highlights?.[0]?.kind).toBe("path");
 });
 

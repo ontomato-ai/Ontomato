@@ -43,7 +43,7 @@ import {
  * - OG-01: Header "Product relation graph" button opens fullscreen dialog hosting ProductAssetGraph reading
  *   `productGraph`, rendering categorized asset columns, highlighting incident edges on hover/focus, and
  *   navigating to real asset detail routes on click.
- * - OG-08: Main graph member uses OntologyModelGraph with 5px node strokes, 6px/7px selected/path strokes,
+ * - OG-08: Main graph member uses OntologyTypeGraph with 5px node strokes, 6px/7px selected/path strokes,
  *   4px selected/path edge strokes, and 0.16 node / 0.12 edge non-match dimming.
  * - OG-10: PNG export passes solid background to G6 exportImage and downloads with dated `ontology-graph-YYYY-MM-DD.png`.
  * - OG-11: Technical/stack read errors are sanitized to reader-safe text and same-target reread failures keep
@@ -408,8 +408,8 @@ afterEach(() => {
 });
 
 describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
-  it("OG-08 / OG-10: wires OntologyModelGraph styling overrides and solid-background dated PNG export", async () => {
-    expect("component" in authoringMembers.graph && authoringMembers.graph.component).toBe("OntologyModelGraph");
+  it("OG-08 / OG-10: wires OntologyTypeGraph styling overrides and solid-background dated PNG export", async () => {
+    expect("component" in authoringMembers.graph && authoringMembers.graph.component).toBe("OntologyTypeGraph");
     expect("component" in authoringMembers.productGraph && authoringMembers.productGraph.component).toBe("ProductAssetGraph");
 
     const harness = mountOntologyGraph();
@@ -420,7 +420,7 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
         expect(graphCanvasState.edges).toHaveLength(1);
       });
 
-      // OG-08: Exact OntologyModelGraph fixed visual language.
+      // OG-08: Exact OntologyTypeGraph fixed visual language.
       expect(graphCanvasState.styleOverrides).toEqual({
         nodeLineWidth: 5,
         highlightedNodeLineWidth: 7,

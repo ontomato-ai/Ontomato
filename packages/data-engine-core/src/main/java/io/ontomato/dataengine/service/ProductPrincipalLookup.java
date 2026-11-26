@@ -12,8 +12,6 @@ public interface ProductPrincipalLookup {
     Set<String> effectiveRoles(String userId, String domainId);
     default String productPrincipalId(String userId){return userId;}
     default List<ProductGrants.Grant> defaultAdminGrants(String domainId, Collection<String> verbs) { return List.of(); }
-    /** Import legacy menu-based maintenance roles once during migration, at the identity boundary. */
-    default List<ProductGrants.Grant> legacyMenuGrants(String domainId, String menuPermission, Collection<String> verbs) { return List.of(); }
     /** Import legacy application entry and maintenance authority once, at the identity boundary. */
     default List<ProductGrants.Grant> legacyApplicationGrants(String domainId,String applicationId){return List.of();}
     /** Resolve user display names by principal ID in a domain; missing IDs are omitted. */

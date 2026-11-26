@@ -56,7 +56,7 @@ export default [
     "ReferencePicker", picker("platform:Skill")),
   projection("agent-executor-choice", "Agent runs as", "The user an agent's work runs as; the identity service decides who may change it.",
     "ReferencePicker", picker("platform:User")),
-  projection("agent-data-scope", "Agent data scope", "The ontology classes an agent works on, chosen on the class and relationship graph; none keeps the default scope.", "ObjectGraph", {
+  projection("agent-data-scope", "Agent data scope", "The ontology classes an agent works on, chosen on the class and relationship graph; none keeps the default scope.", "RecordGraph", {
     config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
     data: {
       nodes: read(type("platform:ObjectType"), "list"),

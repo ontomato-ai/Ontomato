@@ -110,7 +110,7 @@ class ProductGrantControllerTest {
         var mvc=MockMvcBuilders.standaloneSetup(controller(grants,authentication)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post(ProductGrantController.REGISTER_PATH).contentType(MediaType.APPLICATION_JSON).content("{\"domainId\":\"domain\",\"ownerId\":\"author\",\"id\":\"profile\",\"shared\":true}")).andExpect(status().isOk());
         verify(authentication).authenticate(any());
-        verify(grants).register("domain", "profile", "author", true, List.of(), false, null);
+        verify(grants).register("domain", "profile", "author", true, List.of());
     }
     @Test void expandedRegistrationAndGrantSetUseJacksonLists() throws Exception {
         var grants = mock(ProductGrantService.class);
@@ -118,14 +118,14 @@ class ProductGrantControllerTest {
         var mvc = MockMvcBuilders.standaloneSetup(controller(grants, authentication))
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post(ProductGrantController.REGISTER_PATH).contentType(MediaType.APPLICATION_JSON).content("""
-            {"domainId":"domain","id":"retriever","shared":true,"grantAdmin":true,"verbs":["use","view","edit"],"legacyMenuPermission":"analysis-agent"}
+            {"domainId":"domain","id":"profile","shared":true,"verbs":["use","view","edit"]}
             """)).andExpect(status().isOk());
         verify(authentication).authenticate(any());
-        verify(grants).register("domain", "retriever", null, true, List.of("use", "view", "edit"), true, "analysis-agent");
+        verify(grants).register("domain", "profile", null, true, List.of("use", "view", "edit"));
         mvc.perform(post("/product-governance/grant-set").contentType(MediaType.APPLICATION_JSON).content("""
-            {"id":"retriever","principalKind":"role","principalId":"reviewers","verbs":[]}
+            {"id":"profile","principalKind":"role","principalId":"reviewers","verbs":[]}
             """)).andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
-        verify(grants).setGrants("retriever", "role", "reviewers", List.of());
+        verify(grants).setGrants("profile", "role", "reviewers", List.of());
     }
 
     @Test void domainGrantsAcceptAnAbsentBodyAndOmitUnresolvedNames() throws Exception {

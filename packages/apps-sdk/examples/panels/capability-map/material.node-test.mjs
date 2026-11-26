@@ -57,7 +57,7 @@ test("all four capability-map projections validate against the unified projectio
 
   assert.deepEqual(result, {
     "capability-map-graph": {
-      componentId: "@ontomato/sdk:OntologyGraph",
+      componentId: "@ontomato/sdk:InstanceGraph",
       data: ["schema", "counts", "start", "neighbors"],
       bindings: ["PlatformObjectType:platform:OntologyType"],
       outputs: ["selectedNode", "selectedType"],

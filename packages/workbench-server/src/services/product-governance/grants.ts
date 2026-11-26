@@ -40,8 +40,6 @@ interface ProductRegistrationOptions {
   ownerId?: string | null;
   createOnly?: boolean;
   verbs?: ProductGrantVerb[];
-  grantAdmin?: boolean;
-  legacyMenuPermission?: string;
 }
 
 export async function registerProductResource(

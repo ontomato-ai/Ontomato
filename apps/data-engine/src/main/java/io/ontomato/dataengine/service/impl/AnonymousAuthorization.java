@@ -7,6 +7,7 @@ import io.ontomato.dataengine.service.BuiltinProductIds;
 import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
+import io.ontomato.dataengine.service.authorization.PresetAgentPolicies;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,7 +21,7 @@ import org.springframework.http.HttpStatus;
 
 @Component
 @DependsOn("jdbcInitDb")
-public final class AnonymousAuthorization implements AuthorizationSubjects, AuthorizationStore, InitializingBean {
+public final class AnonymousAuthorization implements AuthorizationSubjects, AuthorizationStore, PresetAgentPolicies.RolePolicies, InitializingBean {
     private static final String DOMAIN_POLICY = "domain";
     private final ProductGrantService products;
 
@@ -69,6 +70,11 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
 
     private boolean hasDomainUse(ObjectTarget target) {
         return !objectGrants(target, Verb.USE, Set.of(DOMAIN_POLICY)).isEmpty();
+    }
+
+    @Override
+    public void initialize(String domainId, List<String> ids) {
+        // The anonymous subject already has these agent verbs and has no roles.
     }
 
     @Override public boolean requiresFirstPublicationAudience() { return false; }

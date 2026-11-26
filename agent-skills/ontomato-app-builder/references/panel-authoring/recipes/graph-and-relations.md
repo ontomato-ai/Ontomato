@@ -1,12 +1,12 @@
 # Connect a graph and its relations
 
 Inspect the graph and relation data ports in the component reference and the named reads in `panel type`.
-Declare a shared [graph selection type](../RUNTIME.md#graph-selection) in `manifest.state`. `OntologyGraph` uses
+Declare a shared [graph selection type](../RUNTIME.md#graph-selection) in `manifest.state`. `InstanceGraph` uses
 `selected` as its selection port. To connect its selection and relation filters, write:
 
 ```json
 {
-  "graph": { "component": "OntologyGraph", "state": { "selected": "selected", "visibleRelationKinds": "relationKinds" } },
+  "graph": { "component": "InstanceGraph", "state": { "selected": "selected", "visibleRelationKinds": "relationKinds" } },
   "relations": {
     "component": "ObjectRelations",
     "type": "platform:OntologyType",
@@ -23,6 +23,6 @@ and writes those ports and `start`. Its read-only outputs include `status`, `edg
 Clearing `ObjectList` checks writes `[]`. If those checks filter the graph, map `[]` to `null` when clearing the filter
 should show all nodes. An explicit empty array makes the graph show an empty set.
 
-For custom `nodes` + `edges` graphs (`ObjectGraph`), double-clicking a node or edge selects it and emits `choose` with
+For custom `nodes` + `edges` graphs (`RecordGraph`), double-clicking a node or edge selects it and emits `choose` with
 its `{ className, primaryKey }` reference — matching `ObjectList`'s `@choose` activation event. See
-`sdk read docs/components/ObjectGraph.md`.
+`sdk read docs/components/RecordGraph.md`.
