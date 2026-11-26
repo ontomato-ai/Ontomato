@@ -11,9 +11,9 @@ import {
 } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
+import { objectVisibilitySql, type ObjectVisibilityRange } from "../product-governance/authorization";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { HomeState } from "@ontomato/contracts/platform-home";
-import type { AgentAccessFacts } from "./authorization";
 export interface AssistantOwner {
   domainId: string;
   userId: string;
@@ -63,22 +63,45 @@ export interface AgentRow {
 }
 const db = () => getPostgresPool();
 const agentDefinitionScope = "domain_id=$1 AND kind NOT IN ('app-builder','ops-diagnosis')";
+const agentDefinitionColumns = { ownerId: "a.owner_id", id: "a.id::text" };
+
+function agentDefinitionVisibility(domainId: string, view: ObjectVisibilityRange, includeSystem: boolean) {
+  const values: unknown[] = [domainId];
+  const kinds = includeSystem ? "domain_id=$1" : agentDefinitionScope;
+  return { where: `${kinds} AND ${objectVisibilitySql(view, agentDefinitionColumns, values)}`, values };
+}
+
+export type AgentDefinitionSummaryRow = Pick<AgentRow, "id" | "name" | "description" | "icon" | "enabled" | "kind" | "sort_order"> & {
+  editable: boolean;
+};
+
+type AgentDefinitionRead = {
+  includeSystem: boolean;
+  editRange?: ObjectVisibilityRange;
+  limit?: number;
+  after?: { sortOrder: number; name: string; id: string };
+};
 
 export const assistantStore = {
-  async countAgentDefinitions(domainId: string, ids?: readonly string[]): Promise<number> {
-    const { rows: [result] } = await db().query<{ total: number }>(
-      `SELECT COUNT(*)::int AS total FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope}
-       AND ($2::uuid[] IS NULL OR id=ANY($2::uuid[]))`,
-      [domainId, ids ?? null],
-    );
-    return result.total;
-  },
-  async agentDefinitionAccessFacts(domainId: string): Promise<AgentAccessFacts[]> {
-    const { rows } = await db().query<AgentAccessFacts>(
-      `SELECT id, domain_id, owner_id FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope}`,
-      [domainId],
+  async agentDefinitionSummaries(domainId: string, view: ObjectVisibilityRange, { includeSystem, editRange, limit, after }: AgentDefinitionRead) {
+    const { where, values } = agentDefinitionVisibility(domainId, view, includeSystem);
+    const editable = editRange ? objectVisibilitySql(editRange, agentDefinitionColumns, values) : "FALSE";
+    const continuation = after === undefined ? "" :
+      `AND (a.sort_order,a.name,a.id) > ($${values.push(after.sortOrder)},$${values.push(after.name)},$${values.push(after.id)})`;
+    const pageSize = limit === undefined ? "" : `LIMIT $${values.push(limit)}`;
+    const { rows } = await db().query<AgentDefinitionSummaryRow>(
+      `SELECT a.id,a.kind,a.name,a.description,a.icon,a.enabled,a.sort_order,${editable} AS editable
+       FROM ${table("assistant_agents")} AS a WHERE ${where} ${continuation}
+       ORDER BY a.sort_order,a.name,a.id ${pageSize}`, values,
     );
     return rows;
+  },
+  async countVisibleAgentDefinitions(domainId: string, view: ObjectVisibilityRange, { includeSystem }: Pick<AgentDefinitionRead, "includeSystem">) {
+    const { where, values } = agentDefinitionVisibility(domainId, view, includeSystem);
+    const { rows: [result] } = await db().query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM ${table("assistant_agents")} AS a WHERE ${where}`, values,
+    );
+    return result.total;
   },
   async agents(domainId: string): Promise<AgentRow[]> {
     return (

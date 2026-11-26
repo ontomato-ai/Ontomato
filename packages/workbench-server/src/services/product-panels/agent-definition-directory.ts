@@ -21,7 +21,7 @@ import { assistantService } from "../assistant/service";
 import { assistantStore, type AssistantOwner, type AgentRow } from "../assistant/store";
 import { readFavorites } from "../platform-home/service";
 import { createOpsDiagnosisDefinition } from "../ops-diagnosis/panel-model";
-import { decideObjects, readAgentAccess, requireAllowed } from "../product-governance/authorization";
+import { decideObjects, readAgentAccess, readObjectRanges, requireAllowed } from "../product-governance/authorization";
 import { agentObject, allowedAgents } from "../assistant/authorization";
 import { ownerEnvelopeSchema } from "./data-query-operations";
 import { operationHost } from "./operation-host";
@@ -163,7 +163,9 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
   const systems = createSystemAgentOwners(owner, viewer);
   const word = (key: string) => tForLocale(viewer.locale, `panels.productCatalog.${key}`);
   const catalogueWord = (key: string) => word(`application.${key}`);
-  const storedRecord = (agent: AgentRow, canEdit: boolean, domainShared?: boolean) => agentDefinitionRecord({
+  const storedRecord = (agent: Pick<AgentRow, "id" | "kind" | "name" | "description" | "enabled" | "icon">,
+    canEdit: boolean, domainShared?: boolean,
+  ) => agentDefinitionRecord({
     id: agent.id,
     name: assistantName(agent, viewer.locale),
     description: assistantDescription(agent, viewer.locale),
@@ -230,21 +232,22 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
       });
     },
     async list() {
-      const agents = await allowedAgents(await assistantStore.channelAgents(owner.domainId), "VIEW", viewer);
-      const editable = new Set((await allowedAgents(agents, "EDIT", viewer)).map(agent => agent.id));
+      const { VIEW, EDIT } = await readObjectRanges("AGENT", ["VIEW", "EDIT"], viewer);
+      const agents = await assistantStore.agentDefinitionSummaries(owner.domainId, VIEW, { includeSystem: true, editRange: EDIT });
       const local = await Promise.all(agents.map(async agent => {
         const source = isAppBuilderKind(agent.kind) ? systems.builder : isOpsDiagnosisKind(agent.kind) ? systems.diagnosis : undefined;
-        return source ? systemRecord(await source.read(), editable.has(agent.id)) : storedRecord(agent, editable.has(agent.id));
+        return source ? systemRecord(await source.read(), agent.editable) : storedRecord(agent, agent.editable);
       }));
       const retriever = await viewRetrieval();
       return retriever ? [...local, systemRecord(retriever, retriever.editable === true)] : local;
     },
     async count() {
-      const [visible, retriever] = await Promise.all([
-        assistantStore.channelAgents(owner.domainId).then(agents => allowedAgents(agents, "VIEW", viewer)),
+      const [total, retriever] = await Promise.all([
+        readObjectRanges("AGENT", ["VIEW"], viewer).then(({ VIEW }) =>
+          assistantStore.countVisibleAgentDefinitions(owner.domainId, VIEW, { includeSystem: true })),
         viewRetrieval(),
       ]);
-      return { rows: [], total: visible.length + Number(retriever !== undefined) };
+      return { rows: [], total: total + Number(retriever !== undefined) };
     },
     async record(primaryKey: string) {
       validateId(primaryKey);
