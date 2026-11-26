@@ -46,11 +46,11 @@ let dependencies: Map<string, EntryDependency[]>;
 let boundDependencies: Awaited<ReturnType<typeof readBoundEntryDependencies>>;
 let agentDomains: Map<string, string>;
 const projection = () => registerProductProjectionRequestSchema.parse({ name: "Task summary", description: "", visibility: "domain", revision: 0,
-  componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" } },
+  componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: { kind: "object", objectType: "platform:Trigger" } },
   data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } }, outputs: {}, config: { fields: ["name"] } });
 const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", description: "", visibility: "domain", revision: 0,
   content: { html: "<main></main>", module: "throw new Error('Node must never execute this module')", recipes: "Choose a test task." },
-  manifest: { state: { selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" } } },
+  manifest: { state: { selectedTask: { type: { kind: "object", objectType: "platform:Trigger" } } },
     members: { summary: { target: { projectionId: "x" }, inputs: { task: { state: "selectedTask" } } } } } });
 async function seedProjection() {
   return saveCurrentProjection(owner, credentials, "x", projection());

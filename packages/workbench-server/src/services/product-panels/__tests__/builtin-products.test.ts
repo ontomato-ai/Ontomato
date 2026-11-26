@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -6,6 +6,7 @@ import { components } from "../../../../../apps-sdk/src/catalogue";
 import * as panelCheck from "@ontomato/contracts/panel-check";
 import { PERMISSION_POLICY } from "@ontomato/contracts/platform-object-types";
 import { installContentLayout } from "../../../content/layout";
+import { workbenchApplications } from "../../applications/builtins";
 
 vi.mock("../../app-builder/sdk", () => ({
   readCurrentAppSdkComponents: async () => ({
@@ -175,15 +176,17 @@ describe("readBuiltinProducts", () => {
       expect(functionDetail.content.html).not.toContain('v-if="detailReady" #actions');
       expect(panels.has("builtin-product-skills-library")).toBe(true);
       expect(panels.has("builtin-product-skills-library-detail")).toBe(true);
-      expect(panels.has("builtin-product-ontology-triggers")).toBe(true);
-
-      const triggersPanel = panels.get("builtin-product-ontology-triggers");
-      expect(triggersPanel).toBeDefined();
-      expect(triggersPanel!.manifest.state.search?.deepLink).toBe(true);
-      expect(triggersPanel!.manifest.state.creating?.deepLink).toBe(false);
-      expect(triggersPanel!.manifest.state.editing?.deepLink).toBe(false);
-      expect(triggersPanel!.content.html).not.toMatch(/<el-|--el-/);
-      expect(triggersPanel!.content.module).not.toContain("usePanelData");
+      expect(panels.has("builtin-product-ontology-triggers")).toBe(false);
+      const triggerPanelId = "builtin-product-scheduled-tasks";
+      expect(panels.has(triggerPanelId)).toBe(true);
+      const schedules = workbenchApplications.find(app => app.id === "schedules")?.declaration.panelUses;
+      expect(schedules).toContainEqual(expect.objectContaining({
+        panelId: triggerPanelId, path: "/schedules", names: expect.objectContaining({ "zh-CN": "任务触发" }),
+      }));
+      const ontology = JSON.parse(await readFile(path.join(packagesRoot, "data-engine-core/src/main/resources/applications/ontology.json"), "utf8"));
+      expect(ontology.declaration.panelUses).toContainEqual(expect.objectContaining({
+        panelId: triggerPanelId, path: "/ontology/assets/triggers", names: expect.objectContaining({ "zh-CN": "任务触发" }),
+      }));
       expect(panels.has("builtin-product-ontology-workflows")).toBe(true);
 
       const generalSettings = panels.get("builtin-product-general-settings");

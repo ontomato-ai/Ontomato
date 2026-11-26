@@ -74,8 +74,8 @@ const dataPanelId = "panel-data-port-pilot";
 const agentPanelId = "panel-agent-settings-pilot";
 const agentId = randomUUID();
 const mcpServiceId = randomUUID();
-const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "governance-instruction")!.response);
-const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => item.name === "governance-ready")!.response);
+const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "agents-instruction")!.response);
+const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => item.name === "agents-empty")!.response);
 const taskRun = platformTaskRunSchema.parse({
   ...examples.runs.find(item => item.name === "agents-running")!.response, taskId: task.id,
 });
@@ -87,7 +87,7 @@ const lastRun = {
 const createdTaskId = "10000000-0000-4000-8000-000000000011";
 const ownerWrites: string[] = [];
 let ownerTasks: typeof task[] = [];
-const taskType = { kind: "object", objectType: "platform:ScheduledTask" };
+const taskType = { kind: "object", objectType: "platform:Trigger" };
 /** The metric and function owners' one definition each, answered by their catalogue reads and forms. */
 const catalogueOwners = [
   { root: "metricView", objectType: "platform:MetricView",
@@ -468,7 +468,7 @@ beforeAll(async () => {
     expect(req.body.answer.steps[0].graph.patterns[0].relationship).toEqual([{ from: 0, to: 1, type: ["person_to_org"] }]);
     res.json({ data: [{ answer: [{ id: "org1", name: "Example Org" }] }] });
   });
-  app.get("/platform/scheduled-tasks", (req, res) => {
+  app.get("/platform/triggers", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ tasks: ownerTasks, timeZone: task.timeZone });
   });
@@ -482,11 +482,12 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({
       success: true,
-      data: examples.applications.response.applications.map(({ id }) => ({
-        id, kind: "native", names: { en: id, "zh-CN": id === task.appId ? "应用名称" : id },
+      data: [{
+        id: "agents", kind: "native", names: { en: "Agents", "zh-CN": "应用名称" },
         descriptions: {}, icon: "apps", rail: "apps", category: "business", sort: 0,
-        entry: { path: `/${id}`, entryKey: id }, scheduleAdapter: `java:${id}`, releaseId: null,
-      })),
+        entry: { path: "/agents", entryKey: "agents" }, scheduleAdapter: "java:agents", releaseId: null,
+        entryAvailable: true,
+      }],
     });
   });
   app.get(`/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`, (req, res) => {
@@ -498,21 +499,21 @@ beforeAll(async () => {
       },
     });
   });
-  app.post("/platform/scheduled-tasks/credential/renew", (req, res) => {
+  app.post("/platform/triggers/credential/renew", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     ownerWrites.push("renew");
     res.sendStatus(204);
   });
-  app.get("/platform/scheduled-tasks/applications", (req, res) => {
+  app.get("/platform/triggers/targets", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    res.json(examples.applications.response);
+    res.json({ actions: [], workflows: [] });
   });
-  app.get("/platform/scheduled-tasks/:taskId", (req, res) => {
+  app.get("/platform/triggers/:taskId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     if (req.params.taskId === task.id) { res.json(task); return; }
     res.status(404).json({ message: "Task no longer exists" });
   });
-  app.post("/platform/scheduled-tasks/applications/:appId/form", (req, res) => {
+  app.post("/platform/triggers/applications/:appId/form", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.appId).toBe(task.appId);
     expect(req.body.changedField).toBeNull();
@@ -522,42 +523,42 @@ beforeAll(async () => {
     }
     expect(req.body.values).toEqual(task.content);
     expect([task.id, null]).toContain(req.body.taskId);
-    res.json(taskForm);
+    res.json({ ...taskForm, values: req.body.values, submittable: true });
   });
-  app.post("/platform/scheduled-tasks", (req, res) => {
+  app.post("/platform/triggers", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.header("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
     expect(req.body).toMatchObject({ appId: task.appId, content: task.content, title: "New scheduled task" });
     ownerWrites.push("create");
     res.status(201).json({ ...task, id: createdTaskId, title: req.body.title });
   });
-  app.get("/platform/scheduled-tasks/:taskId/runs", (req, res) => {
+  app.get("/platform/triggers/:taskId/runs", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
     expect(req.query.cursor).toBe("previous-page");
     res.json({ runs: [taskRun], nextCursor: "next-page" });
   });
-  app.get("/platform/scheduled-tasks/:taskId/runs/:runId", (req, res) => {
+  app.get("/platform/triggers/:taskId/runs/:runId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
     expect(req.params.runId).toBe(taskRun.id);
     res.json(taskRun);
   });
-  app.put("/platform/scheduled-tasks/:taskId/enabled", (req, res) => {
+  app.put("/platform/triggers/:taskId/enabled", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(createdTaskId);
     expect(req.body).toEqual({ enabled: false, revision: task.revision });
     ownerWrites.push("setEnabled");
     res.json({ ...task, id: createdTaskId, enabled: false, nextRunAt: null, revision: task.revision + 1 });
   });
-  app.delete("/platform/scheduled-tasks/:taskId", (req, res) => {
+  app.delete("/platform/triggers/:taskId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
     expect(req.header("If-Match")).toBe(`"${task.revision}"`);
     ownerWrites.push("delete");
     res.sendStatus(204);
   });
-  app.put("/platform/scheduled-tasks/:taskId", (req, res) => {
+  app.put("/platform/triggers/:taskId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
     if (req.body.revision !== task.revision) {
@@ -568,7 +569,7 @@ beforeAll(async () => {
     ownerWrites.push("save");
     res.json({ ...task, revision: task.revision + 1 });
   });
-  app.post("/platform/scheduled-tasks/:taskId/runs", (req, res) => {
+  app.post("/platform/triggers/:taskId/runs", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
     ownerWrites.push("runNow");
@@ -650,12 +651,12 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const formWrite = await request("PUT", "product-projections/projection-pilot-form", {
     ...projection, componentId: "@ontomato/sdk:ObjectForm", revision: 0,
     data: { form: { ...projection.data.record, read: "form" } },
-    operations: { save: { operation: { kind: "PlatformOperation", id: "platform:ScheduledTask.save" }, target: { input: "task" } } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: "platform:Trigger.save" }, target: { input: "task" } } },
   });
   expect(formWrite.status, await formWrite.text()).toBe(200);
   const runWrite = await request("PUT", "product-projections/projection-pilot-run", {
     ...projection, componentId: "@ontomato/sdk:OperationButton", revision: 0,
-    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
   });
   expect(runWrite.status, await runWrite.text()).toBe(200);
   const operationRef = (id: string) => ({ kind: "PlatformOperation", id });
@@ -665,13 +666,13 @@ it("reads back stable member keys and named data, and leaves the record intact a
       data: { createForm: {
         source: { type: { kind: "PlatformObjectType", id: taskType.objectType } }, read: "createForm", params: { defaultAppId: { input: "defaultAppId" } },
       } },
-      operations: { create: { operation: operationRef("platform:ScheduledTask.create") } },
+      operations: { create: { operation: operationRef("triggers.create") } },
     },
     "projection-pilot-renew-credential": {
       ...projection, componentId: "@ontomato/sdk:PanelData", inputs: {}, config: {}, data: {},
       operations: {
         renewCredential: {
-          operation: operationRef("schedules.renewCredential"),
+          operation: operationRef("triggers.renewCredential"),
           target: { literal: { className: "platform:Application", primaryKey: "schedules" } },
         },
       },
@@ -686,8 +687,8 @@ it("reads back stable member keys and named data, and leaves the record intact a
     "projection-pilot-manage-task": {
       ...projection, componentId: "@ontomato/sdk:PanelData", config: {}, data: {},
       operations: {
-        setEnabled: { operation: operationRef("platform:ScheduledTask.setEnabled"), target: { input: "task" } },
-        delete: { operation: operationRef("platform:ScheduledTask.delete"), target: { input: "task" } },
+        setEnabled: { operation: operationRef("triggers.setEnabled"), target: { input: "task" } },
+        delete: { operation: operationRef("triggers.delete"), target: { input: "task" } },
       },
     },
   })) {
@@ -758,7 +759,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
     source, memberPath: [{ member: "run" }], operations: true, inputs: { task: taskRef },
   })).json();
   expect(operation).toMatchObject({
-    status: "ready", value: { runNow: { kind: "action", effect: "write", handlerRef: "schedules.runNow", label: "立即运行" } },
+    status: "ready", value: { runNow: { kind: "action", effect: "write", handlerRef: "triggers.runNow", label: "立即运行" } },
   });
   const target = { kind: "object", objectType: taskType.objectType, primaryKey: task.id };
   let runNowReceipt: unknown;

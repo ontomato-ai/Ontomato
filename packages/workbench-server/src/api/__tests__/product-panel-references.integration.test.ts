@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { AGENT_DEFINITION, DELETE_AGENT, PRODUCT_PANEL, PRODUCT_PROJECTION, SCHEDULED_TASK, SDK_COMPONENT } from "@ontomato/contracts/platform-object-types";
+import { AGENT_DEFINITION, DELETE_AGENT, PRODUCT_PANEL, PRODUCT_PROJECTION, TRIGGER, SDK_COMPONENT } from "@ontomato/contracts/platform-object-types";
 import {
   PROJECTION_REUSE_PANEL_HEADER, productPanelInUseErrorSchema, productPanelResponseSchema, productPanelUsedBySchema,
   productProjectionInUseErrorSchema, productProjectionResponseSchema,
@@ -75,7 +75,7 @@ const projectionInput = {
   inputs: { caption: portType }, outputs: { selected: portType }, config: {},
   data: {
     record: {
-      source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: "00000000-0000-4000-8000-000000000001" } } },
+      source: { object: { literal: { className: TRIGGER, primaryKey: "00000000-0000-4000-8000-000000000001" } } },
       read: "record", params: {},
     },
   },

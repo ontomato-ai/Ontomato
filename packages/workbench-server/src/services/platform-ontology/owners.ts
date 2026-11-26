@@ -33,6 +33,7 @@ import type { ProductOwner } from "../product-governance/grants";
 import { countUsableCurrentDefinitions, usableCurrentDefinitionIds } from "../product-panels/access";
 import { readPanelComponentCatalogue } from "../product-panels/component-catalogue";
 import { listObjectDetailPanelMappings } from "../product-panels/object-detail";
+import { triggerClient } from "../scheduling/trigger-client";
 
 import {
   ACTION, AGENT_DEFINITION, APPLICATION, ATTRIBUTE, BUSINESS_KNOWLEDGE, DEFINITION, FUNCTION, METRIC_VIEW,
@@ -111,15 +112,6 @@ export interface RawWorkflow {
   steps: Array<{ actionId?: string; roleCode?: string }>;
   createdBy?: string | null;
   reviewedBy?: string | null;
-}
-
-export interface RawTrigger {
-  id: string;
-  name: string;
-  effectKind?: string | null;
-  workflowId?: string;
-  actionId?: string;
-  enabled?: boolean;
 }
 
 export interface RawKnowledge {
@@ -429,7 +421,7 @@ export class PlatformOntologyOwnerReaders {
       case ACTION: return this.postTotal("/action/queryList");
       case METRIC_VIEW: return this.postTotal("/metricView/queryList");
       case FUNCTION: return this.postTotal("/function/queryList");
-      case TRIGGER: return this.postTotal("/trigger/queryList");
+      case TRIGGER: return this.memo("java:triggers:count", () => triggerClient(this.credentials).count());
       case WORKFLOW: return this.postTotal("/workflow/query");
       case USER: return this.postTotal("/workflow/subjects");
       case PERMISSION_POLICY: return this.postTotal("/platform/governance/policies");
@@ -599,23 +591,8 @@ export class PlatformOntologyOwnerReaders {
     });
   }
 
-  triggers(): Promise<OwnerReadResult<RawTrigger[]>> {
-    return this.memo("java:/trigger/queryList", async () => {
-      const rows = asArray(await this.postDataEngine("/trigger/queryList", {}));
-      return rows.flatMap((row) => {
-        const id = asString(row.id);
-        if (!id) return [];
-        const effect = asRecord(row.effect);
-        return [{
-          id,
-          name: asString(row.name) ?? id,
-          effectKind: asString(row.effectKind) ?? null,
-          workflowId: asString(effect?.workflowId),
-          actionId: asString(effect?.actionId),
-          enabled: row.enabled === true,
-        }];
-      });
-    });
+  triggers() {
+    return this.memo("java:triggers", async () => (await triggerClient(this.credentials).list()).tasks);
   }
 
   knowledge(): Promise<OwnerReadResult<RawKnowledge[]>> {

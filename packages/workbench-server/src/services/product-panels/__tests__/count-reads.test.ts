@@ -142,10 +142,12 @@ describe("platform count reads", () => {
 
   it("counts triggers without loading the list", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe("/trigger/queryList");
-      expect(init.method).toBe("POST");
-      expect(init.body).toBe(JSON.stringify({ countOnly: true }));
-      return Response.json({ success: true, data: { total: 3 } });
+      const { pathname, searchParams } = new URL(url);
+      expect(pathname).toBe("/platform/triggers");
+      expect(searchParams.get("countOnly")).toBe("true");
+      expect(init.method).toBe("GET");
+      expect(init.body).toBeUndefined();
+      return Response.json({ total: 3 });
     }));
     await expect(readCount(TRIGGER)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
   });

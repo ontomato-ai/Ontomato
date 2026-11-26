@@ -18,10 +18,12 @@ import type { AgentHostOwner } from "../agent-host/types";
 import { HttpError } from "../../utils/errors";
 
 export interface ScheduleContext { owner: AgentHostOwner; credentials: AssistantCredentials }
+export interface ScheduleTargetDisplay { name: string | null; summary: PlatformScheduleSummaryItem[] }
 export interface ScheduleApplication {
   id: string;
   description(locale?: string): string | null;
   authorize(context: ScheduleContext): Promise<void>;
+  describeTargets(contents: readonly PlatformScheduleContent[], context: ScheduleContext): Promise<ScheduleTargetDisplay[]>;
   form(input: PlatformScheduleFormRequest, context: ScheduleContext): Promise<PlatformScheduleForm>;
   validate(input: PlatformScheduleValidationRequest, context: ScheduleContext): Promise<PlatformScheduleValidation>;
   start(input: PlatformScheduleExecutionRequest, context: ScheduleContext): Promise<PlatformScheduleExecutionState>;
@@ -31,7 +33,7 @@ export interface ScheduleApplication {
 export const option = (value: string, label: string, reason: string | null = null, description: string | null = null): FormOption => ({
   value, label, description, disabled: reason !== null, disabledReason: reason,
 });
-export const select = (key: string, label: string, options: FormOption[], refreshOnChange = false, defaultValue: string | null = null): FormField => ({
+export const select = (key: string, label: string, options: FormOption[], refreshOnChange = false, defaultValue: string | null = null): Extract<FormField, { type: "select" }> => ({
   key, label, options, refreshOnChange, defaultValue, type: "select", required: true, help: null,
 });
 export const instruction = (label: string): FormField => ({
@@ -47,15 +49,19 @@ export function completeForm(appId: string, formRevision: string, fields: FormFi
     if (field.type === "select" && value && !field.options.some((item) => item.value === value && !item.disabled))
       errors.push({ field: formFieldPointer("/values/", field.key), code: "target_unavailable", message: field.options.find((item) => item.value === value)?.disabledReason ?? "The selected target is unavailable" });
   }
-  const summary: PlatformScheduleSummaryItem[] = fields.filter((field) => values[field.key]).map((field) => ({
-    key: field.key, label: field.label,
-    value: field.type === "select" ? field.options.find((item) => item.value === values[field.key])?.label ?? values[field.key] : values[field.key].slice(0, 160),
-  }));
+  const summary = summarizeFields(fields, values);
   for (const item of summary) if (labels[item.key]) item.value = labels[item.key];
   return platformScheduleFormSchema.parse({
     appId, formRevision, fields, values, summary, errors,
     submittable: !errors.length && fields.every((field) => !field.required || Boolean(values[field.key].trim())),
   });
+}
+
+export function summarizeFields(fields: readonly FormField[], values: PlatformScheduleContent): PlatformScheduleSummaryItem[] {
+  return fields.filter((field) => values[field.key]).map((field) => ({
+    key: field.key, label: field.label,
+    value: field.type === "select" ? field.options.find((item) => item.value === values[field.key])?.label ?? values[field.key] : values[field.key].slice(0, 160),
+  }));
 }
 
 export function checkedForm(input: PlatformScheduleValidationRequest, form: PlatformScheduleForm): PlatformScheduleValidation {

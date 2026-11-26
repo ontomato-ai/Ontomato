@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
-import { DASHBOARD_CARD, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { DASHBOARD_CARD, TRIGGER } from "@ontomato/contracts/platform-object-types";
 import {
   METRIC_CHART_COMPONENT, productPanelInUseErrorSchema, productPanelListResponseSchema, productPanelResponseSchema,
   productProjectionInUseErrorSchema, productProjectionListResponseSchema, productProjectionResponseSchema,
@@ -43,7 +43,7 @@ const projectionDefinition = {
   componentId: "@ontomato/sdk:ObjectSummary", inputs: {}, outputs: {}, config: {},
   data: {
     record: {
-      source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: "00000000-0000-4000-8000-000000000001" } } },
+      source: { object: { literal: { className: TRIGGER, primaryKey: "00000000-0000-4000-8000-000000000001" } } },
       read: "record", params: {},
     },
   },
@@ -279,7 +279,7 @@ it("filters projections across the full catalog before paging by componentId and
   const listScheduled = {
     name: "Scheduled tasks list", description: "All scheduled tasks", visibility: "domain",
     componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
   };
   const listStudentA = {
     name: "Student directory A", description: "Active students", visibility: "domain",
@@ -301,7 +301,7 @@ it("filters projections across the full catalog before paging by componentId and
   const runScheduled = {
     name: "Run schedule button", description: "Execute schedule now", visibility: "domain",
     componentId: "@ontomato/sdk:OperationButton", inputs: {}, outputs: {}, config: {}, data: {},
-    operations: { run: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } } },
+    operations: { run: { operation: { kind: "PlatformOperation", id: "triggers.runNow" } } },
   };
   const chatOnly = {
     name: "Ask assistant", description: "Conversation entry", visibility: "domain",
@@ -323,11 +323,11 @@ it("filters projections across the full catalog before paging by componentId and
   const listsOnly = await list("componentId=" + encodeURIComponent("@ontomato/sdk:ObjectList") + "&sort=name");
   expect(listsOnly.total).toBe(3);
   expect(listsOnly.items.map(item => item.id)).toEqual(["p-sched-list", "p-stu-list-a", "p-stu-list-b"]);
-  expect(listsOnly.items[0]?.objectTypes).toEqual([SCHEDULED_TASK]);
+  expect(listsOnly.items[0]?.objectTypes).toEqual([TRIGGER]);
   expect(listsOnly.items[1]?.objectTypes).toEqual(["Student"]);
 
   // Single filter: objectType (platform type matched via data source AND PlatformOperation owner)
-  const scheduled = await list("objectType=" + encodeURIComponent(SCHEDULED_TASK) + "&sort=name");
+  const scheduled = await list("objectType=" + encodeURIComponent(TRIGGER) + "&sort=name");
   expect(scheduled.total).toBe(2);
   expect(scheduled.items.map(item => item.id)).toEqual(["p-sched-run", "p-sched-list"]);
 

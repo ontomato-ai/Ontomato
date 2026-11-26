@@ -1,106 +1,42 @@
-import { z } from "zod";
-import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
-import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
-import {
-  platformScheduleApplicationsSchema,
-  platformScheduleFormRequestSchema,
-  platformScheduleFormSchema,
-  platformSchedulesPath,
-  platformTaskListSchema,
-  platformTaskRunPageSchema,
-  platformTaskRunSchema,
-  platformTaskSchema,
-} from "@ontomato/contracts/platform-schedules";
 import { createScheduledTaskReads, type ScheduledApplicationsStatus } from "@ontomato/platform-schedules/panel-reads";
-import { config } from "../../config/application";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
+import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
 import { withReadDirective } from "../product-panels/read-directive";
+import { triggerClient } from "./trigger-client";
 
 const SCHEDULE_LIST_REREAD_MS = 30_000;
 const SCHEDULE_RUN_REREAD_MS = 5_000;
 
-const applicationCatalogResponse = z.object({ success: z.literal(true), data: applicationCatalogSchema });
-
 export function createScheduledTaskReadAdapter(
-  viewer: AssistantCredentials, signal?: AbortSignal,
+  owner: ProductOwner, viewer: AssistantCredentials, signal?: AbortSignal,
   reuseApplicationsStatus?: (load: () => Promise<ScheduledApplicationsStatus>) => Promise<ScheduledApplicationsStatus>,
 ) {
-  const options = {
-    headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers),
-    signal,
-  };
-  const base = config.dataQuery.baseUrl.replace(/\/$/, "") + platformSchedulesPath.slice(DATA_QUERY_GATEWAY.length);
-  const taskPath = (id: string) => `${base}/${encodeURIComponent(id)}`;
+  const client = triggerClient(viewer, signal);
   const locale = resolveLocale(viewer.locale);
-  const catalogPath = `${config.dataQuery.baseUrl.replace(/\/$/, "")}/platform/applications?purpose=schedules`;
-  async function loadApplicationsStatus(): Promise<ScheduledApplicationsStatus> {
-    const [response, catalog] = await Promise.all([
-      backendGet("scheduled-task-applications", `${base}/applications`, options),
-      backendGet("scheduled-task-application-names", catalogPath, options),
-    ]);
-    const { applications } = platformScheduleApplicationsSchema.parse(JSON.parse(response.text));
-    const { data } = applicationCatalogResponse.parse(JSON.parse(catalog.text));
-    const entries = new Map(data.map((entry) => [
-      entry.id,
-      { name: localizedApplicationText(entry.names, locale) ?? entry.id, icon: entry.icon },
-    ]));
-    const resolved: (typeof applications[number] & { name: string; icon?: string })[] = [];
-    const missingIds: string[] = [];
-    for (const app of applications) {
-      const entry = entries.get(app.id);
-      if (!entry) {
-        missingIds.push(app.id);
-      } else {
-        resolved.push({ ...app, name: entry.name, ...(entry.icon ? { icon: entry.icon } : {}) });
-      }
-    }
-    return { applications: resolved, missingIds };
-  }
+  const context = { owner, credentials: { ...viewer, locale } };
+  const loadApplicationsStatus = async () => (await import("./applications")).readTriggerApplications(context, signal);
   const applicationsStatus = reuseApplicationsStatus
     ? () => reuseApplicationsStatus(loadApplicationsStatus)
     : loadApplicationsStatus;
+  const applications = async () => (await applicationsStatus()).applications;
   const reads = createScheduledTaskReads({
-    async list(includeCredentialStatus = false) {
-      const path = includeCredentialStatus ? `${base}?includeCredentialStatus=true` : base;
-      const response = await backendGet("scheduled-task-list", path, options);
-      return platformTaskListSchema.parse(JSON.parse(response.text));
-    },
-    async task(id) {
-      const response = await backendGet("scheduled-task-record", taskPath(id), options);
-      return platformTaskSchema.parse(JSON.parse(response.text));
-    },
-    async runs(id, cursor) {
-      const query = cursor ? `?${new URLSearchParams({ cursor })}` : "";
-      const response = await backendGet("scheduled-task-runs", `${taskPath(id)}/runs${query}`, options);
-      return platformTaskRunPageSchema.parse(JSON.parse(response.text));
-    },
-    async run(id, runId) {
-      const response = await backendGet("scheduled-task-run", `${taskPath(id)}/runs/${encodeURIComponent(runId)}`, options);
-      return platformTaskRunSchema.parse(JSON.parse(response.text));
-    },
+    ...client,
     applicationsStatus,
-    async applications() {
-      const { applications, missingIds } = await applicationsStatus();
-      if (missingIds.length > 0) {
-        throw new Error(`The application catalog has no scheduled application '${missingIds[0]}'`);
-      }
-      return applications;
+    async findMembers(keyword, limit) {
+      return (await searchProductGrantPrincipals("principal", keyword, limit, viewer)).options;
     },
-    async form(appId, request) {
-      const response = await backendPost(
-        "scheduled-task-form", `${base}/applications/${encodeURIComponent(appId)}/form`,
-        platformScheduleFormRequestSchema.parse(request), options,
-      );
-      return platformScheduleFormSchema.parse(JSON.parse(response.text));
+    describeTargets: async (tasks, directory) => (await import("./applications")).describeTriggerTargets(tasks, directory, context),
+    async targets() {
+      const [capabilities, entries] = await Promise.all([client.targets(), applications()]);
+      return { ...capabilities, applications: entries };
     },
   }, locale, (key, values) => tForLocale(locale, key, values));
 
   return {
     ...reads,
-    async list(params?: { application?: string; search?: string }) {
+    async count() { return { rows: [], total: await client.count() }; },
+    async list(params?: Parameters<typeof reads.list>[0]) {
       const rows = await reads.list(params);
       return rows.some(row => row.outputs?.isRunning === true)
         ? withReadDirective(rows, { rereadAfterMs: SCHEDULE_LIST_REREAD_MS })

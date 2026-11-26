@@ -551,7 +551,7 @@ it("filters panel templates in PostgreSQL before scanning cursor pages", async (
 
 it("filters projections in PostgreSQL by componentId and bound objectType before paging and returns distinct facets", async () => {
   const { listCurrentProducts, listProjectionFilterFacets } = await import("../../services/product-panels/catalog");
-  const { SCHEDULED_TASK } = await import("@ontomato/contracts/platform-object-types");
+  const { TRIGGER } = await import("@ontomato/contracts/platform-object-types");
 
   const seedProjection = async (id: string, definition: Record<string, unknown>) => {
     await state.pool!.query(
@@ -563,7 +563,7 @@ it("filters projections in PostgreSQL by componentId and bound objectType before
   await seedProjection("filter-sched-list", {
     name: "Filter A Schedule List", description: "Lists schedules",
     componentId: "@ontomato/sdk:ObjectList",
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
   });
   await seedProjection("filter-stu-list-1", {
     name: "Filter B Student List 1", description: "Lists students 1",
@@ -584,7 +584,7 @@ it("filters projections in PostgreSQL by componentId and bound objectType before
   await seedProjection("filter-sched-run", {
     name: "Filter E Run Schedule", description: "Runs schedule",
     componentId: "@ontomato/sdk:OperationButton",
-    operations: { run: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } } },
+    operations: { run: { operation: { kind: "PlatformOperation", id: "triggers.runNow" } } },
   });
 
   const byComponent = await listCurrentProducts(owner, viewer, "projection", {
@@ -594,7 +594,7 @@ it("filters projections in PostgreSQL by componentId and bound objectType before
   expect(byComponent.items.map(item => item.id)).toEqual(["filter-sched-list", "filter-stu-list-1", "filter-stu-list-2"]);
 
   const byPlatformType = await listCurrentProducts(owner, viewer, "projection", {
-    q: "Filter ", scope: "all", sort: "name", limit: 10, objectType: SCHEDULED_TASK,
+    q: "Filter ", scope: "all", sort: "name", limit: 10, objectType: TRIGGER,
   });
   expect(byPlatformType.total).toBe(2);
   expect(byPlatformType.items.map(item => item.id)).toEqual(["filter-sched-list", "filter-sched-run"]);
@@ -619,5 +619,5 @@ it("filters projections in PostgreSQL by componentId and bound objectType before
   expect(facets.componentIds).toEqual(expect.arrayContaining([
     "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
   ]));
-  expect(facets.objectTypes).toEqual(expect.arrayContaining([SCHEDULED_TASK, "Student"]));
+  expect(facets.objectTypes).toEqual(expect.arrayContaining([TRIGGER, "Student"]));
 });

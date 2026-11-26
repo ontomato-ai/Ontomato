@@ -23,7 +23,7 @@ import {
 } from "./query";
 import {
   ACTION, AGENT_DEFINITION, APPLICATION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE,
-  PLATFORM_ONTOLOGY_TYPE_MAP, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, SKILL,
+  PLATFORM_ONTOLOGY_TYPE_MAP, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, SKILL, TRIGGER,
 } from "./schema";
 
 const instanceSearchParams = z.object({
@@ -79,6 +79,7 @@ export function createPlatformOntologyReadAdapter(
   };
   const typeLabelOf = (type: string) => text(PLATFORM_ONTOLOGY_TYPE_MAP.get(type)!.labelKey);
   const detailPathOf = (className: string, key: string) => {
+    if (className === TRIGGER) return panelAddress("/schedules", { taskId: key });
     const route = instanceDetailRoutes[className];
     return route && panelAddress(route, { selected: key });
   };
