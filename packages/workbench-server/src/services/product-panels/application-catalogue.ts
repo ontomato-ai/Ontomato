@@ -1,11 +1,13 @@
 import { z } from "zod";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
   applicationCatalogueCreateSchema, applicationCatalogueFormRequestSchema, applicationCatalogueQueryResultSchema,
   applicationCatalogueRecordSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
   type ApplicationCatalogueFormRequest,
 } from "@ontomato/contracts/application-catalogue";
+import type { AssistantAgentList } from "@ontomato/contracts/assistant-chat";
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
-import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import { panelFormDescriptionSchema, panelReadParameterSchemas, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { AGENT_DEFINITION, APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication, isPlatformCatalogApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
@@ -18,13 +20,18 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { createLogger } from "../../logging/logger";
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { listDefaultAgentOptions } from "../assistant/default-agents";
-import { listCurrentProductNames } from "./catalog";
+import { listCurrentProductNames, readScopedPanelNames, readScopedPanels, readScopedProjectionNames } from "./catalog";
 import { readCurrentPanel } from "./current";
 import { assetGraphNode, createAssetGraph, panelGraphMembers } from "./asset-graph";
+import type { PanelReadRanges, PanelReadVisibility } from "./java-panel-reads";
+import type { PanelReadSelection } from "./panel-owner-reads";
 
 const applicationPath = "/platform/applications";
+export const APPLICATION_NAVIGATION_READ = { type: APPLICATION, name: "navigation", parameters: {} } as const;
+export const applicationNavigationFactsSchema = applicationCatalogSchema.transform(apps => apps.filter(isPlatformCatalogApplication));
 const cataloguePath = `${applicationPath}/catalogue`;
 export const applicationDraftIdSchema = z.string().regex(/^app-[a-z0-9-]+$/);
 const createPath = /^\/platform\/applications\/(app-[a-z0-9-]+)\/panel-uses\?create=true$/;
@@ -51,7 +58,8 @@ const querySchema = z.object({
 }).strict();
 const catalogueCountSchema = z.object({ total: z.number().int().nonnegative() }).strict();
 
-type ApplicationCatalogueRow = z.infer<typeof applicationCatalogueQueryResultSchema>["rows"][number];
+type ApplicationCataloguePage = z.infer<typeof applicationCatalogueQueryResultSchema>;
+type ApplicationCatalogueRow = ApplicationCataloguePage["rows"][number];
 type ApplicationCatalogueDetail = z.infer<typeof applicationCatalogueRecordSchema>;
 
 /** Canonical hash-route external link (`#/...?standalone=1`) for an application that allows standalone opening. */
@@ -66,6 +74,13 @@ export function applicationStandaloneLink(
   const query = new URLSearchParams(search);
   query.set("standalone", "1");
   return `#${routePath}?${query}`;
+}
+
+export function applicationCatalogueQueryParameters(params: Record<string, unknown>) {
+  const { page, ...rest } = querySchema.parse(params);
+  return typeof page === "object"
+    ? { ...rest, page: page.number, size: rest.size ?? page.size }
+    : { ...rest, ...(page !== undefined && { page }) };
 }
 
 function summarizeThemeOverrides(theme: ApplicationCatalogueDetail["theme"] | undefined): string | undefined {
@@ -186,6 +201,183 @@ export function toApplicationPanelRecord(
   };
 }
 
+function applicationPanelQuery({ rows, total, nextCursor }: ApplicationCataloguePage, locale?: string): PanelRecordQuery {
+  return {
+    rows: rows.map(row => toApplicationPanelRecord(row, locale)),
+    ...(total !== undefined && { total }),
+    ...(nextCursor !== undefined && { nextCursor }),
+  };
+}
+
+export async function presentApplicationCatalogueRecord(
+  detail: ApplicationCatalogueDetail, locale: string | undefined,
+  loadPanelNames: (ids: readonly string[]) => Promise<ReadonlyMap<string, string>>,
+): Promise<PanelRecord> {
+  const framePanelLabel = detail.framePanelId ? (await loadPanelNames([detail.framePanelId])).get(detail.framePanelId) : undefined;
+  return toApplicationPanelRecord(detail, locale, { framePanelLabel });
+}
+
+export function presentRegisteredApplicationRecord(
+  domainId: string, locale: string | undefined, payload: unknown, ranges: Parameters<typeof readScopedPanelNames>[2],
+) {
+  return presentApplicationCatalogueRecord(applicationCatalogueRecordSchema.parse(payload), locale,
+    ids => readScopedPanelNames(domainId, ids, ranges));
+}
+
+const applicationEntryRowsFactsSchema = applicationCatalogueRecordSchema.pick({
+  panelUses: true, groups: true, canEditEntries: true,
+});
+
+async function presentApplicationEntryRows(
+  detail: z.infer<typeof applicationEntryRowsFactsSchema>, domainId: string, locale: string | undefined,
+  loadPanelNames: (ids: readonly string[]) => Promise<ReadonlyMap<string, string>>,
+): Promise<PanelRecord[]> {
+  const language = resolveLocale(locale);
+  const word = (key: string) => tForLocale(language, `panels.productCatalog.application.${key}`);
+  const panelIds = [...new Set(detail.panelUses.filter(isApplicationPanelUse).map(use => use.panelId))];
+  const [panels, agentOptions] = await Promise.all([loadPanelNames(panelIds), listDefaultAgentOptions(domainId, locale)]);
+  const agents = new Map(agentOptions.map(({ value, label }) => [
+    value.kind === "id" ? `id:${value.id}` : `preset:${value.agentKind}`, label,
+  ]));
+  const groupName = (key?: string) => {
+    if (!key) return "—";
+    const found = detail.groups.find(group => group.key === key);
+    if (!found) return key;
+    return panelRecordFieldText({ kind: "localized", values: found.names }, language, "en") || key;
+  };
+  const agentLabel = (agent: ApplicationPanelUse["defaultAgent"]) => {
+    if (!agent) return word("defaultAgentFallback");
+    return agent.kind === "id"
+      ? agents.get(`id:${agent.id}`) ?? agent.id
+      : agents.get(`preset:${agent.agentKind}`) ?? agent.agentKind;
+  };
+  return detail.panelUses.map((use): PanelRecord => {
+    const displayName = use.names
+      ? panelRecordFieldText({ kind: "localized", values: use.names }, language, "en") || use.id
+      : use.id;
+    const panelEntry = isApplicationPanelUse(use);
+    return {
+      primaryKey: use.id,
+      className: APPLICATION_PANEL_USE,
+      label: displayName,
+      fields: {
+        path: use.path,
+        panelId: panelEntry ? use.panelId : "",
+        panel: panelEntry
+          ? { kind: "reference", className: PRODUCT_PANEL, primaryKey: use.panelId, label: panels.get(use.panelId) ?? use.panelId }
+          : "—",
+        group: groupName(use.groupKey),
+        defaultAgent: panelEntry ? agentLabel(use.defaultAgent) : "—",
+        canEdit: detail.canEditEntries,
+      },
+      fieldLabels: {
+        path: word("entryPath"),
+        panel: word("entryPanel"),
+        group: word("entryGroup"),
+        defaultAgent: word("entryAgent"),
+      },
+    };
+  });
+}
+
+export function presentRegisteredApplicationEntryRows(
+  domainId: string, locale: string | undefined, payload: unknown, ranges: Parameters<typeof readScopedPanelNames>[2],
+) {
+  const detail = applicationEntryRowsFactsSchema.parse(payload);
+  return presentApplicationEntryRows(detail, domainId, locale, ids => readScopedPanelNames(domainId, ids, ranges));
+}
+
+function applicationPanelIds(detail: Pick<ApplicationCatalogueDetail, "panelUses">) {
+  return [...new Set(detail.panelUses.filter(isApplicationPanelUse).map(use => use.panelId))];
+}
+
+function applicationUsedPanelRows(ids: readonly string[], names: ReadonlyMap<string, string>, locale?: string): PanelRecord[] {
+  const fieldLabels = { id: tForLocale(resolveLocale(locale), "panels.productCatalog.application.entryPanel") };
+  return ids.map(panelId => {
+    const label = names.get(panelId) ?? panelId;
+    return {
+      primaryKey: panelId, className: PRODUCT_PANEL, label,
+      ...(label !== panelId && { subtitle: panelId }),
+      fields: { id: panelId, accessible: names.has(panelId) },
+      fieldLabels,
+    };
+  });
+}
+
+const usedPanelFactsSchema = z.object({ panelIds: z.array(z.string().min(1)) });
+const referenceGraphFactsSchema = applicationCatalogueRecordSchema.pick({
+  id: true, names: true, framePanelId: true,
+}).merge(usedPanelFactsSchema);
+type ReferenceGraphFacts = z.infer<typeof referenceGraphFactsSchema>;
+type ApplicationGraphMember = ReturnType<typeof panelGraphMembers>[number] & { panelId: string };
+
+function applicationGraphRootIds({ framePanelId, panelIds }: ReferenceGraphFacts) {
+  return [...new Set([...(framePanelId ? [framePanelId] : []), ...panelIds])];
+}
+
+function applicationGraphMembers(panel: Parameters<typeof panelGraphMembers>[0]): ApplicationGraphMember[] {
+  return panelGraphMembers(panel).map(member => ({ ...member, panelId: panel.id }));
+}
+
+function applicationReferenceGraph(
+  detail: ReferenceGraphFacts, rootIds: readonly string[], members: readonly ApplicationGraphMember[],
+  panelNames: ReadonlyMap<string, string>, projectionNames: ReadonlyMap<string, string>, locale?: string,
+): PanelRecord {
+  const graph = createAssetGraph();
+  const label = localizedApplicationText(detail.names, resolveLocale(locale)) ?? detail.id;
+  const app = assetGraphNode("application", { id: detail.id, name: label });
+  graph.addNode(app);
+  for (const id of rootIds) {
+    const node = assetGraphNode("panel", { id, name: panelNames.get(id) ?? id });
+    graph.addNode(node);
+    graph.addEdge(app.id, node.id, "navigates");
+  }
+  for (const { kind, id, panelId } of members) {
+    const names = kind === "projection" ? projectionNames : panelNames;
+    const node = assetGraphNode(kind, { id, name: names.get(id) ?? id });
+    graph.addNode(node);
+    graph.addEdge(`asset:${panelId}`, node.id, "contains");
+  }
+  return { primaryKey: detail.id, className: APPLICATION, label, fields: { graph: { kind: "json", value: graph.build() } } };
+}
+
+export async function presentRegisteredApplicationUsedPanels(
+  domainId: string, locale: string | undefined, payload: unknown, ranges: Parameters<typeof readScopedPanelNames>[2],
+) {
+  const { panelIds } = usedPanelFactsSchema.parse(payload);
+  return applicationUsedPanelRows(panelIds, await readScopedPanelNames(domainId, panelIds, ranges), locale);
+}
+
+export async function presentRegisteredApplicationReferenceGraph(
+  domainId: string, locale: string | undefined, payload: unknown, ranges: Parameters<typeof readScopedPanelNames>[2],
+  projectionUse: Parameters<typeof readScopedProjectionNames>[2],
+) {
+  const detail = referenceGraphFactsSchema.parse(payload);
+  const rootIds = applicationGraphRootIds(detail);
+  const roots = await readScopedPanels(domainId, rootIds, ranges);
+  const members = rootIds.flatMap(id => {
+    const root = roots.get(id);
+    return root?.usable ? applicationGraphMembers(root.panel) : [];
+  });
+  const panelIds = new Set<string>(), projectionIds = new Set<string>();
+  for (const { kind, id } of members) {
+    if (kind === "projection") projectionIds.add(id);
+    else if (!rootIds.includes(id)) panelIds.add(id);
+  }
+  const [memberNames, projectionNames] = await Promise.all([
+    readScopedPanelNames(domainId, [...panelIds], ranges),
+    readScopedProjectionNames(domainId, [...projectionIds], projectionUse),
+  ]);
+  for (const [id, { panel }] of roots) memberNames.set(id, panel.name || id);
+  return applicationReferenceGraph(detail, rootIds, members, memberNames, projectionNames, locale);
+}
+
+export function createApplicationPanelReadPresenter(locale?: string) {
+  return {
+    query: (payload: unknown) => applicationPanelQuery(applicationCatalogueQueryResultSchema.parse(payload), locale),
+  };
+}
+
 const GALLERY_EXCLUDED_APP_IDS = new Set(["home", "personal-workspace", "workplace", "application-gallery"]);
 const logger = createLogger("application-catalogue");
 const GALLERY_RAIL_ORDER = ["top", "apps", "bottom"] as const;
@@ -200,21 +392,12 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
   return {
     async navigation() {
       const response = await backendGet("application-navigation", url(`${applicationPath}?purpose=navigation`), options());
-      return ownerData(response.text, applicationCatalogSchema).filter(isPlatformCatalogApplication);
+      return ownerData(response.text, applicationNavigationFactsSchema);
     },
     async query(params: Record<string, unknown>) {
-      const { page, ...rest } = querySchema.parse(params);
       const query = new URLSearchParams();
-      for (const [key, value] of Object.entries(rest)) {
+      for (const [key, value] of Object.entries(applicationCatalogueQueryParameters(params))) {
         if (value !== undefined) query.set(key, String(value));
-      }
-      if (page !== undefined) {
-        if (typeof page === "number") {
-          query.set("page", String(page));
-        } else {
-          query.set("page", String(page.number));
-          if (rest.size === undefined) query.set("size", String(page.size));
-        }
       }
       const response = await backendGet("application-catalogue", url(`${cataloguePath}?${query}`), options());
       return ownerData(response.text, applicationCatalogueQueryResultSchema);
@@ -287,45 +470,144 @@ async function withDefaultAgentChoices(description: PanelFormDescription, choice
   return { ...description, fields: description.fields.map(field => field === entries ? { ...entries, control: { ...control, itemFields } } : field) };
 }
 
+type CatalogueFormRead = {
+  input: ApplicationCatalogueFormRequest;
+  mergeCurrentValues: boolean;
+  draftId?: string;
+};
+
+function prepareCatalogueDraftForm(
+  { values, changedField = null }: FormParams,
+  source?: Extract<ApplicationCatalogueFormRequest["target"], { kind: "object" }>,
+): CatalogueFormRead {
+  const { id, ...formValues } = values ?? {};
+  const draftId = applicationDraftIdSchema.optional().parse(id);
+  return {
+    input: {
+      section: "create",
+      target: source ?? { kind: "draft", ...(draftId !== undefined && { id: draftId }) },
+      ...(values !== undefined && { values: formValues }),
+      changedField,
+    },
+    mergeCurrentValues: false,
+    draftId,
+  };
+}
+
+function prepareCatalogueEditForm(
+  primaryKey: string, { section, entryId, values, changedField = null }: EditFormParams,
+): CatalogueFormRead {
+  const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;
+  if (section === "create" || (section === "entry" && entryId === "__copy__")) {
+    return prepareCatalogueDraftForm({ values, changedField }, target);
+  }
+  const schema = section === "identity"
+    ? applicationIdentityUpdateSchema
+    : section === "entry"
+      ? applicationPanelUseSchema
+      : applicationEntriesUpdateSchema;
+  return {
+    input: { section, target, ...(entryId !== undefined && { entryId }), ...(values !== undefined && { values }), changedField },
+    mergeCurrentValues: values !== undefined && !schema.safeParse(values).success,
+  };
+}
+
+function presentCatalogueForm(
+  form: PanelFormDescription, { input, draftId }: CatalogueFormRead, domainId: string, locale?: string,
+) {
+  if (input.section === "create") {
+    const allocatedId = createPath.exec(form.save.path)?.[1];
+    if (!allocatedId || (draftId !== undefined && draftId !== allocatedId))
+      throw new HttpError(502, "The application owner returned an invalid draft save path", "APPLICATION_DRAFT_INVALID");
+    form = { ...form, values: { ...form.values, id: allocatedId } };
+  }
+  return withDefaultAgentChoices(form, () => defaultAgentChoices(domainId, locale));
+}
+
+export function prepareApplicationPanelFormRead(
+  selection: PanelReadSelection, params: Record<string, unknown>, domainId: string, locale?: string,
+) {
+  if (selection.typeId !== APPLICATION || (selection.method !== "form" && selection.method !== "createForm")) return;
+  const values = panelReadParameterSchemas.panelFormValues.optional().parse(params.values);
+  requireFormFieldNames(values, "values");
+  const change = { values, changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) };
+  const read = selection.method === "createForm" ? prepareCatalogueDraftForm(change) : prepareCatalogueEditForm(selection.primaryKey!, {
+    ...change,
+    section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
+    entryId: panelReadParameterSchemas.applicationEntryId.optional().parse(params.entryId),
+  });
+  return {
+    call: {
+      type: APPLICATION, name: selection.method,
+      parameters: runtimeJsonObjectSchema.parse({
+        ...applicationCatalogueFormRequestSchema.parse(read.input), mergeCurrentValues: read.mergeCurrentValues,
+      }),
+    },
+    present: (payload: unknown) => presentCatalogueForm(panelFormDescriptionSchema.parse(payload), read, domainId, locale),
+  };
+}
+
+type ApplicationGalleryParams = { category?: string; search?: string; favoritesOnly?: boolean };
+type ApplicationGalleryDirectory = {
+  navigation(): Promise<z.infer<typeof applicationNavigationFactsSchema>>;
+  agents(): Promise<Pick<AssistantAgentList, "agents">>;
+};
+
+function applicationGallerySources(category = "all") {
+  return { includeApps: category !== "agents", includeAgents: category === "all" || category === "agents" };
+}
+
+export function prepareApplicationGalleryRead(
+  owner: ProductOwner, viewer: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
+) {
+  if (selection.typeId !== APPLICATION || selection.method !== "available") return;
+  const gallery = params as ApplicationGalleryParams;
+  const { includeApps, includeAgents } = applicationGallerySources(gallery.category);
+  return {
+    call: includeApps ? APPLICATION_NAVIGATION_READ : undefined,
+    ...(includeAgents && { visibility: [{ kind: "AGENT", verbs: ["USE"] }] satisfies PanelReadVisibility[] }),
+    present(payload: unknown, ranges?: PanelReadRanges) {
+      return createApplicationReadAdapter(owner, viewer).available(gallery, {
+        navigation: async () => applicationNavigationFactsSchema.parse(payload),
+        async agents() {
+          const range = ranges?.AGENT?.USE;
+          if (!range) throw new HttpError(502, "The panel read owner did not provide AGENT/USE visibility", "PANEL_READ_OWNER_RESPONSE_INVALID");
+          const { listAssistantAgentsInRange } = await import("../assistant/agents");
+          return listAssistantAgentsInRange(owner, viewer, range);
+        },
+      });
+    },
+  };
+}
+
 export function createApplicationReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const client = applicationCatalogueClient(viewer);
   const { record } = client;
   const language = resolveLocale(viewer.locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.application.${key}`);
-  const form = async (input: ApplicationCatalogueFormRequest) =>
-    withDefaultAgentChoices(await client.form(input), () => defaultAgentChoices(owner.domainId, viewer.locale));
+  async function form(read: CatalogueFormRead) {
+    let { input } = read;
+    if (read.mergeCurrentValues) {
+      const current = await client.form({ ...input, values: undefined, changedField: null });
+      input = { ...input, values: { ...current.values, ...input.values } };
+    }
+    return presentCatalogueForm(await client.form(input), read, owner.domainId, viewer.locale);
+  }
 
   function panelNameMap(): Promise<Map<string, string>> {
     return listCurrentProductNames(owner, viewer, "panel");
   }
 
-  async function agentLabelMap(): Promise<Map<string, string>> {
-    try {
-      const options = await listDefaultAgentOptions(owner.domainId, viewer.locale);
-      const map = new Map<string, string>();
-      for (const option of options) {
-        const value = option.value;
-        if (value && typeof value === "object") {
-          if ("id" in value && typeof value.id === "string") map.set(`id:${value.id}`, option.label);
-          if ("agentKind" in value && typeof value.agentKind === "string") map.set(`preset:${value.agentKind}`, option.label);
-        }
-      }
-      return map;
-    } catch {
-      return new Map();
-    }
-  }
-
   return {
-    async available(params: { category?: string; search?: string; favoritesOnly?: boolean }): Promise<PanelRecordQuery> {
+    async available(params: ApplicationGalleryParams, directory: ApplicationGalleryDirectory = {
+      navigation: client.navigation,
+      agents: () => import("../assistant/service").then(({ assistantService }) => assistantService.agents(owner, viewer)),
+    }): Promise<PanelRecordQuery> {
       const category = params.category ?? "all";
-      const includeApps = category !== "agents";
-      const includeAgents = category === "all" || category === "agents";
+      const { includeApps, includeAgents } = applicationGallerySources(category);
       const [catalog, agentResult, favoritesResult] = await Promise.all([
-        includeApps ? client.navigation() : Promise.resolve([]),
-        includeAgents
-          ? import("../assistant/service").then(({ assistantService }) => assistantService.agents(owner, viewer))
-          : Promise.resolve({ agents: [] }),
+        includeApps ? directory.navigation() : [],
+        includeAgents ? directory.agents() : { agents: [] },
         readFavorites(owner).then(
           items => ({ ok: true as const, items }),
           error => ({ ok: false as const, error }),
@@ -435,57 +717,13 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
       return { rows: [], total };
     },
     async query(params: Record<string, unknown>) {
-      const { rows, total, nextCursor } = await client.query(params);
-      return {
-        rows: rows.map(row => toApplicationPanelRecord(row, viewer.locale)),
-        ...(total !== undefined && { total }),
-        ...(nextCursor !== undefined && { nextCursor }),
-      };
+      return applicationPanelQuery(await client.query(params), viewer.locale);
     },
     async record(primaryKey: string) {
-      const detail = await record(primaryKey);
-      const framePanelLabel = detail.framePanelId ? (await panelNameMap()).get(detail.framePanelId) : undefined;
-      return toApplicationPanelRecord(detail, viewer.locale, { framePanelLabel });
+      return presentApplicationCatalogueRecord(await record(primaryKey), viewer.locale, panelNameMap);
     },
-    async form(primaryKey: string, { section, entryId, values, changedField = null }: EditFormParams) {
-      const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;
-      if (section === "create" || (section === "entry" && entryId === "__copy__")) {
-        const { id, ...formValues } = values ?? {};
-        const draftId = applicationDraftIdSchema.optional().parse(id);
-        const draft = await form({
-          section: "create",
-          target,
-          values: values === undefined ? undefined : formValues,
-          changedField,
-        });
-        const allocatedId = createPath.exec(draft.save.path)?.[1];
-        if (!allocatedId || (draftId !== undefined && draftId !== allocatedId))
-          throw new HttpError(502, "The application owner returned an invalid draft save path", "APPLICATION_DRAFT_INVALID");
-        return { ...draft, values: { ...draft.values, id: allocatedId } };
-      }
-      const schema = section === "identity"
-        ? applicationIdentityUpdateSchema
-        : section === "entry"
-          ? applicationPanelUseSchema
-          : applicationEntriesUpdateSchema;
-      if (values !== undefined && !schema.safeParse(values).success) {
-        const current = await form({ section, ...(entryId !== undefined && { entryId }), target, changedField: null });
-        values = { ...current.values, ...values };
-      }
-      return form({ section, ...(entryId !== undefined && { entryId }), target, values, changedField });
-    },
-    async createForm({ values, changedField = null }: FormParams) {
-      const { id, ...formValues } = values ?? {};
-      const draftId = applicationDraftIdSchema.optional().parse(id);
-      const draft = await form({
-        section: "create", target: { kind: "draft", id: draftId },
-        values: values === undefined ? undefined : formValues, changedField,
-      });
-      const allocatedId = createPath.exec(draft.save.path)?.[1];
-      if (!allocatedId || (draftId !== undefined && draftId !== allocatedId))
-        throw new HttpError(502, "The application owner returned an invalid draft save path", "APPLICATION_DRAFT_INVALID");
-      return { ...draft, values: { ...draft.values, id: allocatedId } };
-    },
+    form: (primaryKey: string, params: EditFormParams) => form(prepareCatalogueEditForm(primaryKey, params)),
+    createForm: (params: FormParams) => form(prepareCatalogueDraftForm(params)),
     async entries(primaryKey: string) {
       const { id, entry, panelUses, groups, framePanelId, theme } = await record(primaryKey);
       return {
@@ -495,65 +733,11 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
       };
     },
     async entryRows(primaryKey: string): Promise<PanelRecord[]> {
-      const detail = await record(primaryKey);
-      const [panels, agents] = await Promise.all([panelNameMap(), agentLabelMap()]);
-      const groupName = (key?: string) => {
-        if (!key) return "—";
-        const found = detail.groups.find(group => group.key === key);
-        if (!found) return key;
-        return panelRecordFieldText({ kind: "localized", values: found.names }, language, "en") || key;
-      };
-      const agentLabel = (agent: ApplicationPanelUse["defaultAgent"]) => {
-        if (!agent) return word("defaultAgentFallback");
-        if (agent.kind === "id") return agents.get(`id:${agent.id}`) ?? agent.id;
-        if (agent.kind === "preset") return agents.get(`preset:${agent.agentKind}`) ?? agent.agentKind;
-        return word("defaultAgentFallback");
-      };
-      return detail.panelUses.map((use): PanelRecord => {
-        const displayName = use.names
-          ? panelRecordFieldText({ kind: "localized", values: use.names }, language, "en") || use.id
-          : use.id;
-        const panelEntry = isApplicationPanelUse(use);
-        const panelLabel = panelEntry ? (panels.get(use.panelId) ?? use.panelId) : "—";
-        return {
-          primaryKey: use.id,
-          className: APPLICATION_PANEL_USE,
-          label: displayName,
-          fields: {
-            path: use.path,
-            panelId: panelEntry ? use.panelId : "",
-            panel: panelEntry
-              ? { kind: "reference", className: PRODUCT_PANEL, primaryKey: use.panelId, label: panelLabel }
-              : "—",
-            group: groupName(use.groupKey),
-            defaultAgent: panelEntry ? agentLabel(use.defaultAgent) : "—",
-            canEdit: detail.canEditEntries,
-          },
-          fieldLabels: {
-            path: word("entryPath"),
-            panel: word("entryPanel"),
-            group: word("entryGroup"),
-            defaultAgent: word("entryAgent"),
-          },
-        };
-      });
+      return presentApplicationEntryRows(await record(primaryKey), owner.domainId, viewer.locale, panelNameMap);
     },
     async usedPanels(primaryKey: string): Promise<PanelRecord[]> {
       const detail = await record(primaryKey);
-      const panels = await panelNameMap();
-      const ids = [...new Set(detail.panelUses.filter(isApplicationPanelUse).map(use => use.panelId).filter(Boolean))];
-      return ids.map((panelId): PanelRecord => {
-        const accessible = panels.has(panelId);
-        const label = panels.get(panelId) ?? panelId;
-        return {
-          primaryKey: panelId,
-          className: PRODUCT_PANEL,
-          label,
-          ...(label !== panelId && { subtitle: panelId }),
-          fields: { id: panelId, accessible },
-          fieldLabels: { id: word("entryPanel") },
-        };
-      });
+      return applicationUsedPanelRows(applicationPanelIds(detail), await panelNameMap(), viewer.locale);
     },
     async referenceGraph(primaryKey: string): Promise<PanelRecord> {
       const detail = await record(primaryKey);
@@ -561,45 +745,13 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
         panelNameMap(),
         listCurrentProductNames(owner, viewer, "projection"),
       ]);
-      const graph = createAssetGraph();
-      const appLabel = localizedApplicationText(detail.names, language) ?? detail.id;
-      const app = assetGraphNode("application", { id: detail.id, name: appLabel });
-      graph.addNode(app);
-
-      const panelIds = [
-        ...(detail.framePanelId ? [detail.framePanelId] : []),
-        ...detail.panelUses.filter(isApplicationPanelUse).map(use => use.panelId).filter(Boolean),
-      ];
-      const uniquePanelIds = [...new Set(panelIds)];
-      for (const id of uniquePanelIds) {
-        const node = assetGraphNode("panel", { id, name: panels.get(id) ?? id });
-        graph.addNode(node);
-        graph.addEdge(app.id, node.id, "navigates");
-      }
-
-      // Populate outgoing relationships for accessible panels.
-      const accessiblePanelIds = uniquePanelIds.filter(panelId => panels.has(panelId));
+      const facts = { ...detail, panelIds: applicationPanelIds(detail) };
+      const rootIds = applicationGraphRootIds(facts);
       const loadedPanels = await Promise.all(
-        accessiblePanelIds.map(panelId => readCurrentPanel(owner, viewer, panelId).catch(() => null)),
+        rootIds.filter(id => panels.has(id)).map(id => readCurrentPanel(owner, viewer, id).catch(() => null)),
       );
-      for (const loaded of loadedPanels) {
-        if (!loaded) continue;
-        for (const { id, kind } of panelGraphMembers(loaded)) {
-          const names = kind === "projection" ? projectionNames : panels;
-          const node = assetGraphNode(kind, { id, name: names.get(id) ?? id });
-          graph.addNode(node);
-          graph.addEdge(`asset:${loaded.id}`, node.id, "contains");
-        }
-      }
-
-      return {
-        primaryKey: detail.id,
-        className: APPLICATION,
-        label: appLabel,
-        fields: {
-          graph: { kind: "json", value: graph.build() },
-        },
-      };
+      return applicationReferenceGraph(facts, rootIds, loadedPanels.flatMap(panel => panel ? applicationGraphMembers(panel) : []),
+        panels, projectionNames, viewer.locale);
     },
   };
 }

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { panelFormDescriptionSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { createCustomerOntologyReadAdapter } from "../customer-reads";
+import { createCustomerOntologyReadAdapter, prepareCustomerNeighborsRead } from "../customer-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
 
@@ -31,11 +31,6 @@ const classAttributes: Record<string, typeof personAttributes> = {
   org: orgAttributes,
   log: logAttributes,
 };
-const personRelationships = [
-  { relationship: "person_to_org", fromclass: "person", toclass: "org", desc: "Belongs to", fromShowName: "Person", toShowName: "Organization", fromField: "person_id", toField: "org_id" },
-  { relationship: "person_to_person", fromclass: "person", toclass: "person", desc: "", fromField: "from_id", toField: "to_id" },
-];
-
 type OwnerRequest = { url: URL; body?: Record<string, any> };
 type OwnerHandler = (request: OwnerRequest) => Response | undefined;
 
@@ -52,37 +47,12 @@ function stubOwner(handle: OwnerHandler) {
   }));
 }
 
-/** The model catalog routes: attributes by class, and the relationships touching a class. */
 function catalogRoute(request: OwnerRequest): Response | undefined {
-  if (request.url.pathname !== "/ontology/model/attributes" && request.url.pathname !== "/ontology/model/relationships")
-    return undefined;
-  const className = request.url.searchParams.get("className")!;
-  if (request.url.pathname === "/ontology/model/attributes") {
-    const attributes = classAttributes[className];
-    return attributes
-      ? Response.json(attributes)
-      : Response.json({ error: { code: "OBJECT_TYPE_NOT_FOUND", message: "Class not found" } }, { status: 404 });
-  }
-  return Response.json(personRelationships.filter(relation =>
-    relation.fromclass === className || relation.toclass === className));
-}
-
-/** Routes one DSL call by its relationship type and the idx ends it names, like the Java engine sees them. */
-function dslRoute(dsl: Record<string, any>): { kind: string; direction: "outgoing" | "incoming" } {
-  const pattern = dsl.answer.steps[0].graph.patterns[0];
-  const relationship = pattern.relationship[0];
-  return {
-    kind: relationship.type[0],
-    direction: relationship.from === 0 ? "outgoing" : "incoming",
-  };
-}
-
-function dslAnswer(rows: Record<string, unknown>[]): Record<string, unknown> {
-  return { data: [{ answer: rows }] };
-}
-
-function relationPattern(dsl: Record<string, any>) {
-  return dsl.answer.steps[0].graph.patterns[0];
+  if (request.url.pathname !== "/ontology/model/attributes") return undefined;
+  const attributes = classAttributes[request.url.searchParams.get("className")!];
+  return attributes
+    ? Response.json(attributes)
+    : Response.json({ error: { code: "OBJECT_TYPE_NOT_FOUND", message: "Class not found" } }, { status: 404 });
 }
 
 afterEach(() => {
@@ -208,159 +178,110 @@ it("tells the owner's missing object, permission refusal and query failure apart
 });
 
 const anchor = { className: "person", primaryKey: "p1" };
+const org = { className: "org", primaryKey: "o1" };
 
-/** The owner answers the anchor's record and each relation-direction query with the given rows. */
-function stubNeighbors(rows: (kind: string, direction: string) => Response, dslCalls: Record<string, any>[] = [], attributeReads: string[] = []) {
-  stubOwner(request => {
-    if (request.url.pathname === "/ontology/model/attributes") attributeReads.push(request.url.searchParams.get("className")!);
-    const route = catalogRoute(request);
-    if (route) return route;
-    if (request.url.pathname === "/data/queryInfoByNode")
-      return Response.json({ success: true, data: { classDef: { className: "person" }, data: { name: "Alice", age: 30 } } });
-    if (request.url.pathname === "/dsl/executeV1") {
-      dslCalls.push(request.body!);
-      const { kind, direction } = dslRoute(request.body!);
-      return rows(kind, direction);
-    }
-    return undefined;
-  });
+function directionRows(direction: "incoming" | "outgoing", targetClass: string, rows: Record<string, unknown>[]) {
+  return { direction, targetClass, status: "ok", rows };
 }
 
-it("reads an outgoing relationship's neighbors with the anchor's key, one row over the limit", async () => {
-  const dslCalls: Record<string, any>[] = [];
-  const attributeReads: string[] = [];
-  stubNeighbors(() => Response.json(dslAnswer([{ id: "o1", title: "Acme" }, { id: "o2", title: "Globex" }])), dslCalls, attributeReads);
+const peopleFacts = {
+  anchor: { attributes: personAttributes, answer: { success: true, data: { data: { name: "Alice" } } } },
+  label: "Friends",
+  targetAttributes: {},
+  typeLabels: { person: "Person" },
+};
 
-  const result = panelRelationNeighborsSchema.parse(
-    await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor }),
-  );
-
-  // The anchor's class and the target class are read once per call.
-  expect(attributeReads).toEqual(["person", "org"]);
-  expect(dslCalls.map(call => dslRoute(call))).toEqual([{ kind: "person_to_org", direction: "outgoing" }]);
-  const pattern = relationPattern(dslCalls[0]);
-  expect(pattern.objects[0]).toMatchObject({ class: "person" });
-  expect(pattern.objects[0].conditions.properties).toEqual({ field: "id", operator: "=", value: "p1" });
-  expect(pattern.relationship).toEqual([{ from: 0, to: 1, type: ["person_to_org"] }]);
-  expect(dslCalls[0].answer.steps[0].output.limit).toEqual({ count: 51, offset: 0 });
-  expect(dslCalls[0].answer.steps[0].output.fields[0]).toMatchObject({ field: "id", distinct: true });
-  expect(dslCalls[0].answer.steps[0].output.sort).toEqual({ fields: [{ variable: "target", field: "id", order: "asc" }] });
-
-  expect(result.node).toEqual({ className: "person", primaryKey: "p1", label: "Alice", typeLabel: "Person", layer: "fact" });
-  expect(result.edges.map(edge => edge.label)).toEqual(["Belongs to", "Belongs to"]);
-  expect(result.edges.map(edge => [edge.id, edge.from, edge.to, edge.direction])).toEqual([
-    ["person_to_org:outgoing:p1:o1", anchor, { className: "org", primaryKey: "o1" }, "outgoing"],
-    ["person_to_org:outgoing:p1:o2", anchor, { className: "org", primaryKey: "o2" }, "outgoing"],
-  ]);
-  expect(result.neighbors).toEqual([
-    { className: "org", primaryKey: "o1", label: "Acme", typeLabel: "Organization", layer: "fact" },
-    { className: "org", primaryKey: "o2", label: "Globex", typeLabel: "Organization", layer: "fact" },
-  ]);
-  expect(result.relations).toEqual([{ relationKind: "person_to_org", label: "Belongs to", status: "ok", edgeCount: 2, truncated: false }]);
-});
-
-it("reads both directions of a self-loop and keeps a neighbor reached twice as one", async () => {
-  const dslCalls: Record<string, any>[] = [];
-  const attributeReads: string[] = [];
-  stubNeighbors(() => Response.json(dslAnswer([{ id: "p2", name: "Bob" }])), dslCalls, attributeReads);
-
-  const reads = createCustomerOntologyReadAdapter(owner, viewer);
-  const result = await reads.neighbors("person_to_person", { node: anchor });
-  const first = await reads.neighbors("person_to_person", { node: anchor, limit: 1 });
-  const second = await reads.neighbors("person_to_person", { node: anchor, limit: 1, offset: first.nextOffset! });
-
-  // The self-loop's target is the anchor's own class, read once.
-  expect(attributeReads).toEqual(["person", "person", "person"]);
-  expect(dslCalls.slice(0, 2).map(call => dslRoute(call).direction)).toEqual(["outgoing", "incoming"]);
-  expect(dslCalls.slice(4).map(call => call.answer.steps[0].output.limit))
-    .toEqual([{ count: 3, offset: 0 }, { count: 3, offset: 0 }]);
-  expect(first).toMatchObject({ edges: [{ direction: "outgoing" }], nextOffset: 1, total: null });
-  expect(second).toMatchObject({ edges: [{ direction: "incoming" }], nextOffset: null, total: 2 });
-  expect(relationPattern(dslCalls[1]).relationship).toEqual([{ from: 1, to: 0, type: ["person_to_person"] }]);
-  // An incoming edge keeps the relationship's own direction: the neighbor is its from end.
-  expect(result.edges.map(edge => [edge.direction, edge.from.primaryKey, edge.to.primaryKey]))
-    .toEqual([["outgoing", "p1", "p2"], ["incoming", "p2", "p1"]]);
-  expect(result.neighbors).toEqual([{ className: "person", primaryKey: "p2", label: "Bob", typeLabel: "Person", layer: "fact" }]);
-  expect(result.relations).toEqual([{ relationKind: "person_to_person", label: "person_to_person", status: "ok", edgeCount: 2, truncated: false }]);
-});
-
-it("refuses relationKinds that point the read at another relationship", async () => {
-  stubNeighbors(() => Response.json(dslAnswer([{ id: "o1", title: "Acme" }])));
-  const reads = createCustomerOntologyReadAdapter(owner, viewer);
-
-  await expect(reads.neighbors("person_to_org", { node: anchor, relationKinds: ["person_to_person"] }))
-    .rejects.toMatchObject({ status: 400 });
-  await expect(reads.neighbors("person_to_org", { node: anchor, relationKinds: ["person_to_org"] }))
-    .resolves.toMatchObject({ relations: [{ relationKind: "person_to_org", label: "Belongs to", status: "ok" }] });
-});
-
-it("fails a relationship the anchor's class does not have, without querying it", async () => {
-  const dslCalls: Record<string, any>[] = [];
-  stubNeighbors(() => Response.json(dslAnswer([])), dslCalls);
-
-  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("made_up", { node: anchor });
-
-  expect(dslCalls).toEqual([]);
-  expect(result.edges).toEqual([]);
-  expect(result.relations).toEqual([
-    { relationKind: "made_up", status: "failed", edgeCount: 0, truncated: false, reason: expect.any(String) },
-  ]);
-});
-
-it("reports the viewer's refusal on the relationship as refused, with the owner's reason", async () => {
-  stubNeighbors(() => Response.json({ success: false, code: 403, message: "Class is outside the authorized scope" }, { status: 403 }));
-
-  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor });
-
-  expect(result.relations).toEqual([{
-    relationKind: "person_to_org", label: "Belongs to", status: "refused", edgeCount: 0, truncated: false, reason: "Class is outside the authorized scope",
-  }]);
-  expect(result.edges).toEqual([]);
-});
-
-it("marks the relationship failed when the owner's execution fails, with its reason", async () => {
-  stubNeighbors(() => Response.json({ error: "upstream adapter failed" }));
-
-  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor });
-
-  expect(result.relations).toEqual([{
-    relationKind: "person_to_org", label: "Belongs to", status: "failed", edgeCount: 0, truncated: false, reason: "Failed to read this relationship. Please try again later.",
-  }]);
-});
-
-it("continues a relationship after the returned rows and reports the final page", async () => {
-  const rows = [{ id: "o1", title: "Acme" }, { id: "o2", title: "Globex" }, { id: "o3", title: "Initech" }];
-  const dslCalls: Record<string, any>[] = [];
-  stubNeighbors(() => {
-    const { offset, count } = dslCalls.at(-1)!.answer.steps[0].output.limit;
-    return Response.json(dslAnswer(rows.slice(offset, offset + count)));
-  }, dslCalls);
-  const reads = createCustomerOntologyReadAdapter(owner, viewer);
-
-  const first = await reads.neighbors("person_to_org", { node: anchor, limit: 2 });
-  expect(first.relations).toEqual([{ relationKind: "person_to_org", label: "Belongs to", status: "ok", edgeCount: 2, truncated: true }]);
-  expect(first.neighbors.map(neighbor => neighbor.primaryKey)).toEqual(["o1", "o2"]);
-  expect(first).toMatchObject({ nextOffset: 2, total: null });
-
-  const next = await reads.neighbors("person_to_org", { node: anchor, limit: 2, offset: first.nextOffset! });
-  expect(dslCalls[1].answer.steps[0].output.limit).toEqual({ count: 3, offset: 2 });
-  expect(next.neighbors.map(neighbor => neighbor.primaryKey)).toEqual(["o3"]);
-  expect(next.relations[0]).toMatchObject({ edgeCount: 1, truncated: false });
-  expect(next).toMatchObject({ nextOffset: null, total: 3 });
-});
-
-it("fails the whole neighbors read by the record's rule when the anchor is unreadable", async () => {
-  stubOwner(request => {
-    const route = catalogRoute(request);
-    if (route) return route;
-    if (request.url.pathname === "/data/queryInfoByNode")
-      return Response.json({ success: false, code: "OBJECT_NOT_FOUND", message: "Object not found" });
-    return undefined;
+it("reads the declared relationship from its incoming end, with all readable business keys and continuation", () => {
+  const first = prepareCustomerNeighborsRead("person_to_org", { node: org, limit: 1 }, "en");
+  const second = prepareCustomerNeighborsRead("person_to_org", { node: org, limit: 1, offset: 1 }, "en");
+  expect(first.call).toEqual({ type: "customer:Relationship", name: "neighbors", parameters: {
+    relationshipId: "person_to_org", node: org, limit: 1, offset: 0,
+  } });
+  expect(second.call.parameters.offset).toBe(1);
+  const facts = {
+    anchor: { attributes: orgAttributes, answer: { success: true, data: { data: { title: "Acme" } } } },
+    label: "Belongs to",
+    targetAttributes: { person: [...personAttributes,
+      { ...personAttributes[1], name: "team", showName: "Team" }] },
+    typeLabels: { person: "Person", org: "Organization" },
+  };
+  const p1 = { id: "p1", name: "Alice", team: "Ops" };
+  const p3 = { id: "p3" };
+  expect(panelRelationNeighborsSchema.parse(first.present({
+    ...facts, directions: [directionRows("incoming", "person", [p1, p3])],
+  }))).toMatchObject({
+    node: { ...org, label: "Acme", typeLabel: "Organization", layer: "fact" },
+    neighbors: [{ ...anchor, label: "Alice / Ops", typeLabel: "Person", layer: "fact" }],
+    edges: [{ relationKind: "person_to_org", from: anchor, to: org, direction: "incoming", derived: false }],
+    relations: [{ relationKind: "person_to_org", status: "ok", edgeCount: 1, truncated: true }],
+    nextOffset: 1, total: null,
   });
+  expect(second.present({ ...facts, directions: [directionRows("incoming", "person", [p3])] })).toMatchObject({
+    neighbors: [{ primaryKey: "p3", label: "p3" }],
+    relations: [{ status: "ok", edgeCount: 1, truncated: false }],
+    nextOffset: null, total: 2,
+  });
+});
 
-  await expect(createCustomerOntologyReadAdapter(owner, viewer)
-    .neighbors("person_to_org", { node: { className: "person", primaryKey: "p9" } }))
-    .rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
+it("pages the outgoing then incoming edges of a self-loop and keeps a neighbor reached twice as one", () => {
+  const rows = [{ id: "p2", name: "Bob" }];
+  const facts = { ...peopleFacts, directions: [directionRows("incoming", "person", rows), directionRows("outgoing", "person", rows)] };
+  const first = prepareCustomerNeighborsRead("person_to_person", { node: anchor, limit: 1 }).present(facts);
+  const second = prepareCustomerNeighborsRead("person_to_person", { node: anchor, limit: 1, offset: first.nextOffset }).present(facts);
+  const all = prepareCustomerNeighborsRead("person_to_person", { node: anchor }).present(facts);
+  expect(first).toMatchObject({ edges: [{ direction: "outgoing", from: anchor }], nextOffset: 1, total: null });
+  expect(second).toMatchObject({ edges: [{ direction: "incoming", to: anchor }], nextOffset: null, total: 2 });
+  expect(all.neighbors).toEqual([{ className: "person", primaryKey: "p2", label: "Bob", layer: "fact", typeLabel: "Person" }]);
+  expect(all.edges.map(edge => edge.id)).toEqual(["person_to_person:outgoing:p1:p2", "person_to_person:incoming:p1:p2"]);
+});
+
+it("refuses relationKinds that point the read at another relationship", () => {
+  expect(() => prepareCustomerNeighborsRead("person_to_org", { node: anchor, relationKinds: ["person_to_person"] }))
+    .toThrow("relationKinds can only name the source relationship");
+});
+
+it("fails a relationship the anchor's class does not have", () => {
+  expect(prepareCustomerNeighborsRead("made_up", { node: anchor }).present({
+    ...peopleFacts, label: null, directions: [],
+  })).toMatchObject({ edges: [], relations: [{ relationKind: "made_up", status: "failed", edgeCount: 0, truncated: false }] });
+});
+
+it("reports a refusal in one direction and preserves rows in the other", () => {
+  const direction = { direction: "incoming", targetClass: "person" };
+  expect(prepareCustomerNeighborsRead("person_to_person", { node: anchor }).present({
+    ...peopleFacts, directions: [
+      directionRows("outgoing", "person", [{ id: "p2", name: "Bob" }]),
+      { ...direction, status: "refused", reason: "Class is outside the authorized scope" },
+    ],
+  })).toMatchObject({
+    edges: [{ direction: "outgoing" }],
+    relations: [{ relationKind: "person_to_person", status: "refused", edgeCount: 1, reason: "Class is outside the authorized scope" }],
+    nextOffset: null, total: null,
+  });
+});
+
+it("marks the relationship failed when the owner reports an execution failure", () => {
+  expect(prepareCustomerNeighborsRead("person_to_person", { node: anchor }, "en").present({
+    ...peopleFacts, directions: [{ direction: "outgoing", targetClass: "person", status: "failed" }],
+  })).toMatchObject({
+    relations: [{ status: "failed", edgeCount: 0, reason: "Failed to read this relationship. Please try again later." }],
+  });
+});
+
+it.each([
+  ["DATA_PERMISSION_DENIED", 403, "CUSTOMER_DATA_PERMISSION"],
+  ["OBJECT_NOT_FOUND", 404, "OBJECT_NOT_FOUND"],
+])("keeps center failure %s separate from a relationship refusal", (code, status, expectedCode) => {
+  const { present } = prepareCustomerNeighborsRead("person_to_org", { node: anchor });
+  try {
+    present({
+      ...peopleFacts, label: null, directions: [],
+      anchor: { ...peopleFacts.anchor, answer: { success: false, code, message: "Owner's reason" } },
+    });
+    expect.unreachable();
+  } catch (error) {
+    expect(error).toMatchObject({ status, code: expectedCode, message: "Owner's reason" });
+  }
 });
 
 it("reads an ordinary customer class edit form from attribute metadata and current object values", async () => {

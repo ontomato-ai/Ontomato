@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, provide, ref, watch } from "vue";
+import { computed, provide, ref, shallowRef, watch } from "vue";
 import { clearExternalLinkTab, copyExternalLink, externalLinkTab, rememberExternalLinkTab } from "./external-link";
 import { allowsStandalone } from "@ontomato/contracts/platform-identity";
 import type { PanelCurrentUser } from "@ontomato/contracts/panel-host";
+import type { ApplicationOpenResponse } from "@ontomato/contracts/product-panels";
 import { useRoute, useRouter, RouterView, RouterLink } from "vue-router";
 import { Link } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -25,6 +26,7 @@ import ApplicationFrameHost, { type ApplicationFrameSpec } from "./ApplicationFr
 import type { PlatformAppDeclaration } from "./apps";
 import { railApp } from "./apps";
 import {applicationShortcuts} from './application-shortcuts';
+import { routeEntryPath, routeOpenedEntry } from "./panel-entries";
 
 /**
  * The page the current address shows: its words, and whether it draws its own header. Which application it belongs to is
@@ -123,9 +125,19 @@ const moreActions = computed(() => props.shownPage?.externalLink
   ? [{ id: "copy-external-link", label: props.labels.copyExternalLink, icon: Link,
     onClick: () => void copyExternalLink(props.shownPage!.externalLink!, { copied: props.labels.externalLinkCopied, title: props.labels.copyExternalLink }) }]
   : []);
+const activeOpenedEntry = shallowRef<{ path: string; entry: ApplicationOpenResponse } | null>(null);
+const currentOpenedEntry = computed<ApplicationOpenResponse | null>(() => {
+  const entryPath = routeEntryPath(route);
+  if (activeOpenedEntry.value?.path === entryPath) return activeOpenedEntry.value.entry;
+  return routeOpenedEntry(route, entryPath);
+});
+function reportOpenedEntry(path: string, entry: ApplicationOpenResponse) {
+  activeOpenedEntry.value = { path, entry };
+}
 const externalTab = ref(externalLinkTab());
 const standaloneRequested = ref(route.query.standalone === "1");
-const standaloneAllowed = computed(() => allowsStandalone(activeApp.value));
+const standaloneSource = computed(() => currentOpenedEntry.value ?? activeApp.value);
+const standaloneAllowed = computed(() => allowsStandalone(standaloneSource.value));
 const hideRail = computed(() => {
   if (route.meta.standaloneApplication === true) return true;
   if (activeAppId.value && props.standaloneApplications?.includes(activeAppId.value)) return true;
@@ -135,10 +147,10 @@ const hideRail = computed(() => {
 });
 watch(hideRail, (hidden) => emit("railVisible", !hidden), { immediate: true });
 watch(
-  [() => route.query.standalone, () => activeApp.value],
-  ([flag, app]) => {
+  [() => route.query.standalone, standaloneSource],
+  ([flag, source]) => {
     if (flag === "1") standaloneRequested.value = true;
-    if (app && !allowsStandalone(app)) {
+    if (source && !allowsStandalone(source)) {
       standaloneRequested.value = false;
       if (externalTab.value) {
         externalTab.value = false;
@@ -151,7 +163,7 @@ watch(
       return;
     }
     if (!standaloneRequested.value || externalTab.value) return;
-    if (app === null) return;
+    if (source === null) return;
     standaloneRequested.value = false;
     externalTab.value = true;
     rememberExternalLinkTab();
@@ -223,7 +235,12 @@ const headerLabels = computed(() => ({
       render: ApplicationFrameHost keeps the page in place and moves it into `<current-entry>` once the frame attaches.
     -->
     <div ref="appBody" class="platform-app-body">
-      <ApplicationFrameHost :frame="applicationFrame" :blocked="Boolean(blocked)">
+      <ApplicationFrameHost
+        :frame="applicationFrame"
+        :opened-entry="currentOpenedEntry"
+        :blocked="Boolean(blocked)"
+        @opened-entry="reportOpenedEntry"
+      >
         <div class="platform-app-page">
           <PlatformPageHeader
             v-if="headerShown"

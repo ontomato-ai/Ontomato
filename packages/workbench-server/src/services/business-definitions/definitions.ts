@@ -15,9 +15,17 @@ export async function readDefinition(owner:ProductOwner,id:string){
 }
 const publishedDefinitionScope = "domain_id=$1 AND status='PUBLISHED'";
 
-export async function listPublishedDefinitions(owner:ProductOwner){
-  const result=await db().query(`SELECT definition FROM ${t('business_definitions')} WHERE ${publishedDefinitionScope} ORDER BY id`,[owner.domainId]);
-  return result.rows.map(row=>businessDefinitionSchema.parse(row.definition));
+export type PublishedDefinitionSelection = { id: string } | { objectType: string };
+
+export async function listPublishedDefinitions(owner: ProductOwner, selection?: PublishedDefinitionSelection) {
+  const values = [owner.domainId];
+  const filter = selection === undefined ? "" : "id" in selection
+    ? ` AND id=$${values.push(selection.id)}`
+    : ` AND definition->>'objectType'=$${values.push(selection.objectType)}`;
+  const result = await db().query(
+    `SELECT definition FROM ${t("business_definitions")} WHERE ${publishedDefinitionScope}${filter} ORDER BY id`, values,
+  );
+  return result.rows.map(row => businessDefinitionSchema.parse(row.definition));
 }
 
 export async function countPublishedDefinitions(owner: ProductOwner): Promise<number> {

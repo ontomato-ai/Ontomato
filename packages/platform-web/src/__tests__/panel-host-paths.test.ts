@@ -5,9 +5,10 @@ import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import en from "element-plus/es/locale/lang/en";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
-import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import type { DirectPanelMount } from "@ontomato/apps-sdk/direct";
+import { definePanel, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
+import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH, productPanelReadRequestSchema, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
+import { DASHBOARD_CARD, FAVORITE, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import type { ApplicationPanelUse, ProductProjection } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels } from "@ontomato/platform-shell";
@@ -19,7 +20,7 @@ import {
   setCachedPanel,
   setCachedProjection,
 } from "../panel-definition-cache";
-import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readApplicationFrameManifest, readPanelData, resolveApplicationEntry } from "../panel-host";
+import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readPanelData, resolveApplicationEntry } from "../panel-host";
 
 /*
  * The panel host's addresses (design 10.3): each request goes to the owner it belongs to, and the two owners differ.
@@ -265,38 +266,50 @@ describe("the panel host's addresses", () => {
   });
 });
 
-it("refreshes a cached frame default for an entry opened beside a conversation", async () => {
-  const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", };
+it("consumes bundled frame and content definitions from the opening response without extra panel or snapshot fetches", async () => {
+  const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks" };
   const framePanelId = "term-frame";
-  const frameManifest = (term: string) => definePanel({
-    state: { term: { type: { kind: "scalar", type: "string" }, external: true, deepLink: true, default: term } },
+  const frameManifest = definePanel({
+    state: { term: { type: { kind: "scalar", type: "string" }, external: true, deepLink: true, default: "fall" } },
     members: {},
   });
-  let revision = 1;
-  let term = "fall";
-  vi.stubGlobal("fetch", async (input: string | URL) => {
-    const url = new URL(input, "http://localhost");
-    if (url.pathname === panelHostPaths.snapshot(framePanelId)) {
-      return Response.json({ panel: { id: framePanelId, revision }, projections: [] });
-    }
-    expect(url.pathname).toBe(panelHostPaths.panel(framePanelId));
-    return Response.json({ panel: {
-      id: framePanelId, revision, name: "Terms", description: "", visibility: "domain",
-      domainId: "domain-1", ownerId: "owner-1", editable: true,
-      createdAt: "2026-11-18T00:00:00.000Z", updatedAt: "2026-11-18T00:00:00.000Z",
-      content: { html: '<div id="app"></div>' }, manifest: frameManifest(term),
-    } });
+  const framePanel = {
+    id: framePanelId, revision: 1, name: "Terms", description: "", visibility: "domain" as const,
+    domainId: "domain-1", ownerId: "owner-1", editable: true,
+    createdAt: "2026-11-18T00:00:00.000Z", updatedAt: "2026-11-18T00:00:00.000Z",
+    content: { html: '<div id="app"></div>' }, manifest: frameManifest,
+  };
+  const contentPanel = {
+    id: "panel-a", revision: 2, name: "Tasks", description: "", visibility: "domain" as const,
+    domainId: "domain-1", ownerId: "owner-1", editable: true,
+    createdAt: "2026-11-18T00:00:00.000Z", updatedAt: "2026-11-18T00:00:00.000Z",
+    content: { html: '<div id="app"></div>' }, manifest: definePanel({ state: {}, members: {} }),
+  };
+  const fetchSpy = vi.fn(async () => {
+    throw new Error("Unexpected network fetch when bundled opening definitions are supplied");
   });
+  vi.stubGlobal("fetch", fetchSpy);
 
-  const fullPage = framePanelHost("app-a", use, framePanelId, () => {});
-  await fullPage.source();
+  const framePort = framePanelHost("app-a", use, framePanelId, () => {}, undefined, undefined, () => ({ panel: framePanel }));
+  const frameSource = await framePort.source();
+  expect(frameSource.panel.id).toBe(framePanelId);
+  expect(framePort.sourceReconciled?.()).toBe(true);
   expect(cachedApplicationFrameManifest("app-a", framePanelId)?.state.term?.default).toBe("fall");
 
-  revision = 2;
-  term = "spring";
-  const beside = await readApplicationFrameManifest("app-a", use, framePanelId);
-  expect(beside.state.term?.default).toBe("spring");
-  expect((await fullPage.source()).panel.manifest.state.term?.default).toBe("spring");
+  const contentPort = platformPanelHost(
+    "app-a", use, () => {}, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    { panel: contentPanel },
+  );
+  const contentSource = await contentPort.source();
+  expect(contentSource.panel.id).toBe("panel-a");
+  expect(contentPort.sourceReconciled?.()).toBe(true);
+
+  const builtinPort = builtinFramePanelHost("settings", framePanelId, undefined, undefined, () => ({ panel: framePanel }));
+  const builtinSource = await builtinPort.source();
+  expect(builtinSource.panel.id).toBe(framePanelId);
+  expect(builtinPort.sourceReconciled?.()).toBe(true);
+
+  expect(fetchSpy).not.toHaveBeenCalled();
 });
 
 it.each([403, 404, "bad-frame"] as const)("reports %s and stops instead of reopening the subscription", async refusal => {
@@ -1059,6 +1072,87 @@ describe("dynamic and nested member projection access verification", () => {
       manifest: manifestDef,
     };
   }
+
+  it("loads favorite card placements and the fast preview while a separate metric request is held", async () => {
+    const list = { ...makeProjection("favorite-card-placements", "Pinned cards"), componentId: "@ontomato/sdk:GroupedGrid",
+      data: { rows: { source: { type: { kind: "PlatformObjectType" as const, id: FAVORITE } }, read: "list",
+        params: { targetGroup: { literal: "dashboardCards" } } } } } satisfies ProductProjection;
+    const preview = { ...makeProjection("favorite-card-preview", "Preview"), componentId: "@ontomato/sdk:MetricCard",
+      inputs: { target: { kind: "object", objectType: DASHBOARD_CARD } },
+      data: { result: { source: { object: { input: "target" } }, read: "result", params: {} } },
+    } satisfies ProductProjection;
+    const use = { id: "home", pageKey: "home", panelId: "panel-favorite-cards", path: "/home" };
+    const listSlot = "favoriteDashboardCards";
+    const cardSlot = "previewMetricCard";
+    const panel = makeCodedPanel(use.panelId, definePanel({
+      state: {},
+      members: { [listSlot]: { target: { projectionId: list.id } }, [cardSlot]: { target: { projectionId: preview.id } } },
+    }), listSlot);
+    panel.content.html = '<div id="app"></div>';
+    const card = (id: string) => ({ className: DASHBOARD_CARD, primaryKey: "board/" + id });
+    const rows = ["slow", "fast"].map(id => ({ ...card(id), label: id, fields: { kind: "metric" } }));
+    const metric = (total: number) => ({
+      rows: [{ total }], columns: [{ key: "total", label: "Total", type: null }], truncation: null,
+    });
+    const sent: { path: string; request: ProductPanelReadRequest }[] = [];
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname;
+      if (path === panelHostPaths.panel(use.panelId)) return Response.json({
+        panel, projections: { [list.id]: { status: "ready", projection: list }, [preview.id]: { status: "ready", projection: preview } },
+      });
+      if (path !== panelHostPaths.read) throw new Error("Unexpected panel request: " + path);
+      const request = productPanelReadRequestSchema.parse(JSON.parse(String(init.body)));
+      sent.push({ path, request });
+      if ("operations" in request) throw new Error("Only projection data is read");
+      if (request.dataName === "rows") return Response.json({ status: "ready", value: rows });
+      const target = panelObjectRefSchema.parse(request.inputs.target);
+      if (target.primaryKey === card("slow").primaryKey) {
+        await held;
+        return Response.json({ status: "ready", value: metric(1) });
+      }
+      expect(target).toEqual(card("fast"));
+      return Response.json({ status: "ready", value: metric(2) });
+    });
+
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels, label: () => "Pinned cards", address: () => use.path, initial: () => ({}),
+      }))!;
+      await view.ready;
+      const instance = (view.direct.value!.mount as DirectPanelMount).instance;
+      const [listContext, slow, fast] = await Promise.all([
+        instance.memberContext(listSlot),
+        instance.placingScoped(cardSlot, () => ({ target: card("slow") })),
+        instance.placingScoped(cardSlot, () => ({ target: card("fast") })),
+      ]);
+      const states = scope.run(() => ({
+        list: listContext.data.use("rows"), slow: slow.context.data.use("result"), fast: fast.context.data.use("result"),
+      }))!;
+
+      await vi.waitFor(() => {
+        expect(states.list.value).toMatchObject({ status: "ready", value: rows });
+        expect(states.fast.value).toMatchObject({ status: "ready", value: metric(2) });
+      });
+      expect(states.slow.value).toEqual({ status: "loading" });
+      const source = { kind: "registered", applicationId: "app-a", useId: use.id };
+      expect(sent).toEqual([
+        { path: panelHostPaths.read, request: { source, memberPath: [{ member: listSlot }], dataName: "rows", inputs: {} } },
+        ...["slow", "fast"].map(id => ({
+          path: panelHostPaths.read,
+          request: { source, memberPath: [{ member: cardSlot }], dataName: "result", inputs: { target: card(id) } },
+        })),
+      ]);
+      release();
+      await vi.waitFor(() => expect(states.slow.value).toMatchObject({ status: "ready", value: metric(1) }));
+    } finally {
+      release();
+      scope.stop();
+    }
+  });
 
   it("verifies server use grant for a cached projection selected by a fromState dynamic member and clears cache on 403", async () => {
     const use = {

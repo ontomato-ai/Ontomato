@@ -55,17 +55,9 @@ public class VectorRebuildStateDao {
     }
 
     public void save(String domainId, VectorRebuildState state) {
-        write(domainId, state, "ON CONFLICT (domain_id) DO UPDATE SET model_ref = EXCLUDED.model_ref, dimensions = EXCLUDED.dimensions, status = EXCLUDED.status, "
-                + "cleared = EXCLUDED.cleared, error = EXCLUDED.error");
-    }
-
-    /** Keeps a row written concurrently: a seed never overwrites a recorded state. */
-    public void insertIfAbsent(String domainId, VectorRebuildState state) {
-        write(domainId, state, "ON CONFLICT (domain_id) DO NOTHING");
-    }
-
-    private void write(String domainId, VectorRebuildState state, String onConflict) {
-        jdbcTemplate.update("INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?) " + onConflict,
+        jdbcTemplate.update("INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?) "
+                + "ON CONFLICT (domain_id) DO UPDATE SET model_ref = EXCLUDED.model_ref, dimensions = EXCLUDED.dimensions, "
+                + "status = EXCLUDED.status, cleared = EXCLUDED.cleared, error = EXCLUDED.error",
                 domainId, state.getModelId(), state.getDimensions(), state.getStatus().name(),
                 state.isCleared(), state.getError() == null ? null : JSON.toJSONString(state.getError()));
     }

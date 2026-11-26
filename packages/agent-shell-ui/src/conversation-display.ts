@@ -20,7 +20,7 @@ import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { presentationAppliesAddress } from "@ontomato/contracts/panel-host";
 import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
-import type { ApplicationEntryResolution } from "@ontomato/contracts/product-panels";
+import type { ApplicationOpenResponse } from "@ontomato/contracts/product-panels";
 import { fileName } from "./artifacts";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
 
@@ -49,7 +49,7 @@ export interface DisplayPage {
    */
   instance: string;
   /** Consumes the permission result belonging to this particular opening. */
-  takeOpenedEntry?: () => ApplicationEntryResolution | undefined;
+  takeOpenedEntry?: () => ApplicationOpenResponse | undefined;
 }
 
 export type DisplayTarget = { kind: "artifact"; open: OpenArtifact } | ({ kind: "page" } & DisplayPage);
@@ -59,7 +59,7 @@ export type DisplayHistory = "push" | "replace";
 
 /** Result of checking whether the initiating reader is admitted to open a target page address. */
 export type DisplayPageAdmissionResult =
-  | { ok: true; openedEntry?: ApplicationEntryResolution }
+  | { ok: true; openedEntry?: ApplicationOpenResponse }
   | { ok: false; reason: "forbidden" | "not_found" | "unsupported_target" | "outside_embedded_host"; error?: { code: string; message: string } };
 
 /** Live state patch handed to a newly opened panel instance (covering all declared public state fields). */

@@ -14,7 +14,7 @@ import type {
 } from "@ontomato/contracts/panel-projection";
 import {
   PLATFORM_SCHEDULE_TITLE_MAX, platformTaskFrequencySchema, platformTaskInputSchema,
-  type PlatformScheduleApplication, type PlatformTask, type PlatformTaskList, type PlatformTaskRun, type PlatformTriggerTargets,
+  type PlatformScheduleApplication, type PlatformTask, type PlatformTaskList, type PlatformTaskRun, type PlatformTaskRunPage, type PlatformTriggerTargets,
 } from "@ontomato/contracts/platform-schedules";
 import type { SchedulesApi } from "./api";
 import { applicationDraftErrors, applicationFormErrors, scheduledTaskCreateDescription, scheduledTaskSaveDescription, taskInput, taskInputField } from "./panel-operations";
@@ -359,94 +359,46 @@ function settingsFields(
   ];
 }
 
-export function createScheduledTaskReads(api: TaskReadApi, locale: string, translate: Translate) {
-  async function describe(
-    task: PlatformTask | undefined, serviceZone: string, params: TaskCreateFormParams,
-  ): Promise<PanelFormDescription> {
-    const current = scheduledTaskPanelSettings(task, serviceZone);
-    const { applications, actions, workflows } = await api.targets();
-    const draft = parseScheduledTaskPanelDraft(params.values ?? {});
-    const supplied = draft.success ? draft.data.task : {};
-    const errors: FormFieldError[] = draft.success ? [] : draft.error.issues.map(issue => {
-      const isParameter = issue.path[0] === "parameters";
-      const path = isParameter ? issue.path.slice(1) : issue.path;
-      const field = path.map(key => taskFieldPath(String(key))).join("");
-      const messageKey = isParameter ? "invalidDraftParameter" : "invalidDraftField";
-      return { field, code: "invalid_format", message: translate(`platformSchedules.panelErrors.${messageKey}`, { field }) };
-    });
-    const changed = params.changedField;
-    const validate = draft.success && params.values !== undefined && changed == null;
-    if (!task && supplied.appId === undefined && params.defaultAppId && applications.some(app => app.id === params.defaultAppId && app.available))
-      current.appId = params.defaultAppId;
-    const resetTarget = changed === "/task/targetKind";
-    const resetContent = resetTarget || changed === "/task/appId" || changed === "/task/targetId";
-    const settings = mergeTaskSettings(current, {
-      ...supplied,
-      ...(resetTarget && { appId: "", targetId: "" }),
-      ...(resetContent && { capabilityContent: {} }),
-      timeZone: current.timeZone,
-    }, resetContent);
-    const isApp = settings.targetKind === "application";
-    const selectedId = isApp ? settings.appId : settings.targetId;
-    const targetPath = isApp ? "/task/appId" : "/task/targetId";
-    const options = isApp ? applications.map(app => ({
-      ...option(app.id, app.name, app.description, app.unavailableReason), ...(app.icon && { icon: app.icon }),
-    })) : (settings.targetKind === "action" ? actions : workflows).map(target => option(target.id, target.name, target.description));
-    const selected = options.find(entry => entry.value === selectedId);
-    const unavailable = translate(isApp ? "platformSchedules.form.appUnknown" : "platformSchedules.form.targetUnavailable");
-    if (selectedId && !selected) options.push(option(selectedId, selectedId, null, unavailable));
-    if ((selectedId && (!selected || selected.disabled)) || (validate && !selectedId)) {
-      errors.push({ field: targetPath, code: selectedId ? "invalid_option" : "required",
-        message: selected?.disabledReason ?? (selectedId ? unavailable : translate("platformSchedules.notice.noApplication")) });
-    }
+export type TriggerListParams = {
+  scope?: string; search?: string; status?: PlatformTask["status"]; agentId?: string; taskId?: string;
+};
+export type TriggerMemberPage = { number: number; size: number };
+type DescribeRows = (tasks: PlatformTask[]) => Promise<PanelRecord[]>;
 
-    const sameApp = task?.targetKind === "application" && task.appId === settings.appId;
-    const stored = sameApp ? task.content : {};
-    const parameters: FormValues = draft.success ? draft.data.parameters : {};
-    const form = isApp && selected && !selected.disabled ? await api.form(settings.appId, {
-      values: resetContent ? {} : {
-         ...(!task && settings.appId === "agents" && params.defaultAgentId ? { agentId: params.defaultAgentId } : {}),
-         ...stored, ...parameters,
-       },
-      changedField: changed != null && !changed.startsWith("/task/") ? formFieldKey(changed, "/") : null,
-      taskId: sameApp ? task.id : null,
-      timeZone: settings.timeZone,
-    }) : undefined;
-    if (validate) {
-      if (!isApp || form) {
-        const parsed = platformTaskInputSchema.safeParse(taskInput(settings, form));
-        if (!parsed.success) errors.push(...parsed.error.issues.map(issue => ({
-          field: taskInputField(issue.path, settings.targetKind), code: "invalid_format" as const, message: issue.message,
-        })));
-      }
-      if (form) errors.push(...applicationDraftErrors(form, parameters));
-    }
-    const frequencyHelp = translate(task ? "platformSchedules.form.taskZone" : "platformSchedules.form.serviceZone", { zone: settings.timeZone });
-    return {
-      fields: [...settingsFields(settings.targetKind, options, task === undefined, frequencyHelp, translate), ...(form?.fields.map(typedField) ?? [])],
-      sections: [
-        ...(form ? [{ key: "application", title: translate("platformSchedules.form.content", { app: selected!.label }),
-          ...(form.fields.length === 0 && { hint: translate("platformSchedules.form.noFields") }) }] : []),
-        { key: "notifications", title: translate("platformSchedules.form.after") },
-      ],
-      values: { ...form?.values, task: settings },
-      errors: form ? [...errors, ...applicationFormErrors(form)] : errors,
-      ...(task && { revision: task.revision }),
-      save: task ? scheduledTaskSaveDescription(task.id) : scheduledTaskCreateDescription(settings.enabled!),
-    };
-  }
+export const TRIGGER_MEMBER_SEARCH_MAX = 100;
 
-  async function describeRows(tasks: PlatformTask[]) {
-    if (!tasks.some(task => task.targetKind === "application")) return tasks.map(task => taskRecord(task, locale, translate));
-    const directory = await api.applicationsStatus();
-    const icons = new Map(directory.applications.map(app => [app.id, app.icon]));
-    return (await api.describeTargets(tasks, directory)).map(task => taskRecord(task, locale, translate,
-      task.targetKind === "application" ? icons.get(task.appId) : undefined));
-  }
+export function triggerMemberSearchLimit(page?: TriggerMemberPage) {
+  return Math.min((page?.number ?? 1) * (page?.size ?? 50), TRIGGER_MEMBER_SEARCH_MAX);
+}
 
+export function triggerMemberIds(values: readonly unknown[]) {
+  return memberIdsSchema.parse(values);
+}
+
+export function findTriggerMember(id: string, candidates: readonly { id: string; name: string }[]) {
+  return candidates.find(candidate => candidate.id === id);
+}
+
+export function createTriggerReadPresenter(locale: string, translate: Translate) {
   return {
-    async list(params?: { scope?: string; search?: string; status?: PlatformTask["status"]; agentId?: string; taskId?: string }) {
-      const { tasks } = await api.list();
+    rows(tasks: readonly PlatformTask[], directory?: ScheduledApplicationsStatus) {
+      const icons = new Map(directory?.applications.map(app => [app.id, app.icon]));
+      return tasks.map(task => taskRecord(task, locale, translate, task.targetKind === "application" ? icons.get(task.appId) : undefined));
+    },
+    memberOptions(members: readonly { id: string; name: string }[], page?: TriggerMemberPage): PanelOptionList {
+      const size = page?.size ?? 50;
+      const end = (page?.number ?? 1) * size;
+      return { options: members.slice(end - size, end).map(memberOption) };
+    },
+    memberResolve(ids: readonly string[], members: ReadonlyMap<string, string>): PanelOptionList {
+      return { options: ids.map(id => {
+        const name = members.get(id);
+        return name === undefined
+          ? { primaryKey: id, value: id, label: id, unavailable: { reason: translate("platformSchedules.form.memberUnavailable") } }
+          : memberOption({ id, name });
+      }) };
+    },
+    async list(tasks: PlatformTask[], params: TriggerListParams | undefined, describeRows: DescribeRows) {
       const scope = params?.scope?.trim();
       const status = params?.status;
       const query = params?.search?.trim().toLowerCase();
@@ -457,8 +409,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       return query ? rows.filter(row => [row.label, row.fields.targetName, row.fields.settings, row.fields.frequency]
         .some(value => String(value).toLowerCase().includes(query))) : rows;
     },
-    async status(): Promise<PanelRecord> {
-      const { tasks, credentialStatus } = await api.list(true);
+    status({ tasks, credentialStatus }: PlatformTaskList): PanelRecord {
       return {
         primaryKey: "schedules-status",
         label: translate("platformSchedules.title"),
@@ -469,8 +420,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
         },
       };
     },
-    async counts(by?: string): Promise<PanelGroupCounts> {
-      const { tasks } = await api.list();
+    counts(tasks: PlatformTask[], by?: string): PanelGroupCounts {
       if (by === "attention") {
         let issues = 0;
         let running = 0;
@@ -493,6 +443,133 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
           count: tasks.filter(task => task.targetKind === kind).length })),
       ];
     },
+    runRecords(page: PlatformTaskRunPage): PanelRecordQuery {
+      return {
+        rows: page.runs.map(run => runRecord(run, translate)),
+        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+      };
+    },
+    runRecord(primaryKey: string, latest?: PlatformTaskRun, task?: PlatformTask): PanelRecord {
+      const focused = (run: PlatformTaskRun): PanelRecord => {
+        const { label: _label, subtitle: _subtitle, ...record } = runRecord(run, translate);
+        const output = run.result ?? run.resultSummary;
+        // The small panel draws status and trigger in its header.
+        return { ...record, label: "", fields: { ...record.fields, ...(output !== null && { result: cleanMarkdownParagraphs(output) }) } };
+      };
+      const pause: Record<string, string> = task?.pause ? { pauseMessage: task.pause.message } : {};
+      if (latest) {
+        const record = focused(latest);
+        return { ...record, fields: { ...record.fields, ...pause } };
+      }
+      return {
+        primaryKey,
+        label: "",
+        fields: { ...pause, timeZone: task!.timeZone },
+        outputs: { status: "", resultPath: "", isRunning: false },
+      };
+    },
+  };
+}
+
+export async function presentTriggerForm(
+  task: PlatformTask | undefined, serviceZone: string, params: TaskCreateFormParams,
+  { applications, actions, workflows }: PlatformTriggerTargets & { applications: NamedApplication[] },
+  readApplicationForm: TaskReadApi["form"], translate: Translate,
+): Promise<PanelFormDescription> {
+  const current = scheduledTaskPanelSettings(task, serviceZone);
+  const draft = parseScheduledTaskPanelDraft(params.values ?? {});
+  const supplied = draft.success ? draft.data.task : {};
+  const errors: FormFieldError[] = draft.success ? [] : draft.error.issues.map(issue => {
+    const isParameter = issue.path[0] === "parameters";
+    const path = isParameter ? issue.path.slice(1) : issue.path;
+    const field = path.map(key => taskFieldPath(String(key))).join("");
+    const messageKey = isParameter ? "invalidDraftParameter" : "invalidDraftField";
+    return { field, code: "invalid_format", message: translate(`platformSchedules.panelErrors.${messageKey}`, { field }) };
+  });
+  const changed = params.changedField;
+  const validate = draft.success && params.values !== undefined && changed == null;
+  if (!task && supplied.appId === undefined && params.defaultAppId && applications.some(app => app.id === params.defaultAppId && app.available))
+    current.appId = params.defaultAppId;
+  const resetTarget = changed === "/task/targetKind";
+  const resetContent = resetTarget || changed === "/task/appId" || changed === "/task/targetId";
+  const settings = mergeTaskSettings(current, {
+    ...supplied,
+    ...(resetTarget && { appId: "", targetId: "" }),
+    ...(resetContent && { capabilityContent: {} }),
+    timeZone: current.timeZone,
+  }, resetContent);
+  const isApp = settings.targetKind === "application";
+  const selectedId = isApp ? settings.appId : settings.targetId;
+  const targetPath = isApp ? "/task/appId" : "/task/targetId";
+  const options = isApp ? applications.map(app => ({
+    ...option(app.id, app.name, app.description, app.unavailableReason), ...(app.icon && { icon: app.icon }),
+  })) : (settings.targetKind === "action" ? actions : workflows).map(target => option(target.id, target.name, target.description));
+  const selected = options.find(entry => entry.value === selectedId);
+  const unavailable = translate(isApp ? "platformSchedules.form.appUnknown" : "platformSchedules.form.targetUnavailable");
+  if (selectedId && !selected) options.push(option(selectedId, selectedId, null, unavailable));
+  if ((selectedId && (!selected || selected.disabled)) || (validate && !selectedId)) {
+    errors.push({ field: targetPath, code: selectedId ? "invalid_option" : "required",
+      message: selected?.disabledReason ?? (selectedId ? unavailable : translate("platformSchedules.notice.noApplication")) });
+  }
+
+  const sameApp = task?.targetKind === "application" && task.appId === settings.appId;
+  const stored = sameApp ? task.content : {};
+  const parameters: FormValues = draft.success ? draft.data.parameters : {};
+  const form = isApp && selected && !selected.disabled ? await readApplicationForm(settings.appId, {
+    values: resetContent ? {} : {
+      ...(!task && settings.appId === "agents" && params.defaultAgentId ? { agentId: params.defaultAgentId } : {}),
+      ...stored, ...parameters,
+    },
+    changedField: changed != null && !changed.startsWith("/task/") ? formFieldKey(changed, "/") : null,
+    taskId: sameApp ? task.id : null,
+    timeZone: settings.timeZone,
+  }) : undefined;
+  if (validate) {
+    if (!isApp || form) {
+      const parsed = platformTaskInputSchema.safeParse(taskInput(settings, form));
+      if (!parsed.success) errors.push(...parsed.error.issues.map(issue => ({
+        field: taskInputField(issue.path, settings.targetKind), code: "invalid_format" as const, message: issue.message,
+      })));
+    }
+    if (form) errors.push(...applicationDraftErrors(form, parameters));
+  }
+  const frequencyHelp = translate(task ? "platformSchedules.form.taskZone" : "platformSchedules.form.serviceZone", { zone: settings.timeZone });
+  return {
+    fields: [...settingsFields(settings.targetKind, options, task === undefined, frequencyHelp, translate), ...(form?.fields.map(typedField) ?? [])],
+    sections: [
+      ...(form ? [{ key: "application", title: translate("platformSchedules.form.content", { app: selected!.label }),
+        ...(form.fields.length === 0 && { hint: translate("platformSchedules.form.noFields") }) }] : []),
+      { key: "notifications", title: translate("platformSchedules.form.after") },
+    ],
+    values: { ...form?.values, task: settings },
+    errors: form ? [...errors, ...applicationFormErrors(form)] : errors,
+    ...(task && { revision: task.revision }),
+    save: task ? scheduledTaskSaveDescription(task.id) : scheduledTaskCreateDescription(settings.enabled!),
+  };
+}
+
+export function createScheduledTaskReads(api: TaskReadApi, locale: string, translate: Translate) {
+  async function describe(task: PlatformTask | undefined, serviceZone: string, params: TaskCreateFormParams) {
+    return presentTriggerForm(task, serviceZone, params, await api.targets(), (appId, input) => api.form(appId, input), translate);
+  }
+
+  const presenter = createTriggerReadPresenter(locale, translate);
+  async function describeRows(tasks: PlatformTask[]) {
+    if (!tasks.some(task => task.targetKind === "application")) return presenter.rows(tasks);
+    const directory = await api.applicationsStatus();
+    return presenter.rows(await api.describeTargets(tasks, directory), directory);
+  }
+
+  return {
+    async list(params?: TriggerListParams) {
+      return presenter.list((await api.list()).tasks, params, describeRows);
+    },
+    async status() {
+      return presenter.status(await api.list(true));
+    },
+    async counts(by?: string) {
+      return presenter.counts((await api.list()).tasks, by);
+    },
     async record(primaryKey: string) {
       const [row] = await describeRows([await api.task(primaryKey)]);
       return row!;
@@ -504,49 +581,24 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     async createForm(params: TaskCreateFormParams) {
       return describe(undefined, (await api.list()).timeZone, params);
     },
-    async memberOptions({ keyword, page }: { keyword?: string; page?: { number: number; size: number } }): Promise<PanelOptionList> {
-      const size = page?.size ?? 50;
-      const end = (page?.number ?? 1) * size;
-      const members = await api.findMembers(keyword, Math.min(end, 100));
-      return { options: members.slice(end - size, end).map(memberOption) };
+    async memberOptions({ keyword, page }: { keyword?: string; page?: TriggerMemberPage }): Promise<PanelOptionList> {
+      return presenter.memberOptions(await api.findMembers(keyword, triggerMemberSearchLimit(page)), page);
     },
     async memberResolve(values: readonly unknown[]): Promise<PanelOptionList> {
-      const ids = memberIdsSchema.parse(values);
-      return { options: await Promise.all(ids.map(async id => {
-        const member = (await api.findMembers(id, 100)).find(candidate => candidate.id === id);
-        return member ? memberOption(member)
-          : { primaryKey: id, value: id, label: id, unavailable: { reason: translate("platformSchedules.form.memberUnavailable") } };
-      })) };
+      const ids = triggerMemberIds(values);
+      const members = await Promise.all(ids.map(async id =>
+        findTriggerMember(id, await api.findMembers(id, TRIGGER_MEMBER_SEARCH_MAX))));
+      return presenter.memberResolve(ids, new Map(members.flatMap(member => member ? [[member.id, member.name]] : [])));
     },
     runs: api.runs,
     run: api.run,
-    async runRecords(primaryKey: string, cursor?: string): Promise<PanelRecordQuery> {
-      const page = await api.runs(primaryKey, cursor);
-      return {
-        rows: page.runs.map(run => runRecord(run, translate)),
-        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
-      };
+    async runRecords(primaryKey: string, cursor?: string) {
+      return presenter.runRecords(await api.runs(primaryKey, cursor));
     },
-    async runRecord(primaryKey: string, requestedRunId?: string): Promise<PanelRecord> {
-      const focused = (run: PlatformTaskRun): PanelRecord => {
-        const { label: _label, subtitle: _subtitle, ...record } = runRecord(run, translate);
-        const output = run.result ?? run.resultSummary;
-        // The small panel draws status and trigger in its header.
-        return { ...record, label: "", fields: { ...record.fields, ...(output !== null && { result: cleanMarkdownParagraphs(output) }) } };
-      };
-      if (requestedRunId) return focused(await api.run(primaryKey, requestedRunId));
+    async runRecord(primaryKey: string, requestedRunId?: string) {
+      if (requestedRunId) return presenter.runRecord(primaryKey, await api.run(primaryKey, requestedRunId));
       const [task, { runs: [latest] }] = await Promise.all([api.task(primaryKey), api.runs(primaryKey)]);
-      const pause: Record<string, string> = task.pause ? { pauseMessage: task.pause.message } : {};
-      if (latest) {
-        const record = focused(latest);
-        return { ...record, fields: { ...record.fields, ...pause } };
-      }
-      return {
-        primaryKey,
-        label: "",
-        fields: { ...pause, timeZone: task.timeZone },
-        outputs: { status: "", resultPath: "", isRunning: false },
-      };
+      return presenter.runRecord(primaryKey, latest, task);
     },
   };
 }

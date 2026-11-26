@@ -59,7 +59,7 @@ class KnowledgeGovernanceImportTest {
 
   private void permit(String user, String... operations) {
     when(subjects.resolveRoles("domain", user)).thenReturn(
-        new RoleResolution(Set.of(user), Set.of(user), List.of(), Set.of(), Map.of(), false));
+        new RoleResolution(Set.of(user), Set.of(user), List.of(), Set.of(), Map.of(), false, false));
     when(policies.policies("domain", Set.of(user))).thenReturn(List.of(new PolicyRef(user, user, PolicyKind.MANAGEMENT)));
     when(policies.managementOperations("domain", Set.of(user))).thenReturn(Set.of(operations));
   }

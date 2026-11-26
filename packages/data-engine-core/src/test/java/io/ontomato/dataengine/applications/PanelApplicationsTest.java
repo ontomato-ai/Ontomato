@@ -16,6 +16,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -72,6 +74,46 @@ class PanelApplicationsTest {
         var declaration = new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "calendar", List.of(), List.of(platformUse));
         return new ApplicationCatalog.Builtin(id, "native", "apps", "admin", 1,
             JSONObject.of("renderer", "panels", "path", path), null, declaration);
+    }
+
+    @Test void scopedVisibleEntriesKeepBuiltinReservationsAndEntryAdmission() {
+        var requested = app("app-panel-a", "panels", List.of(use("active", null), use("denied", null), use("reserved", null)));
+        var builtIn = app("builtin-elsewhere", "panels", List.of(use("builtin-elsewhere", "reserved", null)));
+        builtIn.put("domainId", null);
+        doReturn(List.of(builtIn, requested)).when(db).query(contains("domain_id = ? AND id = ANY (?)"),
+            any(RowMapper.class), eq("domain"), any(SqlArrayValue.class));
+        var subject = authorization.resolveSubject(
+            new io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity("domain", "author",
+                io.ontomato.dataengine.service.authorization.AuthorizationService.CredentialLimit.UNRESTRICTED));
+        assertEquals(List.of("app-panel-a/use-active"),
+            catalog.visibleEntries(subject, Set.of("app-panel-a")).stream().map(ApplicationCatalog.VisibleEntry::id).toList());
+    }
+
+    @Test void workbenchOpenUsesTheExistingEntryDecisionAndReturnsCurrentRegistrationWithoutLegacyGrants() {
+        var use = use("tasks", null);
+        var app = app("app-panel-a", "panels", List.of(use, use("menu", null)));
+        app.put("names", Map.of("en", "Panel app"));
+        app.put("groups", List.of());
+        app.put("allowStandalone", false);
+        app.put("panelSettings", JSONObject.of("framePanelId", "frame-root"));
+        doReturn(List.of(app)).when(catalog).all();
+        var actor = new io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity("domain", "author",
+            io.ontomato.dataengine.service.authorization.AuthorizationService.CredentialLimit.UNRESTRICTED);
+        var subject = authorization.resolveSubject(actor);
+        clearInvocations(authorization);
+
+        var opened = catalog.openPanelEntry(use.path(), null, null, subject);
+        assertEquals(use, opened.get("use"));
+        assertEquals("frame-root", opened.getString("framePanelId"));
+        assertFalse(opened.getBooleanValue("allowStandalone"));
+        assertEquals(new ApplicationCatalog.PanelReadRegistration("app-panel-a", use, "frame-root"),
+            catalog.panelReadRegistrations("domain").apply("app-panel-a", use.id()));
+        assertEquals(404, assertThrows(ResponseStatusException.class,
+            () -> catalog.panelReadRegistrations("another-domain").apply("app-panel-a", use.id())).getStatusCode().value());
+        assertEquals(403, assertThrows(ResponseStatusException.class,
+            () -> catalog.openPanelEntry(null, "app-panel-a", "use-menu", subject)).getStatusCode().value());
+        verify(authorization, never()).resolveSubject(any());
+        verifyNoInteractions(grants);
     }
 
     @Test void rejectsDomainPathsOutsideTheAssignedSpaceAndNormalizedDuplicatesWithoutWrites() {

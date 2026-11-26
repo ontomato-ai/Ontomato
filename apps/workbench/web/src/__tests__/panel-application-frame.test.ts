@@ -20,7 +20,7 @@ import platformFrameModule from "../../../../../packages/platform-shell/resource
 import ontologyFrameSource from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-frame/panel.json";
 import ontologyFrameHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-frame/panel.html?raw";
 import ontologyFrameModule from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-frame/panel.mjs?raw";
-import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, panelUse, projections, type Sent } from "./panel-frame";
+import { APPLICATION_ENTRY_PATH, applicationEntryPageContext, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, panelUse, projections, type Sent } from "./panel-frame";
 
 /*
  * An application's own frame (product-layer standard, part one; design §三, big main's rulings 2026-11-21): the frame
@@ -71,6 +71,23 @@ const uses = ["spring", "autumn"].map((name) => ({
 }));
 
 async function answer(request: Sent) {
+  if (request.path === APPLICATION_ENTRY_PATH) {
+    const query = new URLSearchParams(request.search);
+    const path = query.get("path");
+    const useId = query.get("useId");
+    const use = uses.find((candidate) => useId ? candidate.id === useId : candidate.path === path);
+    if (!use) return nothingAt(request);
+    return Response.json({
+      applicationId: app,
+      use,
+      allowStandalone: true,
+      framePanelId: frame.id,
+      frame: { panel: frame, projections: {} },
+      content: { panel: content, projections: {} },
+      menu: { singleEntry: false, groups: [], panelUses: uses },
+      pageSkillContext: applicationEntryPageContext(app, use),
+    });
+  }
   // Node answers the frame for the entry with no page placement: the frame is no page of its own.
   if (request.path === `/api/product-panels/${frame.id}/snapshot`) {
     const { pageSkillContext: _none, ...snapshot } = await (await panelSnapshot(frame, projections, request)).json();
@@ -108,8 +125,10 @@ it("holds the entry's page, header and content, in the frame; shares the frame's
       return found.closest<HTMLElement>(".panel-application-frame")!;
     });
     expect(framed.value).toBe(true);
-    // The frame read its record as the entry's frame.
-    expect(sent.some((request) => request.path === `/api/product-panels/${frame.id}` && request.search.includes("source=frame"))).toBe(true);
+    // Opening delivered both frame and content in one application-entry response, with no second root definition read.
+    expect(sent.filter((request) => request.path === APPLICATION_ENTRY_PATH)).toHaveLength(1);
+    expect(sent.filter((request) => request.path === `/api/product-panels/${frame.id}`)).toHaveLength(0);
+    expect(sent.filter((request) => request.path === `/api/product-panels/${content.id}`)).toHaveLength(0);
     // The entry's page is inside the frame: its own <page-header>, then the content, with the frame's default term.
     await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .sdk-page-header-title")?.textContent?.trim()).toBe("Term"));
     await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .term")?.textContent).toBe("A"));

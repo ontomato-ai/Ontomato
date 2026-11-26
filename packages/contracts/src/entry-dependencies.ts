@@ -36,10 +36,12 @@ export const entryRootsSchema = z.object({
 export type EntryRoots = z.infer<typeof entryRootsSchema>;
 
 export interface ReadAffectedEntryRootsRequest {
-  domainId: string;
+  domainId: string | null;
   panelIds: string[];
 }
-export const affectedEntryRootsSchema = z.array(z.object({ entryId: id, roots: entryRootsSchema }));
+export const affectedEntryRootSchema = z.object({ entryId: id, roots: entryRootsSchema, domainId: id.nullish() });
+export const affectedEntryRootsSchema = z.array(affectedEntryRootSchema);
+export type AffectedEntryRoot = z.infer<typeof affectedEntryRootSchema>;
 
 export const entryDependencyChangeRequestSchema = z.object({
   domainId: id,
@@ -48,7 +50,9 @@ export const entryDependencyChangeRequestSchema = z.object({
     sequence: eventSequence.refine(value => value !== "0"),
     actorId: id,
   }),
-  entries: z.array(z.object({ entryId: id, before: z.array(entryDependencySchema), after: z.array(entryDependencySchema) })),
+  entries: z.array(z.object({
+    entryId: id, before: z.array(entryDependencySchema), after: z.array(entryDependencySchema),
+  })),
 });
 export type EntryDependencyChangeRequest = z.infer<typeof entryDependencyChangeRequestSchema>;
 

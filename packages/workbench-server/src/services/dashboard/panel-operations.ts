@@ -107,7 +107,7 @@ const savedCardParametersResultSchema = z.object({
 }).strict();
 
 function nameFieldInputSchema(labelKey: string) {
-  return (_host: PanelOperationHost, locale?: string) => ({
+  return (locale?: string) => ({
     type: "object",
     properties: {
       name: {
@@ -239,7 +239,7 @@ export const dashboardServerOperations = [
     targetType: DASHBOARD,
     targetSchema: z.null(),
     inputSchema: nameInputSchema,
-    describeInputSchema: nameFieldInputSchema("panels.dashboard.fields.name"),
+    describeLocalInputSchema: nameFieldInputSchema("panels.dashboard.fields.name"),
     resultSchema: namedIdResultSchema,
     async execute(host: PanelOperationHost, _target: null, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const { name } = nameInputSchema.parse(input);
@@ -275,7 +275,7 @@ export const dashboardServerOperations = [
     targetLabel: dashboardLabel,
     done: (host, name) => tForLocale(host.locale, "panels.dashboard.messages.renamed", { name }),
     inputSchema: nameInputSchema,
-    describeInputSchema: nameFieldInputSchema("panels.dashboard.fields.name"),
+    describeLocalInputSchema: nameFieldInputSchema("panels.dashboard.fields.name"),
     resultSchema: namedIdResultSchema,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const { primaryKey } = dashboardObjectTarget.parse(target);
@@ -382,7 +382,7 @@ export const dashboardServerOperations = [
     targetSchema: dashboardObjectTarget,
     targetLabel: dashboardLabel,
     inputSchema: createGroupInputSchema,
-    describeInputSchema: (_host, locale) => ({
+    describeLocalInputSchema: locale => ({
       type: "object",
       properties: {
         title: {
@@ -438,7 +438,7 @@ export const dashboardServerOperations = [
     targetSchema: dashboardObjectTarget,
     targetLabel: dashboardLabel,
     inputSchema: renameGroupInputSchema,
-    describeInputSchema: (_host, locale) => ({
+    describeLocalInputSchema: locale => ({
       type: "object",
       properties: {
         groupId: { type: "string", minLength: 1 },
@@ -522,7 +522,7 @@ export const dashboardServerOperations = [
     targetLabel: cardLabel,
     done: (host, name) => tForLocale(host.locale, "panels.dashboard.messages.cardRenamed", { name }),
     inputSchema: nameInputSchema,
-    describeInputSchema: nameFieldInputSchema("panels.dashboard.fields.cardName"),
+    describeLocalInputSchema: nameFieldInputSchema("panels.dashboard.fields.cardName"),
     resultSchema: renamedCardResultSchema,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const { primaryKey } = dashboardCardObjectTarget.parse(target);

@@ -24,9 +24,9 @@ vi.mock("../../product-governance/authorization", async original => ({
   decideObjects: async (requests: ObjectDecisionRequest[]) => Promise.all(requests.map(request => state.allowed(request))),
 }));
 vi.mock("../../../infrastructure/product-current", () => ({
-  findCurrentProducts: async (domainId: string, kind: string, ids: string[]) => {
-    expect([domainId, kind, ids]).toEqual([owner.domainId, "panel", ["panel-1"]]);
-    return new Map([[panel.id, panel]]);
+  findCurrentProduct: async (domainId: string, kind: string, id: string) => {
+    expect([domainId, kind, id]).toEqual([owner.domainId, "panel", "panel-1"]);
+    return panel;
   },
 }));
 vi.mock("../object-detail-write", () => ({ setObjectDetail: state.set, clearObjectDetail: state.clear }));

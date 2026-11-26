@@ -1,3 +1,5 @@
+import { modelOwnerRead } from "../../__tests__/fixtures/workbench-panel-read-facts";
+import { mountWorkbenchPanelReadsOwner } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import type { ObjectDecisionRequest } from "../../services/product-governance/authorization";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
@@ -191,7 +193,7 @@ beforeAll(async () => {
   });
   app.post("/authorization/objects/read-ranges", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
-    expect(["PANEL", "PROJECTION"]).toContain(req.body.kind);
+    expect(["PANEL", "PROJECTION", "COMPONENT"]).toContain(req.body.kind);
     const caller = req.get("tk");
     const { verbs } = req.body as { verbs: ("USE" | "EDIT")[] };
     res.json({ ranges: Object.fromEntries(verbs.map(verb => [verb, {
@@ -304,11 +306,18 @@ beforeAll(async () => {
     frameDispatches.push(req.header("Idempotency-Key")!);
     res.json(scheduledRun);
   });
-  app.use("/api", (req, _res, next) => {
+  const authenticateFixture: express.RequestHandler = (req, _res, next) => {
     Object.assign(req, { domainId: req.header("X-Test-Domain") ?? "pilot", userId: req.header("X-Test-User") ?? "reader",
       token: req.header("X-Test-Token") ?? "host-reader", locale: "en" });
     next();
+  };
+  mountWorkbenchPanelReadsOwner(app, { token: "fixture-service",
+    viewer: credential => ({ domainId: callerDomains.get(credential)!, userId: credential === "host-reader" ? "reader" : credential }),
+    read: modelOwnerRead,
   });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticateFixture));
+  app.use("/api", authenticateFixture);
   app.use(COMPONENT_PACKAGES_PATH, createComponentPackagesRouter(platformService, checkComponentPackageUpgrade));
   app.use(DOMAIN_COMPONENTS_PATH, (await import("../routes/domain-components")).domainComponentsRouter);
   app.use("/api/product-panels", productPanelsRouter);
@@ -692,7 +701,7 @@ afterAll(async () => {
 
 function request(method: string, resource: string, body?: object, signal?: AbortSignal) {
   return fetch(`${state.base}/api/${resource}`, {
-    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal,
+    method, headers: { "Content-Type": "application/json", ...(resource === "product-panels/read" && { tk: "host-reader" }) }, body: JSON.stringify(body), signal,
   });
 }
 

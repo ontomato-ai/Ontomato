@@ -24,6 +24,13 @@ public interface SubjectDirectory {
 
     List<Subject> subjectsInDomain(String domainId);
 
+    record MemberIdentity(String id, String loginCode, String displayName) {}
+
+    /** Domain member names and logins without role resolution. */
+    List<MemberIdentity> memberIdentitiesInDomain(String domainId);
+
+    List<MemberIdentity> memberIdentitiesInDomain(String domainId, Set<String> memberIds);
+
     long countInDomain(String domainId);
 
     /** Current display names for the requested members of this domain, with login code as the name of an unnamed account. */

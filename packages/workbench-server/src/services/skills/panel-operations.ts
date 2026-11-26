@@ -1,3 +1,4 @@
+import type { SkillWriteRestriction } from "@ontomato/contracts/skills";
 import { z } from "zod";
 import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
 import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
@@ -34,6 +35,13 @@ const skillObjectTarget = z.object({
 
 const deleteInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
+
+export function skillDeleteRefusal(restriction: SkillWriteRestriction, locale?: string) {
+  if (restriction === null) return;
+  return { reason: restriction.kind === "public"
+    ? tForLocale(locale, "panels.skill.readOnlyPublic")
+    : tForLocale(locale, "panels.skill.readOnlyProvider", { provider: restriction.providerName }) };
+}
 
 const loadSkillManager = async () => (await import("./skill-manager")).skillManager;
 
@@ -166,12 +174,7 @@ export const skillServerOperations = [
         if (error.code === "PERMISSION_DENIED") return { reason: error.message };
         throw error;
       }
-      if (restriction === null) return undefined;
-      return {
-        reason: restriction.kind === "public"
-          ? tForLocale(host.locale, "panels.skill.readOnlyPublic")
-          : tForLocale(host.locale, "panels.skill.readOnlyProvider", { provider: restriction.providerName }),
-      };
+      return skillDeleteRefusal(restriction, host.locale);
     },
     async unavailableBatch(host: PanelOperationHost, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
       const skillManager = await loadSkillManager();
@@ -191,13 +194,8 @@ export const skillServerOperations = [
       }
       const reasons = new Map<string, { reason: string } | undefined>();
       for (const { target, rowKey } of targets) {
-        const restriction = restrictions.get(target.primaryKey);
-        if (!restriction) continue;
-        reasons.set(rowKey, {
-          reason: restriction.kind === "public"
-            ? tForLocale(host.locale, "panels.skill.readOnlyPublic")
-            : tForLocale(host.locale, "panels.skill.readOnlyProvider", { provider: restriction.providerName }),
-        });
+        const refusal = skillDeleteRefusal(restrictions.get(target.primaryKey) ?? null, host.locale);
+        if (refusal) reasons.set(rowKey, refusal);
       }
       return reasons;
     },

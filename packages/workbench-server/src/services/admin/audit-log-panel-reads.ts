@@ -39,8 +39,8 @@ const operationStyle: Record<string, { key: string; tone: PanelFieldTone }> = {
   DEL: { key: "auditOperationDelete", tone: "danger" },
 };
 
-export function createAuditLogPanelReads(viewer: AssistantCredentials) {
-  const text = (key: string) => tForLocale(viewer.locale, `panels.simplePages.${key}`);
+function auditLogPresentation(locale?: string) {
+  const text = (key: string) => tForLocale(locale, `panels.simplePages.${key}`);
   const fieldLabels = () => Object.fromEntries(
     ["business", "operation", "description", "userId", "userName", "byAi", "parameters", "operateTime"]
       .map(key => [key, text(key)]),
@@ -74,6 +74,27 @@ export function createAuditLogPanelReads(viewer: AssistantCredentials) {
       ...(Object.keys(tones).length > 0 && { tones }),
     };
   }
+  return {
+    query(result: z.infer<typeof pageSchema>) {
+      const labels = fieldLabels();
+      return { rows: result.data.map(entry => record(entry, labels, false)), total: result.totalRows };
+    },
+    record(entry: z.infer<typeof auditRecordSchema>) {
+      return record(entry, fieldLabels(), true);
+    },
+  };
+}
+
+export function createAuditLogPanelReadPresenter(locale?: string) {
+  const presentation = auditLogPresentation(locale);
+  return {
+    query: (payload: unknown) => presentation.query(pageSchema.parse(payload)),
+    record: (payload: unknown) => presentation.record(auditRecordSchema.parse(payload)),
+  };
+}
+
+export function createAuditLogPanelReads(viewer: AssistantCredentials) {
+  const presentation = auditLogPresentation(viewer.locale);
   async function read(path: string, body: object) {
     const response = await backendPost(`audit-log-${path}`, `${config.dataQuery.baseUrl.replace(/\/$/, "")}/auditLog/${path}`, body, {
       headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
@@ -88,14 +109,10 @@ export function createAuditLogPanelReads(viewer: AssistantCredentials) {
       if (page.number > maxPage) {
         result = pageSchema.parse(await read("queryPage", { pageNum: maxPage, pageSize: page.size, bussiness: business, operation }));
       }
-      const labels = fieldLabels();
-      return {
-        rows: result.data.map(entry => record(entry, labels, false)),
-        total: result.totalRows,
-      };
+      return presentation.query(result);
     },
     async record(primaryKey: string) {
-      return record(auditRecordSchema.parse(await read("queryById", { id: primaryKey })), fieldLabels(), true);
+      return presentation.record(auditRecordSchema.parse(await read("queryById", { id: primaryKey })));
     },
   };
 }

@@ -1,11 +1,11 @@
 import { loadDomainComponent } from "./domain-component";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
-  applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelResponseSchema, productPanelSchema,
+  applicationEntryResolutionQuerySchema, applicationOpenResponseSchema, productPanelResponseSchema, productPanelSchema,
   isApplicationPanelUse,
   type FrameConversationEntry,
-  type ApplicationEntryResolution, type ApplicationEntryResolutionQuery, type ApplicationPanelUse,
-  type BundledPanelProjection, type ProductPanel,
+  type ApplicationEntryResolutionQuery, type ApplicationOpenResponse, type ApplicationPanelUse,
+  type BundledPanelProjection, type ProductPanel, type ProductPanelResponse,
 } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema, appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import {
@@ -114,6 +114,7 @@ async function panel(panelId: string) {
 
 interface PendingPanelRead {
   request: ProductPanelReadRequest;
+  independent?: true;
   resolve: (result: ProductPanelReadResponse) => void;
   reject: (error: unknown) => void;
 }
@@ -134,13 +135,18 @@ function panelReadBatchKey(request: ProductPanelReadRequest): string {
 function flushPendingPanelReads() {
   const reads = pendingPanelReads.splice(0);
   const buckets = new Map<string, PendingPanelRead[]>();
+  const independent: PendingPanelRead[][] = [];
   for (const item of reads) {
+    if (item.independent) {
+      independent.push([item]);
+      continue;
+    }
     const key = panelReadBatchKey(item.request);
     const bucket = buckets.get(key);
     if (bucket) bucket.push(item);
     else buckets.set(key, [item]);
   }
-  for (const bucket of buckets.values()) {
+  for (const bucket of [...buckets.values(), ...independent]) {
     for (let offset = 0; offset < bucket.length; offset += PANEL_READ_BATCH_MAX) {
       const chunk = bucket.slice(offset, offset + PANEL_READ_BATCH_MAX);
       void sendPanelReads(chunk).catch(error => {
@@ -167,8 +173,12 @@ async function sendPanelReads(chunk: PendingPanelRead[]) {
 
 /** One named datum a panel's member shows, read by the platform as the reader, in one of its four states. */
 export function readPanelData(request: ProductPanelReadRequest): Promise<ProductPanelReadResponse> {
+  return queuePanelRead(request);
+}
+
+function queuePanelRead(request: ProductPanelReadRequest, independent?: true): Promise<ProductPanelReadResponse> {
   return new Promise((resolve, reject) => {
-    pendingPanelReads.push({ request, resolve, reject });
+    pendingPanelReads.push({ request, independent, resolve, reject });
     if (pendingPanelReads.length === 1) queueMicrotask(flushPendingPanelReads);
   });
 }
@@ -266,6 +276,8 @@ export function platformPanelHost(
   onPanelLoaded?: (loaded: ProductPanel, projections?: Readonly<Record<string, BundledPanelProjection>>) => void,
   display?: PanelChatHost["display"],
   feed?: PanelSessionFeed,
+  /** Bundled content panel definition returned with the opening response, consumed once on initial mount. */
+  initialPanel?: ProductPanelResponse | null,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const panelChatHost = createPanelChatHost(use.defaultAgent, { claimComposer, display });
   const shown: PanelUseRef = { applicationId, useId: use.id };
@@ -280,17 +292,31 @@ export function platformPanelHost(
   const bundleQuery = `?${query}`;
   const controlled = new Set(Object.keys(use.inputs ?? {}));
   let pendingPersonalState: PersonalStateRead | undefined;
+  let initialContent = initialPanel && initialPanel.panel.id === use.panelId ? initialPanel : null;
   let lastPanel: ProductPanel | undefined;
   let mountBundle: MountProjectionBundle | undefined;
   let panelDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
   let sourceReconciled = false;
   const nestedSnapshots = new Set<() => Promise<void>>();
   return {
-    // After entry admission, render the panel and its fixed projections under the reader's current use grants.
+    // After entry admission, render the panel and its bundled projections under the reader's current use grants.
     async source() {
       warmTemplateCompiler();
       pendingPersonalState = undefined;
       sourceReconciled = false;
+      if (initialContent) {
+        const answer = initialContent;
+        initialContent = null;
+        const scope = currentDefinitionCacheScope();
+        setCachedPanel(use.panelId, answer.panel, scope);
+        mountBundle = ingestBundledPanelProjections(answer.projections, scope);
+        warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
+        panelDomainComponents = answer.domainComponents;
+        lastPanel = answer.panel;
+        sourceReconciled = true;
+        onPanelLoaded?.(answer.panel, answer.projections);
+        return { kind: "registered", applicationId, use, panel: answer.panel };
+      }
       {
         const cached = getCachedPanel(use.panelId);
         if (cached && !hasProjectionCandidates(cached.manifest)) {
@@ -435,6 +461,8 @@ export function framePanelHost(
   applicationId: string, use: ApplicationPanelUse | FrameConversationEntry, framePanelId: string, changed: (change: PanelObjectChange) => void,
   router?: Router,
   chat?: FrameChatOptions,
+  /** Optional one-shot provider returning the frame definition bundled in the active route opening response. */
+  initialFrame?: () => Promise<ProductPanelResponse | null> | ProductPanelResponse | null,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const shown: PanelUseRef = { applicationId, useId: use.id };
   const frameSource: PanelReadSource = { kind: "frame", applicationId, useId: use.id } as PanelReadSource;
@@ -442,6 +470,7 @@ export function framePanelHost(
   const sourceQuery = new URLSearchParams({ applicationId, useId: use.id, source: "frame", includeProjections: "1" });
   const panelChatHost = createPanelChatHost(isApplicationPanelUse(use) ? use.defaultAgent : undefined, chat);
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
+  let readInitialFrame = initialFrame;
   let lastPanel: ProductPanel | undefined;
   let mountBundle: MountProjectionBundle | undefined;
   let frameDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
@@ -451,6 +480,22 @@ export function framePanelHost(
     async source() {
       warmTemplateCompiler();
       sourceReconciled = false;
+      const provided = readInitialFrame;
+      readInitialFrame = undefined;
+      if (provided) {
+        const answer = await provided();
+        if (answer) {
+          const scope = currentDefinitionCacheScope();
+          setCachedPanel(cacheKey, answer.panel, scope);
+          mountBundle = ingestBundledPanelProjections(answer.projections, scope);
+          warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
+          frameDomainComponents = answer.domainComponents;
+          lastPanel = answer.panel;
+          reportFrameComposer(chat, answer.panel, answer.projections);
+          sourceReconciled = true;
+          return { kind: "registered", applicationId, use, panel: answer.panel };
+        }
+      }
       const reconciled = await reconcileCachedApplicationFrame(cacheKey, framePanelId, query);
       if (reconciled) {
         sourceReconciled = true;
@@ -527,6 +572,8 @@ export function builtinFramePanelHost(
   framePanelId: string,
   router?: Router,
   chat?: FrameChatOptions,
+  /** Optional one-shot provider returning the frame definition bundled in the active route opening response. */
+  initialFrame?: () => Promise<ProductPanelResponse | null> | ProductPanelResponse | null,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const placeholderUse: ApplicationPanelUse = {
     id: applicationId,
@@ -538,13 +585,31 @@ export function builtinFramePanelHost(
   const shown: PanelUseRef = { applicationId, useId: placeholderUse.id };
   const sourceQuery = new URLSearchParams({ includeProjections: "1" });
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
+  let readInitialFrame = initialFrame;
   let lastPanel: ProductPanel | undefined;
   let mountBundle: MountProjectionBundle | undefined;
+  let frameDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
   let sourceReconciled = false;
   return {
     async source() {
       warmTemplateCompiler();
       sourceReconciled = false;
+      const provided = readInitialFrame;
+      readInitialFrame = undefined;
+      if (provided) {
+        const answer = await provided();
+        if (answer) {
+          const scope = currentDefinitionCacheScope();
+          setCachedPanel(cacheKey, answer.panel, scope);
+          mountBundle = ingestBundledPanelProjections(answer.projections, scope);
+          warmPanelProjectionComponents(answer.panel.manifest, answer.projections);
+          frameDomainComponents = answer.domainComponents;
+          lastPanel = answer.panel;
+          reportFrameComposer(chat, answer.panel, answer.projections);
+          sourceReconciled = true;
+          return { kind: "registered", applicationId, use: placeholderUse, panel: answer.panel };
+        }
+      }
       const cached = getCachedPanel(cacheKey);
       if (cached && !hasProjectionCandidates(cached.manifest)) {
         const scope = currentDefinitionCacheScope();
@@ -606,6 +671,7 @@ export function builtinFramePanelHost(
           { mountBundle, verifyAccess: readOptions?.dynamic },
         ),
         preloadComponentIds: panelProjectionComponentIds(source.panel.manifest),
+        ...(frameDomainComponents ? { panelDomainComponents: frameDomainComponents } : {}),
         use: null,
         read: () => Promise.resolve({ status: "forbidden", reason: "Native frame does not read panel data" }),
         confirmOperation: () => Promise.reject(new Error("A native frame runs no panel operations")),
@@ -793,7 +859,7 @@ function directOptions(
     ),
     preloadComponentIds: panelProjectionComponentIds(source.panel.manifest),
     use: root ? { ...use, root } : use,
-    read: request => readPanelData({ source: readSource, ...request }),
+    read: (request, independent) => queuePanelRead({ source: readSource, ...request }, independent),
     confirmOperation: (preparation, hooks) => confirmPanelIntent(
       use,
       preparation.intentId,
@@ -1094,15 +1160,13 @@ async function mountCoded(
 }
 
 /**
- * Java's answer for one entry of an application: by the address the reader opened, or by the application and use
- * relation a kept page was opened for. It admits the reader (the application's entry access and the use relation's), and
- * gives the use, the application's frame panel and theme where its renderer is \`panels\`, and the menu of the entries the
- * reader may see — one answer, so the page, its frame and its menu never come from two readings of the catalogue.
+ * Single opening answer for one entry of an application: admits the reader, returns the entry use, frame panel ID,
+ * theme, visible menu, standalone flag, and bundled frame/content panel definitions in one round trip.
  */
-export async function resolveApplicationEntry(query: ApplicationEntryResolutionQuery): Promise<ApplicationEntryResolution> {
+export async function resolveApplicationEntry(query: ApplicationEntryResolutionQuery): Promise<ApplicationOpenResponse> {
   const search = new URLSearchParams(applicationEntryResolutionQuerySchema.parse(query) as Record<string, string>);
   const answer = await json(`/api/product-panels/application-entry?${search}`);
-  return applicationEntryResolutionSchema.parse(answer);
+  return applicationOpenResponseSchema.parse(answer);
 }
 
 /**
@@ -1113,25 +1177,6 @@ export function cachedApplicationFrameManifest(
   framePanelId: string,
 ): Pick<PanelManifest, "state"> | null {
   return getCachedPanel(framePanelCacheKey(applicationId, framePanelId))?.manifest ?? null;
-}
-
-/**
- * Reads an application's frame panel manifest for an entry opened without mounting the frame (beside a conversation),
- * so declared `deepLink: true` defaults on the frame still populate `frameState` even when omitted from the URL.
- */
-export async function readApplicationFrameManifest(
-  applicationId: string,
-  use: ApplicationPanelUse,
-  framePanelId: string,
-): Promise<Pick<PanelManifest, "state">> {
-  const cacheKey = framePanelCacheKey(applicationId, framePanelId);
-  const query = new URLSearchParams({ applicationId, useId: use.id, source: "frame" });
-  const reconciled = await reconcileCachedApplicationFrame(cacheKey, framePanelId, query);
-  if (reconciled?.panel) return reconciled.panel.manifest;
-  const scope = currentDefinitionCacheScope();
-  const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${query}`));
-  setCachedPanel(cacheKey, answer.panel, scope);
-  return answer.panel.manifest;
 }
 
 class PanelStreamContractError extends Error {}

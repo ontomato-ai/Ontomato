@@ -11,7 +11,7 @@ vi.mock("../caller", () => ({ restoreAgentCaller: vi.fn() }));
 vi.mock("../../assistant/service", () => ({
   assistantService: { ownRun: vi.fn(), admitAgent: vi.fn() },
 }));
-vi.mock("../../product-governance/grants", () => ({ requireProductGrant: vi.fn() }));
+vi.mock("../../product-governance/service-authentication", () => ({ requireProductGrant: vi.fn() }));
 vi.mock("../../assistant/store", () => ({
   assistantStore: { turn: vi.fn(), session: vi.fn() },
 }));

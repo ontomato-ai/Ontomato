@@ -127,13 +127,17 @@ const inspectResultSchema = z.object({
   items: z.array(inspectedItemSchema),
 });
 
+export const graphPolicyGrantSchema = z.object({
+  policyId: id, targetKind: id, targetKey: z.string(), verb: id, scope: scope.nullish(),
+});
 const graphFactsSchema = z.object({
   rolePolicies: z.array(z.object({ roleId: id, policyId: id, kind: z.enum(["MANAGEMENT", "OBJECT"]) })),
   domainPolicyId: id,
   entries: z.array(z.object({ id, applicationId: id, names: z.record(z.string()), pageKey: id })),
-  policyGrants: z.array(z.object({ policyId: id, targetKind: id, targetKey: z.string(), verb: id, scope: scope.nullish() })),
+  policyGrants: z.array(graphPolicyGrantSchema),
 });
 export type AuthorizationGraphFacts = z.infer<typeof graphFactsSchema>;
+export const productGraphAuthorizationFactsSchema = graphFactsSchema.omit({ domainPolicyId: true });
 
 async function policyPost<T>(viewer: AssistantCredentials, endpoint: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
   const response = await backendPost(

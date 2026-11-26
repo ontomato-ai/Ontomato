@@ -35,6 +35,7 @@ import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { AssistantOwner } from "../assistant/store";
 import type { VisibleAgentMcpUsage } from "../product-panels/agent-definition-directory";
+import type { ObjectVisibilityRange } from "../product-governance/authorization";
 import type {
   PanelImpactInspector,
   PanelOperationHost,
@@ -388,8 +389,80 @@ async function findService(runtime: RuntimeClient, primaryKey: string): Promise<
   return matched;
 }
 
+async function readMaskedServiceConfiguration<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    // Decoder errors can contain the received header value. Fail without publishing the payload.
+    if (error instanceof z.ZodError || error instanceof SyntaxError)
+      throw new HttpError(502, "Runtime did not return a valid masked MCP service configuration", "PANEL_READ_OWNER_RESPONSE_INVALID");
+    throw error;
+  }
+}
+
+function externalMcpFormReads(runtime: RuntimeClient, locale?: string) {
+  return {
+    async form(primaryKey: string, inputs: FormInputs): Promise<PanelFormDescription> {
+      const service = await readMaskedServiceConfiguration(() => findService(runtime, primaryKey));
+      return buildFormDescription(false, service, inputs, locale);
+    },
+    async createForm(inputs: FormInputs): Promise<PanelFormDescription> {
+      return buildFormDescription(true, null, inputs, locale);
+    },
+  };
+}
+
+const mcpServicesReadApproval = z.literal(workbenchManagement.mcpServicesRead.id);
+
+function externalMcpDirectoryReads(runtime: RuntimeClient, locale: string | undefined, readUsage: () => Promise<VisibleAgentMcpUsage>) {
+  return {
+    async list(): Promise<PanelRecord[]> {
+      const [{ services }, usage] = await Promise.all([
+        readMaskedServiceConfiguration(() => runtime.mcpServices()), readUsage(),
+      ]);
+      return services.map(service => toServiceRecord(service, usage, locale));
+    },
+    async record(primaryKey: string): Promise<PanelRecord> {
+      const [service, usage] = await Promise.all([
+        readMaskedServiceConfiguration(() => findService(runtime, primaryKey)), readUsage(),
+      ]);
+      return toServiceRecord(service, usage, locale);
+    },
+  };
+}
+
+export function createRegisteredExternalMcpDirectoryReads(
+  owner: AssistantOwner, locale: string | undefined, javaFacts: unknown, view: ObjectVisibilityRange,
+) {
+  mcpServicesReadApproval.parse(javaFacts);
+  return externalMcpDirectoryReads(createRuntime(owner), locale, async () => {
+    const { readVisibleAgentMcpUsagesInRange } = await import("../product-panels/agent-definition-directory");
+    return readVisibleAgentMcpUsagesInRange(owner.domainId, locale, view);
+  });
+}
+
+async function readExternalMcpTools(runtime: ReturnType<typeof createRuntime>, primaryKey: string, locale: string | undefined) {
+  const id = validateServiceId(primaryKey);
+  const { tools } = await runtime.mcpTools(id, new AbortController().signal);
+  return tools.map((tool) => mcpToolToPanelRecord(tool, locale));
+}
+
+export function readRegisteredExternalMcpTools(
+  owner: AssistantOwner, locale: string | undefined, javaFacts: unknown, primaryKey: string,
+) {
+  mcpServicesReadApproval.parse(javaFacts);
+  return readExternalMcpTools(createRuntime(owner), primaryKey, locale);
+}
+
+export function createRegisteredExternalMcpFormReads(owner: AssistantOwner, locale: string | undefined, javaFacts: unknown) {
+  mcpServicesReadApproval.parse(javaFacts);
+  return externalMcpFormReads(createRuntime(owner), locale);
+}
+
 export function createExternalMcpReads(owner: AssistantOwner, viewer: AssistantCredentials) {
   const runtime = createRuntime(owner);
+  const forms = externalMcpFormReads(runtime, viewer.locale);
+  const directory = externalMcpDirectoryReads(runtime, viewer.locale, () => readSafeAgentUsages(owner, viewer));
 
   const optionList = async (): Promise<PanelOption[]> =>
     (await runtime.mcpOptions()).map(({ id, name }) => ({
@@ -415,34 +488,23 @@ export function createExternalMcpReads(owner: AssistantOwner, viewer: AssistantC
     },
     async list(): Promise<PanelRecord[]> {
       await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
-      const [{ services }, usage] = await Promise.all([
-        runtime.mcpServices(),
-        readSafeAgentUsages(owner, viewer),
-      ]);
-      return services.map((service) => toServiceRecord(service, usage, viewer.locale));
+      return directory.list();
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
-      const [service, usage] = await Promise.all([
-        findService(runtime, primaryKey),
-        readSafeAgentUsages(owner, viewer),
-      ]);
-      return toServiceRecord(service, usage, viewer.locale);
+      return directory.record(primaryKey);
     },
     async form(primaryKey: string, inputs: FormInputs): Promise<PanelFormDescription> {
       await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
-      const service = await findService(runtime, primaryKey);
-      return buildFormDescription(false, service, inputs, viewer.locale);
+      return forms.form(primaryKey, inputs);
     },
     async createForm(inputs: FormInputs): Promise<PanelFormDescription> {
       await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
-      return buildFormDescription(true, null, inputs, viewer.locale);
+      return forms.createForm(inputs);
     },
     async tools(primaryKey: string): Promise<PanelRecord[]> {
       await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
-      const id = validateServiceId(primaryKey);
-      const { tools } = await runtime.mcpTools(id, new AbortController().signal);
-      return tools.map((tool) => mcpToolToPanelRecord(tool, viewer.locale));
+      return readExternalMcpTools(runtime, primaryKey, viewer.locale);
     },
   };
 }

@@ -11,6 +11,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,6 +27,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 @DependsOn("functionDao")
 public class TaskStore {
+  private static final String LAST_RUN_FOR_TASK =
+      "FROM trigger_run WHERE task_id=t.id ORDER BY started_at DESC,id DESC LIMIT 1";
   private final JdbcTemplate db;
   private final DataSource source;
 
@@ -147,6 +150,27 @@ public class TaskStore {
         """, TaskStore::task, domain, app, app, kind, kind, status, status);
   }
 
+  List<Trigger> ontologyCenter(String domain, String id) {
+    return db.query("SELECT * FROM trigger_def WHERE domain_id=? AND id=?", TaskStore::task, domain, id);
+  }
+
+  record TriggerDirectoryEntry(String id, String title, String targetKind, String creator, String status, List<String> coauthors) {}
+
+  List<TriggerDirectoryEntry> ontologyDirectory(String domain, Set<String> ids) {
+    if (ids.isEmpty()) return List.of();
+    return new NamedParameterJdbcTemplate(db).query("""
+        SELECT id, title, target_kind, creator_id, status, coauthor_ids
+        FROM trigger_def WHERE domain_id=:domain AND id IN (:ids)
+        """, Map.of("domain", domain, "ids", ids), (row, index) -> new TriggerDirectoryEntry(row.getString("id"),
+            row.getString("title"), row.getString("target_kind"), row.getString("creator_id"), row.getString("status"),
+            JSON.convertValue(json(row, "coauthor_ids"), new com.fasterxml.jackson.core.type.TypeReference<>() {})));
+  }
+
+  List<Trigger> ontologyIncoming(String domain, String kind, String targetId) {
+    return db.query("SELECT * FROM trigger_def WHERE domain_id=? AND target_kind=? AND target_id=?",
+        TaskStore::task, domain, kind, targetId);
+  }
+
   public Set<String> registeredIds(String domain, Set<String> ids) {
     return Set.copyOf(new NamedParameterJdbcTemplate(db).queryForList(
         "SELECT id FROM trigger_def WHERE domain_id=:domain AND id IN (:ids)",
@@ -224,18 +248,31 @@ public class TaskStore {
 
   record RunViews(String id, UUID active, UUID latestResult, JsonNode link, Run lastRun) {}
 
+  Map<String, String> lastRunStatuses(List<String> ids) {
+    if (ids.isEmpty()) return Map.of();
+    return new NamedParameterJdbcTemplate(db).query("""
+        SELECT t.id, last_run.status FROM trigger_def t
+        CROSS JOIN LATERAL (SELECT status %s) last_run
+        WHERE t.id IN (:ids)
+        """.formatted(LAST_RUN_FOR_TASK), Map.of("ids", ids), rows -> {
+          var statuses = new HashMap<String, String>();
+          while (rows.next()) statuses.put(rows.getString("id"), rows.getString("status"));
+          return statuses;
+        });
+  }
+
   List<RunViews> runViews(List<String> ids, String member) {
     if (ids.isEmpty()) return List.of();
     return new NamedParameterJdbcTemplate(db).query("""
         SELECT t.id AS definition_id, active.id AS active_id, result.id AS result_id, result.result_link AS owner_link, last_run.*
         FROM trigger_def t
         LEFT JOIN trigger_run active ON active.task_id=t.id AND active.status='running'
-        LEFT JOIN LATERAL (SELECT * FROM trigger_run WHERE task_id=t.id ORDER BY started_at DESC,id DESC LIMIT 1) last_run ON true
+        LEFT JOIN LATERAL (SELECT * %s) last_run ON true
         LEFT JOIN LATERAL (SELECT id,result_link FROM trigger_run WHERE task_id=t.id AND result_link IS NOT NULL
           AND definition_snapshot->>'domainId'=t.domain_id AND definition_snapshot->>'executorId'=:member
           ORDER BY started_at DESC,id DESC LIMIT 1) result ON true
         WHERE t.id IN (:ids)
-        """, Map.of("ids", ids, "member", member), (row, index) -> new RunViews(row.getString("definition_id"),
+        """.formatted(LAST_RUN_FOR_TASK), Map.of("ids", ids, "member", member), (row, index) -> new RunViews(row.getString("definition_id"),
         row.getObject("active_id", UUID.class), row.getObject("result_id", UUID.class), json(row, "owner_link"),
         row.getString("id") == null ? null : mapRun(row, index)));
   }

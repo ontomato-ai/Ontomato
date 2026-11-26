@@ -140,7 +140,7 @@ import {
   dispatchHumanPanelOperation, prepareHumanPanelOperation,
   readPanelOperation,
 } from "../operations";
-import { readProductPanelData } from "../data-reads";
+import { readScopedPanelData } from "../data-reads";
 
 configureI18n({
   defaultLocale: "en",
@@ -438,7 +438,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readProductPanelData(owner, credentials, {
+    const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "tasks" }],
       dataName: "rows",
@@ -495,7 +495,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     });
     vi.stubGlobal("fetch", availabilityRpc);
 
-    const res = await readProductPanelData(owner, credentials, {
+    const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "members" }], dataName: "rows", inputs: {},
     });
@@ -814,7 +814,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    await expect(readProductPanelData(owner, credentials, {
+    await expect(readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "tasks" }],
       operations: true,
@@ -991,7 +991,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readProductPanelData(owner, credentials, {
+    const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "panels" }],
       dataName: "rows",
@@ -1101,7 +1101,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readProductPanelData(owner, credentials, {
+    const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "items" }],
       dataName: "rows",

@@ -13,6 +13,8 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { assistantSkillCatalog } from "../assistant/skills";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { skillManager } from "./skill-manager";
+import { skillDeleteRefusal } from "./panel-operations";
+import { type SkillView } from "./view";
 
 /*
  * The skill owner's named reads for panels:
@@ -47,7 +49,7 @@ const fileInputSchema = z.object({
 }).strict();
 
 export function createSkillReadAdapter(
-  owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string,
+  owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string, libraryView?: SkillView,
 ): SkillReads {
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(viewer.locale, key, params);
 
@@ -70,13 +72,6 @@ export function createSkillReadAdapter(
     return restriction.kind === "public" ? t("panels.skill.sourcePublic") : restriction.providerName;
   }
 
-  function restrictionText(restriction: SkillWriteRestriction): string {
-    if (restriction === null) return "";
-    return restriction.kind === "public"
-      ? t("panels.skill.readOnlyPublic")
-      : t("panels.skill.readOnlyProvider", { provider: restriction.providerName });
-  }
-
   function skillFieldLabels() {
     return {
       description: t("panels.skill.fields.description"),
@@ -94,14 +89,15 @@ export function createSkillReadAdapter(
       fields: {
         description: skill.description,
         source: sourceText(skill.writeRestriction),
-        writeRestriction: restrictionText(skill.writeRestriction),
+        writeRestriction: skillDeleteRefusal(skill.writeRestriction, viewer.locale)?.reason ?? "",
       },
     };
   }
 
   return {
     async count() {
-      return { rows: [], total: await skillManager.countSkills(owner.domainId, viewer) };
+      return { rows: [], total: libraryView
+        ? libraryView.registry.getSkills().length : await skillManager.countSkills(owner.domainId, viewer) };
     },
     async options() {
       const { skills, diagnostics } = await assistantSkillCatalog(owner.domainId, viewer);
@@ -133,9 +129,10 @@ export function createSkillReadAdapter(
     async query(params: Record<string, unknown>) {
       const { search, cursor, size } = queryInputSchema.parse(params);
       const needle = search?.trim() ?? "";
-      const { skills, diagnostics } = needle
-        ? await skillManager.searchSkills(owner.domainId, needle, viewer)
-        : await skillManager.getAllSkills(owner.domainId, viewer);
+      const catalogue = libraryView
+        ? skillManager.describeLibrary(libraryView, viewer.locale)
+        : needle ? await skillManager.searchSkills(owner.domainId, needle, viewer) : await skillManager.getAllSkills(owner.domainId, viewer);
+      const { skills, diagnostics } = libraryView && needle ? skillManager.searchLibrary(catalogue, needle) : catalogue;
       const messages = diagnosticText(diagnostics);
       const offset = cursor === undefined ? 0 : Number(cursor);
       const labels = skillFieldLabels();
@@ -147,10 +144,15 @@ export function createSkillReadAdapter(
       };
     },
     async record(primaryKey: string) {
-      return skillRow(await skillManager.getSkillInfo(owner.domainId, primaryKey, viewer), skillFieldLabels());
+      const skill = libraryView
+        ? skillManager.describeSkill(libraryView.requireSkillById(primaryKey), viewer.locale)
+        : await skillManager.getSkillInfo(owner.domainId, primaryKey, viewer);
+      return skillRow(skill, skillFieldLabels());
     },
     async files(primaryKey: string) {
-      const files = await skillManager.listSkillFiles(owner.domainId, primaryKey, viewer);
+      const files = libraryView
+        ? await skillManager.listFilesFromEntry(libraryView.requireSkillById(primaryKey))
+        : await skillManager.listSkillFiles(owner.domainId, primaryKey, viewer);
       const fieldLabels = { size: t("panels.skill.fields.size") };
       return files.map(entry => ({
         primaryKey: entry.path,
@@ -161,7 +163,9 @@ export function createSkillReadAdapter(
     },
     async file(primaryKey: string, params: Record<string, unknown>) {
       const { path } = fileInputSchema.parse(params);
-      const content = await skillManager.readSkillFile(owner.domainId, primaryKey, path, viewer);
+      const content = libraryView
+        ? await skillManager.readFileFromEntry(libraryView.requireSkillById(primaryKey), path, viewer.locale)
+        : await skillManager.readSkillFile(owner.domainId, primaryKey, path, viewer);
       return {
         primaryKey: path,
         label: path,

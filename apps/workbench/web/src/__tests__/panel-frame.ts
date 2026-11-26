@@ -23,7 +23,7 @@ import {
   type PlatformScheduleForm,
   type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
-import { isApplicationPanelUse, type ApplicationEntryResolution, type ApplicationPanelUse, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
+import { isApplicationPanelUse, type ApplicationEntryResolution, type ApplicationOpenResponse, type ApplicationPanelUse, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -479,16 +479,20 @@ async function resolveEntryFrom(answer: (request: Sent) => Response | Promise<Re
   const use = uses.find((candidate) => useId ? candidate.id === useId : panelUsePath(candidate.path) === path);
   if (!use) return notFound(`No entry of ${applicationId} at ${path ?? useId}`);
   // A \`panels\` application's frame panel and theme, where the test declares them beside its uses.
-  const { framePanelId, theme, groups, names, singleEntry } = (body.data ?? body) as {
+  const { framePanelId, theme, groups, names, singleEntry, allowStandalone } = (body.data ?? body) as {
     framePanelId?: string;
     theme?: unknown;
     groups?: unknown[];
     names?: Record<string, string>;
     singleEntry?: boolean;
+    allowStandalone?: boolean;
   };
   const namedUses = uses.filter((one) => one.names);
   return Response.json({
     applicationId, use,
+    allowStandalone: allowStandalone ?? true,
+    frame: null,
+    content: null,
     menu: { singleEntry: singleEntry ?? namedUses.length <= 1, ...(names ? { names } : {}), groups: groups ?? [], panelUses: namedUses },
     ...(framePanelId ? { framePanelId } : {}), ...(theme ? { theme } : {}),
     ...(isApplicationPanelUse(use) && { pageSkillContext: applicationEntryPageContext(applicationId, use) }),

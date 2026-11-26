@@ -1,3 +1,5 @@
+import { modelOwnerRead } from "../../__tests__/fixtures/workbench-panel-read-facts";
+import { mountWorkbenchPanelReadsOwner } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
@@ -242,10 +244,14 @@ beforeAll(async () => {
     } });
   });
   javaOwner(app);
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     Object.assign(req, { domainId: "model", userId: "reader", userName: "Model Reader", token: "model-reader", locale: req.header("Accept-Language") });
     next();
-  });
+  };
+  mountWorkbenchPanelReadsOwner(app, { token: "fixture-service", viewer: () => ({ domainId: "model", userId: "reader", userName: "Model Reader" }), read: modelOwnerRead });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
@@ -278,7 +284,7 @@ afterAll(async () => {
 
 function request(method: string, resource: string, body?: object) {
   return fetch(`${state.base}/api/${resource}`, {
-    method, headers: { "Content-Type": "application/json", "Accept-Language": "en" }, body: JSON.stringify(body),
+    method, headers: { tk: "model-reader", "Content-Type": "application/json", "Accept-Language": "en" }, body: JSON.stringify(body),
   });
 }
 

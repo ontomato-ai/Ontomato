@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service.impl;
 
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
@@ -12,7 +13,6 @@ import io.ontomato.dataengine.service.QueryPackage;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
-import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
@@ -31,6 +31,7 @@ import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -210,11 +211,20 @@ public class FunctionServiceImpl implements FunctionService {
 
   @Override
 	public String deleteRefusal(String id, String domainId, String lang) {
+		return deleteRefusal(id, domainId, lang, () -> definitions.current());
+	}
+
+	@Override
+	public String deleteRefusal(String id, String lang, SubjectContext subject) {
+		return deleteRefusal(id, subject.identity().domainId(), lang, () -> subject);
+	}
+
+	private String deleteRefusal(String id, String domainId, String lang, java.util.function.Supplier<SubjectContext> subject) {
 		Function function = functionDao.queryById(id);
 		if (function == null || !domainId.equals(function.getDomainId()))
 			throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
 		if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
-            definitions.require(definitions.current(), access(function, Verb.EDIT));
+            definitions.require(subject.get(), access(function, Verb.EDIT));
         OwnerRefusal refusal = deletionRefusal(function, lang);
 		return refusal == null ? null : refusal.getMessage();
 	}
@@ -230,27 +240,46 @@ public class FunctionServiceImpl implements FunctionService {
   }
 
   @Override
-  public List<Function> listVisible(String operation, String className, User user) {
-    var visible = visibleTo(user);
-    return queryList(operation, className, user.getDomainId()).stream().filter(visible).toList();
+  public List<Function> listVisible(String operation, String className, SubjectContext subject) {
+    var visible = visibleTo(subject);
+    return queryList(operation, className, subject.identity().domainId()).stream().filter(visible).toList();
   }
 
   @Override
-  public long countVisible(User user) {
-    var visible = visibleTo(user);
-    var ids = functionDao.queryReadCandidates(user.getDomainId()).stream()
-        .filter(visible).map(Function::getId).toList();
-    return functionDao.countByIds(user.getDomainId(), ids);
+  public Optional<Function> visibleDefinition(String id, SubjectContext subject) {
+    return functionDao.queryReadCandidates(subject.identity().domainId(), id).stream()
+        .filter(visibleTo(subject)).findFirst();
   }
 
-  private Predicate<Function> visibleTo(User user) {
-    var subject = definitions.subject(user);
+  @Override
+  public List<Function> visibleDefinitions(Set<String> ids, SubjectContext subject) {
+    return functionDao.queryReadCandidates(subject.identity().domainId(), ids).stream()
+        .filter(visibleTo(subject)).toList();
+  }
+
+  @Override
+  public List<FunctionDao.ObjectTypeReferences> visibleObjectTypeReferences(String centerId, boolean outgoing, SubjectContext subject) {
+    var visible = visibleTo(subject);
+    return functionDao.objectTypeReferences(subject.identity().domainId(), centerId, outgoing).stream()
+        .filter(row -> visible.test(row.definition())).toList();
+  }
+
+  @Override
+  public long countVisible(SubjectContext subject) {
+    var domainId = subject.identity().domainId();
+    var ids = functionDao.queryReadCandidates(domainId).stream()
+        .filter(visibleTo(subject)).map(Function::getId).toList();
+    return functionDao.countByIds(domainId, ids);
+  }
+
+  private Predicate<Function> visibleTo(SubjectContext subject) {
     return function -> Function.OPERATION_PRODUCT.equals(function.getOperation())
         || definitions.canRead(subject, access(function, Verb.USE));
   }
 
   @Override
-  public JSONObject form(JSONObject request, String lang, String domainId) {
+  public JSONObject form(JSONObject request, String lang, SubjectContext subject) {
+    String domainId = subject.identity().domainId();
     JSONObject target = request.getJSONObject("target");
     if (target == null) throw new IllegalArgumentException("target is required");
     String kind = target.getString("kind");
@@ -266,10 +295,9 @@ public class FunctionServiceImpl implements FunctionService {
       if (function == null || !domainId.equals(function.getDomainId()))
         throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
       if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
-          definitions.requireRead(definitions.current(), access(function, Verb.USE));
+          definitions.requireRead(subject, access(function, Verb.USE));
       existing = true;
     } else if ("draft".equals(kind)) {
-      var subject = definitions.current();
       var values = request.getJSONObject("values");
       if (values != null && values.getString("operation") != null) {
           definitions.require(subject, new Create(functionKind(values.getString("operation"))));

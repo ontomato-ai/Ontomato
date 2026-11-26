@@ -23,6 +23,11 @@ import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import io.ontomato.dataengine.util.CodeHashUtil;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.CredentialLimit;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -137,9 +142,13 @@ class ActionRefusalTest {
     Action stored = action("a1", Action.ORIGIN_SYSTEM, Action.STATUS_PENDING_REVIEW);
     when(actionDao.queryById("a1")).thenReturn(new Object[] {stored, "f-a1"});
 
-    assertEquals("Action.cannotDeleteSystem", service.systemDeletionRefusal("a1", "domain-a", "en"));
+    var sameDomain = new SubjectContext(new VerifiedIdentity("domain-a", "author", CredentialLimit.UNRESTRICTED),
+        null, Map.of(), Set.of(), Set.of());
+    var otherDomain = new SubjectContext(new VerifiedIdentity("domain-b", "author", CredentialLimit.UNRESTRICTED),
+        null, Map.of(), Set.of(), Set.of());
+    assertEquals("Action.cannotDeleteSystem", service.deleteRefusal("a1", "en", sameDomain));
     assertEquals("ACTION_NOT_FOUND", assertThrows(OwnerRefusal.class,
-        () -> service.systemDeletionRefusal("a1", "domain-b", "en")).code());
+        () -> service.deleteRefusal("a1", "en", otherDomain)).code());
     OwnerRefusal error = assertThrows(OwnerRefusal.class, () -> service.delete("a1", "en", new io.ontomato.dataengine.service.QueryAccessService.GrantUser("author", "domain-a")));
 
     assertEquals("ACTION_SYSTEM", error.code());

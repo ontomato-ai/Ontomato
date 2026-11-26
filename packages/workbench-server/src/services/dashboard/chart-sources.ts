@@ -72,7 +72,7 @@ function findAnyCard(detail: DashboardDetail, cardId: string) {
   return detail.groups.flatMap(group => [...group.charts, ...group.metrics]).find(card => card.id === cardId);
 }
 
-export function createDashboardCardReadAdapter(owner: DashboardOwner, viewer: AssistantCredentials) {
+export function createDashboardCardReadSource(owner: DashboardOwner) {
   const { domainId } = owner;
   const association = (primaryKey: string, registration: ChartRegistration): RegisteredSource => ({
     ...registration,
@@ -83,12 +83,9 @@ export function createDashboardCardReadAdapter(owner: DashboardOwner, viewer: As
     chartTemplate(primaryKey: string, registration: ChartRegistration) {
       return dashboardChartSources.read(domainId, association(primaryKey, registration));
     },
-    async result(primaryKey: string, registration: ChartRegistration, parameters: DashboardMetricReference["parameters"]) {
+    async registeredCard(primaryKey: string, registration: ChartRegistration) {
       const { card } = await registeredChart(domainId, association(primaryKey, registration));
-      const metric = new DashboardMetricClient(domainId, viewer);
-      const { revision, sourceObjectTypes } = await metric.describe(registration.metricId);
-      const executed = await metric.execute({ ...card.query, parameters: { ...card.query.parameters, ...parameters } }, revision);
-      return sourceObjectTypes !== undefined ? { ...executed, sourceObjectTypes } : executed;
+      return card;
     },
     /** Direct owner read for a chart card's template inside the owner's own dashboard panel. */
     async ownedChartTemplate(primaryKey: string) {
@@ -96,17 +93,41 @@ export function createDashboardCardReadAdapter(owner: DashboardOwner, viewer: As
       const card = await ownChart(owner, source);
       return { chartFile: card.chartFile, parameters: card.query.parameters };
     },
-    /** Direct owner read for any chart or metric card's executed metric output inside the owner's own dashboard panel. */
-    async ownedResult(primaryKey: string, parameters: DashboardMetricReference["parameters"]) {
+    /** Either kind of card inside the owner's own dashboard panel. */
+    async ownedCard(primaryKey: string) {
       const { dashboardId, cardId } = parseDashboardCardPrimaryKey(primaryKey);
       const detail = await getOwnedDashboard(owner.userId, domainId, dashboardId);
       const card = findAnyCard(detail, cardId);
       if (!card) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");
-      const metric = new DashboardMetricClient(domainId, viewer);
-      const { revision, sourceObjectTypes } = await metric.describe(card.query.metricId);
-      const executed = await metric.execute({ ...card.query, parameters: { ...card.query.parameters, ...parameters } }, revision);
-      requireMatchingOutput(card, executed);
-      return sourceObjectTypes !== undefined ? { ...executed, sourceObjectTypes } : executed;
+      return card;
+    },
+  };
+}
+
+export function dashboardCardMetricQuery(card: { query: DashboardMetricReference }, parameters: DashboardMetricReference["parameters"]) {
+  return { ...card.query, parameters: { ...card.query.parameters, ...parameters } };
+}
+
+export function createDashboardCardReadAdapter(owner: DashboardOwner, viewer: AssistantCredentials) {
+  const source = createDashboardCardReadSource(owner);
+  async function execute(query: DashboardMetricReference) {
+    const metric = new DashboardMetricClient(owner.domainId, viewer);
+    const { revision, sourceObjectTypes } = await metric.describe(query.metricId);
+    const executed = await metric.execute(query, revision);
+    return sourceObjectTypes !== undefined ? { ...executed, sourceObjectTypes } : executed;
+  }
+  return {
+    chartTemplate: source.chartTemplate,
+    ownedChartTemplate: source.ownedChartTemplate,
+    async result(primaryKey: string, registration: ChartRegistration, parameters: DashboardMetricReference["parameters"]) {
+      const card = await source.registeredCard(primaryKey, registration);
+      return execute(dashboardCardMetricQuery(card, parameters));
+    },
+    async ownedResult(primaryKey: string, parameters: DashboardMetricReference["parameters"]) {
+      const card = await source.ownedCard(primaryKey);
+      const output = await execute(dashboardCardMetricQuery(card, parameters));
+      requireMatchingOutput(card, output);
+      return output;
     },
   };
 }

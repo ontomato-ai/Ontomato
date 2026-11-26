@@ -214,6 +214,33 @@ it("requests only USE for panel picker options and projection facets", async () 
   expect(mocks.decide).not.toHaveBeenCalled();
 });
 
+it("preserves picker options and uses the admitted range without another authorization round", async () => {
+  const { registeredLocalReads } = await import("../registered-local-reads");
+  const options = registeredLocalReads[PRODUCT_PANEL]!.options!;
+  const panel = {
+    ...storedPanel("reader-panel", "another-user"), ...healthyDefinition, definition: healthyDefinition,
+    sortKey: "orders", editable: false,
+  };
+  const keyword = "Orders";
+  const page = { number: 2, size: 3 };
+  const seed = () => mocks.query.mockResolvedValueOnce({ rows: [panel] }).mockResolvedValueOnce({ rows: [{ total: 4 }] });
+  seed();
+  const legacy = await adapter.options(keyword, page);
+
+  mocks.ranges.mockClear();
+  seed();
+  const ranges = {
+    USE: { fixed: true, authorId: null, objectIds: grantedIds.use, all: false },
+    EDIT: { fixed: false, authorId: owner.userId, objectIds: grantedIds.edit, all: false },
+  };
+  await expect(options.read(owner, { PANEL: ranges }, undefined, credentials, undefined, { keyword, page }))
+    .resolves.toEqual(legacy);
+  expect(legacy).toEqual({ options: [{ primaryKey: panel.id, value: panel.id, label: "Orders" }], total: 4 });
+  expect(options.visibility).toEqual([{ kind: "PANEL", verbs: ["USE"] }]);
+  expect(mocks.ranges).not.toHaveBeenCalled();
+  expect(mocks.decide).not.toHaveBeenCalled();
+});
+
 it.each([["author-panel", true], ["editor-panel", true], ["reader-panel", false]] as const)(
   "returns a typed diagnostic with the right delete capability for %s", async (id, canDelete) => {
     const record = panelRecordSchema.parse(await adapter.record(id));

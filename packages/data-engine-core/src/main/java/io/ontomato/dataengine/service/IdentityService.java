@@ -31,6 +31,9 @@ public interface IdentityService {
      */
     User getCurrentUser();
 
+    /** Verify the current credential without loading operation permissions for the panel reader. */
+    default User verifyWorkbenchPanelViewer() { return getCurrentUser(); }
+
     /** The workbench's stable identity for an authenticated ontology caller. */
     default String workbenchSubjectId(User user) { return user.getId(); }
 

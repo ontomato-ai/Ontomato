@@ -3,11 +3,9 @@ import { configuredAssistantSkills } from "./skill-selection";
 import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
-import { isPageOperatorSkill, PAGE_OPERATOR_SKILL } from "./page-operator";
-import { runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
+import { isPageOperatorSkill, PAGE_OPERATOR_SKILL, runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import type { CurrentPageContext } from "@ontomato/contracts/page-context";
 import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
-import { SkillSourceRecordError } from "../../core/skills/providers";
 import { skillRegistryManager, skillSourceLabel } from "../../core/skills/registry/manager";
 import type { SkillEntry } from "../../core/skills/types";
 import { HttpError } from "../../utils/errors";
@@ -98,7 +96,11 @@ function assistantSkillSources(view: SkillView) {
 }
 
 export async function countAssistantSkills(domainId: string, credentials: AssistantCredentials): Promise<number> {
-  return assistantSkillSources(await readSkillView(domainId, credentials)).size;
+  return countAssistantSkillsFromView(await readSkillView(domainId, credentials));
+}
+
+export function countAssistantSkillsFromView(view: SkillView): number {
+  return assistantSkillSources(view).size;
 }
 
 export async function readAssistantSkillView(domainId: string, initiatorCredentials: AssistantCredentials, userId?: string) {

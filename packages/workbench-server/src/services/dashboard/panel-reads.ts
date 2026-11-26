@@ -1,28 +1,36 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
   dashboardCardPrimaryKey,
+  dashboardMetricDescriptionSchema,
+  dashboardParameterFormSchema,
   parseDashboardCardPrimaryKey,
   type DashboardDetail,
   type DashboardGroup,
+  type DashboardMetricDescription,
+  type DashboardParameterForm,
   type MetricReferenceEntry,
 } from "@ontomato/contracts/dashboard";
 import { formFieldPointer } from "@ontomato/contracts/form-fields";
-import type {
-  PanelFormDescription,
-  PanelFormField,
-  PanelFormValues,
-  PanelRecord,
-  PanelRecordFieldValue,
+import {
+  panelReadParameterSchemas,
+  type PanelFormDescription,
+  type PanelFormField,
+  type PanelFormValues,
+  type PanelRecord,
+  type PanelRecordFieldValue,
 } from "@ontomato/contracts/panel-projection";
 import { DASHBOARD, DASHBOARD_CARD, METRIC_VIEW } from "@ontomato/contracts/platform-object-types";
+import { z } from "zod";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { favoriteTargetKey, readFavoriteKeySet } from "../platform-home/service";
+import type { JavaPanelRead } from "../product-panels/java-panel-reads";
 import { getOwnedDashboard } from "./access";
 import { DashboardMetricClient } from "./metric-client";
-import { metricCardParameterForm } from "./metric-data";
+import { metricCardParameterForm, ownedCard } from "./metric-data";
 import { listDashboards } from "./store";
 
 type FormReadParams = {
@@ -240,6 +248,161 @@ export function createDashboardReadAdapter(owner: ProductOwner, viewer: Assistan
   };
 }
 
+function presentCardParameterForm(loaded: DashboardParameterForm, overrides?: PanelFormValues): PanelFormDescription {
+  const readOnlySet = new Set(loaded.readOnly);
+  const fields: PanelFormField[] = loaded.fields.map(field => {
+    const path = formFieldPointer("/", field.key);
+    const base = {
+      path,
+      label: field.label,
+      required: field.required,
+      readOnly: readOnlySet.has(field.key),
+      ...(field.help !== null ? { help: field.help } : {}),
+      ...(field.defaultValue !== null ? { defaultValue: field.defaultValue } : {}),
+    };
+    if (field.type === "select") {
+      const enumValues = field.options.map(option => option.value);
+      const valueSchema: Record<string, RuntimeJsonValue> = enumValues.length > 0
+        ? { type: "string", enum: enumValues }
+        : { type: "string" };
+      return {
+        ...base,
+        valueSchema,
+        ...(field.refreshOnChange ? { refreshOnChange: true } : {}),
+        control: {
+          kind: "select",
+          options: field.options.map(option => ({
+            value: option.value,
+            label: option.label,
+            description: option.description,
+            disabled: option.disabled,
+            disabledReason: option.disabledReason,
+          })),
+        },
+      };
+    }
+    const valueSchema: Record<string, RuntimeJsonValue> = { type: "string", maxLength: field.maxLength };
+    return {
+      ...base,
+      valueSchema,
+      control: {
+        kind: "text",
+        multiline: field.multiline,
+        ...(field.placeholder !== null ? { placeholder: field.placeholder } : {}),
+        maxLength: field.maxLength,
+      },
+    };
+  });
+
+  const values: PanelFormValues = {};
+  for (const field of loaded.fields) {
+    const incoming = overrides?.[field.key];
+    if (!readOnlySet.has(field.key) && typeof incoming === "string") {
+      values[field.key] = incoming;
+    } else if (typeof loaded.values[field.key] === "string") {
+      values[field.key] = loaded.values[field.key]!;
+    } else {
+      values[field.key] = "";
+    }
+  }
+
+  const properties: Record<string, { type: string }> = {};
+  for (const field of loaded.fields) properties[field.key] = { type: "string" };
+
+  return {
+    fields,
+    values,
+    errors: [],
+    revision: loaded.revision,
+    save: {
+      method: "POST",
+      path: "/api/dashboards/save-card-parameters",
+      bodySchema: {
+        type: "object",
+        properties: {
+          revision: { type: "string" },
+          values: { type: "object", properties },
+        },
+        required: ["values"],
+      },
+    },
+  };
+}
+
+function presentCardMetricSource(
+  primaryKey: string, card: MetricReferenceEntry, spec: DashboardMetricDescription | null, locale?: string,
+): PanelRecord {
+  const metricName = spec ? spec.name || spec.id : card.query.metricId;
+  const metricStatus = spec ? spec.status : "UNAVAILABLE";
+  const parameterEntries = Object.entries(card.query.parameters);
+  const parametersValue: PanelRecordFieldValue = parameterEntries.length > 0
+    ? {
+        kind: "json",
+        value: Object.fromEntries(
+          parameterEntries.map(([key, value]) => [key, value === undefined ? null : (value as RuntimeJsonValue)]),
+        ),
+      }
+    : tForLocale(locale, "panels.dashboard.metricSource.noParameters");
+  return {
+    primaryKey,
+    className: DASHBOARD_CARD,
+    label: card.name,
+    fields: {
+      metric: {
+        kind: "reference",
+        className: METRIC_VIEW,
+        primaryKey: card.query.metricId,
+        label: metricName,
+      },
+      status: metricStatusLabel(metricStatus, locale),
+      parameters: parametersValue,
+    },
+    tones: {
+      status: metricStatusTone(metricStatus),
+    },
+    fieldLabels: {
+      metric: tForLocale(locale, "panels.dashboard.metricSource.metricName"),
+      status: tForLocale(locale, "panels.dashboard.metricSource.status"),
+      parameters: tForLocale(locale, "panels.dashboard.metricSource.parameters"),
+    },
+  };
+}
+
+async function readOwnedMetricSourceCard({ userId, domainId }: ProductOwner, primaryKey: string) {
+  const { dashboardId, cardId } = parseDashboardCardPrimaryKey(primaryKey);
+  const detail = await getOwnedDashboard(userId, domainId, dashboardId);
+  const found = findCardWithGroup(detail, cardId);
+  if (!found) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");
+  return found.card;
+}
+
+const metricSourceFacts = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("available"), metric: dashboardMetricDescriptionSchema }),
+  z.object({ status: z.literal("unavailable") }),
+]);
+
+export async function prepareDashboardCardMetadataRead(
+  owner: ProductOwner, primaryKey: string, method: "form" | "metricSource", params: Record<string, unknown>, locale?: string,
+): Promise<{ call: NonNullable<JavaPanelRead["call"]>; present(payload: unknown): PanelFormDescription | PanelRecord }> {
+  if (method === "form") {
+    const values = panelReadParameterSchemas.panelFormValues.optional().parse(params.values);
+    requireFormFieldNames(values, "values");
+    const { card } = await ownedCard(owner, parseDashboardCardPrimaryKey(primaryKey));
+    return {
+      call: { type: METRIC_VIEW, name: "parameterForm", parameters: { primaryKey: card.query.metricId, parameters: card.query.parameters } },
+      present: payload => presentCardParameterForm(dashboardParameterFormSchema.parse(payload), values),
+    };
+  }
+  const card = await readOwnedMetricSourceCard(owner, primaryKey);
+  return {
+    call: { type: METRIC_VIEW, name: "describe", parameters: { primaryKey: card.query.metricId } },
+    present(payload) {
+      const facts = metricSourceFacts.parse(payload);
+      return presentCardMetricSource(primaryKey, card, facts.status === "available" ? facts.metric : null, locale);
+    },
+  };
+}
+
 export function createDashboardCardOwnerReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const { userId, domainId } = owner;
   const { locale } = viewer;
@@ -267,136 +430,21 @@ export function createDashboardCardOwnerReadAdapter(owner: ProductOwner, viewer:
         request,
         new DashboardMetricClient(domainId, viewer),
       );
-      const readOnlySet = new Set(loaded.readOnly);
-      const fields: PanelFormField[] = loaded.fields.map(field => {
-        const path = formFieldPointer("/", field.key);
-        const base = {
-          path,
-          label: field.label,
-          required: field.required,
-          readOnly: readOnlySet.has(field.key),
-          ...(field.help !== null ? { help: field.help } : {}),
-          ...(field.defaultValue !== null ? { defaultValue: field.defaultValue } : {}),
-        };
-        if (field.type === "select") {
-          const enumValues = field.options.map(option => option.value);
-          const valueSchema: Record<string, RuntimeJsonValue> = enumValues.length > 0
-            ? { type: "string", enum: enumValues }
-            : { type: "string" };
-          return {
-            ...base,
-            valueSchema,
-            ...(field.refreshOnChange ? { refreshOnChange: true } : {}),
-            control: {
-              kind: "select",
-              options: field.options.map(option => ({
-                value: option.value,
-                label: option.label,
-                description: option.description,
-                disabled: option.disabled,
-                disabledReason: option.disabledReason,
-              })),
-            },
-          };
-        }
-        const valueSchema: Record<string, RuntimeJsonValue> = { type: "string", maxLength: field.maxLength };
-        return {
-          ...base,
-          valueSchema,
-          control: {
-            kind: "text",
-            multiline: field.multiline,
-            ...(field.placeholder !== null ? { placeholder: field.placeholder } : {}),
-            maxLength: field.maxLength,
-          },
-        };
-      });
-
-      const values: PanelFormValues = {};
-      for (const field of loaded.fields) {
-        const incoming = params.values?.[field.key];
-        if (!readOnlySet.has(field.key) && typeof incoming === "string") {
-          values[field.key] = incoming;
-        } else if (typeof loaded.values[field.key] === "string") {
-          values[field.key] = loaded.values[field.key]!;
-        } else {
-          values[field.key] = "";
-        }
-      }
-
-      const properties: Record<string, { type: string }> = {};
-      for (const field of loaded.fields) properties[field.key] = { type: "string" };
-
-      return {
-        fields,
-        values,
-        errors: [],
-        revision: loaded.revision,
-        save: {
-          method: "POST",
-          path: "/api/dashboards/save-card-parameters",
-          bodySchema: {
-            type: "object",
-            properties: {
-              revision: { type: "string" },
-              values: { type: "object", properties },
-            },
-            required: ["values"],
-          },
-        },
-      };
+      return presentCardParameterForm(loaded, params.values);
     },
 
     async metricSource(primaryKey: string): Promise<PanelRecord> {
-      const { dashboardId, cardId } = parseDashboardCardPrimaryKey(primaryKey);
-      const detail = await getOwnedDashboard(userId, domainId, dashboardId);
-      const found = findCardWithGroup(detail, cardId);
-      if (!found) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");
-      const { card } = found;
+      const card = await readOwnedMetricSourceCard(owner, primaryKey);
       const client = new DashboardMetricClient(domainId, viewer);
-      let metricName = card.query.metricId;
-      let metricStatus = "UNAVAILABLE";
+      let spec: DashboardMetricDescription | null = null;
       try {
-        const spec = await client.describe(card.query.metricId);
-        metricName = spec.name || spec.id;
-        metricStatus = spec.status;
+        spec = await client.describe(card.query.metricId);
       } catch (error) {
         if (!(error instanceof HttpError) || (error.status !== 404 && error.code !== "METRIC_UNAVAILABLE")) {
           throw error;
         }
       }
-      const parameterEntries = Object.entries(card.query.parameters);
-      const parametersValue: PanelRecordFieldValue = parameterEntries.length > 0
-        ? {
-            kind: "json",
-            value: Object.fromEntries(
-              parameterEntries.map(([key, value]) => [key, value === undefined ? null : (value as RuntimeJsonValue)]),
-            ),
-          }
-        : tForLocale(locale, "panels.dashboard.metricSource.noParameters");
-      return {
-        primaryKey,
-        className: DASHBOARD_CARD,
-        label: card.name,
-        fields: {
-          metric: {
-            kind: "reference",
-            className: METRIC_VIEW,
-            primaryKey: card.query.metricId,
-            label: metricName,
-          },
-          status: metricStatusLabel(metricStatus, locale),
-          parameters: parametersValue,
-        },
-        tones: {
-          status: metricStatusTone(metricStatus),
-        },
-        fieldLabels: {
-          metric: tForLocale(locale, "panels.dashboard.metricSource.metricName"),
-          status: tForLocale(locale, "panels.dashboard.metricSource.status"),
-          parameters: tForLocale(locale, "panels.dashboard.metricSource.parameters"),
-        },
-      };
+      return presentCardMetricSource(primaryKey, card, spec, locale);
     },
   };
 }

@@ -1,3 +1,5 @@
+import { mountWorkbenchPanelReadsOwner, ownerData, type PanelFixtureRead } from "../../__tests__/fixtures/workbench-panel-reads-owner";
+import { customerOwnerRead, modelOwnerRead } from "../../__tests__/fixtures/workbench-panel-read-facts";
 import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
 import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
@@ -16,8 +18,10 @@ import { fileURLToPath } from "node:url";
 import { panelFormDescriptionSchema, panelOptionListSchema } from "@ontomato/contracts/panel-projection";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import {
-  DELETE_FUNCTION, FUNCTION, METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
+  ACTION, AGENT_DEFINITION, APPLICATION, DELETE_FUNCTION, FUNCTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_TYPE,
+  SKILL, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIGGER, USER,
 } from "@ontomato/contracts/platform-object-types";
+import { skillEditorAccessRequestSchema } from "@ontomato/contracts/skill-editor-access";
 import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomato/platform-schedules/panel-text";
 import examples from "../../../../contracts/examples/platform-schedules.json";
@@ -34,6 +38,7 @@ import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/
 import { ensureOpsDiagnosisSchema } from "../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
+import { HttpError } from "../../utils/errors";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", allowAgentEdits: true, allowAgentCreation: true }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -73,6 +78,10 @@ const dataPanelId = "panel-data-port-pilot";
 const agentPanelId = "panel-agent-settings-pilot";
 const agentId = randomUUID();
 const mcpServiceId = randomUUID();
+const pilotModel = {
+  classDef: [{ className: "warehouse", showName: "Warehouse", attrs: [] }, { className: "item", attrs: [] }],
+  relationship_rule: { contains: { fromclass: "warehouse", toclass: "item", desc: "Contains" } },
+};
 const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "agents-instruction")!.response);
 const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => item.name === "agents-empty")!.response);
 const taskRun = platformTaskRunSchema.parse({
@@ -103,6 +112,130 @@ const metricRefusals: Record<number, { status: number; message: string }> = {
   1992: { status: 404, message: "Executable read metric not found" },
   1993: { status: 409, message: "Metric specification changed; retrieve it again" },
 };
+function pilotSkillEditorAccess(input: unknown) {
+  const { agentTarget, target, ownerFacts } = skillEditorAccessRequestSchema.parse(input);
+  if (agentTarget === "draft") {
+    expect(target).toBeUndefined();
+    expect(ownerFacts).toBeUndefined();
+  } else {
+    expect(target).toEqual({ kind: "AGENT", id: agentTarget, domainId: "pilot" });
+    expect(ownerFacts).toBeDefined();
+  }
+  const allowed = agentTarget === "draft" ? state.allowAgentCreation : agentTarget === agentId && state.allowAgentEdits;
+  return allowed ? { allowed: true } : { allowed: false, code: "FORBIDDEN", reason: "Agent editor access denied" };
+}
+
+const pilotOwnerRead: PanelFixtureRead = async (call, owner, viewer) => {
+  const { type, name, parameters } = call;
+  const key = String(parameters.primaryKey);
+  if (type === "customer:Relationship" && name === "neighbors") {
+    expect(owner.credential).toBe("pilot-reader");
+    expect(parameters).toEqual({
+      relationshipId: "person_to_org", node: { className: "person", primaryKey: "p1" }, limit: 10, offset: 0,
+    });
+    const attributes = (className: string) => [
+      { className, name: "id", showName: "Identifier", type: "string", attrDesc: "", enable: true, businessKey: false, primaryKey: true },
+      { className, name: "name", showName: "Name", type: "string", attrDesc: "", enable: true, businessKey: true, primaryKey: false },
+    ];
+    return {
+      anchor: { attributes: attributes("person"), answer: { success: true, data: { data: { name: "Alice" } } } },
+      label: "Contains", typeLabels: {}, targetAttributes: { org: attributes("org") },
+      directions: [{ targetClass: "org", direction: "outgoing", status: "ok", rows: [{ id: "org1", name: "Example Org" }] }],
+    };
+  }
+  if (type === SKILL && name === "editorAccess") return pilotSkillEditorAccess(parameters);
+  if (type === ONTOLOGY_TYPE) {
+    if (name === "start") return viewer.userName;
+    if (name === "metadataCounts")
+      return { objectTypes: pilotModel.classDef.length, attributes: 0, relationships: Object.keys(pilotModel.relationship_rule).length };
+    if (name === "modelInstanceDirectory") {
+      expect(parameters).toEqual({ type: OBJECT_TYPE });
+      return { classDef: pilotModel.classDef };
+    }
+    if (name === "modelNeighbors") {
+      expect(parameters.className).toBe(OBJECT_TYPE);
+      const classDef = pilotModel.classDef.filter(row => row.className === key);
+      const requested = parameters.relations as { kind: string }[];
+      const relations = Object.fromEntries(requested.map(({ kind }) => {
+        if (kind === "object-type.has-attribute") return [kind, { classDef, relationDef: [] }];
+        const field = kind === "relationship.from-object-type" ? "fromclass" : "toclass";
+        const relationDef = Object.fromEntries(Object.entries(pilotModel.relationship_rule).filter(([, relation]) => relation[field] === key));
+        return [kind, { classDef: [], relationDef }];
+      }));
+      return { center: { classDef, relationDef: [] }, relations };
+    }
+  }
+  if (type === APPLICATION && name === "scheduleTargets")
+    return ownerData(await owner.get("/platform/applications", { purpose: "schedules" }));
+  if (type === TRIGGER) {
+    if (name === "list" || name === "status") return owner.get("/platform/triggers");
+    if (name === "record") return owner.get(`/platform/triggers/${key}`);
+    if (name === "targets") return owner.get("/platform/triggers/targets");
+    if (name === "form") return { task: await owner.get(`/platform/triggers/${key}`), edit: { allowed: true } };
+    if (name === "createForm") return { timeZone: task.timeZone };
+    if (name === "applicationLabelAccess") return { inspection: { allowed: false }, caseSets: { allowed: false } };
+    if (name === "runs") return owner.get(`/platform/triggers/${key}/runs`, { cursor: String(parameters.cursor) });
+    if (name === "run") return owner.get(`/platform/triggers/${key}/runs/${parameters.runId}`);
+  }
+  if (type === MODEL_OPTION && (name === "options" || name === "resolve")) return ownerData(await owner.get("/model-options"));
+  if (type === USER && name === "options") {
+    const query = parameters.keyword ? {
+      keyword: String(parameters.keyword), pageNum: String(parameters.pageNum), pageSize: String(parameters.pageSize),
+    } : undefined;
+    const { users } = await owner.get("/platform/agent-execution/options", query);
+    return users;
+  }
+  if (type === USER && name === "resolve") {
+    return Promise.all((parameters.ids as string[]).map(async selected =>
+      (await owner.get("/platform/agent-execution/options", { selected })).selected));
+  }
+  if (type === AGENT_DEFINITION) {
+    if (name === "list" || ((name === "record" || name === "form") && key === RETRIEVAL_AGENT_ID))
+      return { retriever: ownerData(await owner.get(`/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`)) };
+    if (name === "createForm") {
+      const { decisions: [create] } = await owner.post("/authorization/objects/decide-batch", { requests: [{ create: "AGENT" }] });
+      if (!create.allowed) throw new HttpError(403, create.reason, create.code);
+      expect(parameters.validation).toBeUndefined();
+      const { canSetExecutionUser } = await owner.get("/platform/agent-execution/options");
+      return { canSetExecutionUser };
+    }
+    if (name === "record" || name === "deleteAvailability" || name === "form") {
+      const requests = ["VIEW", "EDIT"].map(verb => ({
+        target: { kind: "AGENT", domainId: viewer.domainId, id: key },
+        ownerFacts: { ownerId: parameters.ownerId, state: "PUBLISHED" }, verb,
+      }));
+      const { decisions: [view, edit] } = await owner.post("/authorization/objects/decide-batch", { requests });
+      if (name === "deleteAvailability") return edit.allowed;
+      if (!view.allowed) throw new HttpError(403, view.reason, view.code);
+      if (name === "form") {
+        expect(parameters.validation).toBeUndefined();
+        const { canSetExecutionUser } = await owner.get("/platform/agent-execution/options");
+        return { editable: edit.allowed, canSetExecutionUser };
+      }
+      return { editable: edit.allowed, ...(edit.allowed && { shared: false }) };
+    }
+  }
+  const root = type === ACTION ? "action" : catalogueOwners.find(({ objectType }) => objectType === type)?.root;
+  if (type === METRIC_VIEW && name === "result") {
+    const { revision, sourceObjectTypes } = await owner.post("/ontology/query/metrics/describe", { id: key });
+    const output = await owner.post("/ontology/query/metrics/execute", { id: key, revision, parameters: parameters.parameters });
+    return { ...output, sourceObjectTypes };
+  }
+  if (root) {
+    if (name === "list" || name === "query") return ownerData(await owner.post(`/${root}/queryList`, {}));
+    if (name === "record")
+      return ownerData(await owner.post(`/${root}/queryById`, { id: key }));
+    if (name === "form" || name === "createForm") return ownerData(await owner.post(`/${root}/${type === ACTION ? "definitionForm" : "form"}`, {
+      target: name === "createForm" ? { kind: "draft" } : { kind: "object", objectType: type, primaryKey: key },
+      changedField: parameters.changedField ?? null, values: parameters.values,
+    }));
+    if (name === "deleteRefusal") return type === ACTION
+      ? ownerData(await owner.post("/action/queryById", { id: key, purpose: "delete-availability" }))
+      : ownerData(await owner.post(`/${root}/deleteRefusal`, { id: key }));
+  }
+  return await customerOwnerRead(call, owner, viewer) ?? await modelOwnerRead(call, owner, viewer);
+};
+
 const projection = {
   name: "Task summary", description: "", visibility: "domain",
   componentId: "@ontomato/sdk:ObjectSummary",
@@ -193,6 +326,10 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   const allowsAgentVerb = (verb: string) => verb !== "EDIT" || state.allowAgentEdits;
+  app.post("/authorization/objects/skill-editor-access", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json(pilotSkillEditorAccess(req.body));
+  });
   app.post("/authorization/objects/decide-batch", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json(agentObjectDecisions(req.body, request =>
@@ -203,14 +340,19 @@ beforeAll(async () => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     expect(req.header("tk")).toBe("pilot-reader");
     const { kind, verbs } = req.body as { kind: string; verbs: string[] };
+    if (kind === "COMPONENT") {
+      expect(verbs).toEqual(["USE"]);
+      res.json({ ranges: { USE: { fixed: true, authorId: null, objectIds: [], all: false } } });
+      return;
+    }
     expect(kind).toBe("AGENT");
     res.json({ ranges: Object.fromEntries(verbs.map(verb => {
-      expect(["VIEW", "EDIT"]).toContain(verb);
+      expect(["VIEW", "EDIT", "USE"]).toContain(verb);
       return [verb, { fixed: false, authorId: null, objectIds: allowsAgentVerb(verb) ? [agentId] : [], all: false }];
     })) });
   });
   app.post("/authorization/objects/agent-access", (_req, res) => res.json({ shared: false, grants: [] }));
-  app.post("/product-governance/grants", (_req, res) => res.json({ grants: [] }));
+  app.post("/product-governance/service-authentication", (_req, res) => res.json({ grants: [] }));
   const allowed = (id: string, verb: string, token?: string) => {
     expect(token).toBe("pilot-reader");
     return id === agentId || resourceIds.has(id) || (verb === "use" && id.startsWith("builtin-product-"));
@@ -259,10 +401,7 @@ beforeAll(async () => {
   app.post("/admin/getMetas", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.header("Accept-Language")).toBe("zh-CN");
-    res.json({ success: true, data: {
-      classDef: [{ className: "warehouse", showName: "Warehouse", attrs: [] }, { className: "item", attrs: [] }],
-      relationship_rule: { contains: { fromclass: "warehouse", toclass: "item", desc: "Contains" } },
-    } });
+    res.json({ success: true, data: pilotModel });
   });
   app.get("/ontology/model/field-labels", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -344,6 +483,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
       applicationId: family, menu: { singleEntry: true, groups: [], panelUses: [] },
+      ...(family === "owner-customer" && { framePanelId: "panel-owner-customer" }),
       use: { id: "data", pageKey: "data", path: `/applications/${family}/data`,
         panelId: `panel-${family}` },
     } });
@@ -467,11 +607,6 @@ beforeAll(async () => {
     expect(req.body).toEqual({ class: "person", id: "person:p1" });
     res.json({ success: true, data: { data: { name: "Alice" } } });
   });
-  app.post("/dsl/executeV1", (req, res) => {
-    expect(req.header("tk")).toBe("pilot-reader");
-    expect(req.body.answer.steps[0].graph.patterns[0].relationship).toEqual([{ from: 0, to: 1, type: ["person_to_org"] }]);
-    res.json({ data: [{ answer: [{ id: "org1", name: "Example Org" }] }] });
-  });
   app.get("/platform/triggers", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ tasks: ownerTasks, timeZone: task.timeZone });
@@ -583,10 +718,14 @@ beforeAll(async () => {
     ownerWrites.push("runNow");
     res.json(taskRun);
   });
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     Object.assign(req, { domainId: "pilot", userId: "reader", userName: "Pilot Reader", token: "pilot-reader", locale: req.header("Accept-Language") });
     next();
-  });
+  };
+  mountWorkbenchPanelReadsOwner(app, { token: "fixture-service", viewer: () => ({ domainId: "pilot", userId: "reader", userName: "Pilot Reader" }), read: pilotOwnerRead });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
@@ -606,7 +745,7 @@ afterAll(async () => {
 
 function request(method: string, resource: string, body?: object, locale = "zh-CN") {
   return fetch(`${state.base}/api/${resource}`, {
-    method, headers: { "Content-Type": "application/json", "Accept-Language": locale }, body: JSON.stringify(body),
+    method, headers: { tk: "pilot-reader", "Content-Type": "application/json", "Accept-Language": locale }, body: JSON.stringify(body),
   });
 }
 
@@ -1194,6 +1333,8 @@ it("reads agent settings and reference options with the panel viewer", async () 
   expect(await read("draftSkills", "options")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining({ primaryKey: agentId }));
   state.allowAgentEdits = false;
+  const readOnlyForm = panelFormDescriptionSchema.parse(await ready("definition", "form", { agent }));
+  expect(readOnlyForm.fields.find(field => field.path === "/name")?.readOnly).toBe(true);
   expect(await read("skills", "options")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   state.allowAgentEdits = true;

@@ -4,8 +4,10 @@ import { panelReadParameterSchemas, type PanelRecord, type PanelRecordQuery } fr
 import {
   platformOntologyNeighborsRequestSchema,
   type PlatformOntologyCountsResponse,
+  type PlatformOntologyNodeRef,
   type PlatformOntologyNeighborsRequest,
   type PlatformOntologyNeighborsResponse,
+  type PlatformOntologyObjectsRequest,
   type PlatformOntologyStartResponse,
 } from "@ontomato/contracts/platform-ontology";
 import { tForLocale } from "../../i18n";
@@ -20,6 +22,7 @@ import {
   readPlatformOntologyNeighbors,
   readPlatformOntologyStart,
   platformOntologyOwnerReadError,
+  requirePlatformOntologyInstanceType,
 } from "./query";
 import {
   ACTION, AGENT_DEFINITION, APPLICATION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE,
@@ -35,6 +38,29 @@ const instancesParams = instanceSearchParams.required({ className: true }).exten
   size: panelReadParameterSchemas.size.optional(),
 });
 const instanceRecordParams = z.object({ object: panelReadParameterSchemas.graphNode }).strict();
+
+function instancePageInput(
+  { className, page, search, size }: z.infer<typeof instanceSearchParams> & { size?: number },
+): PlatformOntologyObjectsRequest {
+  if (className !== undefined && !PLATFORM_ONTOLOGY_TYPE_MAP.has(className)) {
+    throw new HttpError(400, `Unknown platform ontology type: ${className}`, "INVALID_PLATFORM_TYPE");
+  }
+  return { type: className ?? ONTOLOGY_TYPE, keyword: search, page: page?.number, pageSize: size ?? page?.size };
+}
+
+export function platformOntologyInstanceSearchInput(params: Record<string, unknown>): PlatformOntologyObjectsRequest {
+  return instancePageInput(instanceSearchParams.parse(params));
+}
+
+export function platformOntologyInstancesInput(params: Record<string, unknown>): PlatformOntologyObjectsRequest {
+  return instancePageInput(instancesParams.parse(params));
+}
+
+export function platformOntologyInstanceRecordInput(params: Record<string, unknown>): PlatformOntologyNodeRef {
+  const { object } = instanceRecordParams.parse(params);
+  requirePlatformOntologyInstanceType(object.className);
+  return object;
+}
 
 const instanceDetailRoutes: Readonly<Partial<Record<string, string>>> = {
   [OBJECT_TYPE]: "/ontology/objects",
@@ -55,8 +81,22 @@ export interface PlatformOntologyReadAdapter extends ReturnType<typeof createPla
   start(): Promise<PlatformOntologyStartResponse>;
   neighbors(params: PlatformOntologyNeighborsRequest | Record<string, unknown>): Promise<PlatformOntologyNeighborsResponse>;
   instanceSearch(params: Record<string, unknown>): Promise<PanelRecordQuery>;
+  presentInstanceSearchPage(page: Awaited<ReturnType<typeof readPlatformOntologyInstancePage>>): PanelRecordQuery;
+  presentInstancesPage(page: Awaited<ReturnType<typeof readPlatformOntologyInstancePage>>): PanelRecordQuery;
+  presentInstanceRecord(
+    object: PlatformOntologyNodeRef, item: Awaited<ReturnType<typeof readPlatformOntologyInstance>>,
+  ): PanelRecord;
   instances(params: Record<string, unknown>): Promise<PanelRecordQuery>;
   instanceRecord(params: Record<string, unknown>): Promise<PanelRecord>;
+}
+
+export function presentOntologyNeighborDisplay(result: PlatformOntologyNeighborsResponse, locale?: string) {
+  const display = createRelationKindDisplayMap(locale);
+  const named = <T extends { relationKind: string }>(item: T) => {
+    const relation = display.get(item.relationKind);
+    return relation ? { ...item, label: relation.label } : item;
+  };
+  return { ...result, edges: result.edges.map(named), relations: result.relations.map(named) };
 }
 
 /**
@@ -67,7 +107,6 @@ export function createPlatformOntologyReadAdapter(
   viewer: AssistantCredentials,
   callerUserName?: string,
 ): PlatformOntologyReadAdapter {
-  const relationDisplay = createRelationKindDisplayMap(viewer.locale);
   const text = (key: string) => tForLocale(viewer.locale, key);
   const word = (key: string) => text(`panels.platformOntology.${key}`);
   const baseFieldLabels = {
@@ -106,17 +145,10 @@ export function createPlatformOntologyReadAdapter(
     };
   }
 
-  async function readInstanceRows(
-    input: z.infer<typeof instanceSearchParams> & { size?: number },
+  function presentInstanceRows(
+    result: Awaited<ReturnType<typeof readPlatformOntologyInstancePage>>,
     includeMetadata: boolean,
-  ): Promise<PanelRecordQuery> {
-    const { className, page, search, size } = input;
-    if (className !== undefined && !PLATFORM_ONTOLOGY_TYPE_MAP.has(className)) {
-      throw new HttpError(400, `Unknown platform ontology type: ${className}`, "INVALID_PLATFORM_TYPE");
-    }
-    const result = await readPlatformOntologyInstancePage(owner, viewer, {
-      type: className ?? ONTOLOGY_TYPE, keyword: search, page: page?.number, pageSize: size ?? page?.size,
-    });
+  ): PanelRecordQuery {
     if (result.status !== "ok") throw platformOntologyOwnerReadError(result.status, result.reason);
     const rows = result.items.map(item => {
       const row = instanceRow(item, includeMetadata);
@@ -134,8 +166,20 @@ export function createPlatformOntologyReadAdapter(
     };
   }
 
+  const presentInstancesPage = (page: Awaited<ReturnType<typeof readPlatformOntologyInstancePage>>) => presentInstanceRows(page, true);
+  const presentInstanceRecord: PlatformOntologyReadAdapter["presentInstanceRecord"] = (object, item) => {
+    const detailPath = detailPathOf(object.className, object.primaryKey);
+    return {
+      ...instanceRow(item, true),
+      outputs: { typeLabel: typeLabelOf(object.className), ...(detailPath && { detailPath }) },
+    };
+  };
+
   return {
     ...createPlatformOntologyCatalogueReads(owner, viewer),
+    presentInstanceSearchPage: (page: Awaited<ReturnType<typeof readPlatformOntologyInstancePage>>) => presentInstanceRows(page, false),
+    presentInstancesPage,
+    presentInstanceRecord,
 
     counts(): Promise<PlatformOntologyCountsResponse> {
       return readPlatformOntologyCounts(owner, viewer);
@@ -152,35 +196,21 @@ export function createPlatformOntologyReadAdapter(
     ): Promise<PlatformOntologyNeighborsResponse> {
       const input = platformOntologyNeighborsRequestSchema.parse(params);
       const result = await readPlatformOntologyNeighbors(owner, viewer, input, callerUserName);
-      return {
-        ...result,
-        edges: result.edges.map((edge) => {
-          const display = relationDisplay.get(edge.relationKind);
-          return display ? { ...edge, label: display.label } : edge;
-        }),
-        relations: result.relations.map((relation) => {
-          const display = relationDisplay.get(relation.relationKind);
-          return display ? { ...relation, label: display.label } : relation;
-        }),
-      };
+      return presentOntologyNeighborDisplay(result, viewer.locale);
     },
 
-    instanceSearch(params): Promise<PanelRecordQuery> {
-      return readInstanceRows(instanceSearchParams.parse(params), false);
+    async instanceSearch(params): Promise<PanelRecordQuery> {
+      return presentInstanceRows(await readPlatformOntologyInstancePage(owner, viewer, platformOntologyInstanceSearchInput(params)), false);
     },
 
-    instances(params): Promise<PanelRecordQuery> {
-      return readInstanceRows(instancesParams.parse(params), true);
+    async instances(params): Promise<PanelRecordQuery> {
+      return presentInstancesPage(await readPlatformOntologyInstancePage(owner, viewer, platformOntologyInstancesInput(params)));
     },
 
     async instanceRecord(params): Promise<PanelRecord> {
-      const { object } = instanceRecordParams.parse(params);
+      const object = platformOntologyInstanceRecordInput(params);
       const item = await readPlatformOntologyInstance(owner, viewer, object);
-      const detailPath = detailPathOf(object.className, object.primaryKey);
-      return {
-        ...instanceRow(item, true),
-        outputs: { typeLabel: typeLabelOf(object.className), ...(detailPath && { detailPath }) },
-      };
+      return presentInstanceRecord(object, item);
     },
   };
 }

@@ -1,14 +1,16 @@
 package io.ontomato.dataengine.service.vector;
 
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.ai.EmbeddingSelection;
 import io.ontomato.dataengine.dao.VectorRebuildState;
+import io.ontomato.dataengine.dao.VectorRebuildState.Status;
 import io.ontomato.dataengine.dao.VectorRebuildStateDao;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
@@ -36,22 +38,27 @@ public class VectorRetrievalGate {
     @Autowired
     private LangService langService;
 
-    /**
-     * The recorded state of this domain judged against its current configuration. The service writes
-     * both in one transaction; a recorded generation that still differs (a record edited outside it,
-     * such as a restored or migrated one) counts as a round not yet started for the configured one.
-     */
-    public VectorRebuildState stateOf(String domainId, BusinessConfig businessConfig) {
-        EmbeddingSelection current = embeddingService.selection(domainId);
-        VectorRebuildState state = stateDao.find(domainId);
-        if (state == null) {
-            stateDao.insertIfAbsent(domainId, VectorRebuildState.of(current, VectorRebuildState.Status.READY, true));
-            state = stateDao.find(domainId);
+    // The source DAOs use this gate for searches and writes, but their row counts do not enter it.
+    @Autowired
+    private ObjectProvider<VectorRebuildSources> vectorSources;
+
+    record Snapshot(EmbeddingSelection generation, VectorRebuildState recorded) {
+        VectorRebuildState effective(BooleanSupplier running, BooleanSupplier empty) {
+            if (recorded == null) return VectorRebuildState.of(generation, Status.READY, true);
+            boolean current = recorded.sameGeneration(generation);
+            if (current && recorded.getStatus() == Status.READY) return recorded;
+            if (!running.getAsBoolean() && empty.getAsBoolean()) return VectorRebuildState.of(generation, Status.READY, true);
+            return current ? recorded : VectorRebuildState.of(generation, Status.PENDING, false);
         }
-        if (!state.sameGeneration(current)) {
-            return VectorRebuildState.of(current, VectorRebuildState.Status.PENDING, false);
-        }
-        return state;
+    }
+
+    Snapshot snapshot(String domainId) {
+        return new Snapshot(embeddingService.selection(domainId), stateDao.find(domainId));
+    }
+
+    public VectorRebuildState effectiveState(String domainId) {
+        var snapshot = snapshot(domainId);
+        return snapshot.effective(() -> rebuildTracker.isRunning(domainId), () -> vectorSources.getObject().isEmpty(domainId));
     }
 
     /**
@@ -68,9 +75,9 @@ public class VectorRetrievalGate {
 
     /** Throw unless every vector of this domain belongs to the current generation. */
     public void requireRetrievable(String domainId) {
-        BusinessConfig businessConfig = businessConfigService.get(domainId);
-        if (stateOf(domainId, businessConfig).getStatus() != VectorRebuildState.Status.READY) {
-            throw new VectorNotReadyException(langService.get(businessConfig.getLang(), VectorNotReadyException.MESSAGE_KEY));
+        if (effectiveState(domainId).getStatus() != Status.READY) {
+            String lang = businessConfigService.get(domainId).getLang();
+            throw new VectorNotReadyException(langService.get(lang, VectorNotReadyException.MESSAGE_KEY));
         }
     }
 

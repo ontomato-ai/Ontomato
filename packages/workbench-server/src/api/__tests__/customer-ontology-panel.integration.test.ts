@@ -1,3 +1,5 @@
+import { customerOwnerRead } from "../../__tests__/fixtures/workbench-panel-read-facts";
+import { mountWorkbenchPanelReadsOwner } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
@@ -39,7 +41,7 @@ const resourceIds = new Set<string>();
 let server: Server;
 let contentRoot: string;
 
-/** The Java owner's catalog: attributes in their stored order, and the relationships touching each class. */
+/** The Java owner's attributes in their stored order. */
 const attribute = (className: string, name: string, showName: string, flags: { primaryKey?: boolean; businessKey?: boolean } = {}) => ({
   className, name, showName, type: "varchar", attrDesc: "", enable: true,
   businessKey: flags.businessKey ?? false, primaryKey: flags.primaryKey ?? false,
@@ -53,9 +55,6 @@ const attributes: Record<string, ReturnType<typeof attribute>[]> = {
   audit: [attribute("audit", "id", "ID", { primaryKey: true })],
   secret: [attribute("secret", "id", "ID", { primaryKey: true })],
 };
-const relationship = (name: string, fromclass: string, toclass: string) =>
-  ({ relationship: name, fromclass, toclass, desc: name, fromField: "id", toField: "id" });
-const relationships = [relationship("person_to_org", "person", "org"), relationship("org_to_audit", "org", "audit")];
 const objects: Record<string, Record<string, unknown>> = {
   "person:p1": { id: "p1", name: "Alice", team: "Ops", tags: ["lead", "oncall"], note: null },
   "org:o1": { id: "o1", title: "Acme" },
@@ -70,11 +69,6 @@ function javaOwner(app: express.Express) {
   app.get("/ontology/model/attributes", (req, res) => {
     reader(req);
     res.json(attributes[String(req.query.className)]);
-  });
-  app.get("/ontology/model/relationships", (req, res) => {
-    reader(req);
-    const className = String(req.query.className);
-    res.json(relationships.filter(rel => rel.fromclass === className || rel.toclass === className));
   });
   app.post("/data/getWholeClassDataByPage", (req, res) => {
     reader(req);
@@ -97,25 +91,29 @@ function javaOwner(app: express.Express) {
       ? { success: false, code: "DATA_PERMISSION_DENIED", message: "No data permission for p2" }
       : { success: false, code: "OBJECT_NOT_FOUND", message: `Object ${req.body.id} does not exist` });
   });
-  app.post("/dsl/executeV1", (req, res) => {
-    reader(req);
-    const pattern = req.body.answer.steps[0].graph.patterns[0];
-    const [{ type: [kind], from }] = pattern.relationship;
-    const { offset, count } = req.body.answer.steps[0].output.limit;
-    ownerCalls.push(`dsl ${kind} from ${from} limit ${count} offset ${offset}`);
-    if (kind === "org_to_audit") {
-      res.status(403).json({ success: false, message: "Class audit is outside the authorized scope" });
-      return;
-    }
-    // The anchor org sits at the relationship's target end, so its people come back from the incoming direction.
-    expect(from).toBe(1);
-    const people = [{ id: "p1", name: "Alice", team: "Ops" }, { id: "p3", name: "Bob", team: "" }];
-    res.json({ data: [{ answer: people.slice(offset, offset + count) }] });
-  });
 }
 
 const person = { className: "person", primaryKey: "p1" };
 const org = { className: "org", primaryKey: "o1" };
+const readCustomerFacts: typeof customerOwnerRead = (call, owner, viewer) => {
+  if (call.type !== "customer:Relationship" || call.name !== "neighbors")
+    return customerOwnerRead(call, owner, viewer);
+
+  const { relationshipId, node, limit, offset } = call.parameters as {
+    relationshipId: string; node: typeof org; limit: number; offset: number;
+  };
+  expect(owner.credential).toBe("fact-reader");
+  expect(node).toEqual(org);
+  ownerCalls.push(`neighbors ${relationshipId} limit ${limit} offset ${offset}`);
+  const people = [{ id: "p1", name: "Alice", team: "Ops" }, { id: "p3", name: "Bob", team: "" }];
+  const directions = relationshipId === "org_to_audit"
+    ? [{ targetClass: "audit", direction: "outgoing", status: "refused", reason: "Class audit is outside the authorized scope" }]
+    : [{ targetClass: "person", direction: "incoming", status: "ok", rows: people.slice(offset, offset + limit + 1) }];
+  return {
+    anchor: { attributes: attributes.org, answer: { success: true, data: { data: objects["org:o1"] } } },
+    label: relationshipId, typeLabels: {}, targetAttributes: { person: attributes.person, audit: attributes.audit }, directions,
+  };
+};
 const recordOf = (literal: object) => ({
   componentId: "@ontomato/sdk:ObjectSummary", data: { record: { source: { object: { literal } }, read: "record", params: {} } },
 });
@@ -169,15 +167,19 @@ beforeAll(async () => {
     if (req.query.applicationId !== use.applicationId) { next(); return; }
     expect(req.header("tk")).toBe("fact-reader");
     res.json({ success: true, data: {
-      applicationId: use.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
+      applicationId: use.applicationId, framePanelId: panelId, menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: use.useId, pageKey: use.useId, path: `/applications/${use.applicationId}/${use.useId}`, panelId },
     } });
   });
   javaOwner(app);
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     Object.assign(req, { domainId: "facts", userId: "reader", userName: "Fact Reader", token: "fact-reader", locale: req.header("Accept-Language") });
     next();
-  });
+  };
+  mountWorkbenchPanelReadsOwner(app, { token: "fixture-service", viewer: () => ({ domainId: "facts", userId: "reader", userName: "Fact Reader" }), read: readCustomerFacts });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   server = await new Promise<Server>(resolve => {
@@ -209,7 +211,7 @@ afterAll(async () => {
 
 function request(method: string, resource: string, body?: object) {
   return fetch(`${state.base}/api/${resource}`, {
-    method, headers: { "Content-Type": "application/json", "Accept-Language": "en" }, body: JSON.stringify(body),
+    method, headers: { tk: "fact-reader", "Content-Type": "application/json", "Accept-Language": "en" }, body: JSON.stringify(body),
   });
 }
 
@@ -261,7 +263,7 @@ it("reads a relationship's neighbors from the anchor's end, marking truncation a
     relations: [{ relationKind: "person_to_org", status: "ok", edgeCount: 1, truncated: false }],
     nextOffset: null, total: 2,
   } });
-  expect(ownerCalls).toEqual(["dsl person_to_org from 1 limit 2 offset 0", "dsl person_to_org from 1 limit 2 offset 1"]);
+  expect(ownerCalls).toEqual(["neighbors person_to_org limit 1 offset 0", "neighbors person_to_org limit 1 offset 1"]);
 
   expect(await read("audits", "neighbors")).toMatchObject({ status: "ready", value: {
     node: { primaryKey: "o1" }, neighbors: [], edges: [],

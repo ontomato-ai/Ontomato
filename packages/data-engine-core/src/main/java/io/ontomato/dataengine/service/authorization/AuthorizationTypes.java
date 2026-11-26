@@ -47,13 +47,20 @@ public final class AuthorizationTypes {
 
     public record RoleSource(String grantId, String grantType, String sourceId, String orgId, String roleId) {}
 
+    /** Role facts for the resolved subject. Direct domain administration excludes organization role grants. */
     public record RoleResolution(
             Set<String> effectiveRoleIds,
             Set<String> directRoleIds,
             List<RoleSource> organizationGrants,
             Set<String> membershipRoots,
             Map<String, Set<String>> grantRootsByRole,
-            boolean administrator) {
+            boolean administrator,
+            boolean directDomainAdministrator) {
+        /** Effective domain administration includes roles granted through the organization. */
+        public boolean effectiveDomainAdministrator() {
+            return administrator;
+        }
+
         public Set<String> rootsForRole(String roleId) {
             var roots = new java.util.LinkedHashSet<>(grantRootsByRole.getOrDefault(roleId, Set.of()));
             if (directRoleIds.contains(roleId)) roots.addAll(membershipRoots);

@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service.impl;
 
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -18,6 +19,11 @@ public class AnonymousPlatformAccessQuery implements PlatformAccessQuery {
 
     @Override
     public List<RoleAccess> rolesInDomain(String domainId) {
+        return List.of();
+    }
+
+    @Override
+    public List<RoleName> roleNamesInDomain(String domainId, Set<String> roleIds) {
         return List.of();
     }
 

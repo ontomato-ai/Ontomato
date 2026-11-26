@@ -1,17 +1,23 @@
 import { z } from "zod";
-import { allowedAgents } from "./authorization";
+import { agentInVisibilityRange, allowedAgents } from "./authorization";
 import { assistantService } from "./service";
 import { assistantStore } from "./store";
 import { withScheduledUserActivity } from "./scheduled-activity";
 import { HttpError } from "../../utils/errors";
 import { checkedForm, completeForm, emptyExecution, instruction, option, scheduledSessionId, select, summarizeFields, type ScheduleApplication, type ScheduleContext } from "../scheduling/application";
 import { scheduledConversationStatus } from "../scheduling/conversation";
+import type { ObjectVisibilityRange } from "../product-governance/authorization";
 
-async function agentChoices({ owner, credentials }: ScheduleContext) {
+function agentOption(agent: { id: string; name: string; enabled: boolean; description: string }, zh?: boolean) {
+  return option(agent.id, agent.name, agent.enabled ? null : zh ? "智能体已停用" : "Agent disabled", agent.description);
+}
+
+async function agentChoices({ owner, credentials }: ScheduleContext, range?: ObjectVisibilityRange) {
   const zh = credentials.locale?.startsWith("zh");
   const agents = await assistantStore.agents(owner.domainId);
-  const options = (await allowedAgents(agents, "USE", credentials))
-    .map(agent => option(agent.id, agent.name, agent.enabled ? null : zh ? "智能体已停用" : "Agent disabled", agent.description));
+  const visible = range ? agents.filter(agent => agentInVisibilityRange(agent, range, owner.domainId))
+    : await allowedAgents(agents, "USE", credentials);
+  const options = visible.map(agent => agentOption(agent, zh));
   return { agents, options };
 }
 
@@ -23,15 +29,19 @@ export const assistantScheduleApplication: ScheduleApplication = {
   id: "agents",
   description(locale) { return locale?.startsWith("zh") ? "按指令运行一个智能体" : "Run an agent with your instructions"; },
   async authorize() {},
-  async describeTargets(contents, context) {
-    const { options } = await agentChoices(context);
-    const fields = agentFields(context.credentials.locale?.startsWith("zh"), options);
+  async describeTargets(contents, context, access) {
+    const zh = context.credentials.locale?.startsWith("zh");
+    const options = access
+      ? (await assistantStore.agentDefinitionSummaries(context.owner.domainId, access.agentUse, { includeSystem: false }))
+        .map(agent => agentOption(agent, zh))
+      : (await agentChoices(context)).options;
+    const fields = agentFields(zh, options);
     const names = new Map(options.map(item => [item.value, item.label]));
     return contents.map(content => ({ name: names.get(content.agentId) ?? null, summary: summarizeFields(fields, content) }));
   },
-  async form(input, context) {
+  async form(input, context, access) {
     const zh = context.credentials.locale?.startsWith("zh");
-    const { agents, options } = await agentChoices(context);
+    const { agents, options } = await agentChoices(context, access?.agentUse);
     const selected = input.values.agentId;
     if (selected && !options.some(entry => entry.value === selected)) {
       const reason = agents.some(agent => agent.id === selected)

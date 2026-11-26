@@ -50,8 +50,24 @@ public final class AuthorizationService {
     /** Constructed from the verified identity at the appropriate server boundary. */
     public record VerifiedIdentity(String domainId, String userId, CredentialLimit limit) {}
 
+    /** The resolved identity remains the placement principal. Application catalogue reads use the original Java user ID. */
     public record SubjectContext(VerifiedIdentity identity, RoleResolution roles, Map<String, List<PolicyRef>> policyRefsByRole,
-                                 Set<String> objectPolicyIds, Set<String> managementPolicyIds) {}
+                                 Set<String> objectPolicyIds, Set<String> managementPolicyIds,
+                                 UserDataPermission liveDataPermission, String javaUserId) {
+        public SubjectContext(VerifiedIdentity identity, RoleResolution roles, Map<String, List<PolicyRef>> policyRefsByRole,
+                              Set<String> objectPolicyIds, Set<String> managementPolicyIds) {
+            this(identity, roles, policyRefsByRole, objectPolicyIds, managementPolicyIds, null, identity.userId());
+        }
+
+        public SubjectContext withLiveDataPermission(UserDataPermission permission) {
+            return new SubjectContext(identity, roles, policyRefsByRole, objectPolicyIds, managementPolicyIds, permission, javaUserId);
+        }
+
+        public SubjectContext withJavaUserId(String userId) {
+            return javaUserId.equals(userId) ? this
+                    : new SubjectContext(identity, roles, policyRefsByRole, objectPolicyIds, managementPolicyIds, liveDataPermission, userId);
+        }
+    }
 
     public record Decision(boolean allowed, String code, String reason) {
         static final Decision ALLOWED = new Decision(true, null, null);

@@ -25,7 +25,7 @@ public final class CapabilityDefinitionTestSupport {
         return definitions;
     }
 
-    private static SubjectContext subject(String domain, String actor) {
+    public static SubjectContext subject(String domain, String actor) {
         return new SubjectContext(new VerifiedIdentity(domain, actor, CredentialLimit.UNRESTRICTED), null,
                 Map.of(), Set.of(), Set.of());
     }

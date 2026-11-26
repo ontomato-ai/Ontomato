@@ -1,9 +1,9 @@
-import { ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW } from "@ontomato/contracts/platform-object-types";
+import { ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, WORKFLOW } from "@ontomato/contracts/platform-object-types";
 import { afterEach, expect, it, vi } from "vitest";
 import { panelFormDescriptionSchema, panelRecordListSchema, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { createWorkflowReadAdapter } from "../panel-reads";
+import { createWorkflowPanelReadPresenter, createWorkflowReadAdapter, prepareWorkflowPanelRead } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
 
@@ -54,7 +54,7 @@ function readOwner(refused: string[] = []) {
       : responses[path];
     return Response.json({ success: true, data });
   }));
-  return { adapter: createWorkflowReadAdapter(owner, viewer), sent };
+  return { adapter: createWorkflowReadAdapter(owner, viewer), sent, responses };
 }
 
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -91,6 +91,42 @@ it("filters before paginating and reads a single record by ID", async () => {
   await expect(adapter.record("missing")).rejects.toMatchObject({ status: 404, code: "WORKFLOW_NOT_FOUND" });
 });
 
+it("uses the same workflow mappers for admitted batch facts and the direct reads", async () => {
+  const { adapter, sent, responses } = readOwner();
+  const plan = (method: string, params: Record<string, unknown> = {}, primaryKey?: string) =>
+    prepareWorkflowPanelRead({ typeId: WORKFLOW, method, primaryKey }, params, viewer.locale)!;
+  const formFacts = { subjects: responses["/workflow/subjects"], actions: responses["/action/queryList"] };
+  const recordFacts = { ...formFacts, grants: [{ ...grant, workflowId: workflow.id }] };
+  const catalogue = { ...recordFacts, workflows: [workflow, draft] };
+  const paging = { search: "FLOW", cursor: "1", size: 1 };
+  const values = { name: "Work in progress" };
+  const list = plan("list");
+  const query = plan("query", paging);
+  const detail = plan("record", {}, workflow.id);
+  const form = plan("form", {}, workflow.id);
+  const draftForm = plan("createForm", { values });
+
+  const results = [
+    list.present(catalogue), query.present(catalogue),
+    detail.present({ ...recordFacts, workflow }), form.present({ ...formFacts, workflow }),
+    draftForm.present(formFacts),
+  ];
+  expect(sent).toHaveLength(0);
+  expect([list.call.parameters, query.call.parameters, draftForm.call.parameters]).toEqual([{}, {}, {}]);
+  expect([detail.call.parameters, form.call.parameters]).toEqual([{ primaryKey: workflow.id }, { primaryKey: workflow.id }]);
+  expect(results).toEqual(await Promise.all([
+    adapter.list(), adapter.query(paging), adapter.record(workflow.id), adapter.form(workflow.id), adapter.createForm({ values }),
+  ]));
+  await expect(Promise.resolve().then(() => plan("query", { cursor: "bad" }))).rejects.toMatchObject({ code: "INVALID_CURSOR" });
+
+  const restricted = detail.present({ workflow, subjects: [], actions: [], grants: null });
+  expect(restricted).toMatchObject({ fields: { createdBy: "Unspecified", grantsSummary: "Could not read grants" } });
+  const restrictedForm = panelFormDescriptionSchema.parse(draftForm.present({ subjects: [], actions: [] }));
+  const fields = walkFields(restrictedForm.fields);
+  expect(fields.find(field => field.path === "/executionPrincipalId")?.control).toMatchObject({ options: [] });
+  expect(fields.find(field => field.path === "/actionId")?.control).toMatchObject({ options: [] });
+});
+
 it("separates optional catalogue failures from the workflow and grant dialog reads", async () => {
   const { adapter } = readOwner(["/workflow/grants", "/workflow/subjects", "/action/queryList"]);
   expect(await adapter.list()).toMatchObject([
@@ -104,12 +140,25 @@ it("separates optional catalogue failures from the workflow and grant dialog rea
 });
 
 it("reads the four authorization groups as records with scope and action names", async () => {
-  const { adapter } = readOwner();
-  expect(await adapter.grantCaseScopedSteps("wf-1")).toMatchObject([{ fields: { roleCode: "buyer", stepName: "Review", actionName: "Buy" } }]);
-  expect(await adapter.grantInForce("wf-1")).toMatchObject([{ fields: { roleCode: "buyer", capabilities: ["Buy · 2 · All readable objects"] } }]);
-  expect(await adapter.grantSuperseded("wf-1")).toMatchObject([{ fields: { roleCode: "buyer", capabilities: ["Ship · 2 · All readable objects"] } }]);
-  expect(await adapter.grantDirect("wf-1")).toMatchObject([{ fields: { roleCode: "direct", capabilities: ["Buy · All readable objects"] } }]);
+  const { adapter, responses } = readOwner();
+  const present = createWorkflowPanelReadPresenter(viewer.locale);
+  const actions = responses["/action/queryList"];
+  const grants = responses["/workflow/grants"];
+  const selected = { primaryKey: workflow.id };
+  const [steps, inForce, superseded, direct] = await Promise.all([
+    adapter.grantCaseScopedSteps(workflow.id), adapter.grantInForce(workflow.id),
+    adapter.grantSuperseded(workflow.id), adapter.grantDirect(workflow.id),
+  ]);
+  expect(steps).toMatchObject([{ fields: { roleCode: "buyer", stepName: "Review", actionName: "Buy" } }]);
+  expect(inForce).toMatchObject([{ fields: { roleCode: "buyer", capabilities: ["Buy · 2 · All readable objects"] } }]);
+  expect(superseded).toMatchObject([{ fields: { roleCode: "buyer", capabilities: ["Ship · 2 · All readable objects"] } }]);
+  expect(direct).toMatchObject([{ fields: { roleCode: "direct", capabilities: ["Buy · All readable objects"] } }]);
+  expect(present.grantCaseScopedSteps({ workflow, actions })).toEqual(steps);
+  expect(present.grantInForce({ grants, actions }, selected)).toEqual(inForce);
+  expect(present.grantSuperseded({ grants, actions }, selected)).toEqual(superseded);
+  expect(present.grantDirect({ workflow, grants, actions })).toEqual(direct);
   expect(await adapter.grantDirect("wf-2")).toEqual([]);
+  expect(present.grantDirect({ workflow: draft, grants, actions })).toEqual([]);
 });
 
 function walkFields(fields: PanelFormField[]): PanelFormField[] {

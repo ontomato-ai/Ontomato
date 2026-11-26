@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { assertManagement } from "../../identity/management";
 import path from "node:path";
@@ -20,6 +21,7 @@ import {
   listRuns,
   loadCaseResults,
   loadRunMeta,
+  loadRunMetaForDomain,
   settleStaleRunMeta,
 } from "../../platform/diagnosis/autotest/results/store";
 import { getCaseVerdict, getCaseVerdictReason } from "../../platform/diagnosis/autotest/results/verdict";
@@ -281,11 +283,9 @@ function assertValidRelativeFilePath(filePath: string): string {
   return normalized;
 }
 
-export function createOpsKnowledgeReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const locale = viewer.locale;
+function opsKnowledgeFileReads(locale?: string) {
   return {
-    async files(): Promise<PanelRecord[]> {
-      await assertManagement(workbenchManagement.opsKnowledgeRead, owner, viewer);
+    files(): PanelRecord[] {
       const root = listKnowledgeTree();
       return flattenKnowledgeFiles(root).map((node) => ({
         className: OPS_KNOWLEDGE,
@@ -301,8 +301,7 @@ export function createOpsKnowledgeReadAdapter(owner: ProductOwner, viewer: Assis
         },
       }));
     },
-    async record(filePath: string): Promise<PanelRecord> {
-      await assertManagement(workbenchManagement.opsKnowledgeRead, owner, viewer);
+    record(filePath: string): PanelRecord {
       try {
         const file = readKnowledgeMarkdown(filePath);
         return {
@@ -331,11 +330,32 @@ export function createOpsKnowledgeReadAdapter(owner: ProductOwner, viewer: Assis
   };
 }
 
-export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const locale = viewer.locale;
+export function createOpsKnowledgeReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  const reads = opsKnowledgeFileReads(viewer.locale);
+  const requireAccess = () => assertManagement(workbenchManagement.opsKnowledgeRead, owner, viewer);
+  return {
+    async files() {
+      await requireAccess();
+      return reads.files();
+    },
+    async record(filePath: string) {
+      await requireAccess();
+      return reads.record(filePath);
+    },
+  };
+}
 
+const opsKnowledgeReadApproval = z.literal(workbenchManagement.opsKnowledgeRead.id);
+
+/** A ready Java batch item must carry the approval from the registered management read. */
+export function createRegisteredOpsKnowledgeReadAdapter(javaFacts: unknown, locale?: string) {
+  opsKnowledgeReadApproval.parse(javaFacts);
+  return opsKnowledgeFileReads(locale);
+}
+
+function turnEvidenceReads(owner: ProductOwner, locale: string | undefined, requireAccess: () => Promise<void> | void) {
   async function requireTurnManifest(turnKey: string, includeCollecting = false): Promise<WorkspaceManifest> {
-    await assertManagement(workbenchManagement.opsTurnEvidenceRead, owner, viewer);
+    await requireAccess();
     const domainId = owner.domainId;
     if (!parseTurnKey(turnKey)) throw new HttpError(400, "Invalid turnKey");
     const collecting = includeCollecting ? getCollectingTurnWorkspace(turnKey) : undefined;
@@ -348,7 +368,7 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
 
   return {
     async list(params: { search?: string } = {}): Promise<PanelRecord[]> {
-      await assertManagement(workbenchManagement.opsTurnEvidenceRead, owner, viewer);
+      await requireAccess();
       const domainId = owner.domainId;
       const keptKeys = await getArtifactRetentionSnapshot();
       const keyword = (params.search ?? "").trim().toLowerCase();
@@ -502,21 +522,29 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
   };
 }
 
+export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  return turnEvidenceReads(owner, viewer.locale, () => assertManagement(workbenchManagement.opsTurnEvidenceRead, owner, viewer));
+}
+
+export function createRegisteredTurnEvidenceReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
+  return turnEvidenceReads(owner, locale, () => {
+    z.literal(workbenchManagement.opsTurnEvidenceRead.id).parse(javaFacts);
+  });
+}
+
 const autotestRunReadDirective = { rereadAfterMs: 5000 };
 
-export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const locale = viewer.locale;
-
+function autotestRunReads(owner: ProductOwner, locale: string | undefined, requireAccess: () => Promise<void> | void) {
   async function requireRun(runId: string): Promise<{ domainId: string; meta: RunMeta; active: boolean }> {
-    await assertManagement(workbenchManagement.opsRunsRead, owner, viewer);
+    await requireAccess();
     const domainId = owner.domainId;
     let meta: RunMeta | null;
     try {
-      meta = loadRunMeta(runId);
+      meta = loadRunMetaForDomain(runId, domainId);
     } catch {
       throw new HttpError(400, "Invalid runId");
     }
-    if (!meta || meta.domainId !== domainId) {
+    if (!meta) {
       throw new HttpError(404, "Test run not found");
     }
     const activeRun = getActiveRun();
@@ -530,7 +558,7 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
 
   return {
     async list() {
-      await assertManagement(workbenchManagement.opsRunsRead, owner, viewer);
+      await requireAccess();
       const domainId = owner.domainId;
       const activeRun = getActiveRun();
       const keptKeys = await getArtifactRetentionSnapshot();
@@ -674,16 +702,24 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
   };
 }
 
-export function createAutotestCaseArtifactReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const locale = viewer.locale;
+export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  return autotestRunReads(owner, viewer.locale, () => assertManagement(workbenchManagement.opsRunsRead, owner, viewer));
+}
 
+export function createRegisteredAutotestRunReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
+  return autotestRunReads(owner, locale, () => {
+    z.literal(workbenchManagement.opsRunsRead.id).parse(javaFacts);
+  });
+}
+
+function autotestCaseArtifactReads(owner: ProductOwner, locale: string | undefined, requireAccess: () => Promise<void> | void) {
   async function requireCaseArtifact(primaryKey: string): Promise<{
     runId: string;
     caseId: string;
     artifactDir: string;
     manifest: WorkspaceManifest;
   }> {
-    await assertManagement(workbenchManagement.opsRunsRead, owner, viewer);
+    await requireAccess();
     const domainId = owner.domainId;
     const { runId, caseId } = parseAutotestCaseArtifactKey(primaryKey);
     let meta: RunMeta | null;
@@ -792,6 +828,16 @@ export function createAutotestCaseArtifactReadAdapter(owner: ProductOwner, viewe
   };
 }
 
+export function createAutotestCaseArtifactReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  return autotestCaseArtifactReads(owner, viewer.locale, () => assertManagement(workbenchManagement.opsRunsRead, owner, viewer));
+}
+
+export function createRegisteredAutotestCaseArtifactReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
+  return autotestCaseArtifactReads(owner, locale, () => {
+    z.literal(workbenchManagement.opsRunsRead.id).parse(javaFacts);
+  });
+}
+
 export const DEFAULT_DSL_QUERY_TEXT = `{
   "problem": "",
   "answer": {
@@ -799,11 +845,10 @@ export const DEFAULT_DSL_QUERY_TEXT = `{
   }
 }`;
 
-export function createDslQueryReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const locale = viewer.locale;
+function dslQueryReads(locale: string | undefined, requireAccess: () => Promise<void> | void) {
   return {
     async form(params?: { values?: PanelFormValues; changedField?: string | null }): Promise<PanelFormDescription> {
-      await requireDslQueryAccess(workbenchManagement.opsDslRead, owner, viewer);
+      await requireAccess();
       const dslText = typeof params?.values?.dsl === "string" ? params.values.dsl : DEFAULT_DSL_QUERY_TEXT;
       return {
         values: { dsl: dslText },
@@ -834,6 +879,16 @@ export function createDslQueryReadAdapter(owner: ProductOwner, viewer: Assistant
       };
     },
   };
+}
+
+export function createDslQueryReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  return dslQueryReads(viewer.locale, () => requireDslQueryAccess(workbenchManagement.opsDslRead, owner, viewer));
+}
+
+export function createRegisteredDslQueryReadAdapter(_owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
+  return dslQueryReads(locale, () => {
+    z.literal(workbenchManagement.opsDslRead.id).parse(javaFacts);
+  });
 }
 
 export { computeSummary };

@@ -1,28 +1,17 @@
 package io.ontomato.dataengine.service.vector;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.BiConsumer;
-import java.util.function.IntSupplier;
-import java.util.function.Supplier;
-
+import com.alibaba.fastjson2.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
 
-import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.service.ai.EmbeddingSelection;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
-import io.ontomato.dataengine.dao.ActionDao;
-import io.ontomato.dataengine.dao.KnowledgeDao;
-import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.dao.VectorRebuildItem;
 import io.ontomato.dataengine.dao.VectorRebuildState;
 import io.ontomato.dataengine.dao.VectorRebuildState.ItemType;
 import io.ontomato.dataengine.dao.VectorRebuildState.Phase;
 import io.ontomato.dataengine.dao.VectorRebuildState.Status;
 import io.ontomato.dataengine.dao.VectorRebuildStateDao;
-import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
@@ -58,47 +47,28 @@ public class VectorRebuildService {
     private VectorRebuildStateDao stateDao;
 
     @Autowired
-    private TransactionTemplate transactions;
-
-    @Autowired
-    private KnowledgeDao knowledgeDao;
-
-    @Autowired
-    private ActionDao actionDao;
-
-    @Autowired
-    private MetricViewDao metricViewDao;
-
-    @Autowired
-    private VectorResourceDao vectorResourceDao;
-
-    /** One kind of vectorized rows of a domain. */
-    private record VectorSource(ItemType type, String table, IntSupplier rows, IntSupplier pending,
-            Supplier<List<VectorRebuildItem>> listPending, BiConsumer<VectorRebuildItem, float[]> fill) {
-    }
+    private VectorRebuildSources vectorSources;
 
     public VectorRebuildStatus status(String domainId) {
-        VectorRebuildState state;
+        VectorRetrievalGate.Snapshot snapshot;
         try {
-            state = retrievalGate.stateOf(domainId, businessConfigService.get(domainId));
+            snapshot = retrievalGate.snapshot(domainId);
         } catch (AgentHttpException error) {
             if (!"MODEL_NOT_CONFIGURED".equals(error.code())) throw error;
             return VectorRebuildStatus.unconfigured();
         }
         int total = 0;
         int pending = 0;
-        for (VectorSource source : sources(domainId)) {
+        for (var source : vectorSources.forDomain(domainId)) {
             total += source.rows().getAsInt();
             pending += source.pending().getAsInt();
         }
-        if (total == 0 && state.getStatus() != Status.READY && !rebuildTracker.isRunning(domainId)) {
-            state = settleEmpty(domainId);
-        }
+        boolean empty = total == 0;
         boolean running = rebuildTracker.isRunning(domainId);
+        VectorRebuildState state = snapshot.effective(() -> running, () -> empty);
         if (!running && state.getStatus() == Status.RUNNING) {
-            // The round may have finished while the counts were read. Confirm its persisted result
-            // before reporting an interruption, using the same live-run snapshot below.
-            state = retrievalGate.stateOf(domainId, businessConfigService.get(domainId));
+            // A round may have finished while the counts were read, before the live-run snapshot.
+            state = retrievalGate.snapshot(domainId).effective(() -> running, () -> empty);
         }
         VectorRebuildStatus status = new VectorRebuildStatus();
         status.setState(reported(domainId, state.getStatus(), running));
@@ -124,48 +94,60 @@ public class VectorRebuildService {
         };
     }
 
-    /**
-     * A domain with no row to vectorize needs no round, whatever state it recorded (an empty domain
-     * flagged by an earlier rule included). Judged again with no vector write in flight.
-     */
-    private VectorRebuildState settleEmpty(String domainId) {
-        return rebuildTracker.exclusively(domainId, () -> {
-            BusinessConfig businessConfig = businessConfigService.get(domainId);
-            VectorRebuildState state = retrievalGate.stateOf(domainId, businessConfig);
-            if (state.getStatus() == Status.READY || rebuildTracker.isRunning(domainId) || !isEmpty(domainId)) {
-                return state;
-            }
-            VectorRebuildState ready = VectorRebuildState.of(embeddingService.selection(domainId), Status.READY, true);
-            stateDao.save(domainId, ready);
-            return ready;
-        });
+    /** Capture the previous selection for a settings save when no generation was recorded yet. */
+    private EmbeddingSelection generationBeforeSettingsChange(String domainId) {
+        if (stateDao.find(domainId) != null) return null;
+        try {
+            return embeddingService.selection(domainId);
+        } catch (AgentHttpException error) {
+            if (!"MODEL_NOT_CONFIGURED".equals(error.code())) throw error;
+            return null;
+        }
     }
 
-    /** Reconcile a runtime-owned selection after save or startup, then use the existing rebuild lifecycle. */
+    /** Reconcile a configured selection on startup. */
     public void modelSettingsChanged(String domainId) {
-        boolean pending = rebuildTracker.exclusively(domainId, () -> {
-            if (rebuildTracker.isRunning(domainId)) return false;
-            VectorRebuildState state = retrievalGate.stateOf(domainId, businessConfigService.get(domainId));
-            if (isEmpty(domainId)) state = VectorRebuildState.of(embeddingService.selection(domainId), Status.READY, true);
-            stateDao.save(domainId, state);
-            return state.getStatus() == Status.PENDING;
-        });
+        boolean pending = rebuildTracker.exclusively(domainId, () -> reconcileSelection(domainId, null));
         if (pending) start(domainId, businessConfigService.get(domainId).getLang());
+    }
+
+    private record SettingsSave(JSONObject settings, boolean pending) {}
+
+    /** Keep the runtime selection change and its vector state inside the existing generation boundary. */
+    public JSONObject saveModelSettings(String domainId, VectorRebuildTracker.Change<JSONObject, Exception> save) throws Exception {
+        var result = rebuildTracker.exclusively(domainId, () -> {
+            var previous = generationBeforeSettingsChange(domainId);
+            var saved = save.run();
+            return new SettingsSave(saved, saved.getString("embeddingModel") != null && reconcileSelection(domainId, previous));
+        });
+        if (result.pending()) start(domainId, businessConfigService.get(domainId).getLang());
+        return result.settings();
+    }
+
+    private boolean reconcileSelection(String domainId, EmbeddingSelection previous) {
+        if (rebuildTracker.isRunning(domainId)) return false;
+        var snapshot = retrievalGate.snapshot(domainId);
+        if (snapshot.recorded() == null && previous != null) {
+            snapshot = new VectorRetrievalGate.Snapshot(snapshot.generation(),
+                    VectorRebuildState.of(previous, Status.READY, true));
+        }
+        var state = snapshot.effective(() -> false, () -> vectorSources.isEmpty(domainId));
+        stateDao.save(domainId, state);
+        return state.getStatus() == Status.PENDING;
     }
 
     /** Start a new round or continue the current one in the background, and return at once. */
     public void start(String domainId, String lang) {
         rebuildTracker.exclusively(domainId, () -> {
-            BusinessConfig businessConfig = businessConfigService.get(domainId);
-            VectorRebuildState state = retrievalGate.stateOf(domainId, businessConfig);
+            var snapshot = retrievalGate.snapshot(domainId);
+            var state = snapshot.effective(() -> rebuildTracker.isRunning(domainId), () -> vectorSources.isEmpty(domainId));
             if (state.getStatus() == Status.READY) {
                 throw new IllegalStateException(langService.get(lang, "Vector.rebuildNotNeeded"));
             }
             if (!rebuildTracker.tryStart(domainId)) {
                 throw new IllegalStateException(langService.get(lang, "Vector.rebuildAlreadyRunning"));
             }
-            // Read now, so a key or timeout corrected after a failure is used by the continued round.
-            EmbeddingSelection properties = embeddingService.selection(domainId);
+            EmbeddingSelection properties = snapshot.generation();
             VectorRebuildState running = VectorRebuildState.of(properties, Status.RUNNING, state.isCleared());
             try {
                 stateDao.save(domainId, running);
@@ -198,16 +180,13 @@ public class VectorRebuildService {
         String itemId = null;
         try {
             if (!state.isCleared()) {
-                knowledgeDao.clearDomainVectors(domainId);
-                actionDao.clearDomainVectors(domainId);
-                metricViewDao.clearDomainVectors(domainId);
-                vectorResourceDao.clearDomainVectors(domainId);
+                vectorSources.clear(domainId);
                 // Recorded only after every table is cleared: an interrupted clear runs again in full.
                 state.setCleared(true);
                 stateDao.save(domainId, state);
             }
             phase = Phase.READ;
-            for (VectorSource source : sources(domainId)) {
+            for (var source : vectorSources.forDomain(domainId)) {
                 phase = Phase.READ;
                 itemType = source.type();
                 itemId = null;
@@ -247,39 +226,6 @@ public class VectorRebuildService {
         } finally {
             rebuildTracker.finish(domainId);
         }
-    }
-
-    /** No row of this domain needs a vector: a new generation needs no round. */
-    private boolean isEmpty(String domainId) {
-        for (VectorSource source : sources(domainId)) {
-            if (source.rows().getAsInt() > 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private List<VectorSource> sources(String domainId) {
-        List<VectorSource> sources = new ArrayList<>();
-        sources.add(new VectorSource(ItemType.KNOWLEDGE, null,
-                () -> knowledgeDao.countDomainRows(domainId), () -> knowledgeDao.countDomainPending(domainId),
-                () -> knowledgeDao.listDomainPending(domainId),
-                (item, vector) -> knowledgeDao.fillDomainVector(item.getId(), vector)));
-        sources.add(new VectorSource(ItemType.ACTION, null,
-                () -> actionDao.countDomainRows(domainId), () -> actionDao.countDomainPending(domainId),
-                () -> actionDao.listDomainPending(domainId),
-                (item, vector) -> actionDao.fillDomainVector(item.getId(), item.getText(), vector)));
-        sources.add(new VectorSource(ItemType.METRIC_VIEW, null,
-                () -> metricViewDao.countDomainRows(domainId), () -> metricViewDao.countDomainPending(domainId),
-                () -> metricViewDao.listDomainPending(domainId),
-                (item, vector) -> metricViewDao.fillDomainVector(item.getId(), item.getText(), vector)));
-        for (String table : vectorResourceDao.listDomainTables(domainId)) {
-            sources.add(new VectorSource(ItemType.RESOURCE, table,
-                    () -> vectorResourceDao.countTableRows(table), () -> vectorResourceDao.countTablePending(table),
-                    () -> vectorResourceDao.listTablePending(table),
-                    (item, vector) -> vectorResourceDao.fillTableVector(table, item.getId(), vector)));
-        }
-        return sources;
     }
 
 }

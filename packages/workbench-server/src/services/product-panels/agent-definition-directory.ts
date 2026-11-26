@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentObjectAccessSchema } from "@ontomato/contracts/object-policy-access";
 import {
   ontologyAgentModelSchema, ontologyAgentModelWriteSchema, type ModelSelection,
 } from "@ontomato/contracts/model-settings";
@@ -13,18 +14,22 @@ import { isAppBuilderKind } from "../app-builder/definition";
 import { createAppBuilderDefinition } from "../app-builder/panel-model";
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import { agentDefinitionRecord } from "../assistant/definition-record";
+import { agentDefinitionFromRow } from "../assistant/definitions";
 import { formJsonSchema, modelPanelField, modelSelectionWrite } from "../assistant/model-panel-form";
-import { describeAgentDefinitionForm } from "../assistant/definition-form";
+import {
+  agentFormExecutionFactsSchema, describeAgentDefinitionForm, prepareAgentDefinitionFormFromFacts,
+} from "../assistant/definition-form";
 import { assistantDescription, assistantName } from "../assistant/labels";
 import { isPresetAgentKind } from "../assistant/preset-definitions";
 import { assistantService } from "../assistant/service";
 import { assistantStore, type AssistantOwner, type AgentRow } from "../assistant/store";
 import { readFavorites } from "../platform-home/service";
 import { createOpsDiagnosisDefinition } from "../ops-diagnosis/panel-model";
-import { decideObjects, readAgentAccess, readObjectRanges, requireAllowed } from "../product-governance/authorization";
+import { decideObjects, readAgentAccess, readObjectRanges, requireAllowed, type ObjectVisibilityRange } from "../product-governance/authorization";
 import { agentObject, allowedAgents } from "../assistant/authorization";
 import { ownerEnvelopeSchema } from "./data-query-operations";
 import { operationHost } from "./operation-host";
+import { formParams, type PanelReadSelection } from "./panel-owner-reads";
 
 const retrievalPath = `${DATA_QUERY_GATEWAY}/ontology/ai/agent-models`;
 export const systemFormValues = modelSelectionWrite.extend({ name: z.string().optional(), description: z.string().optional() });
@@ -33,6 +38,22 @@ type SystemOwner = {
   read(): Promise<SystemAgent>;
   save(id: string, selection: ModelSelection): Promise<{ modelSelection: ModelSelection }>;
 };
+
+const retrieverFactsSchema = ontologyAgentModelSchema.extend({ editable: z.boolean() }).strict();
+const agentListFactsSchema = z.object({ retriever: retrieverFactsSchema.nullable() });
+const retrieverCountSchema = z.union([z.literal(0), z.literal(1)]);
+const localRecordFactsSchema = z.object({ editable: z.boolean(), shared: z.boolean().optional() });
+const localFormFactsSchema = agentFormExecutionFactsSchema.extend({ editable: z.boolean() });
+const retrievalFormFactsSchema = z.object({ retriever: retrieverFactsSchema });
+const retrievalRecordFactsSchema = z.object({ retriever: retrieverFactsSchema, shared: z.boolean().optional() });
+
+function retrievalDefinition({ id, modelSelection, editable }: z.infer<typeof retrieverFactsSchema>, locale?: string) {
+  return {
+    id, modelSelection, editable,
+    name: tForLocale(locale, "panels.agentDefinition.retrievalName"),
+    description: tForLocale(locale, "panels.agentDefinition.retrievalDescription"),
+  };
+}
 
 export function createSystemAgentOwners(owner: AssistantOwner, viewer: AssistantCredentials) {
   const builder = createAppBuilderDefinition(owner, viewer);
@@ -49,16 +70,12 @@ export function createSystemAgentOwners(owner: AssistantOwner, viewer: Assistant
   }
   const retrieval: SystemOwner = {
     async read() {
-      const { id, modelSelection, editable } = await callRetrieval(
+      const model = await callRetrieval(
         `${retrievalPath}/${RETRIEVAL_AGENT_ID}`,
-        ontologyAgentModelSchema.extend({ editable: z.boolean() }).strict(),
+        retrieverFactsSchema,
         { method: "GET" },
       );
-      return {
-        id, modelSelection, editable,
-        name: tForLocale(viewer.locale, "panels.agentDefinition.retrievalName"),
-        description: tForLocale(viewer.locale, "panels.agentDefinition.retrievalDescription"),
-      };
+      return retrievalDefinition(model, viewer.locale);
     },
     async save(id, modelSelection) {
       const saved = await callRetrieval(`${retrievalPath}/${encodeURIComponent(id)}`, ontologyAgentModelSchema, {
@@ -144,10 +161,20 @@ export async function readVisibleAgentMcpUsages(
 ): Promise<VisibleAgentMcpUsage> {
   const agents = (await assistantStore.channelAgents(owner.domainId))
     .filter(agent => !isAppBuilderKind(agent.kind) && !isOpsDiagnosisKind(agent.kind));
-  const visible = await allowedAgents(agents, "VIEW", viewer);
+  return visibleAgentMcpUsage(await allowedAgents(agents, "VIEW", viewer), viewer.locale);
+}
+
+export async function readVisibleAgentMcpUsagesInRange(domainId: string, locale: string | undefined, view: ObjectVisibilityRange) {
+  const agents = await assistantStore.agentDefinitionRelationRows(domainId, view, "enabled_mcp_service_ids");
+  return visibleAgentMcpUsage(agents, locale);
+}
+
+function visibleAgentMcpUsage(
+  visible: readonly Pick<AgentRow, "kind" | "name" | "enabled_mcp_service_ids">[], locale: string | undefined,
+): VisibleAgentMcpUsage {
   const byServiceId = new Map<string, string[]>();
   for (const agent of visible) {
-    const label = assistantName(agent, viewer.locale);
+    const label = assistantName(agent, locale);
     for (const serviceId of agent.enabled_mcp_service_ids ?? []) {
       const list = byServiceId.get(serviceId);
       if (list) list.push(label);
@@ -175,6 +202,23 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
   const systemRecord = (agent: SystemAgent, canEdit: boolean, domainShared?: boolean) =>
     agentDefinitionRecord({ ...agent, enabled: true }, "system", viewer.locale, canEdit, domainShared);
 
+  function localRecord(agent: Parameters<typeof storedRecord>[0], canEdit: boolean, domainShared?: boolean) {
+    const source = isAppBuilderKind(agent.kind) ? systems.builder : isOpsDiagnosisKind(agent.kind) ? systems.diagnosis : undefined;
+    return source ? source.read().then(definition => systemRecord(definition, canEdit, domainShared))
+      : storedRecord(agent, canEdit, domainShared);
+  }
+
+  async function listInRanges({ VIEW, EDIT }: Record<"VIEW" | "EDIT", ObjectVisibilityRange>, readRetriever: () => Promise<SystemAgent | undefined>) {
+    const agents = await assistantStore.agentDefinitionSummaries(owner.domainId, VIEW, { includeSystem: true, editRange: EDIT });
+    const local = await Promise.all(agents.map(agent => localRecord(agent, agent.editable)));
+    const retriever = await readRetriever();
+    return retriever ? [...local, systemRecord(retriever, retriever.editable === true)] : local;
+  }
+
+  const countLocal = (view: ObjectVisibilityRange) =>
+    assistantStore.countVisibleAgentDefinitions(owner.domainId, view, { includeSystem: true });
+  const presentCount = (local: number, retrievers: number) => ({ rows: [], total: local + retrievers });
+
   async function viewRetrieval() {
     try {
       return await systems.retrieval.read();
@@ -187,6 +231,27 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
   async function grants(id: string) {
     validateId(id);
     return readAgentAccess(await agentPolicyDefinition(owner, viewer, id), viewer);
+  }
+
+  function presentGrantRows({ grants: policyGrants, shared }: z.infer<typeof agentObjectAccessSchema>): PanelRecord[] {
+    return [
+      ...policyGrants.map(({ policyId, name, level }): PanelRecord => {
+        const verb = level.toLowerCase();
+        const levelLabel = level === "VIEW" ? word("grantView") : catalogueWord(level === "EDIT" ? "grantEdit" : "grantUse");
+        return {
+          primaryKey: policyId,
+          className: AGENT_DEFINITION,
+          label: name,
+          fields: { policyId, level: verb, levelLabel, verb, verbLabel: levelLabel, revocable: true },
+          fieldLabels: { levelLabel: catalogueWord("grantVerb"), verbLabel: catalogueWord("grantVerb") },
+          tones: { levelLabel: level === "EDIT" ? "warning" : level === "VIEW" ? "info" : "default" },
+        };
+      }),
+      ...(shared ? [{
+        primaryKey: "domain", className: AGENT_DEFINITION, label: word("grantDomain"),
+        fields: { level: "use", levelLabel: catalogueWord("grantUse"), revocable: false },
+      }] : []),
+    ];
   }
 
   async function viewLocal(id: string) {
@@ -232,22 +297,30 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
       });
     },
     async list() {
-      const { VIEW, EDIT } = await readObjectRanges("AGENT", ["VIEW", "EDIT"], viewer);
-      const agents = await assistantStore.agentDefinitionSummaries(owner.domainId, VIEW, { includeSystem: true, editRange: EDIT });
-      const local = await Promise.all(agents.map(async agent => {
-        const source = isAppBuilderKind(agent.kind) ? systems.builder : isOpsDiagnosisKind(agent.kind) ? systems.diagnosis : undefined;
-        return source ? systemRecord(await source.read(), agent.editable) : storedRecord(agent, agent.editable);
-      }));
-      const retriever = await viewRetrieval();
-      return retriever ? [...local, systemRecord(retriever, retriever.editable === true)] : local;
+      return listInRanges(await readObjectRanges("AGENT", ["VIEW", "EDIT"], viewer), viewRetrieval);
+    },
+    listFromBatch(ranges: Record<"VIEW" | "EDIT", ObjectVisibilityRange>, payload: unknown) {
+      const { retriever } = agentListFactsSchema.parse(payload);
+      return listInRanges(ranges, async () => retriever ? retrievalDefinition(retriever, viewer.locale) : undefined);
+    },
+    localRecordFromBatch(agent: AgentRow, payload: unknown) {
+      const { editable, shared } = localRecordFactsSchema.parse(payload);
+      return localRecord(agent, editable, shared);
+    },
+    retrievalRecordFromBatch(payload: unknown) {
+      const { retriever, shared } = retrievalRecordFactsSchema.parse(payload);
+      return systemRecord(retrievalDefinition(retriever, viewer.locale), retriever.editable, shared);
     },
     async count() {
       const [total, retriever] = await Promise.all([
-        readObjectRanges("AGENT", ["VIEW"], viewer).then(({ VIEW }) =>
-          assistantStore.countVisibleAgentDefinitions(owner.domainId, VIEW, { includeSystem: true })),
+        readObjectRanges("AGENT", ["VIEW"], viewer).then(({ VIEW }) => countLocal(VIEW)),
         viewRetrieval(),
       ]);
-      return { rows: [], total: total + Number(retriever !== undefined) };
+      return presentCount(total, Number(retriever !== undefined));
+    },
+    async countFromBatch(view: ObjectVisibilityRange, payload: unknown) {
+      const retrievers = retrieverCountSchema.parse(payload);
+      return presentCount(await countLocal(view), retrievers);
     },
     async record(primaryKey: string) {
       validateId(primaryKey);
@@ -258,8 +331,7 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
       }
       const { agent, object, canEdit } = await viewLocal(primaryKey);
       const shared = canEdit ? (await readAgentAccess(object, viewer)).shared : undefined;
-      const source = isAppBuilderKind(agent.kind) ? systems.builder : isOpsDiagnosisKind(agent.kind) ? systems.diagnosis : undefined;
-      return source ? systemRecord(await source.read(), canEdit, shared) : storedRecord(agent, canEdit, shared);
+      return localRecord(agent, canEdit, shared);
     },
     async form(primaryKey: string, inputs: FormInputs) {
       validateId(primaryKey);
@@ -273,30 +345,81 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
       const { canEdit } = await viewLocal(primaryKey);
       return systemAgentForm(await source.read(), inputs, canEdit, viewer.locale);
     },
+    prepareLocalForm(agent: AgentRow, inputs: FormInputs) {
+      const source = isAppBuilderKind(agent.kind) ? systems.builder : isOpsDiagnosisKind(agent.kind) ? systems.diagnosis : undefined;
+      if (source) return {
+        validation: undefined,
+        present: (payload: unknown) => {
+          const { editable } = localRecordFactsSchema.parse(payload);
+          return source.read().then(value => systemAgentForm(value, inputs, editable, viewer.locale));
+        },
+      };
+      const form = prepareAgentDefinitionFormFromFacts({
+        target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: agent.id }, ...inputs,
+      }, agentDefinitionFromRow(agent, viewer.locale), owner, viewer);
+      return { validation: form.validation, present: (payload: unknown) => form.present(localFormFactsSchema.parse(payload)) };
+    },
+    retrievalFormFromBatch(inputs: FormInputs, payload: unknown) {
+      const { retriever } = retrievalFormFactsSchema.parse(payload);
+      return systemAgentForm(retrievalDefinition(retriever, viewer.locale), inputs, retriever.editable, viewer.locale);
+    },
+    prepareCreateForm(inputs: FormInputs) {
+      const form = prepareAgentDefinitionFormFromFacts({ target: { kind: "draft" }, ...inputs }, undefined, owner, viewer);
+      return {
+        validation: form.validation,
+        present: (payload: unknown) => form.present({ ...agentFormExecutionFactsSchema.parse(payload), editable: true }),
+      };
+    },
     async createForm(inputs: FormInputs) {
       return describeAgentDefinitionForm({ target: { kind: "draft" }, ...inputs }, owner, viewer);
     },
     grants,
     async grantRows(primaryKey: string): Promise<PanelRecord[]> {
-      const { grants: policyGrants, shared } = await grants(primaryKey);
-      return [
-        ...policyGrants.map(({ policyId, name, level }): PanelRecord => {
-          const verb = level.toLowerCase();
-          const levelLabel = level === "VIEW" ? word("grantView") : catalogueWord(level === "EDIT" ? "grantEdit" : "grantUse");
-          return {
-            primaryKey: policyId,
-            className: AGENT_DEFINITION,
-            label: name,
-            fields: { policyId, level: verb, levelLabel, verb, verbLabel: levelLabel, revocable: true },
-            fieldLabels: { levelLabel: catalogueWord("grantVerb"), verbLabel: catalogueWord("grantVerb") },
-            tones: { levelLabel: level === "EDIT" ? "warning" : level === "VIEW" ? "info" : "default" },
-          };
-        }),
-        ...(shared ? [{
-          primaryKey: "domain", className: AGENT_DEFINITION, label: word("grantDomain"),
-          fields: { level: "use", levelLabel: catalogueWord("grantUse"), revocable: false },
-        }] : []),
-      ];
+      return presentGrantRows(await grants(primaryKey));
     },
+    grantRowsFromBatch(payload: unknown) {
+      return presentGrantRows(agentObjectAccessSchema.parse(payload));
+    },
+  };
+}
+
+export async function prepareAgentDefinitionRead(
+  owner: AssistantOwner, viewer: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
+) {
+  const { typeId, method } = selection;
+  if (typeId !== AGENT_DEFINITION || !["record", "grantRows", "form", "createForm"].includes(method)) return;
+  const directory = createAgentDefinitionDirectory(owner, viewer);
+  if (method === "createForm") {
+    const { validation, present } = directory.prepareCreateForm(formParams(params));
+    return {
+      call: { type: AGENT_DEFINITION, name: method, parameters: { ...(validation && { validation }) } },
+      present,
+    };
+  }
+  const primaryKey = selection.primaryKey!;
+  validateId(primaryKey);
+  if (method === "form") {
+    const inputs = formParams(params);
+    if (primaryKey === RETRIEVAL_AGENT_ID) return {
+      call: { type: AGENT_DEFINITION, name: method, parameters: { primaryKey } },
+      present: (payload: unknown) => directory.retrievalFormFromBatch(inputs, payload),
+    };
+    const agent = await assistantStore.agent(primaryKey, owner);
+    const { validation, present } = directory.prepareLocalForm(agent, inputs);
+    return {
+      call: { type: AGENT_DEFINITION, name: method, parameters: { primaryKey, ownerId: agent.owner_id, ...(validation && { validation }) } },
+      present,
+    };
+  }
+  if (primaryKey === RETRIEVAL_AGENT_ID) {
+    return {
+      call: { type: AGENT_DEFINITION, name: method, parameters: { primaryKey } },
+      present: method === "grantRows" ? directory.grantRowsFromBatch : directory.retrievalRecordFromBatch,
+    };
+  }
+  const agent = await assistantStore.agent(primaryKey, owner);
+  return {
+    call: { type: AGENT_DEFINITION, name: method, parameters: { primaryKey, ownerId: agent.owner_id } },
+    present: method === "grantRows" ? directory.grantRowsFromBatch : (payload: unknown) => directory.localRecordFromBatch(agent, payload),
   };
 }

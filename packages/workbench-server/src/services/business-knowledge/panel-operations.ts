@@ -120,7 +120,7 @@ const affected = (primaryKey: string) => ({
 });
 
 /** Owner availability check for approving one entry: only pending entries can be approved. */
-function approveUnavailableReason(host: Pick<PanelOperationHost, "locale">, found: KnowledgeEntry | undefined) {
+export function approveUnavailableReason(host: Pick<PanelOperationHost, "locale">, found: Pick<KnowledgeEntry, "status"> | undefined) {
   if (!found) return { reason: tForLocale(host.locale, "panels.knowledge.notFound") };
   if (found.status === 1) return { reason: tForLocale(host.locale, "panels.knowledge.alreadyApproved") };
   return undefined;

@@ -15,8 +15,8 @@ import { knowledgeEntrySchema } from "./panel-operations";
 
 /*
  * The business knowledge owner's named reads, called with the viewer's credentials: the queried list with the status
- * counts of its tabs, one entry, and the form. The owner keeps entries whole by domain and has no single read, so every
- * entry read fetches the whole domain and selects here. The list keeps the page it replaces: space-separated terms
+ * counts of its tabs, one entry, and the form. The owner keeps entries whole by domain; both routes select from the
+ * same owner map. The list keeps the page it replaces: space-separated terms
  * matched case-insensitively somewhere in title, content or tags, entries whose title hits more terms first, then the
  * status filter returning one continuous matching list without cursor paging. Field labels and the two status names
  * come from the owner's form description in the reader's language — the one source the owner gives them in, not a
@@ -24,6 +24,11 @@ import { knowledgeEntrySchema } from "./panel-operations";
  */
 
 type KnowledgeEntry = z.infer<typeof knowledgeEntrySchema>;
+const searchableEntrySchema = knowledgeEntrySchema.pick({
+  knowledgeTitle: true, knowledgeText: true, knowledgeTags: true, status: true,
+});
+type SearchableEntry = z.infer<typeof searchableEntrySchema>;
+const entriesSchema = z.record(z.string(), knowledgeEntrySchema);
 type StatusFilter = z.infer<typeof panelReadParameterSchemas.knowledgeStatus>;
 
 /** The list read's inputs, as the flattened list contract declares them. */
@@ -46,17 +51,17 @@ const recordInputSchema = z.object({
 const searchTerms = (search: string | undefined) => search?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? [];
 
 /** Whether every search term appears case-insensitively in title, content or tags. */
-function entryMatches(entry: KnowledgeEntry, terms: readonly string[]): boolean {
+function entryMatches(entry: SearchableEntry, terms: readonly string[]): boolean {
   if (!terms.length) return true;
   const text = [entry.knowledgeTitle, entry.knowledgeText, ...(entry.knowledgeTags ?? [])].join("\n").toLowerCase();
   return terms.every(term => text.includes(term));
 }
 
 /** The entries the search keeps, title hits first: the page's own ranking over the owner's order. */
-function searchedEntries(entries: KnowledgeEntry[], terms: readonly string[]): KnowledgeEntry[] {
+function searchedEntries<Entry extends SearchableEntry>(entries: Entry[], terms: readonly string[]): Entry[] {
   if (!terms.length) return entries;
   const hits = entries.filter(entry => entryMatches(entry, terms));
-  const titleHits = (entry: KnowledgeEntry) => terms.filter(term => entry.knowledgeTitle.toLowerCase().includes(term)).length;
+  const titleHits = (entry: SearchableEntry) => terms.filter(term => entry.knowledgeTitle.toLowerCase().includes(term)).length;
   return hits.sort((a, b) => titleHits(b) - titleHits(a));
 }
 
@@ -109,11 +114,12 @@ function rowHighlights(
 }
 
 /** The labels the owner's form gives: the field names and the two status names, in the reader's language. */
-interface EntryText {
-  fieldLabels: Record<string, string>;
-  pendingName: string;
-  approvedName: string;
-}
+const statusLabelsSchema = z.object({ pendingName: z.string(), approvedName: z.string() });
+const entryTextSchema = statusLabelsSchema.extend({
+  fieldLabels: z.object({ knowledgeText: z.string(), knowledgeTags: z.string(), status: z.string() }),
+});
+type StatusLabels = z.infer<typeof statusLabelsSchema>;
+type EntryText = StatusLabels & { fieldLabels: Record<string, string> };
 function entryTextOf(description: PanelFormDescription): EntryText {
   const fieldLabels = Object.fromEntries(description.fields.map(field => [field.path.slice(1), field.label]));
   const status = description.fields.find(field => field.path === "/status");
@@ -154,6 +160,51 @@ function entryRow(entry: KnowledgeEntry, text: EntryText, terms: readonly string
   };
 }
 
+const queryFactsSchema = z.object({ entries: entriesSchema, text: entryTextSchema });
+const countsFactsSchema = z.object({ entries: z.array(searchableEntrySchema), labels: statusLabelsSchema });
+const recordFactsSchema = z.object({ entry: knowledgeEntrySchema, text: entryTextSchema });
+
+/** The owner returns the complete filtered list even when the declaration supplies cursor or size. */
+function knowledgeQuery(entries: KnowledgeEntry[], text: EntryText, { search, status }: z.infer<typeof queryInputSchema>) {
+  const terms = searchTerms(search);
+  const kept = statusFiltered(searchedEntries(entries, terms), status ?? "all");
+  return { rows: kept.map(entry => entryRow(entry, text, terms)), total: kept.length };
+}
+
+function knowledgeCounts(entries: SearchableEntry[], text: StatusLabels, search: string | undefined, locale?: string) {
+  const kept = searchedEntries(entries, searchTerms(search));
+  const pending = kept.filter(entry => entry.status !== 1).length;
+  return [
+    { key: "all", label: tForLocale(locale, "panels.knowledge.statusAll"), count: kept.length },
+    { key: "pending", label: text.pendingName, count: pending },
+    { key: "approved", label: text.approvedName, count: kept.length - pending },
+  ];
+}
+
+function presentKnowledgeForm(payload: unknown): PanelFormDescription {
+  // The owner's form description carries no errors; the panel form contract always has the list, empty here.
+  return panelFormDescriptionSchema.parse({ ...runtimeJsonObjectSchema.parse(payload), errors: [] });
+}
+
+export function createBusinessKnowledgePanelReadPresenter(locale?: string) {
+  return {
+    query(payload: unknown, { primaryKey: _key, ...params }: Record<string, unknown>) {
+      const { entries, text } = queryFactsSchema.parse(payload);
+      return knowledgeQuery(Object.values(entries), text, queryInputSchema.parse(params));
+    },
+    counts(payload: unknown, { primaryKey: _key, ...params }: Record<string, unknown>) {
+      const { entries, labels } = countsFactsSchema.parse(payload);
+      return knowledgeCounts(entries, labels, countsInputSchema.parse(params).search, locale);
+    },
+    record(payload: unknown, { primaryKey: _key, ...params }: Record<string, unknown>) {
+      const { entry, text } = recordFactsSchema.parse(payload);
+      return entryRow(entry, text, searchTerms(recordInputSchema.parse(params).search));
+    },
+    form: presentKnowledgeForm,
+    createForm: presentKnowledgeForm,
+  };
+}
+
 export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials, signal?: AbortSignal) {
   const options = {
     headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers),
@@ -172,7 +223,7 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
     const envelope = await ownerPost("knowledge-list", "/admin/getBussinessKnowledge", {});
     if (!envelope.success)
       throw new HttpError(422, envelope.message ?? "The owner refused the knowledge list", "KNOWLEDGE_READ_REFUSED");
-    return Object.values(z.record(z.string(), knowledgeEntrySchema).parse(envelope.data));
+    return Object.values(entriesSchema.parse(envelope.data));
   }
 
   /** The owner's form description for a target: a draft's blank form or one entry's, with submitted values and edits. */
@@ -187,8 +238,7 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
     });
     if (!envelope.success)
       throw new HttpError(422, envelope.message ?? "The owner refused the form read", "KNOWLEDGE_READ_REFUSED");
-    // The owner's form description carries no errors; the panel form contract always has the list, empty here.
-    return panelFormDescriptionSchema.parse({ ...runtimeJsonObjectSchema.parse(envelope.data), errors: [] });
+    return presentKnowledgeForm(envelope.data);
   }
 
   /** The labels for the rows, read from the blank form so list, detail and form agree in one language. */
@@ -209,26 +259,15 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
      * (and when called without search or status, the domain's unfiltered total).
      */
     async query(params: Record<string, unknown>) {
-      const { search, status } = queryInputSchema.parse(params);
+      const query = queryInputSchema.parse(params);
       const [entries, text] = await Promise.all([ownerEntries(), ownerEntryText()]);
-      const terms = searchTerms(search);
-      const kept = statusFiltered(searchedEntries(entries, terms), status ?? "all");
-      return {
-        rows: kept.map(entry => entryRow(entry, text, terms)),
-        total: kept.length,
-      };
+      return knowledgeQuery(entries, text, query);
     },
     /** The status counts over the searched entries, in tab order. */
     async counts(params: Record<string, unknown>) {
       const { search } = countsInputSchema.parse(params);
       const [entries, text] = await Promise.all([ownerEntries(), ownerEntryText()]);
-      const kept = searchedEntries(entries, searchTerms(search));
-      const pending = kept.filter(entry => entry.status !== 1).length;
-      return [
-        { key: "all", label: tForLocale(viewer.locale, "panels.knowledge.statusAll"), count: kept.length },
-        { key: "pending", label: text.pendingName, count: pending },
-        { key: "approved", label: text.approvedName, count: kept.length - pending },
-      ];
+      return knowledgeCounts(entries, text, search, viewer.locale);
     },
     /** One entry, read from the whole-domain list the owner keeps, with highlights when search matches it. */
     async record(primaryKey: string, params: Record<string, unknown> = {}) {

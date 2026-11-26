@@ -1,8 +1,12 @@
 package io.ontomato.dataengine.dao;
 
+import static io.ontomato.dataengine.service.OntologyNeighborFacts.ID_PADDING;
+
 import io.ontomato.dataengine.bean.action.ActionTarget;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -11,6 +15,7 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +57,7 @@ public class ActionDao extends BaseDao {
 	private static final String TABLE_NAME = "action";
 
 	private static final String COLUMNS = "id, name, description, origin, function_id, code_segments, business_meaning, code_hash, explanation_version, status, class_names, domain_id, submission_criteria, target, create_timestamp, modify_timestamp, created_by, reviewed_by, approval_mode, adopted, coauthor_ids";
+	private static final String DIRECTORY_COLUMNS = "id, name, status, created_by, coauthor_ids";
 
 	@PostConstruct
 	public void initIndex() {
@@ -319,6 +325,89 @@ public class ActionDao extends BaseDao {
 			log.error(e.getMessage(), e);
 		}
 		return oList;
+	}
+
+	public List<Action> provenanceCandidates(String domainId, Set<String> memberIds) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		var ids = memberIds.toArray();
+		return jdbcTemplate.query("SELECT " + DIRECTORY_COLUMNS + ", reviewed_by FROM " + TABLE_NAME
+				+ " WHERE domain_id = ? AND (BTRIM(created_by, ?) = ANY (?) OR BTRIM(reviewed_by, ?) = ANY (?))"
+				+ " ORDER BY modify_timestamp DESC", (row, index) -> {
+					var definition = definitionFacts(row, domainId);
+					definition.setReviewedBy(row.getString("reviewed_by"));
+					return definition;
+				}, domainId, ID_PADDING, new SqlArrayValue("varchar", ids), ID_PADDING, new SqlArrayValue("varchar", ids));
+	}
+
+	public List<FunctionDependency<Action>> functionDependencies(String domainId, String centerId, boolean sourceCenter) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		String center = sourceCenter ? "id" : "function_id";
+		return jdbcTemplate.query(
+				"SELECT " + DIRECTORY_COLUMNS + ", function_id FROM " + TABLE_NAME
+						+ " WHERE domain_id = ? AND " + center + " = ? ORDER BY modify_timestamp DESC",
+				(rs, row) -> new FunctionDependency<>(definitionFacts(rs, domainId), rs.getString("function_id")),
+				domainId, centerId);
+	}
+
+	public List<Action> workflowStepDefinitions(String domainId, String workflowId) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		return jdbcTemplate.query("SELECT " + DIRECTORY_COLUMNS + " FROM " + TABLE_NAME
+				+ " WHERE domain_id = ? AND id IN (SELECT ref.action_id FROM workflow w CROSS JOIN LATERAL ("
+				+ WorkflowDao.EDITABLE_STEP_ACTIONS + ") ref WHERE w.domain_id = ? AND w.id = ?)",
+				(row, index) -> definitionFacts(row, domainId), domainId, domainId, workflowId);
+	}
+
+	public List<Action> definitionDirectoryEntry(String domainId, String id) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		return jdbcTemplate.query("SELECT " + DIRECTORY_COLUMNS + " FROM " + TABLE_NAME
+				+ " WHERE domain_id = ? AND id = ?",
+				(row, index) -> definitionFacts(row, domainId), domainId, id);
+	}
+
+	public List<Action> definitionDirectoryEntries(String domainId, Set<String> ids) {
+		if (ids.isEmpty() || !assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		return jdbcTemplate.query("SELECT " + DIRECTORY_COLUMNS + " FROM " + TABLE_NAME
+				+ " WHERE domain_id = ? AND id = ANY (?)",
+				(row, index) -> definitionFacts(row, domainId), domainId, new SqlArrayValue("varchar", ids.toArray()));
+	}
+
+	public record ObjectTypeReference(Action definition, String className) {}
+
+	public List<ObjectTypeReference> objectTypeReferences(String domainId, String centerId, boolean outgoing) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		var sql = """
+				SELECT id, name, status, created_by, coauthor_ids, scope.class_name
+				FROM action
+				CROSS JOIN LATERAL (SELECT btrim(target::jsonb ->> 'className', ?) AS class_name) scope
+				WHERE domain_id = ? AND
+				""" + (outgoing ? "id = ?" : "scope.class_name = ?") + " ORDER BY modify_timestamp DESC";
+		return jdbcTemplate.query(sql, (rs, row) ->
+				new ObjectTypeReference(definitionFacts(rs, domainId), rs.getString("class_name")),
+				ID_PADDING, domainId, centerId);
+	}
+
+	private static Action definitionFacts(ResultSet rs, String domainId) throws SQLException {
+		var action = new Action();
+		action.setId(rs.getString("id"));
+		action.setName(rs.getString("name"));
+		action.setStatus(rs.getString("status"));
+		action.setDomainId(domainId);
+		action.setCreatedBy(rs.getString("created_by"));
+		action.setCoauthorIds(JSON.parseArray(rs.getString("coauthor_ids"), String.class));
+		return action;
+	}
+
+	public List<Object[]> queryPublishedByIds(String domainId, List<String> ids) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) return List.of();
+		return jdbcTemplate.query(
+				"SELECT " + COLUMNS + " FROM " + TABLE_NAME
+						+ " WHERE domain_id = ? AND status = ? AND id = ANY (?) ORDER BY modify_timestamp DESC",
+				statement -> {
+					statement.setString(1, domainId);
+					statement.setString(2, Action.STATUS_PUBLISHED);
+					statement.setArray(3, statement.getConnection().createArrayOf("varchar", ids.toArray()));
+				},
+				(rs, rowNum) -> mapRowWithFunctionId(rs));
 	}
 
 	/** The number of Actions the list filters select, without loading their functions or definitions. */

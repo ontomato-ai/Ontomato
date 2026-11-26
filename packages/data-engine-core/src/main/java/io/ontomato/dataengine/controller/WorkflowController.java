@@ -4,13 +4,19 @@ import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Predicate;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -20,11 +26,17 @@ import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.WorkflowDao;
+import io.ontomato.dataengine.panelreads.OntologyNeighborScope;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.service.AssignmentAuthority;
 import io.ontomato.dataengine.service.CapabilityGrantQuery;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PlatformAccessQuery;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.WorkflowService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import io.ontomato.dataengine.service.authorization.ManagementOperations.Operation;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
@@ -45,7 +57,11 @@ import lombok.extern.slf4j.Slf4j;
 public class WorkflowController {
 
     private static final String CHANGE = "workflow.lifecycle.change";
-    private static final String READ = "workflow.grants.read";
+    static final String READ = "workflow.grants.read";
+    private static final String ONTOLOGY = "platform:OntologyType";
+    private static final String ROLE = "platform:Role";
+    private static final String WORKFLOW = "platform:Workflow";
+    private static final String ACTION = "platform:Action";
 
     @Component
     public static final class Operations implements ManagementOperations.Contributor {
@@ -58,6 +74,9 @@ public class WorkflowController {
 
     @Autowired
     private ManagementRequestAccess management;
+
+    @Autowired
+    private AuthorizationService authorization;
 
     @Autowired
     private WorkflowService workflowService;
@@ -217,23 +236,85 @@ public class WorkflowController {
         JSONObject ret = new JSONObject();
         try {
             User user = SystemUtils.getCurUser();
-            JSONArray data = new JSONArray();
-            for (SubjectDirectory.Subject subject : subjects.subjectsInDomain(user.getDomainId())) {
-                JSONObject item = new JSONObject();
-                item.put("id", subject.id());
-                item.put("loginCode", subject.loginCode());
-                item.put("displayName", subject.displayName());
-                item.put("roleIds", JSONArray.of(subject.roleIds().toArray()));
-                data.add(item);
-            }
             ret.put("success", true);
-            ret.put("data", data);
+            ret.put("data", subjectRows(user.getDomainId(), true));
         } catch (Exception e) {
             log.error(e.getMessage(), e);
             ret.put("success", false);
             ret.put("message", e.getMessage());
         }
         return ret;
+    }
+
+    private JSONArray subjectRows(String domain, boolean includeRoles) {
+        JSONArray data = new JSONArray();
+        for (SubjectDirectory.Subject subject : subjects.subjectsInDomain(domain)) {
+            var item = JSONObject.of("id", subject.id(), "loginCode", subject.loginCode(), "displayName", subject.displayName());
+            if (includeRoles) item.put("roleIds", JSONArray.of(subject.roleIds().toArray()));
+            data.add(item);
+        }
+        return data;
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyStartMemberName() {
+        return new WorkbenchPanelRead("platform:OntologyType", "start", (subject, parameters) -> {
+            management.require(subject, GovernanceDirectoryController.MEMBERS_READ);
+            var viewer = subject.identity();
+            return subjects.displayNamesInDomain(viewer.domainId(), Set.of(viewer.userId())).get(viewer.userId());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead userInstanceDirectory() {
+        return new WorkbenchPanelRead("platform:User", "instanceDirectory", (subject, parameters) -> {
+            management.require(subject, GovernanceDirectoryController.MEMBERS_READ);
+            return subjects.memberIdentitiesInDomain(subject.identity().domainId());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologySubjectsCount() {
+        return new WorkbenchPanelRead("platform:OntologyType", "subjectsCount", (subject, parameters) -> {
+            management.require(subject, GovernanceDirectoryController.MEMBERS_READ);
+            return Map.of("total", subjects.countInDomain(subject.identity().domainId()));
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyRoleDirectoryCount() {
+        return new WorkbenchPanelRead("platform:OntologyType", "roleDirectoryCount", (subject, parameters) -> {
+            management.require(subject, GovernanceDirectoryController.ROLES_READ);
+            return Map.of("total", platformAccess.countRolesInDomain(subject.identity().domainId()));
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyGrantRoleCounts() {
+        return new WorkbenchPanelRead("platform:OntologyType", "grantRoleCounts", (subject, parameters) -> {
+            management.require(subject, READ);
+            return grants.countRolesInDomain(subject.identity().domainId());
+        });
+    }
+
+    record RoleDirectoryEntry(String roleId, String roleCode) {}
+
+    @Bean
+    WorkbenchPanelRead roleInstanceDirectory() {
+        return new WorkbenchPanelRead("platform:Role", "instanceDirectory", (subject, parameters) -> {
+            management.require(subject, GovernanceDirectoryController.ROLES_READ);
+            return platformAccess.rolesInDomain(subject.identity().domainId()).stream()
+                    .map(role -> new RoleDirectoryEntry(role.roleId(), role.roleCode())).toList();
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead roleInstanceGrantRoles() {
+        return new WorkbenchPanelRead("platform:Role", "instanceGrantRoles", (subject, parameters) -> {
+            management.require(subject, READ);
+            return grants.grantsInDomain(subject.identity().domainId()).stream()
+                    .map(grant -> new RoleDirectoryEntry(grant.roleId(), grant.roleCode())).distinct().toList();
+        });
     }
 
     /** Role directory and platform grants for workflow administration. */
@@ -284,29 +365,20 @@ public class WorkflowController {
         }
         JSONObject ret = new JSONObject();
         try {
-            JSONArray data = new JSONArray();
-            for (CapabilityGrantQuery.Grant grant : grants.grantsInDomain(user.getDomainId())) {
-                JSONObject item = new JSONObject();
-                item.put("roleId", grant.roleId());
-                item.put("roleCode", grant.roleCode());
-                item.put("capabilityKind", grant.capabilityKind());
-                item.put("capabilityId", grant.capabilityId());
-                item.put("capabilityVersion", grant.capabilityVersion());
-                item.put("workflowId", grant.workflowId());
-                item.put("stepNo", grant.stepNo());
-                item.put("scope", grant.scope());
-                item.put("inForce", grant.inForce());
-                item.put("activatedByWorkflowVersion", grant.activatedByWorkflowVersion());
-                data.add(item);
-            }
             ret.put("success", true);
-            ret.put("data", data);
+            ret.put("data", grantRows(user.getDomainId()));
         } catch (Exception e) {
             log.error(e.getMessage(), e);
             ret.put("success", false);
             ret.put("message", e.getMessage());
         }
         return ret;
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelCount() {
+        return new WorkbenchPanelRead("platform:Workflow", "count", (subject, parameters) ->
+                Map.of("rows", List.of(), "total", workflowService.count(null, null, subject.identity().domainId())));
     }
 
     @PostMapping("/workflow/query")
@@ -323,9 +395,7 @@ public class WorkflowController {
             String id = param.getString("id");
             String status = queryStatus(param);
             if (id != null) {
-                Workflow workflow = Workflow.STATUS_ACTIVE.equals(status)
-                        ? workflowService.queryActiveById(id, user.getDomainId())
-                        : workflowService.queryById(id, user.getDomainId());
+                Workflow workflow = readWorkflow(id, status, user.getDomainId());
                 ret.put("success", true);
                 var definition = workflow == null ? null : render(workflow);
                 if (workflow != null && Workflow.STATUS_ACTIVE.equals(status) && "execution".equals(param.getString("purpose"))) {
@@ -341,10 +411,7 @@ public class WorkflowController {
                 }
                 ret.put("data", definition);
             } else {
-                List<Workflow> workflows =
-                        workflowService.queryList(status, user.getDomainId());
-                JSONArray data = new JSONArray();
-                for (Workflow workflow : workflows) data.add(render(workflow));
+                JSONArray data = renderWorkflows(workflowService.queryList(status, user.getDomainId()));
                 ret.put("success", true);
                 ret.put("data", data);
             }
@@ -354,6 +421,210 @@ public class WorkflowController {
             ret.put("message", e.getMessage());
         }
         return ret;
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyWorkflowStepLinks() {
+        return new WorkbenchPanelRead(ONTOLOGY, "role.owns-workflow-step", (subject, parameters) -> {
+            var scope = OntologyNeighborScope.parse(parameters, ROLE, WORKFLOW);
+            management.require(subject, READ);
+            return grants.workflowStepLinks(subject.identity().domainId(), scope.centerId(), scope.outgoing());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyWorkflowCenter() {
+        return new WorkbenchPanelRead(ONTOLOGY, "workflowCenter", (subject, parameters) -> {
+            if (!(parameters.get("primaryKey") instanceof String id) || id.isBlank())
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A workflow ID is required");
+            return workflowService.directoryEntries(subject.identity().domainId(), Set.of(id));
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyWorkflowStepActions() {
+        return new WorkbenchPanelRead(ONTOLOGY, "workflow.step-references-action", (subject, parameters) -> {
+            var scope = OntologyNeighborScope.parse(parameters, WORKFLOW, ACTION);
+            return workflowDao.stepActionLinks(subject.identity().domainId(), scope.centerId(), scope.outgoing());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowInstanceDirectory() {
+        return new WorkbenchPanelRead("platform:Workflow", "instanceDirectory", (subject, parameters) ->
+                workflowService.queryList(null, subject.identity().domainId()).stream()
+                        .map(WorkflowController::renderDirectoryEntry).toList());
+    }
+
+    record WorkflowProvenance(String name, String createdBy, String reviewedBy) {}
+
+    @Bean
+    WorkbenchPanelRead workflowInstanceProvenance() {
+        return new WorkbenchPanelRead("platform:Workflow", "instanceProvenance", (subject, parameters) ->
+                workflowService.queryList(null, subject.identity().domainId()).stream()
+                        .map(workflow -> {
+                            String name = workflow.getName();
+                            return new WorkflowProvenance(name == null || name.isBlank() ? workflow.getId() : name,
+                                    workflow.getCreatedBy(), workflowReviewer(workflow));
+                        }).toList());
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelList() {
+        return workflowPanelCatalogue("list");
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelQuery() {
+        return workflowPanelCatalogue("query");
+    }
+
+    private WorkbenchPanelRead workflowPanelCatalogue(String name) {
+        return new WorkbenchPanelRead("platform:Workflow", name, (subject, parameters) -> {
+            var workflows = workflowService.queryList(null, subject.identity().domainId());
+            var ids = workflows.stream().map(Workflow::getId).collect(java.util.stream.Collectors.toSet());
+            var facts = workflowRecordFacts(subject, ids);
+            facts.put("workflows", renderWorkflows(workflows));
+            return facts;
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelRecord() {
+        return new WorkbenchPanelRead("platform:Workflow", "record", (subject, parameters) -> {
+            var workflow = requirePanelWorkflow(subject, (String) parameters.get("primaryKey"));
+            var facts = workflowRecordFacts(subject, Set.of(workflow.getId()));
+            facts.put("workflow", render(workflow));
+            return facts;
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelForm() {
+        return new WorkbenchPanelRead("platform:Workflow", "form", (subject, parameters) -> {
+            var workflow = requirePanelWorkflow(subject, (String) parameters.get("primaryKey"));
+            var facts = workflowFormFacts(subject);
+            facts.put("workflow", render(workflow));
+            return facts;
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelCreateForm() {
+        return new WorkbenchPanelRead("platform:Workflow", "createForm", (subject, parameters) -> workflowFormFacts(subject));
+    }
+
+    private JSONObject workflowFormFacts(SubjectContext subject) {
+        // A denied directory contributes no names or options to the workflow display.
+        var directory = authorization.decide(subject, new Management(GovernanceDirectoryController.MEMBERS_READ)).allowed()
+                ? subjectRows(subject.identity().domainId(), false) : new JSONArray();
+        return JSONObject.of("subjects", directory, "actions", actionNames(subject));
+    }
+
+    private JSONObject workflowRecordFacts(SubjectContext subject, Set<String> workflowIds) {
+        var facts = workflowFormFacts(subject);
+        // Null is the existing unavailable-grants state, distinct from an empty authorized list.
+        var visibleGrants = authorization.decide(subject, new Management(READ)).allowed()
+                ? grantRows(subject.identity().domainId(), grant -> grant.inForce()
+                        && grant.workflowId() != null && workflowIds.contains(grant.workflowId())) : null;
+        facts.put("grants", visibleGrants);
+        return facts;
+    }
+
+    private JSONArray renderWorkflows(List<Workflow> workflows) {
+        JSONArray rows = new JSONArray();
+        for (var workflow : workflows) rows.add(render(workflow));
+        return rows;
+    }
+
+    private Workflow requirePanelWorkflow(SubjectContext subject, String id) {
+        Workflow workflow = readWorkflow(id, null, subject.identity().domainId());
+        if (workflow == null) throw new OwnerRefusal("WORKFLOW_NOT_FOUND", "Workflow not found");
+        return workflow;
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelLifecycleState() {
+        return new WorkbenchPanelRead("platform:Workflow", "lifecycleState", (subject, parameters) -> {
+            var workflow = requirePanelWorkflow(subject, (String) parameters.get("primaryKey"));
+            return JSONObject.of("id", workflow.getId(), "status", workflow.getStatus(), "hasDraft", workflow.getHasDraft());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelGrantCaseScopedSteps() {
+        return new WorkbenchPanelRead("platform:Workflow", "grantCaseScopedSteps", (subject, parameters) -> {
+            management.require(subject, READ);
+            return workflowGrantFacts(subject, (String) parameters.get("primaryKey"), false);
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelGrantInForce() {
+        return workflowGrantRows("grantInForce");
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelGrantSuperseded() {
+        return workflowGrantRows("grantSuperseded");
+    }
+
+    @Bean
+    WorkbenchPanelRead workflowPanelGrantDirect() {
+        return new WorkbenchPanelRead("platform:Workflow", "grantDirect", (subject, parameters) -> {
+            management.require(subject, READ);
+            return workflowGrantFacts(subject, (String) parameters.get("primaryKey"), true);
+        });
+    }
+
+    private WorkbenchPanelRead workflowGrantRows(String name) {
+        return new WorkbenchPanelRead("platform:Workflow", name, (subject, parameters) -> {
+            management.require(subject, READ);
+            return JSONObject.of("grants", grantRows(subject.identity().domainId()), "actions", actionNames(subject));
+        });
+    }
+
+    private JSONObject workflowGrantFacts(SubjectContext subject, String id, boolean includeGrants) {
+        String domain = subject.identity().domainId();
+        Workflow workflow = requirePanelWorkflow(subject, id);
+        var facts = JSONObject.of("workflow", render(workflow), "actions", actionNames(subject));
+        if (includeGrants) facts.put("grants", grantRows(domain));
+        return facts;
+    }
+
+    private List<JSONObject> actionNames(SubjectContext subject) {
+        return actions.listVisibleDefinitions(subject, null, null).stream()
+                .map(action -> JSONObject.of("id", action.getId(), "name", action.getName(), "status", action.getStatus()))
+                .toList();
+    }
+
+    private Workflow readWorkflow(String id, String status, String domain) {
+        return Workflow.STATUS_ACTIVE.equals(status) ? workflowService.queryActiveById(id, domain)
+                : workflowService.queryById(id, domain);
+    }
+
+    private JSONArray grantRows(String domain) {
+        return grantRows(domain, grant -> true);
+    }
+
+    private JSONArray grantRows(String domain, Predicate<CapabilityGrantQuery.Grant> includes) {
+        JSONArray data = new JSONArray();
+        for (CapabilityGrantQuery.Grant grant : grants.grantsInDomain(domain)) {
+            if (!includes.test(grant)) continue;
+            JSONObject item = new JSONObject();
+            item.put("roleId", grant.roleId());
+            item.put("roleCode", grant.roleCode());
+            item.put("capabilityKind", grant.capabilityKind());
+            item.put("capabilityId", grant.capabilityId());
+            item.put("capabilityVersion", grant.capabilityVersion());
+            item.put("workflowId", grant.workflowId());
+            item.put("stepNo", grant.stepNo());
+            item.put("scope", grant.scope());
+            item.put("inForce", grant.inForce());
+            item.put("activatedByWorkflowVersion", grant.activatedByWorkflowVersion());
+            data.add(item);
+        }
+        return data;
     }
 
     private static boolean countOnly(JSONObject param) {
@@ -389,13 +660,14 @@ public class WorkflowController {
         return workflow;
     }
 
+    private static JSONObject renderDirectoryEntry(Workflow workflow) {
+        return JSONObject.of("id", workflow.getId(), "name", workflow.getName(),
+                "status", workflow.getStatus(), "version", workflow.getVersion());
+    }
+
     private JSONObject render(Workflow workflow) {
-        JSONObject result = new JSONObject();
-        result.put("id", workflow.getId());
-        result.put("name", workflow.getName());
+        JSONObject result = renderDirectoryEntry(workflow);
         result.put("description", workflow.getDescription());
-        result.put("status", workflow.getStatus());
-        result.put("version", workflow.getVersion());
         result.put("hasDraft", workflow.getHasDraft());
         result.put("runClassName", workflow.getRunClassName());
         result.put("temporary", workflow.getTemporary());
@@ -404,12 +676,14 @@ public class WorkflowController {
         // Reported so an operator who just activated learns whether the convenient queries were produced.
         result.put("activationNotes", workflow.getActivationNotes());
         result.put("createdBy", workflow.getCreatedBy());
-        // Activation is this object's review moment and the events are its record, so the reviewer is
-        // the principal on the most recent Activated row rather than a second stored copy.
-        result.put("reviewedBy", workflow.getId() == null
-                ? null
-                : workflowDao.queryLastEventPrincipal(workflow.getId(), Workflow.EVENT_ACTIVATED));
+        result.put("reviewedBy", workflowReviewer(workflow));
         result.put("steps", workflow.getSteps() == null ? new JSONArray() : JSONArray.of(workflow.getSteps().toArray()));
         return result;
     }
+    private String workflowReviewer(Workflow workflow) {
+        // The latest activation event records the review principal.
+        return workflow.getId() == null ? null
+                : workflowDao.queryLastEventPrincipal(workflow.getId(), Workflow.EVENT_ACTIVATED);
+    }
+
 }

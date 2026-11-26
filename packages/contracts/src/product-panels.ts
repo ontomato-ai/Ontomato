@@ -554,6 +554,14 @@ export const productPanelResponseSchema = z.object({
 }).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 
+export const APPLICATION_OPEN_PATH = "/product-panels/application-entry";
+export const applicationOpenResponseSchema = applicationEntryResolutionSchema.extend({
+  allowStandalone: z.boolean(),
+  frame: productPanelResponseSchema.nullable(),
+  content: productPanelResponseSchema.nullable(),
+});
+export type ApplicationOpenResponse = z.infer<typeof applicationOpenResponseSchema>;
+
 const productCurrentSummarySchema = z.object({
   ...editableDefinitionFields,
   id: domainProductRecordFields.id,

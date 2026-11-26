@@ -56,6 +56,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import {
   affected,
@@ -63,6 +64,7 @@ import {
   ownerWriteFailure,
   type DataQueryOperationHost,
 } from "../product-panels/data-query-operations";
+import type { JavaPanelRead } from "../product-panels/java-panel-reads";
 import { operationHost } from "../product-panels/operation-host";
 import type {
   PanelImpactInspector,
@@ -969,43 +971,37 @@ function connectionRecord(name: string, connection: ModelConnection, settings: M
   };
 }
 
-export function createModelConnectionReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const locale = actor.credentials.locale;
-  const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
+type ModelSettingsReadParams = Pick<PanelFormRequest, "values"> & { primaryKey: string };
 
+function presentModelConnections(locale?: string) {
+  const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
   return {
-    async list(): Promise<PanelRecord[]> {
-      const settings = await readSettings(host);
+    list(settings: ModelSettingsData): PanelRecord[] {
       return Object.entries(settings.connections).map(([name, connection]) =>
         connectionRecord(name, connection, settings, locale));
     },
 
-    async record(primaryKey: string): Promise<PanelRecord> {
-      const settings = await readSettings(host);
+    record(settings: ModelSettingsData, { primaryKey }: ModelSettingsReadParams): PanelRecord {
       const connection = settings.connections[primaryKey];
       if (!connection) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
       return connectionRecord(primaryKey, connection, settings, locale);
     },
 
-    async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      const settings = await readSettings(host);
+    form(settings: ModelSettingsData, inputs: ModelSettingsReadParams): PanelFormDescription {
+      const { primaryKey } = inputs;
       if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
       return buildConnectionForm(false, primaryKey, settings, inputs, locale);
     },
 
-    async createForm(inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      const settings = await readSettings(host);
+    createForm(settings: ModelSettingsData, inputs: Pick<PanelFormRequest, "values">): PanelFormDescription {
       return buildConnectionForm(true, null, settings, inputs, locale);
     },
 
-    async createModelForm(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      const settings = await readSettings(host);
-      return buildModelForm(primaryKey, null, settings, inputs, locale);
+    createModelForm(settings: ModelSettingsData, inputs: ModelSettingsReadParams): PanelFormDescription {
+      return buildModelForm(inputs.primaryKey, null, settings, inputs, locale);
     },
 
-    async models(primaryKey: string): Promise<PanelRecord[]> {
-      const settings = await readSettings(host);
+    models(settings: ModelSettingsData, { primaryKey }: ModelSettingsReadParams): PanelRecord[] {
       if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
       return modelsForConnection(settings, primaryKey).map(([modelName, entry]): PanelRecord => {
         const defaultTag = modelName === settings.defaultModel
@@ -1036,62 +1032,13 @@ export function createModelConnectionReads(actor: PanelOperationActor) {
         };
       });
     },
-
-    async usages(primaryKey: string): Promise<PanelRecord[]> {
-      const [settings, agents] = await Promise.all([
-        readSettings(host),
-        readOntologyAgents(host),
-      ]);
-      if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
-      const names = new Set(modelsForConnection(settings, primaryKey).map(([modelName]) => modelName));
-      const rows: PanelRecord[] = [];
-      const fieldLabels = {
-        where: t("panels.modelSettings.usages.where"),
-        model: t("panels.modelSettings.usages.model"),
-      };
-      if (settings.defaultModel && names.has(settings.defaultModel)) {
-        const where = t("panels.modelSettings.fields.defaultModel");
-        rows.push({
-          primaryKey: `default:${settings.defaultModel}`,
-          label: where,
-          fields: { where, model: settings.defaultModel },
-          fieldLabels,
-        });
-      }
-      if (settings.embeddingModel && names.has(settings.embeddingModel)) {
-        const where = t("panels.modelSettings.fields.embeddingModel");
-        rows.push({
-          primaryKey: `embedding:${settings.embeddingModel}`,
-          label: where,
-          fields: { where, model: settings.embeddingModel },
-          fieldLabels,
-        });
-      }
-      for (const agent of agents) {
-        const ref = agent.modelSelection.modelId;
-        if (ref && names.has(ref)) {
-          const where = ontologyAgentDisplayName(agent, locale);
-          rows.push({
-            primaryKey: `agent:${agent.id}`,
-            label: where,
-            fields: { where, model: ref },
-            fieldLabels,
-          });
-        }
-      }
-      return rows;
-    },
   };
 }
 
-export function createModelEntryReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const locale = actor.credentials.locale;
+function presentModelEntries(locale?: string) {
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
-
   return {
-    async record(primaryKey: string): Promise<PanelRecord> {
-      const settings = await readSettings(host);
+    record(settings: ModelSettingsData, { primaryKey }: ModelSettingsReadParams): PanelRecord {
       const entry = settings.models[primaryKey];
       if (!entry) throw new HttpError(404, `Model '${primaryKey}' not found`, "NOT_FOUND");
       return {
@@ -1113,12 +1060,100 @@ export function createModelEntryReads(actor: PanelOperationActor) {
       };
     },
 
-    async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      const settings = await readSettings(host);
+    form(settings: ModelSettingsData, inputs: ModelSettingsReadParams): PanelFormDescription {
+      const { primaryKey } = inputs;
       const entry = settings.models[primaryKey];
       if (!entry) throw new HttpError(404, `Model '${primaryKey}' not found`, "NOT_FOUND");
       return buildModelForm(entry.connection, primaryKey, settings, inputs, locale);
     },
+  };
+}
+
+function modelSettingsFormInputs(params: Record<string, unknown>): Pick<PanelFormRequest, "values"> {
+  const values = panelFormValuesSchema.optional().parse(params.values);
+  requireFormFieldNames(values, "values");
+  return { values };
+}
+
+const modelUsageFactsSchema = z.object({ settings: modelSettingsSchema, agentModels: ontologyAgentModelsSchema });
+
+function prepareModelUsageFacts(
+  render: (settings: ModelSettingsData, agents: OntologyAgentModel[]) => PanelRecord[] | PanelFormDescription,
+) {
+  return {
+    call: { type: MODEL_USAGE, name: "settingsAndAgents", parameters: {} } satisfies NonNullable<JavaPanelRead["call"]>,
+    present(payload: unknown) {
+      const { settings, agentModels } = modelUsageFactsSchema.parse(payload);
+      return render(settings, agentModels.agents);
+    },
+  };
+}
+
+export function prepareModelSettingsRead(
+  { typeId, method, primaryKey }: { typeId: string; method: string; primaryKey?: string },
+  params: Record<string, unknown>,
+  locale?: string,
+) {
+  if (typeId === MODEL_CONNECTION && method === "usages")
+    return prepareModelUsageFacts((settings, agents) => presentConnectionUsages(primaryKey!, settings, agents, locale));
+  if (typeId === MODEL_USAGE && method === "form") {
+    const inputs = modelSettingsFormInputs(params);
+    requireDomainKey(primaryKey!);
+    return prepareModelUsageFacts((settings, agents) => presentModelUsageForm(settings, agents, inputs, locale));
+  }
+  if (typeId === MODEL_USAGE && method === "vectorRebuild") {
+    requireDomainKey(primaryKey!);
+    return {
+      call: { type: MODEL_USAGE, name: method, parameters: {} } satisfies NonNullable<JavaPanelRead["call"]>,
+      present: (payload: unknown) => presentVectorRebuild(vectorRebuildStatusSchema.parse(payload), locale),
+    };
+  }
+  type Presenter = (settings: ModelSettingsData, inputs: ModelSettingsReadParams) => unknown;
+  const presenters: Record<string, Presenter> | undefined = typeId === MODEL_CONNECTION ? presentModelConnections(locale)
+    : typeId === MODEL_ENTRY ? presentModelEntries(locale) : undefined;
+  if (!presenters || !Object.hasOwn(presenters, method)) return;
+  const render = presenters[method];
+  const form = method === "form" || method === "createForm" || method === "createModelForm";
+  const inputs = form ? modelSettingsFormInputs(params) : {};
+  return {
+    // The owner reads domain settings. Draft form values are used only for presentation in Node.
+    call: { type: MODEL_CONNECTION, name: "settings", parameters: {} } satisfies NonNullable<JavaPanelRead["call"]>,
+    present: (payload: unknown) => render(modelSettingsSchema.parse(payload), { primaryKey: primaryKey!, ...inputs }),
+  };
+}
+
+export function createModelConnectionReads(actor: PanelOperationActor) {
+  const host = operationHost(actor);
+  const locale = actor.credentials.locale;
+  const present = presentModelConnections(locale);
+
+  return {
+    list: async () => present.list(await readSettings(host)),
+    record: async (primaryKey: string) => present.record(await readSettings(host), { primaryKey }),
+    form: async (primaryKey: string, inputs: Pick<PanelFormRequest, "values">) =>
+      present.form(await readSettings(host), { ...inputs, primaryKey }),
+    createForm: async (inputs: Pick<PanelFormRequest, "values">) => present.createForm(await readSettings(host), inputs),
+    createModelForm: async (primaryKey: string, inputs: Pick<PanelFormRequest, "values">) =>
+      present.createModelForm(await readSettings(host), { ...inputs, primaryKey }),
+    models: async (primaryKey: string) => present.models(await readSettings(host), { primaryKey }),
+
+    async usages(primaryKey: string): Promise<PanelRecord[]> {
+      const [settings, agents] = await Promise.all([
+        readSettings(host),
+        readOntologyAgents(host),
+      ]);
+      return presentConnectionUsages(primaryKey, settings, agents, locale);
+    },
+  };
+}
+
+export function createModelEntryReads(actor: PanelOperationActor) {
+  const host = operationHost(actor);
+  const present = presentModelEntries(actor.credentials.locale);
+  return {
+    record: async (primaryKey: string) => present.record(await readSettings(host), { primaryKey }),
+    form: async (primaryKey: string, inputs: Pick<PanelFormRequest, "values">) =>
+      present.form(await readSettings(host), { ...inputs, primaryKey }),
   };
 }
 
@@ -1231,10 +1266,269 @@ function parseUsageDraft(
   };
 }
 
+function presentConnectionUsages(
+  primaryKey: string, settings: ModelSettingsData, agents: readonly OntologyAgentModel[], locale?: string,
+): PanelRecord[] {
+  const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
+  if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
+  const names = new Set(modelsForConnection(settings, primaryKey).map(([modelName]) => modelName));
+  const rows: PanelRecord[] = [];
+  const fieldLabels = {
+    where: t("panels.modelSettings.usages.where"),
+    model: t("panels.modelSettings.usages.model"),
+  };
+  if (settings.defaultModel && names.has(settings.defaultModel)) {
+    const where = t("panels.modelSettings.fields.defaultModel");
+    rows.push({
+      primaryKey: `default:${settings.defaultModel}`,
+      label: where,
+      fields: { where, model: settings.defaultModel },
+      fieldLabels,
+    });
+  }
+  if (settings.embeddingModel && names.has(settings.embeddingModel)) {
+    const where = t("panels.modelSettings.fields.embeddingModel");
+    rows.push({
+      primaryKey: `embedding:${settings.embeddingModel}`,
+      label: where,
+      fields: { where, model: settings.embeddingModel },
+      fieldLabels,
+    });
+  }
+  for (const agent of agents) {
+    const ref = agent.modelSelection.modelId;
+    if (ref && names.has(ref)) {
+      const where = ontologyAgentDisplayName(agent, locale);
+      rows.push({
+        primaryKey: `agent:${agent.id}`,
+        label: where,
+        fields: { where, model: ref },
+        fieldLabels,
+      });
+    }
+  }
+  return rows;
+}
+
+function presentModelUsageForm(
+  settings: ModelSettingsData, ontologyAgents: readonly OntologyAgentModel[],
+  inputs: Pick<PanelFormRequest, "values">, locale?: string,
+): PanelFormDescription {
+  const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
+  const tasks = backgroundTaskAgents(ontologyAgents);
+  const chatModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "chat");
+  const embeddingModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "embedding");
+
+  const baseValues = usageFormValues(settings, tasks);
+  const incomingTasks = inputs.values?.taskModels && typeof inputs.values.taskModels === "object" && !Array.isArray(inputs.values.taskModels)
+    ? inputs.values.taskModels as Record<string, unknown>
+    : undefined;
+  const mergedTaskModels = baseValues.taskModels
+    ? { ...baseValues.taskModels, ...(incomingTasks ?? {}) }
+    : incomingTasks;
+  const values: Record<string, unknown> = inputs.values
+    ? {
+      ...inputs.values,
+      ...(mergedTaskModels !== undefined ? { taskModels: mergedTaskModels } : {}),
+    }
+    : baseValues;
+
+  const rawDefault = decodeOptionalModelSelection(values.defaultModel);
+  const defaultModel = typeof rawDefault === "string" ? rawDefault : undefined;
+  const rawEmbedding = decodeOptionalModelSelection(values.embeddingModel);
+  const embeddingModel = typeof rawEmbedding === "string" ? rawEmbedding : undefined;
+
+  const baseChatOptions: PanelFormOption[] = chatModels
+    .map(([name, entry]) => ({
+      value: name,
+      label: name,
+      description: `${entry.connection} · ${entry.model}`,
+      disabled: false,
+      disabledReason: null,
+    }));
+  const defaultChatOptions: PanelFormOption[] = [
+    {
+      value: NO_MODEL_SELECTED,
+      label: t("panels.modelSettings.usage.noDefaultChat"),
+      description: null,
+      disabled: false,
+      disabledReason: null,
+    },
+    ...baseChatOptions,
+  ];
+  const chatMissing = !!defaultModel && !chatModels.some(([name]) => name === defaultModel);
+  if (chatMissing) {
+    defaultChatOptions.push({
+      value: defaultModel,
+      label: t("panels.modelSettings.usage.unavailable", { name: defaultModel }),
+      description: null,
+      disabled: true,
+      disabledReason: t("panels.modelSettings.usage.unavailableReason"),
+    });
+  }
+
+  const embeddingOptions: PanelFormOption[] = [
+    {
+      value: NO_MODEL_SELECTED,
+      label: t("panels.modelSettings.usage.noEmbedding"),
+      description: null,
+      disabled: false,
+      disabledReason: null,
+    },
+    ...embeddingModels.map(([name, entry]) => ({
+      value: name,
+      label: `${name} · ${t("panels.modelSettings.specs.dimensions", { n: entry.type === "embedding" ? entry.dimensions : 0 })}`,
+      description: `${entry.connection} · ${entry.model}`,
+      disabled: false,
+      disabledReason: null,
+    })),
+  ];
+  const embeddingMissing = !!embeddingModel && !embeddingModels.some(([name]) => name === embeddingModel);
+  if (embeddingMissing) {
+    embeddingOptions.push({
+      value: embeddingModel,
+      label: t("panels.modelSettings.usage.unavailable", { name: embeddingModel }),
+      description: null,
+      disabled: true,
+      disabledReason: t("panels.modelSettings.usage.unavailableReason"),
+    });
+  }
+
+  const errors = inputs.values ? parseUsageDraft(values, settings, tasks, undefined, locale).errors : [];
+
+  const followDefaultLabel = defaultModel
+    ? t("panels.modelSettings.usage.followDefaultNamed", { name: defaultModel })
+    : t("panels.modelSettings.usage.followDefault");
+  const embeddingHelp = embeddingModel && !embeddingMissing
+    ? `${t("panels.modelSettings.fields.embeddingModelHelp")} ${t("panels.modelSettings.fields.embeddingRebuildHint")}`
+    : t("panels.modelSettings.fields.embeddingModelHelp");
+
+  const fields: PanelFormField[] = [
+    {
+      path: "/defaultModel",
+      section: "defaults",
+      label: t("panels.modelSettings.fields.defaultModel"),
+      help: t("panels.modelSettings.fields.defaultModelHelp"),
+      required: false,
+      readOnly: false,
+      refreshOnChange: true,
+      ...(chatMissing
+        ? { warning: t("panels.modelSettings.usage.missingWarning", { name: defaultModel }) }
+        : !defaultModel
+          ? { warning: t("panels.modelSettings.usage.defaultChatUnset") }
+          : {}),
+      valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+      control: { kind: "select", options: defaultChatOptions, placeholder: t("panels.modelSettings.usage.noDefaultChat") },
+    },
+    {
+      path: "/embeddingModel",
+      section: "defaults",
+      label: t("panels.modelSettings.fields.embeddingModel"),
+      help: embeddingHelp,
+      required: false,
+      readOnly: false,
+      refreshOnChange: true,
+      ...(embeddingMissing ? { warning: t("panels.modelSettings.usage.missingWarning", { name: embeddingModel }) } : {}),
+      valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+      control: { kind: "select", options: embeddingOptions, placeholder: t("panels.modelSettings.usage.noEmbedding") },
+    },
+  ];
+
+  for (const kind of BACKGROUND_TASK_KINDS) {
+    if (!tasks.has(kind)) continue;
+    const selected = typeof mergedTaskModels?.[kind] === "string"
+      ? mergedTaskModels[kind] as string
+      : FOLLOW_DOMAIN_DEFAULT;
+    const taskOptions: PanelFormOption[] = [
+      {
+        value: FOLLOW_DOMAIN_DEFAULT,
+        label: followDefaultLabel,
+        description: null,
+        disabled: false,
+        disabledReason: null,
+      },
+      ...baseChatOptions,
+    ];
+    const taskMissing = selected !== FOLLOW_DOMAIN_DEFAULT && !chatModels.some(([name]) => name === selected);
+    if (taskMissing) {
+      taskOptions.push({
+        value: selected,
+        label: t("panels.modelSettings.usage.unavailable", { name: selected }),
+        description: null,
+        disabled: true,
+        disabledReason: t("panels.modelSettings.usage.unavailableReason"),
+      });
+    }
+    fields.push({
+      path: `/taskModels/${kind}`,
+      section: "backgroundTasks",
+      label: t(`panels.modelSettings.usage.tasks.${kind}.label`),
+      help: t(`panels.modelSettings.usage.tasks.${kind}.help`),
+      required: true,
+      readOnly: false,
+      defaultValue: FOLLOW_DOMAIN_DEFAULT,
+      ...(taskMissing ? { warning: t("panels.modelSettings.usage.missingWarning", { name: selected }) } : {}),
+      valueSchema: cachedZodToRuntimeJsonSchema(z.string().min(1)),
+      control: { kind: "select", options: taskOptions },
+    });
+  }
+
+  const sections = [
+    { key: "defaults", title: t("panels.modelSettings.usage.sections.defaults") },
+    ...(tasks.size > 0
+      ? [{
+        key: "backgroundTasks",
+        title: t("panels.modelSettings.usage.sections.backgroundTasks"),
+        hint: t("panels.modelSettings.usage.sections.backgroundTasksHint"),
+      }]
+      : []),
+  ];
+
+  return {
+    sections,
+    values: values as PanelFormDescription["values"],
+    fields,
+    errors,
+    save: {
+      method: "POST",
+      path: "/api/data-query/model-settings/save",
+      bodySchema: cachedZodToRuntimeJsonSchema(usageFormValuesSchema),
+    },
+  };
+}
+
+function presentVectorRebuild(status: VectorRebuildStatus, locale?: string): PanelRecord {
+  const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
+  const state = status.state ?? "";
+  const stateLabel = status.configured && status.state
+    ? t(`panels.modelSettings.vectorRebuild.states.${status.state}`)
+    : t("panels.modelSettings.vectorRebuild.states.UNCONFIGURED");
+  const progress = status.configured ? `${status.done} / ${status.total}` : "-";
+  const message = vectorRebuildMessage(status, locale);
+  const tone = vectorRebuildTone(status);
+  const alive = status.state === "RUNNING" || status.state === "PAUSING";
+  const canRebuild = status.state === "PENDING" || status.state === "READY";
+  const canResume = status.state === "PAUSED" || status.state === "FAILED" || status.state === "INTERRUPTED";
+  const canPause = status.state === "RUNNING";
+
+  return {
+    primaryKey: DOMAIN_KEY,
+    label: stateLabel,
+    subtitle: message,
+    fields: { stateLabel, progress, message, tone },
+    fieldLabels: {
+      stateLabel: t("panels.modelSettings.vectorRebuild.state"),
+      progress: t("panels.modelSettings.vectorRebuild.progress"),
+      message: t("panels.modelSettings.vectorRebuild.detail"),
+    },
+    tones: { stateLabel: tone, tone },
+    outputs: { configured: status.configured, state, tone, alive, canRebuild, canResume, canPause },
+  };
+}
+
 export function createModelUsageReads(actor: PanelOperationActor) {
   const host = operationHost(actor);
   const locale = actor.credentials.locale;
-  const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
 
   return {
     async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
@@ -1243,216 +1537,13 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         readSettings(host),
         readOntologyAgents(host),
       ]);
-      const tasks = backgroundTaskAgents(ontologyAgents);
-      const chatModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "chat");
-      const embeddingModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "embedding");
-
-      const baseValues = usageFormValues(settings, tasks);
-      const incomingTasks = inputs.values?.taskModels && typeof inputs.values.taskModels === "object" && !Array.isArray(inputs.values.taskModels)
-        ? inputs.values.taskModels as Record<string, unknown>
-        : undefined;
-      const mergedTaskModels = baseValues.taskModels
-        ? { ...baseValues.taskModels, ...(incomingTasks ?? {}) }
-        : incomingTasks;
-      const values: Record<string, unknown> = inputs.values
-        ? {
-          ...inputs.values,
-          ...(mergedTaskModels !== undefined ? { taskModels: mergedTaskModels } : {}),
-        }
-        : baseValues;
-
-      const rawDefault = decodeOptionalModelSelection(values.defaultModel);
-      const defaultModel = typeof rawDefault === "string" ? rawDefault : undefined;
-      const rawEmbedding = decodeOptionalModelSelection(values.embeddingModel);
-      const embeddingModel = typeof rawEmbedding === "string" ? rawEmbedding : undefined;
-
-      const baseChatOptions: PanelFormOption[] = chatModels
-        .map(([name, entry]) => ({
-          value: name,
-          label: name,
-          description: `${entry.connection} · ${entry.model}`,
-          disabled: false,
-          disabledReason: null,
-        }));
-      const defaultChatOptions: PanelFormOption[] = [
-        {
-          value: NO_MODEL_SELECTED,
-          label: t("panels.modelSettings.usage.noDefaultChat"),
-          description: null,
-          disabled: false,
-          disabledReason: null,
-        },
-        ...baseChatOptions,
-      ];
-      const chatMissing = !!defaultModel && !chatModels.some(([name]) => name === defaultModel);
-      if (chatMissing) {
-        defaultChatOptions.push({
-          value: defaultModel,
-          label: t("panels.modelSettings.usage.unavailable", { name: defaultModel }),
-          description: null,
-          disabled: true,
-          disabledReason: t("panels.modelSettings.usage.unavailableReason"),
-        });
-      }
-
-      const embeddingOptions: PanelFormOption[] = [
-        {
-          value: NO_MODEL_SELECTED,
-          label: t("panels.modelSettings.usage.noEmbedding"),
-          description: null,
-          disabled: false,
-          disabledReason: null,
-        },
-        ...embeddingModels.map(([name, entry]) => ({
-          value: name,
-          label: `${name} · ${t("panels.modelSettings.specs.dimensions", { n: entry.type === "embedding" ? entry.dimensions : 0 })}`,
-          description: `${entry.connection} · ${entry.model}`,
-          disabled: false,
-          disabledReason: null,
-        })),
-      ];
-      const embeddingMissing = !!embeddingModel && !embeddingModels.some(([name]) => name === embeddingModel);
-      if (embeddingMissing) {
-        embeddingOptions.push({
-          value: embeddingModel,
-          label: t("panels.modelSettings.usage.unavailable", { name: embeddingModel }),
-          description: null,
-          disabled: true,
-          disabledReason: t("panels.modelSettings.usage.unavailableReason"),
-        });
-      }
-
-      const errors = inputs.values ? parseUsageDraft(values, settings, tasks, undefined, locale).errors : [];
-
-      const followDefaultLabel = defaultModel
-        ? t("panels.modelSettings.usage.followDefaultNamed", { name: defaultModel })
-        : t("panels.modelSettings.usage.followDefault");
-      const embeddingHelp = embeddingModel && !embeddingMissing
-        ? `${t("panels.modelSettings.fields.embeddingModelHelp")} ${t("panels.modelSettings.fields.embeddingRebuildHint")}`
-        : t("panels.modelSettings.fields.embeddingModelHelp");
-
-      const fields: PanelFormField[] = [
-        {
-          path: "/defaultModel",
-          section: "defaults",
-          label: t("panels.modelSettings.fields.defaultModel"),
-          help: t("panels.modelSettings.fields.defaultModelHelp"),
-          required: false,
-          readOnly: false,
-          refreshOnChange: true,
-          ...(chatMissing
-            ? { warning: t("panels.modelSettings.usage.missingWarning", { name: defaultModel }) }
-            : !defaultModel
-              ? { warning: t("panels.modelSettings.usage.defaultChatUnset") }
-              : {}),
-          valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-          control: { kind: "select", options: defaultChatOptions, placeholder: t("panels.modelSettings.usage.noDefaultChat") },
-        },
-        {
-          path: "/embeddingModel",
-          section: "defaults",
-          label: t("panels.modelSettings.fields.embeddingModel"),
-          help: embeddingHelp,
-          required: false,
-          readOnly: false,
-          refreshOnChange: true,
-          ...(embeddingMissing ? { warning: t("panels.modelSettings.usage.missingWarning", { name: embeddingModel }) } : {}),
-          valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-          control: { kind: "select", options: embeddingOptions, placeholder: t("panels.modelSettings.usage.noEmbedding") },
-        },
-      ];
-
-      for (const kind of BACKGROUND_TASK_KINDS) {
-        if (!tasks.has(kind)) continue;
-        const selected = typeof mergedTaskModels?.[kind] === "string"
-          ? mergedTaskModels[kind] as string
-          : FOLLOW_DOMAIN_DEFAULT;
-        const taskOptions: PanelFormOption[] = [
-          {
-            value: FOLLOW_DOMAIN_DEFAULT,
-            label: followDefaultLabel,
-            description: null,
-            disabled: false,
-            disabledReason: null,
-          },
-          ...baseChatOptions,
-        ];
-        const taskMissing = selected !== FOLLOW_DOMAIN_DEFAULT && !chatModels.some(([name]) => name === selected);
-        if (taskMissing) {
-          taskOptions.push({
-            value: selected,
-            label: t("panels.modelSettings.usage.unavailable", { name: selected }),
-            description: null,
-            disabled: true,
-            disabledReason: t("panels.modelSettings.usage.unavailableReason"),
-          });
-        }
-        fields.push({
-          path: `/taskModels/${kind}`,
-          section: "backgroundTasks",
-          label: t(`panels.modelSettings.usage.tasks.${kind}.label`),
-          help: t(`panels.modelSettings.usage.tasks.${kind}.help`),
-          required: true,
-          readOnly: false,
-          defaultValue: FOLLOW_DOMAIN_DEFAULT,
-          ...(taskMissing ? { warning: t("panels.modelSettings.usage.missingWarning", { name: selected }) } : {}),
-          valueSchema: cachedZodToRuntimeJsonSchema(z.string().min(1)),
-          control: { kind: "select", options: taskOptions },
-        });
-      }
-
-      const sections = [
-        { key: "defaults", title: t("panels.modelSettings.usage.sections.defaults") },
-        ...(tasks.size > 0
-          ? [{
-            key: "backgroundTasks",
-            title: t("panels.modelSettings.usage.sections.backgroundTasks"),
-            hint: t("panels.modelSettings.usage.sections.backgroundTasksHint"),
-          }]
-          : []),
-      ];
-
-      return {
-        sections,
-        values: values as PanelFormDescription["values"],
-        fields,
-        errors,
-        save: {
-          method: "POST",
-          path: "/api/data-query/model-settings/save",
-          bodySchema: cachedZodToRuntimeJsonSchema(usageFormValuesSchema),
-        },
-      };
+      return presentModelUsageForm(settings, ontologyAgents, inputs, locale);
     },
 
     async vectorRebuild(primaryKey: string): Promise<PanelRecord> {
       requireDomainKey(primaryKey);
       const status = await readVectorRebuild(host);
-      const state = status.state ?? "";
-      const stateLabel = status.configured && status.state
-        ? t(`panels.modelSettings.vectorRebuild.states.${status.state}`)
-        : t("panels.modelSettings.vectorRebuild.states.UNCONFIGURED");
-      const progress = status.configured ? `${status.done} / ${status.total}` : "-";
-      const message = vectorRebuildMessage(status, locale);
-      const tone = vectorRebuildTone(status);
-      const alive = status.state === "RUNNING" || status.state === "PAUSING";
-      const canRebuild = status.state === "PENDING" || status.state === "READY";
-      const canResume = status.state === "PAUSED" || status.state === "FAILED" || status.state === "INTERRUPTED";
-      const canPause = status.state === "RUNNING";
-
-      return {
-        primaryKey: DOMAIN_KEY,
-        label: stateLabel,
-        subtitle: message,
-        fields: { stateLabel, progress, message, tone },
-        fieldLabels: {
-          stateLabel: t("panels.modelSettings.vectorRebuild.state"),
-          progress: t("panels.modelSettings.vectorRebuild.progress"),
-          message: t("panels.modelSettings.vectorRebuild.detail"),
-        },
-        tones: { stateLabel: tone, tone },
-        outputs: { configured: status.configured, state, tone, alive, canRebuild, canResume, canPause },
-      };
+      return presentVectorRebuild(status, locale);
     },
   };
 }

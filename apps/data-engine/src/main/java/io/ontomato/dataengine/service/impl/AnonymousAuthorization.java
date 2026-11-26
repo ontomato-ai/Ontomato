@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
@@ -24,6 +25,7 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
             SELECT target_key FROM object_policy_grant
             WHERE domain_id=? AND target_kind=? AND verb=?
             """;
+    private static final String DOMAIN_GRANTS = "SELECT target_kind, target_key, verb FROM object_policy_grant WHERE domain_id=?";
     private final JdbcTemplate jdbc;
 
     public AnonymousAuthorization(JdbcTemplate jdbc) {
@@ -42,7 +44,7 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
 
     @Override
     public RoleResolution resolveRoles(String domainId, String userId) {
-        return new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false);
+        return new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false);
     }
 
     @Override public boolean entryEntitlement(ObjectTarget entry) { return true; }
@@ -109,11 +111,61 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     @Override public void replaceAgentLevel(String policyId, ObjectTarget target, Verb level) { throw noRolePolicies(); }
     @Override public List<ObjectGrant> policyObjectGrants(String domainId, String policyId) { return List.of(); }
     @Override public List<ObjectGrant> domainObjectGrants(String domainId) {
-        return jdbc.query("""
-                SELECT target_kind, target_key, verb FROM object_policy_grant WHERE domain_id=?
-                """, (row, index) -> new ObjectGrant(DOMAIN_POLICY,
+        return domainGrants(domainId, DOMAIN_GRANTS, domainId);
+    }
+
+    @Override public List<ObjectGrant> policyEntryGrants(String domainId, String policyId) {
+        if (!DOMAIN_POLICY.equals(policyId)) return List.of();
+        return domainGrants(domainId, DOMAIN_GRANTS + " AND target_kind='ENTRY'", domainId);
+    }
+
+    @Override public List<ObjectGrant> applicationEntryGrants(String domainId, String applicationId) {
+        String prefix = applicationId + "/";
+        return domainGrants(domainId, DOMAIN_GRANTS + """
+                 AND target_kind='ENTRY' AND (target_key=? OR LEFT(target_key, LENGTH(?))=?)
+                """, domainId, applicationId, prefix, prefix);
+    }
+
+    @Override public List<ObjectGrant> policyActionGrants(String domainId, String policyId) {
+        if (!DOMAIN_POLICY.equals(policyId)) return List.of();
+        return domainGrants(domainId, DOMAIN_GRANTS + " AND target_kind='ACTION' AND target_key<>''", domainId);
+    }
+
+    @Override public List<ObjectGrant> actionPolicyGrants(String domainId, String actionId) {
+        return domainGrants(domainId, DOMAIN_GRANTS + " AND target_kind='ACTION' AND target_key=?", domainId, actionId);
+    }
+
+    @Override public List<ObjectGrant> policyObjectGrants(String domainId, String policyId, Set<Kind> kinds) {
+        if (!DOMAIN_POLICY.equals(policyId)) return List.of();
+        return domainGrants(domainId, DOMAIN_GRANTS + " AND target_kind=ANY (?) AND target_key<>''",
+                domainId, kindNames(kinds));
+    }
+
+    @Override public List<ObjectGrant> targetObjectGrants(String domainId, String targetId, Set<Kind> kinds) {
+        return domainGrants(domainId, DOMAIN_GRANTS + " AND target_kind=ANY (?) AND target_key=?",
+                domainId, kindNames(kinds), targetId);
+    }
+
+    @Override public List<ObjectGrant> policyCreateGrants(String domainId, Set<String> policyIds, Set<Kind> kinds) {
+        if (!policyIds.contains(DOMAIN_POLICY)) return List.of();
+        return domainGrants(domainId, DOMAIN_GRANTS + " AND target_kind=ANY (?) AND verb='CREATE' AND target_key=''",
+                domainId, kindNames(kinds));
+    }
+
+    @Override public Set<String> policyUseKeys(String domainId, String policyId, Kind kind, Set<String> targetIds) {
+        if (!DOMAIN_POLICY.equals(policyId) || targetIds.isEmpty()) return Set.of();
+        return Set.copyOf(jdbc.queryForList(DOMAIN_OBJECT_KEYS + " AND target_key=ANY (?)", String.class,
+                domainId, kind.name(), Verb.USE.name(), new SqlArrayValue("text", targetIds.toArray())));
+    }
+
+    private static SqlArrayValue kindNames(Set<Kind> kinds) {
+        return new SqlArrayValue("text", kinds.stream().map(Kind::name).toArray());
+    }
+
+    private List<ObjectGrant> domainGrants(String domainId, String sql, Object... args) {
+        return jdbc.query(sql, (row, index) -> new ObjectGrant(DOMAIN_POLICY,
                 new ObjectTarget(domainId, Kind.valueOf(row.getString("target_kind")), row.getString("target_key")),
-                Verb.valueOf(row.getString("verb")), null), domainId);
+                Verb.valueOf(row.getString("verb")), null), args);
     }
 
     @Override public List<PolicyRef> domainRolePolicies(String domainId) { return List.of(); }

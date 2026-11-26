@@ -16,6 +16,10 @@ export interface PolicyWorkbenchCatalog {
   agents: PolicyCatalogOption[];
 }
 
+export function effectiveAccessNeedsWorkbenchCatalog(category?: string): boolean {
+  return !category || category === "productObject" || category === "capabilityObject";
+}
+
 function localizedName(definition: Record<string, unknown>, id: string, locale?: string): string {
   const names = definition.names;
   if (names && typeof names === "object" && !Array.isArray(names)) {

@@ -1,3 +1,4 @@
+import { mountWorkbenchPanelReadsOwner, type PanelFixtureRead } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
@@ -428,11 +429,38 @@ beforeAll(async () => {
     });
   });
 
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     const token = req.header("tk") ?? "m7-reader";
     Object.assign(req, { domainId, userId: "owner-1", token, locale: req.header("Accept-Language") ?? "en" });
     next();
+  };
+  const m7OwnerRead: PanelFixtureRead = async ({ type, name }, owner) => {
+    if (type === FEEDBACK_RECORD && ["query", "counts", "record"].includes(name)) {
+      const operationId = workbenchManagement.feedbackRead.id;
+      await owner.post("/internal/workbench-management/require", { domainId, operationId });
+      return operationId;
+    }
+    if (type === SKILL) {
+      if (name === "count" || name === "queryWithDeleteAccess") {
+        await owner.post("/internal/workbench-management/require", { domainId, operationId: workbenchManagement.skillLibraryRead.id });
+        if (name === "count") return true;
+      }
+      if (name === "queryWithDeleteAccess" || name === "deleteAccess")
+        return managementOperations.has(workbenchManagement.skillLibraryChange.id)
+          ? { allowed: true }
+          : { allowed: false, code: "PERMISSION_DENIED", reason: "Management operation forbidden" };
+    }
+  };
+  app.post("/authorization/objects/read-ranges", (req, res) => {
+    expect(["PANEL", "PROJECTION"]).toContain(req.body.kind);
+    res.json({ ranges: { USE: { all: false, fixed: false, authorId: "owner-1", objectIds: [] } } });
   });
+  mountWorkbenchPanelReadsOwner(app, {
+    token: "fixture-service", viewer: () => ({ domainId, userId: "owner-1" }), read: m7OwnerRead,
+  });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
@@ -459,7 +487,7 @@ afterAll(async () => {
 function request(method: string, resource: string, body?: object, locale = "en", headers?: Record<string, string>) {
   return fetch(`${state.base}/api/${resource}`, {
     method,
-    headers: { "Content-Type": "application/json", "Accept-Language": locale, ...headers },
+    headers: { tk: "m7-reader", "Content-Type": "application/json", "Accept-Language": locale, ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }

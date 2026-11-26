@@ -63,8 +63,13 @@ public class DslServiceImpl implements DslService {
 
 	@Override
 	public Map<String, Object> executeV1(JSONObject dsl, UserDataPermission permission, User user) {
-		return executeNormalized(dsl, permission, user.getDomainId(), false, null);
+		return executeV1ForDomain(dsl, permission, user.getDomainId());
 	}
+
+    @Override
+    public Map<String, Object> executeV1ForDomain(JSONObject dsl, UserDataPermission permission, String domainId) {
+        return executeNormalized(dsl, permission, domainId, false, null);
+    }
 
     @Override
     public Map<String, Object> executeInternal(JSONObject dsl, UserDataPermission permission, User user) {

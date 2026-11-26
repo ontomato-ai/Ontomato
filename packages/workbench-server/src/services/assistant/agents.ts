@@ -3,6 +3,7 @@ import type { AssistantAgentsQuery } from "@ontomato/contracts/page-context";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { isAppBuilderKind } from "../app-builder/definition";
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
+import { definitionVisibleInRange, type DefinitionVisibilityRange } from "../product-panels/access";
 import { allowedAgents } from "./authorization";
 import { assistantStore, type AgentRow, type AssistantOwner } from "./store";
 import { isPresetAgentKind } from "./preset-definitions";
@@ -11,11 +12,23 @@ import { effectiveAssistantSkills } from "./skills";
 import { isPageOperatorSkill } from "./page-operator";
 import { requirePanelEntry } from "../product-panels/application-use";
 
-export async function listAssistantAgents(owner: AssistantOwner, credentials: AssistantCredentials, query: AssistantAgentsQuery = {}, excludePreset?: string) {
-  const definitions = await allowedAgents(
-    (await assistantStore.channelAgents(owner.domainId)).filter(agent => agent.kind !== excludePreset),
-    "USE", credentials,
+export function listAssistantAgents(owner: AssistantOwner, credentials: AssistantCredentials, query: AssistantAgentsQuery = {}, excludePreset?: string) {
+  return readAssistantAgents(owner, credentials, query, excludePreset, agents => allowedAgents(agents, "USE", credentials));
+}
+
+export function listAssistantAgentsInRange(owner: AssistantOwner, credentials: AssistantCredentials, range: DefinitionVisibilityRange) {
+  return readAssistantAgents(owner, credentials, {}, undefined, agents =>
+    agents.filter(agent => definitionVisibleInRange({
+      id: agent.id, domainId: agent.domain_id, ownerId: agent.owner_id,
+    }, range, owner.domainId)),
   );
+}
+
+async function readAssistantAgents(
+  owner: AssistantOwner, credentials: AssistantCredentials, query: AssistantAgentsQuery, excludePreset: string | undefined,
+  admit: (agents: AgentRow[]) => AgentRow[] | Promise<AgentRow[]>,
+) {
+  const definitions = await admit((await assistantStore.channelAgents(owner.domainId)).filter(agent => agent.kind !== excludePreset));
   const builder = definitions.find(agent => isAppBuilderKind(agent.kind));
   const summary = (agent: AgentRow) => ({
     id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),

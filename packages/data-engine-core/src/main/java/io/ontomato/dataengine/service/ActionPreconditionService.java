@@ -11,7 +11,9 @@ import io.ontomato.dataengine.util.DslUtil;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Evaluates an Action's {@code submissionCriteria} before the program runs.
@@ -67,6 +69,30 @@ public class ActionPreconditionService {
      */
     public Verdict evaluate(
             Action action, JSONObject parameters, User user, UserDataPermission permission, ExecutionTarget target) {
+        return evaluate(action, parameters, user, permission, target, false);
+    }
+
+    public Verdict evaluateDescription(
+            Action action, JSONObject parameters, User user, UserDataPermission permission, ExecutionTarget target) {
+        return evaluate(action, parameters, user, permission, target, true);
+    }
+
+    public static void requireDescriptionClasses(ExecutionTarget target, List<String> classes) {
+        try {
+            target.requireClasses(classes);
+        } catch (ResponseStatusException refusal) {
+            throw new DescriptionScopeDenied();
+        }
+    }
+
+    public static final class DescriptionScopeDenied extends OwnerRefusal {
+        public DescriptionScopeDenied() {
+            super("ACTION_TARGET_OUT_OF_SCOPE", "超出本轮数据范围");
+        }
+    }
+
+    private Verdict evaluate(Action action, JSONObject parameters, User user, UserDataPermission permission,
+            ExecutionTarget target, boolean description) {
         JSONObject criteria = action.getSubmissionCriteria();
         if (criteria == null || criteria.isEmpty()) return Verdict.pass();
 
@@ -78,6 +104,13 @@ public class ActionPreconditionService {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> classDefs =
                 (List<Map<String, Object>>) jsonRule.get("classDef");
+
+        if (description && !target.classNames().isEmpty()) {
+            var classes = conditions.stream().map(JSONObject::from)
+                    .map(condition -> normalize(condition.getString("className"), classDefs))
+                    .filter(Objects::nonNull).distinct().toList();
+            if (!classes.isEmpty()) requireDescriptionClasses(target, classes);
+        }
 
         List<String> violations = new ArrayList<>();
         for (Object value : conditions) {

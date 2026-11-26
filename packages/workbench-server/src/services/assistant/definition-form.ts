@@ -2,15 +2,19 @@ import { z } from "zod";
 import { assistantEngineSchema, assistantAgentInputSchema, assistantAgentPanelValuesSchema as inputSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
+import { modelOptionsSchema } from "@ontomato/contracts/model-settings";
 import { AGENT_DEFINITION, EXTERNAL_MCP_SERVICE, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import { tForLocale } from "../../i18n";
+import { requireChatModel } from "../../platform/agent-runtime/model-selection";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import {
   AgentDefinitionFieldError, agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm,
 } from "./definition-form-schema";
 import { agentAllowed, requireAgent, requireAgentCreation } from "./authorization";
-import { checkedDefinition, projectAgentDefinitionSkills, readAgentDefinitionRow, readStoredAgentDefinition } from "./definitions";
+import {
+  checkedAgentDefinitionSkills, checkedDefinition, projectAgentDefinitionSkills, readAgentDefinitionRow, readStoredAgentDefinition,
+} from "./definitions";
 import { readAssistantSkillView } from "./skills";
 import { readExecutionOptions } from "./execution-setting";
 import type { AssistantOwner } from "./store";
@@ -80,11 +84,7 @@ export async function describeAgentDefinitionForm(
     checkDraft ? undefined : readExecutionOptions(credentials, null),
     target.kind === "object" ? readAssistantSkillView(owner.domainId, credentials) : undefined,
   ]);
-  let current = initialValues;
-  if (definition) {
-    const { id: _id, sortOrder: _sortOrder, ...values } = definition;
-    current = values;
-  }
+  const current = definition ? storedFormValues(definition) : initialValues;
 
   let values: PanelFormValues = submittedValues ?? (definition
     ? { ...current, skills: projectAgentDefinitionSkills(definition, skillView!).skills }
@@ -93,11 +93,8 @@ export async function describeAgentDefinitionForm(
   if (checkDraft) {
     try {
       // Preserve skill selections the draft did not submit. The reader sees only their visible projection below.
-      const { skills, ...stored } = current;
-      const input = definition
-        ? parseAgentDefinitionUpdateForm({ ...stored, ...submittedValues })
-        : parseAgentDefinitionForm(submittedValues);
-      const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, skills,
+      const input = parseDraft(target, current, submittedValues);
+      const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills,
         skillView && { credentials, view: skillView });
       values = { ...input, ...checked };
       if (definition && input.skills === undefined) {
@@ -109,7 +106,95 @@ export async function describeAgentDefinitionForm(
     }
   }
   const { canSetExecutionUser } = openOptions ?? await readExecutionOptions(credentials, null);
-  const text = (key: string) => tForLocale(credentials.locale, `panels.agentForm.${key}`);
+  return presentAgentDefinitionForm(target, values, errors, canEdit, canSetExecutionUser, credentials.locale);
+}
+
+export const agentFormExecutionFactsSchema = z.object({
+  canSetExecutionUser: z.boolean(),
+  executionError: z.string().optional(),
+  modelOptions: z.unknown(),
+});
+type AgentFormExecutionFacts = z.infer<typeof agentFormExecutionFactsSchema>;
+
+interface PreparedAgentDefinitionForm {
+  validation?: { oldExecutionUserId: string | null; executionUserId: string | null; modelId: string | null };
+  present(facts: AgentFormExecutionFacts & { editable: boolean }): PanelFormDescription | Promise<PanelFormDescription>;
+}
+
+export function prepareAgentDefinitionFormFromFacts(
+  request: PanelFormRequest, definition: AssistantAgentDefinition | undefined,
+  owner: AssistantOwner, credentials: AssistantCredentials,
+): PreparedAgentDefinitionForm {
+  const { target, values: submitted, changedField } = request;
+  const current = definition ? storedFormValues(definition) : initialValues;
+  const render = (facts: AgentFormExecutionFacts & { editable: boolean }, values: PanelFormValues, errors: FormFieldError[] = []) =>
+    presentAgentDefinitionForm(target, values, errors, facts.editable, facts.canSetExecutionUser, credentials.locale);
+
+  if (submitted === undefined) {
+    if (!definition) return { present: facts => render(facts, { ...current, publicationAccess: { kind: "private" } }) };
+    return {
+      async present(facts) {
+        const view = await readAssistantSkillView(owner.domainId, credentials);
+        return render(facts, { ...current, skills: projectAgentDefinitionSkills(definition, view).skills });
+      },
+    };
+  }
+  if (changedField !== null) return { present: facts => render(facts, submitted) };
+
+  let input;
+  try {
+    input = parseDraft(target, current, submitted);
+  } catch (error) {
+    if (!(error instanceof AgentDefinitionFieldError)) throw error;
+    return { present: facts => render(facts, submitted, error.errors) };
+  }
+  const executionUserId = input.executionUserId === undefined ? current.executionUserId : input.executionUserId;
+  const modelId = input.modelSelection.modelId;
+  return {
+    validation: { oldExecutionUserId: current.executionUserId, executionUserId, modelId },
+    async present(facts) {
+      if (facts.executionError !== undefined)
+        return render(facts, submitted, [{ field: "/executionUserId", code: "invalid_option", message: facts.executionError }]);
+      if (modelId !== null) {
+        try {
+          requireChatModel(modelId, modelOptionsSchema.parse(facts.modelOptions));
+        } catch (error) {
+          if (!(error instanceof HttpError) || error.status !== 400 || error.code !== "INVALID_REQUEST") throw error;
+          return render(facts, submitted, AgentDefinitionFieldError.fromOption(error, "/modelSelection/modelId", "target_unavailable").errors);
+        }
+      }
+      try {
+        const skills = await checkedAgentDefinitionSkills(input.skills, owner, credentials, current.skills);
+        const values = { ...input, ...skills, executionUserId };
+        if (definition && input.skills === undefined) {
+          const view = await readAssistantSkillView(owner.domainId, credentials);
+          values.skills = projectAgentDefinitionSkills(definition, view).skills;
+        }
+        return render(facts, values);
+      } catch (error) {
+        if (!(error instanceof AgentDefinitionFieldError)) throw error;
+        return render(facts, submitted, error.errors);
+      }
+    },
+  };
+}
+
+function parseDraft(target: PanelFormRequest["target"], current: CurrentValues, submitted: PanelFormValues) {
+  const { skills: _skills, ...stored } = current;
+  return target.kind === "object"
+    ? parseAgentDefinitionUpdateForm({ ...stored, ...submitted })
+    : parseAgentDefinitionForm(submitted);
+}
+
+function storedFormValues({ id: _id, sortOrder: _sortOrder, ...values }: AssistantAgentDefinition): CurrentValues {
+  return values;
+}
+
+function presentAgentDefinitionForm(
+  target: PanelFormRequest["target"], values: PanelFormValues, errors: FormFieldError[],
+  canEdit: boolean, canSetExecutionUser: boolean, locale?: string,
+): PanelFormDescription {
+  const text = (key: string) => tForLocale(locale, `panels.agentForm.${key}`);
   const helped = new Set(fields.filter((field) => "help" in field).map(({ key }) => key));
   const suggested = new Set(fields.filter((field) => "placeholder" in field).map(({ key }) => key));
   const publicationFields: PanelFormField[] = target.kind === "draft" ? [

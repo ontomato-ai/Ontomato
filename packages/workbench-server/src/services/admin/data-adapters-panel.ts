@@ -671,18 +671,19 @@ function summarizeRecord(
   };
 }
 
-export function createDataAdapterConfigReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const locale = actor.credentials.locale;
+const dataAdapterFactsSchema = z.object({ config: businessConfigPayloadSchema, catalogue: dataAdaptersPayloadSchema });
+const routingFactsSchema = dataAdapterFactsSchema.extend({ ontology: ontologyOutlineSchema });
+
+type DataAdapterFacts = z.output<typeof dataAdapterFactsSchema>;
+type RoutingFacts = z.output<typeof routingFactsSchema>;
+type DataAdapterFormInputs = Partial<Pick<PanelFormRequest, "values" | "changedField">>;
+type SelectedDataAdapterFormInputs = DataAdapterFormInputs & { primaryKey: string };
+
+function dataAdapterConfigPresentation(locale?: string) {
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
 
   return {
-    async record(primaryKey: string): Promise<PanelRecord> {
-      requireDomainKey(primaryKey);
-      const [config, adaptersData] = await Promise.all([
-        readBusinessConfig(host),
-        readDataAdapters(host),
-      ]);
+    record({ config, catalogue: adaptersData }: DataAdapterFacts): PanelRecord {
       const summary = summarizeRecord(
         { ...config, dataAdapter: config.dataAdapter || adaptersData.currentType },
         adaptersData.adapters,
@@ -738,15 +739,7 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
       };
     },
 
-    async form(
-      primaryKey: string,
-      inputs: Pick<PanelFormRequest, "values" | "changedField">,
-    ): Promise<PanelFormDescription> {
-      requireDomainKey(primaryKey);
-      const [config, adaptersData] = await Promise.all([
-        readBusinessConfig(host),
-        readDataAdapters(host),
-      ]);
+    form({ config, catalogue: adaptersData }: DataAdapterFacts, inputs: DataAdapterFormInputs): PanelFormDescription {
       const adapters = adaptersData.adapters;
       const incoming = inputs.values;
       const switchedMode = inputs.changedField === "/adapterMode";
@@ -996,16 +989,10 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
       };
     },
 
-    async routingForm(
-      primaryKey: string,
-      inputs: Pick<PanelFormRequest, "values" | "changedField">,
-    ): Promise<PanelFormDescription> {
-      requireDomainKey(primaryKey);
-      const [config, adaptersData, ontology] = await Promise.all([
-        readBusinessConfig(host),
-        readDataAdapters(host),
-        readOntologyOutline(host),
-      ]);
+    routingForm(
+      { config, catalogue: adaptersData, ontology }: RoutingFacts,
+      inputs: DataAdapterFormInputs,
+    ): PanelFormDescription {
       const sourceAdapters = adaptersData.adapters.filter((a) => a.type !== multiDataSourceType);
       const storedMulti = config.multiDataSource;
       const incoming = inputs.values;
@@ -1227,6 +1214,50 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           bodySchema: cachedZodToRuntimeJsonSchema(z.record(z.unknown())),
         },
       };
+    },
+  };
+}
+
+/** Presents the owner's response facts. Only routing forms consume the ontology outline. */
+export function createDataAdapterConfigPanelReadPresenter(locale?: string) {
+  const presentation = dataAdapterConfigPresentation(locale);
+  return {
+    record(payload: unknown, { primaryKey }: { primaryKey: string }) {
+      requireDomainKey(primaryKey);
+      return presentation.record(dataAdapterFactsSchema.parse(payload));
+    },
+    form(payload: unknown, { primaryKey, ...inputs }: SelectedDataAdapterFormInputs) {
+      requireDomainKey(primaryKey);
+      return presentation.form(dataAdapterFactsSchema.parse(payload), inputs);
+    },
+    routingForm(payload: unknown, { primaryKey, ...inputs }: SelectedDataAdapterFormInputs) {
+      requireDomainKey(primaryKey);
+      return presentation.routingForm(routingFactsSchema.parse(payload), inputs);
+    },
+  };
+}
+
+async function readDataAdapterFacts(host: DataQueryOperationHost): Promise<DataAdapterFacts> {
+  const [config, catalogue] = await Promise.all([readBusinessConfig(host), readDataAdapters(host)]);
+  return { config, catalogue };
+}
+
+export function createDataAdapterConfigReads(actor: PanelOperationActor) {
+  const host = operationHost(actor);
+  const presentation = dataAdapterConfigPresentation(actor.credentials.locale);
+  return {
+    async record(primaryKey: string) {
+      requireDomainKey(primaryKey);
+      return presentation.record(await readDataAdapterFacts(host));
+    },
+    async form(primaryKey: string, inputs: DataAdapterFormInputs) {
+      requireDomainKey(primaryKey);
+      return presentation.form(await readDataAdapterFacts(host), inputs);
+    },
+    async routingForm(primaryKey: string, inputs: DataAdapterFormInputs) {
+      requireDomainKey(primaryKey);
+      const [facts, ontology] = await Promise.all([readDataAdapterFacts(host), readOntologyOutline(host)]);
+      return presentation.routingForm({ ...facts, ontology }, inputs);
     },
   };
 }
@@ -1519,7 +1550,7 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
     targetSchema: dataAdapterTargetSchema.optional(),
     inputSchema: panelReadOperationInputSchema,
     resultSchema: panelReadOperationSectionsResultSchema,
-    describeResultSections(_host, locale) {
+    describeResultSections(locale) {
       const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
       return [
         { id: "summary", label: t("panels.dataAdapters.record.summary"), kind: "fields" as const },

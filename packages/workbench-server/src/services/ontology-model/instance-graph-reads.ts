@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { PanelRecord, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import { panelReadParameterSchemas, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import {
   platformOntologyEdgeSchema, platformOntologyNodeRefSchema,
@@ -110,42 +110,101 @@ function toEdge({ from, to, type }: z.infer<typeof rawEdge>, direction: Platform
   };
 }
 
-export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
-  const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
-  const text = (field: string) => tForLocale(viewer.locale, `panels.objectDetail.${field}`);
+function graphText(locale?: string) {
+  return (field: string) => tForLocale(locale, `panels.objectDetail.${field}`);
+}
 
-  async function read(operation: string, body?: Record<string, unknown>) {
-    const url = `${config.dataQuery.baseUrl}/data/instanceGraph/${operation}`;
-    const response = body === undefined
-      ? await backendGet(`instance-graph-${operation}`, url, options)
-      : await backendPost(`instance-graph-${operation}`, url, body, options);
-    const answer = graphReply.parse(JSON.parse(response.text));
-    if (!answer.success) {
-      logger.warn("Instance graph read failed", {
-        operation,
-        code: answer.code ?? "INSTANCE_GRAPH_READ_FAILED",
-        ownerMessage: answer.message,
-      });
-      if (answer.code === "GRAPH_VERSION_CHANGED") {
-        throw new HttpError(409, text("graphVersionChanged"), "GRAPH_VERSION_CHANGED");
-      }
-      if (answer.code === "GRAPH_SAMPLE_EXPIRED") {
-        throw new HttpError(409, text("graphSampleExpired"), "GRAPH_SAMPLE_EXPIRED");
-      }
-      throw new HttpError(502, text("graphReadFailed"), answer.code ?? "INSTANCE_GRAPH_READ_FAILED");
+function parseGraphReply(payload: unknown, operation: string, text: ReturnType<typeof graphText>) {
+  const answer = graphReply.parse(payload);
+  if (!answer.success) {
+    logger.warn("Instance graph read failed", {
+      operation,
+      code: answer.code ?? "INSTANCE_GRAPH_READ_FAILED",
+      ownerMessage: answer.message,
+    });
+    if (answer.code === "GRAPH_VERSION_CHANGED") {
+      throw new HttpError(409, text("graphVersionChanged"), "GRAPH_VERSION_CHANGED");
     }
-    return answer;
+    if (answer.code === "GRAPH_SAMPLE_EXPIRED") {
+      throw new HttpError(409, text("graphSampleExpired"), "GRAPH_SAMPLE_EXPIRED");
+    }
+    throw new HttpError(502, text("graphReadFailed"), answer.code ?? "INSTANCE_GRAPH_READ_FAILED");
   }
+  return answer;
+}
 
-  async function ready(operation: string, body?: Record<string, unknown>): Promise<unknown> {
-    const answer = await read(operation, body);
-    if (answer.status !== "READY") throw new HttpError(409, text("graphUnavailable"), "INSTANCE_GRAPH_UNAVAILABLE");
-    return answer.data;
-  }
+function requireGraphReady(answer: ReturnType<typeof parseGraphReply>, text: ReturnType<typeof graphText>) {
+  if (answer.status !== "READY") throw new HttpError(409, text("graphUnavailable"), "INSTANCE_GRAPH_UNAVAILABLE");
+  return answer.data;
+}
 
+const instanceNeighborsSchema = z.object({
+  node: panelReadParameterSchemas.graphNode,
+  relationKinds: panelReadParameterSchemas.relationKinds.optional(),
+  targetClass: panelReadParameterSchemas.className.optional(),
+  direction: panelReadParameterSchemas.neighborDirection.optional(),
+  limit: panelReadParameterSchemas.neighborsLimit.optional(),
+  offset: panelReadParameterSchemas.nonNegativeInt.optional(),
+});
+type NeighborFilters = Omit<z.input<typeof instanceNeighborsSchema>, "node" | "relationKinds"> & {
+  relationKinds?: readonly string[];
+};
+
+export function instanceNeighborsParams(params: Record<string, unknown>) {
+  return instanceNeighborsSchema.parse(params);
+}
+
+export function instanceNeighborsRequest(node: PlatformOntologyNodeRef, { targetClass, ...filters }: NeighborFilters) {
+  return { node, ...(targetClass !== undefined && { neighborClass: targetClass }), ...filters };
+}
+
+function renderInstanceNeighbors(node: PlatformOntologyNodeRef, payload: unknown, text: ReturnType<typeof graphText>) {
+  const graph = rawNeighbors.parse(payload);
+  const [center, ...neighbors] = graph.nodes.map(toNode);
+  const edges = graph.edges.map(edge => toEdge(edge,
+    edge.from.className === node.className && edge.from.primaryKey === node.primaryKey ? "outgoing" : "incoming"));
+  const relations = graph.relations
+    ? graph.relations.map(entry => ({
+      ...toRelationStatus(entry, text),
+      ...(entry.truncated !== undefined ? { truncated: entry.truncated } : {}),
+    }))
+    : (() => {
+      const counts = new Map<string, number>();
+      for (const edge of edges) counts.set(edge.relationKind, (counts.get(edge.relationKind) ?? 0) + 1);
+      return [...counts].map(([relationKind, edgeCount]) => ({
+        relationKind, edgeCount, status: "ok" as const, truncated: graph.nextOffset != null,
+      }));
+    })();
   return {
-    async overview() {
-      const { status, data } = await read("nodes");
+    node: center, neighbors, edges,
+    relations,
+    nextOffset: graph.nextOffset ?? null, total: graph.total ?? null, version: graph.version,
+  };
+}
+
+export function instanceGraphConnectionsRequest(params: Record<string, unknown>) {
+  const version = panelReadParameterSchemas.keyword.parse(params.version);
+  const sampleToken = panelReadParameterSchemas.keyword.optional().parse(params.sampleToken);
+  return { version, ...(sampleToken !== undefined && { sampleToken }) };
+}
+
+export function instanceGraphSearchRequest(params: Record<string, unknown>) {
+  const term = panelReadParameterSchemas.keyword.optional().parse(params.search);
+  const className = panelReadParameterSchemas.className.optional().parse(params.className);
+  const version = panelReadParameterSchemas.keyword.optional().parse(params.version);
+  return {
+    ...(term !== undefined && { term }),
+    ...(className !== undefined && { class: className }),
+    ...(version !== undefined && { version }),
+  };
+}
+
+export function createInstanceGraphReadPresenter(locale?: string) {
+  const text = graphText(locale);
+  const ready = (operation: string, payload: unknown) => requireGraphReady(parseGraphReply(payload, operation, text), text);
+  return {
+    overview(payload: unknown) {
+      const { status, data } = parseGraphReply(payload, "nodes", text);
       if (status !== "READY") return { status, groups: [], nodes: [] };
       const graph = rawOverview.parse(data);
       return {
@@ -160,8 +219,8 @@ export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
         ...(graph.relations ? { relations: graph.relations.map(entry => toRelationStatus(entry, text)) } : {}),
       };
     },
-    async connections(version: string, sampleToken?: string) {
-      const graph = rawConnections.extend({ version: z.string() }).parse(await ready("connections", { version, sampleToken }));
+    connections(payload: unknown) {
+      const graph = rawConnections.extend({ version: z.string() }).parse(ready("connections", payload));
       return {
         version: graph.version,
         edges: graph.overviewEdges.map(edge => toEdge(edge)),
@@ -169,12 +228,12 @@ export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
         ...(graph.relations ? { relations: graph.relations.map(entry => toRelationStatus(entry, text)) } : {}),
       };
     },
-    async statistics() {
-      const graph = rawStatistics.parse(await ready("statistics"));
+    statistics(payload: unknown) {
+      const graph = rawStatistics.parse(ready("statistics", payload));
       return { counts: graph.classes.map(item => ({ type: item.class, layer: "fact", status: "ok", count: item.instanceCount })) };
     },
-    async classes(): Promise<PanelRecord[]> {
-      const { status, data } = await read("nodes");
+    classes(payload: unknown): PanelRecord[] {
+      const { status, data } = parseGraphReply(payload, "nodes", text);
       if (status !== "READY") return [];
       const graph = rawOverview.parse(data);
       const fieldLabels = {
@@ -199,8 +258,8 @@ export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
         };
       });
     },
-    async search(term?: string, className?: string, version?: string): Promise<PanelRecordQuery> {
-      const graph = rawSearch.parse(await ready("search", { term, class: className, version }));
+    search(payload: unknown): PanelRecordQuery {
+      const graph = rawSearch.parse(ready("search", payload));
       const fieldLabels = { className: text("className"), classLabel: text("classLabel"), primaryKey: text("primaryKey") };
       const rows = graph.nodes.map(toNode).map(node => ({
         className: node.className, primaryKey: node.primaryKey, label: node.label,
@@ -209,32 +268,31 @@ export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
       }));
       return { rows, fieldLabels, total: graph.total, hasMore: graph.hasMore };
     },
-    async neighbors(node: PlatformOntologyNodeRef, params: {
-      relationKinds?: readonly string[]; targetClass?: string;
-      direction?: "incoming" | "outgoing" | "both"; limit?: number; offset?: number;
-    }) {
-      const { targetClass, ...filters } = params;
-      const graph = rawNeighbors.parse(await ready("neighborhood", { node, neighborClass: targetClass, ...filters }));
-      const [center, ...neighbors] = graph.nodes.map(toNode);
-      const edges = graph.edges.map(edge => toEdge(edge,
-        edge.from.className === node.className && edge.from.primaryKey === node.primaryKey ? "outgoing" : "incoming"));
-      const relations = graph.relations
-        ? graph.relations.map(entry => ({
-          ...toRelationStatus(entry, text),
-          ...(entry.truncated !== undefined ? { truncated: entry.truncated } : {}),
-        }))
-        : (() => {
-          const counts = new Map<string, number>();
-          for (const edge of edges) counts.set(edge.relationKind, (counts.get(edge.relationKind) ?? 0) + 1);
-          return [...counts].map(([relationKind, edgeCount]) => ({
-            relationKind, edgeCount, status: "ok" as const, truncated: graph.nextOffset != null,
-          }));
-        })();
-      return {
-        node: center, neighbors, edges,
-        relations,
-        nextOffset: graph.nextOffset ?? null, total: graph.total ?? null, version: graph.version,
-      };
+    neighbors(node: PlatformOntologyNodeRef, payload: unknown) {
+      return renderInstanceNeighbors(node, ready("neighborhood", payload), text);
     },
+  };
+}
+
+export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
+  const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
+  const present = createInstanceGraphReadPresenter(viewer.locale);
+
+  async function read(operation: string, body?: Record<string, unknown>): Promise<unknown> {
+    const url = `${config.dataQuery.baseUrl}/data/instanceGraph/${operation}`;
+    const response = body === undefined
+      ? await backendGet(`instance-graph-${operation}`, url, options)
+      : await backendPost(`instance-graph-${operation}`, url, body, options);
+    return JSON.parse(response.text);
+  }
+
+  return {
+    overview: async () => present.overview(await read("nodes")),
+    connections: async (params: Record<string, unknown>) => present.connections(await read("connections", instanceGraphConnectionsRequest(params))),
+    statistics: async () => present.statistics(await read("statistics")),
+    classes: async () => present.classes(await read("nodes")),
+    search: async (params: Record<string, unknown>) => present.search(await read("search", instanceGraphSearchRequest(params))),
+    neighbors: async (node: PlatformOntologyNodeRef, params: NeighborFilters) =>
+      present.neighbors(node, await read("neighborhood", instanceNeighborsRequest(node, params))),
   };
 }

@@ -147,9 +147,11 @@ vi.mock("../panel-host", () => ({
   resolveApplicationEntry: async () => ({
     applicationId: "app-a",
     use,
+    allowStandalone: true,
+    frame: null,
+    content: null,
     menu: { singleEntry: true, groups: [], panelUses: [use] },
   }),
-  readApplicationFrameManifest: vi.fn(),
   platformPanelHost: () => createPort(),
   onPanelReadDenied: () => () => {},
 }));

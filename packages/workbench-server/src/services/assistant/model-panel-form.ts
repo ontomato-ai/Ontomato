@@ -12,7 +12,7 @@ export const DOMAIN_DEFAULT_MODEL_OPTION = "@default";
 
 export const modelPanelValues = z.object({ modelId: modelNameSchema.nullable() }).strict();
 export const modelSelectionWrite = z.object({ modelSelection: modelPanelValues }).strict();
-const modelOptionsResponse = z.object({ success: z.literal(true), data: modelOptionsSchema });
+const modelOptionsResponse = z.object({ success: z.literal(true), data: z.unknown() });
 
 /**
  * The domain's chat models, headed by the empty choice, which follows the domain default and names its current model.
@@ -22,15 +22,19 @@ export async function readDomainModelOptions(viewer: AssistantCredentials): Prom
   const response = await backendGet("agent-model-options", `${config.dataQuery.baseUrl}/model-options`, {
     headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
   });
-  const { data: { models, defaultModel } } = modelOptionsResponse.parse(JSON.parse(response.text));
+  return presentDomainModelOptions(modelOptionsResponse.parse(JSON.parse(response.text)).data, viewer.locale);
+}
+
+export function presentDomainModelOptions(payload: unknown, locale?: string): PanelOption[] {
+  const { models, defaultModel } = modelOptionsSchema.parse(payload);
   const chat = models.filter(model => model.type === "chat");
   const current = chat.find(model => model.name === defaultModel);
   const following: PanelOption = {
     primaryKey: DOMAIN_DEFAULT_MODEL_OPTION,
     value: null,
     label: current
-      ? tForLocale(viewer.locale, "panels.agentOptions.domainDefaultModel", { model: current.name })
-      : tForLocale(viewer.locale, "panels.agentOptions.domainDefault"),
+      ? tForLocale(locale, "panels.agentOptions.domainDefaultModel", { model: current.name })
+      : tForLocale(locale, "panels.agentOptions.domainDefault"),
   };
   return [following, ...chat.map((model): PanelOption => ({ primaryKey: model.name, value: model.name, label: model.name }))];
 }

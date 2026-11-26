@@ -1,11 +1,14 @@
 package io.ontomato.dataengine.service;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
-import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.dao.FunctionDao.ObjectTypeReferences;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 
 public interface FunctionService {
 
@@ -23,16 +26,23 @@ public interface FunctionService {
 	 * The same rule the delete applies; a Function not in this domain does not exist.
 	 */
 	public String deleteRefusal(String id, String domainId, String lang);
+
+	String deleteRefusal(String id, String lang, SubjectContext subject);
 	
 	public Function queryById(String id);
 	
 	public List<Function> queryList(String operation, String className, String domainId);
 
-	List<Function> listVisible(String operation, String className, User user);
+	List<Function> listVisible(String operation, String className, SubjectContext subject);
 
-	long countVisible(User user);
+	Optional<Function> visibleDefinition(String id, SubjectContext subject);
+	List<Function> visibleDefinitions(Set<String> ids, SubjectContext subject);
+
+	List<ObjectTypeReferences> visibleObjectTypeReferences(String centerId, boolean outgoing, SubjectContext subject);
+
+	long countVisible(SubjectContext subject);
 
 	/** The owner's form description for a Function, or a field error for an incoming draft. */
-	public JSONObject form(JSONObject request, String lang, String domainId);
+	public JSONObject form(JSONObject request, String lang, SubjectContext subject);
 	
 }

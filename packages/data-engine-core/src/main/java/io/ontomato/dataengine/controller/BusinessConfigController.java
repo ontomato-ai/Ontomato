@@ -17,9 +17,11 @@ import io.ontomato.dataengine.dataAdapter.DataAdapterConnectionTester;
 import io.ontomato.dataengine.dataAdapter.DataAdapterProvider;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.dataAdapter.MultiDataSourceValidator;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.SandboxPermissionService;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import io.ontomato.dataengine.service.authorization.ManagementOperations.Operation;
@@ -32,6 +34,8 @@ import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -88,8 +92,7 @@ public class BusinessConfigController {
 	@Autowired
 	private VectorRebuildService vectorRebuildService;
 
-	/** Optional in unit tests that construct the controller directly; Spring injects it in the app. */
-	@Autowired(required = false)
+	@Autowired
 	private ConnectionSecretCodec connectionSecretCodec;
 
 	
@@ -119,6 +122,14 @@ public class BusinessConfigController {
     	}
 		return ret;
 	}
+
+    @Bean
+    WorkbenchPanelRead vectorRebuildPanelRead() {
+        return new WorkbenchPanelRead("platform:ModelUsage", "vectorRebuild", (subject, parameters) -> {
+            management.require(subject, VECTORS_READ);
+            return vectorRebuildService.status(subject.identity().domainId());
+        });
+    }
 
 	@PostMapping("/businessConfig/rebuildVectors")
     @ResponseBody
@@ -224,7 +235,11 @@ public class BusinessConfigController {
 	@GetMapping("/businessConfig/dataAdapters")
     @ResponseBody
     public JSONObject dataAdapters() {
-		User user = SystemUtils.getCurUser();
+        User user = SystemUtils.getCurUser();
+        return JSONObject.of("success", true, "data", readDataAdapterCatalogue(businessConfigService.get(user.getDomainId()).getDataAdapter()));
+    }
+
+    private JSONObject readDataAdapterCatalogue(String currentType) {
 		JSONArray adapters = new JSONArray();
     	for (DataAdapterProvider provider : dataAdapterRegistry.installed()) {
     		JSONObject item = new JSONObject();
@@ -248,15 +263,9 @@ public class BusinessConfigController {
 			adapters.add(item);
     	}
 		// The current domain's adapter type without its saved connections: what non-management readers need.
-		JSONObject data = new JSONObject();
-		data.put("currentType", businessConfigService.get(user.getDomainId()).getDataAdapter());
-		data.put("adapters", adapters);
-    	JSONObject ret = new JSONObject();
-    	ret.put("data", data);
-    	ret.put("success", true);
-		return ret;
-	}
-	
+        return JSONObject.of("currentType", currentType, "adapters", adapters);
+    }
+
 	@PostMapping("/businessConfig/useDataAdapter")
     @ResponseBody
     @Owned
@@ -413,7 +422,35 @@ public class BusinessConfigController {
     @Owned
     public JSONObject generalForm(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String locale) {
         User user = management.require(GENERAL_READ);
-        BusinessConfig settings = businessConfigService.get(user.getDomainId());
+        return readGeneralForm(user.getDomainId(), locale);
+    }
+
+    @Bean
+    WorkbenchPanelRead generalSettingsPanelList() {
+        return generalSettingsPanelRead("list", false);
+    }
+
+    @Bean
+    WorkbenchPanelRead generalSettingsPanelRecord() {
+        return generalSettingsPanelRead("record", true);
+    }
+
+    @Bean
+    WorkbenchPanelRead generalSettingsPanelForm() {
+        return generalSettingsPanelRead("form", true);
+    }
+
+    private WorkbenchPanelRead generalSettingsPanelRead(String name, boolean selected) {
+        return new WorkbenchPanelRead("platform:GeneralSettings", name, (subject, parameters) -> {
+            management.require(subject, GENERAL_READ);
+            if (selected && !"general".equals(parameters.get("primaryKey")))
+                throw new OwnerRefusal("NOT_FOUND", "General settings not found");
+            return readGeneralForm(subject.identity().domainId(), LocaleContextHolder.getLocale().toLanguageTag());
+        });
+    }
+
+    private JSONObject readGeneralForm(String domainId, String locale) {
+        BusinessConfig settings = businessConfigService.get(domainId);
         JSONObject fields = new JSONObject();
         for (String name : java.util.List.of("knowledgeMaxResult", "dslCookerTimeoutSeconds", "lang")) {
             String key = "GeneralSettings." + name;
@@ -447,14 +484,7 @@ public class BusinessConfigController {
         User user = management.require(CONNECTIONS_READ);
     	JSONObject ret = new JSONObject();
     	try {
-			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-			// Mask connection secrets on the response copy.
-			BusinessConfig view = connectionSecretCodec == null
-					? businessConfig
-					: connectionSecretCodec.maskedCopy(businessConfig);
-			JSONObject data = JSONObject.from(view);
-			data.put("sandboxCapability", sandboxPermissions.read(user.getDomainId(), businessConfig));
-			ret.put("data", data);
+            ret.put("data", readConnectionConfig(user.getDomainId()));
     		ret.put("success", true);
     	} catch (Exception e) {
     		log.error(e.getMessage(), e);
@@ -463,7 +493,68 @@ public class BusinessConfigController {
     	}
 		return ret;
 	}
-	
+
+    private JSONObject readConnectionConfig(String domainId) {
+        BusinessConfig businessConfig = businessConfigService.get(domainId);
+        JSONObject data = JSONObject.from(connectionSecretCodec.maskedCopy(businessConfig));
+        data.put("sandboxCapability", sandboxPermissions.read(domainId, businessConfig));
+        return data;
+    }
+
+    @Bean
+    WorkbenchPanelRead dataAdapterConfigPanelRecord() {
+        return dataAdapterPanelRead("record");
+    }
+
+    @Bean
+    WorkbenchPanelRead dataAdapterConfigPanelForm() {
+        return dataAdapterPanelRead("form");
+    }
+
+    @Bean
+    WorkbenchPanelRead dataAdapterConfigPanelRoutingForm() {
+        return dataAdapterPanelRead("routingForm");
+    }
+
+    private WorkbenchPanelRead dataAdapterPanelRead(String name) {
+        return new WorkbenchPanelRead("platform:DataAdapterConfig", name, (subject, parameters) -> {
+            management.require(subject, CONNECTIONS_READ);
+            if (!"domain".equals(parameters.get("primaryKey")))
+                throw new OwnerRefusal("NOT_FOUND", "Data adapter configuration not found");
+            boolean routing = "routingForm".equals(name);
+            if (routing) management.require(subject, OntologyModelController.Operations.READ);
+
+            String domainId = subject.identity().domainId();
+            BusinessConfig configuration = businessConfigService.get(domainId);
+            BusinessConfig masked = connectionSecretCodec.maskedCopy(configuration);
+            var config = JSONObject.of("multiDataSource", masked.getMultiDataSource());
+            if (!routing) {
+                config.put("dataAdapter", masked.getDataAdapter());
+                config.put("dataAdapterConnections", masked.getDataAdapterConnections());
+            }
+            if ("record".equals(name)) config.put("sandboxCapability", sandboxPermissions.read(domainId, configuration));
+            var facts = JSONObject.of("config", config, "catalogue", readDataAdapterCatalogue(configuration.getDataAdapter()));
+            if (routing) facts.put("ontology", readDataAdapterOntologyOutline(domainId));
+            return facts;
+        });
+    }
+
+    private JSONObject readDataAdapterOntologyOutline(String domainId) {
+        var schema = adminService.getPrettyJSONRule(domainId);
+        var classes = new JSONArray();
+        for (Object value : schema.getJSONArray("classDefs")) {
+            var definition = (JSONObject) value;
+            classes.add(JSONObject.of("name", definition.getString("name")));
+        }
+        var relationships = new JSONObject();
+        schema.getJSONObject("relationshipDefs").forEach((name, value) -> {
+            var definition = (JSONObject) value;
+            relationships.put(name, JSONObject.of("fromClass", definition.getString("fromClass"),
+                    "toClass", definition.getString("toClass")));
+        });
+        return JSONObject.of("classDefs", classes, "relationshipDefs", relationships);
+    }
+
 	@GetMapping("/businessConfig/getConfigAndDesc")
     @ResponseBody
     @Owned

@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.controller;
 
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.subject;
+
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -16,6 +19,7 @@ import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
+import io.ontomato.dataengine.service.ActionPreconditionService.DescriptionScopeDenied;
 import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.ExecutionTarget;
@@ -63,6 +67,66 @@ class ActionPanelEndpointTest {
   private final AgentExecutionScope agentExecutionScope = mock(AgentExecutionScope.class);
   private final ActionController controller = new ActionController(agentExecutionScope);
 
+  @Test
+  void groupedScopedDescriptionsKeepAllowedButtonsAndSeparateOwnerRefusals() {
+    var executor = subject("domain", "executor");
+    var scope = new ExecutionTarget(null, null, List.of("Order"), Long.MAX_VALUE);
+    var allowed = executionAction("allowed");
+    var denied = executionAction("denied");
+    var field = new io.ontomato.dataengine.bean.function.Parameter();
+    field.setName("order_id");
+    field.setType("TYPE_STRING");
+    field.setDescription("Order key");
+    field.setSample("Private sample");
+    field.setValue("Private value");
+    var function = new Function();
+    function.setParameters(List.of(field));
+    denied.setFunction(function);
+    denied.setSubmissionCriteria(JSONObject.of("conditions", JSONArray.of(JSONObject.of("className", "Hidden"))));
+    var hidden = executionAction("hidden");
+    var precondition = executionAction("precondition");
+    when(actionService.queryById("allowed")).thenReturn(allowed);
+    when(actionService.queryById("denied")).thenReturn(denied);
+    when(actionService.queryById("hidden")).thenReturn(hidden);
+    when(actionService.queryById("precondition")).thenReturn(precondition);
+    var grant = io.ontomato.dataengine.service.CapabilityGrantLookup.Admission.ALL;
+    when(authorization.requireExecution(same(executor), any(), any(), same(scope))).thenReturn(grant);
+    doThrow(new DescriptionScopeDenied())
+        .when(actionService).requireExecutionForm(same(denied), any(), any(), anyString(), same(executor), same(grant), same(scope));
+    doThrow(new ActionAuthorization.Denied("ACTION_TARGET_OUT_OF_SCOPE", "Outside action permission"))
+        .when(actionService).requireExecutionForm(same(hidden), any(), any(), anyString(), same(executor), same(grant), same(scope));
+    doThrow(new OwnerRefusal("ACTION_PRECONDITION_FAILED", "Order is closed"))
+        .when(actionService).requireExecutionForm(same(precondition), any(), any(), anyString(), same(executor), same(grant), same(scope));
+
+    var owner = controller.actionPanelExecutionDefinitions();
+    var handler = (io.ontomato.dataengine.panelreads.WorkbenchPanelRead.CallerScopedHandler) owner.handler();
+    var target = Map.of("className", "Order", "primaryKey", "O1");
+    var results = (List<?>) handler.read(executor, Map.of("actions", List.of(
+        Map.of("primaryKey", "allowed", "object", target), Map.of("primaryKey", "denied", "object", target),
+        Map.of("primaryKey", "hidden", "object", target), Map.of("primaryKey", "precondition", "object", target))), scope);
+    assertEquals("allowed", ((JSONObject) results.get(0)).getJSONObject("payload").getString("id"));
+    var description = JSONObject.of("id", "denied", "name", "denied", "target", denied.getTarget(),
+        "function", JSONObject.of("parameters", List.of(JSONObject.of("name", "order_id", "type", "TYPE_STRING", "description", "Order key"))));
+    assertEquals(JSONObject.of("status", "forbidden", "code", "ACTION_TARGET_OUT_OF_SCOPE",
+        "error", "超出本轮数据范围", "payload", description), results.get(1));
+    assertEquals(JSONObject.of("status", "forbidden", "code", "ACTION_TARGET_OUT_OF_SCOPE",
+        "error", "Outside action permission"), results.get(2));
+    assertEquals(JSONObject.of("status", "error", "code", "ACTION_PRECONDITION_FAILED", "error", "Order is closed"), results.get(3));
+    verify(actionService).requireExecutionForm(same(allowed), eq(JSONObject.of("order_id", "O1")),
+        eq(List.of("order_id")), anyString(), same(executor), same(grant), same(scope));
+  }
+
+  private static Action executionAction(String id) {
+    var action = new Action();
+    action.setId(id);
+    action.setName(id);
+    action.setDomainId("domain");
+    action.setStatus(Action.STATUS_PUBLISHED);
+    action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Order", "order_id"));
+    action.setDefinition(new JSONObject());
+    return action;
+  }
+
   @BeforeEach
   void setup() {
     User user = mock(User.class);
@@ -84,7 +148,7 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "identityService", identityService);
     ReflectionTestUtils.setField(controller, "caseExecutionGuard", caseExecutionGuard);
     ReflectionTestUtils.setField(controller, "authorization", authorization);
-    when(authorization.allowsDefinition(any(), any())).thenReturn(true);
+    when(authorization.subject(user)).thenReturn(subject("domain", "user-1"));
     ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
     ReflectionTestUtils.setField(controller, "buildTests", buildTests);
     ReflectionTestUtils.setField(controller, "sandboxPermissions", sandboxPermissions);
@@ -183,7 +247,7 @@ class ActionPanelEndpointTest {
 
   @Test
   void aDraftsFieldErrorsAreASuccessfulFormRead() throws Exception {
-    when(actionService.definitionForm(any(), eq("en"), any(io.ontomato.dataengine.core.bean.User.class))).thenReturn(JSONObject.of(
+    when(actionService.definitionForm(any(), eq("en"), any(SubjectContext.class))).thenReturn(JSONObject.of(
         "fields", new JSONArray(), "values", JSONObject.of("name", ""),
         "errors", List.of(FormFields.error("/function/operation", "invalid_option", "expected OPERATION_WRITE")),
         "save", JSONObject.of("path", "/action/save")));
@@ -354,7 +418,8 @@ class ActionPanelEndpointTest {
     untested.setDomainId("domain");
     var trial = new TrialSummary("t1", "FAILED", null, "invalid order", 32L, Instant.EPOCH);
     when(actionService.queryById("a1")).thenReturn(failed);
-    when(actionService.queryList(null, null, null, "domain")).thenReturn(List.of(failed, untested));
+    when(actionService.listVisibleDefinitions(any(SubjectContext.class), isNull(), isNull()))
+        .thenReturn(List.of(failed, untested));
     when(actionTrialStore.latest(failed)).thenReturn(trial);
     when(actionTrialStore.latestByActions("domain", List.of(failed, untested))).thenReturn(Map.of("a1", trial));
     when(actionTrialStore.statusCode(trial)).thenReturn("failed");

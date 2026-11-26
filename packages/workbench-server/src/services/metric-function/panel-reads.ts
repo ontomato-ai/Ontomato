@@ -2,9 +2,8 @@ import { z } from "zod";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { dashboardMetricDescriptionSchema, dashboardMetricOutputSchema, type DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import { FUNCTION, METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
-import { panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import {
-  panelFormDescriptionSchema, panelReadParameterSchemas, type PanelFormDescription, type PanelFormValues, type PanelRecord,
+  panelFormDescriptionSchema, panelReadParameterSchemas, type PanelFormValues, type PanelRecord,
   type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
@@ -14,6 +13,7 @@ import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
 import type { ProductOwner } from "../product-governance/service-authentication";
+import { metricResultParameters } from "./result-read";
 
 /*
  * The metric and function owners' named reads for a panel, each read as the viewer. Both catalogues query the owner's
@@ -101,16 +101,6 @@ const functionSchema = z.object({
   operationLabel: z.string().nullish(),
 }).passthrough();
 
-/**
- * An object chosen in a panel fills a metric parameter with its primary key, and a checked list of objects with their
- * keys in order; any other value goes as it is.
- */
-function parameterValue(value: RuntimeJsonValue): RuntimeJsonValue {
-  if (Array.isArray(value)) return value.map(parameterValue);
-  const object = panelObjectRefSchema.safeParse(value);
-  return object.success ? object.data.primaryKey : value;
-}
-
 /** A negative owner answer to a read: an object it no longer has is missing, its other refusals conflict, the rest fail. */
 function readRefusal(envelope: z.infer<typeof ownerEnvelopeSchema>, failureCode: string, fallbackMessage: string): HttpError {
   const outcome = ownerWriteFailure(envelope, failureCode, fallbackMessage);
@@ -121,16 +111,12 @@ function readRefusal(envelope: z.infer<typeof ownerEnvelopeSchema>, failureCode:
 function ownerReads(viewer: AssistantCredentials, failureCode: string) {
   const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
   const base = config.dataQuery.baseUrl.replace(/\/$/, "");
-  const translate = (key: string) => tForLocale(viewer.locale, key);
   /** One data-query read: the owner's data, or its refusal or failure as an error. */
-  async function owner<T>(name: string, path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+  async function owner(name: string, path: string, body: unknown): Promise<unknown> {
     const envelope = ownerEnvelopeSchema.parse(JSON.parse((await backendPost(name, base + path, body, options)).text));
     if (!envelope.success) throw readRefusal(envelope, failureCode, "The owner could not read the definition");
-    return schema.parse(envelope.data);
+    return envelope.data;
   }
-  /** The column names, in the reader's language, for the fields a record shows. */
-  const fieldLabels = (type: string, fields: readonly string[]) =>
-    Object.fromEntries(fields.map(field => [field, translate(`panels.${type}.fields.${field}`)]));
   /** The owner's form for a saved definition, or for a new one when there is no primary key. */
   function form(
     name: string, path: string, objectType: string, primaryKey: string | null, { values, changedField }: DefinitionFormParams,
@@ -139,9 +125,9 @@ function ownerReads(viewer: AssistantCredentials, failureCode: string) {
       target: primaryKey === null ? { kind: "draft" } : { kind: "object", objectType, primaryKey },
       ...(values !== undefined && { values }),
       changedField: changedField ?? null,
-    }, panelFormDescriptionSchema);
+    });
   }
-  return { owner, fieldLabels, form };
+  return { owner, form };
 }
 
 const METRIC_FIELDS = ["function", "origin", "status", "createdBy", "reviewedBy", "modified"] as const;
@@ -165,9 +151,33 @@ function metricRecord(metric: z.infer<typeof metricSchema>, fieldLabels: Record<
   };
 }
 
+type CataloguePaging = z.infer<typeof catalogueQuerySchema>;
+
+function fieldLabels(type: string, fields: readonly string[], locale?: string) {
+  return Object.fromEntries(fields.map(field => [field, tForLocale(locale, `panels.${type}.fields.${field}`)]));
+}
+
+const presentForm = (payload: unknown) => panelFormDescriptionSchema.parse(payload);
+
+/** Presents successful metric payloads with the search and paging prepared for the read. */
+export function createMetricPanelReadPresenter(locale?: string) {
+  const labels = () => fieldLabels("metricView", METRIC_FIELDS, locale);
+  function query(payload: unknown, paging: CataloguePaging): PanelRecordQuery {
+    const columns = labels();
+    return queried(z.array(metricSchema).parse(payload).map(metric => metricRecord(metric, columns)), paging);
+  }
+  return {
+    list: (payload: unknown, { search }: Pick<CataloguePaging, "search">) => query(payload, { search }),
+    query,
+    record: (payload: unknown) => metricRecord(metricSchema.parse(payload), labels()),
+    form: presentForm,
+    createForm: presentForm,
+  };
+}
+
 export function createMetricReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
-  const { owner, fieldLabels, form } = ownerReads(viewer, "METRIC_VIEW_READ_FAILED");
-  const labels = () => fieldLabels("metricView", METRIC_FIELDS);
+  const { owner, form } = ownerReads(viewer, "METRIC_VIEW_READ_FAILED");
+  const present = createMetricPanelReadPresenter(viewer.locale);
   // A failed run is the owner's answer, not a transport fault worth running the query again for.
   const runOptions = {
     headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
@@ -179,37 +189,33 @@ export function createMetricReadAdapter(_owner: ProductOwner, viewer: AssistantC
   }
   return {
     async count(): Promise<PanelRecordQuery> {
-      const { total } = await owner("metric-count", "/metricView/queryList", { countOnly: true }, countSchema);
+      const { total } = countSchema.parse(await owner("metric-count", "/metricView/queryList", { countOnly: true }));
       return { rows: [], total };
     },
     async list(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const { status, origin, search } = metricCatalogueListSchema.parse(params);
       const body = { ...(status ? { status } : {}), ...(origin ? { origin } : {}) };
-      const columns = labels();
-      const metrics = await owner("metric-list", "/metricView/queryList", body, z.array(metricSchema));
-      return queried(metrics.map(metric => metricRecord(metric, columns)), { search });
+      return present.list(await owner("metric-list", "/metricView/queryList", body), { search });
     },
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const { status, origin, ...paging } = metricCatalogueQuerySchema.parse(params);
       const body = { ...(status ? { status } : {}), ...(origin ? { origin } : {}) };
-      const columns = labels();
-      const metrics = await owner("metric-list", "/metricView/queryList", body, z.array(metricSchema));
-      return queried(metrics.map(metric => metricRecord(metric, columns)), paging);
+      return present.query(await owner("metric-list", "/metricView/queryList", body), paging);
     },
     async record(primaryKey: string): Promise<PanelRecord> {
-      return metricRecord(await owner("metric-record", "/metricView/queryById", { id: primaryKey }, metricSchema), labels());
+      return present.record(await owner("metric-record", "/metricView/queryById", { id: primaryKey }));
     },
-    form(primaryKey: string, params: DefinitionFormParams): Promise<PanelFormDescription> {
-      return form("metric-form", "/metricView/form", METRIC_VIEW, primaryKey, params);
+    async form(primaryKey: string, params: DefinitionFormParams) {
+      return present.form(await form("metric-form", "/metricView/form", METRIC_VIEW, primaryKey, params));
     },
-    createForm(params: DefinitionFormParams): Promise<PanelFormDescription> {
-      return form("metric-form", "/metricView/form", METRIC_VIEW, null, params);
+    async createForm(params: DefinitionFormParams) {
+      return present.createForm(await form("metric-form", "/metricView/form", METRIC_VIEW, null, params));
     },
     async result(primaryKey: string, params: MetricResultParams): Promise<DashboardMetricOutput> {
       const { revision, sourceObjectTypes } = await query(
         "metric-describe", "/ontology/query/metrics/describe", { id: primaryKey }, dashboardMetricDescriptionSchema,
       );
-      const parameters = Object.fromEntries(Object.entries(params).map(([name, value]) => [name, parameterValue(value)]));
+      const parameters = metricResultParameters(params);
       const executed = await query(
         "metric-execute", "/ontology/query/metrics/execute", { id: primaryKey, revision, parameters }, dashboardMetricOutputSchema,
       );
@@ -228,36 +234,48 @@ function functionRecord(fn: z.infer<typeof functionSchema>, fieldLabels: Record<
   };
 }
 
+function presentFunctionCatalogue(payload: unknown, paging: CataloguePaging, locale?: string): PanelRecordQuery {
+  const labels = fieldLabels("function", ["operation"], locale);
+  return queried(z.array(functionSchema).parse(payload).map(fn => functionRecord(fn, labels)), paging);
+}
+
+/** Presents successful function payloads with the search prepared for the read. */
+export function createFunctionPanelReadPresenter(locale?: string) {
+  return {
+    list: (payload: unknown, { search }: Pick<CataloguePaging, "search">) => presentFunctionCatalogue(payload, { search }, locale),
+    query: (payload: unknown, paging: CataloguePaging) => presentFunctionCatalogue(payload, paging, locale),
+    record: (payload: unknown) => functionRecord(functionSchema.parse(payload), fieldLabels("function", ["operation"], locale)),
+    form: presentForm,
+    createForm: presentForm,
+  };
+}
+
 export function createFunctionReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
-  const { owner, fieldLabels, form } = ownerReads(viewer, "FUNCTION_READ_FAILED");
-  const labels = () => fieldLabels("function", ["operation"]);
+  const { owner, form } = ownerReads(viewer, "FUNCTION_READ_FAILED");
+  const present = createFunctionPanelReadPresenter(viewer.locale);
   return {
     async count(): Promise<PanelRecordQuery> {
-      const { total } = await owner("function-count", "/function/queryList", { countOnly: true }, countSchema);
+      const { total } = countSchema.parse(await owner("function-count", "/function/queryList", { countOnly: true }));
       return { rows: [], total };
     },
     async list(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const { operation, search } = functionCatalogueListSchema.parse(params);
-      const columns = labels();
       const body = operation ? { operation } : {};
-      const functions = await owner("function-list", "/function/queryList", body, z.array(functionSchema));
-      return queried(functions.map(fn => functionRecord(fn, columns)), { search });
+      return present.list(await owner("function-list", "/function/queryList", body), { search });
     },
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const { operation, ...paging } = functionCatalogueQuerySchema.parse(params);
-      const columns = labels();
       const body = operation ? { operation } : {};
-      const functions = await owner("function-list", "/function/queryList", body, z.array(functionSchema));
-      return queried(functions.map(fn => functionRecord(fn, columns)), paging);
+      return present.query(await owner("function-list", "/function/queryList", body), paging);
     },
     async record(primaryKey: string): Promise<PanelRecord> {
-      return functionRecord(await owner("function-record", "/function/queryById", { id: primaryKey }, functionSchema), labels());
+      return present.record(await owner("function-record", "/function/queryById", { id: primaryKey }));
     },
-    form(primaryKey: string, params: DefinitionFormParams): Promise<PanelFormDescription> {
-      return form("function-form", "/function/form", FUNCTION, primaryKey, params);
+    async form(primaryKey: string, params: DefinitionFormParams) {
+      return present.form(await form("function-form", "/function/form", FUNCTION, primaryKey, params));
     },
-    createForm(params: DefinitionFormParams): Promise<PanelFormDescription> {
-      return form("function-form", "/function/form", FUNCTION, null, params);
+    async createForm(params: DefinitionFormParams) {
+      return present.createForm(await form("function-form", "/function/form", FUNCTION, null, params));
     },
   };
 }
