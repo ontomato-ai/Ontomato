@@ -416,6 +416,17 @@ test("owner rows may give a status tone and a field's values as tags", async () 
   assert.equal(panelRecordSchema.safeParse({ ...row, tags: { knowledgeTags: "Business" } }).success, false);
 });
 
+test("owner rows may give a field's value a display text without changing the value", async () => {
+  const { panelRecordSchema } = await import("./panel-projection");
+  const row = { primaryKey: "k-1", label: "Order", fields: { status: "APPROVED", amount: "12.5" } };
+  const labelled = { ...row, valueLabels: { status: "Approved", amount: "Twelve fifty" } };
+  assert.deepEqual(panelRecordSchema.parse(labelled), labelled);
+  // The stored value stays as it is, so a labelled record still reads back the same value.
+  assert.equal(panelRecordSchema.parse(labelled).fields.status, "APPROVED");
+  assert.equal(panelRecordSchema.safeParse({ ...row, valueLabels: { status: "" } }).success, false);
+  assert.equal(panelRecordSchema.safeParse({ ...row, valueLabels: { status: { APPROVED: "Approved" } } }).success, false);
+});
+
 test("panel records carry optional className and strongly typed field values", async () => {
   const { panelRecordFieldValueSchema, panelRecordSchema } = await import("./panel-projection");
   const record = {

@@ -667,6 +667,12 @@ export const panelRecordSchema = z.object({
   tones: z.record(panelFieldToneSchema).optional(),
   /** A field's values as separate tags, by field name. */
   tags: z.record(z.array(z.string())).optional(),
+  /**
+   * The display text an owner gives a field's value, by field name (`{"status": "Approved"}`), shaped like `tones`:
+   * one value per field in a record. Presentation only — filtering, sorting, forms and the operations that read the
+   * record all use the value in `fields`.
+   */
+  valueLabels: z.record(z.string().min(1)).optional(),
   /** Display field keys (including label and subtitle). Omit this property when nothing matched. */
   highlights: z.record(z.array(panelTextHighlightRangeSchema).min(1))
     .refine(fields => Object.keys(fields).length > 0, "Omit highlights when there are no matches").optional(),
