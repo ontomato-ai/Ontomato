@@ -100,7 +100,6 @@
         "config": {
           "tone": "danger",
           "toneField": "error",
-          "titleKey": "errorTitle",
           "field": "error",
           "hideWhenEmpty": true,
           "compact": true
@@ -124,7 +123,7 @@
         },
         "config": {
           "field": "startedAt",
-          "kind": "time",
+          "kind": "datetime",
           "emptyText": "—"
         },
         "name": "Run start timestamp",
@@ -146,7 +145,7 @@
         },
         "config": {
           "field": "finishedAt",
-          "kind": "time",
+          "kind": "datetime",
           "emptyText": "—"
         },
         "name": "Run finish timestamp",
