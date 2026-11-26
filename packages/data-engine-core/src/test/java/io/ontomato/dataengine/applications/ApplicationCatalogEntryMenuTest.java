@@ -10,7 +10,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.service.ProductPrincipalLookup;
+import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
 import io.ontomato.dataengine.service.QueryAccessService;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +22,7 @@ class ApplicationCatalogEntryMenuTest {
     @Test void singleEntryCountsRegisteredNamesBeforeFilteringForTheReader() {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.entries((actor, key) -> !key.equals("multi/second"));
-        var grants = mock(ProductPrincipalLookup.class);
+        var grants = mock(IdentityPrincipalDirectory.class);
         var user = new QueryAccessService.GrantUser("reader", "domain-a");
         var first = use("first", Map.of("en", "First"));
         var second = use("second", Map.of("en", "Second"));
@@ -58,7 +58,7 @@ class ApplicationCatalogEntryMenuTest {
     @Test void entryMenuIncludesFrameConversationWithoutAffectingGroupsOrSingleEntry() {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.allowEntries();
-        var grants = mock(ProductPrincipalLookup.class);
+        var grants = mock(IdentityPrincipalDirectory.class);
         var user = new QueryAccessService.GrantUser("reader", "domain-a");
         var conversation = new ApplicationPanelUse("ops-diagnosis", "ops-diagnosis", null, "/ops/diagnosis", null, null, null, null, null, null,
             ApplicationPanelUse.FRAME_CONVERSATION_KIND, null);
@@ -94,7 +94,7 @@ class ApplicationCatalogEntryMenuTest {
     @Test void mixedNativeApplicationKeepsItsDeclaredHomeBesideStructuredEntries() {
         var authorization = EntryAuthorizationFixture.entries((actor, key) ->
             key.equals("agents/agents") == actor.userId().equals("chat-reader"));
-        var grants = mock(ProductPrincipalLookup.class);
+        var grants = mock(IdentityPrincipalDirectory.class);
         var settings = new ApplicationPanelUse("agents-agent-settings", "agents-agent-settings",
             "builtin-product-agent-settings", "/agents/settings", null, Map.of("en", "Settings"));
         var agents = app("agents", List.of(settings));

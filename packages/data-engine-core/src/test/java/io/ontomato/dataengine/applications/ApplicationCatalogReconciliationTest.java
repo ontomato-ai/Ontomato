@@ -13,7 +13,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.sun.net.httpserver.HttpServer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.IdentityService;
-import io.ontomato.dataengine.service.ProductPrincipalLookup;
+import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
@@ -48,7 +48,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private MockMvc http;
     private ApplicationAccess access;
     private IdentityService identity;
-    private ProductPrincipalLookup grants;
+    private IdentityPrincipalDirectory grants;
     private PanelResources panels;
 
     @BeforeEach void setup() {
@@ -58,7 +58,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         identity = mock(IdentityService.class);
         when(identity.workbenchSubjectId(any())).thenAnswer(call ->
             call.getArgument(0, io.ontomato.dataengine.core.bean.User.class).getId());
-        grants = mock(ProductPrincipalLookup.class);
+        grants = mock(IdentityPrincipalDirectory.class);
 
 
         panels = mock(PanelResources.class);

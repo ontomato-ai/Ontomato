@@ -183,7 +183,6 @@
                                 <include>**/AgentWritePostgresContractTest.java</include>
                                 <include>**/BuildTestPostgresIntegrationTest.java</include>
                                 <include>**/BuildTestEndpointBoundaryTest.java</include>
-                                <include>**/ProductGrantControllerTest.java</include>
                                 <include>**/InternalDomainControllerTest.java</include>
                                 <include>**/BuildTestAccessEnterpriseTest.java</include>
                                 <include>**/PostgreWriteWhereTest.java</include>
