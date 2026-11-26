@@ -5,7 +5,6 @@ import {workbenchApplications} from "../builtins";
 it("wires the dashboards application to its builtin panel and keeps the headless CLI skill public",async()=>{
   const app=workbenchApplications.find(entry=>entry.id==="dashboards");
   expect(app?.framePanelId).toBe("builtin-product-platform-frame");
-  expect(app?.declaration.pageSkills).toBeUndefined();
   expect(app?.declaration.panelUses).toEqual([expect.objectContaining({
     id:"dashboards-main",
     pageKey:"dashboards",

@@ -20,7 +20,6 @@ import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { installContentLayout } from "../../content/layout";
-import { registerSkillProvider } from "../../core/skills/providers";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
@@ -282,24 +281,7 @@ beforeAll(async () => {
   );
   await writeFile(path.join(domainSkillDir, "scripts", "main.mjs"), "export const ok = true;\n");
 
-  registerSkillProvider({
-    id: "provider-m7",
-    name: "M7 Provider",
-    async list(context) {
-      return [
-        {
-          skill: { namespace: { kind: "domain", domainId: context.domainId }, name: "provider-m7-skill" },
-          manifest: { name: "provider-m7-skill", description: "Provider managed skill" },
-          async provide() {
-            return {
-              skill: { namespace: { kind: "domain" as const, domainId: context.domainId }, name: "provider-m7-skill" },
-              files: [{ path: "SKILL.md", content: "---\nname: provider-m7-skill\ndescription: Provider managed skill\n---\n" }],
-            };
-          },
-        },
-      ];
-    },
-  });
+
 
   // Seed PG feedback rows and referencing agents.
   const regularAgentId = randomUUID();
@@ -384,9 +366,6 @@ beforeAll(async () => {
         use: { id: "owners", pageKey: "owners", path: "/owners", panelId },
       },
     });
-  });
-  app.get("/platform/page-skills", (_req, res) => {
-    res.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
   });
   app.get("/v1/runs/:runId", (req, res) => {
     const runId = req.params.runId;
@@ -593,7 +572,7 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   const skillPage = await read("skillList", "rows", { size: 2 });
   expect(skillPage).toMatchObject({
     status: "ready",
-    value: { nextCursor: "2", total: 3 },
+    value: { total: 2 },
   });
   expect(skillPage.value.rows).toHaveLength(2);
 
@@ -605,18 +584,6 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
       fields: {
         source: "Platform",
         writeRestriction: "Built-in skills come with the product and cannot be deleted",
-      },
-    },
-  });
-
-  const providerSkillRef = { className: SKILL, primaryKey: "provider-m7-skill" };
-  expect(await read("skillDetail", "record", { skill: providerSkillRef })).toMatchObject({
-    status: "ready",
-    value: {
-      primaryKey: "provider-m7-skill",
-      fields: {
-        source: "M7 Provider",
-        writeRestriction: "Provided by M7 Provider and cannot be deleted here",
       },
     },
   });
@@ -725,21 +692,6 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
       kind: "refusal",
       code: "PUBLIC_SKILL_READ_ONLY",
       message: "内置技能随产品提供，不能删除",
-    },
-  });
-
-  const providerIntent = await (await request("POST", "panel-operations/intents", {
-    applicationId: "app-m7",
-    useId: "owners",
-    operationId: "skillDetail.delete",
-    call: { target: { kind: "object", objectType: SKILL, primaryKey: "provider-m7-skill" }, input: {} },
-  }, "zh-CN")).json();
-  expect(await (await request("POST", `panel-operations/intents/${providerIntent.intentId}/dispatch`, {}, "zh-CN")).json()).toMatchObject({
-    kind: "dispatched",
-    outcome: {
-      kind: "refusal",
-      code: "SKILL_PROVIDER_READ_ONLY",
-      message: "由 M7 Provider 提供，不能在这里删除",
     },
   });
 

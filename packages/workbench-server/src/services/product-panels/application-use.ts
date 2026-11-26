@@ -44,7 +44,7 @@ export async function requirePanelEntry(
   ).catch(error => {
     if ("applicationId" in ref && error instanceof HttpError && error.status === 404)
       throw new HttpError(404, "No registered panel entrance matches the supplied applicationId and useId. "
-        + "Use the applicationId and useId listed under Available entrances in the panel skill.", error.code);
+        + "Use the applicationId and useId listed under Available entrances in the generated page description.", error.code);
     if (error instanceof HttpError && error.status === 403)
       throw new HttpError(403, "The initiating user does not have access to this panel entrance.", error.code);
     throw error;

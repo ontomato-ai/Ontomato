@@ -17,7 +17,6 @@ vi.mock("../../../infrastructure/postgres", () => ({
 }));
 vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: mocks.transaction }));
 vi.mock("../../../infrastructure/product-current", () => ({ findCurrentProduct: async () => null }));
-vi.mock("../../product-panels/skill-provider", () => ({ readPanelSkillSources: vi.fn() }));
 vi.mock("../../../utils/backend-client", () => ({ backendGet: mocks.get, backendPost: mocks.post }));
 
 import { initializeDomainPresetAgents, initializeExistingDomainPresetAgents } from "../preset-initialization";
@@ -59,10 +58,10 @@ it("publishes only newly inserted presets and never restores withdrawn access on
 
   await initializeExistingDomainPresetAgents();
   const ids = [...domains.get("pending")!.values()].filter(id => id !== "legacy-id");
-  expect(ids).toHaveLength(7);
+  expect(ids).toHaveLength(4);
   expect(mocks.post.mock.calls[1][2]).toEqual({ domainId: "pending", ids });
   const upgradeIds = [...domains.get("already-published")!.values()].filter(id => id !== "withdrawn-id");
-  expect(upgradeIds).toHaveLength(7);
+  expect(upgradeIds).toHaveLength(4);
   expect(mocks.post.mock.calls[2][2]).toEqual({ domainId: "already-published", ids: upgradeIds });
   const revoked = ids[0];
   expect(granted.has(revoked)).toBe(true);
@@ -74,9 +73,9 @@ it("publishes only newly inserted presets and never restores withdrawn access on
   expect(granted.has("withdrawn-id")).toBe(false);
 
   // A preset's place in agent lists comes from the definition, so a domain initialized earlier is brought back in line.
-  const places = orderWrites.filter(row => row.domainId === "pending").slice(0, 8);
+  const places = orderWrites.filter(row => row.domainId === "pending").slice(0, 5);
   expect(places.map(row => row.kind)).toEqual([
-    "regular", "analysis", "knowledge-governance", "modeling", "product-layer", "admin", "app-builder", "ops-diagnosis",
+    "regular", "analysis", "knowledge-governance", "app-builder", "ops-diagnosis",
   ]);
-  expect(places.map(row => row.order)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  expect(places.map(row => row.order)).toEqual([0, 1, 2, 3, 4]);
 });

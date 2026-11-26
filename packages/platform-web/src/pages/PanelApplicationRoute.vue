@@ -19,7 +19,7 @@ import { applicationFrameContextOf, isApplicationPanelUse, isFrameConversationEn
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, pagePaneElementKey, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import { APPLICATION, FAVORITE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { HOME_PREFERENCES_CHANGED, readHomePanel, saveHomePanel } from "../features/home/api";
 import { panelHasInlineConversationEntry, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
@@ -79,7 +79,7 @@ const emit = defineEmits<{
   "objects-changed": [change: PanelObjectChange];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
-  /** Which page skill a message written beside the shown page reaches, as Node answered it with the page's panel. */
+  /** Current placement a message written beside the shown page carries, as resolved with the page's entry. */
   "display-skill": [context: PageSkillContext | null];
 }>();
 
@@ -216,7 +216,7 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
-  /** The latest page skill answer. Undefined means the first read is pending. */
+  /** The latest current-page placement. Undefined means the first read is pending. */
   pageSkill: PageSkillContext | null | undefined;
   /** Shown again and not yet through its checks: what it reaches is passed on only once they have confirmed it. */
   rechecking: boolean;
@@ -625,9 +625,9 @@ const labels = computed<PanelHostLabels>(() => ({
  * conversation's own composer serves instead. Its configuration error is shown where it would be.
  */
 const composerProblem = ref<string | null>(null);
-/** The page skill a message written on the shown page reaches, once its read or its checks have said which. */
+/** The current placement a message written on the shown page carries, once its read or checks have confirmed it. */
 const shownSkill = shallowRef<PageSkillContext | null>(null);
-/** The shown page's skill is known: a message beside it, and the page's own composer, reach it. */
+/** The shown page's placement is known: a message beside it, and the page's own composer, carry it. */
 function passSkill(context: PageSkillContext | null) {
   shownSkill.value = context;
   emit("display-skill", context);
@@ -816,7 +816,7 @@ watch(use, (next, previous) => {
     if (!page.surfaceReady) ensureTransitionTimer();
   }
 
-  // A kept page shown again is checked again, and its page skill with it; a new page tells it once its panel is read.
+  // A kept page shown again is checked again, and its current placement with it; a new page tells it once its panel is read.
   if (found) found.rechecking = true;
   page.pageSkill = currentResolution.value?.pageSkillContext ?? null;
   // Its bare address opens a kept page as it was left: the address takes the state the page is at.
@@ -847,7 +847,7 @@ if (!props.navigate)
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
-  // Its checks are through: the page skill they confirmed is the one a message beside it reaches now.
+  // Its checks are through: the placement they confirmed is what a message beside it carries now.
   page.rechecking = false;
   if (page.pageSkill !== undefined) passSkill(page.pageSkill);
   if (page === shownPage.value) reportLoad(page, page.load);

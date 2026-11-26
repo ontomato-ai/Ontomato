@@ -205,7 +205,7 @@ it("adds the governance callback only when a governance skill is loaded", async 
   await assertNarrowedCallbacks(run.businessCallbacks!);
 });
 
-it("declares workbench, ontology and authoring callbacks for app-builder runs without credentials in environment", async () => {
+it("declares workbench, ontology, authoring and panel callbacks for app-builder runs without credentials in environment", async () => {
   const prep = basePreparation(null);
   prep.a.kind = "app-builder";
   const run = runtimeStartRunRequestSchema.parse(await prepareAppBuilderRun(prep));
@@ -216,6 +216,7 @@ it("declares workbench, ontology and authoring callbacks for app-builder runs wi
   expect(Object.keys(run.businessCallbacks ?? {}).sort()).toEqual([
     "authoring",
     "ontology",
+    "panelOperations",
     "workbench",
   ]);
   await assertNarrowedCallbacks(run.businessCallbacks!);

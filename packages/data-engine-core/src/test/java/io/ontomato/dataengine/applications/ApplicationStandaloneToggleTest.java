@@ -163,7 +163,6 @@ class ApplicationStandaloneToggleTest {
             "kind", "native",
             "entry", JSONObject.of("path", "/settings", "renderer", "settings"),
             "entryAccess", List.of("system-config"),
-            "pageSkills", List.of(),
             "panelUses", List.of(),
             "groups", List.of(),
             "panelSettings", new JSONObject(),
@@ -177,7 +176,7 @@ class ApplicationStandaloneToggleTest {
             argThat((String sql) -> sql.contains("ON CONFLICT(id) DO UPDATE SET") && sql.contains("allow_standalone=excluded.allow_standalone")),
             eq("settings"), isNull(), eq("data-engine"), isNull(), eq("native"),
             any(), any(), eq("settings"), eq("bottom"), eq("admin"), eq(20),
-            any(), isNull(), isNull(), any(), eq("/settings"), any(), any(), any(), eq(false));
+            any(), isNull(), isNull(), any(), eq("/settings"), any(), any(), eq(false));
     }
 
     @Test

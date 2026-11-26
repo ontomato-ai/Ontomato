@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import AgentShell from "../components/AgentShell.vue";
 import { testDisplay } from "./display";
 import { useAgentNav } from "../useAgentNav";
@@ -35,9 +35,13 @@ const every = [
   { id: analyst, name: "Analyst", description: "", icon: null, enabled: true },
   { id: governance, name: "Knowledge governance", description: "", icon: null, enabled: true },
 ];
+const pageContext = (applicationId: string, entryKey: string, pageKey: string, memberPath: PageSkillContext["memberPath"] = []): PageSkillContext => ({
+  applicationId, entryKey, pageKey, useId: entryKey, panelId: `panel-${entryKey}`,
+  path: `/applications/${applicationId}/${entryKey}`, memberPath,
+});
 const board: ShellFeatureDeclaration = {
   id: "dashboards", label: "Dashboards", icon: "dashboard", availability: "page", listed: false, withConversation: true,
-  pageSkill: { mode: "public", locator: { pageKey: "dashboard", applicationId: "dashboards", entryKey: "dashboards-main" } },
+  pageSkill: pageContext("dashboards", "dashboards-main", "dashboard"),
 };
 const panel: ShellFeatureDeclaration = {
   id: "panel-application", label: "Panel", icon: "dashboard", availability: "page", listed: false, withConversation: true,
@@ -105,9 +109,9 @@ function render(options: { page: string | null; agentPicker?: boolean; title?: s
 }
 
 /** What the column's head shows, and the agents its chooser lists when opened. */
-/** The page skill member a candidates request carried, decoded from its single parameter. */
-function memberOf(url: string): unknown {
-  return JSON.parse(new URL(url, "http://host.test").searchParams.get("member") ?? "null");
+/** The entrance query a candidates request carried. */
+function queryOf(url: string): Record<string, string> {
+  return Object.fromEntries(new URL(url, "http://host.test").searchParams);
 }
 
 async function head(root: HTMLElement) {
@@ -203,34 +207,21 @@ it("keeps the conversation's own composer when only the conversation is open", a
   expect(root.querySelector(".shell-main .composer.floating")).toBeNull();
 });
 
-it("narrows candidates from display-skill, re-queries on member switch, skips requests for member: null, and clears on close or instance switch", async () => {
+it("narrows candidates from display-skill, re-queries on entry switch, widens when the report clears, and clears on close or instance switch", async () => {
   const requests: string[] = [];
-  const homeSkill: PageSkillContext = {
-    mode: "member",
-    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-    member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
-  };
-  const drawerSkill: PageSkillContext = {
-    mode: "member",
-    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-    member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-drawer-panel" } },
-  };
-  const nullSkill: PageSkillContext = {
-    mode: "member",
-    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-    member: null,
-  };
+  const homeSkill = pageContext("home", "home", "home");
+  const drawerSkill = pageContext("home", "drawer", "drawer", [{ member: "detail", itemKey: { className: "Order", primaryKey: "1" } }]);
   const request = vi.fn(async (path: string) => {
     requests.push(path);
     const url = new URL(path, "http://host.test");
     if (url.pathname.endsWith("/sessions")) {
       return new Response(JSON.stringify({ sessions: [], nextCursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    const memberKey = (JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null)?.ref.name ?? null;
-    if (memberKey === "pvt-home-panel") {
+    const entryKey = url.searchParams.get("entryKey");
+    if (entryKey === "home") {
       return new Response(JSON.stringify({ agents: [every[0]], defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    if (memberKey === "pvt-drawer-panel") {
+    if (entryKey === "drawer") {
       return new Response(JSON.stringify({ agents: [every[2]], defaultAgentId: governance }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.searchParams.get("pageKey") === "dashboard") {
@@ -280,8 +271,7 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   await settle();
   expect((await head(root)).listed).toEqual(["Assistant"]);
   expect(agentId.value).toBe(assistant);
-  // The candidates request carries the member exactly as the shown page's snapshot named it: source, path and ref.
-  expect(requests.map(memberOf)).toContainEqual(homeSkill.mode === "member" ? homeSkill.member : null);
+  expect(requests.map(queryOf)).toContainEqual({ applicationId: "home", entryKey: "home", pageKey: "home" });
   expect(leftConversation).not.toHaveBeenCalled();
 
   // Switching to an object drawer re-emits display-skill with the drawer member and re-queries.
@@ -289,16 +279,15 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   await settle();
   expect((await head(root)).listed).toEqual(["Knowledge governance"]);
   expect(agentId.value).toBe(governance);
-  expect(requests.map(memberOf)).toContainEqual(drawerSkill.mode === "member" ? drawerSkill.member : null);
+  expect(requests.map(queryOf)).toContainEqual({ applicationId: "home", entryKey: "drawer", pageKey: "drawer" });
   expect(leftConversation).not.toHaveBeenCalled();
 
-  // Reporting member: null sends no /agents request, clears candidates, and keeps the panel open.
-  const agentRequestsBeforeNull = requests.filter((url) => url.includes("/agents")).length;
-  display.skill(nullSkill);
+  // Clearing the panel's report leaves no current page declaration, so the chooser widens to every agent
+  // without moving the conversation's already selected agent.
+  display.skill(null);
   await settle();
-  expect(requests.filter((url) => url.includes("/agents")).length).toBe(agentRequestsBeforeNull);
-  expect((await head(root)).listed).toEqual([]);
-  expect(agentId.value).toBeNull();
+  expect((await head(root)).listed).toEqual(["Assistant", "Analyst", "Knowledge governance"]);
+  expect(agentId.value).toBe(governance);
   expect(display.page.value?.address).toBe("/applications/app/home");
   expect(leftConversation).not.toHaveBeenCalled();
 
@@ -321,16 +310,8 @@ it("keeps an active conversation on its own agent when new page candidates exclu
   const existingSessionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   const runId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
   const sentBodies: { path: string; message: string; pageSkillContext?: PageSkillContext }[] = [];
-  const homeSkill: PageSkillContext = {
-    mode: "member",
-    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-    member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
-  };
-  const drawerSkill: PageSkillContext = {
-    mode: "member",
-    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-    member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-drawer-panel" } },
-  };
+  const homeSkill = pageContext("home", "home", "home");
+  const drawerSkill = pageContext("home", "drawer", "drawer", [{ member: "detail", itemKey: { className: "Order", primaryKey: "1" } }]);
   const session = {
     id: existingSessionId,
     agentId: assistant,
@@ -397,11 +378,11 @@ it("keeps an active conversation on its own agent when new page candidates exclu
     if (url.pathname.endsWith("/sessions")) {
       return new Response(JSON.stringify({ sessions: [session], nextCursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    const memberKey = (JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null)?.ref.name ?? null;
-    if (memberKey === "pvt-home-panel") {
+    const entryKey = url.searchParams.get("entryKey");
+    if (entryKey === "home") {
       return new Response(JSON.stringify({ agents: [every[0]], defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    if (memberKey === "pvt-drawer-panel") {
+    if (entryKey === "drawer") {
       return new Response(JSON.stringify({ agents: [every[2]], defaultAgentId: governance }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.searchParams.get("pageKey") === "dashboard") {
@@ -540,15 +521,7 @@ it("keeps an active conversation on its own agent when new page candidates exclu
  */
 it("fills a panel's entry into this conversation, or starts one with the agent it names, keeping the page beside it", async () => {
   const existingSessionId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
-  const drawerSkill: PageSkillContext = {
-    mode: "member",
-    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-    member: {
-      source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } },
-      memberPath: [],
-      ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-drawer-panel" },
-    },
-  };
+  const drawerSkill = pageContext("home", "drawer", "drawer", [{ member: "detail", itemKey: { className: "Order", primaryKey: "1" } }]);
   const session = {
     id: existingSessionId, agentId: assistant, title: "Existing chat", origin: "user",
     createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), latestRun: null,
@@ -559,8 +532,7 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
     if (url.pathname.endsWith("/history"))
       return json({ session, messages: [], runs: [], latestRun: null, pendingQuestions: [], page: { messageSeq: 0, olderCursor: null } });
     if (url.pathname.endsWith("/sessions")) return json({ sessions: [session], nextCursor: null });
-    const member = JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null;
-    if (member?.ref.name === "pvt-drawer-panel")
+    if (url.searchParams.get("entryKey") === "drawer")
       return json({ agents: [every[0]!, every[2]!], defaultAgentId: governance, presetAgentIds: { regular: assistant, "knowledge-governance": governance } });
     return json({ agents: every });
   });

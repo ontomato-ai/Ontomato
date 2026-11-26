@@ -36,7 +36,7 @@ it('keeps the initiator identity for caller ownership and native skills in self 
  });
  expect(JSON.stringify(run)).not.toContain('human-secret');
 });
-it('uses executor business credentials while page skills and caller ownership stay with the initiator',async()=>{
+it('uses executor business credentials while page control and caller ownership stay with the initiator',async()=>{
  const input=request('executor');const run=await prepareAnalystRun(input);
  expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials,undefined,input.owner.userId);
  expect(mocks.overview).toHaveBeenCalledWith(input.a,expect.objectContaining({apiKey:'executor-key',headers:{'X-Ontomato-Retrieval-Caller-Id':'run'}}));
@@ -72,10 +72,18 @@ it.each(['regular','analysis'])('prepares the default %s with reusable chart pro
  expect(run.definition.systemPrompt).toContain('Do not hand-write ECharts options');
  expect(run.definition.systemPrompt).not.toContain('containing an ECharts option object as plain JSON');
 });
+it('withholds page tools and panel callbacks when the assistant does not carry the page operator',async()=>{
+ const input=request();input.a.kind='analysis';input.a.skills=[analyst];
+ mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:false});
+ const run=await prepareAnalystRun(input);
+ expect(run.definition.skills).toEqual([{skill:analyst,digest}]);
+ expect(run.definition.systemPrompt).not.toContain('ontomato-page-operator');
+ expect(run.businessCallbacks).not.toHaveProperty('panelOperations');
+});
 it('tells a run for the user that the page line only locates, so attributes are read rather than guessed',async()=>{
  const user=await prepareAnalystRun({...request(),reader:'user'});
  expect(user.definition.systemPrompt).toContain('that line only locates');
- expect(user.definition.systemPrompt).toContain("read its current value with the page skill's reads");
+ expect(user.definition.systemPrompt).toContain("read its current value with the current page's admitted panel reads");
  // A delegated run is not read by the user and has no page beside it.
  const delegated=await prepareAnalystRun({...request(),reader:'delegated'});
  expect(delegated.definition.systemPrompt).not.toContain('that line only locates');

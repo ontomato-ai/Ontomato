@@ -3,9 +3,12 @@ import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { APP_BUILDER, APP_BUILDER_KIND } from "../app-builder/definition";
 import { OPS_DIAGNOSIS, OPS_DIAGNOSIS_KIND } from "../ops-diagnosis/definition";
 import { GOVERNANCE_KIND, GOVERNANCE_SKILLS } from "./governance-definition";
+import { PAGE_OPERATOR_SKILL } from "./page-operator";
 
-/** Reports and charts only: asking the data is the assistant's job, and a preset here may be given the query skill by its owner. */
-const reportSkills = (): RuntimeSkillRef[] => defaultAssistantSkills.filter(skill => skill.name !== "ontomato-analyst-assistant");
+const withPageOperator = (skills: readonly RuntimeSkillRef[]): RuntimeSkillRef[] => [
+  ...skills.filter(skill => skill.name !== PAGE_OPERATOR_SKILL.name),
+  PAGE_OPERATOR_SKILL,
+];
 
 export const presetAgentDefinitions = {
   regular: {
@@ -18,31 +21,13 @@ export const presetAgentDefinitions = {
     kind: "analysis",
     name: "Analyst",
     description: "Investigate questions and produce reports",
-    skills: defaultAssistantSkills,
+    skills: defaultAssistantSkills.filter(skill => skill.name !== PAGE_OPERATOR_SKILL.name),
   },
   [GOVERNANCE_KIND]: {
     kind: GOVERNANCE_KIND,
     name: "Knowledge governance",
     description: "Review business knowledge with traceable evidence",
-    skills: GOVERNANCE_SKILLS,
-  },
-  modeling: {
-    kind: "modeling",
-    name: "Modelling assistant",
-    description: "Build and maintain what this domain is made of",
-    skills: reportSkills(),
-  },
-  "product-layer": {
-    kind: "product-layer",
-    name: "Product layer assistant",
-    description: "Components, projections, panels, applications and agent definitions",
-    skills: reportSkills(),
-  },
-  admin: {
-    kind: "admin",
-    name: "Admin assistant",
-    description: "Members, roles, permission policies, settings and task triggers",
-    skills: reportSkills(),
+    skills: withPageOperator(GOVERNANCE_SKILLS),
   },
 } as const;
 
@@ -65,11 +50,8 @@ export const presetAgents: readonly PresetAgent[] = [
   presetAgentDefinitions.regular,
   presetAgentDefinitions.analysis,
   presetAgentDefinitions[GOVERNANCE_KIND],
-  presetAgentDefinitions.modeling,
-  presetAgentDefinitions["product-layer"],
-  presetAgentDefinitions.admin,
-  { ...APP_BUILDER, kind: APP_BUILDER_KIND },
-  { ...OPS_DIAGNOSIS, kind: OPS_DIAGNOSIS_KIND },
+  { ...APP_BUILDER, kind: APP_BUILDER_KIND, skills: withPageOperator(APP_BUILDER.skills) },
+  { ...OPS_DIAGNOSIS, kind: OPS_DIAGNOSIS_KIND, skills: withPageOperator(OPS_DIAGNOSIS.skills) },
 ];
 
 /** A preset's place in the list above, or undefined for a user-built agent. */

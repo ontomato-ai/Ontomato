@@ -16,7 +16,7 @@ import type {
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { randomId } from "@ontomato/contracts/random-id";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { presentationAppliesAddress } from "@ontomato/contracts/panel-host";
 import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
@@ -179,7 +179,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   });
   /** What the shown page instance reported about itself; another instance starts without. */
   const reported = shallowRef<PageContext | null>(null);
-  /** The page skill context reported by the shown page instance; cleared on instance change, close, or redirect. */
+  /** The current page placement reported by the shown page instance; cleared on instance change, close, or redirect. */
   const reportedSkill = shallowRef<PageSkillContext | null>(null);
   const load = shallowRef<DisplayLoad>(READY);
   const objectRefresh = shallowRef<DisplayObjectRefresh | null>(null);

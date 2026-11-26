@@ -10,10 +10,11 @@ import { runDefinition } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { agentVisibilityPrompt } from "../agent-host/visibility";
 import { callbackCredential } from "../agent-runtime/callback-credential";
-import { publishSkill } from "../agent-runtime/skills";
+import { publishSkill, workbenchBuiltinSkillRoot } from "../agent-runtime/skills";
 import type { AssistantPreparation } from "../assistant/prepare";
-import { prepareCurrentPageSkill } from "../assistant/skills";
+import { validateCurrentPageContext } from "../assistant/skills";
 import { OPS_DIAGNOSIS_SKILL } from "./definition";
+import { PAGE_OPERATOR_SKILL } from "../assistant/page-operator";
 
 /**
  * Prepares an operations diagnosis turn on the unified `assistant_sessions` host.
@@ -39,21 +40,19 @@ export async function prepareOpsDiagnosisRun({
   const [published, pagePrepared] = await Promise.all([
     Promise.all([
       publishSkill(path.join(workbenchServerResourceRoot, "resources/runtime-skills/ops-diagnosis"), OPS_DIAGNOSIS_SKILL),
+      publishSkill(workbenchBuiltinSkillRoot(PAGE_OPERATOR_SKILL), PAGE_OPERATOR_SKILL),
       ...chartSources.map(({ root, ref }) => publishSkill(root, ref)),
     ]),
-    pageSkillContext ? prepareCurrentPageSkill(owner.domainId, credentials, pageSkillContext, owner.userId) : Promise.resolve(null),
+    pageSkillContext ? validateCurrentPageContext(owner.domainId, credentials, pageSkillContext, owner.userId) : Promise.resolve(null),
   ]);
-  const skills = [
-    ...published.map(({ skill, digest }) => ({ skill, digest })),
-    ...(pagePrepared ? [pagePrepared.skill] : []),
-  ];
-  const pageControl = pagePrepared !== null;
+  const skills = published.map(({ skill, digest }) => ({ skill, digest }));
+  const pageControl = true;
   const instructions = [
     renderPrompt("diagnosis-agent.main.system", {}, language),
     ARTIFACT_MARKDOWN_PROMPT,
     ...(reader ? [agentVisibilityPrompt(reader)] : []),
-    ...(pagePrepared?.currentPage
-      ? [`Current panel placement for this turn (data):\n${JSON.stringify(pagePrepared.currentPage)}`]
+    ...(pagePrepared
+      ? [`Current panel placement for this turn (data):\n${JSON.stringify(pagePrepared)}`]
       : []),
   ].join("\n\n");
   const definition = runDefinition(

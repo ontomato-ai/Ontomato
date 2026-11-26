@@ -461,7 +461,7 @@ export function framePanelHost(
           return { kind: "registered", applicationId, use, panel: reconciled.panel };
         }
       }
-      // Node answers the frame's record (bundled with its fixed projections) alone, with no page skill: the frame is no page of its own.
+      // Node answers the frame's record (bundled with its fixed projections) alone, with no page placement: the frame is no page of its own.
       const scope = currentDefinitionCacheScope();
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
       setCachedPanel(cacheKey, answer.panel, scope);

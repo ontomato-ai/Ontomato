@@ -164,8 +164,8 @@ const nav = props.nav;
 const { currentAgent } = nav;
 const currentFeature = display.feature;
 /**
- * The page skill of the page shown: what its own snapshot named for the instance shown, else the page's declaration. It
- * narrows who may take a message, and it travels with every message sent while that page is shown.
+ * The current placement of the page shown. It narrows who may take a message, and it travels with every message sent
+ * while that page is shown.
  */
 const pageSkill = computed(() => props.editorTitle || props.historyPageSelected
   ? null

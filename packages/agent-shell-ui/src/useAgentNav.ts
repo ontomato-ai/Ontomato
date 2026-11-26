@@ -1,6 +1,6 @@
 import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import type { AgentHostClient, PageAgents } from "./host";
 
 export interface AgentNavOptions {

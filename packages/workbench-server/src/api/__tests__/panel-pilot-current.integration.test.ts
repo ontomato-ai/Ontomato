@@ -303,11 +303,6 @@ beforeAll(async () => {
       },
     } });
   });
-  app.get("/platform/page-skills", (req, res) => {
-    expect(req.header("tk")).toBe("pilot-reader");
-    expect(req.header("Accept-Language")).toBe("zh-CN");
-    res.json({ success: true, data: { pageSkills: [], registeredSkills: [], admittedEntrances: [] } });
-  });
   app.get("/v1/mcp/services/names", (req, res) => {
     expect(req.header("authorization")).toBe("Bearer fixture-runtime");
     expect(req.header("x-domain-id")).toBe("pilot");

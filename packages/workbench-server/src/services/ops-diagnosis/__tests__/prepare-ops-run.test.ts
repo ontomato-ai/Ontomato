@@ -6,14 +6,14 @@ import type { AgentRow, SessionRow, TurnRow } from "../../assistant/store";
 const mocks = vi.hoisted(() => ({
   publicSkills: vi.fn(),
   publishSkill: vi.fn(),
-  prepareCurrentPageSkill: vi.fn(),
+  validateCurrentPageContext: vi.fn(),
 }));
 
 vi.mock("../../../core/skills/registry/manager", () => ({
   skillRegistryManager: { publicSkills: mocks.publicSkills },
 }));
-vi.mock("../../agent-runtime/skills", () => ({ publishSkill: mocks.publishSkill }));
-vi.mock("../../assistant/skills", () => ({ prepareCurrentPageSkill: mocks.prepareCurrentPageSkill }));
+vi.mock("../../agent-runtime/skills", () => ({ publishSkill: mocks.publishSkill, workbenchBuiltinSkillRoot: (skill: { name: string }) => `/builtin/${skill.name}` }));
+vi.mock("../../assistant/skills", () => ({ validateCurrentPageContext: mocks.validateCurrentPageContext }));
 vi.mock("../../../config/environment", () => ({
   environment: {
     agentRuntime: () => ({ token: "test-callback-secret", callbackUrl: "http://workbench.test" }),
@@ -84,7 +84,7 @@ beforeEach(() => {
     skill,
     digest: "a".repeat(64),
   }));
-  mocks.prepareCurrentPageSkill.mockResolvedValue(null);
+  mocks.validateCurrentPageContext.mockResolvedValue(null);
 });
 
 it("prepares a diagnosis run on assistant_sessions using the agent row model and narrowed evidence callback", async () => {
@@ -104,25 +104,18 @@ it("prepares a diagnosis run on assistant_sessions using the agent row model and
 
   expect(prepared.definition.agentId).toBe(agentId);
   expect(prepared.definition.modelId).toBe("diagnosis-model");
-  expect(prepared.definition.systemPrompt).not.toContain("Page operations:");
+  expect(prepared.definition.systemPrompt).toContain("Page operations:");
   expect(prepared).not.toHaveProperty("environment");
   expect(JSON.stringify(prepared)).not.toContain("secret-token");
-  expect(Object.keys(prepared.businessCallbacks ?? {})).toEqual(["workbench"]);
+  expect(Object.keys(prepared.businessCallbacks ?? {}).sort()).toEqual(["panelOperations", "workbench"]);
   expect(prepared.businessCallbacks?.workbench).toMatchObject({
     baseUrl: "http://workbench.test/api/observe/evidence",
     credential: expect.stringMatching(/^wbc2\./),
   });
 });
 
-it("attaches page skill, pageControl and panelOperations callback when invoked from an operations panel", async () => {
-  const panelSkill = {
-    skill: { namespace: { kind: "provider" as const, provider: "workbench" }, name: "protected-ops-turn" },
-    digest: "b".repeat(64),
-  };
-  mocks.prepareCurrentPageSkill.mockResolvedValue({
-    skill: panelSkill,
-    currentPage: { placement: { panelId: "builtin-product-ops-turn-evidence" } },
-  });
+it("validates and narrates the current placement when invoked from an operations panel", async () => {
+  mocks.validateCurrentPageContext.mockResolvedValue({ panelId: "builtin-product-ops-turn-evidence" });
 
   const prepared = runtimeStartRunRequestSchema.parse(await prepareOpsDiagnosisRun({
     a: agent,
@@ -137,13 +130,13 @@ it("attaches page skill, pageControl and panelOperations callback when invoked f
     executionUserId: null,
     executionCredentials: { token: "secret-token", locale: "en" },
     pageSkillContext: {
-      mode: "public",
-      locator: { applicationId: "operations", entryKey: "ops-turn-evidence", pageKey: "ops-turn-evidence" },
+      applicationId: "operations", entryKey: "ops-turn-evidence", pageKey: "ops-turn-evidence",
+      useId: "ops-turn-evidence", panelId: "builtin-product-ops-turn-evidence", path: "/operations/turn-evidence", memberPath: [],
     },
   }));
 
   expect(prepared.definition.systemPrompt).toContain("Page operations:");
-  expect(prepared.definition.skills).toContainEqual(panelSkill);
+  expect(prepared.definition.skills.map(({ skill }) => skill.name)).toContain("ontomato-page-operator");
   expect(prepared.definition.systemPrompt).toContain("builtin-product-ops-turn-evidence");
   expect(prepared.businessCallbacks?.panelOperations).toMatchObject({
     baseUrl: `http://workbench.test/api/assistant/executions/${runId}/panels`,

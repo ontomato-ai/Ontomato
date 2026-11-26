@@ -155,8 +155,6 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
         }
         return json(200, caller);
       }
-      if (req.method === "GET" && req.url === "/platform/page-skills")
-        return json(200, { success: true, data: { pageSkills: [], registeredSkills: [] } });
       if (req.method === "POST" && req.url === "/product-governance/register") {
         if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken)
           return json(403, { error: { code: "FORBIDDEN", message: "Platform service authorization required" } });

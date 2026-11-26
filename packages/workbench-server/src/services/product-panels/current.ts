@@ -23,7 +23,7 @@ import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
 import { resolveDefaultAgent } from "../assistant/default-agents";
-import { panelSkillRef } from "./skill-identity";
+import { PAGE_OPERATOR_SKILL } from "../assistant/page-operator";
 import { collectReferences, findPanelUsers, validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
 import { panelDefinition, projectionDefinition } from "./render-definitions";
@@ -357,9 +357,8 @@ async function validateApplicationReferences(client: PoolClient,
     const choice = resolveDefaultAgent(definitions, defaultAgent);
     if ("reason" in choice) throw unavailable(choice.reason);
 
-    const ref = panelSkillRef(domainId, use.panelId);
-    const key = runtimeSkillKey(ref);
-    if (!configuredAssistantSkills(choice.agent, [{ defaultAgent, skills: [ref] }]).some(skill => runtimeSkillKey(skill) === key))
+    const key = runtimeSkillKey(PAGE_OPERATOR_SKILL);
+    if (!configuredAssistantSkills(choice.agent).some(skill => runtimeSkillKey(skill) === key))
       throw unavailable("missingSkill");
   }
   for (const id of delivery.panels)

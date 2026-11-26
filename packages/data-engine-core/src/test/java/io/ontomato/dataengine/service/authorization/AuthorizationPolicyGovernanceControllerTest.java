@@ -114,7 +114,6 @@ class AuthorizationPolicyGovernanceControllerTest {
         when(catalog.entriesInDomain("domain")).thenCallRealMethod();
         var agents = JSONObject.of("id", "agents",
                 "entry", JSONObject.of("renderer", "agents", "entryKey", "agents", "home", "/agents/chat"),
-                "pageSkills", List.of(),
                 "panelUses", List.of(new ApplicationPanelUse("settings", "settings", "agent-settings",
                         "/agents/settings", null, Map.of("en", "Settings"))));
         when(catalog.all()).thenReturn(List.of(

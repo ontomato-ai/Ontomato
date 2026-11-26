@@ -269,7 +269,7 @@ describe("what an agent presents", () => {
     expect(host.stream.opened).toHaveLength(1);
     const view = host.stream.current().view!.id;
     expect(host.inputs.at(-1)).toMatchObject({ presentationBinding: { viewId: view } });
-    // No page is shown, so the run starts without a page skill context.
+    // No page is shown, so the run starts without a current page context.
     expect(host.inputs.at(-1)).not.toHaveProperty("pageSkillContext");
   });
 

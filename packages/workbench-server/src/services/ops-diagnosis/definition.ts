@@ -1,5 +1,6 @@
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { OPS_DIAGNOSIS_KIND } from "@ontomato/contracts/ops-diagnosis";
+import { PAGE_OPERATOR_SKILL } from "../assistant/page-operator";
 
 export { OPS_DIAGNOSIS_KIND };
 export function isOpsDiagnosisKind(kind: string) { return kind === OPS_DIAGNOSIS_KIND; }
@@ -11,5 +12,5 @@ export const OPS_DIAGNOSIS = {
   name: "Operations diagnosis",
   description: "Read evidence and diagnose faults",
   icon: "wrench",
-  skills: [OPS_DIAGNOSIS_SKILL],
+  skills: [OPS_DIAGNOSIS_SKILL, PAGE_OPERATOR_SKILL],
 };

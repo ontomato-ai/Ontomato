@@ -190,6 +190,41 @@ class ObjectAuthorizationControllerTest {
         verify(store).revokeObject(domainGrant);
     }
 
+    @Test
+    void skillEditorAccessUsesAgentCreateForDraftAndEditForAnExistingTarget() throws Exception {
+        when(subjects.objectEntitlement("user", new ObjectTarget("domain", Kind.AGENT, ""), Verb.CREATE)).thenReturn(true);
+        http.perform(rpc(SKILL_EDITOR_ACCESS, "{\"agentTarget\":\"draft\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(true));
+
+        http.perform(rpc(SKILL_EDITOR_ACCESS, """
+                {"agentTarget":"agent","target":%s,"ownerFacts":%s}
+                """.formatted(TARGET, AUTHOR)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(true));
+        http.perform(rpc(SKILL_EDITOR_ACCESS, """
+                {"agentTarget":"agent","target":%s,"ownerFacts":%s}
+                """.formatted(TARGET, OTHER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(false))
+                .andExpect(jsonPath("$.code").value("OBJECT_FORBIDDEN"));
+    }
+
+    @Test
+    void skillEditorAccessRejectsMismatchedOrMalformedTargetsBeforePermissionResolution() throws Exception {
+        http.perform(rpc(SKILL_EDITOR_ACCESS, "{\"agentTarget\":\"draft\",\"target\":%s}".formatted(TARGET)))
+                .andExpect(status().isBadRequest());
+        http.perform(rpc(SKILL_EDITOR_ACCESS, """
+                {"agentTarget":"other","target":%s,"ownerFacts":%s}
+                """.formatted(TARGET, AUTHOR)))
+                .andExpect(status().isBadRequest());
+        http.perform(rpc(SKILL_EDITOR_ACCESS, """
+                {"agentTarget":"agent","target":%s,"ownerFacts":%s}
+                """.formatted(TARGET.replace(":\"domain\"", ":\"foreign\""), AUTHOR)))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(subjects, store);
+    }
+
     private void roles(boolean manager) {
         when(subjects.resolveRoles("domain", "user")).thenReturn(
                 new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), manager));

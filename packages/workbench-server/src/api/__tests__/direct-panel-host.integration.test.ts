@@ -1,6 +1,7 @@
 import type { ObjectDecisionRequest } from "../../services/product-governance/authorization";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
+import { PAGE_OPERATOR_SKILL } from "../../services/assistant/page-operator";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -35,7 +36,6 @@ import {
   type ProductDefinitionRevision,
 } from "@ontomato/contracts/product-subscriptions";
 import scheduleExamples from "../../../../contracts/examples/platform-schedules.json";
-import { protectedSkillRef } from "../../core/skills/providers";
 import { installContentLayout } from "../../content/layout";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
@@ -126,8 +126,6 @@ beforeAll(async () => {
 
   const { panelOperationsRouter, productPanelsInternalRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { appBuilderRouter } = await import("../routes/app-builder");
-  const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");
-  registerPanelSkillProvider();
   const app = express();
   app.use(express.json());
   mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "pilot"
@@ -268,10 +266,6 @@ beforeAll(async () => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     res.json({ success: true, data: builtinUses });
   });
-  app.get("/platform/page-skills", (req, res) => {
-    const entrances = hasBuiltinEntry(req.header("tk")) ? builtinUses.map(use => use.entrance) : [];
-    res.json({ success: true, data: { pageSkills: entrances, admittedEntrances: entrances, registeredSkills: [] } });
-  });
   mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId === "app-builtin-fixture") {
       if (req.header("tk") === "host-no-entry" && req.path.endsWith("/resolve-entry")) { res.sendStatus(403); return; }
@@ -369,119 +363,6 @@ it("refuses a platform panel whose entry names an opening sentence one of its la
   await writeFile(path.join(directory, "panel.json"), descriptor({ en: { "actions.newPrefill": "Help me create an action:" }, "zh-CN": {} }));
   await expect(registerBuiltinProducts(bundle)).rejects.toThrow("prefillKey 'actions.newPrefill' is not in content.messages (zh-CN)");
 });
-
-it("reconciles the released built-in authoring sources and exposes the same read-only product in each domain", async () => {
-  const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
-  const bundle = path.join(contentRoot, "platform-panel-test");
-  const directory = path.join(bundle, "catalogue");
-  await mkdir(directory, { recursive: true });
-  const index = path.join(bundle, "index.json");
-  const registration = path.join(directory, "registration.json");
-  const writeIdentity = (name: string) => writeFile(registration, JSON.stringify({
-    panels: [{ id: builtinPanelId, mode: "create", input: { name, description: "", visibility: "domain" } }],
-  }));
-  const member = { id: builtinProjectionId, component: "PanelData", type: "platform:SDKComponent", data: { rows: "catalogue" } };
-  const manifest = { state: {}, members: { components: member } };
-  const descriptor = path.join(directory, "panel.json");
-  await writeFile(index, JSON.stringify(["catalogue"]));
-  await writeIdentity("Components");
-  await writeFile(descriptor, JSON.stringify({ manifest }));
-  const { html, module } = vuePanelContent("components");
-  await writeFile(path.join(directory, "panel.html"), html);
-  await writeFile(path.join(directory, "panel.mjs"), module);
-
-  await registerBuiltinProducts(bundle);
-  await registerBuiltinProducts(bundle);
-  builtinUses = [builtinUse];
-  const { readSkillView } = await import("../../services/skills/view");
-  const skill = protectedSkillRef("product-panels", null, builtinPanelId);
-  const useQuery = new URLSearchParams({
-    applicationId: builtinUse.applicationId, useId: builtinUse.useId,
-  });
-  const packages = [];
-  for (const domainId of ["pilot", "another-domain"]) {
-    const token = domainId === "pilot" ? "host-reader" : "another-domain-reader";
-    const headers = { "X-Test-Domain": domainId, "X-Test-Token": token };
-    const read = (resource: string) => fetch(`${state.base}/api/${resource}`, { headers });
-    const panelResponse = await read("product-panels/" + builtinPanelId);
-    expect(panelResponse.status).toBe(200);
-    expect(productPanelResponseSchema.parse(await panelResponse.json()).panel).toMatchObject({
-      id: builtinPanelId, domainId: null, ownerId: null, editable: false, visibility: "platform", revision: 1,
-      manifest: { members: { components: { target: { projectionId: builtinProjectionId } } } },
-    });
-    const projectionResponse = await read("product-projections/" + builtinProjectionId);
-    expect(projectionResponse.status).toBe(200);
-    expect(productProjectionResponseSchema.parse(await projectionResponse.json()).projection).toMatchObject({
-      id: builtinProjectionId, domainId: null, ownerId: null, editable: false, visibility: "platform",
-    });
-    const list = await read("product-panels");
-    expect(list.status).toBe(200);
-    expect((await list.json()).items).toContainEqual(expect.objectContaining({ id: builtinPanelId, editable: false, visibility: "platform" }));
-    const response = await fetch(state.base + "/api/product-panels/read", {
-      method: "POST", headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify({ source: { kind: "registered", applicationId: "app-builtin-fixture", useId: "catalogue" },
-        memberPath: [{ member: "components" }], dataName: "rows", inputs: {} }),
-    });
-    expect(await response.json()).toMatchObject({ status: "ready", value: expect.arrayContaining([
-      expect.objectContaining({ primaryKey: "@ontomato/sdk:ObjectList" }),
-    ]) });
-    const context = await read(`product-panels/application-entry?${useQuery}`);
-    expect(context.status).toBe(200);
-    expect(await context.json()).toMatchObject({ pageSkillContext: { mode: "member", member: { ref: skill } } });
-    const view = await readSkillView(domainId, { token });
-    const entry = view.requireSkillById(skill.name);
-    expect(entry.skill).toEqual(skill);
-    expect(entry.source.kind).toBe("provider");
-    packages.push(await entry.provide());
-  }
-  expect(packages[0]).toEqual(packages[1]);
-  expect(packages[0]?.files[0]?.content).toContain(builtinProjectionId);
-  const { SkillRegistry } = await import("../../../../agent-runtime/src/skills");
-  const { RuntimeStore } = await import("../../../../agent-runtime/src/store");
-  const runtime = new RuntimeStore(database, state.schema);
-  try {
-    await runtime.initialize();
-    const registry = new SkillRegistry(runtime, path.join(contentRoot, "published-skills"));
-    const host = { id: "workbench", token: "fixture-runtime", providers: ["workbench", "ontology"],
-      publishProviders: ["workbench"], domainSkills: true };
-    const first = await registry.register(host, "pilot", packages[0]);
-    const second = await registry.register(host, "another-domain", packages[1]);
-    expect(first).toEqual(second);
-    expect(first.skill.namespace).toEqual({ kind: "provider", provider: "workbench" });
-    await expect(registry.resolve(host, "another-domain", first)).resolves.toMatchObject({ skill, digest: first.digest });
-  } finally {
-    await runtime.close();
-  }
-  const noEntry = await readSkillView("pilot", { token: "host-no-entry" });
-  expect(noEntry.registry.getSkillByRef(skill)).toBeNull();
-  const inaccessible = await fetch(`${state.base}/api/product-panels/application-entry?${useQuery}`, {
-    headers: { "X-Test-Token": "host-no-entry" },
-  });
-  expect(inaccessible.status).toBe(403);
-  const ordinary = await fetch(`${state.base}/api/product-panels/${builtinPanelId}/snapshot`, {
-    headers: { "X-Test-Token": "host-no-entry" },
-  });
-  expect(ordinary.status).toBe(200);
-  expect(await ordinary.json()).not.toHaveProperty("pageSkillContext");
-  builtinUses = [];
-  const blockedSave = await request("PUT", "product-panels/" + builtinPanelId, {
-    name: "Shadow", description: "", visibility: "domain", revision: 0, content: { html, module }, manifest,
-  });
-  expect(blockedSave.status).toBe(400);
-
-  await writeIdentity("Components updated");
-  await registerBuiltinProducts(bundle);
-  await writeFile(descriptor, JSON.stringify({ manifest: { ...manifest, members: {
-    components: { target: { projectionId: "builtin-product-not-in-release" } },
-  } } }));
-  await expect(registerBuiltinProducts(bundle)).rejects.toThrow("builtin-product-not-in-release");
-  const snapshot = await request("GET", "product-panels/" + builtinPanelId + "/snapshot");
-  expect(panelDefinitionSnapshotSchema.parse(await snapshot.json()).panel.revision).toBe(2);
-  await writeFile(index, "[]");
-  await registerBuiltinProducts(bundle);
-  expect((await request("GET", "product-panels/" + builtinPanelId)).status).toBe(404);
-  expect((await request("GET", "product-projections/" + builtinProjectionId)).status).toBe(404);
-}, 20_000);
 
 it("registers the shipped ontology catalogues with addressable creation, previews and application forms", async () => {
   const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
@@ -1238,16 +1119,15 @@ it("rejects an unavailable default agent before accepting a proposed application
   });
   expect(saved.status, await saved.text()).toBe(200);
 
-  const ref = protectedSkillRef("product-panels", "pilot", panelId);
-  const anotherDomain = { ...ref, namespace: { kind: "domain", domainId: "elsewhere" } };
+  const ref = PAGE_OPERATOR_SKILL;
   const governanceId = randomUUID();
   const assistant = (id: string, kind: string, skills: unknown[]) => state.pool!.query(
     `INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind, name, system_prompt, skills)
      VALUES ($1, 'pilot', $2, $2, '', $3::jsonb)`,
     [id, kind, JSON.stringify(skills)],
   );
-  await assistant(governanceId, "knowledge-governance", [anotherDomain]);
-  await assistant(randomUUID(), "regular", []);
+  await assistant(governanceId, "knowledge-governance", [ref]);
+  await assistant(randomUUID(), "regular", [ref]);
   // A page registered to a preset hands that preset the skill; only a user-built agent has to select it first.
   const builderId = randomUUID();
   await assistant(builderId, builderId, []);

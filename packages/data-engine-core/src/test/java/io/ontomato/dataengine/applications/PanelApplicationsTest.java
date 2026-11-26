@@ -47,12 +47,12 @@ class PanelApplicationsTest {
         return new ApplicationPanelUse("use-" + page, page, "panel-p", "/applications/" + application + "/" + page, null, null);
     }
     private static ApplicationCatalog.Declaration metadata() {
-        return new ApplicationCatalog.Declaration(Map.of("en", "Example"), Map.of(), "calendar", List.of(), List.of(), List.of());
+        return new ApplicationCatalog.Declaration(Map.of("en", "Example"), Map.of(), "calendar", List.of(), List.of());
     }
     private static JSONObject app(String id, String renderer, List<ApplicationPanelUse> uses) {
         return JSONObject.of("id", id, "domainId", "domain", "ownerUserId", "author",
             "entry", JSONObject.of("renderer", renderer, "path", renderer.equals("panels") ? "/applications/" + id : "/" + id, "entryKey", "main"), "panelUses", uses,
-            "pageSkills", List.of(), "entryAccess", List.of(), "panelSettings", new JSONObject());
+            "entryAccess", List.of(), "panelSettings", new JSONObject());
     }
     private static ApplicationController.PanelRegistration body(List<ApplicationPanelUse> uses, boolean create) {
         return body("app-panel-a", uses, create);
@@ -69,7 +69,7 @@ class PanelApplicationsTest {
     private static ApplicationCatalog.Builtin builtin(String id, String path, ApplicationPanelUse use) {
         var platformUse = new ApplicationPanelUse(use.id(), use.pageKey(), "builtin-product-" + use.panelId(),
             use.path(), use.defaultAgent(), use.names(), use.inputs(), use.groupKey());
-        var declaration = new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "calendar", List.of(), List.of(), List.of(platformUse));
+        var declaration = new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "calendar", List.of(), List.of(platformUse));
         return new ApplicationCatalog.Builtin(id, "native", "apps", "admin", 1,
             JSONObject.of("renderer", "panels", "path", path), null, declaration);
     }
@@ -100,7 +100,6 @@ class PanelApplicationsTest {
         doReturn(ontology).when(catalog).require("ontology");
         catalog.builtins("data-engine", List.of(builtin("ontology", "/ontology", at("settings", "/ontology/agents"))));
         doReturn(List.of(ontology)).when(catalog).all();
-        assertEquals("/ontology/agents", catalog.panelSkillSources("domain").getFirst().path());
 
         assertThrows(ResponseStatusException.class, () ->
             catalog.builtins("workbench", List.of(builtin("agents", "/agents", at("other", "/ontology/agents/")))));
@@ -122,10 +121,10 @@ class PanelApplicationsTest {
         }).when(tx).executeWithoutResult(any());
         var galleryEntry = JSONObject.of("renderer", "application-gallery", "path", "/applications", "home", "/applications", "entryKey", "main");
         var gallery = JSONObject.of("id", "application-gallery", "kind", "native", "ownerService", "workbench",
-            "entry", galleryEntry, "panelUses", List.of(), "pageSkills", List.of(), "entryAccess", List.of());
+            "entry", galleryEntry, "panelUses", List.of(), "entryAccess", List.of());
         gallery.put("domainId", null);
         doReturn(gallery).when(catalog).require("application-gallery");
-        var declaration = new ApplicationCatalog.Declaration(Map.of("en", "Application gallery"), Map.of(), "gallery", List.of(), List.of(), List.of());
+        var declaration = new ApplicationCatalog.Declaration(Map.of("en", "Application gallery"), Map.of(), "gallery", List.of(), List.of());
         catalog.builtins("workbench", List.of(new ApplicationCatalog.Builtin("application-gallery", "native", "top", "business", 2,
             galleryEntry, null, declaration)));
         assertThrows(ResponseStatusException.class, () ->
@@ -151,7 +150,6 @@ class PanelApplicationsTest {
         mvc.perform(get("/platform/applications/app-panel-a/panel-uses"))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("app-panel-a")));
-        assertTrue(catalog.panelSkillSources("domain").isEmpty());
         assertTrue(catalog.visible(user).isEmpty());
         var response = catalog.putPanelUses("app-panel-a", body(List.of(use("a", null)), false), user);
         assertEquals("/applications/app-panel-a/a", response.getList("panelUses", ApplicationPanelUse.class).getFirst().path());
@@ -175,26 +173,9 @@ class PanelApplicationsTest {
         assertEquals("/applications/app-panel-a/schedules-a", savedUse.getString("path"));
         assertEquals("preferred-agent", savedUse.getJSONObject("defaultAgent").getString("id"));
         assertEquals("任务", savedUse.getJSONObject("names").getString("zh-CN"));
-        var dashboard = new PageSkills.Declaration("main", "dashboard",
-            new PageSkills.Skill(new PageSkills.Namespace("provider", "workbench", null), "dashboard-pages"), null);
-        var legacy = app("dashboards", "dashboards", List.of());
-        legacy.getJSONObject("entry").put("entryKey", "main");
-        legacy.put("pageSkills", List.of(dashboard));
-        doReturn(List.of(application, legacy)).when(catalog).all();
-        var projected = mvc.perform(get("/platform/page-skills")).andExpect(status().isOk()).andReturn();
-        var projection = JSONObject.parseObject(projected.getResponse().getContentAsString()).getJSONObject("data");
-        assertEquals(List.of("schedules-a", "dashboard"), projection.getJSONArray("pageSkills").toJavaList(JSONObject.class).stream().map(value -> value.getString("pageKey")).toList());
-        assertEquals(List.of("dashboard-pages"), projection.getJSONArray("registeredSkills").toJavaList(JSONObject.class)
-            .stream().map(value -> value.getString("name")).toList());
-        assertFalse(projection.getJSONArray("pageSkills").getJSONObject(0).containsKey("skill"));
-        assertEquals(2, projection.getJSONArray("admittedEntrances").size());
-        assertEquals("schedules-a", projection.getJSONArray("admittedEntrances").getJSONObject(0).getString("pageKey"));
         verify(panels).requireUsableRegistration(eq("domain"), isNull(),
             argThat(usesPassed -> usesPassed.stream().map(ApplicationPanelUse::panelId).toList().equals(List.of("panel-p"))),
             isNull(), isNull(), eq("calendar"), any(java.util.Locale.class));
-        var write = mockingDetails(db).getInvocations().stream().filter(call -> call.getMethod().getName().equals("update")).findFirst().orElseThrow();
-        assertEquals("[]", write.getArgument(17));
-        assertEquals("panel-p", com.alibaba.fastjson2.JSON.parseArray(write.<String>getArgument(18)).getJSONObject(0).getString("panelId"));
     }
 
     @Test void domainOpeningChecksMaintenanceAndTheActualEntryThroughHttp() throws Exception {
@@ -270,49 +251,6 @@ class PanelApplicationsTest {
         verify(db, never()).update(anyString(), any(Object[].class));
     }
 
-    @Test void serviceCatalogListsCompleteEntrancesFromTwoApplicationsAndIsolatesDomains() throws Exception {
-        var a = app("app-panels-trial-a", "panels", List.of(
-            new ApplicationPanelUse("use-panels-trial-a-tasks", "panels-trial-a-tasks", "panel-p",
-                "/applications/app-panels-trial-a/panels-trial-a-tasks",
-                null, Map.of("en", "Task list", "zh-CN", "任务列表"))));
-        a.put("names", Map.of("en", "Schedules", "zh-CN", "计划管理"));
-        var b = app("app-panels-trial-b", "panels", List.of(use("app-panels-trial-b", "panels-trial-b-tasks", null),
-            new ApplicationPanelUse("use-q", "panels-trial-b-summary", "panel-q", "/applications/app-panels-trial-b/summary", null, null)));
-        var foreign = app("app-foreign", "panels", List.of(use("app-foreign", "foreign-page", null)));
-        foreign.put("domainId", "foreign");
-        doReturn(List.of(a, b, foreign)).when(catalog).all();
-        var identity = mock(IdentityService.class);
-        var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity, new WorkbenchServiceAuthentication("service-fixture"))).build();
-
-        mvc.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")).andExpect(status().isForbidden());
-        var request = get(ApplicationController.PANEL_SKILL_SOURCES).header(WorkbenchServiceAuthentication.HEADER, "service-fixture");
-        mvc.perform(request.param("domainId", "domain"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.length()").value(3))
-            .andExpect(jsonPath("$.data[0].skill").doesNotHaveJsonPath())
-            .andExpect(jsonPath("$.data[0].applicationId").value("app-panels-trial-a"))
-            .andExpect(jsonPath("$.data[0].useId").value("use-panels-trial-a-tasks"))
-            .andExpect(jsonPath("$.data[0].panelId").value("panel-p"))
-            .andExpect(jsonPath("$.data[0].path").value("/applications/app-panels-trial-a/panels-trial-a-tasks"))
-            .andExpect(jsonPath("$.data[0].names.en").value("Task list"))
-            .andExpect(jsonPath("$.data[0].names['zh-CN']").value("任务列表"))
-            .andExpect(jsonPath("$.data[0].applicationNames.en").value("Schedules"))
-            .andExpect(jsonPath("$.data[0].applicationNames['zh-CN']").value("计划管理"))
-            .andExpect(jsonPath("$.data[0].entrance.entryKey").value("use-panels-trial-a-tasks"))
-            .andExpect(jsonPath("$.data[0].entrance.pageKey").value("panels-trial-a-tasks"))
-            .andExpect(jsonPath("$.data[1].entrance.pageKey").value("panels-trial-b-tasks"))
-            .andExpect(jsonPath("$.data[1].names").doesNotHaveJsonPath())
-            .andExpect(jsonPath("$.data[1].applicationNames").doesNotHaveJsonPath())
-            .andExpect(jsonPath("$.data[1].panelId").value("panel-p"))
-            .andExpect(jsonPath("$.data[2].panelId").value("panel-q"));
-        mvc.perform(get(ApplicationController.PANEL_SKILL_SOURCES)
-                .header(WorkbenchServiceAuthentication.HEADER, "service-fixture").param("domainId", "foreign"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.length()").value(1))
-            .andExpect(jsonPath("$.data[0].entrance.pageKey").value("foreign-page"));
-        verifyNoInteractions(identity, access, grants);
-    }
-
     @Test void navigationCatalogReturnsSummaryWithoutPanelUsesWhileSingleApplicationViewKeepsAdmittedPanelUses() throws Exception {
         var named = new ApplicationPanelUse("use-named", "named", "panel-p", "/applications/app-panel-a/named", null, Map.of("en", "Tasks", "zh-CN", "任务"));
         var denied = new ApplicationPanelUse("use-denied", "denied", "panel-q", "/applications/app-panel-a/denied", null, Map.of("en", "Hidden"));
@@ -336,8 +274,7 @@ class PanelApplicationsTest {
                 named.path(), detail.path(), objectRestricted.path())))
             .andExpect(jsonPath("$.data[0].panelUses").doesNotExist())
             .andExpect(jsonPath("$.data[0].permissions").doesNotExist())
-            .andExpect(jsonPath("$.data[0].panelSettings").doesNotExist())
-            .andExpect(jsonPath("$.data[0].pageSkills").doesNotExist());
+            .andExpect(jsonPath("$.data[0].panelSettings").doesNotExist());
 
         mvc.perform(get("/platform/applications/app-panel-a"))
             .andExpect(status().isOk())
