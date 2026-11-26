@@ -1,5 +1,13 @@
 package io.ontomato.dataengine.controller;
 
+import org.springframework.stereotype.Component;
+
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +38,21 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 @Slf4j
 @RestController
+@Owned
 public class AdminController {
+
+    @Component
+    static final class Operations implements ManagementOperations.Contributor {
+        static final String KNOWLEDGE_READ = "business-knowledge.read";
+        static final String KNOWLEDGE_CHANGE = "business-knowledge.change";
+        @Override
+        public java.util.List<ManagementOperations.Operation> managementOperations() {
+            return java.util.List.of(
+                    new ManagementOperations.Operation(KNOWLEDGE_READ, "Read business knowledge", ManagementOperations.Access.READ),
+                    new ManagementOperations.Operation(KNOWLEDGE_CHANGE, "Change business knowledge", ManagementOperations.Access.CHANGE));
+        }
+    }
+
 
 	@Autowired
 	private AdminService adminService;
@@ -47,6 +69,7 @@ public class AdminController {
 	@Autowired
 	private KnowledgeTagConfig knowledgeTagConfig;
 
+	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/editdatasetdesc")
 	@ResponseBody
 	public JSONObject editDataSetDesc(@RequestBody JSONObject param) {
@@ -65,6 +88,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/editClassInStarChart")
     @ResponseBody
     public JSONObject editClassInStarChart(@RequestBody JSONObject param) {
@@ -84,6 +108,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/editClassAttrTimeFormat")
     @ResponseBody
     public JSONObject editClassAttrTimeFormat(@RequestBody JSONObject param) {
@@ -104,6 +129,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/addBucketIndicator")
     @ResponseBody
     public JSONObject addBucketIndicator(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -126,6 +152,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/delBucketIndicator")
     @ResponseBody
     public JSONObject delBucketIndicator(@RequestBody JSONObject param) {
@@ -146,6 +173,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/editBucketIndicatorDesc")
     @ResponseBody
     public JSONObject editBucketIndicatorDesc(@RequestBody JSONObject param) {
@@ -167,6 +195,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/editBucketIndicatorUnit")
     @ResponseBody
     public JSONObject editBucketIndicatorUnit(@RequestBody JSONObject param) {
@@ -189,6 +218,7 @@ public class AdminController {
 	}
 	
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getMetas")
     @ResponseBody
     public JSONObject getMetas(@RequestBody JSONObject param) {
@@ -209,6 +239,7 @@ public class AdminController {
 	}
 
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getschemamarkdown")
 	@ResponseBody
 	public JSONObject getSchemaMarkdown(@RequestBody JSONObject param) {
@@ -225,6 +256,7 @@ public class AdminController {
 	}
 	
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getschemamarkdown-v2")
 	@ResponseBody
 	public JSONObject getSchemaMarkdownV2(@RequestBody JSONObject param) {
@@ -241,6 +273,7 @@ public class AdminController {
 	}
 	
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@GetMapping("/admin/getDatasetDesc")
 	@ResponseBody
 	public JSONObject getDatasetDesc() {
@@ -258,6 +291,7 @@ public class AdminController {
 	}
 	
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@GetMapping("/admin/getAllClassNames")
 	@ResponseBody
 	public JSONObject getAllClassNames() {
@@ -281,6 +315,7 @@ public class AdminController {
 	}
 	
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getSchemaByClassName")
 	@ResponseBody
 	public JSONObject getSchemaByClassName(@RequestBody JSONObject param) {
@@ -298,6 +333,7 @@ public class AdminController {
 	}
 	
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getRelationshipByClassNames")
 	@ResponseBody
 	public JSONObject getRelationshipByClassNames(@RequestBody JSONObject param) {
@@ -334,6 +370,7 @@ public class AdminController {
 		return ret;
 	}
 
+	@ManagementEndpoint(Operations.KNOWLEDGE_CHANGE)
 	@PostMapping("/admin/addBussinessKnowledge")
     @ResponseBody
     public JSONObject addBussinessKnowledge(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -362,6 +399,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(Operations.KNOWLEDGE_CHANGE)
 	@PostMapping("/admin/editBussinessKnowledge")
     @ResponseBody
     public JSONObject editBussinessKnowledge(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -395,6 +433,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(Operations.KNOWLEDGE_CHANGE)
 	@PostMapping("/admin/delBussinessKnowledge")
     @ResponseBody
     public JSONObject delBussinessKnowledge(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -415,6 +454,7 @@ public class AdminController {
 	}
 	
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(Operations.KNOWLEDGE_READ)
 	@PostMapping("/admin/getBussinessKnowledge")
     @ResponseBody
     public JSONObject getBussinessKnowledge(@RequestBody JSONObject param) {
@@ -437,6 +477,7 @@ public class AdminController {
 	}
 
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(Operations.KNOWLEDGE_READ)
 	@PostMapping("/admin/bussinessKnowledge/form")
 	@ResponseBody
 	public JSONObject bussinessKnowledgeForm(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang,
@@ -455,6 +496,7 @@ public class AdminController {
 	}
 
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(Operations.KNOWLEDGE_READ)
 	@PostMapping("/admin/getbussinessknowledgemarkdown")
 	@ResponseBody
 	public JSONObject getBussinessKnowledgeMarkdown(@RequestBody JSONObject param) {
@@ -472,6 +514,7 @@ public class AdminController {
 	}
 
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@GetMapping("/admin/getSchema")
 	@ResponseBody
 	public JSONObject getSchema() {
@@ -488,6 +531,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/setSchema")
 	@ResponseBody
 	public JSONObject setSchema(@RequestBody JSONObject param) {

@@ -169,8 +169,9 @@ function stubOwnerHttp(overrides: Partial<Record<string, () => Response>> = {}) 
           { policyId: "pol-1", targetKind: "ACTION", targetKey: "act-1", verb: "EXECUTE", scope: { kind: "all" } },
           { policyId: "pol-2", targetKind: "ACTION", targetKey: "act-1", verb: "EXECUTE", scope: { kind: "all" } },
         ],
-        roleActionGrants: [],
-        roleWorkflowAuthoring: [],
+        rolePolicies: [],
+        domainPolicyId: "default",
+        entries: [],
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (path === "/workflow/platform-access") {
@@ -193,12 +194,6 @@ function stubOwnerHttp(overrides: Partial<Record<string, () => Response>> = {}) 
     }
     if (path === "/platform/governance/policy-data-permissions") {
       return jsonResponse({ policyDataPermissions: [] });
-    }
-    if (path === "/product-governance/domain-grants") {
-      return new Response(JSON.stringify({ grants: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
     }
     if (
       path === "/metricView/queryList"

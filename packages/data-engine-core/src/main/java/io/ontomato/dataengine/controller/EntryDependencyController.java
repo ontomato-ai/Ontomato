@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import io.ontomato.dataengine.applications.ApplicationCatalog;
 import io.ontomato.dataengine.applications.ApplicationEntryEvents;
 import io.ontomato.dataengine.core.bean.R;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
+@Owned
 public final class EntryDependencyController {
     public static final String AFFECTED_ROOTS = "/platform/applications/service/affected-entry-roots";
     public static final String PUBLICATION = "/permissions/service/entry-dependency-changes";

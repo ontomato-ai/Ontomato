@@ -47,10 +47,6 @@ export interface WorkbenchIdentity {
   ): Promise<{ userId: string; domainId: string; token?: string; apiKey?: string }>;
   /** `/api/skills/resources`. Enterprise verifies credentials first then requires the domain; OSS uses 1 directly. */
   resolveSkillResourceDomain(req: Request): Promise<SkillResourceDomainResult | SkillResourceDomainFailure>;
-  /** Legacy menu permission consumers. OSS allows all; enterprise goes through menu permissions. */
-  requirePermission(keys: readonly string[]): RequestHandler;
-  /** Service-level menu permission check matching `requirePermission`. OSS allows all; enterprise checks upstream menu permissions. */
-  assertPermission(identity: { token?: string; apiKey?: string }, keys: readonly string[]): Promise<void>;
   /** Authorize mutations of deployment-wide component packages. */
   requireDeploymentMaintenance: RequestHandler;
   /**

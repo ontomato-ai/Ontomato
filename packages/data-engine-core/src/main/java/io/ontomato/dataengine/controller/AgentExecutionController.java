@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.identity.AgentExecutionSettings;
 import jakarta.servlet.http.HttpServletRequest;
@@ -7,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 public class AgentExecutionController {
   public static final String INTERNAL_PATH = "/internal/agent-execution/**";
   private final WorkbenchServiceAuthentication authentication;

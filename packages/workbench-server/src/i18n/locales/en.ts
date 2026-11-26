@@ -766,7 +766,6 @@ export const en = {
   "panels.governance.role.deleted": "Role “{name}” deleted",
   "panels.governance.policy.operations.save": "Save permission policy",
   "panels.governance.policy.operations.delete": "Delete permission policy",
-  "panels.governance.policy.operations.refreshApiCatalog": "Refresh API catalog",
   "panels.governance.policy.operations.previewEntryGrant": "Preview entry grants",
   "panels.governance.policy.operations.grantEntries": "Grant access to entries",
   "panels.governance.policy.operations.listPending": "List pending grants",

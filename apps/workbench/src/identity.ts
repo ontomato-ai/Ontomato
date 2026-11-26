@@ -1,4 +1,3 @@
-import type { RequestHandler } from "express";
 import type { WorkbenchIdentity } from "@ontomato/workbench-server/identity/types";
 import { environment } from "@ontomato/workbench-server/config/environment";
 import { resolveLocale } from "@ontomato/workbench-server/i18n/index";
@@ -6,10 +5,6 @@ import { runWithLogContext } from "@ontomato/workbench-server/logging/log-contex
 import { getLocaleFromRequest } from "@ontomato/workbench-server/api/utils/request";
 import { platformService } from "@ontomato/workbench-server/api/middleware/platform-service";
 import type { AuthenticatedRequest } from "@ontomato/workbench-server/utils/request-identity";
-
-const pass: RequestHandler = (_req, _res, next) => {
-  next();
-};
 
 export const ossIdentity: WorkbenchIdentity = {
   authenticate(req, _res, next) {
@@ -50,12 +45,6 @@ export const ossIdentity: WorkbenchIdentity = {
       undefined;
     return { ok: true, domainId: "1", token, apiKey };
   },
-
-  requirePermission() {
-    return pass;
-  },
-
-  async assertPermission() {},
 
   requireDeploymentMaintenance: platformService,
 

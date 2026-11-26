@@ -13,7 +13,6 @@ public interface ProductPrincipalLookup {
     default String productPrincipalId(String userId){return userId;}
     default List<ProductGrants.Grant> defaultAdminGrants(String domainId, Collection<String> verbs) { return List.of(); }
     /** Import legacy application entry and maintenance authority once, at the identity boundary. */
-    default List<ProductGrants.Grant> legacyApplicationGrants(String domainId,String applicationId){return List.of();}
     /** Resolve user display names by principal ID in a domain; missing IDs are omitted. */
     default Map<String, String> principalNames(String domainId, Collection<String> principalIds) { return Map.of(); }
     /** Resolve role display names by role ID in a domain; missing IDs are omitted. */

@@ -1,5 +1,11 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+
+import org.springframework.stereotype.Component;
+
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -16,10 +22,24 @@ import io.ontomato.dataengine.service.EnvService;
 
 @RestController
 public class ProductionEnvController {
+
+    @Component
+    static final class Operations implements ManagementOperations.Contributor {
+        static final String READ = "production-environment.read";
+        static final String CHANGE = "production-environment.change";
+        @Override
+        public java.util.List<ManagementOperations.Operation> managementOperations() {
+            return java.util.List.of(
+                    new ManagementOperations.Operation(READ, "Read production environment", ManagementOperations.Access.READ),
+                    new ManagementOperations.Operation(CHANGE, "Synchronize assets to production", ManagementOperations.Access.CHANGE));
+        }
+    }
+
 	
 	@Autowired
 	private EnvService envService;
 
+	@ManagementEndpoint(Operations.READ)
 	@PostMapping("/productionEnv/queryData")
     @ResponseBody
     public JSONObject queryData(@RequestBody JSONObject param) {
@@ -39,6 +59,7 @@ public class ProductionEnvController {
             throw new IllegalArgumentException("dsl: expected one nonempty JSON object; send {\"dsl\":{...}}, not an array or JSON string");
         return param.getJSONObject("dsl");
     }	
+	@ManagementEndpoint(Operations.READ)
 	@PostMapping("/productionEnv/queryDistinctAttrValue")
     @ResponseBody
     public JSONObject queryDistinctAttrValue(@RequestBody JSONObject param) {
@@ -58,6 +79,7 @@ public class ProductionEnvController {
 		
 	}
 	
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/productionEnv/sync")
 	@ResponseBody
 	public JSONObject sync(@RequestBody JSONObject param) {
@@ -87,6 +109,7 @@ public class ProductionEnvController {
 		return ret;
 	}
 
+	@ManagementEndpoint(Operations.READ)
 	@PostMapping("/productionEnv/queryBusinessKnowledge")
     @ResponseBody
     public JSONObject queryBusinessKnowledge(@RequestBody JSONObject param) {

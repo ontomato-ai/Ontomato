@@ -104,6 +104,6 @@ export async function readProductAssetGraph(owner: ProductOwner, viewer: Assista
   await resolveGraphNames(owner, graph, viewer, locale);
   return {
     graph,
-    grantableApplicationIds: new Set(details.filter(detail => detail.canMaintain).map(detail => detail.id)),
+    maintainableApplicationIds: new Set(details.filter(detail => detail.canMaintain).map(detail => detail.id)),
   };
 }

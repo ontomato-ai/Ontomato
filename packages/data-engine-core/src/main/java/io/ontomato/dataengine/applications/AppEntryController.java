@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.applications;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import io.ontomato.dataengine.core.bean.User;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -7,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 public class AppEntryController {
     private final ApplicationCatalog catalog;
     private final ApplicationAccess access;

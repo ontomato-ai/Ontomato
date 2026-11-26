@@ -21,9 +21,6 @@ public interface IdentityService {
         requireQueryAccess();
     }
 
-    /** Reuse the existing Action execution permission for an explicitly captured owner. */
-    void requireActionExecutionAccess(String userId, String domainId);
-
     /** Absolute expiry of the verified credential, or null when it has no expiry. */
     Long getCurrentCredentialExpiresAt();
 

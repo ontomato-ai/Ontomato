@@ -94,8 +94,8 @@ Use the existing sealed workbench callback credential mechanism. In-product
 Only explicitly registered reads, including the read-only POST resolver/query,
 exist below that prefix. Reject unknown routes, methods and request fields;
 there is no caller-supplied URL, service host, file path or generic proxy. Ordinary
-edition authentication and `assertObserveAccess` run after unwrapping. Do not use
-the whole `/api/observe` prefix: it also contains delete, configuration, test-start
+edition authentication and the requested management operation check run after
+unwrapping. Do not use the whole `/api/observe` prefix: it also contains delete, configuration, test-start
 and cancellation operations. The model credential stays supervisor-only; neither
 a runtime host credential nor an unrestricted user token enters the sandbox.
 

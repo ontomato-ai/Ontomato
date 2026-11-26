@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import static io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
@@ -11,6 +13,9 @@ import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.WorkflowDao;
+import io.ontomato.dataengine.dao.TriggerDao;
+import io.ontomato.dataengine.service.agent.OntologyAgentStore;
+import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
@@ -19,14 +24,16 @@ import io.ontomato.dataengine.service.authorization.AuthorizationAccessInspector
 import io.ontomato.dataengine.service.authorization.AuthorizationAccessInspector.InspectResult;
 import io.ontomato.dataengine.service.authorization.AuthorizationAccessInspector.WorkflowStepAction;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +46,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
+@Owned
 @RequestMapping("/authorization/policies")
 public class AuthorizationPolicyGovernanceController {
     public record EntryRootsRequest(String policyId, Set<String> entryIds) {}
@@ -59,10 +67,9 @@ public class AuthorizationPolicyGovernanceController {
     public record ResolvePendingRequest(String policyId, List<Resolution> resolutions) {}
     public record ResolvePendingResult(String policyId, int resolvedCount) {}
     public record PolicyGrantFact(String policyId, Kind targetKind, String targetKey, Verb verb, GrantScope scope) {}
-    public record RoleActionGrant(String roleId, String actionId, String policyId, GrantScope.Kind scopeKind) {}
-    public record RoleWorkflowAuthoring(String roleId, String workflowId, String policyId, Verb verb) {}
-    public record GraphFacts(List<PolicyGrantFact> policyGrants, List<RoleActionGrant> roleActionGrants,
-                             List<RoleWorkflowAuthoring> roleWorkflowAuthoring) {}
+    public record GraphFacts(List<PolicyRef> rolePolicies, String domainPolicyId,
+                             List<ApplicationCatalog.VisibleEntry> entries,
+                             List<PolicyGrantFact> policyGrants) {}
 
     private final WorkbenchServiceAuthentication workbench;
     private final IdentityService identity;
@@ -74,11 +81,12 @@ public class AuthorizationPolicyGovernanceController {
     private final AuthorizationStore store;
     private final ActionDao actions;
     private final WorkflowDao workflows;
+    private final TriggerDao triggers;
 
     public AuthorizationPolicyGovernanceController(WorkbenchServiceAuthentication workbench, IdentityService identity,
             AuthorizationService authorization, AuthorizationPolicies policies, AuthorizationAccessInspector inspector,
             ApplicationCatalog catalog, AuthorizationSubjects subjects, AuthorizationStore store,
-            ActionDao actions, WorkflowDao workflows) {
+            ActionDao actions, WorkflowDao workflows, TriggerDao triggers) {
         this.workbench = workbench;
         this.identity = identity;
         this.authorization = authorization;
@@ -89,6 +97,7 @@ public class AuthorizationPolicyGovernanceController {
         this.store = store;
         this.actions = actions;
         this.workflows = workflows;
+        this.triggers = triggers;
     }
 
     @PostMapping("/entry-roots")
@@ -170,34 +179,44 @@ public class AuthorizationPolicyGovernanceController {
         return inspector.inspectAccess(authorization.resolveSubject(actor(request)), input);
     }
 
+    public record RegistrationTarget(Kind kind, String key) {}
+    public record RegistrationRequest(List<RegistrationTarget> targets) {}
+
+    @ManagementEndpoint(AuthorizationPolicies.READ)
+    @PostMapping("/registered-targets/check")
+    public R<Set<RegistrationTarget>> registeredTargets(@RequestBody RegistrationRequest input) {
+        if (input.targets() == null || input.targets().stream()
+                .anyMatch(target -> target == null || target.kind() == null || blank(target.key())))
+            throw badRequest("Each target requires a kind and a stable key");
+        var keysByKind = input.targets().stream().collect(Collectors.groupingBy(RegistrationTarget::kind,
+                Collectors.mapping(RegistrationTarget::key, Collectors.toSet())));
+        var domainId = identity.getCurrentUser().getDomainId();
+        var matches = new java.util.LinkedHashSet<RegistrationTarget>();
+        for (Map.Entry<Kind, Set<String>> group : keysByKind.entrySet()) {
+            var keys = group.getValue();
+            var registered = switch (group.getKey()) {
+                case ENTRY -> catalog.registeredEntryIds(domainId, keys);
+                case APPLICATION -> catalog.registeredApplicationIds(domainId, keys);
+                case WORKFLOW -> workflows.queryList(null, domainId).stream().map(Workflow::getId)
+                        .filter(keys::contains).collect(Collectors.toSet());
+                case TRIGGER -> triggers.queryList(domainId, null).stream().map(trigger -> trigger.getId())
+                        .filter(keys::contains).collect(Collectors.toSet());
+                case AGENT -> keys.contains(OntologyAgentStore.RETRIEVER) ? Set.of(OntologyAgentStore.RETRIEVER) : Set.<String>of();
+                default -> throw badRequest("This runtime does not own registrations for " + group.getKey());
+            };
+            registered.forEach(key -> matches.add(new RegistrationTarget(group.getKey(), key)));
+        }
+        return R.ok(matches);
+    }
+
     @PostMapping("/graph-facts")
     public GraphFacts graphFacts(HttpServletRequest request) {
         var domainId = actor(request).domainId();
-        var policyGrants = new ArrayList<PolicyGrantFact>();
-        var actionGrants = new ArrayList<RoleActionGrant>();
-        var workflowGrants = new ArrayList<RoleWorkflowAuthoring>();
-        var rolesByPolicy = new HashMap<String, Set<String>>();
-        List<String> workflowIds = null;
-        for (var grant : store.domainObjectGrants(domainId)) {
-            var target = grant.target();
-            var verb = grant.verb();
-            var policyId = grant.policyId();
-            policyGrants.add(new PolicyGrantFact(policyId, target.kind(), target.id(), verb, grant.scope()));
-            var roleIds = rolesByPolicy.computeIfAbsent(policyId, id -> store.policyRoleIds(domainId, id));
-            if (target.kind() == Kind.ACTION && verb == Verb.EXECUTE) {
-                for (var roleId : roleIds)
-                    actionGrants.add(new RoleActionGrant(roleId, target.id(), policyId, grant.scope().kind()));
-            }
-            if (target.kind() == Kind.WORKFLOW && (verb == Verb.EDIT || verb == Verb.CREATE)) {
-                if (verb == Verb.CREATE && workflowIds == null)
-                    workflowIds = workflows.queryList(null, domainId).stream().map(Workflow::getId).toList();
-                var ids = verb == Verb.CREATE ? workflowIds : List.of(target.id());
-                for (var roleId : roleIds) {
-                    for (var id : ids) workflowGrants.add(new RoleWorkflowAuthoring(roleId, id, policyId, verb));
-                }
-            }
-        }
-        return new GraphFacts(policyGrants, actionGrants, workflowGrants);
+        var policyGrants = store.domainObjectGrants(domainId).stream().map(grant ->
+                new PolicyGrantFact(grant.policyId(), grant.target().kind(), grant.target().id(),
+                        grant.verb(), grant.scope())).toList();
+        return new GraphFacts(store.domainRolePolicies(domainId), store.domainPolicy(domainId).policyId(),
+                catalog.visibleEntries(identity.getCurrentUser()), policyGrants);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

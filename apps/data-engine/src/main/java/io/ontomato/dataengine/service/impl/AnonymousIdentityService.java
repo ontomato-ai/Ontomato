@@ -17,7 +17,6 @@ public class AnonymousIdentityService implements IdentityService {
     @Override public String workbenchSubjectId(User user) { return "system"; }
     @Override public Long getCurrentCredentialExpiresAt() { return null; }
     @Override public void requireQueryAccess() {}
-    @Override public void requireActionExecutionAccess(String userId, String domainId) { requireQueryAccess(); }
 
     private static final UserDetail ANONYMOUS_USER = createAnonymousUser();
 
@@ -28,8 +27,6 @@ public class AnonymousIdentityService implements IdentityService {
         user.setUserName("admin");
         user.setEnable(true);
         user.setRoles(List.of());
-        user.setMenuPermissions(List.of());
-        user.setApiPermissions(List.of());
         // Open-source edition single domain: fixed domainId="1", no multi-tenant isolation.
         user.setDomainId("1");
         return user;

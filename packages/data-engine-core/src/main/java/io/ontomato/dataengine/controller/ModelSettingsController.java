@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Owns configuration of the model library and ontology agent model selections. */
 @lombok.extern.slf4j.Slf4j
 @RestController
+@Owned
 public class ModelSettingsController {
 
   private static final String READ = "settings.models.read";

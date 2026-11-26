@@ -206,6 +206,20 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
         store.revokeManagement(ctx.identity().domainId(), policyId, operationId);
     }
 
+    public record SubjectPolicyGrants(List<ManagementOperations.Operation> managementOperations,
+                                      List<ObjectGrant> objectGrants) {}
+
+    public SubjectPolicyGrants subjectPolicyGrants(String domainId, String userId) {
+        var context = authorization.resolveSubject(new AuthorizationService.VerifiedIdentity(
+                domainId, userId, AuthorizationService.CredentialLimit.UNRESTRICTED));
+        var granted = context.roles().administrator() ? operations.list()
+                : store.managementOperations(domainId, context.managementPolicyIds()).stream()
+                        .sorted().map(operations::require).toList();
+        var objects = context.objectPolicyIds().stream().sorted()
+                .flatMap(policy -> store.policyObjectGrants(domainId, policy).stream()).toList();
+        return new SubjectPolicyGrants(granted, objects);
+    }
+
     public List<ManagementOperations.Operation> managementCatalog() {
         return operations.list();
     }

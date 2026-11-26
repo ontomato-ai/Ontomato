@@ -189,6 +189,11 @@ export class DomainSkillRegistryManager {
     if (!domainId.trim()) throw new Error("domainId is required");
     return path.join(this.domainsRoot, encodeURIComponent(domainId).replace(/\./g, "%2E"));
   }
+  async registeredDomainSkillIds(domainId: string, ids: readonly string[]): Promise<string[]> {
+    const requested = new Set(ids);
+    return (await new SkillScanner(this.getDomainSkillsRoot(domainId)).scan())
+      .map(skill => skill.id).filter(id => requested.has(id));
+  }
   async publicSkills() { return this.publicScanner.scan(); }
   async forDomain(domainId: string, admit: AdmitSkills | undefined, reader: AssistantCredentials, userId?: string) {
     const root = this.getDomainSkillsRoot(domainId);

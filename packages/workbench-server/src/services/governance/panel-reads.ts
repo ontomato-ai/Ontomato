@@ -115,8 +115,8 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       effectiveOrgShares(id: string): Promise<PanelRecord[]> {
         return owner("governance-user-effective-org-shares", "/panel/governance/users/effective-org-shares", { id }, panelRecordListSchema);
       },
-      effectiveApiPermissions(id: string): Promise<PanelRecord[]> {
-        return owner("governance-user-effective-api-permissions", "/panel/governance/users/effective-api-permissions", { id }, panelRecordListSchema);
+      effectiveManagementOperations(id: string): Promise<PanelRecord[]> {
+        return owner("governance-user-effective-management-operations", "/panel/governance/users/effective-management-operations", { id }, panelRecordListSchema);
       },
       effectiveDataPermissions(id: string, scope: "subject" | "managed" | "effective"): Promise<PanelRecord[]> {
         return owner("governance-user-effective-data-permissions", "/panel/governance/users/effective-data-permissions", { id, scope }, panelRecordListSchema);

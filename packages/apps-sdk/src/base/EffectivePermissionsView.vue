@@ -18,9 +18,8 @@ import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { useDataStateLabels } from "./data-state-labels";
 import { rawRecordField } from "./record-field";
 import type {
-  EffectivePermissionApiItem,
+  EffectiveManagementOperationItem,
   EffectivePermissionDataRow,
-  EffectivePermissionMenuGroup,
   EffectivePermissionOrgRoleGrant,
   EffectivePermissionOrgShareItem,
   EffectivePermissionShareRole,
@@ -39,8 +38,8 @@ const props = withDefaults(
     record?: PlatformObjectRecord | Record<string, unknown> | null;
     /** Direct organization share source records (standalone usage outside `data.orgShares` binding). */
     orgShares?: readonly (PlatformObjectRecord | Record<string, unknown>)[] | null;
-    /** Direct API permission records (standalone usage outside `data.apiPermissions` binding). */
-    apiPermissions?: readonly (PlatformObjectRecord | Record<string, unknown>)[] | null;
+    /** Direct management operation records (standalone usage outside `data.managementOperations` binding). */
+    managementOperations?: readonly (PlatformObjectRecord | Record<string, unknown>)[] | null;
     /** Direct personal data permission records (standalone usage outside `data.subjectData` binding). */
     subjectData?: readonly (PlatformObjectRecord | Record<string, unknown>)[] | null;
     /** Direct managed-organization data permission records (standalone usage outside `data.managedData` binding). */
@@ -53,7 +52,7 @@ const props = withDefaults(
   {
     record: undefined,
     orgShares: undefined,
-    apiPermissions: undefined,
+    managementOperations: undefined,
     subjectData: undefined,
     managedData: undefined,
     effectiveData: undefined,
@@ -80,7 +79,7 @@ function bindDatum(name: string) {
 
 const recordDatum = bindDatum("record");
 const orgSharesDatum = bindDatum("orgShares");
-const apiPermissionsDatum = bindDatum("apiPermissions");
+const managementOperationsDatum = bindDatum("managementOperations");
 const subjectDataDatum = bindDatum("subjectData");
 const managedDataDatum = bindDatum("managedData");
 const effectiveDataDatum = bindDatum("effectiveData");
@@ -286,54 +285,24 @@ const orgShareItems = computed<EffectivePermissionOrgShareItem[]>(() => {
   });
 });
 
-const menuSummary = computed<{ groups: EffectivePermissionMenuGroup[]; outside: string[] }>(() => {
-  if (!summaryRecord.value) return { groups: [], outside: [] };
-  const rawGroups = readField(summaryRecord.value, "groupedMenuPermissions");
-  const groups: EffectivePermissionMenuGroup[] = [];
-  if (Array.isArray(rawGroups)) {
-    for (const entry of rawGroups) {
-      if (entry && typeof entry === "object") {
-        const obj = entry as Record<string, unknown>;
-        const items = Array.isArray(obj.items)
-          ? obj.items.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-          : [];
-        if (items.length) {
-          groups.push({ name: typeof obj.name === "string" ? obj.name.trim() : undefined, items });
-        }
-      } else if (typeof entry === "string" && entry.trim()) {
-        const trimmed = entry.trim();
-        const splitIdx = trimmed.indexOf(" — ");
-        if (splitIdx > 0) {
-          const name = trimmed.slice(0, splitIdx).trim();
-          const items = trimmed.slice(splitIdx + 3).split(" · ").map(item => item.trim()).filter(Boolean);
-          if (items.length) groups.push({ name, items });
-        } else {
-          groups.push({ items: [trimmed] });
-        }
-      }
-    }
-  }
-  const outside = readStringList(summaryRecord.value, "outsideTreeMenuPermissions");
-  return { groups, outside };
-});
+const grantedTargets = computed(() => summaryRecord.value ? [
+  ...readStringList(summaryRecord.value, "entryPermissions"),
+  ...readStringList(summaryRecord.value, "objectPermissions"),
+] : []);
 
-const apiItems = computed<EffectivePermissionApiItem[]>(() => {
-  const rows = resolveList(props.apiPermissions, apiPermissionsDatum);
+const apiItems = computed<EffectiveManagementOperationItem[]>(() => {
+  const rows = resolveList(props.managementOperations, managementOperationsDatum);
   return rows.map((row, index) => {
-    const method = readString(row, "method");
-    const urlPattern = readString(row, "urlPattern");
-    const apiName = readString(row, "apiName");
-    const permission = readString(row, "permission");
-    const module = readString(row, "module");
-    const label = apiName ?? urlPattern ?? permission ?? (typeof row.title === "string" ? row.title : `API ${index + 1}`);
-    const key = typeof row.id === "string" ? row.id : typeof row.primaryKey === "string" ? row.primaryKey : `${permission ?? label}:${index}`;
-    return { key, method, urlPattern, apiName, permission, module, label };
+    const access = readString(row, "access");
+    const operationId = readString(row, "id");
+    const label = readString(row, "name") ?? operationId ?? String(index + 1);
+    return { key: operationId ?? label, access, operationId, label };
   });
 });
 
 const apiTotalCount = computed<number>(() => {
   if (apiItems.value.length > 0) return apiItems.value.length;
-  const count = summaryRecord.value ? readField(summaryRecord.value, "apiPermissionCount") : undefined;
+  const count = summaryRecord.value ? readField(summaryRecord.value, "managementOperationCount") : undefined;
   return typeof count === "number" ? count : 0;
 });
 
@@ -341,7 +310,7 @@ const filteredApiItems = computed(() => {
   const query = apiKeyword.value.trim().toLowerCase();
   if (!query) return apiItems.value;
   return apiItems.value.filter(item =>
-    [item.method, item.urlPattern, item.apiName, item.permission, item.module, item.label]
+    [item.access, item.operationId, item.label]
       .some(text => text?.toLowerCase().includes(query)),
   );
 });
@@ -551,23 +520,16 @@ const stateLabels = useDataStateLabels();
             <span v-else class="sdk-epv-muted">{{ translate("platform.effectivePermissionsNone", "None") }}</span>
           </el-descriptions-item>
 
-          <el-descriptions-item :label="translate('platform.effectivePermissionsMenuPermissions', 'Menu permissions')">
-            <div v-for="(group, index) in menuSummary.groups" :key="index" class="sdk-epv-menu-group">
-              <span v-if="group.name" class="sdk-epv-menu-group-name">{{ group.name }}</span>
-              <el-tag v-for="item in group.items" :key="item" size="small">{{ item }}</el-tag>
+          <el-descriptions-item :label="translate('platform.effectivePermissionsEntryAndObject', 'Entry and object permissions')">
+            <div v-if="grantedTargets.length" class="sdk-epv-menu-group">
+              <el-tag v-for="target in grantedTargets" :key="target" size="small">{{ target }}</el-tag>
             </div>
-            <div v-if="menuSummary.outside.length" class="sdk-epv-menu-group">
-              <el-tag v-for="code in menuSummary.outside" :key="code" size="small" type="info">{{ code }}</el-tag>
-            </div>
-            <span
-              v-if="!menuSummary.groups.length && !menuSummary.outside.length"
-              class="sdk-epv-muted"
-            >{{ translate("platform.effectivePermissionsNone", "None") }}</span>
+            <span v-else class="sdk-epv-muted">{{ translate("platform.effectivePermissionsNone", "None") }}</span>
           </el-descriptions-item>
 
-          <el-descriptions-item :label="translate('platform.effectivePermissionsApiPermissions', 'API permissions')">
+          <el-descriptions-item :label="translate('platform.effectivePermissionsManagementOperations', 'Management operations')">
             <div class="sdk-epv-api-head">
-              <span>{{ translate("platform.effectivePermissionsApiCount", `${apiTotalCount} APIs`, { count: apiTotalCount }) }}</span>
+              <span>{{ translate("platform.effectivePermissionsOperationCount", `${apiTotalCount} operations`, { count: apiTotalCount }) }}</span>
               <el-button
                 v-if="apiItems.length > 0"
                 link
@@ -585,15 +547,14 @@ const stateLabels = useDataStateLabels();
                 v-model="apiKeyword"
                 size="small"
                 clearable
-                :placeholder="translate('platform.effectivePermissionsSearchApis', 'Search APIs')"
+                :placeholder="translate('platform.effectivePermissionsSearchOperations', 'Search operations')"
                 class="sdk-epv-api-search"
               />
               <ul class="sdk-epv-api-list">
                 <li v-for="api in filteredApiItems" :key="api.key" class="sdk-epv-api-row">
-                  <span v-if="api.method" class="sdk-epv-api-method">{{ api.method }}</span>
-                  <span v-if="api.urlPattern" class="sdk-epv-api-url">{{ api.urlPattern }}</span>
-                  <span v-else class="sdk-epv-api-url">{{ api.label }}</span>
-                  <span v-if="api.permission && api.permission !== api.label" class="sdk-epv-api-code">{{ api.permission }}</span>
+                  <span v-if="api.access" class="sdk-epv-api-method">{{ api.access }}</span>
+                  <span class="sdk-epv-api-url">{{ api.label }}</span>
+                  <span v-if="api.operationId && api.operationId !== api.label" class="sdk-epv-api-code">{{ api.operationId }}</span>
                 </li>
               </ul>
             </template>

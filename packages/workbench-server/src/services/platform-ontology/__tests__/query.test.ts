@@ -152,7 +152,7 @@ function okJson(data: unknown) {
 function graphFacts(data: Record<string, unknown> = {}) {
   return {
     ...okJson(null),
-    text: JSON.stringify({ policyGrants: [], roleActionGrants: [], roleWorkflowAuthoring: [], ...data }),
+    text: JSON.stringify({ policyGrants: [], rolePolicies: [], domainPolicyId: "default", entries: [], ...data }),
   };
 }
 
@@ -349,11 +349,11 @@ beforeEach(() => {
       ]);
     }
     if (url.endsWith("/authorization/policies/graph-facts")) {
-      return graphFacts({ roleWorkflowAuthoring: [{ roleId: "r-1", workflowId: "wf-1", policyId: "p-1", verb: "EDIT" }] });
+      return graphFacts();
     }
     if (url.endsWith("/workflow/platform-access")) {
       return okJson([
-        { roleId: "r-1", roleCode: "Approver", apiPermissions: ["/workflow/save"], managementRole: false },
+        { roleId: "r-1", roleCode: "Approver", managementOperations: [], managementRole: false },
       ]);
     }
     if (url.endsWith("/platform/governance/organization")) {
@@ -367,9 +367,6 @@ beforeEach(() => {
     }
     if (url.endsWith("/platform/governance/policy-data-permissions")) {
       return okJson({ policyDataPermissions: [] });
-    }
-    if (url.endsWith("/product-governance/domain-grants")) {
-      return okJson({ grants: [] });
     }
     throw new Error(`Unexpected URL: ${url}`);
   });
@@ -1369,8 +1366,8 @@ describe("platform-ontology composite query", () => {
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
       if (url.endsWith("/workflow/platform-access")) {
         return okJson([
-          { roleId: "r-1", roleCode: "Approver", apiPermissions: ["/workflow/save"], managementRole: false },
-          { roleId: "r-nameless", roleCode: null, apiPermissions: [], managementRole: false },
+          { roleId: "r-1", roleCode: "Approver", managementOperations: [], managementRole: false },
+          { roleId: "r-nameless", roleCode: null, managementOperations: [], managementRole: false },
         ]);
       }
       if (url.endsWith("/workflow/grants")) {
@@ -2020,12 +2017,12 @@ describe("platform-ontology composite query", () => {
     });
     const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/product-governance/domain-grants")) {
-        return okJson({
-          grants: [
-            { resourceId: "agent-1", principalKind: "domain", principalId: "*", verb: "use" },
-            { resourceId: "panel-1", principalKind: "domain", principalId: "*", verb: "use" },
-            { resourceId: "panel-bare", principalKind: "domain", principalId: "*", verb: "use" },
+      if (url.endsWith("/authorization/policies/graph-facts")) {
+        return graphFacts({
+          policyGrants: [
+            { policyId: "default", targetKind: "AGENT", targetKey: "agent-1", verb: "USE" },
+            { policyId: "default", targetKind: "PANEL", targetKey: "panel-1", verb: "USE" },
+            { policyId: "default", targetKind: "PANEL", targetKey: "panel-bare", verb: "USE" },
           ],
         });
       }

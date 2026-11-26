@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -7,6 +9,7 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 public class ProductOntologyController {
     public static final String PATH="/ontology/products/service";
     private final ProductOntologyService ontology;

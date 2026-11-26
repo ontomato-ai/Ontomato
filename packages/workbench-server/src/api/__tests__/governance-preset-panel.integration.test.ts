@@ -184,11 +184,8 @@ beforeAll(async () => {
     prompts: [{ from: path.join(workbenchServerResourceRoot, "prompts"), to: "." }],
   });
 
-  const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
   installWorkbenchIdentity({
     requireDomainId: () => "unused",
-    requirePermission,
-    assertPermission: async () => undefined,
   } as unknown as WorkbenchIdentity);
 
   const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");

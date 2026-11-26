@@ -2,6 +2,8 @@ package io.ontomato.dataengine.controller;
 
 import io.ontomato.dataengine.applications.ApplicationCatalog;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.ProductGrants;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
+@Owned
 public class ProductGrantController {
     public static final String UNREGISTER_PATH="/product-governance/unregister";
     public static final String REGISTER_PATH="/product-governance/register";
@@ -102,6 +105,7 @@ public class ProductGrantController {
         return Map.of("success", true);
     }
 
+    @ManagementEndpoint(GovernanceDirectoryController.ROLES_READ)
     @PostMapping("/product-governance/domain-grants")
     public Object domainGrants(@RequestBody(required = false) Map<String, Object> body) {
         var filter = body == null ? Map.<String, Object>of() : body;

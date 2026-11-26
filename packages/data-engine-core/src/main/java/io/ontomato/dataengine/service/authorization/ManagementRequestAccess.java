@@ -17,7 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Component
 public final class ManagementRequestAccess {
     /** The handler owns admission and must check it before reading or changing managed state. */
-    @Target(ElementType.METHOD)
+    @Target({ElementType.TYPE, ElementType.METHOD})
     @Retention(RetentionPolicy.RUNTIME)
     public @interface Owned {}
 

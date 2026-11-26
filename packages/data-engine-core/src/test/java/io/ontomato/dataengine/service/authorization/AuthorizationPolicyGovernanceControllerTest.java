@@ -61,7 +61,7 @@ class AuthorizationPolicyGovernanceControllerTest {
         var policies = new AuthorizationPolicies(store, operations, authorization, actions, admin);
         var inspector = new AuthorizationAccessInspector(authorization, store, subjects, policies, workflows, grants, actions);
         var controller = new AuthorizationPolicyGovernanceController(new WorkbenchServiceAuthentication("workbench"),
-                identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows);
+                identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
         http = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new BaseControllerAdvice()).build();
 
         when(identity.getCurrentUser()).thenReturn(user);
@@ -79,13 +79,13 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(status().isUnauthorized());
         when(user.getDomainId()).thenReturn("");
         http.perform(rpc("graph-facts", "{}")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(store, subjects, catalog, actions, workflows);
+        verifyNoInteractions(store, subjects, catalog, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
     }
 
     @Test
     void browsingTheEntryCatalogRequiresManagementReadWithoutAPolicyId() throws Exception {
         http.perform(rpc("entry-roots", "{}")).andExpect(status().isForbidden());
-        verifyNoInteractions(catalog, actions, workflows);
+        verifyNoInteractions(catalog, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
     }
 
     @Test
@@ -240,20 +240,21 @@ class AuthorizationPolicyGovernanceControllerTest {
                 grant(ACTION, Verb.EXECUTE, SELF),
                 grant(new ObjectTarget("domain", Kind.WORKFLOW, "one"), Verb.EDIT, null),
                 grant(new ObjectTarget("domain", Kind.WORKFLOW, ""), Verb.CREATE, null)));
-        when(store.policyRoleIds("domain", "selected")).thenReturn(Set.of("reviewer"));
-        when(workflows.queryList(null, "domain")).thenReturn(List.of(workflow("one"), workflow("two")));
+        when(store.domainRolePolicies("domain")).thenReturn(List.of(new PolicyRef("reviewer", "selected", PolicyKind.OBJECT)));
+        when(store.domainPolicy("domain")).thenReturn(new PolicyRef("member", "default", PolicyKind.OBJECT));
         var result = http.perform(post(PREFIX + "graph-facts").header(WorkbenchServiceAuthentication.HEADER, "workbench"));
         result.andExpect(status().isOk())
                 .andExpect(jsonPath("$.policyGrants[0].targetKind").value("ACTION"))
                 .andExpect(jsonPath("$.policyGrants[0].targetKey").value("approve"))
                 .andExpect(jsonPath("$.policyGrants[0].scope.field").value("assignee"))
-                .andExpect(jsonPath("$.roleActionGrants[0].scopeKind").value("assigned_to_self"))
-                .andExpect(jsonPath("$.roleActionGrants[0].roleId").value("reviewer"))
-                .andExpect(jsonPath("$.roleWorkflowAuthoring[?(@.verb == 'EDIT')].workflowId", containsInAnyOrder("one")))
-                .andExpect(jsonPath("$.roleWorkflowAuthoring[?(@.verb == 'CREATE')].workflowId", containsInAnyOrder("one", "two")));
+                .andExpect(jsonPath("$.policyGrants[1].targetKey").value("one"))
+                .andExpect(jsonPath("$.policyGrants[1].verb").value("EDIT"))
+                .andExpect(jsonPath("$.policyGrants[2].targetKey").value(""))
+                .andExpect(jsonPath("$.policyGrants[2].verb").value("CREATE"))
+                .andExpect(jsonPath("$.rolePolicies[0].roleId").value("reviewer"));
         verifyNoInteractions(subjects);
         verify(store).domainObjectGrants("domain");
-        verify(workflows).queryList(null, "domain");
+        verifyNoInteractions(workflows);
     }
 
     private void permissions(boolean read, boolean change) {
