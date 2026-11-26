@@ -113,8 +113,18 @@
         "component": "ReferencePicker",
         "type": "platform:Skill",
         "data": {
-          "options": "options",
-          "selected": "resolve"
+          "options": {
+            "read": "options",
+            "params": {
+              "agentTarget": { "state": "selected", "field": "primaryKey" }
+            }
+          },
+          "selected": {
+            "read": "resolve",
+            "params": {
+              "agentTarget": { "state": "selected", "field": "primaryKey" }
+            }
+          }
         },
         "name": "技能选择",
         "description": "选择智能体可加载的技能。",

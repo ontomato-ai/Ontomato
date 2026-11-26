@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 import { workspaceCommitSchema, workspacePathSchema } from "./workspaces";
 import { componentIdSchema } from "./product-record-id";
+import { agentSkillTargetSchema } from "./skills";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { findPanelFormOption, formFieldErrorSchema, formValuesSchema, panelFormOptionSchema, panelFormOptionValueSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
@@ -305,6 +306,7 @@ export const panelReadParameterSchemas = {
   keyword: z.string(),
   agentKind: z.string().trim().min(1),
   agentId: z.string().uuid(),
+  agentSkillTarget: agentSkillTargetSchema,
   offset: z.number().int().nonnegative(),
   limit: positiveInteger.max(100),
   workspaceCommit: workspaceCommitSchema,

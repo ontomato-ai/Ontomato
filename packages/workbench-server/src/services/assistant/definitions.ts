@@ -27,6 +27,7 @@ import {
   type AssistantSkillView,
 } from "./skills";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import type { AgentSkillTarget } from "@ontomato/contracts/skills";
 import { tForLocale } from "../../i18n";
 import { isPresetAgentKind } from "./preset-definitions";
 import { withDomainSkills } from "../skills/operations";
@@ -70,6 +71,14 @@ export async function readAgentDefinitionRow(id: string, owner: AssistantOwner, 
   if (!isReadableDefinition(agent.kind)) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
   return agent;
 }
+
+export async function requireAgentSkillSelection(
+  owner: AssistantOwner, credentials: AssistantCredentials, target: AgentSkillTarget,
+) {
+  if (target === "draft") return requireAgentCreation(credentials);
+  await requireAgent(await readAgentDefinitionRow(target, owner), "EDIT", credentials);
+}
+
 export async function readStoredAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
   return view(await readAgentDefinitionRow(id, owner), locale);
 }

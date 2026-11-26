@@ -196,7 +196,6 @@ const knowledgeReads = [
 ] as const satisfies readonly PanelClientRead[];
 
 const skillReads = [
-  { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
   { method: "GET", service: "", path: /^\/skills$/, template: "/skills" },
   { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/references$/, template: "/skills/:id/references" },
   { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/files$/, template: "/skills/:id/files" },

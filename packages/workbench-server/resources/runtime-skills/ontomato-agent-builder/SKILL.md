@@ -33,7 +33,7 @@ Inside the platform run these from the workspace root; installed outside, run `n
 ```sh
 node skills/ontomato-agent-builder/scripts/page.mjs list
 node skills/ontomato-agent-builder/scripts/page.mjs get <id>
-node skills/ontomato-agent-builder/scripts/page.mjs skills
+node skills/ontomato-agent-builder/scripts/page.mjs skills '<id or draft>'
 node skills/ontomato-agent-builder/scripts/page.mjs models
 node skills/ontomato-agent-builder/scripts/page.mjs execution-users [keyword]
 ```

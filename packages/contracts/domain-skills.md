@@ -8,7 +8,10 @@ own replacement scope.
 
 ## Selection and identity
 
-Add `GET /api/assistant/agent-skills`, using the definition-management permission:
+`GET /api/assistant/agent-skills?agentTarget=<id>` requires edit permission on the
+specified agent. Use `agentTarget=draft` when the caller is creating an agent.
+Reading the library itself requires `skills.library.read`. Import, overwrite, and
+delete require `skills.library.change`.
 
 ```ts
 type AssistantSkillCatalog = {
