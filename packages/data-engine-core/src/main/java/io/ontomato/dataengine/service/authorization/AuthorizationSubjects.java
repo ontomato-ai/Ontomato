@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service.authorization;
 
 import io.ontomato.dataengine.bean.workflow.GrantScope;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.ObjectTarget;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.RoleResolution;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
@@ -13,6 +14,8 @@ public interface AuthorizationSubjects {
 
     boolean entryEntitlement(ObjectTarget entry);
     boolean objectEntitlement(String userId, ObjectTarget target, Verb verb);
+    /** Whether the edition admits this verb for every published object of this kind in the current domain. */
+    boolean domainWideObjectEntitlement(Kind kind, Verb verb);
     boolean managementEntitlement(String operationId);
     boolean unrestrictedStandaloneActions();
 

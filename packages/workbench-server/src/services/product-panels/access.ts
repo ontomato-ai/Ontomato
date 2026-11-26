@@ -1,9 +1,10 @@
+import { fixedProductAllows } from "@ontomato/contracts/fixed-product-access";
 import { tForLocale } from "../../i18n";
 import { getPostgresPool } from "../../infrastructure/postgres";
 import { currentProductRows, findCurrentProducts, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { decideObjects, requireAllowed, type ObjectDefinition } from "../product-governance/authorization";
+import { decideObjects, requireAllowed, type Decision, type ObjectDefinition } from "../product-governance/authorization";
 
 export type DefinitionKind = CurrentProductKind | "component";
 export const definitionKinds = { panel: "PANEL", projection: "PROJECTION", component: "COMPONENT" } as const;
@@ -20,14 +21,25 @@ export async function currentDefinitionAccess(
   kind: DefinitionKind, rows: readonly DefinitionFacts[], domainId: string, credentials: AssistantCredentials,
   readEdits = true,
 ) {
-  const objects = rows.map(row => currentDefinition(kind, row, domainId));
-  const requested = objects.map(object => ({ ...object, verb: "USE" as const }));
-  const edits = readEdits ? objects.filter((_, index) => rows[index].domainId !== null) : [];
+  // Only records returned from the owner's builtin tables have a null domain for panels and projections.
+  const policyRows = kind === "component" ? rows : rows.filter(row => row.domainId !== null);
+  const objects = policyRows.map(row => currentDefinition(kind, row, domainId));
+  const edits = readEdits ? objects : [];
   const decisions = await decideObjects([
-    ...requested, ...edits.map(object => ({ ...object, verb: "EDIT" as const })),
+    ...objects.map(object => ({ ...object, verb: "USE" as const })),
+    ...edits.map(object => ({ ...object, verb: "EDIT" as const })),
   ], credentials);
-  const editable = new Set(edits.filter((_, index) => decisions[requested.length + index].allowed).map(({ target }) => target.id));
-  return { decisions: decisions.slice(0, requested.length), editable };
+  const editable = new Set(edits.filter((_, index) => decisions[objects.length + index].allowed).map(({ target }) => target.id));
+  let policyIndex = 0;
+  return {
+    decisions: rows.map((row): Decision => {
+      if (kind === "component" || row.domainId !== null) return decisions[policyIndex++];
+      return fixedProductAllows(definitionKinds[kind], "USE")
+        ? { allowed: true }
+        : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "This platform definition cannot be used." };
+    }),
+    editable,
+  };
 }
 
 export async function usableCurrentDefinitionIds(

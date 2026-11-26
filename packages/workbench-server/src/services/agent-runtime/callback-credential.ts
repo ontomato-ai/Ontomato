@@ -7,6 +7,7 @@ import {
 import { z } from "zod";
 import type { RequestHandler } from "express";
 import { environment } from "../../config/environment";
+import { isQueryRuntimeGrant } from "../../utils/assistant-credentials";
 import { HttpError } from "../../utils/errors";
 
 export const executionCallbackPurpose = z.enum(["workbench", "ontology", "authoring", "panels", "retrieval"]);
@@ -102,7 +103,8 @@ export const unwrapCallbackCredential: RequestHandler = (req, res, next) => {
       req.header("X-Ontomato-Run-Id") !== claims.runId
     )
       throw new Error("Wrong callback scope");
-    res.locals.runtimeCallback = {runId:claims.runId, ...(req.header("tk")?.startsWith("oq.") ? {businessGrant:req.header("tk")} : {})};
+    const businessGrant = req.header("tk");
+    res.locals.runtimeCallback = { runId: claims.runId, ...(isQueryRuntimeGrant(businessGrant) && { businessGrant }) };
     delete req.headers["x-ontomato-callback-credential"];
     delete req.headers.authorization;
     delete req.headers.tk;

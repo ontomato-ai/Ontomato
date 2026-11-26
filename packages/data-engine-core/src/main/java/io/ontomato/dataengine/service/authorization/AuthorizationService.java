@@ -10,6 +10,7 @@ import io.ontomato.dataengine.service.DataPermissionLookup;
 import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,9 +20,14 @@ import org.springframework.stereotype.Service;
 
 @Service
 public final class AuthorizationService {
-    public sealed interface Request permits Entry, ObjectAccess, Create, Management, Action, Data {}
+    public sealed interface Request permits Entry, ObjectAccess, PublishedObjectRead, Create, Management, Action, Data {}
     public record Entry(ObjectTarget target) implements Request {}
     public record ObjectAccess(ObjectTarget target, Verb verb, OwnerFacts ownerFacts) implements Request {}
+    /** A credential must allow the whole kind/verb; a point-limited credential does not authorize enumeration. */
+    public record PublishedObjectRead(Kind kind, Verb verb) implements Request {}
+    public record ObjectVisibilityRange(boolean fixed, String authorId, Set<String> objectIds, boolean all) {
+        private static final ObjectVisibilityRange EMPTY = new ObjectVisibilityRange(false, null, Set.of(), false);
+    }
     public record Create(Kind kind) implements Request {}
     public record Management(String operationId) implements Request {}
     public record Data(List<String> classes) implements Request {}
@@ -73,7 +79,8 @@ public final class AuthorizationService {
         var management = new LinkedHashSet<String>();
         for (var ref : policies.policies(actor.domainId(), roles.effectiveRoleIds())) {
             byRole.computeIfAbsent(ref.roleId(), key -> new ArrayList<>()).add(ref);
-            (ref.kind() == PolicyKind.OBJECT ? objects : management).add(ref.policyId());
+            if (ref.kind() == PolicyKind.OBJECT) objects.add(ref.policyId());
+            else if (ref.kind() == PolicyKind.MANAGEMENT) management.add(ref.policyId());
         }
         byRole.replaceAll((role, refs) -> List.copyOf(refs));
         return new SubjectContext(actor, roles, Map.copyOf(byRole), Set.copyOf(objects), Set.copyOf(management));
@@ -85,6 +92,7 @@ public final class AuthorizationService {
         return switch (request) {
             case Entry(var target) -> decideEntry(ctx, target);
             case ObjectAccess access -> decideObject(ctx, access);
+            case PublishedObjectRead ignored -> Decision.ALLOWED;
             case Create(var kind) -> decideCreate(ctx, kind);
             case Management(var operationId) -> decideManagement(ctx, operationId);
             case Data ignored -> Decision.ALLOWED;
@@ -94,6 +102,29 @@ public final class AuthorizationService {
 
     public List<Decision> decideBatch(SubjectContext ctx, List<? extends Request> requests) {
         return requests.stream().map(request -> decide(ctx, request)).toList();
+    }
+
+    public Map<Verb, ObjectVisibilityRange> readObjectRanges(SubjectContext ctx, Kind kind, Set<Verb> verbs) {
+        var ranges = new EnumMap<Verb, ObjectVisibilityRange>(Verb.class);
+        var policyVerbs = new LinkedHashSet<Verb>();
+        for (var verb : verbs) {
+            if (!decide(ctx, new PublishedObjectRead(kind, verb)).allowed()) {
+                ranges.put(verb, ObjectVisibilityRange.EMPTY);
+                continue;
+            }
+            boolean all = subjects.domainWideObjectEntitlement(kind, verb);
+            var author = OwnershipAdmission.authorAllowed(kind, verb, false) ? ctx.identity().userId() : null;
+            ranges.put(verb, new ObjectVisibilityRange(FixedProductAccess.allows(kind, verb), author, Set.of(), all));
+            if (!all) policyVerbs.add(verb);
+        }
+        if (!policyVerbs.isEmpty()) {
+            var keys = policies.objectKeysByVerb(ctx.identity().domainId(), kind, policyVerbs, ctx.objectPolicyIds());
+            keys.forEach((verb, ids) -> {
+                var range = ranges.get(verb);
+                ranges.put(verb, new ObjectVisibilityRange(range.fixed(), range.authorId(), ids, range.all()));
+            });
+        }
+        return ranges;
     }
 
     private Decision decideEntry(SubjectContext ctx, ObjectTarget target) {
@@ -113,6 +144,7 @@ public final class AuthorizationService {
         if (ownership == OwnershipAdmission.Result.PRIVATE_DRAFT)
             return Decision.denied("PRIVATE_DRAFT", "Only the authors may access this draft.");
         if (ownership == OwnershipAdmission.Result.ALLOWED
+                || subjects.domainWideObjectEntitlement(target.kind(), access.verb())
                 || subjects.objectEntitlement(ctx.identity().userId(), target, access.verb())
                 || has(ctx, target, access.verb())) return Decision.ALLOWED;
         return Decision.denied("OBJECT_FORBIDDEN", "You do not have the required permission for this object.");

@@ -10,14 +10,11 @@ final class OwnershipAdmission {
     static Result decide(String userId, Kind kind, Verb verb, OwnerFacts owner, boolean approvedSandbox) {
         boolean author = userId.equals(owner.ownerId()) || owner.coauthorIds().contains(userId);
         if (owner.state() == DefinitionState.DRAFT && !author) return Result.PRIVATE_DRAFT;
-        if (!author) return Result.PASS_TO_POLICY;
-        if (kind == Kind.ACTION) {
-            if (verb == Verb.EDIT || verb == Verb.EXECUTE && approvedSandbox) return Result.ALLOWED;
-            return Result.PASS_TO_POLICY;
-        }
-        return switch (verb) {
-            case USE, VIEW, EDIT -> Result.ALLOWED;
-            default -> Result.PASS_TO_POLICY;
-        };
+        return author && authorAllowed(kind, verb, approvedSandbox) ? Result.ALLOWED : Result.PASS_TO_POLICY;
+    }
+
+    static boolean authorAllowed(Kind kind, Verb verb, boolean approvedSandbox) {
+        if (kind == Kind.ACTION) return verb == Verb.EDIT || verb == Verb.EXECUTE && approvedSandbox;
+        return verb == Verb.USE || verb == Verb.VIEW || verb == Verb.EDIT;
     }
 }
