@@ -361,7 +361,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Displays key fields or preformatted text of one object (status tags, references, copyable fields); use for read-only detail summaries. Shows the few facts of one object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object, `config.density` ('comfortable' default with an airy `1fr 2fr` grid and `12px`/`16px` gaps, or 'compact' with tighter `auto 1fr` spacing), `config.bordered` to `true` (default `false`) for a bordered description table (supporting `config.columns`, default `1`), `config.keyValueFields` to render map or entry-list fields as an aligned two-column `<dl>` grid, or `config.presentation` to 'pre' to render a focusable scrollable `<pre tabindex='0'>` capped at `55dvh`. Exposes `label` and `status` as read-only outputs.",
+      "Displays key fields or preformatted text of one object (status tags, references, copyable fields); use for read-only detail summaries. Shows the few facts of one object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object, `config.density` ('comfortable' default with an airy `1fr 2fr` grid and `12px`/`16px` gaps, or 'compact' with tighter `auto 1fr` spacing), `config.bordered` to `true` (default `false`) for a bordered description table (supporting `config.columns`, default `1`), `config.keyValueFields` to render map or entry-list fields as an aligned two-column `<dl>` grid, or `config.presentation` to 'pre' to render a focusable scrollable `<pre tabindex='0'>` capped at `55dvh`. In `article` layout, `config.bodyEmptyText` names a panel message drawn in place of the body prose when the body field holds no text. Exposes `label` and `status` as read-only outputs.",
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: { record: { results: ["panelRecord"], required: true } },
@@ -370,7 +370,7 @@ export const components: readonly ComponentMetadata[] = [
       status: { kind: "scalar", type: "string" },
     },
     configProps: [
-      "fields", "showTitle", "layout", "statusField", "tagsField", "bodyField", "emptyText", "missingText",
+      "fields", "showTitle", "layout", "statusField", "tagsField", "bodyField", "bodyEmptyText", "emptyText", "missingText",
       "copyableFields", "presentation", "density", "keyValueFields", "bordered", "columns",
     ],
   }),
@@ -397,7 +397,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Draws a detail header with title, subtitle, status badge, and bound operations; use at the top of detail views or inside `<page-header #title>`. Draws a detail header with object name (`record.label` or `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`, or `status` + `statusTone`), and right-side actions. When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2, configurable without upper cap) operations inline via `OperationButton` in declared order (styling destructive operations as plain danger buttons inline when within the visible limit) and moves remaining overflow operations into an SDK dropdown More menu (whose accessible name automatically includes the current record title) using the shared operation dispatch, parameter dialog, and confirmation path. Also works standalone with `title`/`subtitle` and `#actions` (such as create-mode headers). Set `fallbackTitle` to keep a quiet single-line fallback while loading or missing. Exposes `label`, `status`, and `errorMessage` as read-only outputs (plus any named, typed scalar outputs explicitly declared by the bound read's owner).",
+      "Draws a detail header with title, subtitle, status badge, and bound operations; use at the top of detail views or inside `<page-header #title>`. Draws a detail header with object name (`record.label` or `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`, or `status` + `statusTone`, drawn as the tinted text tag by default or as the shared status dot followed by the status text with `statusStyle: 'dot'`), and right-side actions. When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2, configurable without upper cap) operations inline via `OperationButton` in declared order (styling destructive operations as plain danger buttons inline when within the visible limit) and moves remaining overflow operations into an SDK dropdown More menu (whose accessible name automatically includes the current record title) using the shared operation dispatch, parameter dialog, and confirmation path. Also works standalone with `title`/`subtitle` and `#actions` (such as create-mode headers). Set `fallbackTitle` to keep a quiet single-line fallback while loading or missing. Exposes `label`, `status`, and `errorMessage` as read-only outputs (plus any named, typed scalar outputs explicitly declared by the bound read's owner).",
     effects: "Reads the bound object's `record` datum when declared and runs projection operations through the platform coordinator.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: { record: { results: ["panelRecord"], required: false } },
@@ -407,7 +407,7 @@ export const components: readonly ComponentMetadata[] = [
       errorMessage: { kind: "scalar", type: "string" },
     },
     configProps: [
-      "title", "subtitle", "subtitleField", "statusField", "status", "statusTone", "operations",
+      "title", "subtitle", "subtitleField", "statusField", "status", "statusTone", "statusStyle", "operations",
       "maxVisibleOperations", "fallbackTitle",
     ],
   }),

@@ -53,10 +53,11 @@
         },
         "config": {
           "subtitleField": "trigger",
-          "statusField": "status"
+          "statusField": "status",
+          "statusStyle": "dot"
         },
         "name": "Run status header",
-        "description": "Displays the task title, trigger kind, and execution status badge.",
+        "description": "Displays the task title, trigger kind, and the run status dot with its status text.",
         "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000001"
       },
       "pauseNotice": {
@@ -174,10 +175,11 @@
             "timeZone",
             "snapshotSummary",
             "executionDetails"
-          ]
+          ],
+          "bodyEmptyText": "noResult"
         },
         "name": "Run output",
-        "description": "Draws the cleaned execution output as reading prose, with the duration, time zone, run settings, and execution details listed below it.",
+        "description": "Draws the cleaned execution output as reading prose, with a placeholder when the run produced no text, and lists the duration, time zone, run settings, and execution details below it.",
         "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000006"
       }
     }
@@ -192,7 +194,8 @@
         "startedAt": "Started",
         "finishedAt": "Finished",
         "refresh": "Refresh run",
-        "resultTitle": "Execution result"
+        "resultTitle": "Execution result",
+        "noResult": "No text result was produced."
       },
       "zh-CN": {
         "panel.name": "定时任务运行详情",
@@ -202,7 +205,8 @@
         "startedAt": "开始时间",
         "finishedAt": "完成时间",
         "refresh": "刷新状态",
-        "resultTitle": "执行结果"
+        "resultTitle": "执行结果",
+        "noResult": "本次运行未产出文本结果。"
       },
       "zh-TW": {
         "panel.name": "排程任務執行詳情",
@@ -212,7 +216,8 @@
         "startedAt": "開始時間",
         "finishedAt": "完成時間",
         "refresh": "重新整理狀態",
-        "resultTitle": "執行結果"
+        "resultTitle": "執行結果",
+        "noResult": "本次執行未產出文字結果。"
       },
       "ja": {
         "panel.name": "定期タスク実行詳細",
@@ -222,7 +227,8 @@
         "startedAt": "開始時刻",
         "finishedAt": "完了時刻",
         "refresh": "状態を更新",
-        "resultTitle": "実行結果"
+        "resultTitle": "実行結果",
+        "noResult": "テキスト結果は出力されませんでした。"
       },
       "de": {
         "panel.name": "Ausführungsdetails der geplanten Aufgabe",
@@ -232,7 +238,8 @@
         "startedAt": "Gestartet",
         "finishedAt": "Beendet",
         "refresh": "Status aktualisieren",
-        "resultTitle": "Ausführungsergebnis"
+        "resultTitle": "Ausführungsergebnis",
+        "noResult": "Es wurde kein Textergebnis erzeugt."
       },
       "fr": {
         "panel.name": "Détail d'exécution de tâche planifiée",
@@ -242,7 +249,8 @@
         "startedAt": "Début",
         "finishedAt": "Fin",
         "refresh": "Actualiser",
-        "resultTitle": "Résultat de l'exécution"
+        "resultTitle": "Résultat de l'exécution",
+        "noResult": "Aucun résultat texte n'a été produit."
       },
       "it": {
         "panel.name": "Dettaglio esecuzione attività pianificata",
@@ -252,7 +260,8 @@
         "startedAt": "Avviata",
         "finishedAt": "Terminata",
         "refresh": "Aggiorna stato",
-        "resultTitle": "Risultato dell'esecuzione"
+        "resultTitle": "Risultato dell'esecuzione",
+        "noResult": "Nessun risultato testuale prodotto."
       },
       "ar": {
         "panel.name": "تفاصيل تشغيل المهمة المجدولة",
@@ -262,7 +271,8 @@
         "startedAt": "وقت البدء",
         "finishedAt": "وقت الانتهاء",
         "refresh": "تحديث الحالة",
-        "resultTitle": "نتيجة التنفيذ"
+        "resultTitle": "نتيجة التنفيذ",
+        "noResult": "لم يتم إنتاج نتيجة نصية."
       }
     }
   }
