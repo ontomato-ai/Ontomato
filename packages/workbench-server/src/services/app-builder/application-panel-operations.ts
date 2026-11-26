@@ -266,11 +266,11 @@ export const applicationBuilderServerOperations = [
         await getBuilderProjectStatus(host.initiator.owner, host.initiator.credentials, primaryKey),
       ] as const)));
       const reasons = new Map<string, { reason: string }>();
-      for (const { rowKey, target, row } of targets) {
+      for (const { rowKey, target, input } of targets) {
         const detail = details.get(target.primaryKey)!;
         if (!detail.materialized) reasons.set(rowKey, { reason: text(locale, "notMaterialized") });
         else if (detail.busy) reasons.set(rowKey, { reason: text(locale, "busy") });
-        else if (row!.primaryKey === detail.headCommit) reasons.set(rowKey, { reason: text(locale, "currentCommit") });
+        else if (input!.commit === detail.headCommit) reasons.set(rowKey, { reason: text(locale, "currentCommit") });
       }
       return reasons;
     },
@@ -378,11 +378,11 @@ export const applicationBuilderServerOperations = [
         await getBuilderProject(host.initiator.owner, host.initiator.credentials, primaryKey),
       ] as const)));
       const reasons = new Map<string, { reason: string }>();
-      for (const { rowKey, target, row } of targets) {
+      for (const { rowKey, target, input } of targets) {
         const detail = details.get(target.primaryKey)!;
         if (detail.busy) reasons.set(rowKey, { reason: text(locale, "busy") });
         else if (detail.drift.hasDrift) reasons.set(rowKey, { reason: text(locale, "driftBlocking") });
-        else if (detail.currentReleaseId && row!.primaryKey === detail.currentReleaseId) {
+        else if (detail.currentReleaseId && input!.releaseId === detail.currentReleaseId) {
           reasons.set(rowKey, { reason: text(locale, "currentRelease") });
         }
       }
