@@ -251,7 +251,11 @@ public class ApplicationCatalog {
     public boolean inDomain(JSONObject app, User user) {
         return app.getString("domainId") == null || Objects.equals(app.getString("domainId"), user.getDomainId());
     }
-    public record VisibleEntry(String id, String applicationId, Map<String, String> names, String pageKey) {}
+    public record VisibleEntry(String id, String applicationId, Map<String, String> names, String pageKey) {
+        public VisibleEntry {
+            names = Objects.requireNonNullElse(names, Map.of());
+        }
+    }
 
     public List<VisibleEntry> visibleEntries(User user) {
         var subject = new ApplicationSubject(user);
