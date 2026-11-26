@@ -45,6 +45,13 @@ node "$SKILL/scripts/ontomato.mjs" panel check ./my-app --sdk-dir "$SDK_RELEASE"
 Use the online `node "$SKILL/scripts/ontomato.mjs" panel check ./my-app` when you also need server lookup for
 already-registered platform/domain projections or panels.
 
+### Config keys come from the component page
+
+`config` sets only the keys the component publishes on its single page (`docs/components/<ComponentId>.md`, the same
+list `components.json` carries): a key the page does not list fails `panel check` with
+`config.<key> is not in the author-facing documentation of <componentId>`, and the component would ignore it at
+runtime. Platform panels (`panel check --builtin`) are not limited to that list.
+
 ### Metric charts and single-member refresh
 
 For a calculated MetricView chart from an existing dashboard card, declare `component: "MetricChart"` and
