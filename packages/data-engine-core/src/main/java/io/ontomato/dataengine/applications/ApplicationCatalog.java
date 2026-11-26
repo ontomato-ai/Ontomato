@@ -902,39 +902,21 @@ public class ApplicationCatalog {
                 Set.copyOf(declarations.stream().map(Builtin::id).toList()));
         });
     }
-    public JSONObject publish(String id, Declaration declaration, String releaseId, User user) {
-        if (releaseId == null || !releaseId.matches("[a-zA-Z0-9_-]{1,128}")) throw bad("Invalid releaseId");
-        return userApplication(id, "hosted", declaration, releaseId, user);
-    }
-    public JSONObject publishProduct(String id, Declaration declaration, String releaseId, User user,
-            ProductGrantService.OwnerFacts ownerFacts) {
-        if(releaseId==null||!releaseId.matches("[a-zA-Z0-9_-]{1,128}"))throw bad("Invalid releaseId");
-        if (ownerFacts == null || ownerFacts.ownerId() == null || ownerFacts.ownerId().isBlank()
-                || !"current".equals(ownerFacts.state()))
-            throw bad("Product publication requires current owner facts");
-        return userApplication(id, "product", declaration, releaseId, user, ownerFacts.ownerId());
-    }
     public JSONObject connected(String id, Declaration declaration, String upstream, String upstreamPrefix, User user) {
         var allowed = upstreams.getJSONArray(user.getDomainId());
         if (allowed == null || !allowed.contains(upstream)) throw bad("Upstream is not allowed in this domain");
         if (upstreamPrefix == null || !upstreamPrefix.matches("/(?:[a-zA-Z0-9_-]+/)*"))
             throw bad("Invalid upstream prefix");
         return transactions.execute(tx -> {
-            var result = userApplication(id, "connected", declaration, null, user);
+            var result = userApplication(id, declaration, user);
             db.update("UPDATE sys_application SET entry=entry || ?::jsonb WHERE id=?",
                 JSONObject.of("upstream", upstream, "upstreamPrefix", upstreamPrefix).toJSONString(), id);
             return result;
         });
     }
-    private JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user) {
-        return userApplication(id, kind, declaration, releaseId, user, null);
-    }
-
-    private JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user,
-            String productAuthor) {
+    private JSONObject userApplication(String id, Declaration declaration, User user) {
         validateId(id); validate(declaration);
         if (!declaration.pageSkills().isEmpty() || !declaration.panelUses().isEmpty()) throw bad("Use the panel application registration for panel relations");
-        if(!List.of("hosted","connected","product").contains(kind))throw bad("Invalid user application kind");
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
         return transactions.execute(tx -> {
             lockCatalog();
@@ -942,11 +924,9 @@ public class ApplicationCatalog {
             if (old.isPresent()) {
                 var a = old.get();
                 if (panelManaged(a)) throw bad("A panels application cannot use legacy publication");
-                if (!kind.equals(a.getString("kind"))) throw denied();
+                if (!"connected".equals(a.getString("kind"))) throw denied();
                 requireDomainMaintainer(a, user);
-            } else if ("product".equals(kind)) {
-                access.requireLegacyProductAuthor(user, productAuthor);
-            } else if ("connected".equals(kind)) {
+            } else {
                 var subject = new ApplicationSubject(user);
                 var decision = authorization.decide(subject.context(), new Management(ApplicationController.CONNECT_APPLICATION));
                 if (!decision.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
@@ -954,13 +934,13 @@ public class ApplicationCatalog {
             requireIconChange(old.orElse(null), declaration.icon(), user);
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
             boolean allowStandalone = old.map(ApplicationCatalog::allowsStandalone).orElse(true);
-            String path=kind.equals("product")?"/products/"+id+"?applicationId="+id:"/apps/"+id+"/";
+            String path="/apps/"+id+"/";
             var entryKey = old.map(app -> app.getJSONObject("entry").getString("entryKey")).orElse(LEGACY_ENTRY_KEY);
-            save(id, user.getDomainId(), List.of("hosted","product").contains(kind) ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,
-                JSONObject.of("path", path, "entryKey", entryKey), null, releaseId, declaration, new JSONObject(), allowStandalone);
+            save(id, user.getDomainId(), "data-engine", owner, "connected", "apps", "business", 100,
+                JSONObject.of("path", path, "entryKey", entryKey), null, null, declaration, new JSONObject(), allowStandalone);
             var application = require(id);
             access.declare(application, declaration, old.isEmpty());
-            return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath",path);
+            return JSONObject.of("applicationId", id, "entryPath", path);
         });
     }
     static void validateUseGroups(List<ApplicationPanelUse> uses, List<Group> groups) {

@@ -12,7 +12,9 @@ import {
   DELETE_PERMISSION_POLICY,
   DELETE_ROLE,
   GENERATE_USER_API_KEY,
+  GRANT_MEMBER_ACCESS,
   GRANT_POLICY_ENTRIES,
+  INSPECT_MEMBER_ACCESS,
   INSPECT_POLICY_ACCESS,
   ISSUE_USER_API_KEY_BATCH,
   LIST_PENDING_POLICY_GRANTS,
@@ -22,6 +24,7 @@ import {
   ORG_UNIT,
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
+  READ_MEMBER_ACCESS_CONTEXT,
   REFRESH_POLICY_API_CATALOG,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
@@ -56,13 +59,17 @@ import {
   valuesForTarget,
   type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
+import { readMemberAccessContext } from "./panel-reads";
 import {
+  grantMemberAccessInputSchema,
   grantPolicyEntries,
   grantPolicyEntriesInputSchema,
   grantPolicyEntriesResultSchema,
+  inspectMemberAccessInputSchema,
   inspectPolicyAccessInputSchema,
   inspectPolicyAccessPayload,
   listPendingPolicyGrantsPayload,
+  memberAccessContextInputSchema,
   previewEntryGrantPayload,
   previewPolicyEntryGrantInputSchema,
   resolvePendingPolicyGrants,
@@ -88,6 +95,13 @@ const jsonReadResultSchema = z.object({ kind: z.literal("json"), value: runtimeJ
 function policyReadTargetId(target?: { kind: string; primaryKey?: string } | null): string {
   if (!target || target.kind !== "object" || !target.primaryKey) {
     throw new Error("Policy access reads require a selected permission policy");
+  }
+  return target.primaryKey;
+}
+
+function memberReadTargetId(target?: { kind: string; primaryKey?: string } | null): string {
+  if (!target || target.kind !== "object" || !target.primaryKey) {
+    throw new Error("Member access reads require a selected member");
   }
   return target.primaryKey;
 }
@@ -624,6 +638,82 @@ export const governanceServerOperations = [
           };
         },
       );
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // platform:User — checking and filling one member's access
+  // -------------------------------------------------------------------------
+  {
+    handlerRef: READ_MEMBER_ACCESS_CONTEXT,
+    labelKey: "panels.governance.user.operations.accessContext",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: READ_MEMBER_ACCESS_CONTEXT },
+    effect: "read",
+    batch: false,
+    target: { source: "input", input: "member" },
+    targetType: USER,
+    targetSchema: objectTarget(USER),
+    inputSchema: memberAccessContextInputSchema,
+    resultSchema: jsonReadResultSchema,
+    async execute(host: PanelOperationHost, call) {
+      const subjectId = memberReadTargetId(call.target);
+      const { inspectingPolicyId } = memberAccessContextInputSchema.parse(call.input);
+      return {
+        kind: "json" as const,
+        value: await readMemberAccessContext(
+          host.executor.owner, host.executor.credentials, subjectId, inspectingPolicyId,
+        ),
+      };
+    },
+  },
+  {
+    handlerRef: INSPECT_MEMBER_ACCESS,
+    labelKey: "panels.governance.user.operations.inspectAccess",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: INSPECT_MEMBER_ACCESS },
+    effect: "read",
+    batch: false,
+    target: { source: "input", input: "member" },
+    targetType: USER,
+    targetSchema: objectTarget(USER),
+    inputSchema: inspectMemberAccessInputSchema,
+    resultSchema: jsonReadResultSchema,
+    async execute(host: PanelOperationHost, call) {
+      const subjectId = memberReadTargetId(call.target);
+      const input = inspectMemberAccessInputSchema.parse(call.input);
+      return {
+        kind: "json" as const,
+        value: await inspectPolicyAccessPayload(
+          host.executor.credentials, host.executor.owner.domainId, null, { subjectId, ...input },
+        ),
+      };
+    },
+  },
+  {
+    handlerRef: GRANT_MEMBER_ACCESS,
+    labelKey: "panels.governance.user.operations.grantAccess",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: GRANT_MEMBER_ACCESS },
+    effect: "write",
+    batch: false,
+    targetType: USER,
+    targetSchema: z.null(),
+    inputSchema: grantMemberAccessInputSchema,
+    resultSchema: grantPolicyEntriesResultSchema,
+    async execute(host: PanelOperationHost, _target: null, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      const { policyId, entryIds, acceptedObjects } = grantMemberAccessInputSchema.parse(input);
+      try {
+        const data = await grantPolicyEntries(host.executor.credentials, policyId, { entryIds, acceptedObjects });
+        return {
+          kind: "success",
+          data,
+          affected: affected(PERMISSION_POLICY, policyId, [PERMISSION_POLICY, ROLE, USER]),
+        };
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
+        return { kind: "refusal", code: error.code ?? "POLICY_GRANT_WRITE_REFUSED", message: error.message };
+      }
     },
   },
 
