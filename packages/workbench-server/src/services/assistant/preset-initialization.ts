@@ -22,9 +22,6 @@ const domainPresets = [
   { ...OPS_DIAGNOSIS, sortOrder: 3 },
 ];
 
-const presetPublicationKind = "preset-object-policy";
-const presetPublicationVersion = 1;
-
 async function shouldUpgradeGovernancePreset(domainId: string) {
   const applied = await getPostgresPool().query(
     `SELECT 1 FROM ${table("assistant_preset_upgrades")} WHERE domain_id=$1 AND kind=$2 AND version=$3`,
@@ -58,12 +55,7 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
     }
     if (upgradeGovernance) await upgradeGovernancePreset(client, domainId);
 
-    const publication = await client.query(
-      `INSERT INTO ${table("assistant_preset_upgrades")} (domain_id,kind,version)
-       VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
-      [domainId, presetPublicationKind, presetPublicationVersion],
-    );
-    if (publication.rowCount && ids.length) {
+    if (ids.length) {
       await backendPost(
         "published-agent-presets", `${config.dataQuery.baseUrl}/authorization/objects/published-agent-presets`,
         { domainId, ids }, { headers: productGovernanceServiceHeaders(), retries: 1 },
