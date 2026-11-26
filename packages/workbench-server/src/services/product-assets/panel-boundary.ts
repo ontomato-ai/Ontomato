@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { z } from "zod";
 import { productReferences, type ProductDocument } from "@ontomato/contracts/product-assets";
 import type { ProductOwner } from "../product-governance/grants";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -7,15 +8,19 @@ import { backendGet, buildBackendHeaders, BackendResponseError } from "../../uti
 import { config } from "../../config/application";
 import { HttpError } from "../../utils/errors";
 
+const legacyMaintenanceSchema = z.object({
+  success: z.literal(true),
+  data: z.object({ legacyWritable: z.boolean() }),
+});
+
 export async function assertLegacyApplicationWrite(credentials: AssistantCredentials, applicationId: string) {
-  const response = await backendGet("legacy-product-application", config.dataQuery.baseUrl + `/platform/applications/${encodeURIComponent(applicationId)}`,
+  const response = await backendGet("legacy-product-application", config.dataQuery.baseUrl + `/platform/applications/${encodeURIComponent(applicationId)}/legacy-maintenance`,
     { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1 })
     .catch(error => { if (error instanceof BackendResponseError && error.status === 404) return null; throw error; });
   // A new legacy draft has no Java application until publication.
   if (response === null) return;
-  const application = JSON.parse(response.text);
-  if (!application.success) throw new HttpError(400, "Application declaration is unavailable", "PRODUCT_UNAVAILABLE");
-  if (application.data.entry.renderer === "panels")
+  const { data } = legacyMaintenanceSchema.parse(JSON.parse(response.text));
+  if (!data.legacyWritable)
     throw new HttpError(409, "Application is managed by current panels", "APPLICATION_MANAGED_BY_PANELS");
 }
 

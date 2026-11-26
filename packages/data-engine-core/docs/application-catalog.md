@@ -118,3 +118,61 @@ claimed by the browser:
 
 Both verify responses use the existing `R` envelope (`success: true`, `code: 200`,
 `data: <user>` on success). The identity field is **`data.id`**, not `data.userId`.
+
+
+## Domain application editing
+
+The catalogue supplies the registered application's domain, ID, `owner_user_id`
+and `coauthor_ids` to the application EDIT decision. Registered applications
+are published definitions. An absent author stays absent. Entry admission
+uses the separate ENTRY decision.
+
+The catalogue's `canMaintain` and `canGrant` fields come from the same EDIT
+decision. The application grant panel still reads and changes legacy application
+USE rows through `/platform/applications/{id}/use-grants` and `/use-sharing`.
+It does not issue EDIT grants. The application owner authorizes these routes.
+Legacy release writers check `/platform/applications/{id}/legacy-maintenance`
+before modifying a registered application. Their own bundle and asset checks
+still apply. The generic legacy grant writers also ask the catalogue about a
+registered application before changing same-ID legacy grants.
+
+### Development data cutover evidence
+
+Inventory `product_grant` before deployment by joining both identifiers to a
+registered application. The source key contains no provenance or creation time.
+
+```sql
+SELECT a.domain_id, a.id, a.kind, a.entry->>'renderer' AS renderer,
+       a.owner_user_id, g.principal_kind, g.principal_id
+FROM sys_application a
+JOIN product_grant g ON g.domain_id = a.domain_id AND g.resource_id = a.id
+WHERE a.domain_id IS NOT NULL AND a.kind IS NOT NULL AND g.verb = 'edit'
+ORDER BY a.domain_id, a.id, g.principal_kind, g.principal_id;
+```
+
+- The enterprise declaration and older Java application import seeded principal
+  EDIT for the author and role EDIT for the actual administrator roles. The
+  product grant key also held explicit grants. A principal row matching the
+  recorded author needs no new grant, and its source remains unknown.
+- Add confirmed, existing domain members with an explicit personal EDIT grant
+  to that application's `coauthor_ids`. A differing principal ID is a
+  candidate only. Check the recorded author history, legacy asset ownership if a
+  bundle shares the ID, and the edition's identity mapping. The OSS legacy
+  product principal is `system` while the Java anonymous subject is `admin`.
+  Neither an alias nor an EDIT row establishes authorship. Leave unresolved
+  principal rows and missing authors on the review list.
+- Carry EDIT for valid roles to an object policy assigned to exactly those roles,
+  scoped to this application, and domain-wide EDIT to the domain member
+  policy if the source really granted it. Existing admin-role EDIT is an
+  explicit migration input by role ID. Neither admin status, role name, menu
+  access nor USE supplies an EDIT grant. Check the role and policy domain and
+  their recipients before adding the grant.
+- Apply from the reviewed snapshot before enabling the new writer. Merge
+  coauthor IDs as a set and insert EDIT grants by the existing policy grant
+  key, so applying the same snapshot twice gives the same result. A later run
+  must not restore a coauthor or policy grant intentionally revoked after
+  cutover. Preserve USE rows and retain unresolved rows for the step 4 review.
+
+The schema change only adds the coauthor fact. The development data inventory
+and cutover are operator work. Demotion or deletion of legacy rows belongs to
+the subsequent cleanup.

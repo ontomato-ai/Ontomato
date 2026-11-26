@@ -80,10 +80,6 @@ const ApplicationDetailPanel = {
         });
       },
     });
-    const grantVerbModel = computed({
-      get: () => (values.value.grantVerb === "edit" ? "edit" : "use"),
-      set: (next) => instance.state.set("grantVerb", next === "edit" ? "edit" : "use"),
-    });
     const grantPrincipalId = computed(() => values.value.grantPrincipalId ?? "");
 
     // Read-only projection outputs only (no raw record reads or fields bag).
@@ -271,7 +267,6 @@ const ApplicationDetailPanel = {
         grantUser: null,
         grantRole: null,
         grantPrincipalId: null,
-        grantVerb: "use",
         grantDialog: true,
       });
     }
@@ -369,7 +364,6 @@ const ApplicationDetailPanel = {
       copyDialogOpen,
       grantDialogOpen,
       grantPrincipalKindModel,
-      grantVerbModel,
       grantPrincipalId,
       grantKindOptions,
       recordStatus,

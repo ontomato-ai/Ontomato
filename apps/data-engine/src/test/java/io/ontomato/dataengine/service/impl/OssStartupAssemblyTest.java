@@ -1,6 +1,10 @@
 package io.ontomato.dataengine.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -13,6 +17,7 @@ import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OrganizationDirectory;
 import io.ontomato.dataengine.service.PermissionPolicyDirectory;
 import io.ontomato.dataengine.service.ProductGrants;
+import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import io.ontomato.dataengine.service.SchemaImportAuthorization;
 import io.ontomato.dataengine.service.SchemaPermissionService;
@@ -21,8 +26,29 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 
 class OssStartupAssemblyTest {
+    @Test
+    void applicationEditUsesObjectPolicyAndKeepsLegacyUse() {
+        var products = mock(ProductGrantService.class);
+        var jdbc = mock(JdbcTemplate.class);
+        var anonymous = new AnonymousAuthorization(products, jdbc);
+        var target = new ObjectTarget("1", Kind.APPLICATION, "app-example");
+        when(products.allowedFor("1", "admin", "app-example", "edit")).thenReturn(true);
+        when(products.allowedFor("1", "admin", "app-example", "use")).thenReturn(true);
+
+        assertFalse(anonymous.objectEntitlement("admin", target, Verb.EDIT));
+        assertTrue(anonymous.objectEntitlement("admin", target, Verb.USE));
+        var edit = new ObjectGrant(anonymous.domainPolicy("1").policyId(), target, Verb.EDIT, null);
+        anonymous.grantObject(edit);
+        verify(jdbc).update(contains("INSERT INTO object_policy_grant"), eq("1"), eq("APPLICATION"), eq("app-example"), eq("EDIT"));
+        when(jdbc.query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<ObjectGrant>>any(),
+                eq("1"), eq("APPLICATION"), eq("app-example"), eq("EDIT"))).thenReturn(List.of(edit));
+        assertTrue(anonymous.objectEntitlement("admin", target, Verb.EDIT));
+        verify(products, never()).allowedFor("1", "admin", "app-example", "edit");
+    }
+
     @Test
     void fullApplicationStartsWithoutLazyBeansOrCircularReferences(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {

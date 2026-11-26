@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   applicationCatalogueCreateSchema, applicationCatalogueFormRequestSchema, applicationCatalogueQueryResultSchema,
   applicationCatalogueRecordSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
-  type ApplicationCatalogueFormRequest,
+  applicationUseGrantChangeSchema, applicationUseGrantsSchema, type ApplicationCatalogueFormRequest,
 } from "@ontomato/contracts/application-catalogue";
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
@@ -19,7 +19,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { createLogger } from "../../logging/logger";
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import { readProductGrantRecords, type ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
 import { listDefaultAgentOptions } from "../assistant/default-agents";
 import { listCurrentProducts } from "./catalog";
 import { readCurrentPanel } from "./current";
@@ -231,6 +231,19 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
     async record(primaryKey: string) {
       const response = await backendGet("application-catalogue-record", url(`${cataloguePath}/${encodeURIComponent(primaryKey)}`), options());
       return ownerData(response.text, applicationCatalogueRecordSchema);
+    },
+    async useGrants(id: string) {
+      const response = await backendGet("application-use-grants", url(`${entryPath(id)}/use-grants`), options());
+      const { grants } = ownerData(response.text, applicationUseGrantsSchema);
+      return { grants, shared: grants.some(grant => grant.principalKind === "domain") };
+    },
+    async changeUseGrant(id: string, change: z.infer<typeof applicationUseGrantChangeSchema>) {
+      const response = await backendPut("application-use-grant", url(`${entryPath(id)}/use-grants`), change, options());
+      ownerSuccessSchema.parse(JSON.parse(response.text));
+    },
+    async shareUse(id: string, shared: boolean) {
+      const response = await backendPut("application-use-sharing", url(`${entryPath(id)}/use-sharing`), { shared }, options());
+      ownerSuccessSchema.parse(JSON.parse(response.text));
     },
     async form(input: ApplicationCatalogueFormRequest) {
       const response = await backendPost("application-catalogue-form", url(`${cataloguePath}/form`),
@@ -453,31 +466,15 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
     },
     async record(primaryKey: string) {
       const detail = await record(primaryKey);
-      let domainShared: boolean | undefined;
-      if (detail.canGrant) {
-        try {
-          const { grants } = await readProductGrantRecords(primaryKey, viewer);
-          domainShared = grants.some(grant => grant.principalKind === "domain" && grant.verb === "use");
-        } catch {
-          domainShared = false;
-        }
-      }
+      const domainShared = detail.canGrant ? (await client.useGrants(primaryKey)).shared : undefined;
       const framePanelLabel = detail.framePanelId ? (await panelNameMap()).get(detail.framePanelId) : undefined;
       return toApplicationPanelRecord(detail, viewer.locale, { domainShared, framePanelLabel });
     },
-    async grants(primaryKey: string) {
-      if (!(await record(primaryKey)).canGrant)
-        throw new HttpError(403, "Application edit Grant required", "PRODUCT_FORBIDDEN");
-      const { grants } = await readProductGrantRecords(primaryKey, viewer);
-      return { grants, shared: grants.some(grant => grant.principalKind === "domain" && grant.verb === "use") };
-    },
+    grants: client.useGrants,
     async grantRows(primaryKey: string): Promise<PanelRecord[]> {
-      if (!(await record(primaryKey)).canGrant)
-        throw new HttpError(403, "Application edit Grant required", "PRODUCT_FORBIDDEN");
-      const { grants } = await readProductGrantRecords(primaryKey, viewer);
+      const { grants } = await client.useGrants(primaryKey);
       const kindLabel = (kind: string) =>
         kind === "domain" ? word("grantDomain") : kind === "role" ? word("grantRole") : word("grantPrincipal");
-      const verbLabel = (verb: string) => (verb === "edit" ? word("grantEdit") : word("grantUse"));
       return grants.map((grant): PanelRecord => {
         const isDomain = grant.principalKind === "domain";
         const displayName = isDomain ? word("grantDomain") : (grant.principalName || grant.principalId);
@@ -494,7 +491,7 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
             principalKindLabel: kindLabel(grant.principalKind),
             principalId: grant.principalId,
             verb: grant.verb,
-            verbLabel: verbLabel(grant.verb),
+            verbLabel: word("grantUse"),
             revocable: !isDomain,
           },
           fieldLabels: {
@@ -503,7 +500,6 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
           },
           tones: {
             principalKindLabel: isDomain ? "success" : "info",
-            verbLabel: grant.verb === "edit" ? "warning" : "default",
           },
         };
       });
