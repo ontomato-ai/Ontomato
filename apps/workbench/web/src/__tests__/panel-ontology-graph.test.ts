@@ -304,6 +304,7 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
             labelKey: "platformOntology.relations.action.targets-object-type",
             derived: false,
             owner: "java-action",
+            group: "dependency",
           },
           {
             id: "role.owns-workflow-step",
@@ -312,6 +313,7 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
             labelKey: "platformOntology.relations.role.owns-workflow-step",
             derived: true,
             owner: "java-workflow",
+            group: "authorization",
           },
         ],
       });
