@@ -1,0 +1,40 @@
+name: Enterprise compatibility
+
+on:
+  pull_request_target:
+    branches: [develop]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+
+permissions: {}
+
+jobs:
+  bridge:
+    if: >-
+      github.ref_protected &&
+      github.event.pull_request.state == 'open' &&
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.id == github.event.repository.id &&
+      (github.event.action != 'edited' || github.event.changes.base.ref.from)
+    runs-on: ubuntu-24.04
+    environment: enterprise-pr-compat-develop
+    timeout-minutes: 13
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    concurrency:
+      group: enterprise-pr-compat-${{ github.event.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Check out the trusted workflow revision
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Report enterprise compatibility
+        run: node scripts/ci-enterprise-compatibility.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLAB_ENTERPRISE_TRIGGER_TOKEN: ${{ secrets.GITLAB_ENTERPRISE_TRIGGER_TOKEN }}
+          GITLAB_ENTERPRISE_READ_API_TOKEN: ${{ secrets.GITLAB_ENTERPRISE_READ_API_TOKEN }}
