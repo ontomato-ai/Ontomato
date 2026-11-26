@@ -11,7 +11,7 @@
 
 ## 填写修改
 
-1. 展开对应属性行后，行下内联表单 `attributeRowForm` 展示显示名 `showName`、说明 `attrDesc` 以及横排的启用 `enable`、业务键 `businessKey`、主键 `primaryKey` 开关。
+1. 展开对应属性行后，行下内联表单 `attributeRowForm` 展示显示名 `showName`、说明 `attrDesc`、可选值表 `options`（只在属主给出时出现：值、显示名与语气色）以及横排的启用 `enable`、业务键 `businessKey`、主键 `primaryKey` 开关。
 2. 符合条件的 `varchar` 属性可直接在编辑表单中打开 `primaryKey` 开关并随保存提交（属主自动校验并展示替换原主键的影响确认，原子写入）；当前已是主键或非 `varchar` 类型的属性，`primaryKey` 开关会由属主标记只读并给出原因。
 3. 表单未修改时保存按钮禁用，修改后显示未保存提示并可点击放弃或保存。
 
@@ -19,7 +19,7 @@
 
 1. 读 `form` 成员的 `createForm`，所属对象类型与数据类型的选项以属主表单给的为准。
 2. 用 `present({ creating: true })` 打开新建弹窗。
-3. 用 `fill_form` 填写 `className`、`name`、`type`、`showName`，按需填 `attrDesc`、`enable`、`businessKey`、`primaryKey`。
+3. 用 `fill_form` 填写 `className`、`name`、`type`、`showName`，按需填 `attrDesc`、`options`（属主按所选类型给出时才有）、`enable`、`businessKey`、`primaryKey`。
 4. 需要保存时调用 `page_action({ operation: "form.save" })`。属性名格式、重名与主键替换影响确认由属主处理；保存后关闭弹窗并刷新目录。
 
 ## 删除

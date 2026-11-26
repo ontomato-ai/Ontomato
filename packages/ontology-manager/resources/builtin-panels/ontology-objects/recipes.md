@@ -7,7 +7,7 @@
 - 新建对象类型通过页头「新建对象类型」触发，将公开状态 `creating` 置为 `true` 并清空选中以打开 `objectForm` 创建弹窗；填完保存后进入新类的详情。
 - 公开状态 `creatingAttribute`（不写地址）为 `true` 时，在当前选中类（`selected`）下打开 `attributeForm` 新建属性弹窗；填完保存后关闭弹窗并刷新属性列表。
 - 目录、类详情都在同一张面板；直接打开某个类用本页地址 `<页地址>?selected=<类 API 名>`。
-- 展开属性列表 `attributes` 的某一行，会在该行下方通过 `attributeRowForm`（行级 `ObjectForm`）内联编辑属性（显示名、说明、启用、业务键、主键，以及末尾的删除与保存操作）。
+- 展开属性列表 `attributes` 的某一行，会在该行下方通过 `attributeRowForm`（行级 `ObjectForm`）内联编辑属性（显示名、说明、属主给出时的可选值表 `options`、启用、业务键、主键，以及末尾的删除与保存操作）。
 
 回答“这是哪一页、选中了什么”时，先看 `selected`，再用上面的读取取当前字段，不要凭记忆。要让读者看到某个类，给出本页地址并带上 `?selected=<类 API 名>`。
 
