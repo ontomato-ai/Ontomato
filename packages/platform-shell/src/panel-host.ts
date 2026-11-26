@@ -243,7 +243,7 @@ export type { ProductDefinitionChangedEvent as DefinitionChanged } from "@ontoma
 export const panelHostKey: InjectionKey<PanelHostPort> = Symbol("panel-host");
 
 /** The page region a panel's ordinary overlays belong to; whole-window overlays still use the window root. */
-export const panelOverlayContainerKey: InjectionKey<Ref<HTMLElement | null>> = Symbol("panel-overlay-container");
+export const panelOverlayContainerKey: InjectionKey<Readonly<Ref<HTMLElement | null>>> = Symbol("panel-overlay-container");
 
 /** The platform's panel host, or nothing where panels cannot be opened. */
 export function usePanelHostPort(): PanelHostPort | null {
