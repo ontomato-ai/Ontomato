@@ -1,3 +1,5 @@
+import { workbenchManagement, type WorkbenchManagementOperation } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import fs from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
@@ -71,7 +73,7 @@ import type {
   PanelServerOperation,
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
-import { parseAutotestCaseArtifactKey, requireObserveAccessDomain } from "./panel-reads";
+import { parseAutotestCaseArtifactKey, requireDslQueryAccess } from "./panel-reads";
 import { autotestCaseSetServerOperations } from "./case-sets-panel";
 
 const emptyInputSchema = z.object({}).strict();
@@ -119,8 +121,10 @@ function refusalFromError(error: unknown, fallbackCode: string, fallbackMessage:
   throw error;
 }
 
-async function verifyOwnedTurn(host: PanelOperationHost, turnKey: string): Promise<{ domainId: string }> {
-  const domainId = await requireObserveAccessDomain(host.executor.owner, host.executor.credentials);
+async function verifyOwnedTurn(operation: WorkbenchManagementOperation, host: PanelOperationHost, turnKey: string): Promise<{ domainId: string }> {
+  const { owner, credentials } = host.executor;
+  await assertManagement(operation, owner, credentials);
+  const { domainId } = owner;
   if (!parseTurnKey(turnKey)) throw new HttpError(400, "Invalid turnKey");
   const manifest = loadManifest(turnKey);
   if (!manifest || manifest.domainId !== domainId) {
@@ -129,8 +133,10 @@ async function verifyOwnedTurn(host: PanelOperationHost, turnKey: string): Promi
   return { domainId };
 }
 
-async function verifyOwnedRun(host: PanelOperationHost, runId: string): Promise<{ domainId: string; status: string }> {
-  const domainId = await requireObserveAccessDomain(host.executor.owner, host.executor.credentials);
+async function verifyOwnedRun(operation: WorkbenchManagementOperation, host: PanelOperationHost, runId: string): Promise<{ domainId: string; status: string }> {
+  const { owner, credentials } = host.executor;
+  await assertManagement(operation, owner, credentials);
+  const { domainId } = owner;
   let meta;
   try {
     meta = loadRunMeta(runId);
@@ -167,6 +173,7 @@ const deleteTurnImpact: PanelImpactInspector = {
   handlerRef: `${DELETE_TURN_EVIDENCE}.inspect-impact`,
   async inspect(host, calls) {
     const target = calls[0]!.target as PanelRecordTarget;
+    await assertManagement(workbenchManagement.opsTurnEvidenceDelete, host.initiator.owner, host.initiator.credentials);
     const label = await turnLabel(host, target);
     return {
       summary: tForLocale(host.locale, "panels.ops.confirmDeleteTurn", { id: label }),
@@ -180,6 +187,7 @@ const deleteAutotestRunImpact: PanelImpactInspector = {
   handlerRef: `${DELETE_AUTOTEST_RUN}.inspect-impact`,
   async inspect(host, calls) {
     const target = calls[0]!.target as PanelRecordTarget;
+    await assertManagement(workbenchManagement.opsRunsDelete, host.initiator.owner, host.initiator.credentials);
     const label = await runLabel(host, target);
     return {
       summary: tForLocale(host.locale, "panels.ops.confirmDeleteRun", { id: label }),
@@ -260,7 +268,8 @@ export const opsDiagnosisWriteOperations = [
       const { turnKey } = buildTurnInputSchema.parse(input);
       const { owner, credentials } = host.executor;
       try {
-        const domainId = await requireObserveAccessDomain(owner, credentials);
+        await assertManagement(workbenchManagement.opsTurnEvidenceBuild, owner, credentials);
+        const { domainId } = owner;
         const turn = parseTurnKey(turnKey);
         if (!turn) throw new HttpError(400, "Invalid turnKey");
         const existing = loadManifest(turnKey);
@@ -308,7 +317,7 @@ export const opsDiagnosisWriteOperations = [
       if (target.kind !== "object") throw new Error("Refresh acts on a selected turn evidence workspace");
       const { owner, credentials } = host.executor;
       try {
-        const { domainId } = await verifyOwnedTurn(host, target.primaryKey);
+        const { domainId } = await verifyOwnedTurn(workbenchManagement.opsTurnEvidenceRefresh, host, target.primaryKey);
         const turn = parseTurnKey(target.primaryKey)!;
         await assistantEvidenceReader().verifyDomain(turn.threadId, domainId);
         await buildTurnWorkspace({
@@ -349,7 +358,7 @@ export const opsDiagnosisWriteOperations = [
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Keep acts on a selected turn evidence workspace");
       try {
-        await verifyOwnedTurn(host, target.primaryKey);
+        await verifyOwnedTurn(workbenchManagement.opsTurnEvidenceRetention, host, target.primaryKey);
         await setArtifactKept("turn-workspace", target.primaryKey, true);
         return {
           kind: "success",
@@ -382,7 +391,7 @@ export const opsDiagnosisWriteOperations = [
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Unkeep acts on a selected turn evidence workspace");
       try {
-        await verifyOwnedTurn(host, target.primaryKey);
+        await verifyOwnedTurn(workbenchManagement.opsTurnEvidenceRetention, host, target.primaryKey);
         await setArtifactKept("turn-workspace", target.primaryKey, false);
         return {
           kind: "success",
@@ -415,7 +424,7 @@ export const opsDiagnosisWriteOperations = [
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected turn evidence workspace");
       try {
-        await verifyOwnedTurn(host, target.primaryKey);
+        await verifyOwnedTurn(workbenchManagement.opsTurnEvidenceDelete, host, target.primaryKey);
         const deleted = deleteWorkspace(target.primaryKey);
         if (!deleted) {
           return { kind: "refusal", code: "NOT_FOUND", message: tForLocale(host.locale, "panels.ops.errors.turnNotFound") };
@@ -453,7 +462,7 @@ export const opsDiagnosisWriteOperations = [
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Keep acts on a selected test run");
       try {
-        await verifyOwnedRun(host, target.primaryKey);
+        await verifyOwnedRun(workbenchManagement.opsRunsRetention, host, target.primaryKey);
         await setArtifactKept("autotest-run", target.primaryKey, true);
         return {
           kind: "success",
@@ -486,7 +495,7 @@ export const opsDiagnosisWriteOperations = [
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Unkeep acts on a selected test run");
       try {
-        await verifyOwnedRun(host, target.primaryKey);
+        await verifyOwnedRun(workbenchManagement.opsRunsRetention, host, target.primaryKey);
         await setArtifactKept("autotest-run", target.primaryKey, false);
         return {
           kind: "success",
@@ -545,7 +554,7 @@ export const opsDiagnosisWriteOperations = [
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected test run");
       try {
-        const { status } = await verifyOwnedRun(host, target.primaryKey);
+        const { status } = await verifyOwnedRun(workbenchManagement.opsRunsDelete, host, target.primaryKey);
         if (isRunBusy(target.primaryKey, status)) {
           return {
             kind: "refusal",
@@ -698,7 +707,7 @@ export const opsDiagnosisReadOperations = [
     },
     async execute(host, call) {
       const { primaryKey } = turnTargetSchema.parse(call.target);
-      await verifyOwnedTurn(host, primaryKey);
+      await verifyOwnedTurn(workbenchManagement.opsTurnEvidenceRead, host, primaryKey);
       const buffer = createWorkspaceZip(primaryKey);
       if (!buffer) {
         throw new HttpError(409, tForLocale(host.locale, "panels.ops.errors.noEvidenceToDownload"), "NO_EVIDENCE");
@@ -725,7 +734,7 @@ export const opsDiagnosisReadOperations = [
     resultSchema: panelDownloadReceiptSchema,
     async execute(host, call) {
       const { primaryKey } = autotestRunTargetSchema.parse(call.target);
-      await verifyOwnedRun(host, primaryKey);
+      await verifyOwnedRun(workbenchManagement.opsRunsRead, host, primaryKey);
       const runDir = path.join(autotestConfig.dataDir, "runs", primaryKey);
       if (!fs.existsSync(runDir)) {
         throw new HttpError(404, "Artifacts not found");
@@ -772,7 +781,7 @@ export const opsDiagnosisReadOperations = [
     async execute(host, call) {
       const { primaryKey } = caseArtifactTargetSchema.parse(call.target);
       const { runId, caseId } = parseAutotestCaseArtifactKey(primaryKey);
-      await verifyOwnedRun(host, runId);
+      await verifyOwnedRun(workbenchManagement.opsRunsRead, host, runId);
       const artifactDir = resolveCaseArtifactDir(autotestConfig.dataDir, runId, caseId);
       if (!artifactDir) throw new HttpError(404, "Case artifacts not found");
       const zip = new AdmZip();
@@ -801,7 +810,7 @@ export const opsDiagnosisReadOperations = [
       return [describeDslTable(locale), ...describeDslResultSections(locale), describeDslRawResponse(locale)];
     },
     async execute(host, call) {
-      await requireObserveAccessDomain(host.executor.owner, host.executor.credentials);
+      await requireDslQueryAccess(host.executor.owner, host.executor.credentials);
       const locale = host.locale;
       const { draft } = panelReadOperationInputSchema.parse(call.input);
       const dslObject = parseDslDraftObject(draft.dsl, locale);

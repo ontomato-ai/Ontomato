@@ -1,4 +1,6 @@
 import type { HttpResponse } from "@ontomato/contracts/http";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { requireManagement } from "../../../../identity/management";
 import type {
   KnowledgeMarkdownFile,
   KnowledgeTreeResponse,
@@ -16,7 +18,9 @@ import {
 const router: ReturnType<typeof Router> = Router();
 const logger = createLogger("observe:knowledge-routes");
 
-router.get("/", (_req: Request, res: Response<HttpResponse<KnowledgeTreeResponse>>) => {
+const readKnowledge = requireManagement(workbenchManagement.opsKnowledgeRead);
+
+router.get("/", readKnowledge, (_req: Request, res: Response<HttpResponse<KnowledgeTreeResponse>>) => {
   try {
     res.json({
       success: true,
@@ -33,7 +37,7 @@ router.get("/", (_req: Request, res: Response<HttpResponse<KnowledgeTreeResponse
   }
 });
 
-router.get("/content", (req: Request, res: Response<HttpResponse<KnowledgeMarkdownFile>>) => {
+router.get("/content", readKnowledge, (req: Request, res: Response<HttpResponse<KnowledgeMarkdownFile>>) => {
   try {
     const pathParam = typeof req.query.path === "string" ? req.query.path : "index.md";
     const file = readKnowledgeMarkdown(pathParam);

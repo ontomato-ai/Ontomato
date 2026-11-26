@@ -1,3 +1,5 @@
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement, requireManagement } from "../../../identity/management";
 import type {
   TestCase,
   CaseSet,
@@ -11,7 +13,7 @@ import type {
 import type { HttpResponse, HttpAcknowledgement } from "@ontomato/contracts/http";
 import type { ArtifactFilePreview, ArtifactFileTreeNode } from "@ontomato/contracts/observe";
 import type { SseHeartbeatData } from "@ontomato/contracts/sse";
-import { requireDomainId, type AuthenticatedRequest } from "../../../utils/request-identity";
+import { credentialsFromRequest, requireDomainId, type AuthenticatedRequest } from "../../../utils/request-identity";
 import type { RunConfig } from "./types";
 /**
  * Autotest API routes.
@@ -21,10 +23,11 @@ import type { RunConfig } from "./types";
 
 import fs from "node:fs";
 import path from "node:path";
-import { Request, Response, Router } from "express";
+import { type NextFunction, Request, Response, Router } from "express";
 
 import { t , tApp } from "../../../i18n";
 import { createLogger } from "../../../logging/logger";
+import { sendError } from "../../../utils/http-error-response";
 import { initializeSse } from "../../../utils/sse";
 import {
   createEmptyCaseSet,
@@ -84,17 +87,20 @@ interface ArchiverModuleLike {
 }
 
 /* Mount case artifact sub-router */
-router.use("/runs/:id", (req: Request, res: Response, next) => {
+function requireOwnedRun(req: Request, res: Response, next: NextFunction): void {
   const domainId = (req as AuthenticatedRequest).domainId;
   const active = getActiveRun();
-  const meta = active?.runId === req.params.id ? active : loadRunMeta(req.params.id);
+  const runId = req.params.id ?? req.params.runId;
+  const meta = active?.runId === runId ? active : loadRunMeta(runId);
   if (!domainId || meta?.domainId !== domainId) {
     res.status(404).json({ success: false, error: "Run not found" });
     return;
   }
   next();
-});
-router.use("/runs/:runId/cases/:caseId/artifacts", caseArtifactRouter);
+}
+
+const readRun = requireManagement(workbenchManagement.opsRunsRead);
+router.use("/runs/:runId/cases/:caseId/artifacts", readRun, requireOwnedRun, caseArtifactRouter);
 
 /* ================================================================== */
 /*  Case Sets                                                          */
@@ -112,7 +118,7 @@ router.use("/case-sets", (req: Request, res: Response, next) => {
 /**
  * GET /case-sets - List all case sets (without full case arrays).
  */
-router.get("/case-sets", (req: Request, res: Response<HttpResponse<CaseSetListItem[]>>) => {
+router.get("/case-sets", requireManagement(workbenchManagement.opsCaseSetsRead), (req: Request, res: Response<HttpResponse<CaseSetListItem[]>>) => {
   try {
     const sets = listCaseSets(requireDomainId(req as AuthenticatedRequest));
     res.json({ success: true, data: sets });
@@ -129,7 +135,9 @@ router.get("/case-sets", (req: Request, res: Response<HttpResponse<CaseSetListIt
  * Body: { name: string, cases: [...] }
  *   or: { name: string, payload: [...] }  (legacy array import)
  */
-router.post("/case-sets", (req: Request, res: Response<HttpResponse<CaseSetImportResult>>) => {
+router.post("/case-sets", requireManagement(req =>
+  isEmptyCasePayload(req.body?.cases ?? req.body?.payload)
+    ? workbenchManagement.opsCaseSetsCreate : workbenchManagement.opsCaseSetsImport), (req: Request, res: Response<HttpResponse<CaseSetImportResult>>) => {
   try {
     const { name, cases, payload } = req.body as {
       name?: string;
@@ -194,7 +202,7 @@ router.post("/case-sets", (req: Request, res: Response<HttpResponse<CaseSetImpor
 /**
  * GET /case-sets/:id - Get a single case set with all cases.
  */
-router.get("/case-sets/:id", (req: Request, res: Response<HttpResponse<CaseSet>>) => {
+router.get("/case-sets/:id", requireManagement(workbenchManagement.opsCaseSetsRead), (req: Request, res: Response<HttpResponse<CaseSet>>) => {
   try {
     const cs = getCaseSet(req.params.id, requireDomainId(req as AuthenticatedRequest));
     if (!cs) {
@@ -211,7 +219,7 @@ router.get("/case-sets/:id", (req: Request, res: Response<HttpResponse<CaseSet>>
 /**
  * DELETE /case-sets/:id - Delete a case set.
  */
-router.delete("/case-sets/:id", (req: Request, res: Response<HttpAcknowledgement>) => {
+router.delete("/case-sets/:id", requireManagement(workbenchManagement.opsCaseSetsDelete), (req: Request, res: Response<HttpAcknowledgement>) => {
   try {
     const deleted = deleteCaseSet(req.params.id, requireDomainId(req as AuthenticatedRequest));
     if (!deleted) {
@@ -228,7 +236,7 @@ router.delete("/case-sets/:id", (req: Request, res: Response<HttpAcknowledgement
 /**
  * PUT /case-sets/:id - Update a case set (name and/or cases).
  */
-router.put("/case-sets/:id", (req: Request, res: Response<HttpResponse<CaseSet>>) => {
+router.put("/case-sets/:id", requireManagement(workbenchManagement.opsCaseSetsChange), (req: Request, res: Response<HttpResponse<CaseSet>>) => {
   try {
     const { name, cases } = req.body as {
       name?: string;
@@ -275,7 +283,7 @@ router.put("/case-sets/:id", (req: Request, res: Response<HttpResponse<CaseSet>>
  *
  * Body: { caseSetId: string, concurrency?: number, rounds?: number, caseTimeoutSeconds?: number }
  */
-router.post("/runs", async (req: Request, res: Response<HttpResponse<RunMeta>>) => {
+router.post("/runs", requireManagement(workbenchManagement.opsRunsStart), async (req: Request, res: Response<HttpResponse<RunMeta>>) => {
   try {
     if (isRunActive()) {
       res.status(409).json({
@@ -306,6 +314,12 @@ router.post("/runs", async (req: Request, res: Response<HttpResponse<RunMeta>>) 
     let resolvedCaseSetId = caseSetId;
 
     if (!resolvedCaseSetId && Array.isArray(temporaryCases) && temporaryCases.length > 0) {
+      try {
+        await assertManagement(workbenchManagement.opsCaseSetsImport, identity, credentialsFromRequest(identity));
+      } catch (error) {
+        sendError(res, error);
+        return;
+      }
       const { caseSet } = importCaseSet(
         tApp("diag.autotest.routes.0", { p0: Date.now() }),
         temporaryCases,
@@ -344,7 +358,7 @@ router.post("/runs", async (req: Request, res: Response<HttpResponse<RunMeta>>) 
 /**
  * GET /runs - List all runs.
  */
-router.get("/runs", async (req: Request, res: Response<HttpResponse<RetainedRunMeta[]>>) => {
+router.get("/runs", readRun, async (req: Request, res: Response<HttpResponse<RetainedRunMeta[]>>) => {
   try {
     const active = getActiveRun();
     const keptKeys = await getArtifactRetentionSnapshot();
@@ -365,7 +379,7 @@ router.get("/runs", async (req: Request, res: Response<HttpResponse<RetainedRunM
 /**
  * GET /runs/:id - Get run detail.
  */
-router.get("/runs/:id", async (req: Request, res: Response<HttpResponse<RetainedRunMeta>>) => {
+router.get("/runs/:id", readRun, requireOwnedRun, async (req: Request, res: Response<HttpResponse<RetainedRunMeta>>) => {
   try {
     const keptKeys = await getArtifactRetentionSnapshot();
     const withRetention = (meta: RunMeta) => ({
@@ -395,7 +409,7 @@ router.get("/runs/:id", async (req: Request, res: Response<HttpResponse<Retained
 /**
  * DELETE /runs/:id - Delete a completed historical run and its artifacts.
  */
-router.delete("/runs/:id", async (req: Request, res: Response<HttpAcknowledgement>) => {
+router.delete("/runs/:id", requireManagement(workbenchManagement.opsRunsDelete), requireOwnedRun, async (req: Request, res: Response<HttpAcknowledgement>) => {
   try {
     const runId = req.params.id;
     const active = getActiveRun();
@@ -436,7 +450,7 @@ router.delete("/runs/:id", async (req: Request, res: Response<HttpAcknowledgemen
 /**
  * POST /runs/:id/stop - Stop a running run.
  */
-router.post("/runs/:id/stop", (req: Request, res: Response<HttpResponse<RunMeta>>) => {
+router.post("/runs/:id/stop", requireManagement(workbenchManagement.opsRunsStop), requireOwnedRun, (req: Request, res: Response<HttpResponse<RunMeta>>) => {
   try {
     const meta = stopRun(req.params.id);
     res.json({ success: true, data: meta } satisfies HttpResponse<RunMeta>);
@@ -450,7 +464,7 @@ router.post("/runs/:id/stop", (req: Request, res: Response<HttpResponse<RunMeta>
 /**
  * GET /runs/:id/events - SSE stream of run events.
  */
-router.get("/runs/:id/events", (req: Request, res: Response) => {
+router.get("/runs/:id/events", readRun, requireOwnedRun, (req: Request, res: Response) => {
   const runId = req.params.id;
 
   initializeSse(res);
@@ -531,7 +545,7 @@ router.get("/runs/:id/events", (req: Request, res: Response) => {
 /**
  * GET /runs/:id/results - List case results for a run.
  */
-router.get("/runs/:id/results", (req: Request, res: Response<HttpResponse<RunResults>>) => {
+router.get("/runs/:id/results", readRun, requireOwnedRun, (req: Request, res: Response<HttpResponse<RunResults>>) => {
   try {
     const meta = loadRunMeta(req.params.id);
     if (!meta) {
@@ -581,6 +595,7 @@ router.get("/runs/:id/results", (req: Request, res: Response<HttpResponse<RunRes
  */
 router.get(
   "/runs/:id/cases/:caseId/tree",
+  readRun, requireOwnedRun,
   (req: Request, res: Response<HttpResponse<ArtifactFileTreeNode[]>>) => {
     try {
       const runId = req.params.id;
@@ -615,6 +630,7 @@ router.get(
  */
 router.get(
   "/runs/:id/cases/:caseId/files/*",
+  readRun, requireOwnedRun,
   async (req: Request, res: Response<HttpResponse<ArtifactFilePreview>>) => {
     try {
       const runId = req.params.id;
@@ -668,11 +684,11 @@ router.get(
  * GET /runs/:id/download - Download all run artifacts as a ZIP archive.
  * GET /runs/:id/cases/:caseId/download - Download single case artifacts as ZIP.
  */
-router.get("/runs/:id/download", (req: Request, res: Response) => {
+router.get("/runs/:id/download", readRun, requireOwnedRun, (req: Request, res: Response) => {
   downloadArtifacts(res, req.params.id);
 });
 
-router.get("/runs/:id/cases/:caseId/download", (req: Request, res: Response) => {
+router.get("/runs/:id/cases/:caseId/download", readRun, requireOwnedRun, (req: Request, res: Response) => {
   downloadArtifacts(res, req.params.id, req.params.caseId);
 });
 

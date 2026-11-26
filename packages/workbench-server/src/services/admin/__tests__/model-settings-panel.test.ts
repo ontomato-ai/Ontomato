@@ -37,8 +37,6 @@ import type {
   SinglePanelOperationOutcome,
 } from "../../product-panels/server-operations";
 
-const { assertPermission } = vi.hoisted(() => ({ assertPermission: vi.fn() }));
-vi.mock("../../../identity/installed", () => ({ assertPermission }));
 vi.mock("../../assistant/skills", () => ({}));
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
@@ -107,8 +105,6 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  assertPermission.mockReset();
-  assertPermission.mockResolvedValue(undefined);
   savedBodies = [];
   savedAgentModels = [];
   storedSettings = {
@@ -208,6 +204,22 @@ beforeEach(() => {
 });
 
 describe("model settings owner reads & forms", () => {
+  it("preserves Java authorization refusals for model and vector management", async () => {
+    mockFetch.mockResolvedValueOnce(Response.json({
+      success: false, code: "FORBIDDEN", message: "Model read denied",
+    }, { status: 403 }));
+    await expect(createModelConnectionReads(actor).list()).rejects.toMatchObject({
+      status: 403, code: "FORBIDDEN", message: "Model read denied",
+    });
+
+    mockFetch.mockResolvedValueOnce(Response.json({
+      success: false, code: 403, message: "Vector change denied",
+    }, { status: 403 }));
+    await expect(writeOp(REBUILD_VECTORS).execute(
+      makeHost(), { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" }, {}, "intent-refused",
+    )).rejects.toMatchObject({ status: 403, code: "FORBIDDEN", message: "Vector change denied" });
+  });
+
   it("applies provider_create_fields rules (azure/custom_openai require apiBase; others optional) and secret apiKey", async () => {
     const reads = createModelConnectionReads(actor);
 
@@ -234,8 +246,6 @@ describe("model settings owner reads & forms", () => {
     expect(deepseekForm.fields.find((f) => f.path === "/apiBase")!.control).toMatchObject({
       placeholder: PROVIDER_SPECS.deepseek.apiBasePlaceholder,
     });
-
-    expect(assertPermission).toHaveBeenCalledWith(actor.credentials, ["system-config"]);
   });
 
   it("keeps the saved key out of connection list, detail, and edit form responses", async () => {

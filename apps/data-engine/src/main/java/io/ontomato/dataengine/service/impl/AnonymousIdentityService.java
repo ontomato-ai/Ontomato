@@ -18,7 +18,6 @@ public class AnonymousIdentityService implements IdentityService {
     @Override public Long getCurrentCredentialExpiresAt() { return null; }
     @Override public void requireQueryAccess() {}
     @Override public void requireActionExecutionAccess(String userId, String domainId) { requireQueryAccess(); }
-    @Override public boolean hasKnowledgeGovernanceAccess() { return true; }
 
     private static final UserDetail ANONYMOUS_USER = createAnonymousUser();
 

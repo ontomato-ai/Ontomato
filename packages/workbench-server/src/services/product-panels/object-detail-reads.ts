@@ -1,7 +1,8 @@
 import { saveObjectDetailValuesSchema } from "@ontomato/contracts/object-detail";
 import type { PanelFormDescription, PanelFormValues, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { OBJECT_TYPE, PRODUCT_PANEL, SAVE_OBJECT_DETAIL_PANEL } from "@ontomato/contracts/platform-object-types";
-import { assertPermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -14,9 +15,9 @@ import { findDetailPanel, findObjectDetailPanelId } from "./object-detail";
 export const objectDetailText = (locale: string | undefined, key: string) =>
   tForLocale(locale, `panels.objectDetail.${key}`);
 
-export async function canConfigureObjectDetail(viewer: AssistantCredentials): Promise<boolean> {
+export async function canConfigureObjectDetail(owner: ProductOwner, viewer: AssistantCredentials): Promise<boolean> {
   try {
-    await assertPermission(viewer, ["ontology-modeling"]);
+    await assertManagement(workbenchManagement.objectDetailsChange, owner, viewer);
     return true;
   } catch (error) {
     if (error instanceof HttpError && error.status === 403) return false;
@@ -30,7 +31,7 @@ export function createObjectDetailReadAdapter(owner: ProductOwner, viewer: Assis
   return {
     async record(className: string): Promise<PanelRecord> {
       const [id, canConfigure] = await Promise.all([
-        findObjectDetailPanelId(owner.domainId, className), canConfigureObjectDetail(viewer),
+        findObjectDetailPanelId(owner.domainId, className), canConfigureObjectDetail(owner, viewer),
       ]);
       let panelStatus = "unconfigured";
       let panelId = "";
@@ -65,7 +66,7 @@ export function createObjectDetailReadAdapter(owner: ProductOwner, viewer: Assis
 
     async form(className: string, values?: PanelFormValues): Promise<PanelFormDescription> {
       const [id, canConfigure] = await Promise.all([
-        findObjectDetailPanelId(owner.domainId, className), canConfigureObjectDetail(viewer),
+        findObjectDetailPanelId(owner.domainId, className), canConfigureObjectDetail(owner, viewer),
       ]);
       const panelId = canConfigure || id === null || (await usableCurrentIds("panel", owner.domainId, [id], viewer)).has(id) ? id : null;
       return {

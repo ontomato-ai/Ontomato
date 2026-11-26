@@ -35,8 +35,6 @@ import type {
   SinglePanelOperationOutcome,
 } from "../../product-panels/server-operations";
 
-const { assertPermission } = vi.hoisted(() => ({ assertPermission: vi.fn() }));
-vi.mock("../../../identity/installed", () => ({ assertPermission }));
 vi.mock("../../assistant/skills", () => ({}));
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
@@ -136,8 +134,6 @@ beforeAll(() => {
 
 beforeEach(() => {
   reportedCurrentType = undefined;
-  assertPermission.mockReset();
-  assertPermission.mockResolvedValue(undefined);
   savedSingleBodies = [];
   savedMultiBodies = [];
   testedBodies = [];

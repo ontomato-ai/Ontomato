@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { tmpdir } from "node:os";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java" }, apiBase: "/api" } }));
-vi.mock("../../../identity/installed", () => ({ assertPermission: vi.fn(async () => undefined) }));
 
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";

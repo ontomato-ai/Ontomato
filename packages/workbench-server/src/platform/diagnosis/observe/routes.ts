@@ -1,3 +1,5 @@
+import { workbenchManagement, type WorkbenchManagementOperation } from "@ontomato/contracts/workbench-management";
+import { requireManagement } from "../../../identity/management";
 import type {
   HttpResponse,
   HttpAcknowledgement,
@@ -87,17 +89,21 @@ async function verifyTurnAccess(req: Request, turnKey: string): Promise<void> {
   await assistantEvidenceReader().verifyDomain(turn.threadId, domainId);
 }
 
-router.use("/turns/:turnKey", (req, _res, next) => {
-  void verifyTurnAccess(req, req.params.turnKey).then(() => next(), next);
-});
-router.use((req, _res, next) => {
-  const turnKeys = [req.query.turnKey, req.body?.turnKey].filter(
-    (key) => key !== undefined,
-  );
-  void Promise.all(
-    turnKeys.map((key) => verifyTurnAccess(req, String(key))),
-  ).then(() => next(), next);
-});
+function verifyTurnRequest(req: Request, _res: Response, next: NextFunction): void {
+  const turnKeys = [req.params.turnKey, req.query.turnKey, req.body?.turnKey]
+    .filter(key => key !== undefined);
+  void Promise.all(turnKeys.map(key => verifyTurnAccess(req, String(key))))
+    .then(() => next(), next);
+}
+
+function admit(operation: WorkbenchManagementOperation | ((req: Request) => WorkbenchManagementOperation)) {
+  return [requireManagement(operation), verifyTurnRequest];
+}
+
+const readLogs = admit(workbenchManagement.opsLogsRead);
+const readLogSources = admit(workbenchManagement.opsLogSourcesRead);
+const readTurn = admit(workbenchManagement.opsTurnEvidenceRead);
+
 
 /* ================================================================== */
 /*  Log Sources                                                       */
@@ -108,6 +114,7 @@ router.use((req, _res, next) => {
  */
 router.get(
   "/log-sources",
+  ...readLogSources,
   (_req: Request, res: Response<HttpResponse<LogSource[]>>) => {
     try {
       const sources = listLogSources();
@@ -125,6 +132,7 @@ router.get(
  */
 router.get(
   "/log-source-config",
+  ...readLogSources,
   (_req: Request, res: Response<HttpResponse<LogSourceConfig>>) => {
     try {
       const config = getLogSourceConfig();
@@ -141,6 +149,7 @@ router.get(
  */
 router.put(
   "/log-source-config",
+  ...admit(workbenchManagement.opsLogSourcesChange),
   (req: Request, res: Response<HttpResponse<LogSourceConfig>>) => {
     try {
       const body = req.body as Partial<LogSourceConfig>;
@@ -181,6 +190,7 @@ router.put(
  */
 router.post(
   "/log-sources/probe",
+  ...admit(workbenchManagement.opsLogSourcesProbe),
   async (req: Request, res: Response<HttpResponse<LogSourceProbeResult>>) => {
     try {
       const { sourceType } = req.body as { sourceType?: LogSourceType };
@@ -215,6 +225,7 @@ router.post(
  */
 router.post(
   "/parse",
+  ...readLogs,
   async (req: Request, res: Response<HttpResponse<LogParseResult>>) => {
     try {
       const { startTime, endTime } = req.body as {
@@ -250,6 +261,7 @@ router.post(
  */
 router.get(
   "/errors",
+  ...readLogs,
   async (req: Request, res: Response<HttpResponse<ErrorSummary>>) => {
     try {
       const turnKey = req.query.turnKey as string | undefined;
@@ -287,7 +299,7 @@ router.get(
  *
  * Query params: source, level, turnKey, keyword, since_seq
  */
-router.get("/live-logs", (req: Request, res: Response) => {
+router.get("/live-logs", ...readLogs, (req: Request, res: Response) => {
   initializeSse(res);
 
   const listenerId = randomUUID();
@@ -376,6 +388,12 @@ router.get("/live-logs", (req: Request, res: Response) => {
  */
 router.post(
   "/turns",
+  ...admit(req => {
+    const force: unknown = req.body?.force;
+    if (force !== undefined && typeof force !== "boolean")
+      throw new HttpError(400, "force must be a boolean", "INVALID_REQUEST");
+    return force ? workbenchManagement.opsTurnEvidenceRefresh : workbenchManagement.opsTurnEvidenceBuild;
+  }),
   async (req: Request, res: Response<HttpResponse<WorkspaceManifest>>) => {
     try {
       const { turnKey, force } = req.body as {
@@ -425,6 +443,7 @@ router.post(
  */
 router.get(
   "/turns",
+  ...readTurn,
   async (
     req: Request,
     res: Response<HttpResponse<RetainedWorkspaceManifest[]>>,
@@ -456,6 +475,7 @@ router.get(
  */
 router.get(
   "/turns/:turnKey",
+  ...readTurn,
   async (
     req: Request,
     res: Response<HttpResponse<RetainedWorkspaceManifest>>,
@@ -494,6 +514,7 @@ router.get(
  */
 router.delete(
   "/turns/:turnKey",
+  ...admit(workbenchManagement.opsTurnEvidenceDelete),
   async (req: Request, res: Response<HttpAcknowledgement>) => {
     try {
       const deleted = deleteWorkspace(req.params.turnKey);
@@ -520,6 +541,7 @@ router.delete(
  */
 router.get(
   "/turns/:turnKey/tree",
+  ...readTurn,
   (req: Request, res: Response<HttpResponse<ArtifactFileTreeNode>>) => {
     try {
       const tree = getFileTree(req.params.turnKey);
@@ -542,6 +564,7 @@ router.get(
  */
 router.get(
   "/turns/:turnKey/files/*",
+  ...readTurn,
   async (req: Request, res: Response<HttpResponse<ArtifactFilePreview>>) => {
     try {
       const turnKey = req.params.turnKey;
@@ -570,7 +593,7 @@ router.get(
 /**
  * GET /turns/:turnKey/download - Download Turn workspace as zip.
  */
-router.get("/turns/:turnKey/download", (req: Request, res: Response) => {
+router.get("/turns/:turnKey/download", ...readTurn, (req: Request, res: Response) => {
   try {
     const turnKey = req.params.turnKey;
     const zipBuffer = createWorkspaceZip(turnKey);
@@ -599,6 +622,7 @@ router.get("/turns/:turnKey/download", (req: Request, res: Response) => {
  */
 router.get(
   "/turns/:turnKey/timeline",
+  ...readTurn,
   (req: Request, res: Response<HttpResponse<TimelineEvent[]>>) => {
     try {
       const stored = readWorkspaceFile(
@@ -625,6 +649,7 @@ router.get(
  */
 router.get(
   "/turns/:turnKey/flowchart",
+  ...readTurn,
   (req: Request, res: Response<HttpResponse<Flowchart>>) => {
     try {
       const stored = readWorkspaceFile(
@@ -655,6 +680,7 @@ router.get(
  */
 router.get(
   "/backend-logs",
+  ...readLogs,
   async (req: Request, res: Response<HttpResponse<ParsedLogRecord[]>>) => {
     try {
       // Backend logs are environment-level evidence and their content is not filtered by domain; callers must still carry a business domain.

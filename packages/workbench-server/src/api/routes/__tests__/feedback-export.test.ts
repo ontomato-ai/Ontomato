@@ -4,15 +4,17 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { configureI18n } from "../../../i18n";
 
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+
 const { records, permission } = vi.hoisted(() => ({
   records: vi.fn(),
   permission: vi.fn(),
 }));
 vi.mock("../../../services/admin/feedback-store", () => ({ listFeedback: records }));
-vi.mock("../../../identity/installed", () => ({
-  requirePermission: (keys: string[]) => {
+vi.mock("../../../identity/management", () => ({
+  requireManagement: (operation: { id: string }) => {
     return (_req: unknown, _res: unknown, next: () => void) => {
-      permission(keys);
+      permission(operation);
       next();
     };
   },
@@ -73,7 +75,7 @@ it("exports the filtered records as a BOM CSV attachment with the admin page's c
   const response = await fetch(`${base}/export?sourceType=qa&rating=like&keyword=refund&timeZone=America%2FNew_York`);
 
   expect(response.status).toBe(200);
-  expect(permission).toHaveBeenCalledWith(["user-feedback"]);
+  expect(permission).toHaveBeenCalledWith(workbenchManagement.feedbackExport);
   expect(records).toHaveBeenCalledWith({
     domainId: "domain-1",
     sourceType: "qa",
@@ -107,7 +109,7 @@ it("keeps the list's admission and sends no filter it was not given", async () =
   const response = await fetch(`${base}/export?timeZone=Asia%2FShanghai`);
 
   expect(response.status).toBe(200);
-  expect(permission).toHaveBeenCalledWith(["user-feedback"]);
+  expect(permission).toHaveBeenCalledWith(workbenchManagement.feedbackExport);
   expect(records).toHaveBeenCalledWith({
     domainId: "domain-1",
     sourceType: undefined,

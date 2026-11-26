@@ -10,7 +10,6 @@ import { buildAttachmentContentDisposition } from "../utils/http";
 import { createDiagnosis, diagnosisService } from "../../services/ops-diagnosis/service";
 import { resolveDiagnosisEvidence, ontologyRead, readEvidenceSession, readEvidenceRun, readEvidenceArtifact } from "../../services/ops-diagnosis/evidence";
 import { queryWorkbenchServiceLogs, queryRuntimeServiceLogs, queryOntologyServiceLogs } from "../../platform/diagnosis/observe/service-logs";
-import knowledgeRouter from "../../platform/diagnosis/observe/agent/knowledge-routes";
 import { readKnowledgeMarkdown, listKnowledgeTree } from "../../platform/diagnosis/observe/agent/knowledge-store";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { backendGet } from "../../utils/backend-client";
@@ -26,7 +25,6 @@ router.get("/agent/agents", wrap(async (req, res) => {
   res.json(await diagnosisService.agents(c.owner, c.credentials));
 }));
 router.use("/agent", createAgentHostRouter(diagnosisService));
-router.use("/agent/knowledge", knowledgeRouter);
 router.post("/diagnoses", wrap(async (req, res) => {
   const { owner, credentials } = context(req), { target } = z.object({ target: diagnosisTargetSchema }).strict().parse(req.body);
   await resolveDiagnosisEvidence(target, { ...owner, ...credentials });

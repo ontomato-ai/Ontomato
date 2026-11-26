@@ -21,6 +21,10 @@ import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.SandboxPermissionService;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.authorization.ManagementOperations.Operation;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
 import io.ontomato.dataengine.service.vector.VectorRebuildStatus;
 import io.ontomato.dataengine.util.SystemUtils;
@@ -28,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,6 +43,36 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @RestController
 public class BusinessConfigController {
+
+    private static final String GENERAL_READ = "settings.general.read";
+    private static final String GENERAL_CHANGE = "settings.general.change";
+    private static final String CONNECTIONS_READ = "settings.connections.read";
+    private static final String CONNECTIONS_CHANGE = "settings.connections.change";
+    private static final String CONNECTIONS_TEST = "settings.connections.test";
+    private static final String CONNECTIONS_PROBE = "settings.connections.probe-sandbox";
+    private static final String VECTORS_READ = "settings.vectors.read";
+    private static final String VECTORS_CHANGE = "settings.vectors.change";
+    private static final String DIAGNOSTIC_READ = "records.monitoring.config.read";
+
+    @Component
+    public static final class Operations implements ManagementOperations.Contributor {
+        @Override
+        public List<Operation> managementOperations() {
+            return List.of(
+                new Operation(GENERAL_READ, "Read general settings", ManagementOperations.Access.READ),
+                new Operation(GENERAL_CHANGE, "Change general settings", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_READ, "Read data connections", ManagementOperations.Access.READ),
+                new Operation(CONNECTIONS_CHANGE, "Change data connections", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_TEST, "Test data connections", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_PROBE, "Probe the sandbox connection", ManagementOperations.Access.CHANGE),
+                new Operation(VECTORS_READ, "Read vector index configuration", ManagementOperations.Access.READ),
+                new Operation(VECTORS_CHANGE, "Change vector index configuration", ManagementOperations.Access.CHANGE),
+                new Operation(DIAGNOSTIC_READ, "Read monitoring configuration", ManagementOperations.Access.READ));
+        }
+    }
+
+	@Autowired
+	private ManagementRequestAccess management;
 
 	private static final String MULTI = "multi";
 
@@ -68,10 +103,11 @@ public class BusinessConfigController {
 	
 	@GetMapping("/businessConfig/vectorRebuildStatus")
     @ResponseBody
+    @Owned
     public JSONObject vectorRebuildStatus() {
+        User user = management.require(VECTORS_READ);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
     		VectorRebuildStatus status = vectorRebuildService.status(user.getDomainId());
     		ret.put("data", status);
     		ret.put("success", true);
@@ -85,10 +121,11 @@ public class BusinessConfigController {
 
 	@PostMapping("/businessConfig/rebuildVectors")
     @ResponseBody
+    @Owned
     public JSONObject rebuildVectors(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+        User user = management.require(VECTORS_CHANGE);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
     		vectorRebuildService.start(user.getDomainId(), lang);
     		ret.put("success", true);
     	} catch (Exception e) {
@@ -101,10 +138,11 @@ public class BusinessConfigController {
 	
     @PostMapping("/businessConfig/pauseVectorRebuild")
     @ResponseBody
+    @Owned
     public JSONObject pauseVectorRebuild(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+        User user = management.require(VECTORS_CHANGE);
         JSONObject ret = new JSONObject();
         try {
-            User user = SystemUtils.getCurUser();
             vectorRebuildService.pause(user.getDomainId(), lang);
             ret.put("success", true);
         } catch (Exception e) {
@@ -117,10 +155,11 @@ public class BusinessConfigController {
 
 	@PostMapping("/businessConfig/saveKnowledgeMaxResult")
     @ResponseBody
+    @Owned
     public JSONObject saveKnowledgeMaxResult(@RequestBody JSONObject input) {
+        User user = management.require(GENERAL_CHANGE);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
     		Integer knowledgeMaxResult = input.getInteger("knowledgeMaxResult");
     		if (knowledgeMaxResult != null) {
     			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
@@ -138,10 +177,11 @@ public class BusinessConfigController {
 
 	@PostMapping("/businessConfig/saveDslCookerTimeout")
     @ResponseBody
+    @Owned
     public JSONObject saveDslCookerTimeout(@RequestBody JSONObject input) {
+        User user = management.require(GENERAL_CHANGE);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
     		Long dslCookerTimeout = input.getLong("dslCookerTimeout");
     		if (dslCookerTimeout != null && dslCookerTimeout > 0) {
     			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
@@ -159,10 +199,11 @@ public class BusinessConfigController {
 
 	@PostMapping("/businessConfig/saveLang")
     @ResponseBody
+    @Owned
     public JSONObject saveLang(@RequestBody JSONObject input) {
+        User user = management.require(GENERAL_CHANGE);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
     		String lang = input.getString("lang");
     		if (lang != null) {
     			lang = lang.trim();
@@ -217,10 +258,11 @@ public class BusinessConfigController {
 	
 	@PostMapping("/businessConfig/useDataAdapter")
     @ResponseBody
+    @Owned
     public JSONObject useDataAdapter(@RequestBody JSONObject input) {
+        User user = management.require(CONNECTIONS_CHANGE);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
     		DataAdapterProvider provider = dataAdapterRegistry.provider(input.getString("type"));
     		if (MULTI.equals(provider.type())) {
     			throw new IllegalArgumentException("The multi data adapter is saved through /businessConfig/useMultiDataSource");
@@ -254,10 +296,11 @@ public class BusinessConfigController {
 	 */
 	@PostMapping("/businessConfig/useMultiDataSource")
     @ResponseBody
+    @Owned
     public JSONObject useMultiDataSource(@RequestBody JSONObject input) {
+        User user = management.require(CONNECTIONS_CHANGE);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
     		MultiDataSourceDefinition definition = input.to(MultiDataSourceDefinition.class);
     		List<ConfigurationProblem> problems = MultiDataSourceValidator.problems(definition, dataAdapterRegistry);
     		if (problems.isEmpty()) {
@@ -296,14 +339,16 @@ public class BusinessConfigController {
 
 	@PostMapping("/businessConfig/testDataAdapter")
 	@ResponseBody
+	@Owned
 	public JSONObject testDataAdapter(@RequestBody JSONObject input) {
+		User user = management.require(CONNECTIONS_TEST);
 		JSONObject ret = new JSONObject();
 		try {
 			DataAdapterProvider provider = dataAdapterRegistry.provider(input.getString("type"));
 			String sourceId = input.getString("sourceId");
 			DataAdapterConnection candidate = connectionOf(provider, input);
 			if (connectionSecretCodec != null) {
-				BusinessConfig stored = businessConfigService.get(SystemUtils.getCurUser().getDomainId());
+				BusinessConfig stored = businessConfigService.get(user.getDomainId());
 				DataAdapterConnection saved = stored.getDataAdapterConnections().get(provider.type());
 				var multiSource = stored.getMultiDataSource();
 				if (sourceId != null && !sourceId.isBlank() && multiSource != null) {
@@ -314,7 +359,7 @@ public class BusinessConfigController {
 			}
 			DataAdapter adapter = dataAdapterRegistry.createForTest(provider.type(), candidate);
 			JSONObject report = adapter.testConnection();
-			report.put("sandboxCapability", sandboxPermissions.test(SystemUtils.getCurUser().getDomainId(), provider.type(), candidate, adapter));
+			report.put("sandboxCapability", sandboxPermissions.test(user.getDomainId(), provider.type(), candidate, adapter));
 			ret.put("data", report);
 			ret.put("success", true);
 		} catch (Exception e) {
@@ -364,8 +409,10 @@ public class BusinessConfigController {
 	
     @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping("/businessConfig/generalForm")
+    @Owned
     public JSONObject generalForm(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String locale) {
-        BusinessConfig settings = businessConfigService.get(SystemUtils.getCurUser().getDomainId());
+        User user = management.require(GENERAL_READ);
+        BusinessConfig settings = businessConfigService.get(user.getDomainId());
         JSONObject fields = new JSONObject();
         for (String name : java.util.List.of("knowledgeMaxResult", "dslCookerTimeoutSeconds", "lang")) {
             String key = "GeneralSettings." + name;
@@ -380,11 +427,12 @@ public class BusinessConfigController {
     }
 
     @PostMapping("/businessConfig/checkSandboxPermission")
+    @Owned
     public JSONObject checkSandboxPermission() {
+        User user = management.require(CONNECTIONS_PROBE);
         try {
-            String domain = SystemUtils.getCurUser().getDomainId();
             return JSONObject.of("success", true,
-                    "data", JSONObject.of("sandboxCapability", sandboxPermissions.check(domain)));
+                    "data", JSONObject.of("sandboxCapability", sandboxPermissions.check(user.getDomainId())));
         } catch (Exception failure) {
             log.error(failure.getMessage(), failure);
             return JSONObject.of("success", false, "message", failure.getMessage());
@@ -393,10 +441,11 @@ public class BusinessConfigController {
 
 	@GetMapping("/businessConfig/getConfig")
     @ResponseBody
+    @Owned
     public JSONObject getConfig() {
+        User user = management.require(CONNECTIONS_READ);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
 			// Mask connection secrets on the response copy.
 			BusinessConfig view = connectionSecretCodec == null
@@ -416,10 +465,11 @@ public class BusinessConfigController {
 	
 	@GetMapping("/businessConfig/getConfigAndDesc")
     @ResponseBody
+    @Owned
     public JSONObject getConfigAndDesc() {
+        User user = management.require(DIAGNOSTIC_READ);
     	JSONObject ret = new JSONObject();
     	try {
-    		User user = SystemUtils.getCurUser();
     		JSONObject data = new JSONObject();
 			data.put("config", businessConfigService.getDiagnosticConfig(user.getDomainId()));
     		data.put("desc", businessConfigService.getWholeConfigDesc());

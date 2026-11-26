@@ -890,7 +890,6 @@ public class ApplicationCatalog {
         return userApplication(id, "product", declaration, releaseId, user, ownerFacts.ownerId());
     }
     public JSONObject connected(String id, Declaration declaration, String upstream, String upstreamPrefix, User user) {
-        access.requireConnectedRegistration(user);
         var allowed = upstreams.getJSONArray(user.getDomainId());
         if (allowed == null || !allowed.contains(upstream)) throw bad("Upstream is not allowed in this domain");
         if (upstreamPrefix == null || !upstreamPrefix.matches("/(?:[a-zA-Z0-9_-]+/)*"))

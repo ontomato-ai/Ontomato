@@ -26,7 +26,3 @@ export function assertPermission(
 ): Promise<void> {
   return workbenchIdentity().assertPermission(identity, keys);
 }
-
-export const guardMcpServiceManagement: RequestHandler = (req, res, next) => {
-  void workbenchIdentity().guardMcpServiceManagement(req, res, next);
-};

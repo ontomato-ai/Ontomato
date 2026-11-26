@@ -19,7 +19,7 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { HttpError } from "../../../utils/errors";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 
-const mockAssertPermission = vi.fn(async (..._args: unknown[]) => undefined);
+const mockAssertManagement = vi.fn(async (..._args: unknown[]) => undefined);
 const mockGrantedProductIds = vi.fn(async (..._args: unknown[]): Promise<string[]> => []);
 const mockChannelAgents = vi.fn(async (..._args: unknown[]): Promise<Array<{
   id: string;
@@ -43,8 +43,8 @@ const mockRuntime = {
 vi.mock("../../../config/application", () => ({
   config: { dataQuery: { baseUrl: "http://java" }, apiBase: "/api" },
 }));
-vi.mock("../../../identity/installed", () => ({
-  assertPermission: (...args: unknown[]) => mockAssertPermission(...args),
+vi.mock("../../../identity/management", () => ({
+  assertManagement: (...args: unknown[]) => mockAssertManagement(...args),
 }));
 vi.mock("../../../product/installed", () => ({
   workbenchProduct: () => ({ analysisMcpServerName: "analysis-agents", opsMcpServerName: "ops-agent" }),
@@ -140,7 +140,7 @@ function getWriteOp(id: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockAssertPermission.mockResolvedValue(undefined);
+  mockAssertManagement.mockResolvedValue(undefined);
   mockGrantedProductIds.mockResolvedValue([]);
   mockChannelAgents.mockResolvedValue([]);
   mockRuntime.mcpOptions.mockResolvedValue([]);
@@ -154,7 +154,7 @@ afterEach(() => {
 
 describe("PublishedMcpService owner reads", () => {
   it("returns clean summary fields (with authHint, without redundant tools JSON) and structured tools rows", async () => {
-    const list = await readPublishedMcpServices(viewer);
+    const list = await readPublishedMcpServices(owner, viewer);
     expect(list).toHaveLength(2);
     expect(list[0]).toMatchObject({
       primaryKey: "analysis-agents",
@@ -169,10 +169,10 @@ describe("PublishedMcpService owner reads", () => {
     });
     expect(list[0]!.fields).not.toHaveProperty("tools");
 
-    const single = await readPublishedMcpService(viewer, "analysis-agents");
+    const single = await readPublishedMcpService(owner, viewer, "analysis-agents");
     expect(single.primaryKey).toBe("analysis-agents");
 
-    const tools = await readPublishedMcpServiceTools(viewer, "analysis-agents");
+    const tools = await readPublishedMcpServiceTools(owner, viewer, "analysis-agents");
     expect(tools).toEqual([
       expect.objectContaining({
         primaryKey: "list_agents",
@@ -186,7 +186,7 @@ describe("PublishedMcpService owner reads", () => {
       }),
     ]);
 
-    await expect(readPublishedMcpServiceTools(viewer, "missing")).rejects.toMatchObject({
+    await expect(readPublishedMcpServiceTools(owner, viewer, "missing")).rejects.toMatchObject({
       status: 404,
       code: "NOT_FOUND",
     });
@@ -194,8 +194,8 @@ describe("PublishedMcpService owner reads", () => {
 });
 
 describe("ExternalMcpService owner reads and caller-scoped usedBy", () => {
-  it("serves options and resolve without requiring mcp-service management permission", async () => {
-    mockAssertPermission.mockRejectedValue(new HttpError(403, "Forbidden", "FORBIDDEN"));
+  it("serves options and resolve without requiring a management operation", async () => {
+    mockAssertManagement.mockRejectedValue(new HttpError(403, "Forbidden", "FORBIDDEN"));
     mockRuntime.mcpOptions.mockResolvedValue([{ id: SERVICE_ID_1, name: "Orders MCP" }]);
 
     const reads = createExternalMcpReads(owner, viewer);
@@ -208,7 +208,7 @@ describe("ExternalMcpService owner reads and caller-scoped usedBy", () => {
       { primaryKey: SERVICE_ID_1, value: SERVICE_ID_1, label: "Orders MCP" },
       { primaryKey: SERVICE_ID_2, value: SERVICE_ID_2, label: SERVICE_ID_2, unavailable: { reason: expect.any(String) } },
     ]);
-    expect(mockAssertPermission).not.toHaveBeenCalled();
+    expect(mockAssertManagement).not.toHaveBeenCalled();
   });
 
   it("computes usedBy only from caller-visible agents and omits usedBy when caller sees no agents or query fails", async () => {

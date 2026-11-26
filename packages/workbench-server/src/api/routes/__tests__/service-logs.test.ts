@@ -6,6 +6,11 @@ import { LogQueryError, withServiceLogContext } from "@ontomato/service-logging"
 import serviceLogRouter from "../service-logs";
 import * as queries from "../../../platform/diagnosis/observe/service-logs";
 
+const { requireManagement } = vi.hoisted(() => ({
+  requireManagement: vi.fn((): express.RequestHandler => (_req, _res, next) => next()),
+}));
+vi.mock("../../../identity/management", () => ({ requireManagement }));
+
 it("reports unavailable log storage as an error, never as an empty successful page", async () => {
   const query = vi.spyOn(queries, "queryWorkbenchServiceLogs").mockRejectedValue(
     new LogQueryError(503, "LOG_STORE_UNAVAILABLE", "Service log store is unavailable"),
@@ -16,6 +21,7 @@ it("reports unavailable log storage as an error, never as an empty successful pa
   const server = http.createServer(app);
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   try {
+    expect(requireManagement).toHaveBeenCalledWith(expect.objectContaining({ id: "ops.logs.read" }));
     const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/logs`);
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({

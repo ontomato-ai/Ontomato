@@ -47,14 +47,12 @@ export interface WorkbenchIdentity {
   ): Promise<{ userId: string; domainId: string; token?: string; apiKey?: string }>;
   /** `/api/skills/resources`. Enterprise verifies credentials first then requires the domain; OSS uses 1 directly. */
   resolveSkillResourceDomain(req: Request): Promise<SkillResourceDomainResult | SkillResourceDomainFailure>;
-  /** Knowledge governance and skill writes. OSS allows all; enterprise goes through menu permissions. */
+  /** Legacy menu permission consumers. OSS allows all; enterprise goes through menu permissions. */
   requirePermission(keys: readonly string[]): RequestHandler;
   /** Service-level menu permission check matching `requirePermission`. OSS allows all; enterprise checks upstream menu permissions. */
   assertPermission(identity: { token?: string; apiKey?: string }, keys: readonly string[]): Promise<void>;
   /** Authorize mutations of deployment-wide component packages. */
   requireDeploymentMaintenance: RequestHandler;
-  /** MCP service management routes. Their error copy differs from menu permissions, so they cannot merge into requirePermission. */
-  guardMcpServiceManagement: RequestHandler;
   /** Diagnosis routes. Enterprise requires the domain first, then observer; OSS allows all. */
   observeAccess: RequestHandler;
   /** Verifies that the caller has access to diagnosis/observe capabilities. Enterprise requires domain and observer permission; OSS allows all. */

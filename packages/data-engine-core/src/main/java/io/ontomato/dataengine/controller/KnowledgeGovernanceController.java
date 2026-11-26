@@ -3,7 +3,6 @@ package io.ontomato.dataengine.controller;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.agent.*;
-import io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +23,7 @@ public class KnowledgeGovernanceController {
   @PostMapping("/platform-windows")
   public Object register(@RequestBody java.util.Map<String,Object> input,HttpServletRequest request) {
     access.service(request);
-    return governance.registerPlatform(JSONObject.from(input),access.governance(request));
+    return governance.registerPlatform(JSONObject.from(input),access.authenticated(request));
   }
   @PostMapping("/platform-windows/{run}/close")
   @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -35,12 +34,12 @@ public class KnowledgeGovernanceController {
   @ResponseStatus(HttpStatus.CREATED)
   public Object begin(@RequestHeader("Idempotency-Key") String key,@RequestBody JSONObject input,
       HttpServletRequest request) throws Exception {
-    return governance.begin(AgentJson.id(key),input,access.governance(request));
+    return governance.begin(AgentJson.id(key),input,access.authenticated(request));
   }
   @PostMapping("/{id}/skill-runs/{run}/close")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void close(@PathVariable String id,@PathVariable String run,HttpServletRequest request) throws Exception {
-    governance.closeExternal(AgentJson.id(id),AgentJson.id(run),access.governance(request).owner());
+    governance.closeExternal(AgentJson.id(id),AgentJson.id(run),access.authenticated(request).owner());
   }
   @PostMapping("/{id}/runs/{run}/actions/{action}")
   public Object action(@PathVariable String id,@PathVariable String run,@PathVariable String action,
@@ -50,14 +49,7 @@ public class KnowledgeGovernanceController {
     if (!run.equals(request.getHeader("X-Ontomato-Run-Id")))
       throw AgentHttpException.invalid("Run identity mismatch");
     var grant=(JSONObject)request.getAttribute(QueryGrantService.ATTRIBUTE);
-    Owner owner,executor;
-    if (grant==null) {owner=access.governance(request).owner();executor=owner;}
-    else {
-      if (!"knowledge-governance".equals(grant.getString("purpose")) || !run.equals(grant.getString("runId")))
-        throw AgentHttpException.missing();
-      owner=new Owner(AgentJson.text(grant,"initiatorUserId"),grant.getString("domainId"));
-      executor=new Owner(grant.getString("userId"),grant.getString("domainId"));
-    }
-    return governance.action(id,run,action,input,owner,executor,language);
+    if (grant!=null) return governance.delegatedAction(id,run,action,input,grant,language);
+    return governance.action(id,run,action,input,access.authenticated(request).owner(),language);
   }
 }

@@ -2,6 +2,8 @@ import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 import { getServiceLogContext, LogQueryError } from "@ontomato/service-logging";
 import { serviceLogQuerySchema } from "@ontomato/contracts/service-logging";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { requireManagement } from "../../identity/management";
 import { queryWorkbenchServiceLogs, queryRuntimeServiceLogs } from "../../platform/diagnosis/observe/service-logs";
 import { HttpError } from "../../utils/errors";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
@@ -19,7 +21,8 @@ export const serviceLogAuthResponse: RequestHandler = (_req, res, next) => {
   };
   next();
 };
-for (const runtime of [false, true]) router.get(runtime ? "/runtime-logs" : "/logs", async (req, res) => {
+const readLogs = requireManagement(workbenchManagement.opsLogsRead);
+for (const runtime of [false, true]) router.get(runtime ? "/runtime-logs" : "/logs", readLogs, async (req, res) => {
   try {
     const query = serviceLogQuerySchema.parse(req.query);
     res.json(await (runtime ? queryRuntimeServiceLogs(query, (req as AuthenticatedRequest).domainId) : queryWorkbenchServiceLogs(query)));

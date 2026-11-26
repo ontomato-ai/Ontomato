@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { productAuthoringSchema, productTypes,productQuerySchema } from "@ontomato/contracts/product-assets";
 import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { context, wrap } from "../utils/agent-host";
 import { listProducts, getProduct, saveProduct, deleteProduct, queryProducts,dependencyProducts,countProductTypes,readProductOverlay,saveProductOverlay } from "../../services/product-assets/store";
 import {personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
@@ -29,11 +30,19 @@ import {migratePlatformProjection} from '../../services/product-assets/platform-
 import {migrateDashboardPage} from '../../services/product-assets/dashboard-migration';
 import {synchronizePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
 import {assertAppBuilderAccess} from '../../services/app-builder/access';
-import {requirePermission} from '../../identity/installed';
+import {requireManagement} from '../../identity/management';
 import {assertLegacyProductWrite} from '../../services/product-assets/panel-boundary';
 
 const router: ReturnType<typeof Router> = Router();
-router.post('/synchronize-platform',requirePermission(['system-config']),wrap(async(req,res)=>{const c=context(req);await assertAppBuilderAccess(c.credentials);res.json(await synchronizePlatformAssets(c.owner,c.credentials));}));
+router.post(
+  "/synchronize-platform",
+  requireManagement(workbenchManagement.platformAssetsSynchronize),
+  wrap(async (req, res) => {
+    const { owner, credentials } = context(req);
+    await assertAppBuilderAccess(credentials);
+    res.json(await synchronizePlatformAssets(owner, credentials));
+  }),
+);
 router.post('/:id/create-page',wrap(async(req,res)=>{
   const {owner,credentials}=context(req);
   const source=await getProduct(owner,String(req.params.id));

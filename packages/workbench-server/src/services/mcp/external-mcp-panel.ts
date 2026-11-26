@@ -26,7 +26,8 @@ import {
   DELETE_EXTERNAL_MCP_SERVICE,
   EXTERNAL_MCP_SERVICE,
 } from "@ontomato/contracts/platform-object-types";
-import { assertPermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import { tForLocale } from "../../i18n";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -398,8 +399,7 @@ export function createExternalMcpReads(owner: AssistantOwner, viewer: AssistantC
     }));
 
   return {
-    // Reference options use GET /v1/mcp/services/names without mcp-service management permission
-    // so agent editors can always select external MCP services.
+    // Agent editors use the names endpoint to pick references.
     async options() {
       return { options: await optionList() };
     },
@@ -414,7 +414,7 @@ export function createExternalMcpReads(owner: AssistantOwner, viewer: AssistantC
       };
     },
     async list(): Promise<PanelRecord[]> {
-      await assertPermission(viewer, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
       const [{ services }, usage] = await Promise.all([
         runtime.mcpServices(),
         readSafeAgentUsages(owner, viewer),
@@ -422,7 +422,7 @@ export function createExternalMcpReads(owner: AssistantOwner, viewer: AssistantC
       return services.map((service) => toServiceRecord(service, usage, viewer.locale));
     },
     async record(primaryKey: string): Promise<PanelRecord> {
-      await assertPermission(viewer, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
       const [service, usage] = await Promise.all([
         findService(runtime, primaryKey),
         readSafeAgentUsages(owner, viewer),
@@ -430,16 +430,16 @@ export function createExternalMcpReads(owner: AssistantOwner, viewer: AssistantC
       return toServiceRecord(service, usage, viewer.locale);
     },
     async form(primaryKey: string, inputs: FormInputs): Promise<PanelFormDescription> {
-      await assertPermission(viewer, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
       const service = await findService(runtime, primaryKey);
       return buildFormDescription(false, service, inputs, viewer.locale);
     },
     async createForm(inputs: FormInputs): Promise<PanelFormDescription> {
-      await assertPermission(viewer, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
       return buildFormDescription(true, null, inputs, viewer.locale);
     },
     async tools(primaryKey: string): Promise<PanelRecord[]> {
-      await assertPermission(viewer, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesRead, owner, viewer);
       const id = validateServiceId(primaryKey);
       const { tools } = await runtime.mcpTools(id, new AbortController().signal);
       return tools.map((tool) => mcpToolToPanelRecord(tool, viewer.locale));
@@ -479,7 +479,7 @@ function mapSaveError(error: unknown, locale?: string): SinglePanelOperationOutc
 const deleteExternalMcpImpact: PanelImpactInspector = {
   handlerRef: `${DELETE_EXTERNAL_MCP_SERVICE}.inspect-impact`,
   async inspect(host, calls) {
-    await assertPermission(host.executor.credentials, ["mcp-service"]);
+    await assertManagement(workbenchManagement.mcpServicesDelete, host.executor.owner, host.executor.credentials);
     const target = calls[0]!.target as PanelRecordTarget;
     const runtime = createRuntime(host.executor.owner);
     const [{ services }, usage] = await Promise.all([
@@ -537,7 +537,7 @@ export const externalMcpServerOperations: readonly PanelServerOperation[] = [
       _target: PanelOperationTarget,
       input: Record<string, unknown>,
     ): Promise<SinglePanelOperationOutcome> {
-      await assertPermission(host.executor.credentials, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesCreate, host.executor.owner, host.executor.credentials);
       const { values } = saveInputSchema.parse(input);
       const evaluated = parseExternalMcpDraft(values, true, null, host.locale);
       if (evaluated.errors.length > 0 || !evaluated.payload) {
@@ -585,7 +585,7 @@ export const externalMcpServerOperations: readonly PanelServerOperation[] = [
       if (target.kind !== "object") {
         throw new Error("Saving an external MCP service requires a selected service");
       }
-      await assertPermission(host.executor.credentials, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesChange, host.executor.owner, host.executor.credentials);
       const runtime = createRuntime(host.executor.owner);
       let existing: McpServiceView;
       try {
@@ -643,7 +643,7 @@ export const externalMcpServerOperations: readonly PanelServerOperation[] = [
       if (call.target?.kind !== "object") {
         throw new Error("Checking an external MCP service requires a selected service");
       }
-      await assertPermission(host.executor.credentials, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesRead, host.executor.owner, host.executor.credentials);
       const id = validateServiceId(call.target.primaryKey);
       const t = (key: string, params?: Record<string, unknown>) =>
         tForLocale(host.locale, `panels.externalMcp.${key}`, params);
@@ -711,7 +711,7 @@ export const externalMcpServerOperations: readonly PanelServerOperation[] = [
       if (target.kind !== "object") {
         throw new Error("Deleting an external MCP service requires a selected service");
       }
-      await assertPermission(host.executor.credentials, ["mcp-service"]);
+      await assertManagement(workbenchManagement.mcpServicesDelete, host.executor.owner, host.executor.credentials);
       const runtime = createRuntime(host.executor.owner);
       try {
         await runtime.deleteMcpService(target.primaryKey);

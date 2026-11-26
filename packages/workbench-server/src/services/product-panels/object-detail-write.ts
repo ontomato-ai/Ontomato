@@ -1,4 +1,5 @@
-import { assertPermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import { qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
@@ -13,7 +14,7 @@ import { deliverEntryDependencyPublications } from "./entry-dependency-publicati
 async function writeObjectDetail(
   owner: ProductOwner, credentials: AssistantCredentials, className: string, panelId: string | null,
 ): Promise<void> {
-  await assertPermission(credentials, ["ontology-modeling"]);
+  await assertManagement(workbenchManagement.objectDetailsChange, owner, credentials);
   await transaction(async client => {
     await lockProducts(client, owner);
     const source = { kind: "object-detail" as const, id: className, actorId: owner.userId };

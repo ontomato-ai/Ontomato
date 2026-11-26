@@ -5,7 +5,8 @@ import { EXPORT_FEEDBACK } from "@ontomato/contracts/platform-object-types";
 import type { FeedbackRecord } from "@ontomato/contracts/feedback";
 import { panelReadParameterSchemas, type PanelGroupCounts, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
-import { assertPermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { PanelReadServerOperation } from "../product-panels/server-operations";
@@ -15,8 +16,7 @@ import { exportFeedback, feedbackExportTimeZone } from "./feedback-export";
 
 /*
  * The feedback owner's named reads for direct panels: queried list, ordered filter counts, and single record lookup.
- * Reads delegate filtering, keyword matching, and localized labels to `feedback-store` under the `user-feedback`
- * permission boundary.
+ * Reads delegate filtering, keyword matching, and localized labels to `feedback-store` under the feedback management boundary.
  */
 
 const queryInputSchema = z.object({
@@ -88,7 +88,7 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
     relatedId: t("api.feedbackExport.columns.relatedId"),
     updatedAt: t("api.feedbackExport.columns.updatedAt"),
   });
-  const requireAccess = () => assertPermission(viewer, ["user-feedback"]);
+  const requireAccess = () => assertManagement(workbenchManagement.feedbackRead, owner, viewer);
 
   return {
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
@@ -165,7 +165,7 @@ export const feedbackExportOperation = {
   inputSchema: exportInputSchema,
   resultSchema: z.union([panelDownloadReceiptSchema, panelReadOperationJsonResultSchema]),
   async execute({ executor: { owner, credentials } }, call) {
-    await assertPermission(credentials, ["user-feedback"]);
+    await assertManagement(workbenchManagement.feedbackExport, owner, credentials);
     const { search, sourceType, rating, timeZone } = exportInputSchema.parse(call.input);
     const file = await exportFeedback({
       domainId: owner.domainId,

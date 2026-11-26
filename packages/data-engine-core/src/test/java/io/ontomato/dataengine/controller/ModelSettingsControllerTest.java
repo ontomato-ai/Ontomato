@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
+import io.ontomato.dataengine.service.sys.bean.UserDetail;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -25,6 +28,7 @@ class ModelSettingsControllerTest {
   private final AgentRuntimeClient runtime = mock(AgentRuntimeClient.class);
   private final OntologyAgentAccess access = mock(OntologyAgentAccess.class);
   private final OntologyAgentModelSettings agents = mock(OntologyAgentModelSettings.class);
+  private final ManagementRequestAccess management = mock(ManagementRequestAccess.class);
   private final AuthorizationService authorization = mock(AuthorizationService.class);
   private final RetrieverAccess retrieverAccess = new RetrieverAccess(authorization, mock(AuthorizationStore.class));
   private final VerifiedIdentity viewer = new VerifiedIdentity("verified-domain", "user", CredentialLimit.UNRESTRICTED);
@@ -37,9 +41,13 @@ class ModelSettingsControllerTest {
         new OwnerFacts(null, DefinitionState.PUBLISHED))))
         .thenReturn(new Decision(allowed, "OBJECT_FORBIDDEN", "Agent permission is required"));
   }
-  private final ModelSettingsController controller = new ModelSettingsController(runtime, access, agents, retrieverAccess);
+  private final ModelSettingsController controller = new ModelSettingsController(runtime, access, agents, retrieverAccess, management);
 
   private void identity() {
+    var user = new UserDetail();
+    user.setId("user");
+    user.setDomainId("verified-domain");
+    when(management.require(anyString())).thenReturn(user);
     when(access.authenticated(any())).thenReturn(new OntologyAgentAccess.Context(
         new OntologyAgentStore.Owner("user", "verified-domain"), null, null, null, "en", null, null));
   }
@@ -150,7 +158,7 @@ class ModelSettingsControllerTest {
     permit(Verb.EDIT, true);
     // Exercise MVC deserialization and the real selection service, mocking only its dependencies.
     var service = new OntologyAgentModelSettings(jdbc, runtime);
-    return MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, service, retrieverAccess)).build();
+    return MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, service, retrieverAccess, management)).build();
   }
 
   @Test void mvcSavesAnExistingModelUsingTheVerifiedDomain() throws Exception {
@@ -203,7 +211,7 @@ class ModelSettingsControllerTest {
         .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(response));
     var client = new AgentRuntimeClient("http://runtime.invalid", "fixture-host-token", "http://ontology.invalid");
     ReflectionTestUtils.setField(client, "http", transport);
-    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(client, access, agents, retrieverAccess)).build();
+    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(client, access, agents, retrieverAccess, management)).build();
     var result = mvc.perform(post("/model-settings/test").contentType(MediaType.APPLICATION_JSON)
         .content("{\"model\":{\"type\":\"chat\",\"timeoutSeconds\":25,\"maxRetries\":0}}"))
         .andExpect(request().asyncStarted()).andReturn();

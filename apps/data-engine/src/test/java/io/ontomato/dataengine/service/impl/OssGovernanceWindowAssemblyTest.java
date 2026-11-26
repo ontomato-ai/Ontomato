@@ -9,8 +9,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.controller.KnowledgeGovernanceController;
 import io.ontomato.dataengine.controller.OntologyAgentErrors;
+import io.ontomato.dataengine.core.db.jdbc.InitDb;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.agent.*;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +48,9 @@ class OssGovernanceWindowAssemblyTest {
     var definitions=mock(OntologyAgentDefinitions.class);when(definitions.resource(anyString())).thenCallRealMethod();
     context=new AnnotationConfigApplicationContext();
     var beans=context.getBeanFactory();
+    // The fixture initialized its isolated schema before creating this context.
+    beans.registerSingleton("jdbcInitDb",mock(InitDb.class));
+    beans.registerSingleton("jdbcTemplate",jdbc);
     beans.registerSingleton("ontologyAgentStore",store);
     beans.registerSingleton("queryGrantService",grants);
     beans.registerSingleton("agentRuntimeClient",mock(AgentRuntimeClient.class));
@@ -55,8 +61,12 @@ class OssGovernanceWindowAssemblyTest {
     beans.registerSingleton("langService",mock(LangService.class));
     beans.registerSingleton("agentExecutionAccess",mock(AgentExecutionAccess.class));
     beans.registerSingleton("queryAccessService",mock(QueryAccessService.class));
+    beans.registerSingleton("productGrantService",mock(ProductGrantService.class));
+    beans.registerSingleton("capabilityGrantLookup",mock(CapabilityGrantLookup.class));
+    beans.registerSingleton("dataPermissionLookup",mock(DataPermissionLookup.class));
     context.register(AnonymousIdentityService.class,AnonymousScheduleIdentity.class,KnowledgeGovernanceService.class,
-      OntologyAgentAccess.class,KnowledgeGovernanceController.class);
+      OntologyAgentAccess.class,KnowledgeGovernanceController.class,AnonymousAuthorization.class,
+      AuthorizationService.class,ManagementOperations.class,KnowledgeGovernanceService.Operations.class);
     context.refresh();
     http=MockMvcBuilders.standaloneSetup(context.getBean(KnowledgeGovernanceController.class))
       .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();

@@ -30,6 +30,7 @@ configureI18n({
 });
 
 const mocks = vi.hoisted(() => ({
+  assertManagement: vi.fn(),
   assertObserveAccess: vi.fn<
     Parameters<WorkbenchIdentity["assertObserveAccess"]>,
     ReturnType<WorkbenchIdentity["assertObserveAccess"]>
@@ -37,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   autotestDataDir: "",
 }));
 
+vi.mock("../../../identity/management", () => ({ assertManagement: mocks.assertManagement }));
 vi.mock("../../../content/layout", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../content/layout")>();
   return {
@@ -76,6 +78,7 @@ let tempRoot = "";
 beforeEach(() => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ops-case-sets-panel-"));
   mocks.autotestDataDir = path.join(tempRoot, "autotest");
+  mocks.assertManagement.mockReset().mockResolvedValue(undefined);
   mocks.assertObserveAccess.mockReset().mockResolvedValue(undefined);
 
   installWorkbenchIdentity({
@@ -86,7 +89,6 @@ beforeEach(() => {
     requirePermission: () => (_req, _res, next) => next(),
     assertPermission: async () => {},
     requireDeploymentMaintenance: (_req, _res, next) => next(),
-    guardMcpServiceManagement: (_req, _res, next) => next(),
     observeAccess: (_req, _res, next) => next(),
     assertObserveAccess: mocks.assertObserveAccess,
     requireDomainId: ({ domainId }) => {
@@ -132,7 +134,7 @@ describe("AutotestCaseSet panel reads and operations", () => {
     await expect(adapterA.record(idB)).rejects.toMatchObject({ status: 404 });
     await expect(adapterA.form(idB)).rejects.toMatchObject({ status: 404 });
 
-    mocks.assertObserveAccess.mockRejectedValueOnce(new HttpError(403, "Missing observer permission"));
+    mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Operation forbidden"));
     await expect(adapterA.list()).rejects.toMatchObject({ status: 403 });
   });
 

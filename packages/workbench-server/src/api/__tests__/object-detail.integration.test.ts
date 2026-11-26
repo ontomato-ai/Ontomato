@@ -50,9 +50,9 @@ vi.mock("../../services/product-governance/authorization", async original => {
 });
 
 vi.mock("../../identity/installed", () => ({
-  assertPermission: state.assertPermission,
   workbenchIdentity: () => ({ requireDomainId: (identity: { domainId: string }) => identity.domainId }),
 }));
+vi.mock("../../identity/management", () => ({ assertManagement: state.assertPermission }));
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
@@ -156,11 +156,11 @@ it("returns every class mapped to the panel in the requested domain", async () =
   }
 });
 
-it("requires ontology-modeling and the new panel use grant for a first mapping", async () => {
+it("requires the mapping management operation and the new panel use grant for a first mapping", async () => {
   await addPanel("detail");
   state.assertPermission.mockRejectedValueOnce(new HttpError(403, "Denied", "PERMISSION_DENIED"));
   await expect(setObjectDetail(owner, credentials, "Customer", "detail")).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
-  expect(state.assertPermission).toHaveBeenCalledWith(credentials, ["ontology-modeling"]);
+  expect(state.assertPermission).toHaveBeenCalledWith(expect.objectContaining({ id: "object-details.mapping.change" }), owner, credentials);
   state.requireGrant.mockRejectedValueOnce(new HttpError(403, "Denied", "PRODUCT_FORBIDDEN"));
   await expect(setObjectDetail(owner, credentials, "Customer", "detail")).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
   await expect(resolveObjectDetail(owner, credentials, "Customer")).resolves.toEqual({ kind: "unconfigured" });

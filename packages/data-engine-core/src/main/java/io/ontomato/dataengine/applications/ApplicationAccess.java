@@ -9,7 +9,6 @@ import java.util.Set;
 public interface ApplicationAccess {
     User entryUser(String credential);
     boolean administrator(User user);
-    void requireConnectedRegistration(User user);
     boolean canMaintain(JSONObject application, User user);
     default void requireLegacyProductAuthor(User publisher, String authorId) {}
     default List<ApplicationPanelUse> builtinEntries(String applicationId) { return List.of(); }

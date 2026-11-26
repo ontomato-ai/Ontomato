@@ -6,7 +6,8 @@ import { Request, Response, Router } from "express";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { listFeedback } from "../../services/admin/feedback-store";
 import { exportFeedback, feedbackExportTimeZone } from "../../services/admin/feedback-export";
-import { requirePermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { requireManagement } from "../../identity/management";
 import { asyncHandler, buildAttachmentContentDisposition } from "../utils/http";
 import { HttpError } from "../../utils/errors";
 const router: ReturnType<typeof Router> = Router();
@@ -28,7 +29,7 @@ function feedbackId(value: string): string {
 
 router.get(
   "/export",
-  requirePermission(["user-feedback"]),
+  requireManagement(workbenchManagement.feedbackExport),
   asyncHandler(async (req: Request, res: Response) => {
     const identity = req as AuthenticatedRequest;
     const file = await exportFeedback({
@@ -50,7 +51,7 @@ router.get(
 
 router.get(
   "/",
-  requirePermission(["user-feedback"]),
+  requireManagement(workbenchManagement.feedbackRead),
   asyncHandler(async (req: Request, res: Response) => {
     const sourceType = normalizeSourceType(req.query.sourceType);
     const rating = normalizeRating(req.query.rating);
@@ -112,7 +113,7 @@ router.get(
 
 router.get(
   "/:id",
-  requirePermission(["user-feedback"]),
+  requireManagement(workbenchManagement.feedbackRead),
   asyncHandler(async (req: Request, res: Response) => {
     const identity = req as AuthenticatedRequest;
     const data = await listFeedback({

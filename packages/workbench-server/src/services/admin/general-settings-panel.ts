@@ -3,9 +3,7 @@ import { generalConfigSaveEndpoints, type GeneralConfigKey } from "@ontomato/con
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { GENERAL_SETTINGS } from "@ontomato/contracts/platform-object-types";
 import { panelFormSaveInputSchema, type PanelFormDescription, type PanelFormField, type PanelFormRequest, type PanelRecord } from "@ontomato/contracts/panel-projection";
-import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, type DataQueryOperationHost } from "../product-panels/data-query-operations";
@@ -35,8 +33,7 @@ const languageNames: Record<string, string> = {
   "zh-CN": "简体中文", "zh-TW": "繁體中文", en: "English", ja: "日本語", fr: "Français", it: "Italiano", de: "Deutsch", ar: "العربية",
 };
 
-async function readSettings(host: DataQueryOperationHost, credentials: AssistantCredentials) {
-  await assertPermission(credentials, ["system-config"]);
+async function readSettings(host: DataQueryOperationHost) {
   const response = await host.request(`${DATA_QUERY_GATEWAY}/businessConfig/generalForm`, { method: "GET" });
   if (!response.ok) throw new HttpError(response.status, "Unable to read general settings", "GENERAL_SETTINGS_UNAVAILABLE");
   const data = settingsSchema.parse(await response.json());
@@ -56,7 +53,7 @@ function requireGeneralKey(primaryKey: string) {
 export function createGeneralSettingsReads(actor: PanelOperationActor) {
   const host = operationHost(actor);
   const locale = actor.credentials.locale;
-  const read = () => readSettings(host, actor.credentials);
+  const read = () => readSettings(host);
   async function record(primaryKey: string): Promise<PanelRecord> {
     requireGeneralKey(primaryKey);
     const { values, captions } = await read();
@@ -115,7 +112,7 @@ function submittedValues(input: unknown) {
 export async function saveGeneralSettings(
   host: DataQueryOperationHost, actor: PanelOperationActor, changes: z.infer<typeof generalSettingsPatch>,
 ): Promise<SinglePanelOperationOutcome> {
-  const { values: current, options, captions } = await readSettings(host, actor.credentials);
+  const { values: current, options, captions } = await readSettings(host);
   if (changes.lang !== undefined && !options.includes(changes.lang)) {
     const message = tForLocale(actor.credentials.locale, "panels.simplePages.invalidGeneral");
     return { kind: "refusal", code: "INVALID_GENERAL_SETTING", message, errors: [{ field: "/lang", code: "invalid_option", message }] };

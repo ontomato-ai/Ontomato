@@ -33,9 +33,7 @@ import {
   SAVE_DATA_ADAPTER_ROUTING,
   TEST_DATA_ADAPTER_CONNECTION,
 } from "@ontomato/contracts/platform-object-types";
-import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import {
@@ -60,8 +58,8 @@ import type {
 
 /*
  * Domain data adapter owner for the built-in `data-adapters` settings panel (`platform:DataAdapterConfig`).
- * Every read, save, and connection test routes through Java `BusinessConfigController` and `AdminController`
- * under the `system-config` permission boundary. Saved secret fields stay masked on the backend (`******`),
+ * Java authorizes configuration operations, the installed-adapter catalogue, and the ontology outline.
+ * Saved secret fields stay masked on the backend (`******`),
  * are presented as blank inputs on edit forms, and are restored on blank submission so unchanged secrets
  * are never overwritten or echoed into form values.
  */
@@ -355,13 +353,11 @@ function buildConnectionField(
 
 async function readJavaGet<T>(
   host: DataQueryOperationHost,
-  credentials: AssistantCredentials,
   path: string,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   errorCode: string,
   fallbackMessage: string,
 ): Promise<T> {
-  await assertPermission(credentials, ["system-config"]);
   const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, { method: "GET" });
   if (!response.ok) {
     throw new HttpError(response.status, fallbackMessage, errorCode);
@@ -373,10 +369,9 @@ async function readJavaGet<T>(
   return schema.parse(envelope.data ?? {});
 }
 
-async function readBusinessConfig(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<BusinessConfigView> {
+async function readBusinessConfig(host: DataQueryOperationHost): Promise<BusinessConfigView> {
   return readJavaGet(
     host,
-    credentials,
     "/businessConfig/getConfig",
     businessConfigPayloadSchema,
     "DATA_ADAPTER_CONFIG_UNAVAILABLE",
@@ -384,10 +379,9 @@ async function readBusinessConfig(host: DataQueryOperationHost, credentials: Ass
   );
 }
 
-async function readDataAdapters(host: DataQueryOperationHost, credentials: AssistantCredentials) {
+async function readDataAdapters(host: DataQueryOperationHost) {
   return readJavaGet(
     host,
-    credentials,
     "/businessConfig/dataAdapters",
     dataAdaptersPayloadSchema,
     "DATA_ADAPTERS_UNAVAILABLE",
@@ -395,10 +389,9 @@ async function readDataAdapters(host: DataQueryOperationHost, credentials: Assis
   );
 }
 
-async function readOntologyOutline(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<OntologyOutline> {
+async function readOntologyOutline(host: DataQueryOperationHost): Promise<OntologyOutline> {
   return readJavaGet(
     host,
-    credentials,
     "/admin/getSchema",
     ontologyOutlineSchema,
     "ONTOLOGY_SCHEMA_UNAVAILABLE",
@@ -686,8 +679,8 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
     async record(primaryKey: string): Promise<PanelRecord> {
       requireDomainKey(primaryKey);
       const [config, adaptersData] = await Promise.all([
-        readBusinessConfig(host, actor.credentials),
-        readDataAdapters(host, actor.credentials),
+        readBusinessConfig(host),
+        readDataAdapters(host),
       ]);
       const summary = summarizeRecord(
         { ...config, dataAdapter: config.dataAdapter || adaptersData.currentType },
@@ -750,8 +743,8 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
     ): Promise<PanelFormDescription> {
       requireDomainKey(primaryKey);
       const [config, adaptersData] = await Promise.all([
-        readBusinessConfig(host, actor.credentials),
-        readDataAdapters(host, actor.credentials),
+        readBusinessConfig(host),
+        readDataAdapters(host),
       ]);
       const adapters = adaptersData.adapters;
       const incoming = inputs.values;
@@ -1008,9 +1001,9 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
     ): Promise<PanelFormDescription> {
       requireDomainKey(primaryKey);
       const [config, adaptersData, ontology] = await Promise.all([
-        readBusinessConfig(host, actor.credentials),
-        readDataAdapters(host, actor.credentials),
-        readOntologyOutline(host, actor.credentials),
+        readBusinessConfig(host),
+        readDataAdapters(host),
+        readOntologyOutline(host),
       ]);
       const sourceAdapters = adaptersData.adapters.filter((a) => a.type !== multiDataSourceType);
       const storedMulti = config.multiDataSource;
@@ -1259,8 +1252,8 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
       const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
       const { values } = saveInputSchema.parse(input);
       const [config, adaptersData] = await Promise.all([
-        readBusinessConfig(host, host.executor.credentials),
-        readDataAdapters(host, host.executor.credentials),
+        readBusinessConfig(host),
+        readDataAdapters(host),
       ]);
       const adapters = adaptersData.adapters;
       const adapterMode = typeof values.adapterMode === "string" ? values.adapterMode.trim() : "";
@@ -1439,9 +1432,9 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
       const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
       const { values } = saveInputSchema.parse(input);
       const [config, adaptersData, ontology] = await Promise.all([
-        readBusinessConfig(host, host.executor.credentials),
-        readDataAdapters(host, host.executor.credentials),
-        readOntologyOutline(host, host.executor.credentials),
+        readBusinessConfig(host),
+        readDataAdapters(host),
+        readOntologyOutline(host),
       ]);
       const storedSources: DataSourceEntry[] = (config.multiDataSource?.dataSources ?? []).map((entry) => ({
         id: entry.id,
@@ -1534,8 +1527,8 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
       const { draft, parameters } = panelReadOperationInputSchema.parse(call.input);
       const { sourceId: rawSourceId } = testParamsSchema.parse(parameters);
       const [config, adaptersData] = await Promise.all([
-        readBusinessConfig(host, host.executor.credentials),
-        readDataAdapters(host, host.executor.credentials),
+        readBusinessConfig(host),
+        readDataAdapters(host),
       ]);
       const adapters = adaptersData.adapters;
       const adapterMode = typeof draft.adapterMode === "string" && draft.adapterMode.trim()

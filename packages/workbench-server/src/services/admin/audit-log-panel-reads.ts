@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { panelReadParameterSchemas, type PanelFieldTone, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
-import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
@@ -76,7 +75,6 @@ export function createAuditLogPanelReads(viewer: AssistantCredentials) {
     };
   }
   async function read(path: string, body: object) {
-    await assertPermission(viewer, ["audit-logs"]);
     const response = await backendPost(`audit-log-${path}`, `${config.dataQuery.baseUrl.replace(/\/$/, "")}/auditLog/${path}`, body, {
       headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
     });
