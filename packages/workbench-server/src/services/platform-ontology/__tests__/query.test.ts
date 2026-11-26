@@ -443,7 +443,10 @@ describe("platform-ontology composite query", () => {
     ]));
 
     const role = byId.get(ROLE);
-    expect(Object.keys(role?.reads ?? {}).sort()).toEqual(["createForm", "form", "options", "query", "record", "resolve"]);
+    expect(Object.keys(role?.reads ?? {}).sort()).toEqual([
+      "contributionPolicies", "contributionWorkflowSteps",
+      "createForm", "form", "options", "query", "record", "resolve",
+    ]);
     expect(role?.operations?.map((op) => op.id)).toEqual([`${ROLE}.save`, DELETE_ROLE]);
 
     const definition = byId.get(DEFINITION);
