@@ -53,6 +53,7 @@
       "path": "/ontology/relations/detail"
     }, {
       "id": "business-knowledge", "pageKey": "business-knowledge", "panelId": "builtin-product-business-knowledge",
+      "defaultAgent": { "kind": "preset", "agentKind": "knowledge-governance" },
       "path": "/ontology/knowledge",
       "descriptions": {"en": "Maintain business rules and terminology, and review pending knowledge", "zh-CN": "维护业务规则与术语，审核待确认的知识"},
       "names": {"en": "Business knowledge", "zh-CN": "业务知识"}, "groupKey": "facts"
