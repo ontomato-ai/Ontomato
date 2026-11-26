@@ -8,7 +8,7 @@ current owner declarations and SDK catalogue. Extend the owner or SDK where a re
 ## Add a named owner read or operation
 
 Task triggers are a platform resource with an owner-declared form. The owner supplies the `list`, `record` and
-`form` reads and the `schedules.runNow` operation. The corresponding projections bind the list, selected task,
+`form` reads and the `triggers.runNow` operation. The corresponding projections bind the list, selected task,
 owner form and operation button.
 
 1. At the business owner, identify the existing read or action and its request identity, permission and result.
@@ -30,13 +30,13 @@ owner form and operation button.
 4. Test actual registration, read, confirmation and dispatch through the platform. Cover an admitted target and an
    owner denial. Check the user-visible result and any field error or affected-object receipt.
 
-The task list declares `component: "ObjectList"`, `type: "platform:ScheduledTask"`, `data: {rows: "list"}`
+The task list declares `component: "ObjectList"`, `type: "platform:Trigger"`, `data: {rows: "list"}`
 and `state: {selected: "selectedTask"}`. The summary declares `component: "ObjectSummary"`,
 `target: "selectedTask"` and `data: {record: "record"}`. The form supplies `values` and `changedField` at
 runtime through its component declaration. The selected state is typed once as
-`{kind: "object", objectType: "platform:ScheduledTask"}`.
+`{kind: "object", objectType: "platform:Trigger"}`.
 
-The button member `run` declares `component: "OperationButton"`, `operation: "schedules.runNow"` and
+The button member `run` declares `component: "OperationButton"`, `operation: "triggers.runNow"` and
 `target: "selectedTask"`. A single object target runs once. A list target runs a batch when the owner
 declares batch support. The HTTP examples below use the formal inputs and operation IDs produced by registration.
 
@@ -53,7 +53,7 @@ registered use determine whether this request can read the task.
   "memberPath": [{ "member": "summary" }],
   "dataName": "record",
   "inputs": {
-    "task": { "className": "platform:ScheduledTask", "primaryKey": "<taskId>" }
+    "task": { "className": "platform:Trigger", "primaryKey": "<taskId>" }
   }
 }
 ```

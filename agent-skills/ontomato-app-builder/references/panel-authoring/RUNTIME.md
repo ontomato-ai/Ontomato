@@ -463,7 +463,7 @@ interface PanelOperationHandle {
 ### Operation IDs and write results
 
 The member declaration's `operation` is the owner's full ID. Invoke using the member-qualified ID from the page
-skill's Declared operations. For a member `opRunNow` declaring `schedules.runNow`, pass `opRunNow.runNow`
+skill's Declared operations. For a member `opRunNow` declaring `triggers.runNow`, pass `opRunNow.runNow`
 as `operation` to `page_action`. In Vue, the same binding is `usePanelOperation("opRunNow", "runNow", options?)`,
 which registers a mounted page action entry automatically. Pass `{ entry: false }` for a background flow or
 to subscribe ahead of time to an operation behind a dialog. For example,
