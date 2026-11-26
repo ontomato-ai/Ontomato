@@ -12,7 +12,6 @@ public interface ProductPrincipalLookup {
     Set<String> effectiveRoles(String userId, String domainId);
     default String productPrincipalId(String userId){return userId;}
     default List<ProductGrants.Grant> defaultAdminGrants(String domainId, Collection<String> verbs) { return List.of(); }
-    /** Import legacy application entry and maintenance authority once, at the identity boundary. */
     /** Resolve user display names by principal ID in a domain; missing IDs are omitted. */
     default Map<String, String> principalNames(String domainId, Collection<String> principalIds) { return Map.of(); }
     /** Resolve role display names by role ID in a domain; missing IDs are omitted. */
