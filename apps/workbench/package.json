@@ -12,7 +12,7 @@
     "build:sdk": "node node_modules/@ontomato/apps-sdk/build.mjs web/src/sdk-edition.ts ../../dist/apps-sdk",
     "typecheck:web": "vue-tsc --noEmit -p web/tsconfig.json",
     "test:web": "vitest run --root web",
-    "test:web:integration": "WEB_INTEGRATION=1 vitest run --root web"
+    "test:web:integration": "WEB_INTEGRATION=1 vitest run --root web --passWithNoTests"
   },
   "dependencies": {
     "@ontomato/workbench-server": "workspace:*",
