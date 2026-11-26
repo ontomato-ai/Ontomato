@@ -243,7 +243,7 @@ describe("platform count reads", () => {
       return { rows: [visible, hidden].map(id => ({ id, domainId: owner.domainId, ownerId: "author" })) };
     });
     vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
-    const decide = vi.fn(async (url: string, init: RequestInit) => {
+    const decide = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
       expect(new URL(url).pathname).toBe("/authorization/objects/decide-batch");
       expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
       expect(JSON.parse(String(init.body)).requests.map((request: { target: { id: string } }) => request.target.id))
