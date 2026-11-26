@@ -86,11 +86,11 @@ describe("floating foot dock space measurement", () => {
     expect(unit.style.getPropertyValue("--pane-dock-space")).toBe("184px");
     expect(readSpace.value).toBe(184);
 
-    // Folded corner FAB.
-    triggerResize(foot, 60);
+    // Folded corner FAB: the button floats absolutely and the foot owns no height.
+    triggerResize(foot, 0);
     await nextTick();
-    expect(unit.style.getPropertyValue("--pane-dock-space")).toBe("60px");
-    expect(readSpace.value).toBe(60);
+    expect(unit.style.getPropertyValue("--pane-dock-space")).toBe("0px");
+    expect(readSpace.value).toBe(0);
   });
 
   it("EntryUnit yields to an ancestor pageDockSpaceKey when mounted without its own foot", async () => {

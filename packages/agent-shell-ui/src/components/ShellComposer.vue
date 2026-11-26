@@ -5,6 +5,15 @@ import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
 import type { ShellLabels } from "../types";
 import type { ComposerEntry } from "../page-composer-entry";
 import { useComposerCollapsed } from "../composer-collapsed";
+import {
+  clampComposerFabPosition,
+  composerFabArea,
+  currentComposerFabPosition,
+  draggedComposerFabPosition,
+  readComposerFabPosition,
+  writeComposerFabPosition,
+  type ComposerFabPosition,
+} from "../composer-fab-position";
 
 /**
  * The one message box of the platform: the conversation shell's, the platform home's question box and the composer at
@@ -58,6 +67,105 @@ const { collapsed, setCollapsed } = useComposerCollapsed();
 const opened = ref(false);
 const folded = computed(() => props.floating && collapsed.value && !opened.value);
 
+/**
+ * Where the round button stands inside its page area. It is measured inward from the area's lower right, so the same
+ * remembered place fits pages of different widths; when the area shrinks past it, the button is pulled back into view.
+ * The stylesheet's corner remains the default until the reader drags it.
+ */
+const fab = ref<HTMLButtonElement | null>(null);
+const fabPosition = ref<ComposerFabPosition | null>(null);
+const fabDragging = ref(false);
+let rememberedFabPosition = readComposerFabPosition();
+let fabArea: HTMLElement | null = null;
+let fabDrag: {
+  pointerId: number;
+  x: number;
+  y: number;
+  start: ComposerFabPosition;
+  moved: boolean;
+  target: HTMLElement;
+} | null = null;
+let suppressFabClick = false;
+
+const fabStyle = computed(() => fabPosition.value
+  ? { right: `${fabPosition.value.right}px`, bottom: `${fabPosition.value.bottom}px` }
+  : undefined);
+const fabSize = () => ({ width: fab.value?.offsetWidth ?? 44, height: fab.value?.offsetHeight ?? 44 });
+const fabAreaSize = () => ({
+  width: fabArea?.clientWidth ?? window.innerWidth,
+  height: fabArea?.clientHeight ?? window.innerHeight,
+});
+const clampFabPosition = (position: ComposerFabPosition) => clampComposerFabPosition(position, fabAreaSize(), fabSize());
+
+/** Draws the remembered or default place clamped to the area as it is now; a remembered place is kept clamped too. */
+function syncFabPosition() {
+  const element = fab.value;
+  if (!element || !folded.value) return;
+  fabArea ??= composerFabArea(element);
+  const current = rememberedFabPosition ?? fabPosition.value ?? currentComposerFabPosition(element, fabArea);
+  const next = clampFabPosition(current);
+  fabPosition.value = next;
+  if (rememberedFabPosition) {
+    rememberedFabPosition = next;
+    writeComposerFabPosition(next);
+  }
+}
+
+const fabAreaSizer = new ResizeObserver(() => syncFabPosition());
+watch(fab, (element) => {
+  fabAreaSizer.disconnect();
+  fabArea = element ? composerFabArea(element) : null;
+  if (fabArea) fabAreaSizer.observe(fabArea);
+  if (element) syncFabPosition();
+}, { flush: "post" });
+
+function moveFabDrag(event: PointerEvent) {
+  if (!fabDrag || event.pointerId !== fabDrag.pointerId) return;
+  const dx = event.clientX - fabDrag.x;
+  const dy = event.clientY - fabDrag.y;
+  fabPosition.value = draggedComposerFabPosition(fabDrag.start, dx, dy, fabAreaSize(), fabSize());
+  if (Math.hypot(dx, dy) >= 4) {
+    fabDrag.moved = true;
+    fabDragging.value = true;
+  }
+}
+
+function finishFabDrag(event?: PointerEvent) {
+  if (!fabDrag || (event && event.pointerId !== fabDrag.pointerId)) return;
+  const { target, moved } = fabDrag;
+  target.removeEventListener("pointermove", moveFabDrag);
+  target.removeEventListener("pointerup", finishFabDrag);
+  target.removeEventListener("pointercancel", finishFabDrag);
+  target.removeEventListener("lostpointercapture", finishFabDrag);
+  fabDrag = null;
+  fabDragging.value = false;
+  if (!moved || !fabPosition.value) return;
+  rememberedFabPosition = clampFabPosition(fabPosition.value);
+  fabPosition.value = rememberedFabPosition;
+  writeComposerFabPosition(rememberedFabPosition);
+  suppressFabClick = true;
+  window.setTimeout(() => (suppressFabClick = false), 0);
+}
+
+function startFabDrag(event: PointerEvent) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  const target = event.currentTarget as HTMLElement;
+  fabArea = composerFabArea(target);
+  syncFabPosition();
+  const start = fabPosition.value ?? currentComposerFabPosition(target, fabArea);
+  fabDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start, moved: false, target };
+  target.setPointerCapture(event.pointerId);
+  target.addEventListener("pointermove", moveFabDrag);
+  target.addEventListener("pointerup", finishFabDrag);
+  target.addEventListener("pointercancel", finishFabDrag);
+  target.addEventListener("lostpointercapture", finishFabDrag);
+}
+
+function activateFab() {
+  if (suppressFabClick) return;
+  unfold();
+}
+
 /** The lines the input shows before it grows, and the lines it grows to before it scrolls. */
 const lines = computed(() => (props.floating ? { least: 1, most: 6 } : { least: Math.min(8, Math.max(1, props.minLines ?? 2)), most: 8 }));
 
@@ -85,7 +193,13 @@ watch(input, (el, previous) => {
   if (el) sizer.observe(el);
 });
 onMounted(resize);
-onBeforeUnmount(() => sizer.disconnect());
+onMounted(() => window.addEventListener("resize", syncFabPosition));
+onBeforeUnmount(() => {
+  sizer.disconnect();
+  fabAreaSizer.disconnect();
+  finishFabDrag();
+  window.removeEventListener("resize", syncFabPosition);
+});
 
 function submit() {
   if (!canSend.value) return;
@@ -124,11 +238,15 @@ defineExpose({ focus: () => input.value?.focus() });
 <template>
   <button
     v-if="folded"
+    ref="fab"
     type="button"
     class="composer-unfold"
+    :class="{ dragging: fabDragging }"
+    :style="fabStyle"
     :title="labels.expandComposer"
     :aria-label="labels.expandComposer"
-    @click="unfold"
+    @pointerdown="startFabDrag"
+    @click="activateFab"
   >
     <MessageSquare :size="20" :stroke-width="2.1" aria-hidden="true" />
   </button>
@@ -275,13 +393,16 @@ defineExpose({ focus: () => input.value?.focus() });
   background: var(--el-fill-color);
 }
 /*
- * Folded: a prominent brand-filled round FAB floating at the page's lower right, aligned to the foot's trailing edge
- * so it remains unmistakable across light/dark surfaces while the page behind it keeps its whole height and stays
- * clickable everywhere else.
+ * Folded: a prominent brand-filled round FAB floating at the page's lower right by default. It is absolute even then,
+ * so the zero-height dock owns no space; dragging only changes its inward distances inside the page area, and pointer
+ * capture keeps the drag with the button above panel frames.
  */
 .composer-unfold {
-  margin-inline-start: auto;
+  position: absolute;
+  right: var(--page-gutter);
+  bottom: var(--shell-composer-foot);
   pointer-events: auto;
+  touch-action: none;
   width: 44px;
   height: 44px;
   border: 1px solid color-mix(in srgb, var(--on-primary) 22%, var(--el-color-primary));
@@ -307,6 +428,16 @@ defineExpose({ focus: () => input.value?.focus() });
 }
 .composer-unfold:active {
   transform: translateY(0) scale(0.97);
+}
+.composer-unfold,
+.composer-unfold.dragging {
+  cursor: grab;
+}
+.composer-unfold.dragging,
+.composer-unfold.dragging:hover,
+.composer-unfold.dragging:active {
+  cursor: grabbing;
+  transform: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .composer-unfold {

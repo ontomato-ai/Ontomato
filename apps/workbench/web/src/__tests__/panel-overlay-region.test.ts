@@ -77,6 +77,12 @@ it("routes ordinary dialogs and drawers into the page-region root and fullscreen
   const drawer = mountInPanel(SdkDrawer as Component, { modelValue: true, title: "Drawer" });
   await vi.waitFor(() => expect(drawer.overlay.element.querySelector(".el-drawer")).not.toBeNull());
   expect(drawer.windowRoot.querySelector(".el-drawer")).toBeNull();
+
+  // The composer's floating foot is z-index 5 at most; ordinary panel overlays stay above it in both placements.
+  for (const root of [dialog.overlay.element, drawer.overlay.element]) {
+    const overlay = root.querySelector<HTMLElement>(".el-overlay")!;
+    expect(Number(overlay.style.zIndex)).toBeGreaterThan(5);
+  }
 });
 
 const chartFile = dashboardChartFileSchema.parse({
