@@ -381,7 +381,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Draws a detail header with a title, one-line subtitle, status badge and bound operations; use at the top of a detail view or inside `<page-header #title>`.\n\n- Its actions are the projection's own declared operations, taken in the owner's order through the platform's shared dispatch, parameter dialog and confirmation path; the rest go to a More menu whose accessible name carries the current record's title.\n- It also stands alone with a title, a subtitle and `#actions`, which is how a create-mode header is written.\n- `fallbackTitle` keeps a quiet single-line placeholder while the record loads or is missing, so the page below does not jump.\n- Named scalar outputs the bound read's owner declares pass through it beside its own, without the page having to read them elsewhere.",
+      "Draws a detail header with a title, one-line subtitle, status badge and bound operations; use at the top of a detail view or inside `<page-header #title>`. The subtitle reads in the body font and secondary colour by default, the way prose, summaries, sources and counts do; set `subtitleStyle: 'identifier'` where it carries an identifier, code or key so it reads in the monospace font.\n\n- Its actions are the projection's own declared operations, taken in the owner's order through the platform's shared dispatch, parameter dialog and confirmation path; the rest go to a More menu whose accessible name carries the current record's title.\n- It also stands alone with a title, a subtitle and `#actions`, which is how a create-mode header is written.\n- `fallbackTitle` keeps a quiet single-line placeholder while the record loads or is missing, so the page below does not jump.\n- Named scalar outputs the bound read's owner declares pass through it beside its own, without the page having to read them elsewhere.",
     effects: "Reads the bound object's `record` datum when declared and runs projection operations through the platform coordinator.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: { record: { results: ["panelRecord"], required: false } },
@@ -391,8 +391,8 @@ export const components: readonly ComponentMetadata[] = [
       errorMessage: { kind: "scalar", type: "string" },
     },
     configProps: [
-      "title", "subtitle", "subtitleField", "statusField", "status", "statusTone", "statusStyle", "operations",
-      "maxVisibleOperations", "fallbackTitle",
+      "title", "subtitle", "subtitleField", "subtitleStyle", "statusField", "status", "statusTone", "statusStyle",
+      "operations", "maxVisibleOperations", "fallbackTitle",
     ],
   }),
   defineComponentMeta({

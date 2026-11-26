@@ -53,7 +53,8 @@
           }
         },
         "config": {
-          "subtitleField": "path"
+          "subtitleField": "path",
+          "subtitleStyle": "identifier"
         },
         "id": "builtin-product-7e2c4a19-5b81-4f3d-9a0c-1d8e6b4a2f02"
       },

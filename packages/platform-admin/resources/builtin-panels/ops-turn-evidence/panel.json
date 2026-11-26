@@ -62,6 +62,7 @@
           "layout": "list",
           "statusField": "statusLabel",
           "subtitleField": "turnKey",
+          "subtitleStyle": "identifier",
           "subtitleLines": 1,
           "searchable": false,
           "showFooter": false,
@@ -117,6 +118,7 @@
         },
         "config": {
           "subtitleField": "turnKey",
+          "subtitleStyle": "identifier",
           "statusField": "statusLabel"
         },
         "name": "Selected turn header",
