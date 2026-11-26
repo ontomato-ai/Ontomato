@@ -25,12 +25,10 @@ import { resolveVisualizationData } from "@ontomato/workbench-server/services/ch
 import {
   QueryArtifactCache,
   createQueryArtifactRef,
-  extractRowsFromQueryResult,
   resolveAnalysisData,
 } from "@ontomato/workbench-server/services/chat/graph/utils/query-artifact-cache";
 import { installModelAgentCatalog } from "@ontomato/workbench-server/logging/model-agents";
 import { installWorkspaceArtifactText } from "@ontomato/workbench-server/platform/diagnosis/observe/workspace-artifact/artifact-text";
-import { installCurrentDatasetRule, lastDatasetWithRows } from "@ontomato/workbench-server/services/chat/graph/utils/current-dataset";
 import { installNoDataVisualization, noDataChart } from "@ontomato/workbench-server/services/chat/graph/nodes/visualization-no-data";
 import {
   buildWorkspaceArtifact,
@@ -100,7 +98,6 @@ beforeAll(async () => {
   installRuntimeDefaults(ossRuntimeDefaults);
   configureOssI18n();
   installWorkspaceArtifactText(ossWorkspaceArtifactText);
-  installCurrentDatasetRule(lastDatasetWithRows);
   installNoDataVisualization(noDataChart);
   installM3DiagnosticSupport(null);
   await syncRuntimeDefaultResources();
@@ -481,21 +478,29 @@ describe("open-source edition rules", () => {
     expect(unmatched).toEqual([]);
   });
 
-  it("C10/C11: current dataset selection and zero-row visualization follow this edition's rules", async () => {
-    // [with data, empty]: takes the last dataset with rows; rows and the field display plan share one source and render normally.
+  it("C11: multi-dataset resolution preserves all datasets and zero-row visualization follows this edition's rules", async () => {
+    // [with data, empty]: preserves all datasets and passes the non-empty dataset to chart generation.
     const mixed = [
       { subQuestion: "earlier", data: ROWS, fieldDisplayPlan: WITH_ROWS_PLAN },
       { subQuestion: "empty follow-up", data: [], fieldDisplayPlan: EMPTY_PLAN },
     ];
-    expect(extractRowsFromQueryResult({ datasets: mixed })).toBe(ROWS);
     const withRows = await runVisualization(mixed);
-    expect(withRows.analysis).toMatchObject({ data: ROWS, source: "current_query", fieldDisplayPlan: WITH_ROWS_PLAN });
+    expect(withRows.analysis).toMatchObject({
+      source: "current_query",
+      datasets: [
+        { title: "earlier", data: ROWS, fieldDisplayPlan: WITH_ROWS_PLAN },
+        { title: "empty follow-up", data: [], fieldDisplayPlan: EMPTY_PLAN },
+      ],
+    });
     expect(mocks.chartInputs).toEqual([[ROWS]]);
     expect(withRows.stored?.result).toEqual({ html: "<chart/>", chartType: "bar", title: "Chart" });
 
-    // All empty: takes the last one; chart generation is not called and the "no chart generated" notice image is written.
+    // All empty: chart generation is not called and the "no chart generated" notice image is written.
     const empty = await runVisualization([{ data: [], fieldDisplayPlan: EMPTY_PLAN }]);
-    expect(empty.analysis).toMatchObject({ data: [], source: "current_query", fieldDisplayPlan: EMPTY_PLAN });
+    expect(empty.analysis).toMatchObject({
+      source: "current_query",
+      datasets: [{ data: [], fieldDisplayPlan: EMPTY_PLAN }],
+    });
     expect(mocks.chartInputs).toEqual([]);
     expect(empty.update).toEqual({ visualizationArtifactRef: "visualization:thread-1:3", events: [] });
     expect(empty.stored?.result).toMatchObject({ chartType: "none", title: "No chart generated" });

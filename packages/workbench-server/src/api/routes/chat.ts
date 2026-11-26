@@ -301,11 +301,7 @@ router.get(
 
         await recordTurnAnswerCompletion({ threadId, requestSeq, completedAt: new Date() });
 
-        // One execution covers the workflow execution plus the settlement of late facts registered on it; this turn's display
-        // includes the quality-check panel, so the subscription channel closes only after both finalize. Past the bounded limit, waiting is abandoned.
-        await finalState.pendingLateFacts?.settleAll();
-
-        // The user can still cancel while late facts are awaited; cancellation is not completion and is re-evaluated before finalization.
+        // The answer and its quality check have independent lifecycles. Finishing the answer releases this thread for the next question.
         if (run.controller.signal.aborted) {
           logger.info(tApp("foundation.log.chat.cancelledLate"), { userId, threadId, requestSeq });
           await finishTurnRun("cancelled");

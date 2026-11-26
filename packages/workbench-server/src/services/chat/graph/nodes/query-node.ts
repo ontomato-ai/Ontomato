@@ -1,6 +1,5 @@
 import { buildQueryRunInput, toDisplayFact } from "../../../data-query/query-fact";
-import { startQualityCheckSettlement } from "../../../data-query/late-fact";
-import { resolvePendingLateFacts } from "../utils/query-artifact-cache";
+import { startTrackedQualityCheck } from "../../../data-query/late-fact";
 import type { QueryExecutionFact } from "../../../data-query/query-fact";
 import { GraphState, GraphUpdate } from "../state";
 import { createLogger } from "../../../../logging/logger";
@@ -11,14 +10,14 @@ import { t, tApp } from "../../../../i18n";
 import {
   createQueryArtifactRef,
   getQueryArtifactCache,
-  STANDARD_QUERY_SOURCE_KIND,
-  STANDARD_QUERY_SOURCE_REF,
 } from "../utils/query-artifact-cache";
 import { executeBaseQuery, STANDARD_QUERY_BRANCHES } from "../../../data-query/base-query-executor";
 import { runtimeDefaults } from "../../../../runtime/defaults";
 import { answerBodyText, type QueryBackendSession } from "@ontomato/contracts/query-execution";
 import {
   startQueryRun,
+  STANDARD_QUERY_SOURCE_KIND,
+  STANDARD_QUERY_SOURCE_REF,
   updateQueryRunBackendSessions,
   upsertQueryRun,
   type UpsertQueryRunInput,
@@ -320,32 +319,30 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
     // Execution facts finalize as soon as data arrives, without waiting for the quality check.
     await finishQueryRun(queryResult, "completed");
 
-    // The quality check is a late fact: this turn's display includes the quality-check panel, so it is registered with the run and progress states are pushed,
-    // and the run waits for its settlement before finalizing; the execution facts themselves are unaffected by it.
     if (execution.winner === "abc" && sessionId) {
-      const pendingLateFacts = resolvePendingLateFacts(config);
-      const settlement = startQualityCheckSettlement({
-        identity: { ...queryRunIdentity, sourceStage: "query" },
-        sessionId,
-        abcQuestionMode,
-        token,
-        apiKey,
-        userId,
-        locale,
-        signal,
-        onState: (qcState, markdown) => {
-          onEvent?.({
-            type: "post_thinking",
-            node: "query",
-            content: markdown,
-            label: t("query.qcProcess.label"),
-            mode: "replace",
-            qcState,
-            timestamp: Date.now(),
-          });
-        },
+      // Announce the persisted handoff. The client reads the outcome by request sequence.
+      await persistQueryRun(tApp("queryFixed.260"), async () => {
+        const qcState = await startTrackedQualityCheck({
+          identity: { ...queryRunIdentity, sourceStage: "query" },
+          sessionId,
+          abcQuestionMode,
+          token,
+          apiKey,
+          userId,
+          locale,
+          signal,
+        });
+        if (!qcState) return;
+        onEvent?.({
+          type: "post_thinking",
+          node: "query",
+          content: "",
+          label: t("query.qcProcess.label"),
+          mode: "replace",
+          qcState,
+          timestamp: Date.now(),
+        });
       });
-      pendingLateFacts?.register(settlement);
     }
 
     return buildQueryUpdate(queryResult, eventCollector.concat([thinkingEvent, resultEvent]));

@@ -192,11 +192,15 @@ export function buildQueryRunInput(input: {
   // neither implements its own, and neither can skip writing it. When a caller passes values explicitly, those win.
   const datasets = Array.isArray(fact.datasets) ? (fact.datasets as any[]) : undefined;
   const lastDataset = datasets && datasets.length > 0 ? datasets[datasets.length - 1] : undefined;
+  const datasetsWithRows = datasets?.filter((dataset) => Array.isArray(dataset?.data));
   const dsl = fact.dsl ?? lastDataset?.dsl;
   const dslText = fact.dslText ?? buildDslText(lastDataset?.dsl);
   const objectClasses = fact.objectClasses ?? extractObjectClasses(lastDataset?.dsl);
   const dataCount =
-    fact.dataCount ?? (Array.isArray(lastDataset?.data) ? lastDataset.data.length : undefined);
+    fact.dataCount ??
+    (datasetsWithRows && datasetsWithRows.length > 0
+      ? datasetsWithRows.reduce((sum, dataset) => sum + dataset.data.length, 0)
+      : undefined);
   // The thinking summary is a derived expression of the thinking state; the two share one source. When a caller does not pass it, take it from the
   // thinking state so one caller forgetting to copy it cannot leave the column permanently empty.
   const thinkingSummary = fact.thinkingSummary ?? fact.thinkingState?.summary;

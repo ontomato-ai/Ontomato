@@ -73,13 +73,17 @@ describe("visualizationNode", () => {
       setVisualizationResult: (_ref: string, value: unknown) => results.push(value),
     } as any);
     vi.mocked(cache.resolveAnalysisData).mockResolvedValueOnce({
-      data: [],
+      datasets: [
+        {
+          data: [],
+          truncation: {
+            truncated: true,
+            rowLimit: 100000,
+            truncationHint: "Intermediate rows reached the processing cap.",
+          },
+        },
+      ],
       source: "historical",
-      truncation: {
-        truncated: true,
-        rowLimit: 100000,
-        truncationHint: "Intermediate rows reached the processing cap.",
-      },
     });
     vi.mocked(generateChartsFromCandidates).mockClear();
 
@@ -100,6 +104,42 @@ describe("visualizationNode", () => {
     });
     expect(results[0].thinking).toContain(
       "a 100000-row cap was reached, so this may not cover all matching data. Intermediate rows reached the processing cap."
+    );
+  });
+
+  it("passes all non-empty datasets as distinct chart candidates", async () => {
+    const { visualizationNode } = await import("../visualization-node");
+    const cache = await import("../../utils/query-artifact-cache");
+    const { generateChartsFromCandidates } = await import("../../../../charts/chart-generator");
+    vi.mocked(cache.resolveAnalysisData).mockResolvedValueOnce({
+      datasets: [
+        { title: "Papers (2023-2026)", data: [{ paper_count: 347 }] },
+        { title: "Think tank (2023-2026)", data: [{ thinktank_count: 56 }] },
+        { title: "Empty set", data: [] },
+      ],
+      source: "current_query",
+    });
+    vi.mocked(generateChartsFromCandidates).mockResolvedValueOnce({
+      charts: [{ chartType: "bar", title: "Comparison", skillId: "bar", html: "<svg/>" } as any],
+      diagnostics: [],
+    });
+
+    await visualizationNode(
+      {
+        userQuestion: "Compare outputs",
+        threadId: "t1",
+        plan: { steps: [{ type: "visualization", instruction: "Compare outputs" }] },
+      } as any,
+      { configurable: { domainId: "domain-1", requestSeq: 1 } }
+    );
+
+    expect(generateChartsFromCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidates: [
+          { sourceSubQuestion: "Papers (2023-2026)", data: [{ paper_count: 347 }], truncation: undefined },
+          { sourceSubQuestion: "Think tank (2023-2026)", data: [{ thinktank_count: 56 }], truncation: undefined },
+        ],
+      })
     );
   });
 });

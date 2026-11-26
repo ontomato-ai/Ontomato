@@ -1,4 +1,4 @@
-import { tApp } from "../../i18n";
+import { tApp, tForLocale } from "../../i18n";
 import type { AbcQuestionMode } from "@ontomato/contracts/system-model";
 import type { QcStepEvent, QcResult } from "@ontomato/contracts/query-thinking";
 import { getApiConfig, buildHeaders, buildUrl } from "../../config/data-query-api";
@@ -39,7 +39,6 @@ export async function streamSelfCheckSSE(
   logger.info(tApp("queryFixed.267", { v0: (sessionId), v1: (url) }));
 
   let opened = false;
-  let sawAnyStep = false;
   let finishedPushed = false;
 
   const result: QcResult = { steps: [] };
@@ -52,7 +51,6 @@ export async function streamSelfCheckSSE(
     const hasMeaning = typeof parsed.meaning === "string" && parsed.meaning.trim().length > 0;
 
     if (hasSummary || hasMeaning) {
-      sawAnyStep = true;
       const step: QcStepEvent = {};
       if (hasSummary) step.summary = parsed.summary.trim();
       if (hasMeaning) step.meaning = parsed.meaning.trim();
@@ -92,17 +90,16 @@ export async function streamSelfCheckSSE(
       }
     )) {
       consumeEvent(parsed);
+      if (finishedPushed) break;
     }
+    if (!finishedPushed) {
+      throw new Error(tForLocale(locale, "query.qcProcess.noResult"));
+    }
+    return result;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error(opened ? tApp("queryFixed.268") : tApp("queryFixed.269"), error);
     onError?.(error);
+    return null;
   }
-
-  // Has progress but no conclusion
-  if (!finishedPushed && sawAnyStep) {
-    logger.warn(tApp("queryFixed.270"));
-  }
-
-  return opened ? result : null;
 }

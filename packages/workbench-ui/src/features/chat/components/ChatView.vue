@@ -17,6 +17,7 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import { snapshotTurnKey } from "../../diagnosis/utils/workspace-route";
 import { feedbackApi } from "../../../api/feedback";
 import { workbenchContent } from "../../../content";
+import { copyText } from "../../../utils/clipboard";
 
 const feedbackCopy = workbenchContent().text.feedback;
 
@@ -38,7 +39,10 @@ const copyContent = async (snapshot: ResponseSnapshot, msgId: number) => {
       ElMessage.warning(t("chat.noContentCopy"));
       return;
     }
-    await navigator.clipboard.writeText(textToCopy);
+    if (!(await copyText(textToCopy))) {
+      ElMessage.error(t("chat.copyFailed"));
+      return;
+    }
     copiedState.value[msgId] = true;
     ElMessage.success(t("chat.copiedToClipboard"));
     setTimeout(() => {

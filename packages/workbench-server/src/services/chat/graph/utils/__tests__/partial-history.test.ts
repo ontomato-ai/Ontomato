@@ -69,19 +69,51 @@ describe("a saved partial result without rows", () => {
     expect(extractDatasetsFromQueryRun(EMPTY_RUN)).toEqual([]);
   });
 
-  it("is reusable historical analysis data that keeps its marker", async () => {
+  it("is reusable historical analysis data that keeps its marker and all datasets", async () => {
     const { hasUsableQueryRun, resolveAnalysisData } = await import("../query-artifact-cache");
     expect(hasUsableQueryRun(PARTIAL_RUN)).toBe(true);
     expect(hasUsableQueryRun(EMPTY_RUN)).toBe(false);
 
     store.run = PARTIAL_RUN;
     expect(await resolveAnalysisData({ historicalQueryRef: ref } as never)).toEqual({
-      data: [],
+      datasets: [
+        {
+          title: "Matching sites",
+          data: [],
+          fieldDisplayPlan: undefined,
+          truncation: MARKER,
+        },
+      ],
       source: "historical",
-      fieldDisplayPlan: undefined,
-      truncation: MARKER,
     });
     store.run = EMPTY_RUN;
     expect(await resolveAnalysisData({ historicalQueryRef: ref } as never)).toBeUndefined();
+
+    const multiRun = {
+      ...PARTIAL_RUN,
+      datasetsPayload: [
+        { subQuestion: "Papers", data: [{ paper_count: 347 }] },
+        { subQuestion: "Think tank", data: [{ thinktank_count: 56 }] },
+      ],
+    } as unknown as QueryRun;
+    expect(hasUsableQueryRun(multiRun)).toBe(true);
+    store.run = multiRun;
+    expect(await resolveAnalysisData({ historicalQueryRef: ref } as never)).toEqual({
+      datasets: [
+        {
+          title: "Papers",
+          data: [{ paper_count: 347 }],
+          fieldDisplayPlan: undefined,
+          truncation: undefined,
+        },
+        {
+          title: "Think tank",
+          data: [{ thinktank_count: 56 }],
+          fieldDisplayPlan: undefined,
+          truncation: undefined,
+        },
+      ],
+      source: "historical",
+    });
   });
 });

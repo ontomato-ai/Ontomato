@@ -92,7 +92,7 @@ def validate_sources(sources):
 
 
 def tool_image(arch):
-    return TOOL_IMAGE + "-" + arch + ("-ubi8-v1" if arch == "amd64" else "")
+    return TOOL_IMAGE + "-" + arch + ("-ubi8-v2" if arch == "amd64" else "")
 
 
 def registry_image(arch):
@@ -126,7 +126,7 @@ def ensure_tool(state, arch):
         if sha256(archive) != TOOL_SHA[arch]:
             raise ValueError("oc-mirror download checksum mismatch")
     shutil.copyfile(HERE / "Dockerfile", context / "Dockerfile")
-    run(["docker", "buildx", "build", "--platform", "linux/" + arch, "--provenance=false", "--load", "--build-arg", "BASE_IMAGE=" + TOOL_BASE[arch], "-t", tag, context])
+    run(["docker", "buildx", "build", "--platform", "linux/" + arch, "--target", arch, "--provenance=false", "--load", "--build-arg", "BASE_IMAGE=" + TOOL_BASE[arch], "-t", tag, context])
     return tag
 
 

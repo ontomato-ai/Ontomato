@@ -83,6 +83,8 @@ export interface QcState {
   status: "running" | "completed" | "failed" | "unsettled";
   steps: QcStepState[];
   result?: QcResultState;
+  /** The deadline of a tracked check while its result is still pending. */
+  deadlineAt?: number;
 }
 
 export interface QcStepEvent {
@@ -97,3 +99,5 @@ export interface QcResult {
   conclusion?: string;
   steps: QcStepEvent[];
 }
+
+export type ThreadQualityCheckResponse = { qcState: QcState; qcResult?: QcResult } | null;

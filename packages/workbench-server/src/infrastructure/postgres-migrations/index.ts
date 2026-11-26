@@ -58,6 +58,7 @@ import {
 } from "./20260922-query-run-backend-sessions/migration.js";
 import { ensureQueryRunBackendSessionsSchema } from "./20260922-query-run-backend-sessions/schema.js";
 import { ensureHarnessSessionsSchema } from "./20260922-harness-sessions/schema.js";
+import { settleLegacyQualityCheckReads } from "./20261117-quality-check-settlement/migration.js";
 
 import {
   ANALYSIS_CONVERSATION_TURNS_VERSION,
@@ -217,6 +218,21 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
     },
   },
   { directory: "20260923-governance-harness-links", ensureSchema: ensureGovernanceHarnessLinks },
+  {
+    directory: "20261117-quality-check-settlement",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: "20261117_quality_check_settlement_v1",
+      name: "settle legacy quality-check reads without a final result",
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        await inMigrationTransaction(client, async () => {
+          await settleLegacyQualityCheckReads(client);
+          await recordMigration(client, migration.version, migration.name);
+        });
+      },
+    },
+  },
 ];
 
 export async function runPostgresBusinessMigrations(client: QueryableClient): Promise<void> {

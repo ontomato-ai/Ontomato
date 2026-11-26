@@ -5,7 +5,9 @@ import {
   getThreadDataDownload,
   getThreadDslDownload,
   getThreadMessagesPayload,
+  getThreadQualityCheck,
 } from "../../services/chat/thread-service";
+import { getLocale } from "../../i18n";
 import { updateThreadTitle } from "../../services/chat/thread-store";
 import { buildAttachmentContentDisposition, asyncHandler } from "../utils/http";
 import { HttpError } from "../../utils/errors";
@@ -87,6 +89,21 @@ router.get(
     }
 
     res.json(await getThreadMessagesPayload(threadId, { userId, domainId }));
+  })
+);
+
+router.get(
+  "/:threadId/requests/:requestSeq/quality-check",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { threadId, requestSeq } = req.params;
+    const seq = Number(requestSeq);
+    if (!/^\d+$/.test(requestSeq) || !Number.isInteger(seq) || seq > 2_147_483_647) {
+      throw new HttpError(400, "Invalid request sequence");
+    }
+    const userId = (req as AuthenticatedRequest).userId;
+    const domainId = requireDomainId(req as AuthenticatedRequest);
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await getThreadQualityCheck(threadId, seq, { userId, domainId }, getLocale()));
   })
 );
 

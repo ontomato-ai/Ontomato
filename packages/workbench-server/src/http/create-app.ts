@@ -64,6 +64,8 @@ export interface WorkbenchMounts {
   connectionRouter?: Router;
   /** Enterprise governance platform SSO ticket. Absent in OSS. */
   dataGovernanceRouter?: Router;
+  /** Optional global site appearance router mounted before authentication; writes enforce their own auth inside the router. */
+  siteAppearanceRouter?: Router;
 }
 
 let runtimeBound = false;
@@ -111,6 +113,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   });
 
   if (mounts.authRouter) app.use("/api/auth", mounts.authRouter);
+  if (mounts.siteAppearanceRouter) app.use("/api/site-appearance", mounts.siteAppearanceRouter);
   app.use("/api/data-query", mounts.backendProxyRouter ?? backendProxyRouter);
   app.use(product.proxyMountPath, mounts.backendProxyRouter ?? backendProxyRouter);
   app.use("/mcp/analysis-agents", analysisAgentMcpRouter);

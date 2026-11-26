@@ -1,20 +1,44 @@
 import type { QueryThinkingState, ThinkingAbcStep } from "@ontomato/contracts/query-thinking";
+import type { ResultTruncation } from "@ontomato/contracts/query-execution";
 import { GraphState, GraphUpdate, VisualizationResult } from "../state";
 import { createLogger } from "../../../../logging/logger";
 import { t, tApp } from "../../../../i18n";
 import {
   generateChartsFromCandidates,
   partialSourceNoticeHtml,
+  type ChartDatasetCandidate,
 } from "../../../charts/chart-generator";
+import { combineResultTruncation } from "../../../data-query/protocol";
 import { resolveVisualizationData } from "../utils/data-resolver";
 import {
   createRuntimeArtifactRef,
   getQueryArtifactCache,
   resolveAnalysisData,
+  type ResolvedAnalysisDataset,
 } from "../utils/query-artifact-cache";
 import { noDataVisualization } from "./visualization-no-data";
 
 const logger = createLogger("visualization-node");
+
+function buildChartCandidates(
+  datasets: ResolvedAnalysisDataset[],
+  fallbackInstruction: string
+): ChartDatasetCandidate[] {
+  const nonEmpty = datasets.filter((dataset) => dataset.data.length > 0);
+  const seen = new Map<string, number>();
+  return nonEmpty.map((dataset, index) => {
+    const base =
+      dataset.title ||
+      (nonEmpty.length > 1 ? `${fallbackInstruction} (${index + 1})` : fallbackInstruction);
+    const count = (seen.get(base) || 0) + 1;
+    seen.set(base, count);
+    return {
+      sourceSubQuestion: count > 1 ? `${base} (${count})` : base,
+      data: dataset.data,
+      truncation: dataset.truncation,
+    };
+  });
+}
 
 const VIS_STEP_KEYS = ["data", "skill", "analyze", "render"] as const;
 type VisStepKey = (typeof VIS_STEP_KEYS)[number];
@@ -200,31 +224,56 @@ export async function visualizationNode(state: GraphState, config?: any): Promis
     });
 
     const artifactData = await resolveAnalysisData(state, config);
-    const dataSourceResult = artifactData
-      ? {
-          success: true,
-          data: artifactData.data,
-          source: artifactData.source,
-        }
-      : await resolveVisualizationData(state.userQuestion, undefined, state.mockData);
+    let dataSource: string;
+    let candidates: ChartDatasetCandidate[];
+    let totalRowCount: number;
+    let truncation: ResultTruncation | undefined;
 
-    if (!dataSourceResult.success || !dataSourceResult.data) {
-      logger.error(tApp("queryFixed.91"), dataSourceResult.error);
-      visThinking = failVisStep(
-        visThinking,
-        "data",
-        dataSourceResult.error || t("viz.missingData")
+    if (artifactData) {
+      dataSource = artifactData.source;
+      candidates = buildChartCandidates(artifactData.datasets, visualizationInstruction);
+      totalRowCount = candidates.reduce((sum, candidate) => sum + candidate.data.length, 0);
+      truncation = combineResultTruncation(
+        artifactData.datasets.flatMap((dataset) => (dataset.truncation ? [dataset.truncation] : []))
       );
-      sendVisThinkingState(visThinking, sendEvent);
-      return createErrorReturn(dataSourceResult.error || t("viz.missingData"));
+      if (candidates.length === 0) {
+        candidates = [
+          {
+            sourceSubQuestion: visualizationInstruction,
+            data: [],
+            truncation,
+          },
+        ];
+      }
+    } else {
+      const dataSourceResult = await resolveVisualizationData(
+        state.userQuestion,
+        undefined,
+        state.mockData
+      );
+      if (!dataSourceResult.success || !dataSourceResult.data) {
+        logger.error(tApp("queryFixed.91"), dataSourceResult.error);
+        visThinking = failVisStep(
+          visThinking,
+          "data",
+          dataSourceResult.error || t("viz.missingData")
+        );
+        sendVisThinkingState(visThinking, sendEvent);
+        return createErrorReturn(dataSourceResult.error || t("viz.missingData"));
+      }
+      dataSource = dataSourceResult.source;
+      totalRowCount = dataSourceResult.data.length;
+      candidates = [
+        {
+          sourceSubQuestion: visualizationInstruction,
+          data: dataSourceResult.data,
+        },
+      ];
     }
 
-    const data = dataSourceResult.data;
-    const dataSource = dataSourceResult.source;
-    logger.info(tApp("queryFixed.85", { v0: (dataSource), v1: (data.length) }));
+    logger.info(tApp("queryFixed.85", { v0: (dataSource), v1: (totalRowCount) }));
 
     const noDataChart = noDataVisualization();
-    const truncation = artifactData?.truncation;
     // Zero rows of a partial result are not "no data": that turn shows the source's partial notice.
     const emptyChart = truncation
       ? () => ({
@@ -237,7 +286,7 @@ export async function visualizationNode(state: GraphState, config?: any): Promis
           html: partialSourceNoticeHtml(visualizationInstruction, truncation),
         })
       : noDataChart;
-    if (data.length === 0 && emptyChart) {
+    if (totalRowCount === 0 && emptyChart) {
       const { title, message, html } = emptyChart();
       visThinking = {
         ...visThinking,
@@ -278,7 +327,7 @@ export async function visualizationNode(state: GraphState, config?: any): Promis
     visThinking = markVisStepDone(
       visThinking,
       "data",
-      tApp("queryFixed.86", { v0: (dataSource), v1: (data.length) }),
+      tApp("queryFixed.86", { v0: (dataSource), v1: (totalRowCount) }),
       t("viz.dataReady")
     );
     visThinking = activateVisStep(visThinking, "skill", t("viz.matchingVisSkills"));
@@ -288,13 +337,7 @@ export async function visualizationNode(state: GraphState, config?: any): Promis
       domainId,
       userQuestion: visualizationInstruction,
       scopeId: `visualization-${requestSeq}`,
-      candidates: [
-        {
-          sourceSubQuestion: visualizationInstruction,
-          data,
-          truncation,
-        },
-      ],
+      candidates,
       maxCharts: 1,
       signal: config?.configurable?.signal,
       onProgress(progress) {
