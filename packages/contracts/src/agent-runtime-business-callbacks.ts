@@ -25,7 +25,6 @@ export const runtimeBusinessCallbacksSchema = z.object({
   generation: runtimeBusinessCallbackSchema.optional(),
   retrieval: runtimeBusinessCallbackSchema.optional(),
   governance: runtimeBusinessCallbackSchema.optional(),
-  product: runtimeBusinessCallbackSchema.optional(),
 }).strict();
 export type RuntimeBusinessCallback = z.infer<typeof runtimeBusinessCallbackSchema>;
 export type RuntimeBusinessCallbacks = z.infer<typeof runtimeBusinessCallbacksSchema>;

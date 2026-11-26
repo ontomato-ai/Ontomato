@@ -32,8 +32,6 @@ const APPLICATION_KINDS = new Set([
 const AGENT_KINDS = new Set([
   "agent",
   "agents",
-  "profile",
-  "agent-profile",
 ]);
 
 function firstQueryString(value: unknown): string {
@@ -86,12 +84,6 @@ export function legacyProductAssetTarget(asset: ProductAsset): string {
       || asset.id;
     return panelAddress(APPLICATION_DETAIL_PATH, { selected: appId });
   }
-  if (asset.document.kind === "agent-profile") {
-    const agentId = asset.document.agentId.trim()
-      || stripPrefix(asset.id, ["default-agent-profile-", "platform-agent-"])
-      || asset.id;
-    return panelAddress(AGENTS_PATH, { selected: agentId });
-  }
   const section = classifyProductKind(asset.document.kind);
   return panelAddress(section === "projections" ? PROJECTION_DETAIL_PATH : PANEL_DETAIL_PATH, { selected: asset.id });
 }
@@ -104,8 +96,6 @@ export function legacyProductIdFallbackTarget(id: string, query: RouteValues): s
   const mirroredAppId = stripPrefix(id, ["platform-application-"]);
   if (mirroredAppId) return panelAddress(APPLICATION_DETAIL_PATH, { selected: mirroredAppId });
 
-  const mirroredAgentId = stripPrefix(id, ["default-agent-profile-", "platform-agent-"]);
-  if (mirroredAgentId) return panelAddress(AGENTS_PATH, { selected: mirroredAgentId });
 
   const section = classifyProductKind(firstQueryString(query.kind));
   if (section === "projections") return panelAddress(PROJECTION_DETAIL_PATH, { selected: id });

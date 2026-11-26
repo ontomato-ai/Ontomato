@@ -1,6 +1,4 @@
 import { Router } from "express";
-import { credentialsForDefinition, credentialsForRun } from "../../services/assistant/execution";
-import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { productAuthoringSchema, productTypes,productQuerySchema } from "@ontomato/contracts/product-assets";
@@ -12,14 +10,10 @@ import {personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 import { HttpError } from "../../utils/errors";
 import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import {expandedProductDependencies} from '../../services/product-assets/dependencies';
-import {readProductRelease,productReleaseIssues,snapshotAsset,publishProductBundle,rollbackProductBundle,listProductBundleReleases,synchronizeBundlePublication} from '../../services/product-assets/releases';
-import {assembleAgentProfile,renderAgentObjectContext,executeProfileTool} from '../../services/product-assets/agent-profile';
+import {productReleaseIssues,snapshotAsset,publishProductBundle,rollbackProductBundle,listProductBundleReleases,synchronizeBundlePublication} from '../../services/product-assets/releases';
 import {validatePageState} from '@ontomato/contracts/product-page-state';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
 import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant} from '../../services/product-governance/grants';
-import {requireProductUse} from '../../services/product-assets/grants';
-import {assistantService} from '../../services/assistant/service';
-import {bindProfileSession} from '../../services/product-assets/profile-sessions';
 import {projectionSourceTypes} from '../../services/product-assets/invalidation';
 import {platformObjectTypes} from '../../services/product-assets/platform-objects';
 import {readPlatformProjectionObject} from '../../services/product-assets/object-read';
@@ -28,7 +22,7 @@ import {registeredProductGraph} from '../../services/product-assets/ontology';
 import {publishedApplication,publishedApplicationRelease} from '../../services/product-assets/published';
 import {migratePlatformProjection} from '../../services/product-assets/platform-migration';
 import {migrateDashboardPage} from '../../services/product-assets/dashboard-migration';
-import {synchronizePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
+import {synchronizePlatformAssets,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
 import {assertAppBuilderAccess} from '../../services/app-builder/access';
 import {requireManagement} from '../../identity/management';
 import {assertLegacyProductWrite} from '../../services/product-assets/panel-boundary';
@@ -66,11 +60,11 @@ router.get('/published/:applicationId/:id',wrap(async(req,res)=>{
 router.get("/:id", wrap(async (req,res) => {
   const owner = context(req).owner;
   const asset = await getProduct(owner,String(req.params.id));
-  const agentId=await nativeAgentAsset(owner.domainId,asset.id),applicationId=await nativeApplicationAsset(owner.domainId,asset.id);
-  res.json({asset,...(agentId?{nativeAgentId:agentId}:{}),...(applicationId?{nativeApplicationId:applicationId}:{})});
+  const applicationId=await nativeApplicationAsset(owner.domainId,asset.id);
+  res.json({asset,...(applicationId?{nativeApplicationId:applicationId}:{})});
 }));
 router.get('/:id/dependencies',wrap(async(req,res)=>{const c=context(req),id=String(req.params.id);const asset=await getProduct(c.owner,id);res.json(await expandedProductDependencies(c.owner,c.credentials,asset,await dependencyProducts(c.owner,id)));}));
-router.post('/:id/migrate-platform',wrap(async(req,res)=>{const c=context(req),input=z.object({revision:z.number().int().positive(),profileId:z.string().min(1).max(200).optional()}).strict().parse(req.body);res.json({asset:await migratePlatformProjection(c.owner,c.credentials,String(req.params.id),input.revision,input.profileId)});}));
+router.post('/:id/migrate-platform',wrap(async(req,res)=>{const c=context(req),input=z.object({revision:z.number().int().positive()}).strict().parse(req.body);res.json({asset:await migratePlatformProjection(c.owner,c.credentials,String(req.params.id),input.revision)});}));
 router.post('/:id/migrate-dashboard',wrap(async(req,res)=>{const c=context(req),input=z.object({revision:z.number().int().positive()}).strict().parse(req.body);res.json({asset:await migrateDashboardPage(c.owner,c.credentials,String(req.params.id),input.revision)});}));
 router.post('/:id/migrate',wrap(async(req,res)=>{const c=context(req),id=String(req.params.id);const source=await getProduct(c.owner,id);const {revision}=z.object({revision:z.number().int().positive()}).strict().parse(req.body);res.json({asset:await saveProduct(c.owner,id,{name:source.name,description:source.description,visibility:source.visibility,document:source.document},revision,c.credentials)});}));
 router.get('/:id/overlay',wrap(async(req,res)=>{res.json(await readProductOverlay(context(req).owner,String(req.params.id)));}));
@@ -79,50 +73,19 @@ router.post('/:id/object',wrap(async(req,res)=>{const c=context(req);const {prim
 router.get('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));res.json(await readProductGrantRecords(String(req.params.id),c.credentials));}));
 router.post('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const input=changeProductGrantRequestSchema.parse(req.body);await changeProductGrant(String(req.params.id),input,c.credentials);res.json({success:true});}));
 router.post('/:id/domain-grant',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const {shared}=changeProductDomainGrantRequestSchema.parse(req.body);await changeProductDomainGrant(String(req.params.id),shared,c.credentials);res.json({success:true});}));
-router.get('/:id/agent-context',wrap(async(req,res)=>{const c=context(req);res.json(await assembleAgentProfile(c.owner,c.credentials,String(req.params.id)));}));
-router.get('/:id/active-profile',wrap(async(req,res)=>{
-  const c=context(req),id=String(req.params.id);
-  const {snapshot,releaseId}=await readActiveProductBundle(c.owner,id);
-  const asset=snapshotAsset(snapshot,id);
-  if(asset.document.kind!=='agent-profile')throw new HttpError(400,'Expected AgentProfile','INVALID_AGENT_PROFILE');
-  const executionCredentials=await credentialsForDefinition(c.owner,asset.document.agentId,c.credentials);
-  res.json({asset,releaseId,issues:await productReleaseIssues(c.owner,snapshot,executionCredentials)});
-}));
-router.post('/:id/sessions',wrap(async(req,res)=>{
-  const c=context(req),profileId=String(req.params.id);const {releaseId,contextObjects,pageState}=z.object({releaseId:z.string().uuid(),contextObjects:z.array(z.object({className:z.string().min(1).max(200),primaryKey:z.string().min(1).max(1000)}).strict()).max(20).default([]),pageState:z.record(z.union([z.string(),z.number().finite(),z.boolean(),z.null(),z.object({className:z.string().min(1).max(200),primaryKey:z.string().min(1).max(1000)}).strict()])).default({})}).strict().parse(req.body);
-  await requireProductUse(c.owner,profileId);const snapshot=await readProductRelease(c.owner,releaseId,profileId);
-  const profile=snapshotAsset(snapshot,profileId);if(profile.document.kind!=='agent-profile')throw new HttpError(400,'Expected AgentProfile','INVALID_AGENT_PROFILE');
-  const executionCredentials=await credentialsForDefinition(c.owner,profile.document.agentId,c.credentials);
-  await productReleaseIssues(c.owner,snapshot,executionCredentials);
-  for(const value of Object.values(pageState))if(value&&typeof value==='object'&&!contextObjects.some(object=>object.className===value.className&&object.primaryKey===value.primaryKey))throw new HttpError(400,'Object Page state must have a declared Profile context view','OBJECT_CONTEXT_UNAVAILABLE');
-   for(const selection of contextObjects)if(!profile.document.contextViews.some(id=>{const view=snapshotAsset(snapshot,id);return view.document.kind==='object-projection'&&['text','3d'].includes(view.document.renderer)&&view.document.fields.length>0&&view.document.renders.id===selection.className;}))throw new HttpError(400,'Profile has no context ObjectView for this selection','OBJECT_CONTEXT_UNAVAILABLE');
-  const sessionId=z.string().uuid().parse(req.header('Idempotency-Key'));
-  const result=await assistantService.create(sessionId,c.owner,{agentId:profile.document.agentId},c.credentials);
-   await bindProfileSession(c.owner,sessionId,profileId,releaseId,contextObjects,pageState);
-  res.status(201).json(result);
-}));
-router.post('/:id/tools/:toolId',wrap(async(req,res)=>{const c=context(req);const {parameters}=z.object({parameters:z.record(z.unknown())}).strict().parse(req.body);res.json({result:await executeProfileTool(c.owner,c.credentials,String(req.params.id),String(req.params.toolId),parameters)});}));
-router.post('/:id/releases/:releaseId/tools/:toolId',wrap(async(req,res)=>{
-  const c=context(req),callback=(res.locals.runtimeCallback as RuntimeCallback | undefined);
-  const {parameters}=z.object({parameters:z.record(z.unknown())}).strict().parse(req.body);
-  const sessionId=callback ? z.string().uuid().parse(req.query.sessionId) : z.string().uuid().optional().parse(req.query.sessionId);
-  const execution=callback ? (await credentialsForRun(c.owner,callback.runId,c.credentials,sessionId)).credentials : undefined;
-  res.json({result:await executeProfileTool(c.owner,c.credentials,String(req.params.id),String(req.params.toolId),parameters,z.string().uuid().parse(req.params.releaseId),sessionId,execution)});
-}));
 router.post('/:id/publish',wrap(async(req,res)=>{const c=context(req);const {revision}=z.object({revision:z.number().int().positive()}).strict().parse(req.body);res.json(await publishProductBundle(c.owner,String(req.params.id),revision,c.credentials));}));
 router.post('/:id/retry-publication',wrap(async(req,res)=>{const c=context(req);const asset=await getProduct(c.owner,String(req.params.id));if(!asset.editable)throw new HttpError(403,'Bundle edit Grant required','PRODUCT_FORBIDDEN');await synchronizeBundlePublication(c.owner,asset.id,c.credentials);res.json({success:true});}));
 router.get('/:id/releases',wrap(async(req,res)=>{res.json(await listProductBundleReleases(context(req).owner,String(req.params.id)));}));
 router.get('/:id/upgrade',wrap(async(req,res)=>{
   const c=context(req),id=String(req.params.id),bundle=await getProduct(c.owner,id);
   if(!bundle.editable)throw new HttpError(403,'Bundle edit permission required','PRODUCT_FORBIDDEN');
-   if(!['application','agent-profile'].includes(bundle.document.kind))throw new HttpError(400,'Choose an application bundle','INVALID_PRODUCT_TYPE');
+   if(!(bundle.document.kind==='application'))throw new HttpError(400,'Choose an application bundle','INVALID_PRODUCT_TYPE');
    const source=bundle.document.kind==='application'&&bundle.document.workspaceId;
    const {snapshot,releaseId}=source?await publishedApplicationRelease(c.owner,c.credentials,id):await readActiveProductBundle(c.owner,id);
    const next=await captureProductRelease(c.owner,source&&'children' in bundle.document?bundle.document.children.map(child=>child.assetId):[id],c.credentials,snapshot.triggers?.map(trigger=>trigger.id));
   res.json({releaseId,revision:bundle.revision,...productReleaseDiff(snapshot,next)});
 }));
 router.post('/:id/rollback',wrap(async(req,res)=>{const c=context(req);const {releaseId}=z.object({releaseId:z.string().uuid()}).strict().parse(req.body);res.json(await rollbackProductBundle(c.owner,String(req.params.id),releaseId,c.credentials));}));
-router.post('/:id/object-context',wrap(async(req,res)=>{const c=context(req);const selection=z.object({className:z.string().min(1),primaryKey:z.string().min(1)}).strict().parse(req.body);res.json(await renderAgentObjectContext(c.owner,c.credentials,String(req.params.id),selection));}));
 router.post('/:id/state',wrap(async(req,res)=>{const asset=await getProduct(context(req).owner,String(req.params.id));if(asset.document.kind!=='page')throw new HttpError(400,'Expected page','INVALID_REQUEST');const values=z.record(z.unknown()).parse(req.body);try{res.json({state:validatePageState(asset.document.params??{},values)});}catch(error){throw new HttpError(400,error instanceof Error?error.message:'Invalid page state','INVALID_PAGE_STATE');}}));
 router.put('/:id/overlay',wrap(async(req,res)=>{const c=context(req);const input=z.object({revision:z.number().int().nonnegative(),workspace:personalWorkspaceSchema}).strict().parse(req.body);await assertLegacyProductWrite(c.owner,c.credentials,{id:String(req.params.id)});res.json(await saveProductOverlay(c.owner,String(req.params.id),input.workspace,input.revision));}));
 router.put("/:id", wrap(async (req,res) => {

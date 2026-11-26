@@ -13,7 +13,7 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
   }
   return {
     synchronizePlatform:async()=>send('/synchronize-platform','POST',{}),
-    nativeBinding:async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}`);return {agentId:result.nativeAgentId as string|undefined,applicationId:result.nativeApplicationId as string|undefined};},
+    nativeBinding:async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}`);return {applicationId:result.nativeApplicationId as string|undefined};},
     graph:async()=>productGraphSchema.parse((await send('/graph')).graph),
     defaultProjectionWarnings:async()=>defaultProjectionWarningsSchema.parse(await send('/validation/default-projections')),
     projections:async(kind:'ObjectType'|'Definition'|'MetricView'|'Action',id:string)=>{const result=await send('/projections?'+new URLSearchParams({kind,id}));return {...result,assets:result.assets.map((asset:unknown)=>productAssetSchema.parse(asset))};},
@@ -30,8 +30,7 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
     rollback:async(id:string,releaseId:string)=>send(`/${encodeURIComponent(id)}/rollback`,'POST',{releaseId}),
     migrate:async(id:string,revision:number)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate`,'POST',{revision})).asset),
     migrateDashboard:async(id:string,revision:number)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate-dashboard`,'POST',{revision})).asset),
-    migratePlatform:async(id:string,revision:number,profileId?:string)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate-platform`,'POST',{revision,profileId})).asset),
-    executeProfileTool:async(profileId:string,toolId:string,parameters:Record<string,unknown>)=>send(`/${encodeURIComponent(profileId)}/tools/${encodeURIComponent(toolId)}`,'POST',{parameters}),
+    migratePlatform:async(id:string,revision:number)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate-platform`,'POST',{revision})).asset),
     collection:async(id:string,parameters:Record<string,unknown>,fields:string[],offset=0,projectionId?:string)=>send(`/definitions/${encodeURIComponent(id)}/query`,'POST',{parameters,fields,offset,projectionId}),
     list: async () => ((await send("")).assets as unknown[]).map(asset=>productAssetSchema.parse(asset)),
     query:async(query:Partial<ProductQuery>={})=>productPageSchema.parse(await send('/query?'+new URLSearchParams(Object.entries(query).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)])))),

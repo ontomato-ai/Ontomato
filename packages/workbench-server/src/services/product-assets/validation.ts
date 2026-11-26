@@ -33,9 +33,6 @@ export async function validatePageBindings(owner:ProductOwner,input:ProductAsset
   const signature=input.document.params??{};
   for(const placement of input.document.children){
     const child=await read(placement.assetId),document=child.document;
-    if(document.kind==='agent-profile'){
-      await validatePageBindings(owner,{...input,document:{...input.document,children:document.tools.map(assetId=>({assetId,column:'main' as const}))}},read,credentials);continue;
-    }
     if(!['metric-widget','action-view','collection-view'].includes(document.kind)||!('parameters' in document))continue;
     const bindings=Object.entries(document.parameters).filter(([,binding])=>binding.source==='variable');
     if(!bindings.length)continue;

@@ -12,9 +12,7 @@ import {config} from '../../config/application';
 import {objectViewDocumentSchema} from '@ontomato/contracts/object-views';
 import {withProductGrants,currentProductGrants,refreshProductGrants} from './grants';
 import {registerProductResource,productGrantIdsForOwner,type ProductOwner} from '../product-governance/grants';
-import {assistantStore} from '../assistant/store';
 import {ontologyRegistration,synchronizeProductOntology} from './ontology';
-import {nativeAgentAsset,updateNativeAgent} from './platform-assets';
 import {lockProducts} from '../../infrastructure/product-write-lock';
 import {assertLegacyProductWrite,assertLegacyProductIdentity} from './panel-boundary';
 export {lockProducts} from '../../infrastructure/product-write-lock';
@@ -170,11 +168,6 @@ async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductA
       const removed=await client.query(`SELECT 1 FROM ${t('product_asset_revisions')} WHERE domain_id=$1 AND asset_id=$2 LIMIT 1`,[owner.domainId,id]);
       if(removed.rows.length)throw new HttpError(409,'Deleted asset identities cannot be reused; create a new asset ID','PRODUCT_ID_RETIRED');
     }
-    if(parsed.document.kind==='agent-profile'){
-      await assistantStore.agent(parsed.document.agentId,owner);
-      const native=await nativeAgentAsset(owner.domainId,id);
-      if(native){if(native!==parsed.document.agentId||parsed.document.tools.length||parsed.document.contextViews.length)throw new HttpError(400,'A platform Agent retains its definition and Skill tool surface; configure explicit projections in a separate Profile','INVALID_AGENT_PROFILE');}
-    }
     await validateProduct(owner,normalized.input,credentials);
     for(const child of normalized.children){
       await validateProduct(owner,child.input,credentials);
@@ -183,7 +176,7 @@ async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductA
     }
     await validateComposition(id,normalized.input,childId=>getProduct(owner,childId,client));
     await validatePageBindings(owner,normalized.input,childId=>getProduct(owner,childId,client),credentials);
-    const parents=await client.query(`SELECT ${columns} FROM ${t('product_assets')} WHERE domain_id=$1 AND id<>$2 AND document->>'kind' IN ('page','navigation','agent-profile','application')`,[owner.domainId,id]);
+    const parents=await client.query(`SELECT ${columns} FROM ${t('product_assets')} WHERE domain_id=$1 AND id<>$2 AND document->>'kind' IN ('page','navigation','application')`,[owner.domainId,id]);
     const internalRead=async(childId:string)=>{
       const result=await client.query(`SELECT ${columns} FROM ${t('product_assets')} WHERE domain_id=$1 AND id=$2`,[owner.domainId,childId]);
       if(!result.rows[0])throw new HttpError(409,'An existing composition has an unavailable dependency','PRODUCT_IN_USE');
@@ -193,9 +186,7 @@ async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductA
     const candidateRead=async(childId:string)=>childId===id?({...normalized.input,id} as ProductAsset):internalRead(childId);
     for(const parent of parents.rows.map(row=>asset(row,owner)))if(productReferences(parent.document).some(reference=>reference.kind==='asset'&&reference.id===id))await validatePageBindings(owner,parent,candidateRead,credentials);
     await validateChildren(owner,normalized.input,credentials,client);
-    const saved=await writeProduct(client, owner, id, normalized.input, revision,migrating||parsed.document.kind!==normalized.input.document.kind,credentials);
-    await updateNativeAgent(saved,owner,client);
-    return saved;
+    return writeProduct(client, owner, id, normalized.input, revision,migrating||parsed.document.kind!==normalized.input.document.kind,credentials);
   });
 }
 export async function validateChildren(owner:ProductOwner,input:ProductAssetInput,credentials:AssistantCredentials,client:Pick<PoolClient,'query'>=db(),seen=new Set<string>()) {

@@ -31,7 +31,6 @@ export function contextProducts(transport: ManagerRequest): ContextProducts {
     migrate: method(products => products.migrate),
     migrateDashboard: method(products => products.migrateDashboard),
     migratePlatform: method(products => products.migratePlatform),
-    executeProfileTool: method(products => products.executeProfileTool),
     collection: method(products => products.collection),
     list: method(products => products.list),
     query: method(products => products.query),

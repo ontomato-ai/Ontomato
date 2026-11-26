@@ -32,18 +32,6 @@ it('checks current visibility and detects output contract drift without changing
   mocks.get.mockRejectedValue(Object.assign(new Error('Hidden'),{status:404}));
   await expect(validateReleaseContracts(owner,release,{})).rejects.toMatchObject({status:404});
 });
-it('rolls a Profile back to its frozen projection tree without overwriting draft assets',async()=>{
-  const profile={...snapshot().assets[0],id:'profile',editable:true,document:{kind:'agent-profile',agentId:'agent',instructions:'draft',tools:[],contextViews:[]}};
-  const frozen=releaseSnapshotSchema.parse({schemaVersion:1,roots:['profile'],assets:[{...profile,document:{...profile.document,instructions:'published'}}],contracts:[]});
-  mocks.get.mockResolvedValue(profile);
-  mocks.query.mockImplementation(async(sql:string)=>({rows:sql.includes('SELECT snapshot')?[{snapshot:frozen}]:sql.includes('SELECT release_id')&&!sql.includes('product_publication_outbox')?[{release_id:'first'}]:[]}));
-  await expect(rollbackProductBundle(owner,'profile','first',{})).resolves.toEqual({releaseId:'first'});
-  const active=await activeProductBundle(owner,'profile',{});
-  expect(snapshotAsset(active.snapshot,'profile').document).toMatchObject({instructions:'published'});
-  expect(mocks.query.mock.calls.some(([sql])=>sql.includes('UPDATE product_assets'))).toBe(false);
-  mocks.get.mockResolvedValue({...profile,editable:false});
-  await expect(rollbackProductBundle(owner,'profile','first',{})).rejects.toMatchObject({status:403});
-});
 it('marks only projections with changed contracts while preserving current access checks',async()=>{
   mocks.get.mockResolvedValue({revision:2});
   mocks.describe.mockResolvedValue({status:'PUBLISHED',parameterDefs:[],outputColumns:[{key:'renamed'}]});
@@ -101,11 +89,11 @@ it('requires explicit migration before a new release can pin a legacy widget',as
   await expect(captureProductRelease(owner,['root'],{})).rejects.toMatchObject({code:'PRODUCT_UNPINNABLE_DEPENDENCY'});
 });
 it('can restore a frozen release with a drifted projection while retaining current permission checks',async()=>{
-  const profile={...snapshot().assets[0],id:'profile',editable:true,document:{kind:'agent-profile',agentId:'agent',instructions:'',tools:['root'],contextViews:[]}};
-  const frozen=releaseSnapshotSchema.parse({...snapshot(),roots:['profile'],assets:[profile,...snapshot().assets]});
-  mocks.get.mockResolvedValue(profile);mocks.query.mockResolvedValue({rows:[{snapshot:frozen}]});
+  const app={...snapshot().assets[0],id:'app',editable:true,document:{kind:'application',applicationId:'app',children:[]}};
+  const frozen=releaseSnapshotSchema.parse({...snapshot(),roots:['app'],assets:[app,...snapshot().assets]});
+  mocks.get.mockResolvedValue(app);mocks.query.mockResolvedValue({rows:[{snapshot:frozen}]});
   mocks.describe.mockResolvedValue({status:'PUBLISHED',parameterDefs:[],outputColumns:[{key:'changed'}]});
-  await expect(rollbackProductBundle(owner,'profile','release',{})).resolves.toEqual({releaseId:'release'});
+  await expect(rollbackProductBundle(owner,'app','release',{})).resolves.toEqual({releaseId:'release'});
 });
 it('retains failed directory publications and retries the frozen declaration rather than the draft',async()=>{
   const app={...snapshot().assets[0],id:'app-example',name:'Frozen name',editable:true,document:{kind:'application',applicationId:'app-example',children:[]}};

@@ -23,7 +23,7 @@ public class ProductOntologyService implements InitializingBean {
         """);}
     public record Registration(String id,String kind,String name,long revision,String targetKind,String targetId,boolean isDefault) {}
     static void validate(Registration value){
-        var targets=Map.of("object-projection","ObjectType","collection-view","Definition","metric-widget","MetricView","action-view","Action","agent-profile","AgentDefinition");
+        var targets=Map.of("object-projection","ObjectType","collection-view","Definition","metric-widget","MetricView","action-view","Action");
         if(value==null||value.id()==null||value.id().isBlank()||value.id().length()>200||value.kind()==null||value.name()==null||value.name().isBlank()||value.name().length()>200||value.revision()<1)throw new IllegalArgumentException("Invalid ontology product identity");
         String target=targets.get(value.kind());
         if(target==null&&!"application".equals(value.kind()))throw new IllegalArgumentException("Composition assets do not enter the ontology graph");
@@ -41,7 +41,7 @@ public class ProductOntologyService implements InitializingBean {
             if(!current.isEmpty()&&current.getFirst()>value.revision())continue;
             db.update("INSERT INTO ontology_product_node(domain_id,id,kind,name,revision) VALUES(?,?,?,?,?) ON CONFLICT(domain_id,id) DO UPDATE SET kind=EXCLUDED.kind,name=EXCLUDED.name,revision=EXCLUDED.revision",domain,value.id(),value.kind(),value.name(),value.revision());
             db.update("DELETE FROM ontology_product_edge WHERE domain_id=? AND source_id=?",domain,value.id());
-            if(value.targetId()!=null)db.update("INSERT INTO ontology_product_edge(domain_id,source_id,relation,target_kind,target_id,is_default) VALUES(?,?,?,?,?,?)",domain,value.id(),"agent-profile".equals(value.kind())?"embodies":"renders",value.targetKind(),value.targetId(),value.isDefault());
+            if(value.targetId()!=null)db.update("INSERT INTO ontology_product_edge(domain_id,source_id,relation,target_kind,target_id,is_default) VALUES(?,?,?,?,?,?)",domain,value.id(),"renders",value.targetKind(),value.targetId(),value.isDefault());
         }
     }
     @Transactional public void remove(String domain,String id,long revision){
