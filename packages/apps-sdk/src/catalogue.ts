@@ -768,7 +768,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "layout",
     meaning:
-      "Page header with title, back link, actions, and draft controls. A top-level panel can show a leading visual, a back link, a title, a description, and actions in `#actions` or the default slot. Supply draft controls through the `draft` prop or the `#draft` slot. Choose a density of `bar`, `compact`, or `expanded`. When another panel embeds it, the header renders only the actions and draft controls in a compact row, and renders nothing if neither is supplied.",
+      "Draws a page header \u2014 a back link, an optional leading visual, a title, a description and right-side actions, with the page's own draft controls; use at the top of a panel's content.\n\n- The title is plain text, a locale map or a projection-bound component, so a header can name the record the page follows without the page assembling it.\n- It asks nothing of the platform host and lays itself out by its own width, so a panel places it and a narrow column still reads.\n- Save and Discard appear only when the page hands it a draft; a header without one is a title bar.\n- When another panel embeds it, only the actions and the draft controls are drawn, in one compact row, and a header with neither draws nothing.",
     configProps: ["title", "description", "backLabel", "density", "draft", "labels"],
   }),
   defineComponentMeta({
@@ -778,7 +778,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "layout",
     meaning:
-      "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Use the `#item-trailing` slot (`{ item }`) to place trailing projections or indicators per row, `:item-trailing-text` for plain-text option suffixes in the compact mobile selector, and `:icons` for curated platform icon keys.",
+      "Draws an application's navigation menu from the entries its frame admits, marking the one the reader is on; use inside an application frame panel.\n\n- It reads the admitted entries and the current entry from the panel host, and navigates through the host too, unless the placement takes the selection over itself.\n- On a narrow screen the same menu becomes a compact selector, where a per-row suffix is plain text and nothing else.\n- What a row shows beside its label is the page's to place, not the menu's: trailing projections keep their own members.",
     effects: "Navigates within the platform through the panel host when the reader selects a menu entry; reads no business data itself.",
     configProps: ["title", "groups", "itemTrailingText", "icons", "foot", "activeId", "ariaLabel", "autoNavigate"],
   }),
@@ -789,7 +789,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Displays one typed field value (text, number, date, tag, reference, JSON) with optional exact-match `valueMap`; use in detail views or slots. Displays one typed field value according to its owner-declared type — text, tabular number (`numberFormat`), localized date/datetime/relative-time, localized boolean, semantic status tag (`tone` or `record.tones`), tag list, clickable object reference (`navigate`), multi-language name, list, or code/JSON — with optional exact-match `valueMap` (`{ [rawValue]: { label?, labelKey?, labels?, icon? } }`) mapping raw scalar values to localized labels and platform icons without computing new values or evaluating range/threshold expressions (semantic tone travels on the value or `record.tones`). Reads from its projection's `record` (`panelRecord`) or metric `result` (`metricOutput`, scalar/first-row or named column at `rowIndex`) datum, or renders a direct `value` prop standalone or inside a slot.",
+      "Draws one typed field value — text, number, date, tag, reference, name, list or JSON — as its owner declared the type; use inside detail views and slots.\n\n- The type is the owner's, not the placement's: the drawing follows the declared type, and the component computes no value of it.\n- A tone travels on the value or with the record; mapping a raw value to a label and an icon is exact match only — a range, a threshold or an expression belongs in the owner's MetricView or read.\n- Standalone it draws a value the page already has; bound it reads the projection's record, or a metric result's first row or named column.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -808,7 +808,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Formats values from a record or MetricView row into a fixed `{fieldKey}` sentence template; use for summary text without client calculation. Fills already-provided values from one record (`record`) or one metric result row (`result` at `rowIndex`) into a fixed `{fieldKey}` sentence template (`template` or `templateKey`), with optional per-field `fieldFormats` (including exact-match `valueMap`). Pure display with no expressions, calculation, or conditional sentence branching — derived values and business conditions belong in a MetricView, Action, or owner read. Each placeholder renders via `TypedValue`, keeping references clickable (`navigate`), booleans/names localized, tones tinted, and numbers tabular.",
+      "Fills a fixed `{fieldKey}` sentence with values from one record or one metric row; use for summary text a page must not compute itself.\n\n- Each placeholder is drawn by `TypedValue`, so a reference stays clickable, a name is localized and a number is tabular; the sentence is all the placement writes.\n- No expressions, no calculation and no conditional branching: a derived value or a business condition belongs in the owner's MetricView, action or read.\n- A per-field format applies to that field alone; a field left unformatted keeps its own type's drawing.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -827,7 +827,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Displays a semantic callout banner (info, warning, success, danger) from static copy, a record, or a MetricView; use for notices. Standardized informational, reminder, warning, success, or danger callout banner (`tone`, value-driven `toneField`, exact-match `valueMap` for label/icon, or platform `icon`) for detail cards and guidance notices. Renders static or localized copy (`title`/`text`, `titleKey`/`textKey`), custom slot content (`#default`, `#actions`), or already-provided values bound from a `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}` `template` (with optional `fieldFormats`; no calculation, range thresholds, or conditional branching).",
+      "Draws one callout — information, reminder, warning, success or danger — from the page's own copy, a record, or a metric result; use for a notice in a detail card or a block of guidance.\n\n- Its tone is the placement's, a field of the record, or an exact-match mapping of the value: nothing is inferred from the wording.\n- The words are static or localized, or already-provided values filled into a fixed `{fieldKey}` sentence — no calculation, thresholds or branching.\n- Asked to, it hides itself when it has nothing to say, so a card never carries an empty frame.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
