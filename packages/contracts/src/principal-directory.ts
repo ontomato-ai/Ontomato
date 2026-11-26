@@ -3,7 +3,7 @@ import { z } from "zod";
 const principalKindSchema = z.enum(["member", "role"]);
 
 export const principalDirectoryRequestSchema = z.union([
-  z.object({ kind: principalKindSchema, keyword: z.string().optional(), limit: z.number() }).strict(),
+  z.object({ kind: principalKindSchema, keyword: z.string().optional(), limit: z.number().int() }).strict(),
   z.object({ kind: z.literal("member"), ids: z.array(z.string()) }).strict(),
 ]);
 export type PrincipalDirectoryRequest = z.infer<typeof principalDirectoryRequestSchema>;

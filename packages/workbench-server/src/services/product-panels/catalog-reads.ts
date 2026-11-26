@@ -954,7 +954,7 @@ export function toProductProjectionPanelRecord(
   const isChart = row.componentId === METRIC_CHART_COMPONENT && row.visibility !== "platform";
   const isBuiltin = row.visibility === "platform" || isBuiltinProductId(row.id);
   const componentDisplay = extra?.componentLabel || shortComponentName(row.componentId);
-  const ownerDisplay = row.ownerId === null ? word("platformOwner") : (extra?.ownerLabel || row.ownerId);
+  const ownerDisplay = row.ownerId === null ? word("platformOwner") : (extra?.ownerLabel ?? "");
   const scopeLabel = row.visibility === "platform"
     ? word("scopePlatform")
     : row.visibility === "domain"
@@ -1034,18 +1034,6 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
   const language = resolveLocale(viewer.locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.projection.${key}`);
 
-  async function resolveOwnerLabels(ownerIds: readonly (string | null)[]): Promise<Map<string, string>> {
-    const ids = [...new Set(ownerIds.filter((id): id is string => typeof id === "string" && id.length > 0))];
-    if (!ids.length) return new Map();
-    try {
-      const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
-      const { options } = await createAgentOptionReadAdapters(viewer).users.resolve(ids);
-      return new Map(options.map(item => [item.primaryKey, item.label]));
-    } catch {
-      return new Map();
-    }
-  }
-
   async function resolveComponentLabels(): Promise<Map<string, string>> {
     try {
       const catalogue = await readAuthorComponentCatalogue(owner, viewer);
@@ -1095,7 +1083,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         }),
       );
       const [ownerLabels, componentLabels] = await Promise.all([
-        resolveOwnerLabels(listed.items.map(item => item.ownerId)),
+        resolveOwnerNames(listed.items.map(item => item.ownerId), viewer),
         resolveComponentLabels(),
       ]);
       return {
@@ -1169,7 +1157,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
     async record(primaryKey: string): Promise<PanelRecord> {
       const projection = await rawRecord(primaryKey);
       const [ownerLabels, componentLabels, domainShared, usage] = await Promise.all([
-        resolveOwnerLabels([projection.ownerId]),
+        resolveOwnerNames([projection.ownerId], viewer),
         resolveComponentLabels(),
         projection.editable
           ? catalogueGrants(owner, viewer, "projection", primaryKey).then(result => result.shared)
