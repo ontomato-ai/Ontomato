@@ -37,7 +37,6 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS release_id varchar(128);
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS page_skills jsonb NOT NULL DEFAULT '[]'::jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS panel_uses jsonb NOT NULL DEFAULT '[]'::jsonb;
-            ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS declaration_permissions jsonb NOT NULL DEFAULT '[]'::jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS panel_settings jsonb NOT NULL DEFAULT '{}'::jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS allow_standalone boolean NOT NULL DEFAULT true;
             """);
