@@ -33,7 +33,7 @@ const grantSchema = z.object({
   stepNo: z.number().nullish(),
   scope: z.object({ kind: z.enum(scopeKinds), field: z.string().nullish() }),
   inForce: z.boolean(),
-  activatedByWorkflowVersion: z.number().nullish(),
+  activatedByWorkflowVersion: z.string().nullish(),
 });
 const querySchema = z.object({
   search: panelReadParameterSchemas.keyword.optional(),
@@ -162,8 +162,12 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
     catalogue.find(action => action.id === (id ?? ""))?.name || id || "-";
 
   async function grantRows(id: string, group: "inForce" | "superseded" | "direct"): Promise<PanelRecord[]> {
-    const [all, catalogue] = await Promise.all([grants(), actions()]);
-    const rows = all.filter(grant => group === "direct" ? !grant.workflowId
+    const [all, catalogue, definition] = await Promise.all([
+      grants(), actions(), group === "direct" ? workflow(id) : undefined,
+    ]);
+    const stepActions = new Set(definition?.steps?.map(step => step.actionId));
+    const rows = all.filter(grant => group === "direct"
+      ? !grant.workflowId && grant.capabilityId != null && stepActions.has(grant.capabilityId)
       : grant.workflowId === id && grant.inForce === (group === "inForce"));
     const grouped = new Map<string, Set<string>>();
     for (const grant of rows) {
