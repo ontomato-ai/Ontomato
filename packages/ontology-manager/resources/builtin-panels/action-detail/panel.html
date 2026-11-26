@@ -106,13 +106,13 @@
       @back="goBack"
     >
       <template #title>
-        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <projection v-if="selectedKey" slot="header" :values="{ fallbackTitle: selectedKey }"></projection>
         <h1 v-else-if="creating">{{ t('newAction') }}</h1>
         <h1 v-else>{{ t('pageTitle') }}</h1>
       </template>
       <template v-if="detailReady" #actions>
-        <projection slot="trial" :disabled="draftDirty" :title="draftDirty ? t('trialSaveFirst') : undefined" :notify-success="false" @done="onTrialDone"></projection>
-        <projection v-if="showPublish" slot="publish" :parameters="publishParameters" :disabled="publishDisabled" :title="publishDisabledReason || undefined" :notify-success="false" @done="onPublishDone"></projection>
+        <projection slot="trial" :values="{ disabled: draftDirty, title: draftDirty ? t('trialSaveFirst') : undefined }" @done="onTrialDone"></projection>
+        <projection v-if="showPublish" slot="publish" :values="{ parameters: publishParameters, disabled: publishDisabled, title: publishDisabledReason || undefined }" @done="onPublishDone"></projection>
         <projection slot="remove" @done="onRemoveDone"></projection>
       </template>
     </page-header>

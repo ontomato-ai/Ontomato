@@ -166,7 +166,7 @@ export function createWorkbenchApp(): Express {
         // Saved HTML still has two historical path segments before the skill name.
         const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
         const caller = Object.assign(req, { token, apiKey }) as AuthenticatedRequest;
-        const skill = await skillManager.requireReadableSkill(domainId, id, credentialsFromRequest(caller));
+        const skill = await skillManager.requireSkillResource(domainId, id, credentialsFromRequest(caller));
         const relative = normalizeSkillPackagePath(segments.join("/"));
         if (!relative) {
           res.sendStatus(404);

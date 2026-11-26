@@ -141,9 +141,7 @@
                 >
                   <projection
                     slot="testConnection"
-                    :parameters="{ sourceId: sourceIdOf(item) }"
-                    :show-result="false"
-                    :disabled="disabled || !sourceIdOf(item)"
+                    :values="{ parameters: { sourceId: sourceIdOf(item) }, disabled: disabled || !sourceIdOf(item) }"
                     @read="(result) => onCardTestRead(item, key, result)"
                     @error="(error) => onCardTestError(item, key, error)"
                   ></projection>
@@ -180,8 +178,7 @@
         <div class="da-test-action" @click.capture="onSingleTestTrigger">
           <projection
             slot="testConnection"
-            :show-result="false"
-            :disabled="singleTestDisabled"
+            :values="{ disabled: singleTestDisabled }"
             @read="onSingleTestRead"
             @error="onSingleTestError"
           ></projection>
@@ -251,7 +248,6 @@
           <projection
             v-if="configured && sandboxSupported"
             slot="checkSandboxPermission"
-            :notify-success="false"
             @done="onSandboxChecked"
           ></projection>
         </div>

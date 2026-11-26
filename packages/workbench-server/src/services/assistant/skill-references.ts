@@ -53,20 +53,3 @@ export async function removeAnalysisAgentSkillReferences(
   );
   return r.rowCount ?? 0;
 }
-export async function restoreAnalysisAgentSkillReferences(
-  domainId: string,
-  skillId: string,
-  refs: AnalysisAgentSkillReference[],
-) {
-  for (const r of refs)
-    await getPostgresPool().query(
-      `UPDATE ${t("assistant_agents")} SET skills=skills || $3::jsonb WHERE domain_id=$1 AND id=$2 AND NOT skills @> $3::jsonb`,
-      [
-        domainId,
-        r.id,
-        JSON.stringify([
-          { namespace: { kind: "domain", domainId }, name: skillId },
-        ]),
-      ],
-    );
-}

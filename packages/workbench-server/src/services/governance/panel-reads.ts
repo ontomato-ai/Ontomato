@@ -134,6 +134,14 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       createForm(params: GovernanceFormParams): Promise<PanelFormDescription> {
         return owner("governance-role-create-form", "/panel/governance/roles/form", formBody(undefined, params), panelFormDescriptionSchema);
       },
+      /** The permission policies this role uses: each policy's name and type. */
+      contributionPolicies(id: string): Promise<PanelRecord[]> {
+        return owner("governance-role-contribution-policies", "/panel/governance/roles/contribution/permission-policies", { id }, panelRecordListSchema);
+      },
+      /** The workflow steps published to this role: which workflow, which step, and the scope that step grants. */
+      contributionWorkflowSteps(id: string): Promise<PanelRecord[]> {
+        return owner("governance-role-contribution-workflow-steps", "/panel/governance/roles/contribution/workflow-steps", { id }, panelRecordListSchema);
+      },
     },
     policies: {
       options(): Promise<PanelOptionList> {

@@ -28,7 +28,8 @@
           </template>
           <template #field-skills>
             <section-group :title="t('agents.skills')" :description="t('agents.skillsHint')">
-              <projection slot="skills"></projection>
+              <projection v-if="mode === 'create'" slot="draftSkills"></projection>
+              <projection v-else slot="skills"></projection>
             </section-group>
           </template>
           <template #field-executionUserId>

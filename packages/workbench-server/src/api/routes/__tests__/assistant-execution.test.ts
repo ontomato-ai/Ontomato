@@ -131,7 +131,7 @@ it.each([
   ["GET", `workbench/api/assistant/agent-definitions/${other}`],
   ["POST", "workbench/api/assistant/agent-definitions/form"],
   ["POST", "workbench/api/assistant/agent-definitions/validate"],
-  ["GET", "workbench/api/assistant/agent-skills"],
+  ["GET", "workbench/api/assistant/agent-skills?agentTarget=draft"],
 ])("uses the initiator's visibility for %s %s", async (method, path) => {
  const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
  vi.stubGlobal("fetch", upstream);
@@ -144,7 +144,7 @@ it.each([
 });
 
 it.each([
-  "workbench/api/assistant/agent-skills",
+  "workbench/api/assistant/agent-skills?agentTarget=draft",
   "workbench/api/platform-ontology/counts",
 ])("keeps the active-run requirement on %s", async path => {
  const upstream = vi.fn();

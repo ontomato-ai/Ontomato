@@ -33,11 +33,10 @@ import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureOpsDiagnosisSchema } from "../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
-import { HttpError } from "../../utils/errors";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { ensureAssistantPresetUpgradesSchema } from "../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", allowAgentReads: true, allowAgentCreation: true }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", allowAgentEdits: true, allowAgentCreation: true }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
@@ -52,14 +51,6 @@ vi.mock("../../config/environment", () => ({ environment: {
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
-}));
-vi.mock("../../identity/installed", async original => ({
-  ...await original<typeof import("../../identity/installed")>(),
-  assertPermission: async ({ token }: { token: string }, keys: readonly string[]) => {
-    expect(token).toBe("pilot-reader");
-    expect(keys).toEqual(["analysis-agent"]);
-    if (!state.allowAgentReads) throw new HttpError(403, "Forbidden", "FORBIDDEN");
-  },
 }));
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -206,7 +197,8 @@ beforeAll(async () => {
   app.post("/authorization/objects/decide-batch", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json(agentObjectDecisions(req.body, request =>
-      "create" in request ? state.allowAgentCreation : request.target.domainId === "pilot" && request.target.id === agentId));
+      "create" in request ? state.allowAgentCreation : request.target.domainId === "pilot" &&
+        request.target.id === agentId && (request.verb !== "EDIT" || state.allowAgentEdits)));
   });
   app.post("/authorization/objects/agent-access", (_req, res) => res.json({ shared: false, grants: [] }));
   app.post("/product-governance/grants", (_req, res) => res.json({ grants: [] }));
@@ -1047,7 +1039,19 @@ it("reads agent settings and reference options with the panel viewer", async () 
     tools: picker("platform:ExternalMcpService"),
     users: picker("platform:User", { keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
       { keyword: { input: "keyword" }, page: { input: "page" } }),
-    skills: picker("platform:Skill"),
+    skills: {
+      ...picker("platform:Skill"),
+      data: {
+        options: type("platform:Skill", "options", { agentTarget: { literal: agentId } }),
+        selected: type("platform:Skill", "resolve", { agentTarget: { literal: agentId }, values: { input: "values" } }),
+      },
+    },
+    draftSkills: {
+      ...picker("platform:Skill"),
+      data: {
+        options: type("platform:Skill", "options", { agentTarget: { literal: "draft" } }),
+      },
+    },
 
   };
   const members: Record<string, { target: { projectionId: string }; inputs?: object }> = {};
@@ -1152,6 +1156,9 @@ it("reads agent settings and reference options with the panel viewer", async () 
   expect(skills.map(option => option.value)).toEqual([missing, governance, missing]);
   expect(skills[0]).toMatchObject({ label: "技能不可用", unavailable: { reason: "你无法使用此技能。" } });
   expect(skills[0]).toEqual(skills[2]);
+  expect(panelOptionListSchema.parse(await ready("draftSkills", "options")).options).toContainEqual(expect.objectContaining({
+    value: governance,
+  }));
 
   const partial = await request("POST", "panel-operations/intents", {
     applicationId: "agent-settings", useId: "settings", operationId: "definition.save",
@@ -1176,9 +1183,12 @@ it("reads agent settings and reference options with the panel viewer", async () 
 
   state.allowAgentCreation = false;
   expect(await read("definition", "createForm")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
+  expect(await read("draftSkills", "options")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining({ primaryKey: agentId }));
-  state.allowAgentReads = false;
+  state.allowAgentEdits = false;
+  expect(await read("skills", "options")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
+  state.allowAgentEdits = true;
 });
 
 async function ownerReadPanel(

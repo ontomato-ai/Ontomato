@@ -77,7 +77,8 @@
               "key": "classDesc",
               "labelKey": "ot.colDescription",
               "emptyKey": "ot.dash",
-              "minWidth": 200
+              "minWidth": 200,
+              "minContainerWidth": 901
             },
             {
               "key": "attributeCount",
@@ -243,7 +244,8 @@
                 "false": {
                   "labelKey": "ot.dash"
                 }
-              }
+              },
+              "minContainerWidth": 901
             },
             {
               "key": "primaryKey",
@@ -256,13 +258,15 @@
                 "false": {
                   "labelKey": "ot.dash"
                 }
-              }
+              },
+              "minContainerWidth": 901
             },
             {
               "key": "attrDesc",
               "labelKey": "ot.colAttrDescription",
               "emptyKey": "ot.dash",
-              "minWidth": 140
+              "minWidth": 140,
+              "minContainerWidth": 901
             }
           ]
         },
@@ -308,7 +312,8 @@
               "key": "desc",
               "labelKey": "ot.colAttrDescription",
               "emptyKey": "ot.dash",
-              "minWidth": 140
+              "minWidth": 140,
+              "minContainerWidth": 901
             }
           ]
         },

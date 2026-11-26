@@ -294,7 +294,7 @@
           <span v-if="catalogCount !== null" class="ot-count">{{ t("ot.items", { count: catalogCount }) }}</span>
         </div>
         <div class="ot-table-host">
-          <projection slot="catalog" :columns="catalogColumns" @choose="openClass">
+          <projection slot="catalog" @choose="openClass">
             <template #empty>
               <sdk-empty :description="t('ot.empty')"></sdk-empty>
             </template>
@@ -403,7 +403,7 @@
               </sdk-button>
             </div>
             <div class="ot-detail-list-host">
-              <projection v-if="detailClassName" slot="attributes" :columns="attributeColumns">
+              <projection v-if="detailClassName" slot="attributes">
                 <template #row-detail="{ ref: attrRef }">
                   <row-target-sync :target="attrRef" class="ot-attr-editor">
                     <projection :key="attrRef.primaryKey" slot="attributeRowForm" :inputs="{ target: attrRef }">
@@ -439,7 +439,7 @@
               </div>
             </div>
             <div class="ot-detail-list-host">
-              <projection v-if="detailClassName" slot="relations" :columns="relationColumns" @choose="openRelation">
+              <projection v-if="detailClassName" slot="relations" @choose="openRelation">
                 <template #empty>
                   <sdk-empty :description="t('ot.noRelations')" :image-size="72"></sdk-empty>
                 </template>

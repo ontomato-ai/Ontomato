@@ -235,7 +235,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "layout",
     meaning:
-      "Stands where one projection of a panel is drawn: it reads that projection's current record by ID, draws the component it names, and registers its ports. A panel places and sizes the member container via CSS (including `class` and `style` on `<Projection>`), and the official component fills that box or uses its default height when none is given; it never draws a projection itself.",
+      "Stands where one projection of a panel is drawn: it reads that projection's current record by ID, draws the component it names, and registers its ports. A panel places and sizes the member container via CSS (including `class` and `style` on `<Projection>`), and the official component fills that box or uses its default height when none is given; it never draws a projection itself. What it draws has one owner per value: the projection's `config` holds its fixed presentation, and a value that follows the page is passed as `:values=\"{ … }\"` where the member is placed (the member's declared inputs carry the same values from the panel's state or outputs). No other attribute on `<Projection>` configures the component; the panel's `@event` listeners still reach it.",
     effects: "Reads the projection's current definition through the platform as the reader, and again when that definition changes.",
   }),
   defineComponentMeta({
@@ -1193,7 +1193,7 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "agentId", "agentKind", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAppId", "defaultCommit", "direction", "editMode",
+          "agentId", "agentKind", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAppId", "defaultCommit", "direction", "editMode",
           "entryId", "favoritesOnly", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
           "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
           "runId", "sampleToken", "scope", "search", "section", "size", "sort", "source", "sourceType", "status",

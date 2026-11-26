@@ -88,7 +88,6 @@ await mountPanel({
     const graphRelationKinds = usePanelOutput("instanceGraph", "relationKinds");
     const graphNeighborProgress = usePanelOutput("instanceGraph", "neighborProgress");
     const graphDrawingProgress = usePanelOutput("instanceGraph", "drawingProgress");
-    const graphVersionOutput = usePanelOutput("instanceGraph", "graphVersion");
 
     const isGraphInstanceMode = computed(() => graphActiveMode.value === "instance");
     const graphFailureList = computed(() =>
@@ -147,17 +146,6 @@ await mountPanel({
         }
       }
     });
-
-    watch(
-      graphVersionOutput,
-      (version) => {
-        const next = typeof version === "string" && version ? version : null;
-        if ((instance.state.values.value.graphVersion ?? null) !== next) {
-          instance.state.set("graphVersion", next);
-        }
-      },
-      { immediate: true },
-    );
 
     // Bidirectional sync between ReferencePicker object ref (`graphSearchClass`) and InstanceGraph scalar (`graphSearchClassName` / `selectedGroup`).
     const graphSearchClassKey = computed(() => state.value.graphSearchClass?.primaryKey ?? null);

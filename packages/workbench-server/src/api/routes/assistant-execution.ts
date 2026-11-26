@@ -38,7 +38,7 @@ const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^
 
 // These existing reads and personal operations belong to the initiator, including on runs
 // with a separate execution account. Every other route uses the run's execution identity.
-const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
+const skillReadPath = /^\/api\/(?:assistant\/agent-skills|skills(?:\/[^/]+\/(?:references|files|file))?)$/u;
 const initiatorPanelReads = [AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 async function panelReader(req: Request, runId: string, source: ProductPanelReadSource, memberPath: DirectPanelMemberPath) {

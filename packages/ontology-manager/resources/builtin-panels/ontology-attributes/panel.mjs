@@ -1,4 +1,4 @@
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, resolveComponent, watch } from "vue";
+import { computed, defineComponent, h, onBeforeUnmount, ref, resolveComponent, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -9,76 +9,6 @@ import {
 } from "@ontomato/sdk/panel";
 
 const OBJECT_TYPE = "platform:ObjectType";
-
-const COLUMNS_WIDE = [
-  { key: "label", labelKey: "attr.colAttribute", subtitleKey: "name", minWidth: 180 },
-  { key: "ownerObject", labelKey: "attr.colOwner", kind: "reference", minWidth: 130 },
-  { key: "type", labelKey: "attr.colType", minWidth: 100 },
-  {
-    key: "businessKey",
-    labelKey: "attr.colBizKey",
-    width: 112,
-    valueMap: { true: { labelKey: "attr.yes" }, false: { labelKey: "attr.dash" } },
-  },
-  {
-    key: "primaryKey",
-    labelKey: "attr.colPrimaryKey",
-    width: 112,
-    valueMap: { true: { labelKey: "attr.yes" }, false: { labelKey: "attr.dash" } },
-  },
-];
-const COLUMNS_MEDIUM = [
-  { key: "label", labelKey: "attr.colAttribute", subtitleKey: "name", minWidth: 150 },
-  { key: "ownerObject", labelKey: "attr.colOwner", kind: "reference", minWidth: 100 },
-  { key: "type", labelKey: "attr.colType", minWidth: 80 },
-];
-const COLUMNS_NARROW = [
-  { key: "label", labelKey: "attr.colAttribute", subtitleKey: "name", minWidth: 140 },
-  { key: "type", labelKey: "attr.colType", minWidth: 80 },
-];
-
-/** Observe the panel's own container width via ResizeObserver (never window.innerWidth). */
-function useContainerWidth(targetRef) {
-  const width = ref(0);
-  let observer = null;
-  let currentEl = null;
-
-  function measure(el) {
-    const rect = el.getBoundingClientRect().width;
-    width.value = rect > 0 ? rect : el.clientWidth;
-  }
-
-  function disconnect() {
-    observer?.disconnect();
-    observer = null;
-    currentEl = null;
-  }
-
-  function attach(el) {
-    if (el === currentEl) return;
-    disconnect();
-    if (!el) {
-      width.value = 0;
-      return;
-    }
-    currentEl = el;
-    measure(el);
-    if (typeof ResizeObserver === "function") {
-      observer = new ResizeObserver((entries) => {
-        const entry = entries[entries.length - 1];
-        if (!entry) return;
-        const next = entry.contentRect.width;
-        width.value = next > 0 ? next : el.clientWidth;
-      });
-      observer.observe(el);
-    }
-  }
-
-  onMounted(() => attach(targetRef.value));
-  watch(targetRef, (el) => attach(el));
-  onBeforeUnmount(disconnect);
-  return width;
-}
 
 /** Row-scoped Delete button rendered inside ObjectList #row-detail using the row's owner operation availability. */
 const RowDeleteButton = defineComponent({
@@ -170,13 +100,6 @@ await mountPanel({
     const values = instance.state.values;
     const rootRef = ref(null);
     const narrow = usePanelNarrow(rootRef);
-    const containerWidth = useContainerWidth(rootRef);
-
-    const attributeColumns = computed(() => {
-      if (containerWidth.value > 0 && containerWidth.value <= 560) return COLUMNS_NARROW;
-      if (containerWidth.value > 0 && containerWidth.value <= 900) return COLUMNS_MEDIUM;
-      return COLUMNS_WIDE;
-    });
 
     const className = computed(() => values.value.className || "");
     const ownerFilterKey = computed(() => values.value.ownerFilter?.primaryKey || "");
@@ -244,7 +167,6 @@ await mountPanel({
     return {
       rootRef,
       narrow,
-      attributeColumns,
       search,
       countText,
       creating,

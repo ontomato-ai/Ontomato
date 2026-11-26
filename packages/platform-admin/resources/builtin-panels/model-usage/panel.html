@@ -80,16 +80,13 @@
             <projection
               v-if="rebuildAlive"
               slot="pauseVectorRebuild"
-              size="small"
-              :disabled="!canPause"
-              :label="t('vector.pause')"
+              :values="{ disabled: !canPause, label: t('vector.pause') }"
               @done="onRebuildPaused"
             ></projection>
             <projection
               v-else-if="canRebuild || canResume"
               slot="rebuildVectors"
-              size="small"
-              :label="canResume ? t('vector.resume') : t('vector.rebuild')"
+              :values="{ label: canResume ? t('vector.resume') : t('vector.rebuild') }"
               @done="onRebuildStarted"
             ></projection>
           </div>

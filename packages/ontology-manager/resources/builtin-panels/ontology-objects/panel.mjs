@@ -1,4 +1,4 @@
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, resolveComponent, watch } from "vue";
+import { computed, defineComponent, h, onBeforeUnmount, ref, resolveComponent, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -11,93 +11,6 @@ import {
 } from "@ontomato/sdk/panel";
 
 const OBJECT_TYPE = "platform:ObjectType";
-
-const CATALOG_COLUMNS_WIDE = [
-  { key: "label", subtitleKey: "className", labelKey: "ot.colType", minWidth: 200 },
-  { key: "classDesc", labelKey: "ot.colDescription", emptyKey: "ot.dash", minWidth: 200 },
-  { key: "attributeCount", labelKey: "ot.colAttributes", width: 88, align: "right" },
-  { key: "businessKeyCount", labelKey: "ot.colBusinessKeys", width: 88, align: "right" },
-];
-const CATALOG_COLUMNS_COMPACT = [
-  { key: "label", subtitleKey: "className", labelKey: "ot.colType", minWidth: 190 },
-  { key: "attributeCount", labelKey: "ot.colAttributes", width: 64, align: "right" },
-];
-
-const ATTRIBUTE_COLUMNS_WIDE = [
-  { key: "label", subtitleKey: "name", labelKey: "ot.colAttribute", minWidth: 150 },
-  { key: "type", labelKey: "ot.colDataType", width: 96 },
-  {
-    key: "businessKey",
-    labelKey: "ot.colBusinessKey",
-    width: 112,
-    valueMap: { true: { labelKey: "ot.yes" }, false: { labelKey: "ot.dash" } },
-  },
-  {
-    key: "primaryKey",
-    labelKey: "ot.colPrimaryKey",
-    width: 112,
-    valueMap: { true: { labelKey: "ot.yes" }, false: { labelKey: "ot.dash" } },
-  },
-  { key: "attrDesc", labelKey: "ot.colAttrDescription", emptyKey: "ot.dash", minWidth: 140 },
-];
-const ATTRIBUTE_COLUMNS_COMPACT = [
-  { key: "label", subtitleKey: "name", labelKey: "ot.colAttribute", minWidth: 150 },
-  { key: "type", labelKey: "ot.colDataType", width: 80 },
-];
-
-const RELATION_COLUMNS_WIDE = [
-  { key: "label", labelKey: "ot.colRelation", minWidth: 140 },
-  { key: "fromclassLabel", labelKey: "ot.colSource", minWidth: 110 },
-  { key: "toclassLabel", labelKey: "ot.colTarget", minWidth: 110 },
-  { key: "desc", labelKey: "ot.colAttrDescription", emptyKey: "ot.dash", minWidth: 140 },
-];
-const RELATION_COLUMNS_COMPACT = [
-  { key: "label", labelKey: "ot.colRelation", minWidth: 150 },
-  { key: "fromclassLabel", labelKey: "ot.colSource", minWidth: 80 },
-];
-
-/** Observe the panel's own container width via ResizeObserver (never window.innerWidth). */
-function useContainerWidth(targetRef) {
-  const width = ref(0);
-  let observer = null;
-  let currentEl = null;
-
-  function measure(el) {
-    const rect = el.getBoundingClientRect().width;
-    width.value = rect > 0 ? rect : el.clientWidth;
-  }
-
-  function disconnect() {
-    observer?.disconnect();
-    observer = null;
-    currentEl = null;
-  }
-
-  function attach(el) {
-    if (el === currentEl) return;
-    disconnect();
-    if (!el) {
-      width.value = 0;
-      return;
-    }
-    currentEl = el;
-    measure(el);
-    if (typeof ResizeObserver === "function") {
-      observer = new ResizeObserver((entries) => {
-        const entry = entries[entries.length - 1];
-        if (!entry) return;
-        const next = entry.contentRect.width;
-        width.value = next > 0 ? next : el.clientWidth;
-      });
-      observer.observe(el);
-    }
-  }
-
-  onMounted(() => attach(targetRef.value));
-  watch(targetRef, (el) => attach(el));
-  onBeforeUnmount(disconnect);
-  return width;
-}
 
 /** Row-scoped Delete button rendered inside ObjectList #row-detail using the row's owner operation availability. */
 const RowDeleteButton = defineComponent({
@@ -188,13 +101,7 @@ await mountPanel({
     const { instance, t, navigate, notify } = usePanelContext();
     const rootRef = ref(null);
     const narrow = usePanelNarrow(rootRef);
-    const containerWidth = useContainerWidth(rootRef);
-    const compact900 = computed(() => containerWidth.value > 0 && containerWidth.value <= 900);
     const dialogWidth = computed(() => (narrow.value ? "94%" : "520px"));
-
-    const catalogColumns = computed(() => (compact900.value ? CATALOG_COLUMNS_COMPACT : CATALOG_COLUMNS_WIDE));
-    const attributeColumns = computed(() => (compact900.value ? ATTRIBUTE_COLUMNS_COMPACT : ATTRIBUTE_COLUMNS_WIDE));
-    const relationColumns = computed(() => (compact900.value ? RELATION_COLUMNS_COMPACT : RELATION_COLUMNS_WIDE));
 
     const state = computed(() => instance.state.values.value);
     const selected = computed(() => state.value.selected ?? null);
@@ -421,9 +328,6 @@ await mountPanel({
     return {
       rootRef,
       dialogWidth,
-      catalogColumns,
-      attributeColumns,
-      relationColumns,
       t,
       search,
       creating,

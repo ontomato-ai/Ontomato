@@ -225,7 +225,7 @@
 
       <projection
         slot="tasks"
-        :empty-text="emptyStateMessage(hasActiveFilters)"
+        :values="{ emptyText: emptyStateMessage(hasActiveFilters) }"
         @select="onSelectTask"
         @row-action="onTaskRowAction"
         @operation-done="onTaskOperationDone"
@@ -470,7 +470,7 @@
       <div ref="historyRecords" class="schedules-runs">
         <projection
           slot="history"
-          :expanded-keys="expandedRunIds"
+          :values="{ expandedKeys: expandedRunIds }"
           @update:expanded-keys="onExpandedRunsChange"
           @choose="onChooseRun"
           @row-action="onRunRowAction"

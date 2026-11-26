@@ -498,13 +498,7 @@
       </section>
 
       <section class="pw-grid-wrap">
-        <projection
-          slot="workspaceGrid"
-          :show-group-headers="false"
-          :show-item-headers="true"
-          :allow-hide="true"
-          :editable="true"
-        >
+        <projection slot="workspaceGrid">
           <template #item-header-actions="{ itemId }">
             <div v-if="blockHeaderLinks(itemId).length > 0" class="pw-header-links">
               <button
@@ -579,8 +573,7 @@
                         v-if="row.fields && row.fields.kind === 'chart'"
                         slot="previewChartCard"
                         :inputs="{ target: itemRef }"
-                        :title="title || row.label"
-                        min-height="220px"
+                        :values="{ title: title || row.label }"
                       ></projection>
                       <projection
                         v-else
@@ -604,7 +597,6 @@
                 slot="scheduledTasks"
                 :ref="bindProjection('scheduledTasks')"
                 class="pw-block-list"
-                :empty-text="t('empty.tasks')"
                 @select="onSelectTask"
                 @resolve="onResolveTask"
               ></projection>

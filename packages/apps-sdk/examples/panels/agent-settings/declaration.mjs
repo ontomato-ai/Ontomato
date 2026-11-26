@@ -21,7 +21,11 @@ export default {
     summary: { target: { projectionId: "agent-summary" }, inputs: shown },
     definition: { target: { projectionId: "agent-definition-form" }, inputs: shown },
     model: { target: { projectionId: "agent-model-choice" } },
-    skills: { target: { projectionId: "agent-skill-choice" } },
+    skills: {
+      target: { projectionId: "agent-skill-choice" },
+      inputs: { agentTarget: { state: "selectedAgent", field: "primaryKey" } },
+    },
+    draftSkills: { target: { projectionId: "draft-agent-skill-choice" } },
     executor: { target: { projectionId: "agent-executor-choice" } },
     scope: { target: { projectionId: "agent-data-scope" } },
   },
