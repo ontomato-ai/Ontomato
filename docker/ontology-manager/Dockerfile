@@ -60,6 +60,7 @@ COPY config.js.template /usr/share/nginx/html/config.js.template
 COPY nginx.conf.template /etc/nginx/templates/ontology-manager.conf.template
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+LABEL org.opencontainers.image.source="https://github.com/ontomato-ai/Ontomato"
 EXPOSE 80
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
