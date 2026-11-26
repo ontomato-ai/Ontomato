@@ -694,8 +694,7 @@ it("parses a task-stream notification with no invented pending-question property
 it("authenticates the session command, uses its active run and refuses build-test and late calls", async () => {
   const { channel: port } = channel();
   const workspace = await mkdtemp(path.join(os.tmpdir(), "channel-cmd-"));
-  const activeRun: RuntimeRun = { ...run, status: "running", executionUserId: "exec-user", channel: humanChannel,
-    definition: { ...run.definition, toolSurface: "standard" } };
+  const activeRun: RuntimeRun = { ...run, status: "running", executionUserId: "exec-user", channel: humanChannel };
   const secret = "session-channel-secret";
   const active = { scope, run: activeRun, controller: new AbortController(), sealed: false, workspace, skillCommands: new Set() };
   const session = { runId: runId as string | undefined, credential: Buffer.from(secret) };

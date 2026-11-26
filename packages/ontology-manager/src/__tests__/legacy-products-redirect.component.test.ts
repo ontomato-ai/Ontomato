@@ -97,8 +97,6 @@ describe("retired /ontology/products redirect routes", () => {
     ["/ontology/products?kind=application", "/ontology/applications"],
     ["/ontology/products?create=application&search=hr", "/ontology/applications?search=hr"],
     ["/ontology/products?kind=agent", "/ontology/agents"],
-    ["/ontology/products?create=profile", "/ontology/agents"],
-    ["/ontology/products?kind=agent-profile&search=ignored", "/ontology/agents"],
     ["/ontology/products?kind=page&search=home", "/ontology/panels?search=home"],
     ["/ontology/products?kind=widget", "/ontology/panels"],
     ["/ontology/products?kind=widget-group", "/ontology/panels"],
@@ -134,17 +132,6 @@ describe("retired /ontology/products redirect routes", () => {
       "/ontology/applications/detail?selected=app-custom-1",
     ],
     [
-      "/ontology/products/default-agent-profile-11111111-1111-4111-8111-111111111111",
-      asset("default-agent-profile-11111111-1111-4111-8111-111111111111", {
-        kind: "agent-profile",
-        agentId: "11111111-1111-4111-8111-111111111111",
-        instructions: "",
-        tools: [],
-        contextViews: [],
-      }),
-      "/ontology/agents?selected=11111111-1111-4111-8111-111111111111",
-    ],
-    [
       "/ontology/products/page-42",
       asset("page-42", { kind: "page", children: [] }),
       "/ontology/panels/detail?selected=page-42",
@@ -162,8 +149,6 @@ describe("retired /ontology/products redirect routes", () => {
     [404, "/ontology/products/missing-panel", "/ontology/panels/detail?selected=missing-panel"],
     [403, "/ontology/products/secret-proj?kind=projection", "/ontology/projections/detail?selected=secret-proj"],
     [404, "/ontology/products/platform-application-hr-portal", "/ontology/applications/detail?selected=hr-portal"],
-    [403, "/ontology/products/default-agent-profile-agent-9", "/ontology/agents?selected=agent-9"],
-    [404, "/ontology/products/platform-agent-agent-7", "/ontology/agents?selected=agent-7"],
   ])("locates %s even when GET /api/product-assets/:id responds %i -> %s", async (status, from, expected) => {
     const { router } = await mountStandalone(from, async () =>
       Response.json({ error: { message: "Denied or missing" } }, { status }),
