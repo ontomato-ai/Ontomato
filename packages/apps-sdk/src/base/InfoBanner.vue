@@ -271,7 +271,9 @@ const isHidden = computed(() => {
   const { state, record, fieldText } = resolvedBound.value;
   if (state === "loading") return false;
   if (boundDatum?.name === "record") {
-    const bodyField = hasTemplate.value ? undefined : props.field;
+    // A record banner is drawn on one field, templated sentence or not: while that field has no value the banner says
+    // nothing a reader could act on, so it is not drawn.
+    const bodyField = props.field;
     const sourceField = bodyField || props.toneField;
     if (sourceField && state === "empty") return true;
     if (sourceField && record) {

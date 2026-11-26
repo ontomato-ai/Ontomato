@@ -201,6 +201,8 @@ export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
 export const PREVIEW_POLICY_ENTRY_GRANT = "permissionPolicies.previewEntryGrant";
 export const GRANT_POLICY_ENTRIES = "permissionPolicies.grantEntries";
 export const LIST_PENDING_POLICY_GRANTS = "permissionPolicies.listPending";
+/** Pending grants across the domain, grouped by policy: the policy list page's header entry. */
+export const LIST_PENDING_POLICY_GRANTS_SUMMARY = "permissionPolicies.listPendingSummary";
 export const RESOLVE_PENDING_POLICY_GRANT = "permissionPolicies.resolvePending";
 export const INSPECT_POLICY_ACCESS = "permissionPolicies.inspectAccess";
 export const DELETE_ORG_UNIT = "orgUnits.delete";
@@ -686,7 +688,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [
       `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
       PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES,
-      LIST_PENDING_POLICY_GRANTS, RESOLVE_PENDING_POLICY_GRANT, INSPECT_POLICY_ACCESS,
+      LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY, RESOLVE_PENDING_POLICY_GRANT,
+      INSPECT_POLICY_ACCESS,
     ],
   },
   [ORG_UNIT]: {

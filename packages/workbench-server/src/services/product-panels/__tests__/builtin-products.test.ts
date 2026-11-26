@@ -8,6 +8,15 @@ import { PERMISSION_POLICY } from "@ontomato/contracts/platform-object-types";
 import { installContentLayout } from "../../../content/layout";
 import { workbenchApplications } from "../../applications/builtins";
 
+const { query } = vi.hoisted(() => ({ query: vi.fn<[sql: string, params?: unknown[]], void>() }));
+vi.mock("../../../infrastructure/postgres-transaction", () => ({
+  transaction: (action: (client: { query: typeof query }) => unknown) => action({ query }),
+}));
+vi.mock("../entry-dependency-store", async original => ({
+  ...await original<typeof import("../entry-dependency-store")>(),
+  installBuiltinPanelDependencies: vi.fn(),
+}));
+
 vi.mock("../../app-builder/sdk", () => ({
   readCurrentAppSdkComponents: async () => ({
     version: "test",
@@ -33,18 +42,18 @@ beforeAll(() => {
 
 describe("readBuiltinProducts", () => {
   it("loads short and formal candidates from their owner directory before checking references", async () => {
-    const { readBuiltinProducts } = await import("../builtin-products");
+    const { readBuiltinProducts, registerBuiltinProducts } = await import("../builtin-products");
     const bundle = await mkdtemp(path.join(tmpdir(), "builtin-candidates-"));
     const reader = path.join(bundle, "reader");
     const owner = path.join(bundle, "owner");
-    const shortId = "builtin-product-short-count";
-    const formalId = "builtin-product-formal-count";
+    const shortId = "builtin-product-short-list";
+    const formalId = "builtin-product-formal-list";
     const formal = {
-      name: "Formal count", description: "", visibility: "platform", componentId: "@ontomato/sdk:ObjectCount",
+      name: "Formal list", description: "", visibility: "platform", componentId: "@ontomato/sdk:ObjectList",
       inputs: {}, outputs: {}, config: {},
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: "platform:ObjectType" } }, read: "count", params: {} } },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: "platform:ObjectType" } }, read: "list", params: {} } },
     };
-    const short = { component: "ObjectCount", type: "platform:ObjectType", data: { rows: "count" } };
+    const short = { component: "ObjectList", type: "platform:ObjectType", data: { rows: "list" } };
     const candidates = [
       { id: shortId, input: short },
       { id: formalId, input: formal },
@@ -66,9 +75,14 @@ describe("readBuiltinProducts", () => {
       }
       const file = path.join(owner, "projections.json");
       await writeFile(file, JSON.stringify(candidates));
-      const { projections } = await readBuiltinProducts(bundle);
-      expect(projections.get(shortId)?.data.rows?.read).toBe("count");
-      expect(projections.get(formalId)?.data.rows?.read).toBe("count");
+      const component = components.find(({ componentId }) => componentId === "ObjectList");
+      expect(component?.data?.supplement?.required).toBe(false);
+      await registerBuiltinProducts(bundle);
+      const [, params] = query.mock.calls.find(([, args]) => Array.isArray(args?.[0]) && args[0].includes(formalId))!;
+      const [ids, definitions] = params as [string[], string[]];
+      for (const id of [shortId, formalId]) {
+        expect(JSON.parse(definitions[ids.indexOf(id)]).data).toEqual(formal.data);
+      }
 
       await writeFile(file, JSON.stringify([candidates[0]]));
       await expect(readBuiltinProducts(bundle)).rejects.toThrow(new RegExp(formalId));
