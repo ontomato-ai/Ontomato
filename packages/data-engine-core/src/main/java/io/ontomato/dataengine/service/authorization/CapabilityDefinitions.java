@@ -5,6 +5,7 @@ import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.trigger.Trigger;
+import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
@@ -74,6 +75,12 @@ public class CapabilityDefinitions {
     public static ObjectAccess access(Trigger trigger, Verb verb) {
         return access(trigger.getDomainId(), Kind.TRIGGER, trigger.getId(), trigger.getCreatedBy(),
                 trigger.getStatus(), Trigger.STATUS_PENDING_REVIEW, verb);
+    }
+
+    public static ObjectAccess access(Workflow workflow, Verb verb) {
+        var state = Workflow.STATUS_DRAFT.equals(workflow.getStatus()) ? DefinitionState.DRAFT : DefinitionState.PUBLISHED;
+        return new ObjectAccess(new ObjectTarget(workflow.getDomainId(), Kind.WORKFLOW, workflow.getId()), verb,
+                new OwnerFacts(author(workflow.getCreatedBy()), state, workflow.getCoauthorIds()));
     }
 
     private static ObjectAccess access(String domainId, Kind kind, String id, String owner, String status,

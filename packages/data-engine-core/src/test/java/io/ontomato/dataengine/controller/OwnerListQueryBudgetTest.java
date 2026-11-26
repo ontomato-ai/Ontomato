@@ -150,12 +150,13 @@ class OwnerListQueryBudgetTest {
   @ValueSource(ints = {1, 8})
   void triggersBatchDisplayNamesAndReuseTheTargetCatalogues(int size) throws Exception {
     var controller = new TriggerController();
+    var definitions = new CapabilityDefinitions(authorization, null);
     setField(controller, "triggers", withJdbc(new TriggerDao()));
     setField(controller, "service", new TriggerService());
-    setField(controller, "definitions", new CapabilityDefinitions(authorization, null));
+    setField(controller, "definitions", definitions);
     setField(controller, "actionService", actionService(size));
     setField(controller, "workflowService",
-        new WorkflowServiceImpl(withJdbc(new WorkflowDao()), null, null, null, null, null));
+        new WorkflowServiceImpl(withJdbc(new WorkflowDao()), null, null, null, null, null, definitions));
     stubList(" FROM trigger_def ", indices(size).mapToObj(i -> {
       var trigger = new Trigger();
       trigger.setId("trigger-" + i);

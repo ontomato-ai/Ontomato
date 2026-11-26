@@ -12,6 +12,7 @@ import io.ontomato.dataengine.service.PlatformAccessQuery;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.WorkflowService;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.util.SystemUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -28,6 +29,7 @@ class WorkflowCountBoundaryTest {
     private final CapabilityGrantQuery grants = mock(CapabilityGrantQuery.class);
     private final ActionService actions = mock(ActionService.class);
     private final WorkflowDao workflowDao = mock(WorkflowDao.class);
+    private final ManagementRequestAccess management = mock(ManagementRequestAccess.class);
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(controller())
         .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
 
@@ -37,9 +39,11 @@ class WorkflowCountBoundaryTest {
         when(subjects.countInDomain("domain")).thenReturn(4L);
         when(access.countRolesInDomain("domain")).thenReturn(5L);
         when(grants.countRolesInDomain("domain")).thenReturn(new CapabilityGrantQuery.RoleCounts(3, 2));
+        var user = new QueryAccessService.GrantUser("member", "domain");
+        when(management.require("workflow.grants.read")).thenReturn(user);
 
         try (var system = mockStatic(SystemUtils.class)) {
-            system.when(SystemUtils::getCurUser).thenReturn(new QueryAccessService.GrantUser("member", "domain"));
+            system.when(SystemUtils::getCurUser).thenReturn(user);
             count("/workflow/query", """
                 {"countOnly":true,"id":"wf","status":" ACTIVE ","purpose":"execution","domainId":"other"}""", 1);
             String request = """
@@ -52,7 +56,9 @@ class WorkflowCountBoundaryTest {
         verify(workflows).count("wf", "ACTIVE", "domain");
         verify(subjects).countInDomain("domain");
         verify(access).countRolesInDomain("domain");
-        verify(grants).countRolesInDomain("domain");
+        var grantRead = inOrder(management, grants);
+        grantRead.verify(management).require("workflow.grants.read");
+        grantRead.verify(grants).countRolesInDomain("domain");
         verifyNoMoreInteractions(workflows, subjects, access, grants);
         verifyNoInteractions(actions, workflowDao);
     }
@@ -71,6 +77,7 @@ class WorkflowCountBoundaryTest {
         ReflectionTestUtils.setField(controller, "grants", grants);
         ReflectionTestUtils.setField(controller, "actions", actions);
         ReflectionTestUtils.setField(controller, "workflowDao", workflowDao);
+        ReflectionTestUtils.setField(controller, "management", management);
         return controller;
     }
 }

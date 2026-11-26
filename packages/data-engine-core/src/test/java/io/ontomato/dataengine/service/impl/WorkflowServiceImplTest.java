@@ -25,6 +25,7 @@ import io.ontomato.dataengine.dao.WorkflowDao;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.WorkflowGrantSink;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,7 +57,7 @@ class WorkflowServiceImplTest {
     admin = mock(AdminService.class);
     metricGenerator = mock(WorkflowMetricGenerator.class);
     service = new WorkflowServiceImpl(workflows, actions, grants, admin, metricGenerator,
-        org.springframework.transaction.support.TransactionOperations.withoutTransaction());
+        org.springframework.transaction.support.TransactionOperations.withoutTransaction(), mock(CapabilityDefinitions.class));
     Action local = new Action();
     local.setDomainId(DOMAIN);
     local.setStatus(Action.STATUS_PUBLISHED);
@@ -176,13 +177,13 @@ class WorkflowServiceImplTest {
     manual.setInvocationMode(WorkflowStep.INVOCATION_MANUAL);
     Workflow draft = workflow(manual);
     service.save(draft);
-    verify(workflows).saveDraft(draft);
+    verify(workflows).insertDraft(draft);
 
     WorkflowStep automatic = step(1, "LEADER", "approve");
     automatic.setInvocationMode(WorkflowStep.INVOCATION_AUTOMATIC);
     Workflow reserved = workflow(automatic);
     service.save(reserved);
-    verify(workflows, times(2)).saveDraft(any());
+    verify(workflows, times(2)).insertDraft(any());
   }
 
   @Test
@@ -237,7 +238,7 @@ class WorkflowServiceImplTest {
     assertEquals("workflow_instance", workflow.getRunClassName());
     // The identity field may be left out; a reader may then rely on "id" without repeating fallbacks.
     assertEquals("id", workflow.getRunContract().getIdField());
-    verify(workflows).saveDraft(workflow);
+    verify(workflows).insertDraft(workflow);
   }
 
   @Test
@@ -252,7 +253,7 @@ class WorkflowServiceImplTest {
       broken.setRunContract(contract("workflow_instance", "current_node", "status", List.of()));
       service.save(broken);
     });
-    verify(workflows).saveDraft(workflow);
+    verify(workflows).insertDraft(workflow);
   }
 
   @Test
@@ -263,7 +264,7 @@ class WorkflowServiceImplTest {
     IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.save(workflow));
 
     assertTrue(error.getMessage().contains("does not exist in this domain"), error.getMessage());
-    verify(workflows, never()).saveDraft(any());
+    verify(workflows, never()).insertDraft(any());
   }
 
   @Test
@@ -275,7 +276,7 @@ class WorkflowServiceImplTest {
 
     // This is the failure a contract exists to catch: a typo that would otherwise match nothing at read time.
     assertTrue(error.getMessage().contains("current_stp"), error.getMessage());
-    verify(workflows, never()).saveDraft(any());
+    verify(workflows, never()).insertDraft(any());
   }
 
   @Test
