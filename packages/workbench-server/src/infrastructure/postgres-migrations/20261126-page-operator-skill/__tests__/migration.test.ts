@@ -1,8 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { PAGE_OPERATOR_SKILL, runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { QueryableClient } from "../../helpers";
 import { migratePageOperatorSkill } from "../migration";
-import { PAGE_OPERATOR_SKILL } from "../../../../services/assistant/page-operator";
 
 const query = vi.fn();
 vi.mock("../../../postgres", () => ({ qualifiedTable: (name: string) => `"${name}"` }));

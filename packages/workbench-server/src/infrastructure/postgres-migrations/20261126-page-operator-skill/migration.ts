@@ -1,11 +1,14 @@
-import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { PAGE_OPERATOR_SKILL, runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { defaultAssistantSkills } from "../../../config/assistant-defaults";
-import { PAGE_OPERATOR_SKILL } from "../../../services/assistant/page-operator";
-import { GOVERNANCE_SKILLS } from "../../../services/assistant/governance-definition";
-import { APP_BUILDER_SKILL, APPLICATION_DESIGN_SKILL } from "../../../services/app-builder/definition";
-import { OPS_DIAGNOSIS_SKILL } from "../../../services/ops-diagnosis/definition";
 import { qualifiedTable as t } from "../../postgres";
 import type { QueryableClient } from "../helpers";
+
+const skill = (name: string, provider = "workbench"): RuntimeSkillRef => ({ namespace: { kind: "provider", provider }, name });
+// Frozen shipped skill identities: migrations never follow later edits to the live constants.
+const GOVERNANCE_SKILLS: RuntimeSkillRef[] = [skill("knowledge-governance", "ontology"), skill("assistant-report")];
+const APP_BUILDER_SKILL = skill("ontomato-app-builder");
+const APPLICATION_DESIGN_SKILL = skill("application-design");
+const OPS_DIAGNOSIS_SKILL = skill("ops-diagnosis");
 
 export const PAGE_OPERATOR_SKILL_VERSION = "20261126_page_operator_skill_v1";
 export const PAGE_OPERATOR_SKILL_NAME = "single page operator skill presets";
