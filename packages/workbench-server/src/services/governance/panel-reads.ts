@@ -261,6 +261,12 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
   };
 }
 
+/**
+ * Stored policy type of `sys_post.post_type` for entries and the objects an entry brings out, i.e. `PolicyTypes.OBJECT`
+ * on the Java side. 1 and 2 keep their released meaning (management operations, business data).
+ */
+const ENTRY_AND_OBJECT_POLICY_TYPE = 3;
+
 function ownerData<T>(result: OwnerReadResult<T>): T {
   if (!result.ok) throw new HttpError(result.status === "refused" ? 403 : 502, result.reason);
   return result.data;
@@ -289,7 +295,7 @@ export async function readMemberAccessContext(
   const ownRoleIds = new Set(subjects.find(subject => subject.id === subjectId)?.roleIds ?? []);
   const ownPolicyIds = new Set(rolePolicies.filter(link => ownRoleIds.has(link.roleId)).map(link => link.policyId));
   const roleNameById = new Map(roleAccess.map(access => [access.roleId ?? "", access.roleCode ?? ""]));
-  const candidates = policies.filter(policy => policy.type === 2 && ownPolicyIds.has(policy.id));
+  const candidates = policies.filter(policy => policy.type === ENTRY_AND_OBJECT_POLICY_TYPE && ownPolicyIds.has(policy.id));
   const fillPolicies: RuntimeJsonObject[] = candidates.map(policy => {
     const roleIds = [...new Set(rolePolicies.filter(link => link.policyId === policy.id).map(link => link.roleId))];
     const policyRoleIds = new Set(roleIds);

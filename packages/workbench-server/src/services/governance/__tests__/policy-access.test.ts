@@ -279,6 +279,7 @@ describe("member access inspection", () => {
   const ownPolicyId = "policy-own";
   const apiPolicyId = "policy-api";
   const foreignPolicyId = "policy-foreign";
+  const businessDataPolicyId = "policy-business-data";
   const actor = { credentials: viewer, owner: { domainId, userId: "viewer" } };
   const host: PanelOperationHost = { initiator: actor, executor: actor, request: vi.fn(), requestWorkbench: vi.fn() };
   const memberTarget = { kind: "object", objectType: USER, primaryKey: subjectId } as const;
@@ -301,14 +302,16 @@ describe("member access inspection", () => {
           { roleId: "role-1", policyId: ownPolicyId },
           { roleId: "role-2", policyId: ownPolicyId },
           { roleId: "role-2", policyId: apiPolicyId },
+          { roleId: "role-2", policyId: businessDataPolicyId },
           { roleId: "role-3", policyId: foreignPolicyId },
         ] });
       }
       if (url.endsWith("/platform/governance/policies")) {
         return json({ policies: [
-          { id: ownPolicyId, name: "Sales data", type: 2 },
+          { id: ownPolicyId, name: "Sales data", type: 3 },
           { id: apiPolicyId, name: "Sales console", type: 1 },
-          { id: foreignPolicyId, name: "Finance data", type: 2 },
+          { id: foreignPolicyId, name: "Finance data", type: 3 },
+          { id: businessDataPolicyId, name: "Sales rows", type: 2 },
         ] });
       }
       if (url.endsWith("/workflow/platform-access")) {
