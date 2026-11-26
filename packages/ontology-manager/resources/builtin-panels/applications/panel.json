@@ -167,7 +167,7 @@
     "messages": {
       "zh-CN": {
         "panel.name": "应用",
-        "panel.description": "本域可见的全部应用：内置的与域内建的同列。点击一行查看并维护它的身份、入口、面板引用与授权。",
+        "panel.description": "本域可见的全部应用：内置的与域内建的同列。点击一行查看并维护它的身份、入口和面板引用。",
         "action.create": "新建应用",
         "action.copy": "复制",
         "action.refresh": "刷新",
@@ -195,7 +195,7 @@
       },
       "en": {
         "panel.name": "Applications",
-        "panel.description": "Every application visible in this domain, built-in and domain-built alike. Open one to inspect and maintain its identity, entries, panels and grants.",
+        "panel.description": "Every application visible in this domain, built-in and domain-built alike. Open one to inspect and maintain its identity, entries and panel references.",
         "action.create": "New application",
         "action.copy": "Copy",
         "action.refresh": "Refresh",
@@ -223,7 +223,7 @@
       },
       "zh-TW": {
         "panel.name": "應用",
-        "panel.description": "本域可見的全部應用：內建的與域內建的同列。點擊一行檢視並維護它的身分、入口、面板引用與授權。",
+        "panel.description": "本域可見的全部應用：內建的與域內建的同列。點擊一行檢視並維護它的身分、入口和面板引用。",
         "action.create": "新建應用",
         "action.copy": "複製",
         "action.refresh": "重新整理",
