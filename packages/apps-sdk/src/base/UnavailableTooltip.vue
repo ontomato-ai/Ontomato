@@ -23,6 +23,8 @@ const props = withDefaults(
 );
 
 const tooltipContent = computed(() => props.reason?.trim() || undefined);
+// The panel's teleported overlay root is zero-width. Size the popper from its text before applying the tooltip cap.
+const popperStyle = { width: "max-content" };
 </script>
 
 <template>
@@ -31,6 +33,7 @@ const tooltipContent = computed(() => props.reason?.trim() || undefined);
     :content="tooltipContent"
     :trigger="['hover', 'focus']"
     :placement="placement"
+    :popper-style="popperStyle"
   >
     <span
       class="sdk-unavailable-trigger"
