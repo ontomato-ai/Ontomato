@@ -46,17 +46,63 @@
     gap: var(--page-content-gap);
     min-width: 0;
   }
-  .agent-detail-card {
+  /* Each owner-declared section is its own card, like the sibling detail pages; the wrapper only stacks them. */
+  .agent-detail-card:has(.sdk-owner-form-sectioned) {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .agent-detail-form {
+    min-width: 0;
+  }
+  .agent-detail-form .sdk-owner-form-sectioned {
+    gap: var(--spacing-lg);
+  }
+  .agent-detail-form .sdk-owner-form-sections {
     display: flex;
     flex-direction: column;
-    min-width: 0;
-    padding: var(--page-section-padding, var(--spacing-lg));
+    gap: var(--spacing-md);
+  }
+  .agent-detail-form .sdk-owner-form-section {
+    padding: var(--spacing-lg) var(--spacing-xl);
     border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
     background: var(--sdk-bg-color);
   }
-  .agent-detail-form {
-    min-width: 0;
+  /* The section index reads as a quiet, bordered column instead of loose links. */
+  .agent-detail-form .sdk-owner-form-contents {
+    gap: 2px;
+    padding-left: var(--spacing-md);
+    border-left: 1px solid var(--ui-divider);
+  }
+  /* Single-line controls stop at a readable width instead of spanning the whole card. */
+  .agent-detail-form .sdk-form-field-frame .el-input,
+  .agent-detail-form .sdk-form-field-frame .el-select,
+  .agent-detail-form .sdk-form-field-frame .el-textarea {
+    max-width: 680px;
+  }
+  /* The reset action keeps the component's place under the field and stops shouting. */
+  .agent-detail-form .sdk-form-field-footer {
+    margin-top: 2px;
+  }
+  .agent-detail-form .sdk-form-field-reset {
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  /* Basics pairs name with description; the avatar and the enable switch keep the whole row. */
+  .agent-detail-form [data-form-section="basics"] .sdk-owner-form-field-list,
+  .agent-detail-form [data-form-section="model"] .sdk-owner-form-field-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 var(--spacing-lg);
+  }
+  .agent-detail-form [data-form-section="basics"] [data-field="/icon"],
+  .agent-detail-form [data-form-section="basics"] [data-field="/enabled"] {
+    grid-column: 1 / -1;
+  }
+  /* The scope section title already says "数据范围". */
+  .agent-detail-form [data-field="/classNames"] > label {
+    display: none;
   }
   .agent-detail-form .sdk-owner-form,
   .agent-detail-form .sdk-owner-form-inner {
@@ -160,7 +206,7 @@
     min-width: 0;
   }
   .agent-detail-prompt-preview {
-    min-height: 560px;
+    min-height: 360px;
     padding: var(--spacing-md);
     box-sizing: border-box;
     border: 1px solid var(--sdk-border-color);
@@ -219,7 +265,8 @@
   }
   .agent-detail-skill-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+    grid-auto-rows: 1fr;
     gap: var(--spacing-sm);
     min-height: 48px;
   }
@@ -227,7 +274,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-xs);
-    padding: 12px;
+    padding: 12px 14px;
     background: var(--sdk-bg-color);
     border: 1px solid var(--sdk-border-color-light);
     border-radius: var(--radius-md);
@@ -241,6 +288,7 @@
   .agent-detail-skill-card.is-selected {
     border-color: var(--sdk-color-primary);
     background: var(--sdk-color-primary-light-9);
+    box-shadow: inset 0 0 0 1px var(--sdk-color-primary);
   }
   .agent-detail-skill-card.is-unavailable {
     border-color: var(--sdk-color-warning-light-5);
@@ -355,11 +403,33 @@
     color: var(--sdk-color-danger-text);
   }
 
+  /* Titles and descriptions clamp so one long line does not stretch a whole row of cards. */
+  .agent-detail-skill-title,
+  .agent-detail-skill-desc {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .agent-detail-skill-title {
+    -webkit-line-clamp: 2;
+  }
+  .agent-detail-skill-desc {
+    -webkit-line-clamp: 2;
+  }
+  @container agent-detail-page (max-width: 720px) {
+    .agent-detail-form [data-form-section="basics"] .sdk-owner-form-field-list,
+    .agent-detail-form [data-form-section="model"] .sdk-owner-form-field-list {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .agent-detail-form .sdk-owner-form-section {
+      padding: var(--spacing-md) var(--spacing-lg);
+    }
+  }
+
   @container agent-detail-page (max-width: 640px) {
     .agent-detail-body {
       padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
-    .agent-detail-card,
     .agent-detail-share-bar {
       padding: var(--spacing-md);
     }
@@ -578,7 +648,7 @@
                       class="agent-detail-prompt-editor"
                       :model-value="typeof value === 'string' ? value : ''"
                       language="markdown"
-                      :min-height="560"
+                      :min-height="360"
                       :readonly="disabled"
                       @update:model-value="set($event)"
                     ></code-editor>
