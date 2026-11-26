@@ -204,12 +204,19 @@ it("removes usePanelData, setInterval, and business-data PanelData members from 
   }
 });
 
-it.each([["normalizes a legacy address and renews", false], ["keeps the schedule panel open when renewal is refused", true]])("%s", async (_scenario, refused) => {
+it.each([
+  { scenario: "normalizes a legacy address and renews", credentialStatus: "renewal-required", refused: false },
+  { scenario: "keeps the schedule panel open when renewal is refused", credentialStatus: "renewal-required", refused: true },
+  { scenario: "opens without renewing a valid credential", credentialStatus: "valid", refused: false },
+  { scenario: "opens without renewing when there are no remote tasks", credentialStatus: "no-remote-tasks", refused: false },
+])("$scenario", async ({ credentialStatus, refused }) => {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
   ] });
   router.beforeEach(detailSelectionGuard(DETAIL_SELECTIONS));
   router.beforeEach(panelEntryGuard(router));
+  const shouldRenew = credentialStatus === "renewal-required";
+  let ownerCredentialStatus = credentialStatus;
   const historyReads: Array<string | null> = [];
   let checkHistory = false;
   const writes = humanIntents((operation) => operation === deleteOperation
@@ -282,6 +289,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
               canCreate: true,
               createBlockedReason: "",
               hasCredentialPaused: refused,
+              credentialStatus: ownerCredentialStatus,
             },
           },
         });
@@ -333,23 +341,39 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
     }
     if (path === `/api/panel-operation-intents/${id}`)
       return Response.json({ intentId: id, operationId, label: "Renew background credential", confirmation: { kind: "none" } });
-    if (path === `/api/panel-operations/intents/${id}/dispatch`)
-      return Response.json({ kind: "dispatched", intentId: id, outcome: { kind: "success", data: {} } });
+    if (path === `/api/panel-operations/intents/${id}/dispatch`) {
+      ownerCredentialStatus = "valid";
+      return Response.json({
+        kind: "dispatched", intentId: id,
+        outcome: { kind: "success", data: {}, affected: { objects: [], objectTypes: ["platform:ScheduledTask"] } },
+      });
+    }
     if (path.startsWith("/api/panel-operation-intents/") || path.startsWith("/api/panel-operations/intents/")) {
       return writes(request) ?? nothingAt(request);
     }
     return nothingAt(request);
   }, router);
   useApplicationCatalog().applications.value = catalogFixture();
-  await router.push(refused ? "/schedules" : `/schedules?app=agents&taskId=${taskId}&runId=${runId}`);
+  await router.push(shouldRenew && !refused ? `/schedules?app=agents&taskId=${taskId}&runId=${runId}` : "/schedules");
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {
+    const noticeReads = () => sentPanelReadItems(sent).filter(({ body }) => {
+      const read = body as ProductPanelReadRequest;
+      return read.memberPath[0].member === "pageNotice" && "dataName" in read && read.dataName === "record";
+    });
+    if (!shouldRenew) {
+      await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-sts-card")?.textContent).toContain("Finished"));
+      expect(noticeReads()).toHaveLength(1);
+      expect(sent.some(({ path }) => path === "/api/panel-operations/intents")).toBe(false);
+      return;
+    }
     await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
       path: "/api/panel-operations/intents",
       body: { applicationId: "schedules", useId: use.id, operationId, call: { target, input: {} } },
     })), { timeout: 5000 });
     if (refused) {
       await vi.waitFor(() => expect(element.querySelector(".schedules [role=alert]")?.textContent).toContain("Credential service unavailable"));
+      expect(noticeReads()).toHaveLength(1);
     } else {
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({ path: `/api/panel-operations/intents/${id}/dispatch` })));
       await vi.waitFor(() => expect(sentPanelReadItems(sent)).toContainEqual(expect.objectContaining({
@@ -363,6 +387,8 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         app: "agents", selectedTask: taskId, runId,
       });
       await vi.waitFor(() => expect(document.body.querySelector(`.schedules-focus[data-run="${runId}"]`)).not.toBeNull());
+      await vi.waitFor(() => expect(noticeReads()).toHaveLength(2));
+      expect(sent.filter(({ path }) => path === `/api/panel-operations/intents/${id}/dispatch`)).toHaveLength(1);
     }
     await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-sts-card")?.textContent).toContain("Finished"));
     if (!refused) {

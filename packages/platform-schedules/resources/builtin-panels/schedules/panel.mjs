@@ -15,6 +15,7 @@ await mountPanel({
     const noticeCanCreate = usePanelOutput("pageNotice", "canCreate");
     const noticeBlockedReason = usePanelOutput("pageNotice", "createBlockedReason");
     const noticeCredentialPaused = usePanelOutput("pageNotice", "hasCredentialPaused");
+    const noticeCredentialStatus = usePanelOutput("pageNotice", "credentialStatus");
 
     const tasksStatus = usePanelOutput("tasks", "status");
     const detailStatus = usePanelOutput("detailHeader", "status");
@@ -227,7 +228,7 @@ await mountPanel({
         const outcome = outcomeOf(receipt);
         if (outcome.kind === "success") {
           renewalProblem.value = "";
-          instance.refreshObjects();
+          // The receipt refreshes the affected scheduled task reads.
         } else if (outcome.kind === "refusal") {
           renewalProblem.value = refusalText(outcome);
         }
@@ -236,12 +237,15 @@ await mountPanel({
       }
     }
     onMounted(() => {
-      if (opRenew.operation.value) return void renewCredential();
-      const stop = watch(opRenew.operation, (operation) => {
-        if (!operation) return;
-        stop();
-        void renewCredential();
+      const decision = computed(() => {
+        const status = noticeCredentialStatus.value;
+        if (status === "renewal-required") return opRenew.operation.value ? true : null;
+        return status === null ? null : false;
       });
+      if (decision.value === true) void renewCredential();
+      else if (decision.value === null) watch(decision, (required) => {
+        if (required) void renewCredential();
+      }, { once: true });
     });
 
     // ---------- card row operation outcomes (SC-14) ----------

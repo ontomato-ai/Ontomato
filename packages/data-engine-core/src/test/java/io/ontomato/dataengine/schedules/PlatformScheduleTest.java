@@ -7,6 +7,7 @@ import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -350,6 +351,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   void emptyObjectPostBodiesFromTheWorkbenchAreAccepted() throws Exception {
     UUID taskId = UUID.randomUUID();
     tasks.create(taskId, definition("function:f"), "en", true);
+    http.perform(get("/platform/scheduled-tasks").param("includeCredentialStatus", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.credentialStatus").value("no-remote-tasks"));
     http.perform(
             post("/platform/scheduled-tasks/credential/renew")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -1019,9 +1023,14 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     ReflectionTestUtils.setField(service, "configuredZone", "UTC");
     UUID task = UUID.randomUUID();
     service.create(task, fixtureDefinition("fixture"), "en", true);
+    assertEquals("valid", service.list(null, true).path("credentialStatus").asText());
     UUID run = UUID.randomUUID();
     service.manual(task, run, "en");
     when(identity.accepts("test-key", "sales", "alice")).thenReturn(false);
+    assertEquals("renewal-required", service.list(null, true).path("credentialStatus").asText());
+    assertTrue(jdbc.queryForObject(
+        "SELECT valid FROM platform_task_credential WHERE domain_id='sales' AND creator_id='alice'",
+        Boolean.class));
     var scheduler =
         new PlatformScheduler(
             store, transactions, registry, credentials, identity, mock(TaskMail.class));
@@ -1029,6 +1038,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     scheduler.stop();
     assertEquals("credential_invalid", store.get(task, false).pause().code());
     when(identity.accepts("test-key", "sales", "alice")).thenReturn(true);
+    assertEquals("renewal-required", service.list(null, true).path("credentialStatus").asText());
     failure.set(true);
     service.renewOnVisit("en");
     assertEquals("permission_denied", store.get(task, false).pause().code());
@@ -1038,6 +1048,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         task, object("enabled", true, "revision", store.get(task, false).revision()), "en");
     assertNull(store.get(task, false).pause());
     assertNotNull(store.get(task, false).nextRunAt());
+    assertEquals("valid", service.list(null, true).path("credentialStatus").asText());
     long revision = store.get(task, false).revision();
     service.enabled(task, object("enabled", false, "revision", revision), "en");
     service.renewOnVisit("en");

@@ -303,6 +303,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           applicationsProblem: { kind: "scalar", type: "string" },
           applicationsFailed: { kind: "scalar", type: "boolean" },
           hasCredentialPaused: { kind: "scalar", type: "boolean" },
+          credentialStatus: { kind: "scalar", type: "string" },
         },
       },
       record: {

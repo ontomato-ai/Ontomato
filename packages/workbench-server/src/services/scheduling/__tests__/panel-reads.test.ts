@@ -65,12 +65,15 @@ it("keeps an uninstalled application's name and reason in the picker so the task
 it("reads the viewer's task rows and selected summary, and recomputes the selected task's form", async () => {
   const fetchOwner = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
-    const path = new URL(url).pathname;
+    const { pathname: path, searchParams } = new URL(url);
     if (init.method === "GET" && path === "/platform/applications") return Response.json(catalogue);
     if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks/applications"))
       return Response.json(examples.applicationsEnglish.response);
     if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks"))
-      return Response.json({ timeZone: task.timeZone, tasks: [task] });
+      return Response.json({
+        timeZone: task.timeZone, tasks: [task],
+        ...(searchParams.get("includeCredentialStatus") === "true" && { credentialStatus: "renewal-required" }),
+      });
     if (init.method === "GET" && path.endsWith(`/platform/scheduled-tasks/${task.id}`))
       return Response.json(task);
     if (init.method === "POST" && path.endsWith("/platform/scheduled-tasks/applications/operations/form")) {
@@ -96,6 +99,7 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
   vi.stubGlobal("fetch", fetchOwner);
 
   const reads = createScheduledTaskReadAdapter(viewer);
+  await expect(reads.status()).resolves.toMatchObject({ outputs: { credentialStatus: "renewal-required" } });
   const rows = panelReadResultSchemas.panelRecordList.parse(await reads.list());
   const record = panelReadResultSchemas.panelRecord.parse(await reads.record(task.id));
   expect(rows).toEqual([record]);
