@@ -596,6 +596,7 @@ public class ActionController {
 
 	@PostMapping("/action/trial")
 	public JSONObject trial(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
+			jakarta.servlet.http.HttpServletRequest executionRequest,
 			@RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
@@ -605,7 +606,8 @@ public class ActionController {
 			JSONObject parameters = trialObject(param, "parameters");
 			User user = SystemUtils.getCurUser();
 			ret.put("data", actionTrials.trialSavedAction(id, sample, parameters, lang, user,
-					identityService.getCurrentUserDataPermission(), executionTimeout(user)));
+					identityService.getCurrentUserDataPermission(), executionTimeout(user),
+					callerToken(executionRequest)));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
             if (e instanceof ActionAuthorization.Denied denied) throw denied;
@@ -665,7 +667,9 @@ public class ActionController {
 				}
 			}
 			int timeoutMinutes = executionTimeout(user);
-			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)), path);
+			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes,
+				agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)), path,
+				callerToken(executionRequest));
 			if (result.getError() != null && !"".equals(result.getError().trim())) {
 				throw new Exception(result.getError());
 			}
@@ -694,6 +698,16 @@ public class ActionController {
 			}
 		}
 		return ret;
+	}
+
+	private static String callerToken(jakarta.servlet.http.HttpServletRequest request) {
+		String token = request.getHeader("tk");
+		if (token == null || token.isBlank()) {
+			String authorization = request.getHeader("Authorization");
+			if (authorization != null && authorization.regionMatches(true, 0, "Bearer ", 0, 7))
+				token = authorization.substring(7);
+		}
+		return token == null || token.isBlank() ? null : token.trim();
 	}
 	
 	private Path saveTempFile(MultipartFile file) throws Exception {

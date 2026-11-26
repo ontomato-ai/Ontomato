@@ -17,10 +17,14 @@ public interface ABCProgramService {
 
     /** Execution facts supplied by the trusted caller, outside business parameters. */
     record ExecutionContext(java.util.UUID executionId, com.alibaba.fastjson2.JSONObject identity,
-            ExecutionTarget target, ActionRuntimeGrant action) {
+            ExecutionTarget target, ActionRuntimeGrant action, String callerToken) {
+        public ExecutionContext(java.util.UUID executionId, com.alibaba.fastjson2.JSONObject identity,
+                ExecutionTarget target, ActionRuntimeGrant action) {
+            this(executionId, identity, target, action, null);
+        }
         public ExecutionContext(java.util.UUID executionId, com.alibaba.fastjson2.JSONObject identity,
                 ExecutionTarget target) {
-            this(executionId, identity, target, null);
+            this(executionId, identity, target, null, null);
         }
     }
 

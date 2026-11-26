@@ -89,16 +89,17 @@ class RuntimePythonClientTest {
     when(runtime.output(anyString(), anyString(), eq("stderr"))).thenReturn("");
     when(runtime.output(anyString(), anyString(), eq("query-status.json")))
         .thenReturn("{\"truncated\":true,\"rowLimit\":1000,\"truncationHint\":\"Processing cap\"}");
-    var result =
-        new PythonExecuteServiceImpl(runtime, grants)
-            .execute(
-                "session",
-                "# ontomato-python:2\nfrom query_runtime import execute_dsl",
-                1,
-                "en",
-                PythonAuthority.read("user", "domain"),
-                JSONObject.parseObject("{\"date\":null}"),
-                Map.of());
+    var executor = new PythonExecuteServiceImpl(runtime, grants);
+    org.springframework.test.util.ReflectionTestUtils.setField(
+        executor, "workbenchInternalUrl", "http://data-agent:3000/");
+    var result = executor.execute(
+        "session",
+        "# ontomato-python:2\nfrom query_runtime import execute_dsl",
+        1,
+        "en",
+        PythonAuthority.read("user", "domain").withCallerToken("caller-session-token"),
+        JSONObject.parseObject("{\"date\":null}"),
+        Map.of());
     assertTrue(result.getResult().contains("null"));
     assertEquals(1000, result.getPartialQuery().getInteger("rowLimit"));
     var request = ArgumentCaptor.forClass(Object.class);
@@ -115,6 +116,12 @@ class RuntimePythonClientTest {
     assertEquals(
         "scoped-grant",
         body.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK"));
+    assertEquals(
+        "caller-session-token",
+        body.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_CALLER_TK"));
+    assertEquals(
+        "http://data-agent:3000/api/praxis",
+        body.getJSONObject("environment").getJSONObject("values").getString("ONTOMATO_PRAXIS_URL"));
     var files = body.getJSONArray("files").stream().map(JSONObject::from).toList();
     assertTrue(files.stream().filter(file -> "parameters.json".equals(file.getString("path")))
         .findFirst().orElseThrow().getString("content").contains("null"));
