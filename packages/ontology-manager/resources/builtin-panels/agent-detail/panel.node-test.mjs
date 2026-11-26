@@ -2,12 +2,28 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(dir, "panel.html"), "utf8");
 const moduleSource = readFileSync(join(dir, "panel.mjs"), "utf8");
 const panel = JSON.parse(readFileSync(join(dir, "panel.json"), "utf8"));
+
+function extractFunctionSource(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `${name} function source`);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error(`Could not extract ${name}`);
+}
 
 test("agent detail exposes the six required sections in order", () => {
   assert.deepEqual(
@@ -52,9 +68,47 @@ test("all original owner operations remain declared", () => {
   assert.equal(members.grantSubmit.operation, "agents.grant");
   assert.equal(members.grantsList.operations.revoke.operation, "agents.revoke");
   assert.equal(members.grantsList.config.rowActions.items[0].operation, "revoke");
-  for (const slot of ["remove", "shareEnable", "shareDisable", "grantSubmit"]) {
-    assert.match(html, new RegExp(`slot="${slot}"`, "u"), `${slot} projection stays mounted`);
+  for (const slot of ["remove", "shareEnable", "shareDisable"]) {
+    assert.equal(html.includes(`slot="${slot}"`), false, `${slot} has no hidden projection`);
   }
+  assert.match(html, /slot="grantSubmit"/u, "grantSubmit projection stays mounted");
+  assert.equal(html.includes("agent-detail-operation-sources"), false);
+  assert.equal(moduleSource.includes("entry: false"), false);
+  assert.equal(moduleSource.includes("onShareDone"), false);
+  assert.equal(moduleSource.includes("onRemoveDone"), false);
+});
+
+test("undrawn skills and tools members remain explicit code-read data sources", () => {
+  const members = panel.manifest.members;
+  for (const name of ["skills", "tools"]) {
+    const member = members[name];
+    assert.equal(member.component, "ReferencePicker", `${name} keeps its owner read contract`);
+    assert.match(member.name, /不绘制/u, `${name} name says it is not drawn`);
+    assert.match(member.description, /不绘制；仅由面板脚本读取 options 与 resolve/u, `${name} description says who reads it`);
+    const optionsRead = typeof member.data.options === "string" ? member.data.options : member.data.options.read;
+    const resolveRead = typeof member.data.selected === "string" ? member.data.selected : member.data.selected.read;
+    assert.equal(optionsRead, "options", `${name} options read`);
+    assert.equal(resolveRead, "resolve", `${name} resolve read`);
+    assert.equal(html.includes(`slot="${name}"`), false, `${name} is not rendered`);
+  }
+  assert.match(moduleSource, /memberContext\("skills"\)/u);
+  assert.match(moduleSource, /memberContext\("tools"\)/u);
+
+  const context = vm.createContext({
+    skillOptionsByKey: { value: new Map() },
+  });
+  vm.runInContext(
+    `${extractFunctionSource(moduleSource, "runtimeSkillKey")}
+${extractFunctionSource(moduleSource, "selectedSkillRows")}`,
+    context,
+  );
+  const heldSkill = {
+    namespace: { kind: "domain", domainId: "domain-a" },
+    name: "deleted-skill",
+  };
+  const rows = context.selectedSkillRows([heldSkill]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].label, "deleted-skill", "a held skill absent from candidates still gets a non-empty label");
 });
 
 
@@ -95,7 +149,16 @@ test("all panel messages keep the same keys in every locale", () => {
   const locales = Object.keys(messages);
   assert.deepEqual([...locales].sort(), ["ar", "de", "en", "fr", "it", "ja", "zh-CN", "zh-TW"]);
   const reference = Object.keys(messages.en).sort();
+  const referenceSet = new Set(reference);
   for (const locale of locales) {
-    assert.deepEqual(Object.keys(messages[locale]).sort(), reference, `${locale} message keys`);
+    const keys = Object.keys(messages[locale]).sort();
+    const keySet = new Set(keys);
+    const missing = reference.filter((key) => !keySet.has(key));
+    const extra = keys.filter((key) => !referenceSet.has(key));
+    assert.deepEqual(
+      keys,
+      reference,
+      `${locale} message keys must exactly match en; missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"}`,
+    );
   }
 });

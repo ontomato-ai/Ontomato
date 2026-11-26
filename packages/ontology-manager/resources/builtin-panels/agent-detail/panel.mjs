@@ -658,13 +658,24 @@ await mountPanel({
       return receipt.response?.kind === "dispatched" ? receipt.response.outcome ?? null : null;
     }
 
+    async function onRemoveSettled(receipt) {
+      const outcome = settledOutcome(receipt);
+      if (!outcome) return;
+      if (outcome.kind !== "success") {
+        if (outcome.message) {
+          notify({ kind: "error", text: outcome.message });
+        }
+        return;
+      }
+      notify({ kind: "success", text: outcome.message || t("detail.deleted") });
+      if (selectedKey.value) state.set("selected", null);
+      await nextTick();
+      void navigate(catalogPath.value).catch(() => undefined);
+    }
+
     const removeOp = usePanelOperation("remove", "delete", {
-      entry: false,
       available: () => detailReady.value,
-      onSettled: async (receipt) => {
-        const outcome = settledOutcome(receipt);
-        if (outcome) await onRemoveDone(outcome);
-      },
+      onSettled: onRemoveSettled,
     });
     const deleteDescriptor = computed(() =>
       removeOp.state.value.status === "ready" ? removeOp.state.value.value?.delete ?? null : null,
@@ -680,7 +691,7 @@ await mountPanel({
     async function openChat() {
       if (!selectedKey.value) return;
       if (detailDraft.value?.dirty) {
-        let allowed = true;
+        let allowed;
         if (panel.confirmLeaveUnsaved) {
           allowed = await panel.confirmLeaveUnsaved();
           if (allowed) instance.forms.discard("form");
@@ -700,12 +711,10 @@ await mountPanel({
     }
 
     const shareEnableOp = usePanelOperation("shareEnable", "share", {
-      entry: false,
       available: () => detailReady.value && canGrant.value && !domainShared.value,
       onSettled: notifyShareSettled,
     });
     const shareDisableOp = usePanelOperation("shareDisable", "share", {
-      entry: false,
       available: () => detailReady.value && canGrant.value && domainShared.value,
       onSettled: notifyShareSettled,
     });
@@ -744,19 +753,6 @@ await mountPanel({
     function onSaved() {
       instance.refreshObjects();
       notify({ kind: "success", text: t("detail.saved") });
-    }
-
-    function onShareDone(outcome) {
-      if (outcome?.kind !== "success") return;
-      notify({ kind: "success", text: t("grants.updated") });
-      instance.refreshObjects();
-    }
-
-    async function onRemoveDone(outcome) {
-      if (outcome?.kind !== "success") return;
-      if (selectedKey.value) state.set("selected", null);
-      await nextTick();
-      void navigate(catalogPath.value).catch(() => undefined);
     }
 
     function openGrantDialog() {
@@ -844,8 +840,6 @@ await mountPanel({
       onMoreCommand,
       retry,
       onSaved,
-      onShareDone,
-      onRemoveDone,
       openGrantDialog,
       onGrantAdded,
     };

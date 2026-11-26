@@ -54,10 +54,10 @@ Adding to a policy is the agent-side shortcut for putting this object into one o
 and at which level is decided in that policy.
 
 - The sharing screen shows the two-state audience control (`explicitly granted only` / `everyone in this domain`),
-  backed by the original `shareEnable.share` and `shareDisable.share` operation declarations. The corresponding
-  `OperationButton` projections stay mounted in a non-rendered operation-source container so the owner operation
-  descriptors and agent action entries remain registered while the segmented control owns their presentation; the
-  same arrangement backs the overflow delete menu through `remove.delete`.
+  backed by the original `shareEnable.share` and `shareDisable.share` operation declarations. Each operation has one
+  registration and one settlement path through `usePanelOperation` in the panel script, which is also the mounted
+  agent action entry; no hidden operation projection is rendered. The overflow delete menu uses `remove.delete` in
+  the same way: it notifies, clears `selected`, and navigates only from `onSettled`.
 - The policy table (`grantsList`) and the add-to-policy dialog stay in the same screen. Choose the policy in
   `policyPicker`, choose one level (`use`, `view`, or `edit`) in the inline segmented control, and invoke
   `grantSubmit.grant`.
@@ -69,8 +69,12 @@ and at which level is decided in that policy.
 Skills and external MCP tools are selected tables inside the owner form's capability fields. Each table lists the
 current rows with name, description, and a remove action; its add button opens the shared `PickerDialog` bound to the
 owner's `options` read. Confirming the dialog writes `/skills` or `/enabledMcpServiceIds` through the owner form; the
-dialog never invokes the owner directly. Skill catalogue loading, error, and diagnostic states are shown with standard
-banners rather than a second card presentation.
+dialog never invokes the owner directly. The `skills` and `tools` `ReferencePicker` members are not drawn: they are
+code-read data sources whose owner `options` and `resolve` reads let the selected tables recover labels, descriptions,
+and unavailable reasons, including the name of a selected skill that is no longer in the current catalogue. They stay
+`ReferencePicker` members because the panel reads business data through their owner contract rather than merely
+registering operations. Skill catalogue loading, error, and diagnostic states are shown with standard banners rather
+than a second card presentation.
 
 Data scope is one form field with two modes: the existing relationship graph (`scope`) and a by-name multi-select
 `ObjectList` (`classPicker`). The list's checked object references are only panel state; the form field remains the

@@ -253,8 +253,8 @@
             }
           }
         },
-        "name": "技能选择",
-        "description": "选择智能体可加载的技能。",
+        "name": "技能数据源（不绘制）",
+        "description": "不绘制；仅由面板脚本读取 options 与 resolve，为已选技能表格补充标签、说明和已删除或不可用原因。",
         "id": "builtin-product-b79c7ca3-8287-4fd7-97d5-94c27a818455"
       },
       "toolPicker": {
@@ -286,8 +286,8 @@
         "config": {
           "refreshable": true
         },
-        "name": "外部 MCP 工具选择",
-        "description": "选择智能体启用的外部 MCP 服务。",
+        "name": "外部工具数据源（不绘制）",
+        "description": "不绘制；仅由面板脚本读取 options 与 resolve，为已选外部工具表格补充标签、说明和已删除或不可用原因。",
         "id": "builtin-product-733252d6-8534-4654-944a-a1f5f8ce0a27"
       },
       "executor": {
@@ -533,6 +533,7 @@
         "action.retry": "Retry",
         "detail.back": "Back to agents",
         "detail.changeSummary": "Unsaved changes",
+        "detail.deleted": "Agent deleted.",
         "detail.forbidden": "Your account does not have permission to read this agent.",
         "detail.loadError": "Failed to load agent.",
         "detail.loading": "Loading agent…",
@@ -636,6 +637,7 @@
         "action.retry": "重试",
         "detail.back": "返回智能体",
         "detail.changeSummary": "待保存改动",
+        "detail.deleted": "智能体已删除。",
         "detail.forbidden": "当前账号无权读取这个智能体。",
         "detail.loadError": "读取智能体失败。",
         "detail.loading": "正在读取智能体…",
@@ -739,6 +741,7 @@
         "action.retry": "重試",
         "detail.back": "返回智慧體",
         "detail.changeSummary": "待儲存變更",
+        "detail.deleted": "智慧體已刪除。",
         "detail.forbidden": "目前帳號無權讀取此智慧體。",
         "detail.loadError": "讀取智慧體失敗。",
         "detail.loading": "正在讀取智慧體…",
@@ -842,6 +845,7 @@
         "action.retry": "再試行",
         "detail.back": "エージェント一覧へ戻る",
         "detail.changeSummary": "未保存の変更",
+        "detail.deleted": "エージェントを削除しました。",
         "detail.forbidden": "このエージェントを参照する権限がありません。",
         "detail.loadError": "エージェントの読み込みに失敗しました。",
         "detail.loading": "エージェントを読み込み中…",
@@ -945,6 +949,7 @@
         "action.retry": "إعادة المحاولة",
         "detail.back": "العودة إلى الوكلاء",
         "detail.changeSummary": "التغييرات غير المحفوظة",
+        "detail.deleted": "تم حذف الوكيل.",
         "detail.forbidden": "لا يملك حسابك صلاحية قراءة هذا الوكيل.",
         "detail.loadError": "تعذر تحميل الوكيل.",
         "detail.loading": "جارٍ تحميل الوكيل…",
@@ -1048,6 +1053,7 @@
         "action.retry": "Réessayer",
         "detail.back": "Retour aux agents",
         "detail.changeSummary": "Modifications non enregistrées",
+        "detail.deleted": "Agent supprimé.",
         "detail.forbidden": "Votre compte n'a pas l'autorisation de lire cet agent.",
         "detail.loadError": "Échec du chargement de l'agent.",
         "detail.loading": "Chargement de l'agent…",
@@ -1151,6 +1157,7 @@
         "action.retry": "Erneut versuchen",
         "detail.back": "Zurück zu Agenten",
         "detail.changeSummary": "Ungespeicherte Änderungen",
+        "detail.deleted": "Agent gelöscht.",
         "detail.forbidden": "Ihr Konto hat keine Berechtigung zum Lesen dieses Agenten.",
         "detail.loadError": "Agent konnte nicht geladen werden.",
         "detail.loading": "Agent wird geladen…",
@@ -1254,6 +1261,7 @@
         "action.retry": "Riprova",
         "detail.back": "Torna agli agenti",
         "detail.changeSummary": "Modifiche non salvate",
+        "detail.deleted": "Agente eliminato.",
         "detail.forbidden": "Il tuo account non dispone dell'autorizzazione per leggere questo agente.",
         "detail.loadError": "Impossibile caricare l'agente.",
         "detail.loading": "Caricamento agente…",

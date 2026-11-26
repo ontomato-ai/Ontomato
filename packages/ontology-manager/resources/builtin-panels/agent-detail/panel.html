@@ -574,9 +574,6 @@
   .agent-detail-dropdown-danger {
     color: var(--sdk-color-danger);
   }
-  .agent-detail-operation-sources {
-    display: none !important;
-  }
   @container agent-detail-page (max-width: 720px) {
     .agent-detail-workspace {
       grid-template-columns: minmax(0, 1fr);
@@ -1105,13 +1102,6 @@
     <div v-else class="agent-detail-state">
       <sdk-empty :description="t('detail.missing')"></sdk-empty>
       <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
-    </div>
-
-    <!-- Keep the owner operation projections registered while the custom menu and segmented control own their presentation. -->
-    <div v-if="detailReady" class="agent-detail-operation-sources" aria-hidden="true">
-      <projection slot="remove" @done="onRemoveDone"></projection>
-      <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
-      <projection v-else slot="shareEnable" @done="onShareDone"></projection>
     </div>
 
     <!-- Shared multi-select capability pickers; confirming them fills owner form fields. -->
