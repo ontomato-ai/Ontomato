@@ -128,6 +128,21 @@ it("folds a member projection into its panel once per target", () => {
   expect(fromMain).toEqual([{ source: "asset:main", target: "object-type:Order", relation: "renders", storage: "ontology" }]);
 });
 
+it("treats a definition over a platform class as platform metadata, not a seed", () => {
+  const platformOnly = buildProductAssetGraph({
+    ...sources,
+      panels: [platformPanel],
+    projections: [{
+      ...memberView, id: "platform-view", data: { platform: memberView.data.platform },
+      operations: { remove: { operation: { kind: "PlatformOperation", id: "agents.delete" } } },
+    }],
+    applications: [{ id: "app", name: "Orders", panelIds: ["platform-panel"], defaultAgentIds: [] }],
+    agents: [],
+    objectDetailMappings: [],
+  });
+  expect(platformOnly).toEqual({ nodes: [], edges: [] });
+});
+
 it("drops assets that reach no business object type or definition, and what only they use", () => {
   const { nodes, edges } = buildProductAssetGraph(sources);
   const ids = new Set(nodes.map(node => node.id));

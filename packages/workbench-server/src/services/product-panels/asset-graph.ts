@@ -96,6 +96,8 @@ export function addProjectionGraphReferences(
   source = `asset:${projection.id}`,
 ) {
   for (const ref of projectionReadReferences(projection)) {
+    // A platform operation is the platform's own write surface, not an element of this domain's ontology.
+    if (ref.kind === "PlatformOperation") continue;
     const kind = ref.kind === "MetricView" ? "metric" : ref.kind === "Action" ? "action" : "definition";
     const isObjectType = ref.kind === "ObjectType" || ref.kind === "PlatformObjectType";
     const node = isObjectType
@@ -115,14 +117,13 @@ const CARRIED_RELATIONS: ReadonlySet<GraphEdge["relation"]> = new Set(["renders"
 
 const ASSET_KINDS: ReadonlySet<string> = new Set(["application", "page", "object-projection"]);
 
-function isPlatformObjectType(className: string) {
+export function isPlatformObjectType(className: string) {
   return Object.hasOwn(platformObjectTypes, className);
 }
 
-/** A business ontology element: the object types and definitions a product asset can be used for. */
+/** A business ontology element: an object type of this domain, never a platform-owned one. */
 function isBusinessOntologyNode(node: GraphNode) {
-  return node.kind === "definition"
-    || (node.kind === "object-type" && !isPlatformObjectType(node.id.slice("object-type:".length)));
+  return node.kind === "object-type" && !isPlatformObjectType(node.id.slice("object-type:".length));
 }
 
 /**
