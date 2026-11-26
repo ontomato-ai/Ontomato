@@ -367,6 +367,7 @@ describe("member access inspection", () => {
           { roleId: "role-1", roleCode: "Sales rep", apiPermissions: [], managementRole: false },
           { roleId: "role-2", roleCode: "Sales lead", apiPermissions: [], managementRole: false },
           { roleId: "role-3", roleCode: "Finance", apiPermissions: [], managementRole: false },
+          { roleId: "role-domain-member", roleCode: "domain_member", apiPermissions: [], managementRole: false },
         ]);
       }
       if (url.endsWith("/panel/governance/roles/options")) {
@@ -406,7 +407,10 @@ describe("member access inspection", () => {
     expect(value.canManage).toBe(true);
     expect(value.preselectedPolicyId).toBe(ownPolicyId);
     // The check reports its sources by id, so the answer carries the names the page shows above it.
-    expect(value.roleLabels).toEqual({ "role-1": "Sales rep", "role-2": "Sales lead", "role-3": "Finance" });
+    // The reserved role keeps out of the role directory; the platform-access code is its only name.
+    expect(value.roleLabels).toEqual({
+      "role-1": "Sales rep", "role-2": "Sales lead", "role-3": "Finance", "role-domain-member": "domain_member",
+    });
     expect(value.policyLabels).toEqual({
       [ownPolicyId]: "Sales data",
       [apiPolicyId]: "Sales console",
