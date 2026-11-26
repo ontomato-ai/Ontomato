@@ -743,3 +743,75 @@ describe("ontology model server operations", () => {
 function hostWithBody(status: number, body: unknown): PanelOperationHost {
   return owner(() => ({ status, body })).host;
 }
+
+describe("attribute option values in a save", () => {
+  const options = [
+    { value: "APPROVED", label: "Approved", tone: "success" },
+    { value: "DRAFT", label: "Draft" },
+  ];
+
+  it("forwards declared option values on create and keeps an explicitly emptied list on update", async () => {
+    const { host, requests } = owner(path => {
+      const resource = path.slice(path.indexOf("/ontology/model"));
+      if (resource === "/ontology/model/attributes?className=Device")
+        return { status: 200, body: [{ ...attributeView, type: "varchar", options }] };
+      return { status: resource.endsWith("/create") ? 201 : 200, body: { ...attributeView, type: "varchar", options } };
+    });
+
+    await saveAttribute.execute(
+      host,
+      { kind: "draft" },
+      {
+        values: {
+          className: "Device",
+          name: "size",
+          showName: "Size",
+          type: "varchar",
+          attrDesc: "",
+          enable: true,
+          businessKey: false,
+          primaryKey: false,
+          options,
+        },
+      },
+      "intent-1",
+    );
+    await saveAttribute.execute(
+      host,
+      attributeTarget,
+      {
+        values: { showName: "Size", attrDesc: "", enable: true, businessKey: false, options: [] },
+        submittedFields: ["/showName", "/attrDesc", "/enable", "/businessKey", "/options"],
+      },
+      "intent-2",
+    );
+
+    const create = requests.find(request => request.path.endsWith("/attribute/create"))!;
+    const update = requests.find(request => request.path.endsWith("/attribute/update"))!;
+    expect(create.body).toMatchObject({ options });
+    // An emptied list reaches the owner, so the attribute stops declaring option values.
+    expect(update.body).toMatchObject({ options: [] });
+  });
+
+  it("leaves the owner's stored option values alone when this save does not touch them", async () => {
+    const { host, requests } = owner(path => {
+      const resource = path.slice(path.indexOf("/ontology/model"));
+      if (resource === "/ontology/model/attributes?className=Device")
+        return { status: 200, body: [{ ...attributeView, type: "varchar", options }] };
+      return { status: 200, body: { ...attributeView, type: "varchar", options } };
+    });
+
+    await saveAttribute.execute(
+      host,
+      attributeTarget,
+      {
+        values: { showName: "Size", attrDesc: "", enable: true, businessKey: false },
+        submittedFields: ["/showName"],
+      },
+      "intent-3",
+    );
+
+    const update = requests.find(request => request.path.endsWith("/attribute/update"))!;
+    expect(Object.hasOwn(update.body, "options")).toBe(false);
+  });
+});

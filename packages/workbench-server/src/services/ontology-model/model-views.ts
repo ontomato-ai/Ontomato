@@ -18,6 +18,14 @@ export const objectTypeViewSchema = z.object({
   searchableAttributes: z.array(z.string()).optional(),
 }).strict();
 
+/** One declared option value: the value itself, the name shown for it, and its semantic tone when it has one. */
+export const attributeOptionSchema = z.object({
+  value: z.union([z.string(), z.number()]),
+  label: z.string().min(1),
+  tone: z.enum(["default", "info", "success", "warning", "danger"]).optional(),
+}).strict();
+export type AttributeOption = z.infer<typeof attributeOptionSchema>;
+
 export const attributeViewSchema = z.object({
   className: z.string(),
   name: z.string(),
@@ -27,6 +35,8 @@ export const attributeViewSchema = z.object({
   enable: z.boolean(),
   businessKey: z.boolean(),
   primaryKey: z.boolean(),
+  /** Omitted when the attribute declares no option values. */
+  options: z.array(attributeOptionSchema).optional(),
 }).strict();
 
 export const relationshipViewSchema = z.object({
