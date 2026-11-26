@@ -4,18 +4,34 @@ import { assistantService } from "./service";
 import { assistantStore } from "./store";
 import { withScheduledUserActivity } from "./scheduled-activity";
 import { HttpError } from "../../utils/errors";
-import { checkedForm, completeForm, emptyExecution, instruction, option, scheduledSessionId, select, type ScheduleApplication } from "../scheduling/application";
+import { checkedForm, completeForm, emptyExecution, instruction, option, scheduledSessionId, select, summarizeFields, type ScheduleApplication, type ScheduleContext } from "../scheduling/application";
 import { scheduledConversationStatus } from "../scheduling/conversation";
+
+async function agentChoices({ owner, credentials }: ScheduleContext) {
+  const zh = credentials.locale?.startsWith("zh");
+  const agents = await assistantStore.agents(owner.domainId);
+  const options = (await allowedAgents(agents, "USE", credentials))
+    .map(agent => option(agent.id, agent.name, agent.enabled ? null : zh ? "智能体已停用" : "Agent disabled", agent.description));
+  return { agents, options };
+}
+
+function agentFields(zh: boolean | undefined, options: ReturnType<typeof option>[]) {
+  return [select("agentId", zh ? "智能体" : "Agent", options), instruction(zh ? "指令" : "Instruction")];
+}
 
 export const assistantScheduleApplication: ScheduleApplication = {
   id: "agents",
   description(locale) { return locale?.startsWith("zh") ? "按指令运行一个智能体" : "Run an agent with your instructions"; },
   async authorize() {},
-  async form(input, { owner, credentials }) {
-    const zh = credentials.locale?.startsWith("zh");
-    const agents = await assistantStore.agents(owner.domainId);
-    const options = (await allowedAgents(agents, "USE", credentials))
-      .map(agent => option(agent.id, agent.name, agent.enabled ? null : zh ? "智能体已停用" : "Agent disabled", agent.description));
+  async describeTargets(contents, context) {
+    const { options } = await agentChoices(context);
+    const fields = agentFields(context.credentials.locale?.startsWith("zh"), options);
+    const names = new Map(options.map(item => [item.value, item.label]));
+    return contents.map(content => ({ name: names.get(content.agentId) ?? null, summary: summarizeFields(fields, content) }));
+  },
+  async form(input, context) {
+    const zh = context.credentials.locale?.startsWith("zh");
+    const { agents, options } = await agentChoices(context);
     const selected = input.values.agentId;
     if (selected && !options.some(entry => entry.value === selected)) {
       const reason = agents.some(agent => agent.id === selected)
@@ -23,10 +39,7 @@ export const assistantScheduleApplication: ScheduleApplication = {
         : zh ? "智能体已不存在" : "Agent no longer exists";
       options.push(option(selected, selected, reason));
     }
-    return completeForm("agents", "agents-v1", [
-      select("agentId", zh ? "智能体" : "Agent", options),
-      instruction(zh ? "指令" : "Instruction"),
-    ], input.values);
+    return completeForm("agents", "agents-v1", agentFields(zh, options), input.values);
   },
   async validate(input, context) {
     const form = await this.form({ values: input.content, changedField: null, taskId: null, timeZone: input.timeZone }, context);

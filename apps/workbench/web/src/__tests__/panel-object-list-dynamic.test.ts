@@ -6,7 +6,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { BUSINESS_KNOWLEDGE, TRIGGER } from "@ontomato/contracts/platform-object-types";
 import {
   createDirectPanelInstance,
   type PanelMemberReadRequest,
@@ -109,7 +109,7 @@ describe("ObjectList dynamicColumns, showColumnToggle, and exportable", () => {
         config: {},
         data: {
           rows: {
-            source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+            source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
             read: "list",
             params: {},
           },
@@ -225,7 +225,7 @@ describe("ObjectList dynamicColumns, showColumnToggle, and exportable", () => {
         },
         data: {
           rows: {
-            source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+            source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
             read: "list",
             params: { className: { input: "className" } },
           },

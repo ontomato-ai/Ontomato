@@ -26,7 +26,7 @@ import {
  * the panels that use it, and a reader's unsaved form replaced by a definition change.
  */
 
-const SCHEDULED_TASK = "platform:ScheduledTask";
+const SCHEDULED_TASK = "platform:Trigger";
 
 /** The host's words, as the platform supplies them in the reader's language. */
 const labels: PanelHostLabels = {

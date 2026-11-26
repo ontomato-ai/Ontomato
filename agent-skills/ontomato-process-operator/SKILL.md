@@ -28,7 +28,7 @@ description: 以使用方主体身份在 Ontomato/Praxis 上办事：按需求�
 
 - `inbox` 里能看到这个 `stepId` → 走 Praxis；
 - 只有一个业务对象、没有 `runId` → 走 Ontomato 拉式 `run`；
-- 管理员用 Trigger 启动的 workflow → 先查 Praxis `runs`。
+- 管理员用任务触发启动的流程 → 先查 Praxis `runs`。
 
 ---
 
@@ -409,7 +409,7 @@ node client.mjs case-close <runId>
 | 400 `Missing parameter: X` | Action 参数缺失 | 按 `function.parameters` 补 |
 | 400 `preconditions are not met` | 不是你的回合/状态不对 | 查业务对象当前节点/状态 |
 | 400 `Step is X, not waiting` | 已决定/已执行 | 查 `run-status`，不要重复决定 |
-| 409 `duplicate key` | Trigger 同一槽重复点火 | 视为已点火，去查已有 Run |
+| 409 `duplicate key` | 任务触发在同一计划时刻重复发起 | 视为已点火，去查已有 Run |
 | `No published pending-items query` | 流程没有生成待办查询 | 检查 `runContract`/`activationNotes`，让管理员重新激活 |
 | `Praxis 连不上` | 账本服务没起 | `pnpm dev:praxis` 或由管理员起；拉式 Action 仍可用 |
 

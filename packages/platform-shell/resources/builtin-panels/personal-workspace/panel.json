@@ -98,7 +98,7 @@
       "selectedTask": {
         "type": {
           "kind": "object",
-          "objectType": "platform:ScheduledTask"
+          "objectType": "platform:Trigger"
         }
       }
     },
@@ -518,7 +518,7 @@
       },
       "scheduledTasks": {
         "component": "ScheduledTaskSummaryList",
-        "type": "platform:ScheduledTask",
+        "type": "platform:Trigger",
         "data": {
           "rows": "list"
         },

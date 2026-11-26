@@ -5,7 +5,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { TRIGGER } from "@ontomato/contracts/platform-object-types";
 import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
 import { noOperations, directRun } from "./panel-frame";
 
@@ -19,7 +19,7 @@ import { noOperations, directRun } from "./panel-frame";
 const base = { domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "", revision: 1 };
 const summary: DirectProjection = {
   ...base, id: "task-summary", name: "Task", componentId: "@ontomato/sdk:ObjectSummary",
-  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
+  inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {}, config: {},
   data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
 };
 const manifest: DirectPanelManifest = {

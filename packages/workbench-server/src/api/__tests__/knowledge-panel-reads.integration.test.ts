@@ -752,7 +752,7 @@ it("checks the operation target at registration and when preparing a button", as
 
   const wrongProjectionId = "projection-knowledge-approve-task";
   const wrongProjection = await request("PUT", "product-projections/" + wrongProjectionId, {
-    ...approve, revision: 0, inputs: { knowledge: { kind: "object", objectType: "platform:ScheduledTask" } },
+    ...approve, revision: 0, inputs: { knowledge: { kind: "object", objectType: "platform:Trigger" } },
   });
   expect(wrongProjection.status).toBe(400);
   expect(await wrongProjection.json()).toMatchObject({ error: {

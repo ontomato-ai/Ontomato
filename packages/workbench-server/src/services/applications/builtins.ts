@@ -1,5 +1,16 @@
 import type { BuiltinApplication } from "@ontomato/contracts/platform-identity";
 
+const taskTriggerNames = {
+  "en": "Task triggers",
+  "zh-CN": "任务触发",
+  "zh-TW": "任務觸發",
+  "ja": "タスクトリガー",
+  "de": "Aufgabenauslöser",
+  "fr": "Déclencheurs de tâches",
+  "it": "Trigger delle attività",
+  "ar": "مشغّلات المهام",
+};
+
 export const workbenchApplications: BuiltinApplication[] = [
   {
     id: "application-gallery", kind: "native", rail: "top", category: "business", sort: 2,
@@ -205,10 +216,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     "allowStandalone": false,
     "framePanelId": "builtin-product-platform-frame",
     "declaration": {
-      "names": {
-        "en": "Scheduled tasks",
-        "zh-CN": "定时任务"
-      },
+      "names": taskTriggerNames,
       "descriptions": {
         "en": "Run analyses and reports on a recurring schedule",
         "zh-CN": "按周期自动运行分析与报告"
@@ -223,16 +231,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "path": "/schedules",
         "icon": "schedule",
         "inputs": { "schedulesApplication": { "literal": { "className": "platform:Application", "primaryKey": "schedules" } } },
-        "names": {
-          "en": "Scheduled tasks",
-          "zh-CN": "定时任务",
-          "zh-TW": "排程任務",
-          "ja": "定期タスク",
-          "de": "Geplante Aufgaben",
-          "fr": "Tâches planifiées",
-          "it": "Attività pianificate",
-          "ar": "المهام المجدولة"
-        },
+        "names": taskTriggerNames,
         "descriptions": {
           "en": "Schedule application tasks and review their execution history",
           "zh-CN": "配置各应用的定时任务，查看执行记录与结果"

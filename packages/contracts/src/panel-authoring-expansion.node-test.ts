@@ -5,7 +5,7 @@ import { bindPanelAuthoringChart, expandPanelAuthoringMember, panelAuthoringMemb
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { declaredCustomerFormSaveName, hasDeclaredPlatformFormSave } from "./panel-projection";
 import { dashboardCardPrimaryKey } from "./dashboard";
-import { ATTRIBUTE, OBJECT_TYPE, CREATE_SCHEDULED_TASK, DASHBOARD_CARD, customerOntologyReads, platformObjectTypes } from "./platform-object-types";
+import { ATTRIBUTE, OBJECT_TYPE, CREATE_TRIGGER, DASHBOARD_CARD, customerOntologyReads, platformObjectTypes } from "./platform-object-types";
 import { platformTypeTableEntrySchema } from "./platform-type-table";
 import { productProjectionInputSchema } from "./product-panels";
 
@@ -521,7 +521,7 @@ test("short list row operations, fromSlot nested projections, object-union targe
   // 4. Accepts object-union target state for operations.
   const unionState = panelManifestSchema.parse({
     state: {
-      chosen: { type: { kind: "object-union", objectTypes: [type, "platform:ScheduledTask"] } },
+      chosen: { type: { kind: "object-union", objectTypes: [type, "platform:Trigger"] } },
     },
     members: {},
   }).state;
@@ -946,7 +946,7 @@ test("operation params support declarative formField and formFields wiring for c
   assert.equal(declaredCustomerFormSaveName(mixedWithPlatformSave, false), undefined);
 
   const mixedWithPlatformCreate = {
-    create: { operation: { kind: "PlatformOperation" as const, id: CREATE_SCHEDULED_TASK } },
+    create: { operation: { kind: "PlatformOperation" as const, id: CREATE_TRIGGER } },
     review: { operation: { kind: "Action" as const, id: "review-task" } },
   };
   assert.equal(hasDeclaredPlatformFormSave(mixedWithPlatformCreate), true);

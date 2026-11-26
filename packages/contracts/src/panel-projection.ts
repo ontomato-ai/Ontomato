@@ -328,7 +328,7 @@ export const panelReadParameterSchemas = {
   sort: runtimeJsonValueSchema,
   cursor: z.string(),
   scheduledRunId: runtimeIdSchema,
-  scheduledTaskRef: panelObjectRefSchema.extend({ className: z.literal("platform:ScheduledTask") }),
+  triggerRef: panelObjectRefSchema.extend({ className: z.literal("platform:Trigger") }),
   size: positiveInteger,
   auditLogBusiness: z.enum(["BKNOWLEDGE", "BTERM", "BEXAMPLE", "SCHEMA", "ANALYSIS"]),
   auditLogOperation: z.enum(["ADD", "UPD", "DEL"]),
@@ -404,8 +404,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "ontologyParameter":
     case "sort":
       return input !== undefined;
-    case "scheduledTaskRef":
-      return input?.kind === "object" && input.objectType === "platform:ScheduledTask";
+    case "triggerRef":
+      return input?.kind === "object" && input.objectType === "platform:Trigger";
     case "graphNode":
       return input?.kind === "object" || input?.kind === "object-union" || input?.kind === "json";
     default:

@@ -8,7 +8,7 @@ import type { PanelSecretDelivery } from "@ontomato/contracts/panel-agent";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { APPLICATION, PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, PRODUCT_PANEL, TRIGGER } from "@ontomato/contracts/platform-object-types";
 import {
   createDirectPanelInstance,
   type DirectPanelInstance,
@@ -171,10 +171,10 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
           ],
         },
       },
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
       operations: {
-        inspect: { operation: { kind: "PlatformOperation", id: "schedules.inspectTask" }, target: { row: true } },
-        remove: { operation: { kind: "PlatformOperation", id: "schedules.deleteTask" }, target: { rowField: "related" } },
+        inspect: { operation: { kind: "PlatformOperation", id: "fixture:inspectTask" }, target: { row: true } },
+        remove: { operation: { kind: "PlatformOperation", id: "triggers.delete" }, target: { rowField: "related" } },
       },
     };
     const manifest = definePanel({
@@ -197,12 +197,12 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       answer(request) {
         if (!request.operations) return ready([{
           primaryKey: "clicked", label: "Task",
-          fields: { related: { kind: "reference", className: SCHEDULED_TASK, primaryKey: "related", label: "Related task" } },
+          fields: { related: { kind: "reference", className: TRIGGER, primaryKey: "related", label: "Related task" } },
         }]);
         const descriptor = { kind: "action", target: { source: "row" }, inputSchema: {}, resultSchema: {}, batch: false };
         return ready({
-          inspect: { ...descriptor, effect: "read", handlerRef: "schedules.inspectTask", label: "Inspect" },
-          remove: { ...descriptor, effect: "write", handlerRef: "schedules.deleteTask", label: "Remove" },
+          inspect: { ...descriptor, effect: "read", handlerRef: "fixture:inspectTask", label: "Inspect" },
+          remove: { ...descriptor, effect: "write", handlerRef: "triggers.delete", label: "Remove" },
         });
       },
     });
@@ -217,13 +217,13 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     ]));
     buttons[0]!.click();
     await vi.waitFor(() => expect(readOperation).toHaveBeenCalledWith("tasks.inspect", {
-      target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "clicked" }, input: {},
+      target: { kind: "object", objectType: TRIGGER, primaryKey: "clicked" }, input: {},
     }, undefined, undefined));
     await vi.waitFor(() => expect(buttons[1]!.disabled).toBe(false));
     buttons[1]!.click();
     await vi.waitFor(() => expect(preparedCalls[0]).toMatchObject({
       operationId: "tasks.remove",
-      invocation: { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "related" } } },
+      invocation: { call: { target: { kind: "object", objectType: TRIGGER, primaryKey: "related" } } },
     }));
     await vi.waitFor(() => expect(instance.secretDeliveries.value).toEqual([secret]));
   });
@@ -241,7 +241,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       name: "Tasks",
       componentId: "@ontomato/sdk:ObjectList",
       inputs: {},
-      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      outputs: { selected: { kind: "object", objectType: TRIGGER } },
       config: {
         columns: [
           { key: "label", labelKey: "col.name", width: "240px" },
@@ -258,16 +258,16 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
         },
       },
       data: {
-        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
       },
       operations: {
         runNow: {
-          operation: { kind: "PlatformOperation", id: "schedules.runNow" },
+          operation: { kind: "PlatformOperation", id: "triggers.runNow" },
           target: { row: true },
           params: { schedule: { rowField: "schedule" }, source: { literal: "table-row" } },
         },
         remove: {
-          operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
+          operation: { kind: "PlatformOperation", id: "triggers.delete" },
           target: { row: true },
         },
       },
@@ -275,7 +275,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
 
     const manifest = definePanel({
       state: {
-        selected: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: false },
+        selected: { type: { kind: "object", objectType: TRIGGER }, deepLink: false },
       },
       members: {
         tasks: {
@@ -286,11 +286,11 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     });
 
     const rowOps = {
-      [panelRowOperationKey(rows[0]!, SCHEDULED_TASK)]: {
+      [panelRowOperationKey(rows[0]!, TRIGGER)]: {
         runNow: { available: true },
         remove: { available: true },
       },
-      [panelRowOperationKey(rows[1]!, SCHEDULED_TASK)]: {
+      [panelRowOperationKey(rows[1]!, TRIGGER)]: {
         runNow: { available: true },
         remove: { available: false, unavailable: { reason: "System task cannot be removed" } },
       },
@@ -311,7 +311,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
           return ready({
             runNow: {
               kind: "action",
-              handlerRef: "schedules.runNow",
+              handlerRef: "triggers.runNow",
               label: "Run now",
               effect: "write",
               target: { source: "input", input: "task" },
@@ -321,7 +321,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
             },
             remove: {
               kind: "action",
-              handlerRef: "schedules.deleteTask",
+              handlerRef: "triggers.delete",
               label: "Delete",
               effect: "write",
               target: { source: "input", input: "task" },
@@ -368,7 +368,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     expect(rowActionEvents).toHaveLength(1);
     expect(rowActionEvents[0]).toMatchObject({
       id: "edit",
-      ref: { className: SCHEDULED_TASK, primaryKey: "t-1" },
+      ref: { className: TRIGGER, primaryKey: "t-1" },
       index: 0,
     });
 
@@ -379,7 +379,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       operationId: "tasks.runNow",
       invocation: {
         call: {
-          target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+          target: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" },
           input: { schedule: "0 0 * * *", source: "table-row" },
         },
       },
@@ -586,7 +586,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
         componentId: "@ontomato/sdk:ObjectList",
         data: {
           rows: {
-            source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+            source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
             read: "list",
             params: {},
           },
@@ -640,7 +640,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
 
     // Clicking a row emits choose even though no `selected` state is bound.
     element.querySelector<HTMLTableRowElement>('tr[data-row-item="true"]')!.click();
-    expect(chosen).toEqual([{ className: SCHEDULED_TASK, primaryKey: "app-1" }]);
+    expect(chosen).toEqual([{ className: TRIGGER, primaryKey: "app-1" }]);
 
     // Narrowing to zero matches updates filteredCount to 0.
     instance.state.set("search", "nonexistent");
@@ -732,11 +732,11 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
         columns: [{ key: "label", labelKey: "col.name" }],
       },
       data: {
-        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
       },
       operations: {
         triggerOne: {
-          operation: { kind: "PlatformOperation", id: "schedules.triggerOne" },
+          operation: { kind: "PlatformOperation", id: "fixture:triggerOne" },
           target: { row: true },
           params: {
             source: { literal: "table-row" },
@@ -747,7 +747,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
           },
         },
         triggerWithDialog: {
-          operation: { kind: "PlatformOperation", id: "schedules.triggerWithDialog" },
+          operation: { kind: "PlatformOperation", id: "fixture:triggerWithDialog" },
           target: { row: true },
           params: {
             source: { literal: "table-row" },
@@ -785,7 +785,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
           return ready({
             triggerOne: {
               kind: "action",
-              handlerRef: "schedules.triggerOne",
+              handlerRef: "fixture:triggerOne",
               label: "Trigger",
               effect: "write",
               target: { source: "input", input: "task" },
@@ -806,7 +806,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
             },
             triggerWithDialog: {
               kind: "action",
-              handlerRef: "schedules.triggerWithDialog",
+              handlerRef: "fixture:triggerWithDialog",
               label: "Trigger with Note",
               effect: "write",
               target: { source: "input", input: "task" },
@@ -826,7 +826,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
           });
         }
         return ready(rows, {
-          [panelRowOperationKey(rows[0]!, SCHEDULED_TASK)]: {
+          [panelRowOperationKey(rows[0]!, TRIGGER)]: {
             triggerOne: { available: true },
             triggerWithDialog: { available: true },
           },
@@ -852,7 +852,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       operationId: "tasks.triggerOne",
       invocation: {
         call: {
-          target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+          target: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" },
           input: {
             source: "table-row",
             env: "prod",
@@ -893,7 +893,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       operationId: "tasks.triggerWithDialog",
       invocation: {
         call: {
-          target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+          target: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" },
           input: {
             source: "table-row",
             schedule: "0 0 * * *",

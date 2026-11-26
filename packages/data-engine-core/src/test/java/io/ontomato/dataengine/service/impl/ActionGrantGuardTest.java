@@ -375,11 +375,13 @@ class ActionGrantGuardTest {
   }
 
   @Test
-  void scheduledRunsReturnTheRefusalMessageForTheGrantsThreeRefusals() throws Exception {
+  void scheduledRunsDistinguishAuthorizationFromPreconditionRefusals() throws Exception {
     Action action = publishedAction();
     grantAnswer(false);
-    PythonExecuteResult unauth = service.executeScheduled(action, params(), LANG, alice, permission, 5, UUID.randomUUID());
-    assertEquals("No role grants this action", unauth.getError());
+    var unauth = assertThrows(ActionAuthorization.Denied.class,
+        () -> service.executeScheduled(action, params(), LANG, alice, permission, 5, UUID.randomUUID()));
+    assertEquals("ACTION_NOT_GRANTED", unauth.code());
+    assertEquals("No role grants this action", unauth.getMessage());
 
     grantAnswer(true);
     when(preconditions.evaluate(any(), any(), any(), any(), any()))
@@ -391,8 +393,10 @@ class ActionGrantGuardTest {
     var queries = mock(io.ontomato.dataengine.service.OntologyQueryService.class);
     ReflectionTestUtils.setField(service, "queries", queries);
     when(queries.actionTargetExists(any(), anyString(), any(), any())).thenReturn(false);
-    PythonExecuteResult target = service.executeScheduled(action, params(), LANG, alice, permission, 5, UUID.randomUUID());
-    assertEquals("Target is outside scope", target.getError());
+    var target = assertThrows(ActionAuthorization.Denied.class,
+        () -> service.executeScheduled(action, params(), LANG, alice, permission, 5, UUID.randomUUID()));
+    assertEquals("ACTION_TARGET_OUT_OF_SCOPE", target.code());
+    assertEquals("Target is outside scope", target.getMessage());
   }
 
   @Test

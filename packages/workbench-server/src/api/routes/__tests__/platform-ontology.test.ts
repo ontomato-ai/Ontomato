@@ -6,7 +6,7 @@ import { platformOntologyCountsResponseSchema, platformOntologySchemaResponseSch
 import { APPLICATION, platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
-import { AuthFailedError, backendGet, backendPost } from "../../../utils/backend-client";
+import { AuthFailedError, BackendResponseError, backendGet, backendPost } from "../../../utils/backend-client";
 import { listAgentDefinitionNodes } from "../../../services/assistant/definition-relations";
 import { assistantSkillCatalog } from "../../../services/assistant/skills";
 import { listPublishedDefinitions } from "../../../services/business-definitions/definitions";
@@ -130,18 +130,20 @@ describe("platform-ontology HTTP routes", () => {
   it("returns owner counts without replacing a refusal with zero or querying the list", async () => {
     vi.mocked(backendPost).mockImplementation(async (_endpoint, url, body) => {
       expect(body).toEqual({ countOnly: true });
-      const denied = url.endsWith("/trigger/queryList");
       const data = url.endsWith("/admin/getMetas") ? { objectTypes: 2, attributes: 10, relationships: 3 }
         : url.endsWith("/platform/governance/organization") ? { units: 0, positions: 0, grants: 0 }
         : url.endsWith("/workflow/grants") ? { total: 0, outsideDirectory: 0 }
         : { total: 8 };
       return {
-        text: JSON.stringify(denied ? { success: false, code: 403, message: "Not admitted" } : { success: true, data }),
+        text: JSON.stringify({ success: true, data }),
         headers: new Headers(), status: 200, statusText: "OK",
       };
     });
-    vi.mocked(backendGet).mockResolvedValueOnce({
-      text: JSON.stringify({ success: true, data: { total: 0 } }), headers: new Headers(), status: 200, statusText: "OK",
+    vi.mocked(backendGet).mockImplementation(async (_endpoint, url) => {
+      if (url.endsWith("/platform/triggers?countOnly=true")) {
+        throw new BackendResponseError(403, JSON.stringify({ error: { code: "PERMISSION_DENIED", message: "Not admitted" } }));
+      }
+      return { text: JSON.stringify({ success: true, data: { total: 0 } }), headers: new Headers(), status: 200, statusText: "OK" };
     });
     const response = await fetch(`${base}/api/platform-ontology/counts`);
     expect(response.status).toBe(200);

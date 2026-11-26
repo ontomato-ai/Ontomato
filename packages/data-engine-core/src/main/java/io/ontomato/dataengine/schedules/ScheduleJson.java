@@ -57,6 +57,13 @@ public final class ScheduleJson {
     return value.get(key).asText();
   }
 
+  public static String optionalText(JsonNode value, String key) {
+    var field = value.path(key);
+    if (field.isMissingNode() || field.isNull()) return null;
+    if (!field.isTextual()) throw bad("Invalid " + key);
+    return field.textValue();
+  }
+
   public static void content(JsonNode value) {
     if (value == null
         || !value.isObject()

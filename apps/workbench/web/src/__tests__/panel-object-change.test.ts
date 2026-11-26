@@ -7,7 +7,7 @@ import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import type { DisplayObjectRefresh } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { panelAnswer,
-  currentSdk, installPlatform, leaveFrame, manifestP, nothingAt, panelRecord, panelSnapshot, panelUse, SCHEDULED_TASK,
+  currentSdk, installPlatform, leaveFrame, manifestP, nothingAt, panelRecord, panelSnapshot, panelUse, TRIGGER,
   projections, providePlatform, task, type Sent,
 } from "./panel-frame";
 
@@ -54,7 +54,7 @@ it("refreshes the shown panel instance when a conversation write reports matchin
     await vi.waitFor(() => expect(document.querySelector(".panel-host-coded > *")).not.toBeNull());
     await vi.waitFor(() => expect(reads.length).toBeGreaterThan(0));
     const initialReads = reads.length;
-    const target = { objectType: SCHEDULED_TASK, primaryKey: task.id };
+    const target = { objectType: TRIGGER, primaryKey: task.id };
 
     // An unrelated object type does not trigger a re-read of this panel's scheduled-task member.
     refresh.value = { seq: 1, target: null, affected: { objects: [], objectTypes: [OBJECT_TYPE] } };
@@ -63,7 +63,7 @@ it("refreshes the shown panel instance when a conversation write reports matchin
     expect(reads.length).toBe(initialReads);
 
     // A write affecting this panel's bound object type re-reads its data.
-    refresh.value = { seq: 2, target: null, affected: { objects: [target], objectTypes: [SCHEDULED_TASK, OBJECT_TYPE] } };
+    refresh.value = { seq: 2, target: null, affected: { objects: [target], objectTypes: [TRIGGER, OBJECT_TYPE] } };
     await vi.waitFor(() => expect(reads.length).toBeGreaterThan(initialReads));
   } finally {
     app.unmount();

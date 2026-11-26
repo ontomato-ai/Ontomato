@@ -301,7 +301,7 @@ describe("a page view's live frames", () => {
     await dispatch(host, { type: "ready", connectionId: c });
     expect(shell.ready).toHaveBeenCalledTimes(1);
     onNotice.mockClear();
-    const changed = { type: "object-changed" as const, session: { providerId: "workbench", sessionId: a }, target: { objectType: "platform:ScheduledTask", primaryKey: "task-1" } };
+    const changed = { type: "object-changed" as const, session: { providerId: "workbench", sessionId: a }, target: { objectType: "platform:Trigger", primaryKey: "task-1" } };
     host.handlers.value!.view!.frame(changed);
     await settle();
     expect(shell.objectChanged).toHaveBeenCalledWith(changed);

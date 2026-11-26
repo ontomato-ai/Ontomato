@@ -9,7 +9,7 @@
     "path": "/ontology",
     "renderer": "ontology"
   },
-  "scheduleAdapter": "java:ontology",
+  "scheduleAdapter": null,
   "framePanelId": "builtin-product-ontology-frame",
   "allowStandalone": false,
   "declaration": {
@@ -105,11 +105,21 @@
       "descriptions": {"en": "Define workflow steps, execution roles, and case record permissions", "zh-CN": "定义流程步骤、执行角色与单据权限"},
       "names": {"en": "Workflows", "zh-CN": "工作流"}, "groupKey": "capabilities"
     }, {
-      "id": "ontology-triggers", "pageKey": "ontology-triggers", "panelId": "builtin-product-ontology-triggers",
-      "defaultAgent": { "kind": "preset", "agentKind": "modeling" },
+      "id": "ontology-triggers", "pageKey": "ontology-triggers", "panelId": "builtin-product-scheduled-tasks",
+      "defaultAgent": { "kind": "preset", "agentKind": "admin" },
       "path": "/ontology/assets/triggers",
-      "descriptions": {"en": "Define when workflows start", "zh-CN": "配置流程的启动时机"},
-      "names": {"en": "Triggers", "zh-CN": "触发"}, "groupKey": "capabilities"
+      "inputs": { "schedulesApplication": { "literal": { "className": "platform:Application", "primaryKey": "schedules" } } },
+      "descriptions": {"en": "Configure task triggers for actions, workflows, and applications, and review their execution history", "zh-CN": "配置动作、流程与应用的任务触发，并查看运行记录"},
+      "names": {
+        "en": "Task triggers",
+        "zh-CN": "任务触发",
+        "zh-TW": "任務觸發",
+        "ja": "タスクトリガー",
+        "ar": "مشغّلات المهام",
+        "fr": "Déclencheurs de tâches",
+        "de": "Aufgabenauslöser",
+        "it": "Trigger delle attività"
+      }, "groupKey": "capabilities"
     }, {
       "id": "ontology-skills", "pageKey": "skills-library", "panelId": "builtin-product-skills-library",
       "defaultAgent": { "kind": "preset", "agentKind": "modeling" },

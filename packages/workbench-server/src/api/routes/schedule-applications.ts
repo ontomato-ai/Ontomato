@@ -2,7 +2,6 @@ import { timingSafeEqual } from "node:crypto";
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { z } from "zod";
 import {
-  platformScheduleApplicationSchema,
   platformScheduleErrorSchema,
   platformScheduleExecutionRequestSchema,
   platformScheduleExecutionStateSchema,
@@ -18,7 +17,7 @@ import { getRequestId } from "../../logging/log-context";
 import { createLogger } from "../../logging/logger";
 import { context } from "../utils/agent-host";
 import { HttpError } from "../../utils/errors";
-import { describeScheduleApplication, scheduleApplication } from "../../services/scheduling/applications";
+import { scheduleApplication } from "../../services/scheduling/applications";
 
 const logger = createLogger("schedule-applications");
 function requirePlatform(req: Request) {
@@ -52,9 +51,6 @@ export const scheduleExecutionStatus = route(async (req, res) => {
 });
 
 export const scheduleApplicationsRouter = Router();
-scheduleApplicationsRouter.get("/:appId", route(async (req, res) => {
-  res.json(platformScheduleApplicationSchema.parse(await describeScheduleApplication(req.params.appId, context(req))));
-}));
 scheduleApplicationsRouter.post("/:appId/form", route(async (req, res) => {
   const application = scheduleApplication(req.params.appId), caller = context(req);
   res.json(platformScheduleFormSchema.parse(await application.form(platformScheduleFormRequestSchema.parse(req.body), caller)));

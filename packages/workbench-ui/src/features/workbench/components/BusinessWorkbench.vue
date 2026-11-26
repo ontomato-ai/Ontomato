@@ -15,7 +15,7 @@ import { panelAddress } from "@ontomato/contracts/panel-host";
 import { createSchedulesApi } from "@ontomato/platform-schedules";
 import { scheduledTaskFrequencyText } from "@ontomato/platform-schedules/panel-text";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
-import { schedulesHost } from "../../../utils/schedules-host";
+import { nodeApiRequest } from "../../../utils/api";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback, createPanelOperationSettings } from "../assistant-host";
@@ -201,8 +201,11 @@ const selectedSchedule = computed(() => inStandaloneSchedules.value ? scheduleQu
 const creatingSchedule = computed(() => inStandaloneSchedules.value && scheduleQuery.value.get("workspaceCompose") === "new");
 const scheduleTasks = ref<PlatformTask[]>([]);
 const scheduleLoadFailed = ref(false);
-const schedulesApi = createSchedulesApi(schedulesHost({ applications: () => [], openResult: () => {} }));
-const agentSchedules = computed(() => scheduleTasks.value.filter(task => task.content.agentId === agentId.value));
+const schedulesApi = createSchedulesApi({ request: nodeApiRequest });
+function scheduleAgentId(task: PlatformTask | undefined) {
+  return task?.targetKind === "application" && task.appId === "agents" ? task.content.agentId : undefined;
+}
+const agentSchedules = computed(() => scheduleTasks.value.filter(task => scheduleAgentId(task) === agentId.value));
 let scheduleRead = 0;
 async function loadSchedules() {
   if (!props.internalPages?.schedules) return;
@@ -369,7 +372,7 @@ const nav = useAgentNav({
 watch(
   () => [selectedSchedule.value, creatingSchedule.value, scheduleTasks.value, nav.agents.value] as const,
   ([taskId, creating]) => {
-    const target = creating ? scheduleQuery.value.get("workspaceAgent") : scheduleTasks.value.find(task => task.id === taskId)?.content.agentId;
+    const target = creating ? scheduleQuery.value.get("workspaceAgent") : scheduleAgentId(scheduleTasks.value.find(task => task.id === taskId));
     if (typeof target === "string" && nav.agents.value.some(agent => agent.id === target) && target !== agentId.value) {
       nav.adoptAgent(target);
     }

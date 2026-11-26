@@ -55,8 +55,7 @@ const ALLOWED: readonly Access[] = [
   ["GET", /^\/dashboards\/[^/]+$/],
   ["POST", /^\/dashboards\/groups$/],
   ["POST", /^\/dashboards\/card-parameter-form$/],
-  // schedule-applications.ts: description and parameter validation, not a run
-  ["GET", /^\/platform\/schedule-applications\/[^/]+$/],
+  // schedule-applications.ts: forms and parameter validation, not a run
   ["POST", /^\/platform\/schedule-applications\/[^/]+\/(?:form|validate)$/],
   // workspaces.ts: workspace metadata, files and test-context status, not publish or start
   ["GET", /^\/workspaces(?:\/.*)?$/],

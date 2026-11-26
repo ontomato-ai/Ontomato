@@ -51,8 +51,9 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
     useSessionRunFeed: () => {},
   };
 });
-vi.mock("../../../utils/schedules-host", () => ({
-  schedulesHost: () => ({ request: async () => Response.json(scheduleResponse) }),
+vi.mock("../../../utils/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/api")>()),
+  nodeApiRequest: async () => Response.json(scheduleResponse),
 }));
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../assistant-host", () => ({
@@ -162,7 +163,7 @@ it("opens a dashboard saved from a DataAgent conversation through the dashboard 
 it("opens the selected agent's schedule in the main workbench while retaining the session", async () => {
   const sessionId = "44444444-4444-4444-8444-444444444444";
   const page = "/applications/app-data-agent-workbench/schedules";
-  const example = examples.creates[0]!.response;
+  const example = examples.creates.find(item => item.name === "agents-instruction")!.response;
   scheduleResponse.tasks = [
     { ...example, title: "Sales review", appId: "agents", content: { agentId: sales!.id, instruction: "Review sales" } },
     { ...example, id: "66666666-6666-4666-8666-666666666666", title: "Other review", appId: "agents",

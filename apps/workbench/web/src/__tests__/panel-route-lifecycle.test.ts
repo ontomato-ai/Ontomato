@@ -12,7 +12,7 @@ import { platformLayoutRoute } from "../../../../../packages/platform-web/src/la
 import {
   APPLICATION_ENTRY_PATH, sentPanelReadItems, isPanelDataRead,
   ignoreChanges, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
-  panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, type Sent,
+  panelSnapshot, panelUse, projections, TRIGGER, task, type Sent,
 } from "./panel-frame";
 
 /*
@@ -31,7 +31,7 @@ const p = panelRecord("panel-schedules-trial", "Trial panel P", manifestP);
 const q = panelRecord("panel-schedules-summary", "Trial panel Q", manifestQ);
 const useP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", p.id, `/applications/${appA}/tasks`);
 const useQ = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/applications/${appB}/summary`);
-const deepState = { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } };
+const deepState = { selectedTask: { className: TRIGGER, primaryKey: task.id } };
 const fieldLabels = { application: "Application", settings: "Settings" };
 
 /** The owner's record of the task, as Node's read entry answers it now: tests change it while a page is hidden. */

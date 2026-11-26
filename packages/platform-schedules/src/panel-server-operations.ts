@@ -1,37 +1,32 @@
 import { z } from "zod";
 import { panelFormTargetSchema, type PanelObjectIdentity, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
-import { platformTaskEnabledSchema, platformTaskRunSchema, platformTaskSchema, platformTaskUpdateSchema } from "@ontomato/contracts/platform-schedules";
+import { platformTaskEnabledSchema, platformTaskRunSchema, platformTaskSchema, platformTaskStatusUpdateSchema } from "@ontomato/contracts/platform-schedules";
 import { RUN_NOW } from "@ontomato/contracts/panel-client-requests";
 import {
-  APPLICATION, CREATE_SCHEDULED_TASK, DELETE_SCHEDULED_TASK, RENEW_SCHEDULED_TASK_CREDENTIAL, SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED,
+  APPLICATION, CREATE_TRIGGER, DELETE_TRIGGER, RENEW_TRIGGER_CREDENTIAL, TRIGGER, SET_TRIGGER_ENABLED, SET_TRIGGER_STATUS,
 } from "@ontomato/contracts/platform-object-types";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import type { PlatformSchedulesHost } from "./host";
 import { createSchedulesApi, ScheduleRequestError } from "./api";
-import { scheduledTaskPanelOperations } from "./panel-operations";
+import { scheduledTaskPanelOperations, scheduledTaskPanelSaveSchema } from "./panel-operations";
+import { taskRunStatusKey } from "./run-status";
 import { scheduledTaskPanelSubmission } from "./panel-task-values";
 
 type Host = Pick<PlatformSchedulesHost, "request"> & { locale?: string };
 type Target = Extract<PanelOperationCall["target"], { kind: "object" }>;
-const revision = platformTaskUpdateSchema.shape.revision;
-const saveInput = panelFormSaveInputSchema.extend({ revision }).strict();
+const revision = platformTaskEnabledSchema.shape.revision;
+const saveInput = scheduledTaskPanelSaveSchema;
 const createInput = panelFormSaveInputSchema.omit({ revision: true }).strict();
-const targetSchema = z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string().uuid() }).strict();
+const targetSchema = z.object({ kind: z.literal("object"), objectType: z.literal(TRIGGER), primaryKey: z.string().min(1) }).strict();
 
-/** Names are read as the initiator; an unreadable or missing task is identified only by its ID. */
 async function targetLabel(host: Host, target: Target): Promise<string> {
-  try {
-    return (await createSchedulesApi({ ...host, applications: () => [], openResult: () => {} }).task(target.primaryKey)).title;
-  } catch (error) {
-    if (error instanceof ScheduleRequestError && (error.status === 403 || error.status === 404)) return target.primaryKey;
-    throw error;
-  }
+  return (await createSchedulesApi(host).task(target.primaryKey)).title;
 }
 
 function panelFieldPath(field: string): string {
   if (field.startsWith("/content/")) return field.slice("/content".length);
-  return field.replace(/^\/(title|appId|frequency|timeZone|notifyEmail)(?=\/|$)/, "/task/$1");
+  return field;
 }
 
 /** The owner interprets its own structured refusal; uncertain transport errors remain the coordinator's outcome. */
@@ -40,12 +35,12 @@ async function outcome(
 ): Promise<Exclude<PanelOperationOutcome, { kind: "batch" }>> {
   try {
     const { data, taskId, message, removed, created } = await call();
-    const objects = taskId ? [{ objectType: SCHEDULED_TASK, primaryKey: taskId }] : [];
+    const objects = taskId ? [{ objectType: TRIGGER, primaryKey: taskId }] : [];
     return {
       kind: "success", data: JSON.parse(JSON.stringify(data)),
       ...(message && { message }),
       ...(created && { created }),
-      affected: { objects, objectTypes: [SCHEDULED_TASK], ...(removed && { removed: objects }) },
+      affected: { objects, objectTypes: [TRIGGER], ...(removed && { removed: objects }) },
     };
   } catch (error) {
     if (!(error instanceof ScheduleRequestError) || !error.refusal) throw error;
@@ -63,14 +58,14 @@ async function outcome(
   }
 }
 
-export const scheduledTaskRunNowOperation = {
+const scheduledTaskRunNowOperation = {
   handlerRef: RUN_NOW,
   labelKey: "platformSchedules.action.runNow",
   kind: "action",
   binding: { kind: "PlatformOperation", id: RUN_NOW },
   effect: "write",
   batch: false,
-  targetType: SCHEDULED_TASK,
+  targetType: TRIGGER,
   targetSchema,
   inputSchema: z.object({}).strict(),
   resultSchema: platformTaskRunSchema,
@@ -79,13 +74,13 @@ export const scheduledTaskRunNowOperation = {
 } as const;
 
 const scheduledTaskSaveOperation = {
-  handlerRef: `${SCHEDULED_TASK}.save`,
+  handlerRef: `${TRIGGER}.save`,
   labelKey: "platformSchedules.panelManagement.save",
   kind: "form.save",
-  binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
+  binding: { kind: "PlatformObjectType", id: TRIGGER },
   effect: "write",
   batch: false,
-  targetType: SCHEDULED_TASK,
+  targetType: TRIGGER,
   targetSchema,
   inputSchema: saveInput,
   resultSchema: platformTaskSchema,
@@ -94,7 +89,7 @@ const scheduledTaskSaveOperation = {
     const { values, submittedFields } = saveInput.parse(input);
     return scheduledTaskPanelSubmission(values, submittedFields);
   },
-  formInstructions: "Use the owner form values and the current task revision. Task settings are under task; application fields remain at the root. Send submittedFields for partial edits.",
+  formInstructions: "Use the owner form values and current trigger revision. Trigger settings and native target inputs are under task; application fields remain at the root. Send submittedFields for partial edits.",
   execute(host: Host, target: Target, input: Record<string, unknown>, _intentId: string) {
     const { values, revision, submittedFields } = saveInput.parse(input);
     return outcome(async () => {
@@ -105,48 +100,41 @@ const scheduledTaskSaveOperation = {
 } as const;
 
 const scheduledTaskCreate = {
-  handlerRef: CREATE_SCHEDULED_TASK,
+  handlerRef: CREATE_TRIGGER,
   labelKey: "platformSchedules.panelManagement.create",
   kind: "form.save",
-  binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
+  binding: { kind: "PlatformObjectType", id: TRIGGER },
   effect: "write",
   batch: false,
-  targetType: SCHEDULED_TASK,
+  targetType: TRIGGER,
   targetSchema: panelFormTargetSchema.options[1],
   inputSchema: createInput,
   resultSchema: platformTaskSchema,
   draftInput: (input: Record<string, unknown>) => createInput.parse(input).values,
-  formInstructions: "Use the owner create form. Task settings are under task; application fields remain at the root.",
+  formInstructions: "Use the owner create form. Set task.enabled to false to save pending review without publishing. Application fields remain at the root.",
   create: true,
   execute(host: Host, _target: Extract<PanelOperationCall["target"], { kind: "draft" }>, input: Record<string, unknown>, intentId: string) {
     const { values } = createInput.parse(input);
     return outcome(async () => {
       const data = await scheduledTaskPanelOperations(host).create(values, intentId);
-      return { data, taskId: data.id, created: { objectType: SCHEDULED_TASK, primaryKey: data.id } };
+      return { data, taskId: data.id, created: { objectType: TRIGGER, primaryKey: data.id } };
     });
   },
 } as const;
 
 const scheduledTaskSetEnabled = {
-  handlerRef: SET_SCHEDULED_TASK_ENABLED,
+  handlerRef: SET_TRIGGER_ENABLED,
   labelKey: "platformSchedules.panelManagement.setEnabled",
   kind: "action",
-  binding: { kind: "PlatformOperation", id: SET_SCHEDULED_TASK_ENABLED },
+  binding: { kind: "PlatformOperation", id: SET_TRIGGER_ENABLED },
   effect: "write",
   batch: false,
-  targetType: SCHEDULED_TASK,
+  targetType: TRIGGER,
   targetSchema,
   inputSchema: platformTaskEnabledSchema,
   resultSchema: platformTaskSchema,
   targetInput: "task",
   targetLabel,
-  execute(host: Host, target: Target, input: Record<string, unknown>) {
-    const change = platformTaskEnabledSchema.parse(input);
-    return outcome(async () => {
-      const data = await scheduledTaskPanelOperations(host).setEnabled(target.primaryKey, change);
-      return { data, taskId: data.id };
-    });
-  },
 } as const;
 
 const deleteInput = z.object({ revision }).strict();
@@ -158,8 +146,8 @@ export function createScheduledTaskServerOperations(
     execute(host: Host, target: Target, _input: Record<string, unknown>, intentId: string) {
       return outcome(async () => {
         const data = await scheduledTaskPanelOperations(host).runNow(target.primaryKey, intentId);
-        const key = data.status === "running" ? "panelRunStarted" : `runStatus.${data.status}`;
-        return { data, taskId: data.taskId, message: translate(host.locale, `platformSchedules.${key}`) };
+        const key = data.status === "running" ? "platformSchedules.panelRunStarted" : taskRunStatusKey(data);
+        return { data, taskId: data.taskId, message: translate(host.locale, key) };
       });
     },
   } as const;
@@ -193,10 +181,31 @@ export function createScheduledTaskServerOperations(
     scheduledTaskCreate,
     setEnabled,
     {
-      handlerRef: RENEW_SCHEDULED_TASK_CREDENTIAL,
+      handlerRef: SET_TRIGGER_STATUS,
+      labelKey: "platformSchedules.panelManagement.setStatus",
+      kind: "action",
+      binding: { kind: "PlatformOperation", id: SET_TRIGGER_STATUS },
+      effect: "write",
+      batch: false,
+      targetType: TRIGGER,
+      targetSchema,
+      inputSchema: platformTaskStatusUpdateSchema,
+      resultSchema: platformTaskSchema,
+      targetInput: "task",
+      targetLabel,
+      execute(host: Host, target: Target, input: Record<string, unknown>) {
+        const change = platformTaskStatusUpdateSchema.parse(input);
+        return outcome(async () => {
+          const data = await scheduledTaskPanelOperations(host).setStatus(target.primaryKey, change);
+          return { data, taskId: data.id };
+        });
+      },
+    },
+    {
+      handlerRef: RENEW_TRIGGER_CREDENTIAL,
       labelKey: "platformSchedules.panelManagement.renewCredential",
       kind: "action",
-      binding: { kind: "PlatformOperation", id: RENEW_SCHEDULED_TASK_CREDENTIAL },
+      binding: { kind: "PlatformOperation", id: RENEW_TRIGGER_CREDENTIAL },
       effect: "write",
       batch: false,
       targetType: APPLICATION,
@@ -206,7 +215,7 @@ export function createScheduledTaskServerOperations(
       }).strict(),
       inputSchema: z.object({}).strict(),
       resultSchema: z.object({}).strict(),
-      targetLabel: (host: Host) => Promise.resolve(translate(host.locale, "platformOntology.types.scheduledTask")),
+      targetLabel: (host: Host) => Promise.resolve(translate(host.locale, "platformSchedules.title")),
       execute(host: Host) {
         return outcome(async () => {
           await scheduledTaskPanelOperations(host).renewCredential();
@@ -215,13 +224,13 @@ export function createScheduledTaskServerOperations(
       },
     },
     {
-      handlerRef: DELETE_SCHEDULED_TASK,
+      handlerRef: DELETE_TRIGGER,
       labelKey: "platformSchedules.panelManagement.delete",
       kind: "action",
-      binding: { kind: "PlatformOperation", id: DELETE_SCHEDULED_TASK },
+      binding: { kind: "PlatformOperation", id: DELETE_TRIGGER },
       effect: "write",
       batch: false,
-      targetType: SCHEDULED_TASK,
+      targetType: TRIGGER,
       targetSchema,
       inputSchema: deleteInput,
       resultSchema: z.object({ id: targetSchema.shape.primaryKey }).strict(),
@@ -229,7 +238,7 @@ export function createScheduledTaskServerOperations(
       targetLabel,
       done: (host: Host, name: string) => translate(host.locale, "platformSchedules.panelManagement.deleted", { name }),
       inspectImpact: {
-        handlerRef: `${DELETE_SCHEDULED_TASK}.inspect-impact`,
+        handlerRef: `${DELETE_TRIGGER}.inspect-impact`,
         async inspect(host: Host, calls: readonly PanelOperationCall[]) {
           const targets = calls.map(call => targetSchema.parse(call.target));
           return {

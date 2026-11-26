@@ -6,7 +6,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { TRIGGER } from "@ontomato/contracts/platform-object-types";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -22,16 +22,16 @@ import { noOperations } from "./panel-frame";
  */
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
-const task = { className: SCHEDULED_TASK, primaryKey: "10000000-0000-4000-8000-000000000004" };
+const task = { className: TRIGGER, primaryKey: "10000000-0000-4000-8000-000000000004" };
 const projection: DirectProjection = {
   ...record, id: "task-form", name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
-  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+  inputs: { task: { kind: "object", objectType: TRIGGER }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
   outputs: {}, config: {},
   data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
-  operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
+  operations: { save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } } },
 };
 const manifest: DirectPanelManifest = {
-  state: { task: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
+  state: { task: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { task: { state: "task" } } } },
 };
 const field = (path: string, label: string, control: Record<string, unknown>) =>
@@ -45,7 +45,7 @@ const description = {
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 const saveDescriptor = {
   kind: "form.save",
-  handlerRef: `${SCHEDULED_TASK}.save`,
+  handlerRef: `${TRIGGER}.save`,
   label: "Save",
   effect: "write",
   target: { source: "input", input: "task" },

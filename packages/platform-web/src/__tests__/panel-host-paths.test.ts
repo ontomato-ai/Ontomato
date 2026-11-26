@@ -8,7 +8,7 @@ import en from "element-plus/es/locale/lang/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import type { ApplicationPanelUse, ProductProjection } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels } from "@ontomato/platform-shell";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
@@ -1035,7 +1035,7 @@ describe("dynamic and nested member projection access verification", () => {
       outputs: {},
       config: { emptyText },
       data: {
-        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
       },
     };
   }

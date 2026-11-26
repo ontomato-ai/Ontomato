@@ -9,7 +9,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { APPLICATION } from "@ontomato/contracts/platform-object-types";
 import { createDirectPanelInstance, type PanelReadPort } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
@@ -179,13 +179,13 @@ describe("Item 1.2 & 1.6: Batch expectedCheckedKeys verification and full-auto p
   const manifest: DirectPanelManifest = {
     state: {
       checked: {
-        type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } },
+        type: { kind: "list", items: { kind: "object", objectType: TRIGGER } },
         personal: false,
         deepLink: false,
         external: false,
         default: [
-          { className: SCHEDULED_TASK, primaryKey: "t-1" },
-          { className: SCHEDULED_TASK, primaryKey: "t-2" },
+          { className: TRIGGER, primaryKey: "t-1" },
+          { className: TRIGGER, primaryKey: "t-2" },
         ],
       },
     },
@@ -202,7 +202,7 @@ describe("Item 1.2 & 1.6: Batch expectedCheckedKeys verification and full-auto p
     id: "p-batch-btn",
     name: "Batch Delete",
     componentId: "@ontomato/sdk:OperationButton",
-    inputs: { targets: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+    inputs: { targets: { kind: "list", items: { kind: "object", objectType: TRIGGER } } },
     outputs: {},
     data: {},
     operations: {
@@ -234,19 +234,19 @@ describe("Item 1.2 & 1.6: Batch expectedCheckedKeys verification and full-auto p
     try {
       await vi.waitFor(() => expect(harness.element.querySelector("button")).not.toBeNull());
       expect(harness.instance.checkedKeys()).toEqual({
-        checked: [`${SCHEDULED_TASK}:t-1`, `${SCHEDULED_TASK}:t-2`],
+        checked: [`${TRIGGER}:t-1`, `${TRIGGER}:t-2`],
       });
 
       // User changes checked rows from t-1/t-2 to t-3/t-4 before agent's request arrives.
       harness.instance.state.set("checked", [
-        { className: SCHEDULED_TASK, primaryKey: "t-3" },
-        { className: SCHEDULED_TASK, primaryKey: "t-4" },
+        { className: TRIGGER, primaryKey: "t-3" },
+        { className: TRIGGER, primaryKey: "t-4" },
       ]);
       await nextTick();
 
       const staleChanged = await harness.instance.executeAction({
         operation: "toolbar.batchDelete",
-        expectedCheckedKeys: [`${SCHEDULED_TASK}:t-1`, `${SCHEDULED_TASK}:t-2`],
+        expectedCheckedKeys: [`${TRIGGER}:t-1`, `${TRIGGER}:t-2`],
         agentRun: AGENT_RUN,
       });
       expect(staleChanged).toMatchObject({ ok: false, reason: "stale", operation: "toolbar.batchDelete" });
@@ -257,7 +257,7 @@ describe("Item 1.2 & 1.6: Batch expectedCheckedKeys verification and full-auto p
       await nextTick();
       const staleCleared = await harness.instance.executeAction({
         operation: "toolbar.batchDelete",
-        expectedCheckedKeys: [`${SCHEDULED_TASK}:t-3`, `${SCHEDULED_TASK}:t-4`],
+        expectedCheckedKeys: [`${TRIGGER}:t-3`, `${TRIGGER}:t-4`],
         agentRun: AGENT_RUN,
       });
       expect(staleCleared).toMatchObject({ ok: false, reason: "stale", operation: "toolbar.batchDelete" });
@@ -284,13 +284,13 @@ describe("Item 1.2 & 1.6: Batch expectedCheckedKeys verification and full-auto p
 
       const inFlight = harness.instance.executeAction({
         operation: "toolbar.batchDelete",
-        expectedCheckedKeys: [`${SCHEDULED_TASK}:t-1`, `${SCHEDULED_TASK}:t-2`],
+        expectedCheckedKeys: [`${TRIGGER}:t-1`, `${TRIGGER}:t-2`],
         agentRun: AGENT_RUN,
       });
       await vi.waitFor(() => expect(harness.prepare).toHaveBeenCalledTimes(1));
 
       // While prepare() is in flight in full-auto mode, user changes checked rows to t-9.
-      harness.instance.state.set("checked", [{ className: SCHEDULED_TASK, primaryKey: "t-9" }]);
+      harness.instance.state.set("checked", [{ className: TRIGGER, primaryKey: "t-9" }]);
       await nextTick();
 
       pendingPrepare.resolve({
@@ -333,7 +333,7 @@ describe("Item 1.3, 1.4 & 1.6: Mixed-type list composite rowKey and row confirma
       inputs: {},
       outputs: {},
       data: {
-        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
       },
       operations: {
         remove: { operation: { kind: "PlatformOperation", id: "demo.remove" }, target: { row: true } },
@@ -424,7 +424,7 @@ describe("Item 1.3, 1.4 & 1.6: Mixed-type list composite rowKey and row confirma
       inputs: { app: { kind: "object", objectType: APPLICATION } },
       outputs: {},
       data: {
-        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
       },
       operations: {
         remove: {
@@ -528,11 +528,11 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
   const formManifest: DirectPanelManifest = {
     state: {
       task: {
-        type: { kind: "object", objectType: SCHEDULED_TASK },
+        type: { kind: "object", objectType: TRIGGER },
         personal: false,
         deepLink: false,
         external: false,
-        default: { className: SCHEDULED_TASK, primaryKey: "t-1" },
+        default: { className: TRIGGER, primaryKey: "t-1" },
       },
       parentScope: {
         type: { kind: "scalar", type: "string" },
@@ -558,7 +558,7 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
     name: "Task Form",
     componentId: "@ontomato/sdk:ObjectForm",
     inputs: {
-      task: { kind: "object", objectType: SCHEDULED_TASK },
+      task: { kind: "object", objectType: TRIGGER },
       values: { kind: "json" },
       changedField: { kind: "scalar", type: "string" },
     },
@@ -619,7 +619,7 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
       const staleFill = await harness.instance.fillForm({
         member: "form",
         values: { "/name": "Wrong target" },
-        expectedTarget: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-other" },
+        expectedTarget: { kind: "object", objectType: TRIGGER, primaryKey: "t-other" },
       });
       expect(staleFill).toMatchObject({ ok: false, reason: "stale" });
 
@@ -627,14 +627,14 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
       const okFill = await harness.instance.fillForm({
         member: "form",
         values: { "/name": "Updated" },
-        expectedTarget: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+        expectedTarget: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" },
       });
       expect(okFill).toMatchObject({ ok: true, filledFields: ["/name"] });
 
       // Prepare confirmation under Scope-A, then outer state switches fixedFields to Scope-B.
       const awaiting = await harness.instance.executeAction({
         operation: "form.save",
-        expectedTarget: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+        expectedTarget: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" },
         agentRun: AGENT_RUN,
       });
       expect(awaiting).toMatchObject({ ok: true, kind: "awaiting_confirmation" });
@@ -757,11 +757,11 @@ describe("Item 1.1 & 1.4: Nested panel expectedMemberInstanceId and disposal inv
     const childManifest: DirectPanelManifest = {
       state: {
         task: {
-          type: { kind: "object", objectType: SCHEDULED_TASK },
+          type: { kind: "object", objectType: TRIGGER },
           personal: false,
           deepLink: false,
           external: false,
-          default: { className: SCHEDULED_TASK, primaryKey: "t-1" },
+          default: { className: TRIGGER, primaryKey: "t-1" },
         },
       },
       members: {
@@ -776,7 +776,7 @@ describe("Item 1.1 & 1.4: Nested panel expectedMemberInstanceId and disposal inv
       id: "p-child-btn",
       name: "Run Child",
       componentId: "@ontomato/sdk:OperationButton",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+      inputs: { task: { kind: "object", objectType: TRIGGER } },
       outputs: {},
       data: {},
       operations: {

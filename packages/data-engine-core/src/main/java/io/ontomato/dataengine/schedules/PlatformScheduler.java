@@ -22,6 +22,7 @@ public class PlatformScheduler {
   private final TaskStore store;
   private final TransactionTemplate transactions;
   private final ScheduleApplications applications;
+  private final TriggerCapabilities capabilities;
   private final UserCredentials credentials;
   private final ScheduleIdentity identity;
   private final TaskMail mail;
@@ -37,12 +38,14 @@ public class PlatformScheduler {
       TaskStore store,
       TransactionTemplate transactions,
       ScheduleApplications applications,
+      TriggerCapabilities capabilities,
       UserCredentials credentials,
       ScheduleIdentity identity,
       TaskMail mail) {
     this.store = store;
     this.transactions = transactions;
     this.applications = applications;
+    this.capabilities = capabilities;
     this.credentials = credentials;
     this.identity = identity;
     this.mail = mail;
@@ -59,27 +62,12 @@ public class PlatformScheduler {
     Instant now = Instant.now();
     transactions.executeWithoutResult(
         tx -> {
-          var ids =
-              store
-                  .jdbc()
-                  .queryForList(
-                      "SELECT id FROM platform_task WHERE enabled AND pause_code IS NULL AND"
-                          + " next_run_at<=? ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP"
-                          + " LOCKED",
-                      UUID.class,
-                      TaskStore.timestamp(now));
-          for (UUID id : ids) {
-            var task = store.get(id, false);
+          for (var task : store.due(now)) {
             var slot = task.nextRunAt();
-            store
-                .jdbc()
-                .update(
-                    "UPDATE platform_task SET next_run_at=? WHERE id=?",
-                    TaskStore.timestamp(task.definition().next(slot, now)),
-                    id);
-            if ("cron".equals(task.definition().frequency().path("kind").asText())
-                && slot.isBefore(boot)) continue;
-            if (store.admit(task, UUID.randomUUID(), "schedule", slot) == null)
+            boolean missedCron = "cron".equals(task.definition().frequency().path("kind").asText()) && slot.isBefore(boot);
+            store.advance(task, task.definition().next(slot, now), missedCron ? task.lastFiredAt() : slot);
+            if (missedCron) continue;
+            if (store.admit(task, task.executor(), UUID.randomUUID(), "schedule", slot) == null)
               store.skipped(task, slot);
           }
         });
@@ -87,7 +75,7 @@ public class PlatformScheduler {
         store
             .jdbc()
             .queryForList(
-                "SELECT id FROM platform_task_run WHERE status='running' AND dispatched_at IS NULL"
+                "SELECT id FROM trigger_run WHERE status='running' AND dispatched_at IS NULL"
                     + " ORDER BY started_at,id LIMIT 100",
                 UUID.class)) {
       if (!active.add(id)) continue;
@@ -121,41 +109,39 @@ public class PlatformScheduler {
     if (store
             .jdbc()
             .update(
-                "UPDATE platform_task_run SET dispatched_at=now(),deadline=now()+interval '11"
+                "UPDATE trigger_run SET dispatched_at=now(),deadline=now()+interval '11"
                     + " minutes' WHERE id=? AND status='running' AND dispatched_at IS NULL",
                 id)
         == 0) return;
     String dispatchedKey = null;
     try {
-      var provider = applications.require(run.snapshot().definition().appId());
       var execution = run.execution();
-      var user = identity.creator(execution.domainId(), execution.creatorId());
+      var definition = execution.definition();
+      var provider = definition.application() ? applications.require(definition.appId(), execution.domainId()) : null;
+      var user = identity.creator(execution.domainId(), execution.executorId());
       if (user == null || !user.isEnable()) {
         failure(
-            run, "creator_unavailable", "Task creator is no longer an active domain member", true);
+            run, "creator_unavailable", "Trigger executor is no longer an active domain member", true);
         return;
       }
       String key =
-          provider.remote()
-              ? credentials.forOwner(execution.domainId(), execution.creatorId())
-              : null;
+          (provider != null && provider.remote() || "workflow".equals(definition.targetKind()))
+              ? credentials.forOwner(execution.domainId(), execution.executorId()) : null;
       dispatchedKey = key;
       var actor =
           new ScheduleApplication.Actor(
               user,
-              identity.dataPermission(execution.domainId(), execution.creatorId()),
+              identity.dataPermission(execution.domainId(), execution.executorId()),
               null,
               key,
               execution.locale());
-      provider.authorize(actor, execution.definition().content());
-      provider.validate(execution.definition(), actor);
-      store
-          .jdbc()
-          .update(
-              "UPDATE platform_task_run SET deadline=now()+(? * interval '1 minute') WHERE id=?",
-              provider.deadlineMinutes(execution),
-              id);
-      if (provider.asynchronous()) {
+      if (provider != null) {
+        if (!applications.canEnter(definition.appId(), user))
+          throw new ScheduleException(403, "PERMISSION_DENIED", "Application entry permission is required");
+      }
+      store.jdbc().update("UPDATE trigger_run SET deadline=now()+(? * interval '1 minute') WHERE id=?",
+          provider != null ? provider.deadlineMinutes(execution) : "action".equals(definition.targetKind()) ? 61 : 2, id);
+      if (provider != null && provider.asynchronous()) {
         var state = provider.start(execution, actor);
         apply(run, state);
       } else {
@@ -170,7 +156,7 @@ public class PlatformScheduler {
             statement.execute();
           }
           try {
-            apply(run, provider.start(execution, actor));
+            apply(run, provider == null ? capabilities.start(execution, actor) : provider.start(execution, actor));
           } finally {
             try (var statement =
                 connection.prepareStatement("SELECT pg_advisory_unlock(hashtextextended(?,2))")) {
@@ -181,13 +167,13 @@ public class PlatformScheduler {
         }
       }
     } catch (UserCredentials.Invalid invalid) {
-      failure(run, "credential_invalid", "The creator's background credential is invalid", true);
+      failure(run, "credential_invalid", "The executor's background credential is invalid", true);
     } catch (ScheduleException error) {
       switch (error.code) {
         case "PERMISSION_DENIED" -> failure(run, "permission_denied", error.getReason(), true);
         case "UNAUTHENTICATED", "INTERACTIVE_LOGIN_REQUIRED" -> {
           credentials.invalidate(
-              run.snapshot().domainId(), run.snapshot().creatorId(), dispatchedKey);
+              run.snapshot().domainId(), run.snapshot().executorId(), dispatchedKey);
           failure(run, "credential_invalid", "Background credential rejected", true);
         }
         case "APPLICATION_NOT_FOUND" ->
@@ -196,25 +182,34 @@ public class PlatformScheduler {
             failure(run, "target_unavailable", error.getReason(), true);
         case "FORM_CHANGED" -> failure(run, "definition_changed", error.getReason(), true);
         default -> {
-          if (error.getStatusCode().value() < 500)
-            failure(run, "start_failed", error.getReason(), false);
+          failure(run, error.getStatusCode().is5xxServerError() ? "dependency_unavailable" : "start_failed", error.getReason(), false);
         }
+      }
+    } catch (io.ontomato.dataengine.service.authorization.ActionAuthorization.Denied error) {
+      failure(run, "permission_denied", error.getMessage(), true);
+    } catch (io.ontomato.dataengine.service.OwnerRefusal error) {
+      switch (error.code()) {
+        case "ACTION_NOT_FOUND", "ACTION_NOT_EXECUTABLE" ->
+            failure(run, "target_unavailable", error.getMessage(), true);
+        default -> failure(run, "start_failed", error.getMessage(), false);
       }
     } catch (io.ontomato.dataengine.service.agent.AgentHttpException error) {
       if (error.status() == 403) failure(run, "permission_denied", error.getMessage(), true);
-      else if (error.status() == 401)
-        failure(run, "creator_unavailable", "Task creator is unavailable", true);
-      else if (error.status() < 500) failure(run, "start_failed", error.getMessage(), false);
+      else if (error.status() == 401) failure(run, "creator_unavailable", "Trigger executor is unavailable", true);
+      else failure(run, error.status() >= 500 ? "dependency_unavailable" : "start_failed", error.getMessage(), false);
     } catch (org.springframework.web.server.ResponseStatusException denied) {
-      if (denied.getStatusCode().value() == 403)
-        failure(run, "permission_denied", denied.getReason(), true);
-      else if (denied.getStatusCode().value() == 401)
-        failure(run, "creator_unavailable", "Task creator is unavailable", true);
-      else failure(run, "dependency_unavailable", "The application is unavailable", false);
+      if (denied.getStatusCode().value() == 403) failure(run, "permission_denied", denied.getReason(), true);
+      else if (denied.getStatusCode().value() == 401) failure(run, "creator_unavailable", "Trigger executor is unavailable", true);
+      else failure(run, "dependency_unavailable", denied.getReason(), false);
     } catch (org.springframework.web.client.ResourceAccessException unavailable) {
-      log.warn("Schedule admission response unavailable for {}", id);
+      // The application may have accepted the run before the connection was lost; settle with its owner.
+      log.warn("Schedule admission response unavailable for {}", id, unavailable);
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      failure(run, "interrupted", interrupted.getMessage(), false);
     } catch (Exception error) {
-      failure(run, "dependency_unavailable", "The application is unavailable", false);
+      log.error("Trigger execution failed for {}", id, error);
+      failure(run, "start_failed", io.ontomato.dataengine.util.ErrorText.programError(error, run.snapshot().locale()), false);
     }
   }
 
@@ -223,7 +218,7 @@ public class PlatformScheduler {
         store
             .jdbc()
             .queryForList(
-                "SELECT id FROM platform_task_run WHERE status='running' AND dispatched_at IS NOT"
+                "SELECT id FROM trigger_run WHERE status='running' AND dispatched_at IS NOT"
                     + " NULL ORDER BY started_at,id",
                 UUID.class);
     for (UUID id : ids)
@@ -240,7 +235,8 @@ public class PlatformScheduler {
     if (run == null || !"running".equals(run.status())) return;
     ScheduleApplication provider;
     try {
-      provider = applications.require(run.snapshot().definition().appId());
+      provider = run.snapshot().definition().application()
+          ? applications.require(run.snapshot().definition().appId(), run.snapshot().domainId()) : null;
     } catch (ScheduleException missing) {
       if ("APPLICATION_NOT_FOUND".equals(missing.code)) {
         failure(run, "application_unavailable", "Scheduled application no longer installed", true);
@@ -249,7 +245,7 @@ public class PlatformScheduler {
       throw missing;
     }
     boolean expired = run.deadline() != null && !now.isBefore(run.deadline());
-    if (!provider.asynchronous()) {
+    if (provider == null || !provider.asynchronous()) {
       if (expired && !active.contains(id))
         transactions.executeWithoutResult(
             tx -> {
@@ -298,7 +294,7 @@ public class PlatformScheduler {
             store
                 .jdbc()
                 .update(
-                    "UPDATE platform_task_run SET handle=?::jsonb,result_link=?::jsonb WHERE id=?"
+                    "UPDATE trigger_run SET handle=?::jsonb,result_link=?::jsonb WHERE id=?"
                         + " AND status='running'",
                     jsonValue(state.get("handle")),
                     jsonValue(state.get("resultLink")),
@@ -310,7 +306,7 @@ public class PlatformScheduler {
                   .jdbc()
                   .update(
                       """
-UPDATE platform_task_run SET status=?,handle=coalesce(?::jsonb,handle),result_link=coalesce(?::jsonb,result_link),
+UPDATE trigger_run SET status=?,handle=coalesce(?::jsonb,handle),result_link=coalesce(?::jsonb,result_link),
 result_summary=?,result=?,execution_details=?::jsonb,spend_time=?,error_code=?,error_message=?,finished_at=now()
 WHERE id=? AND status='running'
 """,
@@ -333,14 +329,15 @@ WHERE id=? AND status='running'
                 .jdbc()
                 .update(
                     """
-UPDATE platform_task SET pause_code=?,pause_message=?,next_run_at=NULL,revision=revision+1,updated_at=now()
-WHERE id=? AND revision=? AND enabled AND
-(? <> 'credential_invalid' OR NOT EXISTS(SELECT FROM platform_task_credential WHERE domain_id=platform_task.domain_id AND creator_id=platform_task.creator_id AND valid))
+UPDATE trigger_def SET pause_code=?,pause_message=?,next_run_at=NULL,revision=revision+1,updated_at=now()
+WHERE id=? AND revision=? AND enabled AND executor_id=? AND
+(? <> 'credential_invalid' OR NOT EXISTS(SELECT FROM platform_task_credential WHERE domain_id=trigger_def.domain_id AND creator_id=trigger_def.executor_id AND valid))
 """,
                     pause.path("code").asText(),
                     pause.path("message").asText(),
                     run.taskId(),
                     run.snapshot().taskRevision(),
+                    run.snapshot().executorId(),
                     pause.path("code").asText());
           if (!"skipped".equals(status) && run.snapshot().definition().notifyEmail() != null)
             org.springframework.transaction.support.TransactionSynchronizationManager

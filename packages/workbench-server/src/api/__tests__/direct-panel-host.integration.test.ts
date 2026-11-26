@@ -304,7 +304,7 @@ beforeAll(async () => {
         panelId: codePanelId },
     } });
   });
-  app.post("/platform/scheduled-tasks/:taskId/runs", (req, res) => {
+  app.post("/platform/triggers/:taskId/runs", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
     expect(req.params.taskId).toBe(scheduledRun.taskId);
     frameDispatches.push(req.header("Idempotency-Key")!);
@@ -623,8 +623,8 @@ it("reads the authoritative operation type table while isolating stale published
       id, reason: "The stored function definition is missing.",
     })),
   });
-  expect(objectTypes["platform:ScheduledTask"].operations).toContainEqual(expect.objectContaining({
-    id: "schedules.runNow", target: { source: "input", input: "task" }, batch: false, effect: "write",
+  expect(objectTypes["platform:Trigger"].operations).toContainEqual(expect.objectContaining({
+    id: "triggers.runNow", target: { source: "input", input: "task" }, batch: false, effect: "write",
   }));
   const usedResults = new Set(Object.values(objectTypes).flatMap(entry => Object.values(entry.reads ?? {}).map(read => read.result)));
   expect(new Set(Object.keys(table.resultSchemas))).toEqual(usedResults);
@@ -663,7 +663,7 @@ it("keeps the author type table available when Java denies access to the custome
     expect(table).toMatchObject({
       customerTypesUnavailable: { reason: "The author may not read the domain's object types" },
     });
-    expect(table.objectTypes["platform:ScheduledTask"].operations).toContainEqual(expect.objectContaining({ id: "schedules.runNow" }));
+    expect(table.objectTypes["platform:Trigger"].operations).toContainEqual(expect.objectContaining({ id: "triggers.runNow" }));
     expect(table.objectTypes.expense.operations).toContainEqual(expect.objectContaining({ id: "approve-expense" }));
     expect(table.objectTypes.expense.reads).toBeUndefined();
     expect(table.objectTypes.CostCenter).toBeUndefined();
@@ -744,7 +744,7 @@ it("checks projection data against the current release before registering or cha
   const summary = projectionRequest(trialSummary.input, 0);
   expect("data" in summary).toBe(true);
   if (!("data" in summary)) throw new Error("Expected an ordinary projection in the trial");
-  const rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} };
+  const rows = { source: { type: { kind: "PlatformObjectType", id: "platform:Trigger" } }, read: "list", params: {} };
   const rejects = async (id: string, body: object, code: string) => {
     const result = await request("PUT", "product-projections/" + id, body);
     expect(result.status).toBe(400);
@@ -968,11 +968,11 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   expect(response.status, JSON.stringify(payload)).toBe(200);
   const descriptor = panelOperationDescriptorResponseSchema.parse(payload);
   expect(descriptor).toMatchObject({
-    handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" },
+    handlerRef: "triggers.runNow", effect: "write", target: { source: "input", input: "task" },
   });
   const authorResponse = await request("GET", "app-builder/type-table");
   const table = platformTypeTableResponseSchema.parse(await authorResponse.json());
-  const { id: _id, ...declaration } = table.objectTypes["platform:ScheduledTask"].operations!.find(op => op.id === "schedules.runNow")!;
+  const { id: _id, ...declaration } = table.objectTypes["platform:Trigger"].operations!.find(op => op.id === "triggers.runNow")!;
   expect(descriptor).toMatchObject(declaration);
   expect((await describe("summary.runNow")).status).toBe(422);
 
@@ -1114,7 +1114,7 @@ it("freezes the frame of a human operation and rechecks it before dispatch", asy
     const saved = await request("PUT", `product-panels/${id}`, {
       name: "Operation host", description: "", visibility: "domain", revision: 0, content: vuePanelContent(),
       manifest: {
-        state: frame ? { task: { type: { kind: "object", objectType: "platform:ScheduledTask" } } } : {},
+        state: frame ? { task: { type: { kind: "object", objectType: "platform:Trigger" } } } : {},
         members: frame ? { run: { target: { projectionId }, inputs: { task: { state: "task" } } } } : {},
       },
     });
@@ -1128,9 +1128,9 @@ it("freezes the frame of a human operation and rechecks it before dispatch", asy
   expect((await descriptor(scope)).status).toBe(403);
   const described = await descriptor({ ...scope, root: "frame" });
   expect(described.status, await described.clone().text()).toBe(200);
-  expect(await described.json()).toMatchObject({ handlerRef: "schedules.runNow" });
+  expect(await described.json()).toMatchObject({ handlerRef: "triggers.runNow" });
 
-  const call = { target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: scheduledRun.taskId }, input: {} };
+  const call = { target: { kind: "object", objectType: "platform:Trigger", primaryKey: scheduledRun.taskId }, input: {} };
   const invoke = { ...scope, root: "frame", call };
   const read = await request("POST", "panel-operations/read", invoke);
   expect(await read.json()).toMatchObject({ error: { code: "OPERATION_READ_REQUIRED" } });

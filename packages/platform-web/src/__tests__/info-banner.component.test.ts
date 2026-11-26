@@ -34,7 +34,7 @@ it("shows a record-driven banner only when its field has content and still rende
       data: {
         record: {
           read: "record",
-          source: { object: { literal: { className: "platform:ScheduledTask", primaryKey: "task" } } },
+          source: { object: { literal: { className: "platform:Trigger", primaryKey: "task" } } },
           params: {},
         },
       },

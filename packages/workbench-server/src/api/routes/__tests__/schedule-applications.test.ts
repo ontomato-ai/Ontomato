@@ -9,7 +9,6 @@ import { HttpError } from "../../../utils/errors";
 const mocks=vi.hoisted(()=>({form:vi.fn(),validate:vi.fn(),authorize:vi.fn(),start:vi.fn(),status:vi.fn()}));
 vi.mock("../../../services/scheduling/applications",()=>({
   scheduleApplication:()=>({id:"fixture",...mocks}),
-  describeScheduleApplication:async()=>({id:"fixture",description:"Application-owned description",available:true,unavailableReason:null,taskCount:0}),
 }));
 vi.mock("../../../identity/installed",()=>({workbenchIdentity:()=>({requireDomainId:()=>"trusted-domain"})}));
 const servers:Server[]=[];
@@ -29,7 +28,8 @@ async function app() {
 }
 it("requires the platform credential and derives form ownership from the authenticated request",async()=>{
   const request=await app();
-  const denied=await request("/api/platform/schedule-applications/fixture",undefined,false);expect(denied.status).toBe(403);platformScheduleErrorSchema.parse(await denied.json());
+  const denied=await request("/api/platform/schedule-applications/fixture/form",{},false);expect(denied.status).toBe(403);platformScheduleErrorSchema.parse(await denied.json());
+  expect((await request("/api/platform/schedule-applications/fixture")).status).toBe(404);
   mocks.form.mockResolvedValue({appId:"fixture",formRevision:"v1",fields:[],values:{},summary:[],errors:[],submittable:true});
   const response=await request("/api/platform/schedule-applications/fixture/form",{values:{},changedField:null,taskId:null,timeZone:"UTC"});
   expect(response.status).toBe(200);platformScheduleFormSchema.parse(await response.json());

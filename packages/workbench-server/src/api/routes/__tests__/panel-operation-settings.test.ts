@@ -116,7 +116,7 @@ it("does not read another domain's session",async()=>{
 });
 
 it("returns the server descriptor only for a current use of the authenticated reader", async () => {
- const objectType = "platform:ScheduledTask";
+ const objectType = "platform:Trigger";
  const record = {
    domainId: "domain", ownerId: "owner", visibility: "domain" as const, description: "",
    revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
@@ -132,7 +132,7 @@ it("returns the server descriptor only for a current use of the authenticated re
    projection: {
      ...record, id: "run", componentId: "@ontomato/sdk:OperationButton", name: "Run now",
      inputs: { task }, outputs: {}, config: {},
-     data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+     data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
    },
  });
 
@@ -140,7 +140,7 @@ it("returns the server descriptor only for a current use of the authenticated re
  const result = await fetch(url + "&useId=tasks", { headers: { tk: "owner" } });
  expect(result.status).toBe(200);
  expect(await result.json()).toMatchObject({
-   handlerRef: "schedules.runNow", effect: "write", batch: false,
+   handlerRef: "triggers.runNow", effect: "write", batch: false,
    target: { source: "input", input: "task" },
    inputSchema: { type: "object" }, resultSchema: { type: "object" },
  });

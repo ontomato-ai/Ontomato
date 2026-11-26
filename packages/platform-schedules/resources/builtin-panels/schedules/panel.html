@@ -28,6 +28,16 @@
     gap: var(--spacing-sm);
     min-width: 0;
   }
+  .schedules-toolbar-right {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .schedules-status-filter {
+    width: 150px;
+  }
   .schedules-search {
     width: min(260px, 100%);
     flex: 0 1 260px;
@@ -223,13 +233,26 @@
     <div class="schedules-list-col">
       <div v-if="!inline" class="schedules-toolbar">
         <projection slot="appFilter"></projection>
-        <sdk-input
-          v-model="searchModel"
-          class="schedules-search"
-          clearable
-          :placeholder="t('filter.search')"
-          :aria-label="t('filter.search')"
-        ></sdk-input>
+        <div class="schedules-toolbar-right">
+          <sdk-select
+            v-model="statusModel"
+            class="schedules-status-filter"
+            :aria-label="t('filter.status')"
+            :placeholder="t('filter.statusAll')"
+          >
+            <sdk-option value="" :label="t('filter.statusAll')"></sdk-option>
+            <sdk-option value="PENDING_REVIEW" :label="t('filter.statusPending')"></sdk-option>
+            <sdk-option value="PUBLISHED" :label="t('filter.statusPublished')"></sdk-option>
+            <sdk-option value="UNUSED" :label="t('filter.statusUnused')"></sdk-option>
+          </sdk-select>
+          <sdk-input
+            v-model="searchModel"
+            class="schedules-search"
+            clearable
+            :placeholder="t('filter.search')"
+            :aria-label="t('filter.search')"
+          ></sdk-input>
+        </div>
       </div>
 
       <projection
@@ -304,6 +327,39 @@
             </sdk-select>
           </template>
 
+          <template #field-task.targetId="{ field, value, disabled, set }">
+            <sdk-select
+              :model-value="value ?? ''"
+              :disabled="disabled"
+              :placeholder="t('form.targetPlaceholder')"
+              filterable
+              style="width: 100%"
+              @update:model-value="set($event)"
+            >
+              <sdk-option
+                v-for="opt in fieldOptions(field)"
+                :key="String(opt.value)"
+                :value="opt.value"
+                :label="opt.label"
+                :disabled="Boolean(opt.disabled)"
+              >
+                <span class="schedules-app-opt">
+                  <span>{{ opt.label }}</span>
+                  <span v-if="opt.disabled && opt.disabledReason" class="schedules-app-opt-desc">{{ opt.disabledReason }}</span>
+                  <span v-else-if="opt.description" class="schedules-app-opt-desc">{{ opt.description }}</span>
+                </span>
+              </sdk-option>
+            </sdk-select>
+          </template>
+
+          <template #field-task.executorId>
+            <projection slot="executorPicker"></projection>
+          </template>
+
+          <template #field-task.coauthorIds>
+            <projection slot="coauthorsPicker"></projection>
+          </template>
+
           <template #field-task.timeZone="{ value }">
             <span class="schedules-timezone-readonly">{{ value || "—" }}</span>
           </template>
@@ -335,7 +391,7 @@
               </div>
               <sdk-button :disabled="saving" @click="cancel">{{ t("form.cancel") }}</sdk-button>
               <sdk-button type="primary" :loading="saving" :disabled="asking" @click="save">
-                {{ t("form.createAndEnable") }}
+                {{ t("form.create") }}
               </sdk-button>
             </div>
           </template>
@@ -376,6 +432,39 @@
                 </span>
               </sdk-option>
             </sdk-select>
+          </template>
+
+          <template #field-task.targetId="{ field, value, disabled, set }">
+            <sdk-select
+              :model-value="value ?? ''"
+              :disabled="disabled"
+              :placeholder="t('form.targetPlaceholder')"
+              filterable
+              style="width: 100%"
+              @update:model-value="set($event)"
+            >
+              <sdk-option
+                v-for="opt in fieldOptions(field)"
+                :key="String(opt.value)"
+                :value="opt.value"
+                :label="opt.label"
+                :disabled="Boolean(opt.disabled)"
+              >
+                <span class="schedules-app-opt">
+                  <span>{{ opt.label }}</span>
+                  <span v-if="opt.disabled && opt.disabledReason" class="schedules-app-opt-desc">{{ opt.disabledReason }}</span>
+                  <span v-else-if="opt.description" class="schedules-app-opt-desc">{{ opt.description }}</span>
+                </span>
+              </sdk-option>
+            </sdk-select>
+          </template>
+
+          <template #field-task.executorId>
+            <projection slot="executorPicker"></projection>
+          </template>
+
+          <template #field-task.coauthorIds>
+            <projection slot="coauthorsPicker"></projection>
           </template>
 
           <template #field-task.timeZone="{ value }">
@@ -456,6 +545,8 @@
           >{{ t("card.review") }}</sdk-button>
         </template>
       </projection>
+
+      <projection slot="detailSummary"></projection>
 
       <p v-if="isRunning" class="schedules-drawer-sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
 

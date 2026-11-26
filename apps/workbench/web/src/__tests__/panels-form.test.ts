@@ -4,6 +4,7 @@ import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { platformSchedulesPath } from "@ontomato/contracts/platform-schedules";
 import type { FormField } from "@ontomato/contracts/form-fields";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
@@ -15,7 +16,7 @@ import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
 import { panelMemberKey, type PanelMemberContext } from "../../../../../packages/apps-sdk/src/panel/member";
 import ObjectForm from "../../../../../packages/apps-sdk/src/base/ObjectForm.vue";
 
-import { noOperations, projections, SCHEDULED_TASK } from "./panel-frame";
+import { noOperations, projections, TRIGGER } from "./panel-frame";
 /*
  * The form a panel shows (design 10.3, third and sixth checks): a draft an agent wrote opens in it with its values, its
  * changed fields marked and nothing written; the reader's save is one operation at the revision the form was read at, so
@@ -52,8 +53,8 @@ function panelFor(objectType: string) {
 
 /** Mounts the form with the member and coordinator ports a frame supplies. */
 function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutcome | void>) {
-  const panel = panelFor(SCHEDULED_TASK);
-  const task = { className: SCHEDULED_TASK, primaryKey: "task-1" };
+  const panel = panelFor(TRIGGER);
+  const task = { className: TRIGGER, primaryKey: "task-1" };
   const projection = projections["projection-schedules-form"]!;
   let input: PanelFormSaveInput;
   const instance = createPanelInstance(panel, {
@@ -90,14 +91,14 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
     values,
     revision: 7,
     errors: [],
-    save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {} },
+    save: { method: "PUT", path: `${platformSchedulesPath}/${task.primaryKey}`, bodySchema: {} },
   });
   const form = vi.fn(async (_primaryKey: string) => typed("autotest", { operation: "autotest", caseSetId: "cases-1" }));
   const changed = vi.fn(async (values: Record<string, string>) =>
     typed(values.operation!, values.operation === "inspection" ? { operation: "inspection", instruction: values.instruction ?? "" } : values));
   // The owner's save of the chosen task, as it admits it.
   const operations = computed(() => ({ status: "ready" as const, value: { save: {
-    kind: "form.save" as const, handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write" as const,
+    kind: "form.save" as const, handlerRef: `${TRIGGER}.save`, label: "Save", effect: "write" as const,
     target: { source: "input" as const, input: "task" }, inputSchema: {}, resultSchema: {}, batch: false,
   } } }));
   const unregister = instance.register({
@@ -191,7 +192,7 @@ describe("the form a panel shows", () => {
     expect(element.querySelector(".sdk-owner-form-changed")?.textContent?.trim()).toBe("Changed: Operation, Instruction");
     // Nothing was written: the reader saves explicitly.
     expect(written).toEqual([]);
-    expect(M.operations.value).toEqual([expect.objectContaining({ id: "form.save", handlerRef: `${SCHEDULED_TASK}.save` })]);
+    expect(M.operations.value).toEqual([expect.objectContaining({ id: "form.save", handlerRef: `${TRIGGER}.save` })]);
 
     // The reader saves with the form's own button: one write, at the revision the form was read at. The panel frame is
     // sandboxed without allow-forms, where the browser drops a native form submission, so the button is not a submit.

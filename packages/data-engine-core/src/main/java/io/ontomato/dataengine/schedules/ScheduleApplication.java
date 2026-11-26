@@ -21,7 +21,7 @@ public interface ScheduleApplication {
     }
   }
 
-  record FormInput(JsonNode values, String changedField, UUID taskId, String timeZone) {}
+  record FormInput(JsonNode values, String changedField, String taskId, String timeZone) {}
 
   record Validation(
       JsonNode content,
@@ -31,10 +31,10 @@ public interface ScheduleApplication {
       JsonNode references) {}
 
   record Execution(
-      UUID taskId,
+      String taskId,
       UUID runId,
       String domainId,
-      String creatorId,
+      String executorId,
       TaskDefinition definition,
       String locale,
       String trigger,
@@ -69,13 +69,6 @@ public interface ScheduleApplication {
 
   String id();
 
-  String description(String locale);
-
-  void authorize(Actor actor);
-
-  /** Providers with target-specific grants can authorize the selection without checking unrelated targets. */
-  default void authorize(Actor actor, JsonNode content) { authorize(actor); }
-
   JsonNode form(FormInput input, Actor actor);
 
   Validation validate(TaskDefinition definition, Actor actor);
@@ -100,46 +93,4 @@ public interface ScheduleApplication {
     return 0;
   }
 
-  default void attach(UUID taskId, Validation validation) {}
-
-  default void detach(UUID taskId) {}
-
-  /**
-   * Whether new tasks may be created for this application.
-   *
-   * <p>A retired application keeps its history readable and its existing tasks editable — an operator still needs to
-   * switch one off — but must not accept a new one, or the surface it was retired in favour of is never the only path.
-   * The ontology application returns false because its triggers are capability objects now.</p>
-   */
-  default boolean acceptsNewTasks() {
-    return true;
-  }
-
-  /** The refusal shown when {@link #acceptsNewTasks()} is false, in the caller's language. */
-  default String newTasksRefused(String locale) {
-    return locale != null && locale.startsWith("zh")
-        ? "该应用已改为使用「触发」创建，请在触发页面新建"
-        : "This application's schedules moved to Triggers; create one on the Triggers page";
-  }
-
-  default JsonNode describe(Actor actor) {
-    String reason = null;
-    try {
-      authorize(actor);
-    } catch (org.springframework.web.server.ResponseStatusException denied) {
-      if (denied.getStatusCode().value() != 403) throw denied;
-      reason = denied.getReason();
-    }
-    return object(
-        "id",
-        id(),
-        "description",
-        description(actor.locale()),
-        "available",
-        reason == null,
-        "unavailableReason",
-        reason,
-        "taskCount",
-        0);
-  }
 }

@@ -10,7 +10,7 @@ import { panelAuthorDefinitions, panelHostPaths, platformPanelHost } from "../..
 import {
   sentPanelReadItems,
   ignoreChanges, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
-  panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, type Sent,
+  panelSnapshot, panelUse, projections, TRIGGER, task, type Sent,
 } from "./panel-frame";
 
 /*
@@ -42,7 +42,7 @@ const allUses = [
 /** The relations Java answers now, and the task's label the owner answers now: tests change them while a page is kept. */
 let uses = allUses;
 let shownLabel = task.title;
-const deepState = { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } };
+const deepState = { selectedTask: { className: TRIGGER, primaryKey: task.id } };
 const secondTask = { ...task, id: "ac186b00-a3dd-46d2-b404-72065d877a34", title: "Second scheduled task" };
 
 /** Holds P's definition check until the test lets it answer. */
@@ -62,7 +62,7 @@ function read(request: Sent) {
   if (dataName === "record")
     return { primaryKey: inputs.task!.primaryKey, label: inputs.task!.primaryKey === task.id ? shownLabel : secondTask.title, fields: {} };
   if (dataName === "operation")
-    return { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+    return { handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
   return {
     fields: [field("/name", "Name")],
     values: { name: inputs.task?.primaryKey === secondTask.id ? "Second form" : "Nightly" },
@@ -428,7 +428,7 @@ it("hides the previous target's form and summary immediately while reopening a k
     let releaseRead!: () => void;
     readGate = { primaryKey: secondTask.id, promise: new Promise<void>(resolve => (releaseRead = resolve)) };
 
-    await router.push(panelAddress(at("tasks"), { selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id } }));
+    await router.push(panelAddress(at("tasks"), { selectedTask: { className: TRIGGER, primaryKey: secondTask.id } }));
     await vi.waitFor(() => expect(shown(tasks)).toBe(true));
 
     // Even before reopen's snapshot check resolves, the previous target's editable form and summary must not flash.

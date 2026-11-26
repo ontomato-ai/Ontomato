@@ -3,8 +3,8 @@ import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
-  SCHEDULED_TASK, inside, inspectionTaskForm, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord,
+import { confirmDiscard, formSaveCalls, isPanelDatum, triggerForm, humanIntents, ignoreChanges,
+  TRIGGER, inside, inspectionTaskForm, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord,
   panelUse, projections, registered, task, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -18,12 +18,10 @@ import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
 
 const formProjection = projections["projection-schedules-form"]!;
 const panel = panelRecord("panel-schedules-form", "Task form", definePanel({
-  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
   members: { form: { target: { projectionId: formProjection.id }, inputs: { task: { state: "selectedTask" } } } },
 }));
 const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panel.id, "/applications/app-panels-trial-a/tasks");
-const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;
-const formPath = `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`;
 /** The task as an inspection with its saved instruction. */
 const inspection = { ...task, content: { operation: "inspection", instruction: "Inspect last night's failures" } };
 
@@ -36,19 +34,18 @@ function opened() {
   const intents = humanIntents(() => ({ kind: "success", data: {} }));
   const sent = installPlatform(async (request: Sent) => {
     if (request.path === `/api/product-projections/${formProjection.id}`) return Response.json({ projection: formProjection });
-    if (request.path === taskPath && request.method === "GET") return Response.json(inspection);
-    if (request.path === formPath) {
+    if (isPanelDatum(request, "form")) {
       if (hold || holdOne) {
         holdOne = false;
         await new Promise((resolve) => { held = resolve; });
       }
-      return Response.json({ ...inspectionTaskForm, values: inspection.content, submittable: true });
+      return Response.json({ status: "ready", value: triggerForm({ ...inspectionTaskForm, values: inspection.content }) });
     }
     return intents(request) ?? nothingAt(request);
   });
   const frame = panelFrame();
   platformPanelHost("app-panels-trial-a", use, ignoreChanges).frame(frame, registered("app-panels-trial-a", use, panel), true);
-  writePanelDocument(registered("app-panels-trial-a", use, panel), "/applications/app-panels-trial-a/tasks", { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } });
+  writePanelDocument(registered("app-panels-trial-a", use, panel), "/applications/app-panels-trial-a/tasks", { selectedTask: { className: TRIGGER, primaryKey: task.id } });
   inside(frame);
   return {
     sent, frame,
@@ -75,7 +72,7 @@ function opened() {
 }
 
 const instruction = () => document.querySelector<HTMLTextAreaElement>('[data-field="/instruction"] textarea');
-const formReads = (sent: Sent[]) => sent.filter((request) => request.path === formPath).length;
+const formReads = (sent: Sent[]) => sent.filter((request) => isPanelDatum(request, "form")).length;
 
 /** Watches the form for a skeleton standing in for its fields. */
 function skeletons() {

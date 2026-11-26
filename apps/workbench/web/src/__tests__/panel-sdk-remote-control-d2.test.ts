@@ -15,7 +15,7 @@ import type {
   ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
-import { FEEDBACK_RECORD, SCHEDULED_TASK, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { FEEDBACK_RECORD, TRIGGER, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import { applicationPanelUseSchema, type DirectProjection, type ProductProjection } from "@ontomato/contracts/product-panels";
@@ -281,7 +281,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       const operation = "opRunNow.runNow";
       const descriptor: PanelOwnerOperationDescriptor = {
         kind: "action",
-        handlerRef: "schedules.runNow",
+        handlerRef: "triggers.runNow",
         label: "Run now",
         effect: "write",
         target: { source: "input", input: "task" },
@@ -311,7 +311,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       });
       const manifest: DirectPanelManifest = {
         state: {
-          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true, personal: false, external: false },
+          selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true, personal: false, external: false },
         },
         members: { opRunNow: { target: { projectionId: "proj-run-now" }, inputs: { task: { state: "selectedTask" } } } },
       };
@@ -320,18 +320,18 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
         id: "proj-run-now",
         name: "Run now",
         componentId: "@ontomato/sdk:OperationButton",
-        inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+        inputs: { task: { kind: "object", objectType: TRIGGER } },
         data: {},
         outputs: {},
         config: {},
-        operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+        operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
       };
       const instance = createDirectPanelInstance(manifest, {
         ...noOperations,
         pageKey: "tasks-d2",
         url: () => "/tasks-d2",
         label: () => "Tasks D2",
-        initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+        initial: { selectedTask: { className: TRIGGER, primaryKey: "t-1" } },
         text: createPanelText({}, ref("en"), "en"),
         read: (request) => request.operations ? readDescription() : Promise.resolve(ready(null)),
         readProjection: async () => projection,
@@ -366,7 +366,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
         const executeFromFirstSnapshot = () => instance.executeAction({
           operation, expectedEntryInstanceId: entryId, agentRun: AGENT_RUN,
         });
-        const selectOtherTask = () => instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-2" });
+        const selectOtherTask = () => instance.state.set("selectedTask", { className: TRIGGER, primaryKey: "t-2" });
         if (selection === "changed before loading") {
           selectOtherTask();
           expect(instance.entryInstances()[operation]).not.toBe(entryId);
@@ -380,7 +380,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
           expect(instance.entryInstances()[operation]).toBe(entryId);
           expect(await executeFromFirstSnapshot()).toMatchObject({ ok: true, kind: "executed", operation });
           expect(prepare.mock.calls[0]?.[1]).toEqual({
-            call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" }, input: {} },
+            call: { target: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" }, input: {} },
           });
           expect(confirmOperation).toHaveBeenCalled();
         } else {
@@ -408,7 +408,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
 
     const saveDescriptor: PanelOwnerOperationDescriptor = {
       kind: "form.save",
-      handlerRef: "platform:ScheduledTask.save",
+      handlerRef: "platform:Trigger.save",
       label: "Save task",
       effect: "write",
       batch: false,
@@ -424,7 +424,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
 
     const manifest: DirectPanelManifest = {
       state: {
-        selected: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true, personal: false, external: false },
+        selected: { type: { kind: "object", objectType: TRIGGER }, deepLink: true, personal: false, external: false },
       },
       members: {
         form: {
@@ -439,7 +439,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       name: "Task form",
       componentId: "@ontomato/sdk:ObjectForm",
       inputs: {
-        task: { kind: "object", objectType: SCHEDULED_TASK },
+        task: { kind: "object", objectType: TRIGGER },
         values: { kind: "json" },
         changedField: { kind: "scalar", type: "string" },
       },
@@ -453,7 +453,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       outputs: {},
       config: {},
       operations: {
-        save: { operation: { kind: "PlatformOperation", id: "platform:ScheduledTask.save" }, target: { input: "task" } },
+        save: { operation: { kind: "PlatformOperation", id: "platform:Trigger.save" }, target: { input: "task" } },
       },
     };
 
@@ -461,7 +461,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       pageKey: "tasks-d2",
       url: () => "/tasks-d2",
       label: () => "Tasks D2",
-      initial: { selected: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      initial: { selected: { className: TRIGGER, primaryKey: "t-1" } },
       text: createPanelText({}, ref("en"), "en"),
       read: async (req: PanelMemberReadRequest) => {
         if (req.operations) return ready({ save: saveDescriptor });
@@ -663,7 +663,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       const formIdBefore = instance.forms.snapshot("form")?.formInstanceId;
       expect(typeof formIdBefore).toBe("string");
       await instance.forms.handle("form")!.reset();
-      instance.state.set("selected", { className: SCHEDULED_TASK, primaryKey: "t-2" });
+      instance.state.set("selected", { className: TRIGGER, primaryKey: "t-2" });
       await vi.waitFor(() => expect(textInput("/name")?.value).toBe("Task B"));
       const formIdAfter = instance.forms.snapshot("form")?.formInstanceId;
       expect(formIdAfter).not.toBe(formIdBefore);
@@ -710,7 +710,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
     const manifest: DirectPanelManifest = {
       state: {
         checked: {
-          type: { kind: "list", items: { kind: "object-union", objectTypes: [SCHEDULED_TASK, SKILL] } },
+          type: { kind: "list", items: { kind: "object-union", objectTypes: [TRIGGER, SKILL] } },
           deepLink: false,
           personal: false,
           external: false,
@@ -735,17 +735,17 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       inputs: {},
       data: {
         rows: {
-          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
           read: "list",
           params: {},
         },
       },
       outputs: {
-        checked: { kind: "list", items: { kind: "object-union", objectTypes: [SCHEDULED_TASK, SKILL] } },
+        checked: { kind: "list", items: { kind: "object-union", objectTypes: [TRIGGER, SKILL] } },
       },
       config: {
         selectable: true,
-        rowType: { kind: "object-union", objectTypes: [SCHEDULED_TASK, SKILL] },
+        rowType: { kind: "object-union", objectTypes: [TRIGGER, SKILL] },
         rowActions: {
           items: [{ kind: "operation", operation: "remove" }],
         },
@@ -759,7 +759,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       id: "proj-batch-btn",
       name: "Batch button",
       componentId: "@ontomato/sdk:OperationButton",
-      inputs: { items: { kind: "list", items: { kind: "object-union", objectTypes: [SCHEDULED_TASK, SKILL] } } },
+      inputs: { items: { kind: "list", items: { kind: "object-union", objectTypes: [TRIGGER, SKILL] } } },
       data: {},
       outputs: {},
       config: { operation: "batchRemove" },
@@ -789,11 +789,11 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
         return {
           status: "ready",
           value: [
-            { primaryKey: "row-1", className: SCHEDULED_TASK, label: "Task 1", fields: {} },
+            { primaryKey: "row-1", className: TRIGGER, label: "Task 1", fields: {} },
             { primaryKey: "row-2", className: SKILL, label: "Skill 2", fields: {} },
           ] as never,
           rowOperations: {
-            [`${SCHEDULED_TASK}:row-1`]: { remove: { available: true } },
+            [`${TRIGGER}:row-1`]: { remove: { available: true } },
             [`${SKILL}:row-2`]: { remove: { available: true } },
           },
         };
@@ -855,7 +855,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       // 1. Trigger row action while initial rows read is still in flight -> waits for read completion and succeeds!
       const pendingRowAction = instance.executeAction({
         operation: "list.remove",
-        rowKey: `${SCHEDULED_TASK}:row-1`,
+        rowKey: `${TRIGGER}:row-1`,
         agentRun: AGENT_RUN,
       });
       setTimeout(() => releaseInitialRead(), 30);
@@ -871,14 +871,14 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
 
       // 3. Batch action checks checkedKeys consistency and classifies partial batch completion accurately.
       instance.state.set("checked", [
-        { className: SCHEDULED_TASK, primaryKey: "row-1" },
+        { className: TRIGGER, primaryKey: "row-1" },
         { className: SKILL, primaryKey: "row-2" },
       ]);
       await nextTick();
 
       const staleBatch = await instance.executeAction({
         operation: "batchBtn.batchRemove",
-        expectedCheckedKeys: [`${SCHEDULED_TASK}:row-1`],
+        expectedCheckedKeys: [`${TRIGGER}:row-1`],
         agentRun: AGENT_RUN,
       });
       expect(staleBatch).toMatchObject({ ok: false, reason: "stale" });
@@ -886,7 +886,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       nextOutcome = {
         kind: "batch",
         items: [
-          { target: { objectType: SCHEDULED_TASK, primaryKey: "row-1" }, outcome: { kind: "success", data: {} } },
+          { target: { objectType: TRIGGER, primaryKey: "row-1" }, outcome: { kind: "success", data: {} } },
           {
             target: { objectType: SKILL, primaryKey: "row-2" },
             outcome: { kind: "refusal", code: "TASK_RUNNING", message: "Busy" },
@@ -895,7 +895,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       };
       const partialBatch = await instance.executeAction({
         operation: "batchBtn.batchRemove",
-        expectedCheckedKeys: [`${SCHEDULED_TASK}:row-1`, `${SKILL}:row-2`],
+        expectedCheckedKeys: [`${TRIGGER}:row-1`, `${SKILL}:row-2`],
         agentRun: AGENT_RUN,
       });
       expect(partialBatch).toMatchObject({

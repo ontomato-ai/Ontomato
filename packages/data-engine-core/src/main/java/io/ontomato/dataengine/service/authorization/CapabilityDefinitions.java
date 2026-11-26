@@ -73,8 +73,9 @@ public class CapabilityDefinitions {
     }
 
     public static ObjectAccess access(Trigger trigger, Verb verb) {
-        return access(trigger.getDomainId(), Kind.TRIGGER, trigger.getId(), trigger.getCreatedBy(),
-                trigger.getStatus(), Trigger.STATUS_PENDING_REVIEW, verb);
+        var state = Trigger.PENDING_REVIEW.equals(trigger.status()) ? DefinitionState.DRAFT : DefinitionState.PUBLISHED;
+        return new ObjectAccess(new ObjectTarget(trigger.domain(), Kind.TRIGGER, trigger.id()), verb,
+                new OwnerFacts(trigger.creator(), state, trigger.coauthors()));
     }
 
     public static ObjectAccess access(Workflow workflow, Verb verb) {

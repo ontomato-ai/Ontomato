@@ -197,7 +197,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
 
       json("panel/registration.json", { panels: [{ id: "example", mode: "create",
         input: { name: "Badge", description: "", visibility: "domain" } }] });
-      const objectType = "platform:ScheduledTask";
+      const objectType = "platform:Trigger";
       json("panel/panel.json", { manifest: { state: {},
         members: { badge: { component: badge.componentId, type: objectType,
           data: { rows: "list" }, config: { caption: "Ready" } } } } });

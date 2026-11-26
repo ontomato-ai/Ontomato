@@ -7,11 +7,6 @@ export const FAVORITE = "platform:Favorite";
 export const RECENT_VISIT = "platform:RecentVisit";
 export const AGENT_SESSION = "platform:AgentSession";
 export const EXECUTE_OBJECT_ACTION = "actions.execute";
-export const SCHEDULED_TASK = "platform:ScheduledTask";
-export const CREATE_SCHEDULED_TASK = `${SCHEDULED_TASK}.create`;
-export const SET_SCHEDULED_TASK_ENABLED = `${SCHEDULED_TASK}.setEnabled`;
-export const DELETE_SCHEDULED_TASK = `${SCHEDULED_TASK}.delete`;
-export const RENEW_SCHEDULED_TASK_CREDENTIAL = "schedules.renewCredential";
 export const AGENT_DEFINITION = "platform:AgentDefinition";
 export type AgentDefinitionCategory = "custom" | "preset" | "system";
 export const SKILL = "platform:Skill";
@@ -119,7 +114,10 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
   ...(layer && { layer }),
 });
 
-export const RUN_NOW = "schedules.runNow";
+export const RUN_NOW = "triggers.runNow";
+export const CREATE_TRIGGER = "triggers.create";
+export const SET_TRIGGER_ENABLED = "triggers.setEnabled";
+export const RENEW_TRIGGER_CREDENTIAL = "triggers.renewCredential";
 export const DELETE_AGENT = "agents.delete";
 export const ADD_FAVORITE = "favorites.add";
 export const REMOVE_FAVORITE = "favorites.remove";
@@ -267,7 +265,9 @@ const productCatalogueOperations = (type: string, collection: string) => [
 ];
 const modelListByClass = { source: "type", parameterMode: "fixed", params: { className: "className" }, result: "panelRecordList" } as const;
 
-const scheduledTaskRowOutputs = {
+const triggerRowOutputs = {
+  definitionStatus: { kind: "scalar", type: "string" },
+  targetKind: { kind: "scalar", type: "string" },
   revision: { kind: "scalar", type: "number" },
   enabled: { kind: "scalar", type: "boolean" },
   paused: { kind: "scalar", type: "boolean" },
@@ -284,48 +284,34 @@ const scheduledTaskRowOutputs = {
 
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
 export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDeclaration>> = {
-  [SCHEDULED_TASK]: {
-    ...describeType("scheduledTask", "capability"),
+  [TRIGGER]: {
+    ...describeType("trigger", "capability"),
     reads: {
+      count: countRead,
       list: {
         source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList",
-        outputs: scheduledTaskRowOutputs,
+        outputs: triggerRowOutputs,
       },
       catalogue: {
-        source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword", workspace: "keyword", workspaceAgent: "keyword", selectedTask: "scheduledTaskRef" },
-        result: "panelRecordList", outputs: scheduledTaskRowOutputs,
+        source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword", status: "keyword", workspace: "keyword", workspaceAgent: "keyword", selectedTask: "triggerRef" }, result: "panelRecordList",
+        outputs: triggerRowOutputs,
       },
       counts: { source: "type", parameterMode: "fixed", params: { by: "keyword" }, result: "panelGroupCounts" },
       status: {
         source: "type", parameterMode: "fixed", params: {}, result: "panelRecord",
         outputs: {
-          canCreate: { kind: "scalar", type: "boolean" },
-          createBlockedReason: { kind: "scalar", type: "string" },
-          applicationsProblem: { kind: "scalar", type: "string" },
-          applicationsFailed: { kind: "scalar", type: "boolean" },
           hasCredentialPaused: { kind: "scalar", type: "boolean" },
           credentialStatus: { kind: "scalar", type: "string" },
         },
       },
       record: {
         source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
-        outputs: {
-          revision: { kind: "scalar", type: "number" },
-          enabled: { kind: "scalar", type: "boolean" },
-          paused: { kind: "scalar", type: "boolean" },
-          pauseCode: { kind: "scalar", type: "string" },
-          latestResultPath: { kind: "scalar", type: "string" },
-          hasEarlierResult: { kind: "scalar", type: "boolean" },
-          lastRunStatus: { kind: "scalar", type: "string" },
-          isRunning: { kind: "scalar", type: "boolean" },
-          needsIntervention: { kind: "scalar", type: "boolean" },
-          attentionGroup: { kind: "scalar", type: "string" },
-          latestRunId: { kind: "scalar", type: "string" },
-          openPath: { kind: "scalar", type: "string" },
-        },
+        outputs: triggerRowOutputs,
       },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: { ...definitionFormParams, defaultAppId: "keyword", defaultAgentId: "keyword" }, result: "panelFormDescription" },
+      memberOptions: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
+      memberResolve: { source: "type", parameterMode: "fixed", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
       runs: { source: "object", parameterMode: "fixed", params: { cursor: "cursor" }, result: "scheduledTaskRunPage" },
       run: {
         source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" },
@@ -341,7 +327,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
     },
-    operations: [`${SCHEDULED_TASK}.save`, RUN_NOW, CREATE_SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED, DELETE_SCHEDULED_TASK],
+    operations: [`${TRIGGER}.save`, CREATE_TRIGGER, SET_TRIGGER_ENABLED, SET_TRIGGER_STATUS, DELETE_TRIGGER, RUN_NOW],
   },
   [PUBLISHED_MCP_SERVICE]: {
     ...describeType("publishedMcpService"),
@@ -610,11 +596,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       grantDirect: objectListRead,
     },
     operations: [`${WORKFLOW}.save`, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW],
-  },
-  [TRIGGER]: {
-    ...describeType("trigger", "capability"),
-    reads: { ...metadataList, ...definitionQuery, ...modelReads, count: countRead, armedCount: countRead },
-    operations: [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER],
   },
   [SKILL]: {
     ...describeType("skill", "capability"),
@@ -996,7 +977,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_SYNC_BUILDER_SOURCE,
       APPLICATION_PUBLISH_BUILDER_SOURCE, APPLICATION_ROLLBACK_BUILDER_RELEASE,
       APPLICATION_RESTART_BUILD_TEST,
-      RENEW_SCHEDULED_TASK_CREDENTIAL,
+      RENEW_TRIGGER_CREDENTIAL,
     ],
   },
   [APPLICATION_PANEL_USE]: {
@@ -1378,7 +1359,7 @@ const platformNamedFormSaves: ReadonlySet<string> = new Set([
   APPLICATION_CREATE_DRAFT,
   APPLICATION_UPDATE_BUILDER_META,
   APPLICATION_PUBLISH_BUILDER_SOURCE,
-  CREATE_SCHEDULED_TASK,
+  CREATE_TRIGGER,
   ADD_MODEL_ENTRY,
   CREATE_EXTERNAL_MCP_SERVICE,
   SAVE_OBJECT_DETAIL_PANEL,
@@ -1469,7 +1450,7 @@ export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] =
   relation("permission-policy.can-enter-application", PERMISSION_POLICY, APPLICATION, "java-authorization", "authorization"),
   relation("permission-policy.can-execute-action", PERMISSION_POLICY, ACTION, "java-authorization", "authorization"),
   relation("permission-policy.can-use-object", PERMISSION_POLICY,
-    [PRODUCT_PANEL, PRODUCT_PROJECTION, SDK_COMPONENT, AGENT_DEFINITION, METRIC_VIEW, FUNCTION, WORKFLOW],
+    [PRODUCT_PANEL, PRODUCT_PROJECTION, SDK_COMPONENT, AGENT_DEFINITION, METRIC_VIEW, FUNCTION, WORKFLOW, TRIGGER],
     "java-authorization", "authorization"),
   relation("role.owns-workflow-step", ROLE, WORKFLOW, "java-workflow", "authorization", true),
   relation("projection.uses-component", PRODUCT_PROJECTION, SDK_COMPONENT, "node-product-panels", "assembly"),
