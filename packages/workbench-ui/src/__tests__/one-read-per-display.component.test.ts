@@ -48,13 +48,15 @@ function fakeMember(options: FakeMemberOptions) {
 }
 
 /** The panel a projection member is drawn in, as far as a component taking its data from a parent touches it. */
-function fakePanel() {
+function fakePanel(outputs: Record<string, unknown> = {}) {
   return {
     manifest: { members: {} },
     t: (key: string) => key,
     instance: {
       nameObjects: () => undefined,
-      setMemberOutput: () => undefined,
+      setMemberOutput: (member: string, name: string, value: unknown) => {
+        outputs[`${member}.${name}`] = value;
+      },
       registerActionHandler: () => () => undefined,
       operationIdOf: (_slot: unknown, name: string) => name,
       checkedKeys: () => null,
@@ -65,14 +67,19 @@ function fakePanel() {
   };
 }
 
-function mountIn(member: unknown, component: unknown, props: Record<string, unknown>) {
+function mountIn(
+  member: unknown,
+  component: unknown,
+  props: Record<string, unknown>,
+  panel: unknown = fakePanel(),
+) {
   return mount(component as never, {
     props: props as never,
     global: {
       plugins: [workbenchI18n()],
       provide: {
         [panelMemberKey as symbol]: () => member,
-        [panelContextKey as symbol]: fakePanel(),
+        [panelContextKey as symbol]: panel,
       },
     },
   });
@@ -169,6 +176,18 @@ describe("one display reads a member once", () => {
     // A parent's own read says whether it is loading or failed; the header does not say it a second time.
     expect(late.findComponent({ name: "DataState" }).exists()).toBe(false);
     expect(reads).toEqual([]);
+  });
+
+  it("ObjectHeader publishes the handed record's own state, not a second read's failure", () => {
+    const { member } = fakeMember({
+      data: { record: { status: "error", message: "The owner refused the read" } },
+    });
+    const outputs: Record<string, unknown> = {};
+
+    mountIn(member, ObjectHeader, { record }, fakePanel(outputs));
+
+    expect(outputs["member.status"]).toBe("ready");
+    expect(outputs["member.errorMessage"]).toBe(null);
   });
 
   it("ObjectHeader still reads its own record datum, and says loading from that read, when the parent hands nothing", () => {
