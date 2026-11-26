@@ -484,7 +484,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     });
   });
 
-  it.each([[2, 8], [20, 80]])("bounds RPCs for a member page of %i rows (up to %i availability reads)", async (size, availabilityBudget) => {
+  it.each([[2], [20]])("bounds RPCs for a member page of %i rows", async size => {
     setProduct(makeProjection("members-list", {
       componentId: "@ontomato/sdk:ObjectList",
       inputs: {},
@@ -503,8 +503,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       return { text: JSON.stringify({ success: true, data: { rows, total: size } }) };
     });
     const availabilityRpc = vi.fn(async (url: string) => {
-      if (!/\/panel\/governance\/users\/(remove|api-key)\/unavailable$/.test(url)) throw new Error(`Unexpected RPC: ${url}`);
-      return Response.json({ success: true, data: { reason: null } });
+      if (!/\/panel\/governance\/users\/(remove\/batch\/unavailable|api-key\/rows\/unavailable)$/.test(url)) throw new Error(`Unexpected RPC: ${url}`);
+      return Response.json({ success: true, data: {} });
     });
     vi.stubGlobal("fetch", availabilityRpc);
 
@@ -516,9 +516,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     expect(res).toMatchObject({ status: "ready", value: { rows, total: size } });
     expect(mocks.backendGet.mock.calls.length).toBeLessThanOrEqual(1);
     expect(mocks.backendPost.mock.calls.length).toBeLessThanOrEqual(1);
-    // Round 2 #4: removal and three API-key operations still preflight each row.
-    // Do not require those trips: removing preflights from the list also meets the budget.
-    expect(availabilityRpc.mock.calls.length).toBeLessThanOrEqual(availabilityBudget);
+    // Round 2 #4: the four row operations each resolve the whole page in one batch owner read.
+    expect(availabilityRpc.mock.calls.length).toBeLessThanOrEqual(4);
   });
 
   it("executes row-scoped operations on human and agent channels and rejects wrong target class", async () => {

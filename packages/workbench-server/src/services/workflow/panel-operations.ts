@@ -24,6 +24,12 @@ async function readTarget(host: PanelOperationHost, target: PanelRecordTarget) {
   return requireWorkflow(workflowSchema.nullish().parse(data), host.locale);
 }
 
+async function readWorkflowRows(host: PanelOperationHost) {
+  const envelope = await ownerPost(host, "/workflow/query", {}, ownerEnvelopeSchema);
+  if (!envelope.success) throw new Error(envelope.message ?? "The owner could not read workflows");
+  return z.array(workflowSchema).parse(envelope.data);
+}
+
 const actions = [
   {
     handlerRef: ACTIVATE_WORKFLOW,
@@ -68,6 +74,17 @@ const workflowActions = actions.map((action): PanelWriteServerOperation => ({
     if (action.unavailable(await readTarget(host, target))) {
       return { reason: workflowText(host.locale)(`unavailable.${action.reason}`) };
     }
+  },
+  async unavailableBatch(host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
+    const rows = new Map((await readWorkflowRows(host)).map(row => [row.id, row]));
+    const reasons = new Map<string, { reason: string } | undefined>();
+    for (const { target, rowKey } of targets) {
+      const row = requireWorkflow(rows.get(target.primaryKey), host.locale);
+      if (action.unavailable(row)) {
+        reasons.set(rowKey, { reason: workflowText(host.locale)(`unavailable.${action.reason}`) });
+      }
+    }
+    return reasons;
   },
   inspectImpact: {
     handlerRef: `${action.handlerRef}.inspect-impact`,

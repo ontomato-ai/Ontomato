@@ -496,6 +496,44 @@ describe("governance panel server operations", () => {
     expect(await batchHandler.unavailable?.(nonAdminHost, null)).toEqual({ reason: "Domain administrators only" });
   });
 
+
+  it("checks member row operation availability in one owner request per operation", async () => {
+    const { host, sent } = hostWith((path, body) => {
+      if (path === "/api/data-query/panel/governance/users/remove/batch/unavailable") {
+        return Response.json({ success: true, data: { "u-admin": { reason: "Built-in administrator cannot be removed" } } });
+      }
+      if (path === "/api/data-query/panel/governance/users/api-key/rows/unavailable") {
+        return Response.json({ success: true, data: body.mode === "generate" ? { "u-2": { reason: "API key already exists" } } : { "u-1": { reason: "No API key" } } });
+      }
+      return Response.json({ success: false, code: "UNEXPECTED", message: `Unexpected path ${path}` });
+    });
+    const rows = [
+      { target: { kind: "object" as const, objectType: USER, primaryKey: "u-1" }, rowKey: "row-1" },
+      { target: { kind: "object" as const, objectType: USER, primaryKey: "u-2" }, rowKey: "row-2" },
+      { target: { kind: "object" as const, objectType: USER, primaryKey: "u-admin" }, rowKey: "row-admin" },
+    ];
+
+    const remove = anyWriteOp(REMOVE_USER);
+    const removeReasons = await remove.unavailableBatch?.(host, rows);
+    expect(removeReasons?.get("row-admin")).toEqual({ reason: "Built-in administrator cannot be removed" });
+    expect(removeReasons?.has("row-1")).toBe(false);
+
+    const generate = anyWriteOp(GENERATE_USER_API_KEY);
+    const generateReasons = await generate.unavailableBatch?.(host, rows);
+    expect(generateReasons?.get("row-2")).toEqual({ reason: "API key already exists" });
+
+    const revoke = anyWriteOp(REVOKE_USER_API_KEY);
+    const revokeReasons = await revoke.unavailableBatch?.(host, rows);
+    expect(revokeReasons?.get("row-1")).toEqual({ reason: "No API key" });
+
+    const calls = sent.map(({ path, body }) => [path, body]);
+    expect(calls).toEqual([
+      ["/api/data-query/panel/governance/users/remove/batch/unavailable", { ids: ["u-1", "u-2", "u-admin"] }],
+      ["/api/data-query/panel/governance/users/api-key/rows/unavailable", { ids: ["u-1", "u-2", "u-admin"], mode: "generate" }],
+      ["/api/data-query/panel/governance/users/api-key/rows/unavailable", { ids: ["u-1", "u-2", "u-admin"], mode: "revoke" }],
+    ]);
+  });
+
   it("handles policy permission mutations and organization membership/grant mutations", async () => {
     const { host, sent } = hostWith((path, body) => {
       if (path === "/api/data-query/panel/governance/users/remove" && body.id === "u-admin") {

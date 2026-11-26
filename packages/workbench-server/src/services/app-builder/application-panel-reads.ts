@@ -94,6 +94,7 @@ export class ApplicationBuilderReadAdapter {
         busy: item.busy,
         activeRunId: item.activeRunId ?? "",
         updatedAt: item.updatedAt,
+        canMaintain: true,
         canEditEntries: item.canEditEntries,
         canGrant: item.canGrant,
         statusTag: item.busy ? this.text("statusBusy") : (!item.published ? this.text("unpublishedBadge") : ""),
