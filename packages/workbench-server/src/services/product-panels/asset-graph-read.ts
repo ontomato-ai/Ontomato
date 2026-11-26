@@ -1,5 +1,5 @@
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { isApplicationPanelUse, productPanelSchema, productProjectionSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
+import { isApplicationPanelUse, productPanelSchema, productProjectionSchema } from "@ontomato/contracts/product-panels";
 import type { ProductGraph } from "@ontomato/contracts/product-graph";
 import { resolveLocale } from "../../i18n";
 import { getPostgresPool } from "../../infrastructure/postgres";
@@ -90,9 +90,10 @@ export async function readProductAssetGraph(owner: ProductOwner, viewer: Assista
     assistantStore.agents(owner.domainId),
     listObjectDetailPanelMappings(owner.domainId, getPostgresPool()),
   ]);
+  const projections = readableDefinitions(projectionRows, productProjectionSchema);
   const graph = buildProductAssetGraph({
     panels: readableDefinitions(panelRows, productPanelSchema),
-    projections: readableDefinitions(projectionRows, productProjectionSchema).map(projection => ({
+    projections: projections.map(projection => ({
       ...projection, shared: projection.visibility === "domain",
     })),
     applications: details.map(detail => {

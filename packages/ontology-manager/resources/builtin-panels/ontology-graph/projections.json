@@ -660,7 +660,8 @@
         }
       },
       "config": {
-        "expanded": true
+        "expanded": true,
+        "emptyText": "本域还没有产品资产用到业务对象类型。"
       },
       "name": "Product asset reference graph",
       "description": "Every product asset and the references between them, opened in the ontology graph panel's product relation dialog.",
