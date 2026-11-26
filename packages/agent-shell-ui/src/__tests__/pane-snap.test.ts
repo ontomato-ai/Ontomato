@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, h, nextTick, ref, type App } from "vue";
+import { createApp, defineComponent, h, inject, nextTick, ref, type App } from "vue";
 import ShellPagePane from "../components/ShellPagePane.vue";
-import { shellContextKey, type ShellContext } from "../context";
+import { pagePaneElementKey, shellContextKey, type ShellContext } from "../context";
 
 let app: App | null = null;
 afterEach(() => {
@@ -104,4 +104,46 @@ it("expands or closes a page dragged on past its bounds, and stops at a bound ot
   const furtherOut = await drag(0, "cancel");
   expect(furtherOut.during.width).toBe(expanding.during.width);
   expect(parseFloat(expanding.during.width)).toBeGreaterThan(parseFloat(first.after));
+});
+
+it("provides the persistent page-pane element across keyed child remounts", async () => {
+  const root = document.createElement("div");
+  document.body.appendChild(root);
+  const routeKey = ref("/ontology/relations/detail");
+  const seen: Array<HTMLElement | null> = [];
+  const Child = defineComponent({
+    setup() {
+      const pane = inject(pagePaneElementKey, null);
+      return () => {
+        seen.push(pane?.value ?? null);
+        return h("div", { "data-route": routeKey.value });
+      };
+    },
+  });
+  app = createApp({
+    render: () =>
+      h(
+        ShellPagePane,
+        {
+          feature: { id: "panel", label: "Workspace", icon: "pages", availability: "page", withConversation: true },
+          view: "side",
+          busy: false,
+          sending: false,
+          disabled: false,
+        },
+        { default: () => h(Child, { key: routeKey.value }) },
+      ),
+  });
+  app.provide(shellContextKey, {
+    labels: ref({ expand: "Expand", close: "Close" }),
+    questions: { pending: ref([]), sending: ref(false), view: { skipped: [] } },
+  } as unknown as ShellContext);
+  app.mount(root);
+  await nextTick();
+  const pane = root.querySelector<HTMLElement>(".page-pane")!;
+
+  routeKey.value = "/ontology/relations";
+  await nextTick();
+  expect(seen.at(-1)).toBe(pane);
+  expect(pane.isConnected).toBe(true);
 });
