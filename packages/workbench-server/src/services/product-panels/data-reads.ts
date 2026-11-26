@@ -134,6 +134,7 @@ function readAdapters(
   const schedules = createScheduledTaskReadAdapter(owner, viewer, undefined,
     batchCache && (load => batchCache.scheduleApplications(viewer.headers?.[BUILD_TEST_HEADER], load)));
   const governance = createGovernanceReadAdapters(viewer, {
+    domainId: owner.domainId,
     loadPolicyCatalog: () => loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale),
   });
   const ontology = async () => {

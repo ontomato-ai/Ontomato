@@ -331,6 +331,29 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
         }
     }
 
+    @Transactional
+    public void revokeEntries(SubjectContext ctx, String policyId, List<ObjectTarget> entries,
+            List<ObjectGrant> removedObjects) {
+        requireManagement(ctx, CHANGE);
+        var domainId = ctx.identity().domainId();
+        var toRevoke = new LinkedHashSet<ObjectGrant>();
+        for (var entry : entries) {
+            if (!domainId.equals(entry.domainId()) || entry.kind() != Kind.ENTRY)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each removed entry must belong to the policy domain.");
+            toRevoke.add(new ObjectGrant(policyId, entry, Verb.ENTER, null));
+        }
+        for (var objectGrant : removedObjects) {
+            if (!domainId.equals(objectGrant.target().domainId()) || !policyId.equals(objectGrant.policyId()))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The policy and object must be in your domain.");
+            if (objectGrant.target().kind() == Kind.ENTRY)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Entries are removed through the entry list.");
+            toRevoke.add(objectGrant);
+        }
+        for (var grant : toRevoke) {
+            store.revokeObject(grant);
+        }
+    }
+
     public Set<String> policyRoleIds(SubjectContext ctx, String policyId) {
         requireManagement(ctx, READ);
         return store.policyRoleIds(ctx.identity().domainId(), policyId);

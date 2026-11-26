@@ -8,6 +8,7 @@ import {
   LIST_PENDING_POLICY_GRANTS,
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
+  PREVIEW_POLICY_ENTRY_REVOKE,
   READ_MEMBER_ACCESS_CONTEXT,
   RESOLVE_PENDING_POLICY_GRANT,
   USER,
@@ -17,7 +18,8 @@ import { backendPost } from "../../../utils/backend-client";
 import { registeredPanelOperation, type PanelOperationHost } from "../../product-panels/server-operations";
 import { assistantStore, type AgentRow } from "../../assistant/store";
 import {
-  grantPolicyEntries, inspectPolicyAccess, listPendingPolicyGrants, previewEntryGrant, resolvePendingPolicyGrants,
+  grantPolicyEntries, inspectPolicyAccess, listPendingPolicyGrants, policyEntryRevokePreviewPayload, policyObjectEntryUsagePayload,
+  previewEntryGrant, resolvePendingPolicyGrants,
 } from "../policy-access";
 
 vi.mock("../../../utils/backend-client", async original => ({
@@ -47,6 +49,7 @@ const entries = [
 const rootFacts = {
   policyId, entries, targetPolicyRoleIds: ["role-1", "role-2"],
   existingGrants: [
+    { policyId, kind: "ENTRY", id: entryId, verb: "ENTER", scope: null },
     { policyId, kind: "PANEL", id: "orders-panel", verb: "USE", scope: null },
     { policyId, kind: "ACTION", id: "standalone", verb: "EXECUTE", scope },
     { policyId, kind: "ACTION", id: "step-only", verb: "EXECUTE", scope },
@@ -113,7 +116,7 @@ beforeEach(() => {
   post.mockReset().mockImplementation(async (_name, url, body) => {
     if (url.endsWith("/entry-roots")) {
       const { entryIds } = body as { entryIds: string[] };
-      return json({ ...rootFacts, entries: rootFacts.entries.filter(entry => entryIds.includes(entry.entryId)) });
+      return json({ ...rootFacts, entries: rootFacts.entries.filter(entry => entryIds.length === 0 || entryIds.includes(entry.entryId)) });
     }
     throw new Error("Unexpected policy request: " + url);
   });
@@ -162,6 +165,22 @@ describe("policy access", () => {
       },
       retries: 1,
     });
+  });
+
+  it("derives object entry usage and exact revocation candidates from the same dependency context", async () => {
+    const usage = await policyObjectEntryUsagePayload(viewer, domainId, policyId);
+    expect(usage.items).toEqual(expect.arrayContaining([
+      { kind: "PANEL", id: "orders-panel", entries: [{ id: entryId, label: "Orders" }] },
+      { kind: "ACTION", id: "standalone", entries: [{ id: entryId, label: "Orders" }] },
+      { kind: "ACTION", id: "step-only", entries: [] },
+    ]));
+
+    const preview = await policyEntryRevokePreviewPayload(viewer, domainId, policyId, entryId);
+    expect(preview.objects).toEqual(expect.arrayContaining([
+      { kind: "PANEL", id: "orders-panel", verb: "USE", scope: null, label: "orders-panel" },
+      { kind: "ACTION", id: "standalone", verb: "EXECUTE", scope, label: "standalone" },
+    ]));
+    expect((preview.objects as Array<{ id: string }>).some(item => item.id === "step-only")).toBe(false);
   });
 
   it("writes only explicit grants and rejects malformed choices before contacting Java", async () => {
@@ -232,13 +251,38 @@ describe("policy access", () => {
   it("dispatches all registered read and write operations for the selected policy", async () => {
     const target = { kind: "object", objectType: PERMISSION_POLICY, primaryKey: policyId } as const;
     const actor = { credentials: viewer, owner: { domainId, userId: "viewer" } };
-    const host: PanelOperationHost = { initiator: actor, executor: actor, request: vi.fn(), requestWorkbench: vi.fn() };
+    const usage = { roleCount: 2, userCount: 5, roles: [{ id: "role-1", name: "Sales" }] };
+    const host: PanelOperationHost = {
+      initiator: actor,
+      executor: actor,
+      request: vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: usage }), { status: 200 })),
+      requestWorkbench: vi.fn(),
+    };
     const previewHandler = registeredPanelOperation(PREVIEW_POLICY_ENTRY_GRANT)?.handler;
     if (!previewHandler || previewHandler.effect !== "read") throw new Error("Missing previewEntryGrant read op");
     expect(await previewHandler.execute(host, { target, input: { entryIds: [entryId] } })).toMatchObject({
       kind: "json",
       value: { policyId },
     });
+
+    const revokePreviewHandler = registeredPanelOperation(PREVIEW_POLICY_ENTRY_REVOKE)?.handler;
+    if (!revokePreviewHandler || revokePreviewHandler.effect !== "read") throw new Error("Missing previewEntryRevoke read op");
+    expect(await revokePreviewHandler.execute(host, { target, input: { entryId } })).toMatchObject({
+      kind: "json",
+      value: {
+        policyId,
+        entryId,
+        objects: expect.arrayContaining([
+          { kind: "PANEL", id: "orders-panel", verb: "USE", scope: null, label: "orders-panel" },
+          { kind: "ACTION", id: "standalone", verb: "EXECUTE", scope, label: "standalone" },
+        ]),
+        impact: usage,
+      },
+    });
+    expect(host.request).toHaveBeenCalledWith(
+      "/api/data-query/panel/governance/policies/usage",
+      expect.objectContaining({ body: JSON.stringify({ id: policyId }) }),
+    );
 
     const pendingHandler = registeredPanelOperation(LIST_PENDING_POLICY_GRANTS)?.handler;
     if (!pendingHandler || pendingHandler.effect !== "read") throw new Error("Missing listPending read op");
