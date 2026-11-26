@@ -40,6 +40,16 @@ function categoryOf(record: PanelRecord, pointer: string | undefined): { categor
   return { category: value };
 }
 
+/**
+ * The line an edge record draws: dashed when the projection names the field that marks it (`edgeDashedField`, a JSON
+ * Pointer into the record's fields) and that field holds `true` — a relation derived rather than stored — and solid when
+ * it names no such field or the field holds anything else.
+ */
+function lineOf(record: PanelRecord, pointer: string | undefined): "solid" | "dashed" {
+  if (pointer === undefined) return "solid";
+  return valueAt({ ...record.fields }, pointer) === true ? "dashed" : "solid";
+}
+
 function formatGraphCoverageNotice(
   nodesCoverage: CollectionCoverage,
   edgesCoverage: CollectionCoverage,
@@ -68,7 +78,11 @@ function formatGraphCoverageNotice(
  * node refusal or an error is the graph's, while edge refusal keeps all readable nodes with a non-blocking notice.
  * When `nodes` are truncated, edges with missing endpoints are omitted so the graph and adjacency stay consistent.
  */
-export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string): ComputedRef<GraphRecords> {
+export function useGraphRecords(
+  edgeEnds?: EdgeEndsConfig,
+  nodeCategory?: string,
+  edgeDashedField?: string,
+): ComputedRef<GraphRecords> {
   const { t } = useI18n();
   const member = useMember();
   const ends = (() => {
@@ -111,6 +125,7 @@ export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string
         label: record.label,
         source: endpoint(record.primaryKey, record.fields, ends.source),
         target: endpoint(record.primaryKey, record.fields, ends.target),
+        line: lineOf(record, edgeDashedField),
       }));
       const links = nodesCoverage.truncated
         ? (() => {

@@ -3090,9 +3090,10 @@ function choose(row: PlatformObjectRecord) {
   if (openTarget) {
     highlightedIdentity.value = rowIdentityKey(row);
     void panel.navigate(openTarget);
+    return;
   }
   if (!rowSelectable) {
-    if (!openTarget) highlightedIdentity.value = rowIdentityKey(row);
+    highlightedIdentity.value = rowIdentityKey(row);
     return;
   }
   const identity = rowIdentityKey(row);

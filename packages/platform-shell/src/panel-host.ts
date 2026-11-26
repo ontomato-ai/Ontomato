@@ -128,6 +128,8 @@ function projectionIdsOf(shown: HostedPanelSource): string[] {
 export interface DirectPanelRun {
   overlayRoot?: HTMLElement;
   shown?: () => boolean;
+  /** Output names wired by the parent of a placed panel. */
+  readonly boundOutputs?: ReadonlySet<string>;
   /** The page's registration key. */
   pageKey: string;
   /** The instance's address, with its state, as the reader and a message see it. */

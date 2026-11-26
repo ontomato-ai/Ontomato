@@ -535,7 +535,7 @@ async function workspaceCommand(api, [command, ...args]) {
   }
   if (!args[0]) die("workspace requires an id");
   const base = `/workspaces/${encodeURIComponent(args[0])}`;
-  if (["get", "tree", "commits", "sessions", "releases"].includes(command))
+  if (["get", "tree", "commits", "sessions"].includes(command))
     return print(await workbench(api, "GET", `${base}${command === "get" ? "" : `/${command}`}?${query(args[1])}`));
   if (command === "content") {
     if (!args[1]) die("workspace content requires a path");
@@ -564,28 +564,7 @@ async function workspaceCommand(api, [command, ...args]) {
     return print(await workbench(api, command === "restore" ? "POST" : "PATCH", `${base}${command === "restore" ? "/restore" : ""}`,
       command === "restore" ? { commit: args[1] } : { name: args[1] }));
   }
-  if (command === "publish" || command === "rollback") {
-    if (args.length !== 3) die(`workspace ${command} requires id, ${command === "publish" ? "commit" : "releaseId"} and declaration`);
-    return print(await workbench(api, "POST", `${base}/${command}`, {
-      [command === "publish" ? "commit" : "releaseId"]: args[1], declaration: JSON.parse(readInput(args[2])),
-    }));
-  }
   usage();
-}
-
-async function productCommand(api, [command, ...args]) {
-  const base="/product-assets";
-  if(["list","types"].includes(command) && args.length===0)
-    return print(await workbench(api,"GET",base+(command==="list"?"":`/${command}`)));
-  if(command==="get" && args.length===1) return print(await workbench(api,"GET",`${base}/${encodeURIComponent(args[0])}`));
-  if(command==="save" && args.length===2) return print(await workbench(api,"PUT",`${base}/${encodeURIComponent(args[0])}`,JSON.parse(readInput(args[1]))));
-  if(command==='grants'&&args.length===1)return print(await workbench(api,'GET',`${base}/${encodeURIComponent(args[0])}/grants`));
-  if(command==='grant'&&args.length===2)return print(await workbench(api,'POST',`${base}/${encodeURIComponent(args[0])}/grants`,JSON.parse(readInput(args[1]))));
-  if(command==='domain-grant'&&args.length===2&&['true','false'].includes(args[1]))return print(await workbench(api,'POST',`${base}/${encodeURIComponent(args[0])}/domain-grant`,{shared:args[1]==='true'}));
-  if(command==="copy" && args.length===2) return print(await workbench(api,"POST",`${base}/${encodeURIComponent(args[0])}/copy`,{name:args[1]}));
-  if(command==="create-page" && args.length===2) return print(await workbench(api,"POST",`${base}/${encodeURIComponent(args[0])}/create-page`,{name:args[1]}));
-  if(command==="delete" && args.length===2) return print(await workbench(api,"DELETE",`${base}/${encodeURIComponent(args[0])}`,{revision:Number(args[1])}));
-  die("product list|types|get <id>|save <id> <json|@file>|copy <id> <name>|delete <id> <revision>");
 }
 
 function usage() {
@@ -735,7 +714,6 @@ async function main() {
   if (cmd === "component") return componentCommand(api, argv.slice(1));
   if (cmd === "panel") return panelCommand(api, workspaceId, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));
-  if (cmd === "product") return productCommand(api, argv.slice(1));
   if (cmd === "function") return functionCommand(api, argv.slice(1));
   if (cmd === "dataset-desc") {
     printData(await requestJson(api, "GET", "/admin/getDatasetDesc"));

@@ -84,6 +84,10 @@ export const platformOntologyNeighborsRequestSchema = z.object({
   }),
   relationKinds: z.array(relationKind).max(100).readonly().optional(),
   layers: z.array(platformOntologyLayerSchema).max(4).readonly().optional(),
+  targetClass: panelObjectRefSchema.shape.className.optional(),
+  direction: z.enum(["incoming", "outgoing", "both"]).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  offset: recordCount.optional(),
 }).strict();
 export type PlatformOntologyNeighborsRequest = z.infer<typeof platformOntologyNeighborsRequestSchema>;
 

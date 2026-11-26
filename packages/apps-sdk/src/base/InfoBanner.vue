@@ -43,22 +43,16 @@ const props = withDefaults(
     title?: string;
     /** Panel message key (resolved via `panel.t`) or platform i18n key for the heading. */
     titleKey?: string;
-    /** Locale-keyed headings (for example `{ en: "Note", "zh-CN": "说明" }`). */
-    titles?: Readonly<Record<string, string>>;
     /** Optional fallback body text. */
     text?: string;
     /** Panel message key (resolved via `panel.t`) or platform i18n key for the body text. */
     textKey?: string;
-    /** Locale-keyed body texts. */
-    texts?: Readonly<Record<string, string>>;
     /** Optional field key on a bound `record` or column key on a bound metric `result` providing the body text. */
     field?: string;
     /** Optional fixed `{fieldKey}` sentence template formatted against the bound `record` or metric `result` row. */
     template?: string;
     /** Panel or platform i18n key resolving `template` in the active locale. */
     templateKey?: string;
-    /** Locale-keyed templates formatted against the bound `record` or metric `result` row. */
-    templates?: Readonly<Record<string, string>>;
     /** Optional per-placeholder formatting overrides (including `valueMap`) passed to `RecordTemplate`. */
     fieldFormats?: Readonly<Record<string, TypedFieldFormat>>;
     /** Zero-based row index when reading from a bound metric `result` (`metricOutput`) table. Defaults to `0`. */
@@ -77,14 +71,11 @@ const props = withDefaults(
     icon: undefined,
     title: undefined,
     titleKey: undefined,
-    titles: undefined,
     text: undefined,
     textKey: undefined,
-    texts: undefined,
     field: undefined,
     template: undefined,
     templateKey: undefined,
-    templates: undefined,
     fieldFormats: undefined,
     rowIndex: 0,
     compact: false,
@@ -244,7 +235,6 @@ const customIconName = computed<string | undefined>(() => {
 const resolvedTitle = computed(() =>
   resolveLocalizedText({
     key: props.titleKey,
-    map: props.titles,
     fallback: props.title,
     locale: locale.value,
     panelText: panel?.t,
@@ -256,7 +246,6 @@ const resolvedTitle = computed(() =>
 const resolvedStaticText = computed(() =>
   resolveLocalizedText({
     key: props.textKey,
-    map: props.texts,
     fallback: props.text,
     locale: locale.value,
     panelText: panel?.t,
@@ -265,7 +254,7 @@ const resolvedStaticText = computed(() =>
   }),
 );
 
-const hasTemplate = computed(() => Boolean(props.template || props.templateKey || props.templates));
+const hasTemplate = computed(() => Boolean(props.template || props.templateKey));
 
 const bodyText = computed(() => {
   if (boundDatum && props.field) {
@@ -334,7 +323,6 @@ const ariaRole = computed(() => (effectiveTone.value === "warning" || effectiveT
             v-else-if="hasTemplate"
             :template="template"
             :template-key="templateKey"
-            :templates="templates"
             :field-formats="fieldFormats"
             :record="resolvedBound.record"
             :values="resolvedBound.metricRow"

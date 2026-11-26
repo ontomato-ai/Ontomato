@@ -419,12 +419,12 @@ test("owner rows may give a status tone and a field's values as tags", async () 
 test("owner rows may give a field's value a display text without changing the value", async () => {
   const { panelRecordSchema } = await import("./panel-projection");
   const row = { primaryKey: "k-1", label: "Order", fields: { status: "APPROVED", amount: "12.5" } };
-  const labelled = { ...row, valueLabels: { status: { APPROVED: "Approved" }, amount: { "12.5": "Twelve fifty" } } };
+  const labelled = { ...row, valueLabels: { status: "Approved", amount: "Twelve fifty" } };
   assert.deepEqual(panelRecordSchema.parse(labelled), labelled);
-  // The stored value stays as it is, so a mapped record still reads back the same value.
+  // The stored value stays as it is, so a labelled record still reads back the same value.
   assert.equal(panelRecordSchema.parse(labelled).fields.status, "APPROVED");
-  assert.equal(panelRecordSchema.safeParse({ ...row, valueLabels: { status: { APPROVED: "" } } }).success, false);
-  assert.equal(panelRecordSchema.safeParse({ ...row, valueLabels: { status: "Approved" } }).success, false);
+  assert.equal(panelRecordSchema.safeParse({ ...row, valueLabels: { status: "" } }).success, false);
+  assert.equal(panelRecordSchema.safeParse({ ...row, valueLabels: { status: { APPROVED: "Approved" } } }).success, false);
 });
 
 test("panel records carry optional className and strongly typed field values", async () => {
@@ -3292,6 +3292,19 @@ test("an object control must declare the child fields a reader fills", async () 
   assert.equal(parses({ kind: "object", fields: [child] }).success, true);
   // A whole JSON document a reader takes as source is a code control, not an object.
   assert.equal(parses({ kind: "code", language: "json" }).success, true);
+});
+
+test("a Markdown string is a text control in its Markdown presentation, with no kind of its own", async () => {
+  const { panelFormFieldSchema } = await import("./panel-projection");
+  const field = { ...editableField, path: "/prompt", label: "Prompt", valueSchema: { type: "string" } };
+  const parses = (control: unknown) => panelFormFieldSchema.safeParse({ ...field, control });
+
+  // The owner's value stays a plain string; only how it is drawn changes.
+  assert.equal(parses({ kind: "text", presentation: "markdown" }).success, true);
+  assert.equal(parses({ kind: "text" }).success, true);
+  // Markdown is no longer a control kind of its own.
+  assert.equal(parses({ kind: "markdown" }).success, false);
+  assert.equal(parses({ kind: "text", presentation: "rich-text" }).success, false);
 });
 
 test("object form fields declare discriminated variants, validate invariants, and prune inactive values recursively", () => {
