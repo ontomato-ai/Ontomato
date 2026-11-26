@@ -117,6 +117,12 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       effectiveOrgShares(id: string): Promise<PanelRecord[]> {
         return owner("governance-user-effective-org-shares", "/panel/governance/users/effective-org-shares", { id }, panelRecordListSchema);
       },
+      effectiveManagementOperations(id: string): Promise<PanelRecord[]> {
+        return owner("governance-user-effective-management-operations", "/panel/governance/users/effective-management-operations", { id }, panelRecordListSchema);
+      },
+      effectiveDataPermissions(id: string, scope: "subject" | "managed" | "effective"): Promise<PanelRecord[]> {
+        return owner("governance-user-effective-data-permissions", "/panel/governance/users/effective-data-permissions", { id, scope }, panelRecordListSchema);
+      },
       lookupAccount(keyword: string): Promise<PanelOptionList> {
         return owner("governance-user-lookup-account", "/panel/governance/users/lookup-account", { keyword }, panelOptionListSchema);
       },
@@ -274,24 +280,6 @@ function ownerData<T>(result: OwnerReadResult<T>): T {
  * people each of those policies reaches, and whether this viewer may change policies at all. A policy the person arrived
  * with is preselected only when it is one of his own.
  */
-/**
- * Everything the member's effective-permission page shows, in one owner read: the system interfaces, the entries he can
- * enter, the product-layer and capability-layer objects, the business data he sees, and the workflow steps that hand him
- * work. Each row carries the roles and the policies its right comes from; the owner names the objects it holds, and the
- * product-layer names come with the Workbench catalog the owner cannot see.
- */
-export async function readMemberEffectiveAccess(
-  owner: ProductOwner, viewer: AssistantCredentials, subjectId: string,
-): Promise<RuntimeJsonObject> {
-  const workbenchCatalog = await loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale);
-  return governanceOwner(viewer)(
-    "governance-user-effective-access",
-    "/panel/governance/users/effective-access",
-    { id: subjectId, workbenchCatalog },
-    runtimeJsonObjectSchema,
-  );
-}
-
 export async function readMemberAccessContext(
   owner: ProductOwner, viewer: AssistantCredentials, subjectId: string, inspectingPolicyId?: string,
 ): Promise<RuntimeJsonObject> {
@@ -331,4 +319,22 @@ export async function readMemberAccessContext(
     canManage: candidates.length > 0 && await readPolicyChangePermission(viewer, candidates[0]!.id),
     preselectedPolicyId: preselected ? inspectingPolicyId ?? null : null,
   };
+}
+
+/**
+ * Everything the member's effective-permission page shows, in one owner read: the entries he can enter, the system
+ * interfaces, the product-layer and capability-layer objects, the business data he sees, and the workflow steps that
+ * hand him work. Each row carries the roles and policies its right comes from, and each category its count; the owner
+ * names the objects it holds, and the product-layer names come with the Workbench catalog the owner cannot see.
+ */
+export async function readMemberEffectiveAccess(
+  owner: ProductOwner, viewer: AssistantCredentials, subjectId: string,
+): Promise<RuntimeJsonObject> {
+  const workbenchCatalog = await loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale);
+  return governanceOwner(viewer)(
+    "governance-user-effective-access",
+    "/panel/governance/users/effective-access",
+    { id: subjectId, workbenchCatalog },
+    runtimeJsonObjectSchema,
+  );
 }
