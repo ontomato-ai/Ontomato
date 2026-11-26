@@ -199,6 +199,7 @@ const canvasEl = ref<HTMLElement | null>(null);
 const focusedNode = ref<string | null>(null);
 
 const MIN_SCALE = 0.08;
+const READABLE_MIN_SCALE = 0.5;
 const MAX_SCALE = 2;
 const SCALE_STEP = 1.25;
 
@@ -214,7 +215,7 @@ function actualSize(): void {
   scale.value = 1;
 }
 
-function fit(): void {
+function scaleToFit(minimumScale: number): void {
   const el = canvasEl.value;
   const current = layout.value;
   if (!el || !current || current.width <= 0 || current.height <= 0) return;
@@ -222,17 +223,25 @@ function fit(): void {
   const availableHeight = el.clientHeight - 32;
   if (availableWidth <= 0 || availableHeight <= 0) return;
   scale.value = Math.max(
-    MIN_SCALE,
+    minimumScale,
     Math.min(1, availableWidth / current.width, availableHeight / current.height),
   );
+}
+
+function fit(): void {
+  scaleToFit(MIN_SCALE);
+}
+
+function fitAtReadableScale(): void {
+  scaleToFit(READABLE_MIN_SCALE);
 }
 
 let resizeObserver: ResizeObserver | undefined;
 onMounted(() => {
   if (props.expanded && canvasEl.value && typeof ResizeObserver !== "undefined") {
-    resizeObserver = new ResizeObserver(fit);
+    resizeObserver = new ResizeObserver(fitAtReadableScale);
     resizeObserver.observe(canvasEl.value);
-    fit();
+    fitAtReadableScale();
   }
 });
 
@@ -241,10 +250,10 @@ watch(
   ([isExpanded, el]) => {
     if (!isExpanded || !el) return;
     if (!resizeObserver && typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(fit);
+      resizeObserver = new ResizeObserver(fitAtReadableScale);
       resizeObserver.observe(el);
     }
-    fit();
+    fitAtReadableScale();
   },
 );
 
