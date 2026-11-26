@@ -49,6 +49,18 @@ export const inspectPolicyAccessInputSchema = z.object({
   entryId: id,
   actionTargets: z.array(actionTargetSchema).optional(),
 }).strict();
+export const memberAccessContextInputSchema = z.object({
+  inspectingPolicyId: id.optional(),
+}).strict();
+export const inspectMemberAccessInputSchema = z.object({
+  entryId: id,
+  actionTargets: z.array(actionTargetSchema).optional(),
+}).strict();
+export const grantMemberAccessInputSchema = z.object({
+  policyId: id,
+  entryIds: z.array(id),
+  acceptedObjects: z.array(acceptedObjectSchema),
+}).strict();
 
 const publishedActionSchema = z.object({
   id, name: z.string(), targetClass: z.string().nullish(), targetKeyField: z.string().nullish(),
@@ -330,4 +342,19 @@ export async function inspectPolicyAccess(
   input: InspectionInput,
 ) {
   return policyRecord(input.entryId, await inspectPolicyAccessPayload(viewer, domainId, targetPolicyId, input));
+}
+
+/** Every entry the domain publishes, as the policy entry directory lists them. */
+export async function listPolicyEntries(viewer: AssistantCredentials) {
+  const roots = await policyPost(viewer, "entry-roots", { entryIds: [] }, entryRootsResultSchema);
+  return roots.entries.map(({ entryId, appId, label, entryEntitlement }) => ({ entryId, appId, label, entryEntitlement }));
+}
+
+/**
+ * Whether this viewer may change permission policies. The owner answers that question beside the pending grants of a
+ * policy, so one policy ID is enough to ask it; the answer is the same management decision for every policy in the domain.
+ */
+export async function readPolicyChangePermission(viewer: AssistantCredentials, policyId: string): Promise<boolean> {
+  const { canManage } = await policyPost(viewer, "pending:list", { policyId }, pendingListResultSchema);
+  return canManage;
 }

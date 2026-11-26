@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { panelRecordSchema, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import {
+  GRANT_MEMBER_ACCESS,
   GRANT_POLICY_ENTRIES,
+  INSPECT_MEMBER_ACCESS,
   INSPECT_POLICY_ACCESS,
   LIST_PENDING_POLICY_GRANTS,
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
+  READ_MEMBER_ACCESS_CONTEXT,
   RESOLVE_PENDING_POLICY_GRANT,
+  USER,
 } from "@ontomato/contracts/platform-object-types";
 import { getPostgresPool } from "../../../infrastructure/postgres";
 import { backendPost } from "../../../utils/backend-client";
@@ -267,5 +271,135 @@ describe("policy access", () => {
         affected: { objects: [{ objectType: PERMISSION_POLICY, primaryKey: policyId }], objectTypes: expect.arrayContaining([PERMISSION_POLICY]) },
       });
     }
+  });
+});
+
+describe("member access inspection", () => {
+  const subjectId = "member-1";
+  const ownPolicyId = "policy-own";
+  const apiPolicyId = "policy-api";
+  const foreignPolicyId = "policy-foreign";
+  const actor = { credentials: viewer, owner: { domainId, userId: "viewer" } };
+  const host: PanelOperationHost = { initiator: actor, executor: actor, request: vi.fn(), requestWorkbench: vi.fn() };
+  const memberTarget = { kind: "object", objectType: USER, primaryKey: subjectId } as const;
+
+  function mockOwnerReads({ canManage }: { canManage: boolean }) {
+    post.mockImplementation(async (_name, url, body) => {
+      if (url.endsWith("/entry-roots")) {
+        const { entryIds } = body as { entryIds: string[] };
+        return json({ ...rootFacts, entries: rootFacts.entries.filter(entry => !entryIds.length || entryIds.includes(entry.entryId)) });
+      }
+      if (url.endsWith("/workflow/subjects")) {
+        return json([
+          { id: subjectId, loginCode: "ada", displayName: "Ada", roleIds: ["role-1"] },
+          { id: "member-2", loginCode: "bo", displayName: "Bo", roleIds: ["role-1", "role-2"] },
+          { id: "member-3", loginCode: "cy", displayName: "Cy", roleIds: ["role-3"] },
+        ]);
+      }
+      if (url.endsWith("/platform/governance/role-policies")) {
+        return json({ rolePolicies: [
+          { roleId: "role-1", policyId: ownPolicyId },
+          { roleId: "role-2", policyId: ownPolicyId },
+          { roleId: "role-2", policyId: apiPolicyId },
+          { roleId: "role-3", policyId: foreignPolicyId },
+        ] });
+      }
+      if (url.endsWith("/platform/governance/policies")) {
+        return json({ policies: [
+          { id: ownPolicyId, name: "Sales data", type: 2 },
+          { id: apiPolicyId, name: "Sales console", type: 1 },
+          { id: foreignPolicyId, name: "Finance data", type: 2 },
+        ] });
+      }
+      if (url.endsWith("/workflow/platform-access")) {
+        return json([
+          { roleId: "role-1", roleCode: "Sales rep", apiPermissions: [], managementRole: false },
+          { roleId: "role-2", roleCode: "Sales lead", apiPermissions: [], managementRole: false },
+          { roleId: "role-3", roleCode: "Finance", apiPermissions: [], managementRole: false },
+        ]);
+      }
+      if (url.endsWith("/pending:list")) {
+        expect(body).toEqual({ policyId: ownPolicyId });
+        return json({ policyId: ownPolicyId, canManage, targetPolicyRoleIds: ["role-1", "role-2"], items: [] });
+      }
+      throw new Error("Unexpected policy request: " + url);
+    });
+  }
+
+  it("offers only the entry-and-object policies this member's own roles carry, with the reach of each", async () => {
+    mockOwnerReads({ canManage: true });
+    const handler = registeredPanelOperation(READ_MEMBER_ACCESS_CONTEXT)?.handler;
+    if (!handler || handler.effect !== "read") throw new Error("Missing accessContext read op");
+    const result = await handler.execute(host, { target: memberTarget, input: { inspectingPolicyId: ownPolicyId } });
+    const value = (result as { value: Record<string, unknown> }).value;
+
+    expect(value.entries).toEqual([
+      { entryId, appId: "Shop", label: "Orders", entryEntitlement: true },
+      { entryId: detailId, appId: "Shop", label: "Order details", entryEntitlement: false },
+    ]);
+    expect(value.fillPolicies).toEqual([{
+      policyId: ownPolicyId,
+      label: "Sales data",
+      roleIds: ["role-1", "role-2"],
+      roleNames: ["Sales rep", "Sales lead"],
+      memberIds: [subjectId, "member-2"],
+      memberNames: ["Ada", "Bo"],
+    }]);
+    expect(value.canManage).toBe(true);
+    expect(value.preselectedPolicyId).toBe(ownPolicyId);
+  });
+
+  it("keeps a policy the member does not carry out of the candidates and out of the preselection", async () => {
+    mockOwnerReads({ canManage: false });
+    const handler = registeredPanelOperation(READ_MEMBER_ACCESS_CONTEXT)?.handler;
+    if (!handler || handler.effect !== "read") throw new Error("Missing accessContext read op");
+    const result = await handler.execute(host, { target: memberTarget, input: { inspectingPolicyId: foreignPolicyId } });
+    const value = (result as { value: Record<string, unknown> }).value;
+
+    expect(value.fillPolicies).toEqual([expect.objectContaining({ policyId: ownPolicyId })]);
+    expect(value.preselectedPolicyId).toBeNull();
+    expect(value.canManage).toBe(false);
+  });
+
+  it("inspects one entry for the member without a target policy and writes the shortfall into the chosen policy", async () => {
+    const inspectHandler = registeredPanelOperation(INSPECT_MEMBER_ACCESS)?.handler;
+    if (!inspectHandler || inspectHandler.effect !== "read") throw new Error("Missing inspectAccess read op");
+    post.mockReset().mockImplementation(async (_name, url) => {
+      if (url.endsWith("/entry-roots")) return json({ ...rootFacts, entries: [entries[0]] });
+      if (url.endsWith("/access:inspect")) {
+        return json({
+          subjectId, entryId, targetPolicyId: null, targetPolicyRoleIds: [], subjectRoleIds: ["role-1"],
+          entry: { kind: "ENTRY", id: entryId, verb: "ENTER", allowed: false, sources: [] },
+          items: [{ kind: "PROJECTION", id: "order-list", verb: "USE", allowed: false, sources: [] }],
+        });
+      }
+      throw new Error("Unexpected policy request: " + url);
+    });
+    const inspected = await inspectHandler.execute(host, { target: memberTarget, input: { entryId } });
+    const value = (inspected as { value: Record<string, unknown> }).value;
+    expect(post).toHaveBeenCalledWith(expect.any(String), expect.stringMatching(/\/access:inspect$/), {
+      subjectId, entryId, targetPolicyId: null, optionalActionTargets: undefined, items: expect.any(Array),
+    }, expect.anything());
+    expect(value).toMatchObject({ subjectId, entryId, targetPolicyId: null });
+    expect(value.missingGrantableItems).toEqual([{ kind: "PROJECTION", id: "order-list", verb: "USE", label: "Order list" }]);
+
+    const grantHandler = registeredPanelOperation(GRANT_MEMBER_ACCESS)?.handler;
+    if (!grantHandler || grantHandler.effect !== "write" || grantHandler.kind !== "action" || grantHandler.batch
+      || grantHandler.targetInput !== undefined)
+      throw new Error("Missing grantAccess write op");
+    const grantResult = { policyId: ownPolicyId, grantedEntryCount: 1, grantedObjectCount: 1 };
+    post.mockReset().mockResolvedValue(json(grantResult));
+    const acceptedObjects = [{ kind: "PROJECTION", id: "order-list", verb: "USE" }];
+    expect(await grantHandler.execute(host, null, { policyId: ownPolicyId, entryIds: [entryId], acceptedObjects }, "intent")).toEqual({
+      kind: "success",
+      data: grantResult,
+      affected: {
+        objects: [{ objectType: PERMISSION_POLICY, primaryKey: ownPolicyId }],
+        objectTypes: [PERMISSION_POLICY, "platform:Role", USER],
+      },
+    });
+    expect(post).toHaveBeenCalledWith(expect.any(String), expect.stringMatching(/\/entries:grant$/), {
+      policyId: ownPolicyId, entryIds: [entryId], acceptedObjects,
+    }, expect.anything());
   });
 });

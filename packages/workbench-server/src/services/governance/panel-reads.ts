@@ -12,11 +12,15 @@ import {
   type PanelRecord,
   type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
+import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import type { ProductOwner } from "../product-governance/grants";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
+import type { OwnerReadResult } from "../platform-ontology/owners";
+import { listPolicyEntries, readPolicyChangePermission } from "./policy-access";
 import type { PolicyWorkbenchCatalog } from "./policy-catalog";
 
 /*
@@ -245,5 +249,57 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
         return owner("governance-org-grant-form", "/panel/governance/org-grants/form", formBody(id, params), panelFormDescriptionSchema);
       },
     },
+  };
+}
+
+function ownerData<T>(result: OwnerReadResult<T>): T {
+  if (!result.ok) throw new HttpError(result.status === "refused" ? 403 : 502, result.reason);
+  return result.data;
+}
+
+/**
+ * What the member access tab needs before it asks about one entry: every entry of the domain, the entry-and-object
+ * policies this member's own roles carry (filling a policy the member does not carry would not reach him), the roles and
+ * people each of those policies reaches, and whether this viewer may change policies at all. A policy the person arrived
+ * with is preselected only when it is one of his own.
+ */
+export async function readMemberAccessContext(
+  owner: ProductOwner, viewer: AssistantCredentials, subjectId: string, inspectingPolicyId?: string,
+): Promise<RuntimeJsonObject> {
+  // The directory readers sit above the skills registry; load them when a member access check runs, not while a panel
+  // is placed.
+  const { PlatformOntologyOwnerReaders } = await import("../platform-ontology/owners");
+  const readers = new PlatformOntologyOwnerReaders(owner, viewer);
+  const [entries, subjects, rolePolicies, policies, roleAccess] = await Promise.all([
+    listPolicyEntries(viewer),
+    readers.subjects().then(ownerData),
+    readers.rolePolicies().then(ownerData),
+    readers.permissionPolicies().then(ownerData),
+    readers.platformAccess().then(ownerData),
+  ]);
+  const ownRoleIds = new Set(subjects.find(subject => subject.id === subjectId)?.roleIds ?? []);
+  const ownPolicyIds = new Set(rolePolicies.filter(link => ownRoleIds.has(link.roleId)).map(link => link.policyId));
+  const roleNameById = new Map(roleAccess.map(access => [access.roleId ?? "", access.roleCode ?? ""]));
+  const candidates = policies.filter(policy => policy.type === 2 && ownPolicyIds.has(policy.id));
+  const fillPolicies: RuntimeJsonObject[] = candidates.map(policy => {
+    const roleIds = [...new Set(rolePolicies.filter(link => link.policyId === policy.id).map(link => link.roleId))];
+    const policyRoleIds = new Set(roleIds);
+    const members = subjects.filter(subject => subject.roleIds.some(roleId => policyRoleIds.has(roleId)));
+    return {
+      policyId: policy.id,
+      label: policy.name,
+      roleIds,
+      roleNames: roleIds.map(roleId => roleNameById.get(roleId) || roleId),
+      memberIds: members.map(member => member.id),
+      memberNames: members.map(member => member.displayName || member.loginCode || member.id),
+    };
+  });
+  const preselected = candidates.some(policy => policy.id === inspectingPolicyId);
+  return {
+    subjectId,
+    entries,
+    fillPolicies,
+    canManage: candidates.length > 0 && await readPolicyChangePermission(viewer, candidates[0]!.id),
+    preselectedPolicyId: preselected ? inspectingPolicyId ?? null : null,
   };
 }
