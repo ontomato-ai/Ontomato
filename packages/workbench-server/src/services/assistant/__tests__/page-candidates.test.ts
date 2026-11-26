@@ -329,7 +329,7 @@ function sizeDirectory(agents: number, skills: number) {
   mocks.listOfferings.mockResolvedValue(offerings);
 }
 
-it.each([[2, 2], [80, 220]])("lists %i ordinary agents without reading a domain skill catalogue of size %i", async (agents, skills) => {
+it.each([[2, 2, 1], [80, 220, 1], [220, 220, 2]])("lists %i ordinary agents without reading a domain skill catalogue of size %i (at most %i RPCs)", async (agents, skills, rpcBudget) => {
   sizeDirectory(agents, skills);
 
   const result = await listAssistantAgents(owner, credentials);
@@ -338,7 +338,8 @@ it.each([[2, 2], [80, 220]])("lists %i ordinary agents without reading a domain 
   expect(result.agents).toContainEqual(expect.objectContaining({ id: agentIds.regular, enabled: true }));
   expect(result).not.toHaveProperty("presetAgentIds");
   expect(mocks.query.mock.calls.length).toBeLessThanOrEqual(1);
-  expect(vi.mocked(fetch).mock.calls.length).toBeLessThanOrEqual(1);
+  // Round 2 #2: ordinary candidates skip skill expansion, but agent authorization still spans batches.
+  expect(vi.mocked(fetch).mock.calls.length).toBeLessThanOrEqual(rpcBudget);
   expect(mocks.listOfferings).not.toHaveBeenCalled();
 });
 
