@@ -68,12 +68,10 @@ public class ProductGrantController {
     @PostMapping(REGISTER_PATH) public Object register(HttpServletRequest request,@RequestBody Map<String,Object> body){
         authentication.authenticate(request);
         if(!(body.get("shared") instanceof Boolean shared))throw new IllegalArgumentException("Expected sharing intent");
-        Object admin = body.getOrDefault("grantAdmin", false);
-        if (!(admin instanceof Boolean grantAdmin)) throw new IllegalArgumentException("Expected grantAdmin");
         if (!(body.getOrDefault("createOnly", false) instanceof Boolean createOnly))
             throw new IllegalArgumentException("Expected createOnly");
         boolean created = grants.register(text(body, "domainId"), text(body, "id"), optionalText(body, "ownerId"), shared,
-            body.get("verbs") == null ? List.of() : verbs(body), grantAdmin, optionalText(body, "legacyMenuPermission"));
+            body.get("verbs") == null ? List.of() : verbs(body));
         if (createOnly && !created)
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Product identity is already registered");
         return Map.of("success", true);
