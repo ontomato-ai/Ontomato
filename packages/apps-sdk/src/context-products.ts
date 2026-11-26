@@ -25,7 +25,5 @@ export function contextProducts(transport: ManagerRequest): ContextProducts {
     collection: method(products => products.collection),
     get: method(products => products.get),
     dependencies: method(products => products.dependencies),
-    overlay: method(products => products.overlay),
-    saveOverlay: method(products => products.saveOverlay),
   };
 }

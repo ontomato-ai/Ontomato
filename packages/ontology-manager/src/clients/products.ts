@@ -25,7 +25,5 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
     collection:async(id:string,parameters:Record<string,unknown>,fields:string[],offset=0,projectionId?:string)=>send(`/definitions/${encodeURIComponent(id)}/query`,'POST',{parameters,fields,offset,projectionId}),
     get: async (id:string) => {const result=await send(`/${encodeURIComponent(id)}`);if(result.issues?.some((issue:{assetId:string})=>issue.assetId===id))throw new Error('A referenced capability contract changed; upgrade this product release');return productAssetSchema.parse(result.asset);},
     dependencies: async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}/dependencies`);return {graph:productGraphSchema.parse(result.graph),references:result.references as import('@ontomato/contracts/product-assets').ProductReference[],usedBy:result.usedBy as {id:string;name:string}[]};},
-    overlay:async(id:string)=>send(`/${encodeURIComponent(id)}/overlay`),
-    saveOverlay:async(id:string,workspace:import('@ontomato/contracts/personal-workspace').PersonalWorkspace,revision:number)=>send(`/${encodeURIComponent(id)}/overlay`,'PUT',{workspace,revision}),
   };
 }

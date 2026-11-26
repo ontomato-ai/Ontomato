@@ -1,7 +1,6 @@
-import {createVNode,render,type App} from 'vue';
-import {APP_BRIDGE_CHANNEL,appBridgeRequestSchema,appBridgeHttpSchema,appBridgeMountSchema,appBridgePlacementSchema,appBridgeUnmountSchema,appBridgePathSchema,appBridgeAuthStatusSchema,appBridgeInvalidationSchema,appBridgeCancelSchema,appBridgePageContextSchema,appBridgeExpandPageComposerSchema,type AppBridgeExpandPageComposer,appBridgeConfirmPanelOperationSchema,type AppBridgeConfirmPanelOperation,type AppBridgeConfirmPanelOperationResult} from '@ontomato/contracts/app-bridge';
+import type {App} from 'vue';
+import {APP_BRIDGE_CHANNEL,appBridgeRequestSchema,appBridgeHttpSchema,appBridgePathSchema,appBridgeAuthStatusSchema,appBridgeInvalidationSchema,appBridgeCancelSchema,appBridgePageContextSchema,appBridgeExpandPageComposerSchema,type AppBridgeExpandPageComposer,appBridgeConfirmPanelOperationSchema,type AppBridgeConfirmPanelOperation,type AppBridgeConfirmPanelOperationResult} from '@ontomato/contracts/app-bridge';
 import type {AppHost} from '@ontomato/contracts/app-host';
-import ProductRoute from './pages/ProductRoute.vue';
 
 /** Bind one transferred port to the exact registered frame; messages never select an application identity. */
 /**
@@ -20,10 +19,10 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
     const frame=[...document.querySelectorAll('iframe')].find(frame=>frame.contentWindow===source);
     if(!frame||!frame.sandbox.contains('allow-scripts')||frame.sandbox.contains('allow-same-origin'))return;
     connections.get(source)?.dispose();
-    const port=event.ports[0],mounts=new Map<string,HTMLElement>(),requests=new Map<string,AbortController>();
+    const port=event.ports[0],requests=new Map<string,AbortController>();
     let closed=false;
-    const dispose=()=>{if(closed)return;closed=true;for(const request of requests.values())request.abort();requests.clear();port.close();stopPreferences();viewport.disconnect();window.removeEventListener('scroll',hideOutsideViewport,true);for(const element of mounts.values()){render(null,element);element.remove();}mounts.clear();connections.delete(source);};
-    const hideOutsideViewport=()=>{for(const element of mounts.values())element.style.display='none';if(open(source))port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'viewport'});};
+    const dispose=()=>{if(closed)return;closed=true;for(const request of requests.values())request.abort();requests.clear();port.close();stopPreferences();viewport.disconnect();window.removeEventListener('scroll',hideOutsideViewport,true);connections.delete(source);};
+    const hideOutsideViewport=()=>{if(open(source))port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'viewport'});};
     const viewport=new ResizeObserver(hideOutsideViewport);viewport.observe(frame);window.addEventListener('scroll',hideOutsideViewport,true);
     const sendPreferences=()=>{const {locale,theme}=host.snapshot();port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'preferences',result:{locale,theme}});};
     const stopPreferences=host.subscribePreferences(()=>{if(open(source))sendPreferences();});
@@ -60,21 +59,8 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
         else if(operation==='invalidate')host.invalidateProductData!(source,appBridgeInvalidationSchema.parse(payload));
         else if(operation==='expand-page-composer')expandComposer(source,appBridgeExpandPageComposerSchema.parse(payload));
         else if(operation==='confirm-panel-operation')result=await confirmOperation(source,appBridgeConfirmPanelOperationSchema.parse(payload));
-        else if(operation==='mount'){
-          const input=appBridgeMountSchema.parse(payload);
-          if(mounts.has(input.id)||mounts.size>=50)throw new Error('Invalid product mount');
-          // An embedded product reads live data in the platform's own window: never for a frame on a build-test context.
-          if(host.executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews');
-          const element=document.createElement('div');Object.assign(element.style,{position:'fixed',overflow:'auto',zIndex:'20',display:'none'});document.body.append(element);
-          const vnode=createVNode(ProductRoute,{productAssetId:input.assetId,applicationId,embedded:true});vnode.appContext=app._context;render(vnode,element);mounts.set(input.id,element);
-        }else if(operation==='placement'){
-          const input=appBridgePlacementSchema.parse(payload);
-          const element=mounts.get(input.id);if(!element)throw new Error('Product mount unavailable');
-          const bounds=frame.getBoundingClientRect(),left=Math.max(0,input.x),top=Math.max(0,input.y),width=Math.max(0,Math.min(input.x+input.width,bounds.width)-left),height=Math.max(0,Math.min(input.y+input.height,bounds.height)-top);
-          Object.assign(element.style,{left:`${bounds.left+left}px`,top:`${bounds.top+top}px`,width:`${width}px`,height:`${height}px`,display:input.visible&&width>0&&height>0?'block':'none'});
-        }else if(operation==='unmount'){
-          const {id}=appBridgeUnmountSchema.parse(payload);const element=mounts.get(id);if(element){render(null,element);element.remove();mounts.delete(id);}
-        }else throw new Error('Unsupported application bridge operation');
+        // A retired operation is refused, never answered with nothing.
+        else throw new Error('Unsupported application bridge operation');
         current();port.postMessage({channel:APP_BRIDGE_CHANNEL,id,result});
       }catch(reason){port.postMessage({channel:APP_BRIDGE_CHANNEL,id,error:reason instanceof Error?reason.message:'Platform bridge failed'});}
     };
