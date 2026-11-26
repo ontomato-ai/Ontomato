@@ -47,15 +47,6 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["MetricView:*"],
   }),
   defineComponentMeta({
-    componentId: "ProductAsset",
-    module: "@ontomato/sdk",
-    exportName: "ProductAsset",
-    role: "presentation",
-    group: "layout",
-    meaning:
-      "Embeds an existing product asset as the application's pinned release draws it; an unavailable asset or an unsupported host is reported instead of drawing another page.",
-  }),
-  defineComponentMeta({
     componentId: "EChart",
     module: "@ontomato/sdk/chart",
     exportName: "EChart",
@@ -254,15 +245,12 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "list",
     meaning:
-      "Lists an owner's records or an ontology type's objects as a compact list, table, card grid, tab strip or collapsible list, with search, paging, selection and row actions; use for catalogue views.\n\n- The owner decides what a list holds and how far the reader may go: search and filters run on the owner's read when it declares them, an unpaged read is searched and filtered in the browser without a request, and a new search or filter returns paging to page one.\n- Row actions carry the availability that came with the list read, so a page makes no request per row; two lists on one panel writing the same object through the same operation queue instead of running twice.\n- A failed reread keeps the rows already shown and offers a retry in place instead of emptying the list.\n- Raw row records never reach slots or events: a slot receives the reference, the index and the column, and a selection is a typed object reference.\n- Three empty states stay apart: no data, a narrowed no-match with a Clear filters action, and an owner refusal. `fallbackToFirst` takes a first row only on showing, after a target switch, or once the chosen row leaves the set; a selection cleared elsewhere is never retaken.",
-    effects: "Reads the bound type's list, query or ontology objects datum as the reader; runs declared row operations through the platform coordinator and writes only the panel's own state.",
+      "Lists an owner's records as a compact list, table, card grid, tab strip or collapsible list, with search, paging, selection and row actions; use for catalogue views.\n\n- The owner decides what a list holds and how far the reader may go: search and filters run on the owner's read when it declares them, an unpaged read is searched and filtered in the browser without a request, and a new search or filter returns paging to page one.\n- Row actions carry the availability that came with the list read, so a page makes no request per row; two lists on one panel writing the same object through the same operation queue instead of running twice.\n- A failed reread keeps the rows already shown and offers a retry in place instead of emptying the list.\n- Raw row records never reach slots or events: a slot receives the reference, the index and the column, and a selection is a typed object reference.\n- Three empty states stay apart: no data, a narrowed no-match with a Clear filters action, and an owner refusal. `fallbackToFirst` takes a first row only on showing, after a target switch, or once the chosen row leaves the set; a selection cleared elsewhere is never retaken.",
+    effects: "Reads the bound type's list or query as the reader; runs declared row operations through the platform coordinator and writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
-    // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
-    // is what a placement must declare, so none is required.
     data: {
       // The list supplies unbound search and paging values at runtime; authored state bindings take precedence.
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["search", "cursor", "size", "page"] },
-      objects: { results: ["panelOntologyObjects"], required: false, runtimeParams: ["search", "page"] },
       supplement: { results: ["panelRecordList"], required: false },
     },
     inputs: {
@@ -339,13 +327,11 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "list",
     meaning:
-      "Shows one count from a list, query or objects read as an inline strip or a bare badge; use in headers, toolbars and menu badges.\n\n- The count is the owner's own: a complete unpaged list shows its length, a paged query and an objects read show strictly the total the owner returned, and an unknown total is shown as unknown rather than as `0`.\n- A badge appearance renders no node at all when no finite count is available, so a header never carries a placeholder.\n- Loading, forbidden, awaiting inputs and unreachable each keep their own quiet state instead of a number.",
-    effects: "Reads the bound platform or customer object type's list, query, or ontology objects datum as the reader; writes nothing.",
+      "Shows one count from a list or query as an inline strip or a bare badge; use in headers, toolbars and menu badges.\n\n- The count is the owner's own: a complete unpaged list shows its length, a paged query shows strictly the total the owner returned, and an unknown total is shown as unknown rather than as `0`.\n- A badge appearance renders no node at all when no finite count is available, so a header never carries a placeholder.\n- Loading, forbidden, awaiting inputs and unreachable each keep their own quiet state instead of a number.",
+    effects: "Reads the bound platform or customer object type's list or query as the reader; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
-    // Either `rows` (list/query) or `objects` (ontology objects) supplies the counted collection; at least one is declared.
     data: {
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
-      objects: { results: ["panelOntologyObjects"], required: false },
     },
     readOnlyOutputs: {
       total: { kind: "scalar", type: "number" },
@@ -621,12 +607,11 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "graph",
     meaning:
-      "Draws the bound graph source as an interactive ontology graph in three modes — declared types by layer, a sampled overview, and paginated one-hop expansion; use for an instance explorer.\n\n- The modes are one component and what a placement binds decides which it shows: type mode draws declared types and relation kinds with per-type counts and access, overview mode draws a sampled dot-grid panorama that polls while the sample generates and recovers from a version conflict, and instance mode expands a node at a time from an anchored action bar.\n- Every edge of the drawing is a read the owner admits now: no neighbours, an owner refusal and a failed read are told apart rather than all drawn as an empty graph.\n- What the reader arranged and chose — layers, relation kinds, expanded nodes, group, neighbour filter and per-person positions — is the panel's state, read and written both ways so a page's own filter and the graph follow one choice.\n- Complete object identities are preserved and query matches are highlighted, so a drawn node is the same reference the rest of the page uses.",
-    effects: "Reads the bound graph source's schema, counts, starting node, sampled overview, deferred connections, and paginated one-hop neighbors as the reader; writes only the panel's own selection, group filter, layer filter, relation-kind filter, neighbor filter, expanded-nodes, and personal positions state.",
+      "Draws the bound graph source as an interactive graph with a sampled overview and paginated one-hop expansion; use for an instance explorer.\n\n- The placement's bindings select the mode: overview mode draws a sampled dot-grid panorama that polls while the sample generates and recovers from a version conflict, and instance mode expands a node at a time from an anchored action bar.\n- Every edge of the drawing is a read the owner admits now: no neighbours, an owner refusal and a failed read are told apart rather than all drawn as an empty graph.\n- What the reader arranged and chose — layers, relation kinds, expanded nodes, group, neighbour filter and per-person positions — is the panel's state, read and written both ways so a page's own filter and the graph follow one choice.\n- Complete object identities are preserved and query matches are highlighted, so a drawn node is the same reference the rest of the page uses.",
+    effects: "Reads the bound graph source's counts, starting node, sampled overview, deferred connections, and paginated one-hop neighbors as the reader; writes only the panel's own selection, group filter, layer filter, relation-kind filter, neighbor filter, expanded-nodes, and personal positions state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Relationship:*"],
-    // Expanding from a node is what the graph does; optional overview, deferred connections, and schema/counts/start reads activate when a placement supplies them.
+    // Expanding from a node is what the graph does; optional overview, deferred connections, counts, and start reads activate when a placement supplies them.
     data: {
-      schema: { results: ["panelGraphSchema"], required: false },
       counts: { results: ["panelGraphCounts"], required: false },
       start: { results: ["panelGraphStart"], required: false },
       overview: { results: ["panelGraphOverview"], required: false },
@@ -644,7 +629,6 @@ export const components: readonly ComponentMetadata[] = [
       mode: { kind: "scalar", type: "string" },
       start: { kind: "object", objectType: "@any" },
       selected: { kind: "object", objectType: "@any" },
-      selectedType: { kind: "scalar", type: "string" },
       selectedGroup: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
@@ -654,7 +638,6 @@ export const components: readonly ComponentMetadata[] = [
     outputs: {
       selectedNode: { kind: "object", objectType: "@any" },
       selected: { kind: "object", objectType: "@any" },
-      selectedType: { kind: "scalar", type: "string" },
       selectedGroup: { kind: "scalar", type: "string" },
       // The relation kinds drawn, read as well as written: a page's own kind filter and the graph follow one choice.
       visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
@@ -666,7 +649,6 @@ export const components: readonly ComponentMetadata[] = [
     readOnlyOutputs: {
       startLabel: { kind: "scalar", type: "string" },
       startDetail: { kind: "scalar", type: "string" },
-      visibleRelationKindLabels: { kind: "list", items: { kind: "scalar", type: "string" } },
       activeMode: { kind: "scalar", type: "string" },
       graphStatus: { kind: "scalar", type: "string" },
       graphVersion: { kind: "scalar", type: "string" },
@@ -807,7 +789,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Fills a fixed `{fieldKey}` sentence with values from one record or one metric row; use for summary text a page must not compute itself.\n\n- Each placeholder is drawn by `TypedValue`, so a reference stays clickable, a name is localized and a number is tabular; the sentence is all the placement writes.\n- No expressions, no calculation and no conditional branching: a derived value or a business condition belongs in the owner's MetricView, action or read.\n- A per-field format applies to that field alone; a field left unformatted keeps its own type's drawing.",
+      "Fills a fixed `{fieldKey}` sentence with values from one record or one metric row; use for summary text a page must not compute itself.\n\n- Each placeholder is drawn by `TypedValue`, so a reference stays clickable, a name is localized and a number is tabular; the sentence is all the placement writes.\n- No expressions, no calculation and no conditional branching: a derived value or a business condition belongs in the owner's MetricView, action or read.\n- A per-field format applies to that field alone; a field left unformatted keeps its own type's drawing.\n- One read per display: a template told its `record` or `values` by a parent draws that snapshot alone and its placeholders do not read the member again; only a template with nothing passed reads its own `record` or `result` datum. Never add the second read back, since two reads of one datum can disagree.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -826,7 +808,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Draws one callout — information, reminder, warning, success or danger — from the page's own copy, a record, or a metric result; use for a notice in a detail card or a block of guidance.\n\n- Its tone is the placement's, a field of the record, or an exact-match mapping of the value: nothing is inferred from the wording.\n- The words are static or localized, or already-provided values filled into a fixed `{fieldKey}` sentence — no calculation, thresholds or branching.\n- Asked to, it hides itself when it has nothing to say, so a card never carries an empty frame.",
+      "Draws one callout — information, reminder, warning, success or danger — from the page's own copy, a record, or a metric result; use for a notice in a detail card or a block of guidance.\n\n- Its tone is the placement's, a field of the record, or an exact-match mapping of the value: nothing is inferred from the wording.\n- The words are static or localized, or already-provided values filled into a fixed `{fieldKey}` sentence — no calculation, thresholds or branching.\n- When the banner relies on a record field (`field` for the body, or `toneField` when there is no body field), an empty field hides the entire banner, including any static title. Banners containing only static content still render.\n- For other banners, `hideWhenEmpty` can hide an empty frame.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -872,14 +854,13 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "chart",
     meaning:
-      "Draws one or more statistical metrics — a label, a tabular number, an optional unit, a description and a tone — as cards, compact rows or inline numbers; use for KPI summaries.\n\n- A count taken from a list, a query or an objects read is the owner's own number: a complete list counts its rows, a paged query takes strictly the total the owner returned, and nothing is summed here.\n- Pure presentation: it never aggregates on the client, so a number its owner did not compute does not appear.\n- A bare surface lets it sit inside an outer dashboard card without nesting one card in another.",
+      "Draws one or more statistical metrics — a label, a tabular number, an optional unit, a description and a tone — as cards, compact rows or inline numbers; use for KPI summaries.\n\n- A count taken from a list or query is the owner's own number: a complete list counts its rows, a paged query takes strictly the total the owner returned, and nothing is summed here.\n- Pure presentation: it never aggregates on the client, so a number its owner did not compute does not appear.\n- A bare surface lets it sit inside an outer dashboard card without nesting one card in another.",
     effects: "Reads the bound MetricView `result`, `record`, `rows`, or `objects` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
       result: { results: ["metricOutput"], required: false },
       record: { results: ["panelRecord"], required: false },
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
-      objects: { results: ["panelOntologyObjects"], required: false },
     },
     configProps: [
       "label", "labelKey", "value", "field", "rowIndex", "unit", "unitKey", "description", "descriptionKey", "tone",
@@ -1192,8 +1173,8 @@ export const components: readonly ComponentMetadata[] = [
           "panelRecordList", "panelRecord", "panelRecordQuery", "panelGroupCounts", "panelApplicationMenu",
           "productProjectionList", "productPanelList", "productProjectionRecord", "productPanelRecord", "productProjectionUsedBy",
           "productPanelUsedBy", "productPanelMembers", "productCatalogueGrants", "productObjectAccess", "agentObjectAccess", "applicationEntries",
-          "panelFormDescription", "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphConnections",
-          "panelGraphCounts", "panelGraphOverview", "panelGraphStart", "panelGraphNeighbors", "panelOntologyObjects",
+          "panelFormDescription", "panelOperationDescriptor", "panelOptionList", "panelGraphConnections",
+          "panelGraphCounts", "panelGraphOverview", "panelGraphStart", "panelGraphNeighbors",
           "panelRelationNeighbors", "chartTemplate", "metricOutput",
           "sdkComponentDefinition", "actionDefinition", "actionExplanation", "annotatedCode",
           "scheduledTaskRunPage", "scheduledTaskRun",

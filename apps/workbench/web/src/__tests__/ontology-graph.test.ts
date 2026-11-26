@@ -3,17 +3,11 @@ import { resolve } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
-import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { panelAddress, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import {
-  OBJECT_TYPE,
-  platformObjectTypes,
-} from "@ontomato/contracts/platform-object-types";
-import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
+import { builtinProductProjectionInputSchema, type ProductProjection } from "@ontomato/contracts/product-panels";
+import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type {
   GraphCanvasEdge,
@@ -25,7 +19,6 @@ import { useApplicationCatalog } from "../../../../../packages/platform-web/src/
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { useTemplateCompiler } from "../../../../../packages/platform-web/src/panel-module";
 import { baseComponents } from "../../../../../packages/apps-sdk/src/base-components";
-import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import {
   installPlatform,
   leaveFrame,
@@ -39,10 +32,7 @@ import {
 } from "./panel-frame";
 
 /*
- * Built-in ontology-graph panel contract (OG-01 / OG-08 / OG-10 / OG-11):
- * - OG-01: Header "Product relation graph" button opens fullscreen dialog hosting ProductAssetGraph reading
- *   `productGraph`, rendering categorized asset columns, highlighting incident edges on hover/focus, and
- *   navigating to real asset detail routes on click.
+ * Built-in ontology-graph panel contract (OG-08 / OG-10 / OG-11):
  * - OG-08: Main graph member uses OntologyTypeGraph with 5px node strokes, 6px/7px selected/path strokes,
  *   4px selected/path edge strokes, and 0.16 node / 0.12 edge non-match dimming.
  * - OG-10: PNG export passes solid background to G6 exportImage and downloads with dated `ontology-graph-YYYY-MM-DD.png`.
@@ -109,68 +99,31 @@ const use = panelUse(
   "/ontology/graph",
 );
 
-const objectTypes = Object.fromEntries(
-  Object.entries(platformObjectTypes).map(([type, entry]) => [
-    type,
-    platformTypeTableEntrySchema.parse({
-      ...entry,
-      operations: entry.operations?.map((id) => {
-        const form = id.endsWith(".save") || id.endsWith(".create");
-        return {
-          id,
-          kind: form ? "form.save" : "action",
-          effect: "write",
-          batch: false,
-          inputSchema: {},
-          target: form ? { source: "draft" } : { source: "input", input: "target" },
-        };
-      }),
-    }),
-  ]),
-);
-
 const dir = resolve(process.cwd(), "../../packages/ontology-manager/resources/builtin-panels/ontology-graph");
 const source = JSON.parse(readFileSync(resolve(dir, "panel.json"), "utf8"));
 const html = readFileSync(resolve(dir, "panel.html"), "utf8");
 const module = readFileSync(resolve(dir, "panel.mjs"), "utf8");
-const { members: authoringMembers, ...manifest } = panelAuthoringManifestSchema.parse(source.manifest);
-const catalogue = components.map((component) =>
-  appsSdkComponentCatalogEntrySchema.parse({
-    ...component,
-    ...(component.componentId === "OperationButton"
-      ? { config: [{ name: "operation", type: "string", required: true, description: "Operation local name" }] }
-      : {}),
-    ports: { props: [], events: [], slots: [] },
-  }),
-);
-const projections = new Map<string, ProductProjection>();
-const manifestMembers = Object.fromEntries(
-  Object.entries(authoringMembers).map(([name, definition]) => {
-    if (!("component" in definition)) throw new Error(`Expected an authored projection for ${name}`);
-    const { projection, placement } = expandPanelAuthoringMember(name, definition, {
-      state: manifest.state,
-      typeTable: { objectTypes },
-      components: catalogue,
-    });
-    projections.set(definition.id!, {
-      ...projection,
-      id: definition.id!,
-      name,
-      description: name,
-      visibility: "platform",
-      domainId: null,
-      ownerId: null,
-      editable: false,
-      revision: 1,
-      createdAt: "2026-11-26T00:00:00Z",
-      updatedAt: "2026-11-26T00:00:00Z",
-    });
-    return [name, { ...placement, target: { projectionId: definition.id! } }];
-  }),
-);
+const projectionFile = JSON.parse(readFileSync(resolve(dir, "projections.json"), "utf8")) as {
+  id: string; input: Record<string, unknown>;
+}[];
+const { members: manifestMembers, ...manifest } = panelAuthoringManifestSchema.parse(source.manifest);
+// This harness reads the business ontology only: the four-layer projections never place here.
+const businessProjections = projectionFile.filter(({ id }) => !id.includes("capability"));
+const projections = new Map<string, ProductProjection>(businessProjections.map(({ id, input }) => [id, {
+  ...builtinProductProjectionInputSchema.parse(input),
+  id,
+  domainId: null,
+  ownerId: null,
+  editable: false,
+  revision: 1,
+  createdAt: "2026-11-26T00:00:00Z",
+  updatedAt: "2026-11-26T00:00:00Z",
+} as ProductProjection]));
+const projectionComponents = [...new Set(businessProjections.map(({ input }) => String(input.componentId).split(":").at(-1)!))];
 
 const ontologyGraphPanel = {
-  ...panelRecord(use.panelId, "Ontology graph", definePanel({ ...manifest, members: manifestMembers })),
+  // The parsed authoring members keep their authoring shape; the formal manifest takes the resolved ones.
+  ...panelRecord(use.panelId, "Ontology graph", definePanel({ ...manifest, members: manifestMembers as PanelManifest["members"] })),
   visibility: "platform" as const,
   domainId: null,
   ownerId: null,
@@ -234,20 +187,6 @@ const sampleAttributes = [
     },
   },
 ];
-
-const sampleProductGraphPayload = {
-  nodes: [
-    { id: "asset:app-1", assetId: "app-1", name: "Operations Console", kind: "application", category: "bundle" },
-    { id: "asset:panel-1", assetId: "panel-1", name: "Order Overview Panel", kind: "page", category: "composition" },
-    { id: "asset:proj-1", assetId: "proj-1", name: "Order Summary Card", kind: "object-projection", category: "element" },
-    { id: "object-type:Order", name: "Order", kind: "object-type", category: "ontology" },
-  ],
-  edges: [
-    { source: "asset:app-1", target: "asset:panel-1", relation: "includes", storage: "document" },
-    { source: "asset:panel-1", target: "asset:proj-1", relation: "uses", storage: "document" },
-    { source: "asset:proj-1", target: "object-type:Order", relation: "renders", storage: "ontology" },
-  ],
-};
 
 type DataReadRequest = Extract<ProductPanelReadRequest, { dataName: string }>;
 type PageControllerHandle = {
@@ -320,17 +259,6 @@ function mountOntologyGraph(options: {
       if (member === "relationList" || (member === "graph" && body.dataName === "edges")) {
         return Response.json({ status: "ready", value: sampleRelations });
       }
-      if (member === "productGraph" && body.dataName === "graph") {
-        return Response.json({
-          status: "ready",
-          value: {
-            className: OBJECT_TYPE,
-            primaryKey: "product-graph",
-            label: "Product graph",
-            fields: { graph: { kind: "json", value: sampleProductGraphPayload } },
-          },
-        });
-      }
       if ((member === "objectHeader" || member === "objectDesc") && body.dataName === "record") {
         const pk = (body.inputs.target as { primaryKey?: string } | undefined)?.primaryKey ?? "";
         const found = sampleObjects.find((item) => item.primaryKey === pk);
@@ -388,14 +316,9 @@ function mountOntologyGraph(options: {
 const waitFor = <T>(check: () => T | Promise<T>) => vi.waitFor(check, { timeout: 5000 });
 
 beforeAll(async () => {
-  const usedComponents = new Set(
-    Object.values(authoringMembers).flatMap((definition) =>
-      "component" in definition && definition.component ? [definition.component] : [],
-    ),
-  );
   await Promise.all([
     useTemplateCompiler(),
-    ...Array.from(usedComponents).map((name) => {
+    ...projectionComponents.map((name) => {
       const load = baseComponents[name as keyof typeof baseComponents];
       return load ? load() : Promise.resolve();
     }),
@@ -407,10 +330,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
+describe("ontology-graph builtin panel (OG-08 / OG-10 / OG-11)", () => {
   it("OG-08 / OG-10: wires OntologyTypeGraph styling overrides and solid-background dated PNG export", async () => {
-    expect("component" in authoringMembers.graph && authoringMembers.graph.component).toBe("OntologyTypeGraph");
-    expect("component" in authoringMembers.productGraph && authoringMembers.productGraph.component).toBe("ProductAssetGraph");
+    expect(businessProjections.find(({ id }) => id === "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378")?.input.componentId)
+      .toBe("@ontomato/sdk:OntologyTypeGraph");
 
     const harness = mountOntologyGraph();
     const { app, element } = await harness.open();
@@ -449,48 +372,6 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
       expect((graphCanvasState.exportCalls[0] as { background?: string }).background?.trim().length).toBeGreaterThan(0);
       expect(savedFiles[0]!.mime).toBe("image/png");
       expect(savedFiles[0]!.suggestedName).toMatch(/^ontology-graph-\d{4}-\d{2}-\d{2}\.png$/);
-    } finally {
-      app.unmount();
-    }
-  });
-
-  it("OG-01: opens fullscreen ProductAssetGraph dialog, highlights incident edges on hover, and navigates to clicked asset", async () => {
-    const harness = mountOntologyGraph();
-    const { app, element } = await harness.open();
-    try {
-      await waitFor(() => {
-        expect(element.querySelector("[data-action='product-relation-graph']")).not.toBeNull();
-      });
-
-      const openBtn = element.querySelector<HTMLButtonElement>("[data-action='product-relation-graph']")!;
-      openBtn.click();
-
-      await waitFor(() => {
-        expect(document.body.querySelector("[data-product-graph-dialog]")).not.toBeNull();
-        expect(document.body.querySelectorAll("[data-product-graph-node]")).toHaveLength(4);
-      });
-
-      // Verify categorized columns render and hover highlights incident edges while muting unrelated ones.
-      expect(
-        Array.from(document.body.querySelectorAll<Element>("[data-product-graph-column]")).map((el) =>
-          el.getAttribute("data-product-graph-column"),
-        ),
-      ).toEqual(["bundle", "composition", "element", "ontology"]);
-      const panelCard = document.body.querySelector<SVGGElement>('[data-product-graph-node="asset:panel-1"]')!;
-      expect(panelCard).not.toBeNull();
-      expect(panelCard.textContent).toContain("Order Overview Panel");
-      panelCard.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-      await waitFor(() => {
-        expect(document.body.querySelectorAll("[data-product-graph-edge].related-edge")).toHaveLength(2);
-        expect(document.body.querySelectorAll("[data-product-graph-edge].muted-edge")).toHaveLength(1);
-      });
-
-      // Clicking an asset card navigates to the panel detail route with real asset primaryKey.
-      panelCard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await waitFor(() => {
-        expect(harness.router.currentRoute.value.path).toBe("/ontology/panels/detail");
-        expect(harness.router.currentRoute.value.query.selected).toBe("panel-1");
-      });
     } finally {
       app.unmount();
     }
@@ -543,6 +424,62 @@ describe("ontology-graph builtin panel (OG-01 / OG-08 / OG-10 / OG-11)", () => {
       });
       expect(element.querySelector<HTMLElement>(".og-grid")?.style.display).not.toBe("none");
       expect(graphCanvasState.nodes).toHaveLength(2);
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("OG-12: opens on the business ontology's projections and holds no four-layer-only member there", async () => {
+    const businessIds = ["builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a",
+      "builtin-product-26d935eb-01ee-44ba-a389-b5c4f9277740", "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"];
+    const harness = mountOntologyGraph();
+    const { app } = await harness.open();
+    try {
+      await waitFor(() => {
+        expect(graphCanvasState.nodes).toHaveLength(2);
+      });
+      const ids = harness.sent.filter(({ path }) => path.startsWith("/api/product-projections/"))
+        .map(({ path }) => path.split("/").at(-1)!);
+      for (const id of businessIds) expect(ids).toContain(id);
+      // The four-layer projections are not fetched at all while the panel reads the business ontology.
+      expect(ids.filter((id) => id.includes("capability"))).toEqual([]);
+
+      const reads = harness.sent.flatMap(({ path, body }) => {
+        if (path === "/api/product-panels/read") return [(body as DataReadRequest).memberPath[0]?.member];
+        if (path !== "/api/product-panels/read-batch") return [];
+        return (body as { reads: DataReadRequest[] }).reads.map((item) => item.memberPath[0]?.member);
+      });
+      expect(reads).toContain("attributeStats");
+      // The four-layer-only members are not held here, so no read is made for them.
+      expect(reads).not.toContain("objectSummaryExtra");
+      expect(reads).not.toContain("objectReads");
+      expect(reads).not.toContain("objectOperations");
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("OG-13: offers the browse-instances action and takes it itself when no outer panel bound the request", async () => {
+    const harness = mountOntologyGraph();
+    const { app, element } = await harness.open();
+    try {
+      await waitFor(() => {
+        expect(element.querySelectorAll("[data-member='objectList'] .sdk-object-list-item-btn").length).toBe(2);
+      });
+      const headerRequest = harness.sent.find(({ path }) => path.startsWith("/api/product-projections/"));
+      expect(headerRequest).toBeDefined();
+      // Selecting a type brings the inspector in with the modeling address its own read published.
+      element.querySelector<HTMLButtonElement>("[data-member='objectList'] .sdk-object-list-item-btn")!.click();
+      await waitFor(() => {
+        expect(element.querySelector("button.og-instances")).not.toBeNull();
+      });
+      element.querySelector<HTMLButtonElement>("button.og-instances")!.click();
+      await waitFor(() => {
+        const current = harness.router.currentRoute.value;
+        expect(current.path).toBe("/browser/data");
+        expect(current.query.viewMode).toBe("table");
+        expect(current.query.selectedClass).toBe(`${OBJECT_TYPE}~Order`);
+      });
     } finally {
       app.unmount();
     }

@@ -7,8 +7,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /*
- * The panels this SDK version ships as materials — the trial pair, the four-layer capability map and the agent settings
- * page — registered against the catalogue that same version builds. Registration on the platform checks a projection's
+ * The panels this SDK version ships as materials — the trial pair and the agent settings page — registered against the
+ * catalogue that same version builds. Registration on the platform checks a projection's
  * datums against the component's declaration before it accepts a panel; a declaration that does not cover a datum the
  * material already sends stops the whole registration (one capability-map projection whose `neighbors` read returns the
  * graph result took every panel skill down), so the same three checks run here, where a wrong declaration costs a build
@@ -21,7 +21,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MATERIALS = {
   "schedules-trial P/Q": join(HERE, "examples/panels/schedules-trial/definitions.mjs"),
-  "capability-map": join(HERE, "examples/panels/capability-map/projections.mjs"),
   "agent-settings": join(HERE, "examples/panels/agent-settings/projections.mjs"),
 };
 

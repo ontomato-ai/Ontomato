@@ -16,6 +16,28 @@ import org.springframework.http.converter.json.MappingJackson2HttpMessageConvert
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class GovernanceDirectoryControllerTest {
+    @Test void countRequestsReturnOnlyCountsForTheAuthenticatedDomain() throws Exception {
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("member", "domain"));
+        var organization = mock(OrganizationDirectory.class);
+        when(organization.countInDomain("domain")).thenReturn(new OrganizationDirectory.Counts(2, 3, 7));
+        var policies = mock(PermissionPolicyDirectory.class);
+        when(policies.countInDomain("domain")).thenReturn(11L);
+        var mvc = MockMvcBuilders.standaloneSetup(new GovernanceDirectoryController(identity, organization, policies))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        String request = """
+            {"countOnly":true,"domainId":"other"}""";
+
+        mvc.perform(post("/platform/governance/organization").contentType(MediaType.APPLICATION_JSON).content(request))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.units").value(2)).andExpect(jsonPath("$.positions").value(3))
+            .andExpect(jsonPath("$.grants").value(7)).andExpect(jsonPath("$.memberships").doesNotExist());
+        mvc.perform(post("/platform/governance/policies").contentType(MediaType.APPLICATION_JSON).content(request))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(11)).andExpect(jsonPath("$.policies").doesNotExist());
+        verify(organization).countInDomain("domain");
+        verify(policies).countInDomain("domain");
+        verifyNoMoreInteractions(organization, policies);
+    }
+
     @Test void eachEndpointReadsOnlyItsOwnDirectoryInTheCurrentDomain() throws Exception {
         var identity = mock(IdentityService.class);
         when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("member", "domain"));

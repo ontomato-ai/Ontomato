@@ -142,6 +142,28 @@ export async function listProjectionFilterFacets(owner: ProductOwner, credential
   return { componentIds: [...componentIds].sort(), objectTypes: [...objectTypes].sort() };
 }
 
+/** Every readable current record of a kind: the whole catalogue, not its first page. */
+export async function listCurrentProductRecords(
+  owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind,
+) {
+  const records = new Map<string, Awaited<ReturnType<typeof listCurrentProducts>>["items"][number]>();
+  let cursor: string | undefined;
+  do {
+    const page = await listCurrentProducts(owner, credentials, kind, { q: "", scope: "all", sort: "name", limit: 100, cursor });
+    for (const item of page.items) records.set(item.id, item);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  return records;
+}
+
+/** Names of every readable current record of a kind, keyed by id. */
+export async function listCurrentProductNames(
+  owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind,
+): Promise<Map<string, string>> {
+  const records = await listCurrentProductRecords(owner, credentials, kind);
+  return new Map([...records].map(([id, item]) => [id, item.name || id]));
+}
+
 export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
   kind: CurrentProductKind, input: ProductPanelCatalogQuery & Pick<ProductProjectionCatalogQuery, "componentId" | "objectType">, picker?: { offset: number }) {
   const cursor = readCursor(input);

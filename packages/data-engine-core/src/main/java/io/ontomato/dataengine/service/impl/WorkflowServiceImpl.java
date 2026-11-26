@@ -100,6 +100,12 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    public long count(String id, String status, String domainId) {
+        // A detail read selects the editable definition unless it explicitly requests the active revision.
+        return workflows.count(id, id == null || Workflow.STATUS_ACTIVE.equals(status) ? status : null, domainId);
+    }
+
+    @Override
     public Workflow activate(String id, String domainId, String principalId) {
         Workflow workflow = transactions.execute(status -> publish(id, domainId, principalId));
         generateReadCapabilities(workflow);

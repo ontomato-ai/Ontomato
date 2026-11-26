@@ -137,15 +137,20 @@ function catalogueOwner(answer: (path: string, body: Record<string, unknown>) =>
   return sent;
 }
 
-it("reads the metric catalogue as records with the owner's labels and this owner's column names", async () => {
-  const sent = catalogueOwner(path => ({ success: true, data: path.endsWith("/queryList") ? [metricAsset] : metricAsset }));
+it.each([2, 80])("reads %i metrics with owner display fields in at most one list RPC", async size => {
+  const extra = Array.from({ length: size - 1 }, (_, i) => ({
+    ...metricAsset, id: `metric-${i}`, function: { id: `fn-${i}`, name: `function_${i}` },
+  }));
+  const sent = catalogueOwner(path => ({ success: true, data: path.endsWith("/queryList") ? [metricAsset, ...extra] : metricAsset }));
   const reads = createMetricReadAdapter(owner, viewer);
 
-  const { rows: [row], total } = panelReadResultSchemas.panelRecordQuery.parse(await reads.query({}));
-  const record = panelReadResultSchemas.panelRecord.parse(await reads.record("m1"));
+  const { rows, total } = panelReadResultSchemas.panelRecordQuery.parse(await reads.query({}));
+  expect(total).toBe(size);
+  expect(rows).toHaveLength(size);
+  expect(sent.length).toBeLessThanOrEqual(1);
 
-  expect(row).toEqual(record);
-  expect(total).toBe(1);
+  const record = panelReadResultSchemas.panelRecord.parse(await reads.record("m1"));
+  expect(rows[0]).toEqual(record);
   expect(record).toEqual({
     primaryKey: "m1", label: "Revenue by customer", subtitle: "Monthly revenue",
     fields: {

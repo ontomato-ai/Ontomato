@@ -19,6 +19,8 @@ public interface KnowledgeService {
 
     public Map<String,KnowledgeEntity> getBussinessKnowledge(String domainId);
 
+    int countBusinessKnowledge(String domainId);
+
     public String getBussinessKnowledgeMarkdown(String domainId);
 
 }

@@ -24,17 +24,37 @@ const readCurrentPanelMock = vi.hoisted(() => vi.fn());
 const readCataloguePanelMock = vi.hoisted(() => vi.fn());
 const searchProductGrantPrincipalsMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../catalog", () => ({
-  listCurrentProducts: listCurrentProductsMock,
-  listProjectionFilterFacets: listProjectionFilterFacetsMock,
-  readCataloguePanel: readCataloguePanelMock,
-  currentProductUsedBy: currentProductUsedByMock,
-  currentProductGrants: currentProductGrantsMock,
-  copyCurrentProduct: copyCurrentProductMock,
-  deleteCurrentProduct: deleteCurrentProductMock,
-  changeCurrentProductGrant: vi.fn(),
-  changeCurrentProductDomainGrant: vi.fn(),
-}));
+vi.mock("../catalog", () => {
+  const listCurrentProductRecords: typeof import("../catalog").listCurrentProductRecords = async (owner, viewer, kind) => {
+    const records: Awaited<ReturnType<typeof listCurrentProductRecords>> = new Map();
+    let cursor: string | undefined;
+    do {
+      const page = await listCurrentProductsMock(owner, viewer, kind, { q: "", scope: "all", sort: "name", limit: 100, cursor });
+      for (const item of page.items) records.set(item.id, item);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor !== undefined);
+    return records;
+  };
+
+  const listCurrentProductNames: typeof import("../catalog").listCurrentProductNames = async (owner, viewer, kind) => {
+    const records = await listCurrentProductRecords(owner, viewer, kind);
+    return new Map([...records].map(([id, item]) => [id, item.name || id]));
+  };
+
+  return {
+    listCurrentProducts: listCurrentProductsMock,
+    listCurrentProductRecords,
+    listCurrentProductNames,
+    listProjectionFilterFacets: listProjectionFilterFacetsMock,
+    readCataloguePanel: readCataloguePanelMock,
+    currentProductUsedBy: currentProductUsedByMock,
+    currentProductGrants: currentProductGrantsMock,
+    copyCurrentProduct: copyCurrentProductMock,
+    deleteCurrentProduct: deleteCurrentProductMock,
+    changeCurrentProductGrant: vi.fn(),
+    changeCurrentProductDomainGrant: vi.fn(),
+  };
+});
 
 vi.mock("../current", () => ({
   readCurrentPanel: readCurrentPanelMock,

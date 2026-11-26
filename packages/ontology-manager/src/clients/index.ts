@@ -11,4 +11,3 @@ export {
 } from "../api";
 export { createActionsClient, type ActionExecution, type ActionsClient } from "./actions";
 export { createMetricViewsClient, metricViewsKey, type MetricViewRead, type MetricViewsClient } from "./metric-views";
-export { createProductsClient } from "./products";

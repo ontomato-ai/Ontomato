@@ -2,7 +2,7 @@ import express from "express";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { platformOntologySchemaResponseSchema } from "@ontomato/contracts/platform-ontology";
+import { platformOntologyCountsResponseSchema, platformOntologySchemaResponseSchema } from "@ontomato/contracts/platform-ontology";
 import { APPLICATION, platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
@@ -19,9 +19,14 @@ vi.mock("../../../utils/backend-client", async (original) => ({
   backendGet: vi.fn(),
   backendPost: vi.fn(),
 }));
-vi.mock("../../../services/assistant/definitions", () => ({ listAgentDefinitions: vi.fn() }));
-vi.mock("../../../services/assistant/skills", () => ({ assistantSkillCatalog: vi.fn() }));
-vi.mock("../../../services/business-definitions/definitions", () => ({ listPublishedDefinitions: vi.fn() }));
+vi.mock("../../../services/assistant/definitions", () => ({ listAgentDefinitions: vi.fn(), countVisibleAgentDefinitions: vi.fn(async () => 0) }));
+vi.mock("../../../services/assistant/skills", () => ({ assistantSkillCatalog: vi.fn(), countAssistantSkills: vi.fn(async () => 0) }));
+vi.mock("../../../services/business-definitions/definitions", () => ({ listPublishedDefinitions: vi.fn(), countPublishedDefinitions: vi.fn(async () => 0) }));
+vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn(async () => {}) }));
+vi.mock("../../../services/product-panels/access", async original => ({
+  ...await original<typeof import("../../../services/product-panels/access")>(),
+  countUsableCurrentDefinitions: vi.fn(async () => 0),
+}));
 vi.mock("../../../services/product-governance/grants", () => ({ grantedProductIds: vi.fn() }));
 vi.mock("../../../services/product-panels/component-catalogue", () => ({ readPanelComponentCatalogue: vi.fn() }));
 
@@ -117,6 +122,32 @@ describe("platform-ontology HTTP routes", () => {
     });
     expect(objectsRes.status).toBe(200);
     expect(await objectsRes.json()).toMatchObject({ type: "platform:Action", status: "ok", items: [], total: 0 });
+  });
+
+  it("returns owner counts without replacing a refusal with zero or querying the list", async () => {
+    vi.mocked(backendPost).mockImplementation(async (_endpoint, url, body) => {
+      expect(body).toEqual({ countOnly: true });
+      const denied = url.endsWith("/trigger/queryList");
+      const data = url.endsWith("/admin/getMetas") ? { objectTypes: 2, attributes: 10, relationships: 3 }
+        : url.endsWith("/platform/governance/organization") ? { units: 0, positions: 0, grants: 0 }
+        : url.endsWith("/workflow/grants") ? { total: 0, outsideDirectory: 0 }
+        : { total: 8 };
+      return {
+        text: JSON.stringify(denied ? { success: false, code: 403, message: "Not admitted" } : { success: true, data }),
+        headers: new Headers(), status: 200, statusText: "OK",
+      };
+    });
+    vi.mocked(backendGet).mockResolvedValueOnce({
+      text: JSON.stringify({ success: true, data: { total: 0 } }), headers: new Headers(), status: 200, statusText: "OK",
+    });
+    const response = await fetch(`${base}/api/platform-ontology/counts`);
+    expect(response.status).toBe(200);
+    const { counts } = platformOntologyCountsResponseSchema.parse(await response.json());
+    expect(counts.find(entry => entry.type === "platform:Action")).toMatchObject({ status: "ok", count: 8 });
+    const trigger = counts.find(entry => entry.type === "platform:Trigger");
+    expect(trigger).toMatchObject({ status: "refused", reason: "Not admitted" });
+    expect(trigger).not.toHaveProperty("count");
+    expect(vi.mocked(backendPost).mock.calls.map(([, , body]) => body)).not.toContainEqual({});
   });
 
   it("rejects malformed bodies with 400 and propagates 401 from owner auth failure", async () => {

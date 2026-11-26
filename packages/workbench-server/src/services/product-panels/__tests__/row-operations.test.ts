@@ -5,7 +5,10 @@ import {
   type CreatePanelHumanOperationIntentRequest,
   type PanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
-import { AGENT_DEFINITION, APPLICATION, BUSINESS_KNOWLEDGE, PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import {
+  AGENT_DEFINITION, APPLICATION, BUSINESS_KNOWLEDGE, GENERATE_USER_API_KEY, PRODUCT_PANEL,
+  REGENERATE_USER_API_KEY, REMOVE_USER, REVOKE_USER_API_KEY, SCHEDULED_TASK, USER,
+} from "@ontomato/contracts/platform-object-types";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -35,7 +38,6 @@ const mocks = vi.hoisted(() => ({
   findProduct: vi.fn(),
   listScheduledTasks: vi.fn(),
   queryKnowledge: vi.fn(),
-  readOntologyObjects: vi.fn(),
   usedPanels: vi.fn(),
   readCatalogue: vi.fn(),
 }));
@@ -115,11 +117,6 @@ vi.mock("../../business-knowledge/panel-reads", () => ({
     counts: vi.fn(),
     record: vi.fn(),
     form: vi.fn(),
-  }),
-}));
-vi.mock("../../platform-ontology/panel-reads", () => ({
-  createPlatformOntologyReadAdapter: (owner: unknown, viewer: unknown) => ({
-    objects: (params: Record<string, unknown>) => mocks.readOntologyObjects(owner, viewer, params),
   }),
 }));
 vi.mock("../application-catalogue", async importOriginal => {
@@ -348,6 +345,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("list row-scoped operations, batch availability, and server-pinned injection", () => {
@@ -478,6 +476,42 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
         revoke: { available: false, unavailable: { reason: "Application is archived" } },
       },
     });
+  });
+
+  it.each([[2], [20]])("bounds RPCs for a member page of %i rows", async size => {
+    setProduct(makeProjection("members-list", {
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: USER } }, read: "query", params: {} } },
+      operations: {
+        remove: { operation: { kind: "PlatformOperation", id: REMOVE_USER }, target: { row: true } },
+        issue: { operation: { kind: "PlatformOperation", id: GENERATE_USER_API_KEY }, target: { row: true } },
+        regenerate: { operation: { kind: "PlatformOperation", id: REGENERATE_USER_API_KEY }, target: { row: true } },
+        revoke: { operation: { kind: "PlatformOperation", id: REVOKE_USER_API_KEY }, target: { row: true } },
+      },
+    }));
+    setProduct(makePanel("P", { state: {}, members: { members: { target: { projectionId: "members-list" } } } }));
+    const rows = Array.from({ length: size }, (_, i) => ({ primaryKey: `member-${i}`, label: `Member ${i}`, fields: {} }));
+    mocks.backendPost.mockImplementation(async (_name: string, url: string) => {
+      if (!url.endsWith("/panel/governance/users/query")) throw new Error(`Unexpected RPC: ${url}`);
+      return { text: JSON.stringify({ success: true, data: { rows, total: size } }) };
+    });
+    const availabilityRpc = vi.fn(async (url: string) => {
+      if (!/\/panel\/governance\/users\/(remove\/batch\/unavailable|api-key\/rows\/unavailable)$/.test(url)) throw new Error(`Unexpected RPC: ${url}`);
+      return Response.json({ success: true, data: {} });
+    });
+    vi.stubGlobal("fetch", availabilityRpc);
+
+    const res = await readProductPanelData(owner, credentials, {
+      source: { kind: "registered", applicationId: "A", useId: "tasks" },
+      memberPath: [{ member: "members" }], dataName: "rows", inputs: {},
+    });
+
+    expect(res).toMatchObject({ status: "ready", value: { rows, total: size } });
+    expect(mocks.backendGet.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(mocks.backendPost.mock.calls.length).toBeLessThanOrEqual(1);
+    // Round 2 #4: the four row operations each resolve the whole page in one batch owner read.
+    expect(availabilityRpc.mock.calls.length).toBeLessThanOrEqual(4);
   });
 
   it("executes row-scoped operations on human and agent channels and rejects wrong target class", async () => {

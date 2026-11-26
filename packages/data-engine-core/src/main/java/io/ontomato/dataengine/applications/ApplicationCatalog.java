@@ -26,9 +26,11 @@ import io.ontomato.dataengine.service.authorization.AuthorizationTypes.ObjectTar
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import java.util.*;
+import java.util.stream.Stream;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
@@ -347,11 +349,31 @@ public class ApplicationCatalog {
     }
 
     public JSONObject catalogueCount(User user) {
-        var apps = applicationsInDomain(user.getDomainId());
+        return countApplications(user, true);
+    }
+
+    public JSONObject navigationCount(User user) {
+        return countApplications(user, false);
+    }
+
+    private JSONObject countApplications(User user, boolean includeMaintainable) {
+        var apps = db.query("""
+            SELECT id, domain_id, owner_user_id, coauthor_ids, entry, page_skills, panel_uses
+            FROM sys_application WHERE kind IS NOT NULL AND (domain_id IS NULL OR domain_id=?)
+            """, (row, index) -> JSONObject.of(
+                "id", row.getString("id"), "domainId", row.getString("domain_id"),
+                "ownerUserId", row.getString("owner_user_id"),
+                "coauthorIds", JSON.parseArray(row.getString("coauthor_ids"), String.class),
+                "entry", JSON.parseObject(row.getString("entry")),
+                "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Declaration.class),
+                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class)), user.getDomainId());
         var pageKeys = new BuiltinPageKeys(apps);
         var subject = new ApplicationSubject(user);
-        return JSONObject.of("total", apps.stream()
-            .filter(app -> subject.canEdit(app) || canEnter(app, subject, pageKeys)).count());
+        var ids = apps.stream()
+            .filter(app -> (includeMaintainable && subject.canEdit(app)) || canEnter(app, subject, pageKeys))
+            .map(app -> app.getString("id")).toArray(String[]::new);
+        return JSONObject.of("total", db.queryForObject("SELECT COUNT(*) FROM sys_application WHERE id=ANY(?)",
+            Long.class, new SqlArrayValue("varchar", ids)));
     }
 
     private static String catalogueName(JSONObject app, Locale locale) {
@@ -723,14 +745,18 @@ public class ApplicationCatalog {
         return entries;
     }
 
-    private List<ApplicationPanelUse> admittedEntries(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
-        if (subject.user.getDomainId() == null || !inDomain(app, subject.user)) return List.of();
+    private Stream<ApplicationPanelUse> enterableEntries(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
+        if (subject.user.getDomainId() == null || !inDomain(app, subject.user)) return Stream.empty();
         var id = app.getString("id");
-        return actualEntries(app, pageKeys).stream().filter(entry -> subject.decision(id, entry.id()).allowed()).toList();
+        return actualEntries(app, pageKeys).stream().filter(entry -> subject.decision(id, entry.id()).allowed());
+    }
+
+    private List<ApplicationPanelUse> admittedEntries(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
+        return enterableEntries(app, subject, pageKeys).toList();
     }
 
     private boolean canEnter(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
-        return !admittedEntries(app, subject, pageKeys).isEmpty();
+        return enterableEntries(app, subject, pageKeys).findFirst().isPresent();
     }
 
     public boolean canEnter(String id, User user) {
@@ -904,39 +930,21 @@ public class ApplicationCatalog {
                 Set.copyOf(declarations.stream().map(Builtin::id).toList()));
         });
     }
-    public JSONObject publish(String id, Declaration declaration, String releaseId, User user) {
-        if (releaseId == null || !releaseId.matches("[a-zA-Z0-9_-]{1,128}")) throw bad("Invalid releaseId");
-        return userApplication(id, "hosted", declaration, releaseId, user);
-    }
-    public JSONObject publishProduct(String id, Declaration declaration, String releaseId, User user,
-            ProductGrantService.OwnerFacts ownerFacts) {
-        if(releaseId==null||!releaseId.matches("[a-zA-Z0-9_-]{1,128}"))throw bad("Invalid releaseId");
-        if (ownerFacts == null || ownerFacts.ownerId() == null || ownerFacts.ownerId().isBlank()
-                || !"current".equals(ownerFacts.state()))
-            throw bad("Product publication requires current owner facts");
-        return userApplication(id, "product", declaration, releaseId, user, ownerFacts.ownerId());
-    }
     public JSONObject connected(String id, Declaration declaration, String upstream, String upstreamPrefix, User user) {
         var allowed = upstreams.getJSONArray(user.getDomainId());
         if (allowed == null || !allowed.contains(upstream)) throw bad("Upstream is not allowed in this domain");
         if (upstreamPrefix == null || !upstreamPrefix.matches("/(?:[a-zA-Z0-9_-]+/)*"))
             throw bad("Invalid upstream prefix");
         return transactions.execute(tx -> {
-            var result = userApplication(id, "connected", declaration, null, user);
+            var result = userApplication(id, declaration, user);
             db.update("UPDATE sys_application SET entry=entry || ?::jsonb WHERE id=?",
                 JSONObject.of("upstream", upstream, "upstreamPrefix", upstreamPrefix).toJSONString(), id);
             return result;
         });
     }
-    private JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user) {
-        return userApplication(id, kind, declaration, releaseId, user, null);
-    }
-
-    private JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user,
-            String productAuthor) {
+    private JSONObject userApplication(String id, Declaration declaration, User user) {
         validateId(id); validate(declaration);
         if (!declaration.pageSkills().isEmpty() || !declaration.panelUses().isEmpty()) throw bad("Use the panel application registration for panel relations");
-        if(!List.of("hosted","connected","product").contains(kind))throw bad("Invalid user application kind");
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
         return transactions.execute(tx -> {
             lockCatalog();
@@ -944,11 +952,9 @@ public class ApplicationCatalog {
             if (old.isPresent()) {
                 var a = old.get();
                 if (panelManaged(a)) throw bad("A panels application cannot use legacy publication");
-                if (!kind.equals(a.getString("kind"))) throw denied();
+                if (!"connected".equals(a.getString("kind"))) throw denied();
                 requireDomainMaintainer(a, user);
-            } else if ("product".equals(kind)) {
-                access.requireLegacyProductAuthor(user, productAuthor);
-            } else if ("connected".equals(kind)) {
+            } else {
                 var subject = new ApplicationSubject(user);
                 var decision = authorization.decide(subject.context(), new Management(ApplicationController.CONNECT_APPLICATION));
                 if (!decision.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
@@ -956,13 +962,13 @@ public class ApplicationCatalog {
             requireIconChange(old.orElse(null), declaration.icon(), user);
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
             boolean allowStandalone = old.map(ApplicationCatalog::allowsStandalone).orElse(true);
-            String path=kind.equals("product")?"/products/"+id+"?applicationId="+id:"/apps/"+id+"/";
+            String path="/apps/"+id+"/";
             var entryKey = old.map(app -> app.getJSONObject("entry").getString("entryKey")).orElse(LEGACY_ENTRY_KEY);
-            save(id, user.getDomainId(), List.of("hosted","product").contains(kind) ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,
-                JSONObject.of("path", path, "entryKey", entryKey), null, releaseId, declaration, new JSONObject(), allowStandalone);
+            save(id, user.getDomainId(), "data-engine", owner, "connected", "apps", "business", 100,
+                JSONObject.of("path", path, "entryKey", entryKey), null, null, declaration, new JSONObject(), allowStandalone);
             var application = require(id);
             access.declare(application, declaration, old.isEmpty());
-            return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath",path);
+            return JSONObject.of("applicationId", id, "entryPath", path);
         });
     }
     static void validateUseGroups(List<ApplicationPanelUse> uses, List<Group> groups) {

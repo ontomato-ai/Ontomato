@@ -10,4 +10,9 @@ public class AnonymousOrganizationDirectory implements OrganizationDirectory {
     public Snapshot snapshot(String domainId) {
         return new Snapshot(List.of(), List.of(), List.of(), List.of(), List.of());
     }
+
+    @Override
+    public Counts countInDomain(String domainId) {
+        return new Counts(0, 0, 0);
+    }
 }

@@ -1,33 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
-import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
 import {
   panelAddress,
   type ProductPanelReadRequest,
 } from "@ontomato/contracts/panel-host";
-import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import { builtinProductProjectionInputSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import {
   CLEAR_OBJECT_DETAIL_PANEL,
   OBJECT_TYPE,
   SAVE_OBJECT_DETAIL_PANEL,
-  platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
-import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import type {
   GraphCanvasEdge,
   GraphCanvasElement,
   GraphCanvasNode,
   GraphCanvasPoint,
 } from "@ontomato/foundation-ui/graph/g6";
-import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { encodeGraphNodeId } from "../../../../../packages/apps-sdk/src/base/ontology-graph-layout";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import dataBrowserSource from "../../../../../packages/ontology-manager/resources/builtin-panels/data-browser/panel.json";
+import dataBrowserProjectionFile from "../../../../../packages/ontology-manager/resources/builtin-panels/data-browser/projections.json";
 import dataBrowserHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/data-browser/panel.html?raw";
 import dataBrowserModule from "../../../../../packages/ontology-manager/resources/builtin-panels/data-browser/panel.mjs?raw";
 import {
@@ -98,68 +94,23 @@ const dataBrowserUse = panelUse(
   "/browser/data",
 );
 
-const actionTargets: Record<string, { source: "input"; input: string } | { source: "none" }> = {
-  [CLEAR_OBJECT_DETAIL_PANEL]: { source: "input", input: "objectType" },
-};
-
-const objectTypes = Object.fromEntries(
-  Object.entries(platformObjectTypes).map(([type, entry]) => [
-    type,
-    platformTypeTableEntrySchema.parse({
-      ...entry,
-      operations: entry.operations?.map((id) => {
-        const form = id.endsWith(".save") || id.endsWith(".create") || id === SAVE_OBJECT_DETAIL_PANEL;
-        return {
-          id,
-          kind: form ? "form.save" : "action",
-          effect: "write",
-          batch: false,
-          inputSchema: {},
-          target: form ? { source: "draft" } : (actionTargets[id] ?? { source: "input", input: "target" }),
-        };
-      }),
-    }),
-  ]),
-);
-
-const catalogue = components.map((component) =>
-  appsSdkComponentCatalogEntrySchema.parse({
-    ...component,
-    ...(component.componentId === "OperationButton"
-      ? { config: [{ name: "operation", type: "string", required: true, description: "Operation local name" }] }
-      : {}),
-    ports: { props: [], events: [], slots: [] },
-  }),
-);
-
 function expandDataBrowserPanel() {
   const projections = new Map<string, ProductProjection>();
-  const { members: authoring, ...manifest } = panelAuthoringManifestSchema.parse(dataBrowserSource.manifest);
-  const members = Object.fromEntries(
-    Object.entries(authoring).map(([key, definition]) => {
-      if (!("component" in definition)) return [key, definition];
-      const { projection, placement } = expandPanelAuthoringMember(key, definition, {
-        state: manifest.state,
-        typeTable: { objectTypes },
-        components: catalogue,
-      });
-      const id = definition.id!;
-      projections.set(id, {
-        ...projection,
-        id,
-        name: definition.name ?? key,
-        description: definition.description ?? "",
-        visibility: "platform",
-        domainId: null,
-        ownerId: null,
-        revision: 1,
-        createdAt: "2026-11-25T00:00:00.000Z",
-        updatedAt: "2026-11-25T00:00:00.000Z",
-        editable: false,
-      } as ProductProjection);
-      return [key, { target: { projectionId: id }, ...placement }];
-    }),
-  );
+  const { members, ...manifest } = panelAuthoringManifestSchema.parse(dataBrowserSource.manifest);
+  for (const { id, input } of dataBrowserProjectionFile as { id: string; input: Record<string, unknown> }[]) {
+    // This harness reads the business ontology only: the four-layer projections never place here.
+    if (id.includes("capability")) continue;
+    projections.set(id, {
+      ...builtinProductProjectionInputSchema.parse(input),
+      id,
+      domainId: null,
+      ownerId: null,
+      revision: 1,
+      createdAt: "2026-11-25T00:00:00.000Z",
+      updatedAt: "2026-11-25T00:00:00.000Z",
+      editable: false,
+    } as ProductProjection);
+  }
   const panel: ProductPanel = {
     id: "builtin-product-data-browser",
     name: "Object browser",
@@ -171,7 +122,8 @@ function expandDataBrowserPanel() {
     createdAt: "2026-11-25T00:00:00.000Z",
     updatedAt: "2026-11-25T00:00:00.000Z",
     editable: false,
-    manifest: definePanel({ ...manifest, members }),
+    // The parsed authoring members keep their authoring shape; the formal manifest takes the resolved ones.
+    manifest: definePanel({ ...manifest, members: members as PanelManifest["members"] }),
     content: {
       html: dataBrowserHtml,
       module: dataBrowserModule,
@@ -391,6 +343,12 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
           label: obj.primaryKey === "ord-1" ? "ORD-001" : "Acme Corp",
           fields: { orderNo: "ORD-001", amount: "4200", status: "Paid" },
           fieldLabels: { orderNo: "Order No", amount: "Amount", status: "Status" },
+          ...(member === "nodeHeader" && {
+            outputs: {
+              typeLabel: obj.className === "Order" ? "Order Display" : "Customer Display",
+              detailPath: `/browser/views?selected=${obj.className}~${obj.primaryKey}`,
+            },
+          }),
         },
       };
     }
@@ -443,6 +401,7 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
               label: "ORD-001",
               fields: { orderNo: "ORD-001", amount: "4200", note: "Priority" },
               fieldLabels: { orderNo: "Order No", amount: "Amount", note: "Note" },
+              outputs: { detailPath: "/browser/views?selected=Order~ord-1" },
             },
             {
               className: "Order",
@@ -855,13 +814,30 @@ describe("builtin-product-data-browser panel", () => {
         expect(element.querySelector("[data-table-filter-tag]")?.textContent).toContain("3 filters");
       });
 
-      // Single-clicking a table row highlights without navigating; double-clicking opens object detail /browser/views?selected=Order~ord-1.
-      const firstRow = element.querySelector<HTMLElement>("tbody tr")!;
-      expect(firstRow).toBeTruthy();
-      firstRow.click();
+      // Single-clicking a table row only highlights it.
+      const rows = Array.from(element.querySelectorAll<HTMLElement>("tbody tr"));
+      expect(rows.length).toBeGreaterThan(1);
+      const [ownDetailRow, graphRow] = rows;
+      ownDetailRow!.click();
       await Promise.resolve();
       expect(route.router.currentRoute.value.fullPath).toContain("/browser/data");
-      firstRow.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+
+      // A row without a page of its own becomes the graph's starting node, read there with its relations.
+      graphRow!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      await vi.waitFor(() => {
+        expect(route.readLog.some((r) => r.member === "instanceGraph" && r.dataName === "neighbors")).toBe(true);
+      });
+      expect(route.router.currentRoute.value.fullPath).not.toContain("viewMode=table");
+
+      // A row whose own read published a detail address opens it on double-click instead.
+      const tableView = Array.from(element.querySelectorAll<HTMLButtonElement>("button")).find(
+        (btn) => btn.textContent?.trim() === "Table",
+      )!;
+      tableView.click();
+      await vi.waitFor(() => {
+        expect(element.querySelectorAll<HTMLElement>("tbody tr").length).toBeGreaterThan(1);
+      });
+      element.querySelector<HTMLElement>("tbody tr")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await vi.waitFor(() => {
         expect(route.router.currentRoute.value.fullPath).toBe("/browser/views?selected=Order~ord-1");
       });
@@ -873,7 +849,10 @@ describe("builtin-product-data-browser panel", () => {
   it("opens in-page presentation configuration dialog in table mode and invokes detailPanelForm, clearDetailPanel, and /ontology/panels navigation", async () => {
     const route = mountBrowserRoute({ canConfigure: true });
     const { app, element } = await route.open(
-      panelAddress(dataBrowserUse.path, { selectedClass: "Order", viewMode: "table" }),
+      panelAddress(dataBrowserUse.path, {
+        selectedClass: { className: OBJECT_TYPE, primaryKey: "Order" },
+        viewMode: "table",
+      }),
     );
     try {
       const configBtn = await vi.waitFor(() => {
@@ -965,6 +944,8 @@ describe("builtin-product-data-browser panel", () => {
 
       await vi.waitFor(() => {
         expect(route.readLog.some((r) => r.member === "graphSearchResults" && r.inputs.search === "ORD")).toBe(true);
+        // The graph member's own read-only version reaches the search read as a parameter; no state copies it.
+        expect(route.readLog.some((r) => r.member === "graphSearchResults" && r.inputs.version === "v-1")).toBe(true);
         // The graph member's own read-only version reaches the search read as a parameter; no state copies it.
         expect(route.readLog.some((r) => r.member === "graphSearchResults" && r.inputs.version === "v-1")).toBe(true);
         expect(element.querySelector("[data-graph-candidates]")?.textContent).toContain("ORD-001");

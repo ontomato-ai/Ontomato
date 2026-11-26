@@ -30,4 +30,14 @@ export async function ensureProductPanelsSchema(client: QueryableClient) {
     PRIMARY KEY (domain_id, entry_id))`);
   await client.query(`CREATE INDEX IF NOT EXISTS product_bound_entry_panel_dependencies_reverse
     ON ${t("product_bound_entry_panel_dependencies")} USING gin (dependencies jsonb_path_ops)`);
+  await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_publication_outbox')} (domain_id text NOT NULL,bundle_id text,release_id text);
+    ALTER TABLE ${t('product_publication_outbox')}
+      DROP CONSTRAINT IF EXISTS product_publication_outbox_pkey,
+      ALTER COLUMN bundle_id DROP NOT NULL,
+      ALTER COLUMN release_id DROP NOT NULL,
+      ADD COLUMN IF NOT EXISTS dependency_sequence bigint GENERATED ALWAYS AS IDENTITY,
+      ADD COLUMN IF NOT EXISTS dependency_change jsonb;
+    CREATE UNIQUE INDEX IF NOT EXISTS product_publication_outbox_bundle ON ${t('product_publication_outbox')} (domain_id,bundle_id);
+    CREATE INDEX IF NOT EXISTS product_publication_outbox_dependencies ON ${t('product_publication_outbox')} (domain_id,dependency_sequence)
+      WHERE dependency_change IS NOT NULL`);
 }

@@ -83,7 +83,7 @@ describe("open-source Ontology Service page", () => {
     ["/#/", "#/home", null],
     ["/?view=data-browser", "#/browser/data", null],
     ["/?view=assets", "#/ontology/assets/metrics", null],
-    ["/#/data/Order", "#/browser/data?selectedClass=Order&viewMode=table", null],
+    ["/#/data/Order", "#/browser/data?selectedClass=platform:ObjectType~Order&viewMode=table", null],
     ["/#/objects", "#/ontology/objects", null],
     ["/#/admin", "#/settings/records/system-monitor", null],
     ["/#/admin/audit-log", "#/settings/records/audit-log", null],

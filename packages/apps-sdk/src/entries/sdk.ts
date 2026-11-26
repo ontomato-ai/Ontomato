@@ -3,7 +3,6 @@ import "../styles.css";
 
 export { createAppContext, connectAppContext } from "../hosted-context";
 export type { AppContext } from "../context";
-export {default as ProductAsset} from '../ProductAsset.vue';
 export { default as MetricViewData } from "@ontomato/ontology-manager/app-components/MetricViewData.vue";
 export type { ActionExecution, ActionsClient, MetricViewRead, MetricViewsClient } from "@ontomato/ontology-manager/clients";
 export type { ActionFormRequest } from "@ontomato/contracts/action-forms";

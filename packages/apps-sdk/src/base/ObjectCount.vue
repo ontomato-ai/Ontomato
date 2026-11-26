@@ -2,7 +2,6 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { directReadDeclaration, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
-import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberOutput } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
@@ -24,8 +23,8 @@ interface NormalizedCountItem {
 
 /**
  * Compact inline metric strip displaying the owner's record count from the member's `rows` (`panelRecordList` /
- * `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum. For complete unpaged lists (`panelRecordList`),
- * displays the list length (`0` when empty); for paged/query reads (`panelRecordQuery` / `panelOntologyObjects`),
+ * `panelRecordQuery`) datum. For complete unpaged lists (`panelRecordList`),
+ * displays the list length (`0` when empty); for paged/query reads (`panelRecordQuery`),
  * displays strictly the owner-returned `total` (showing `—` when the owner omits `total` or returns an empty response
  * without `total`, never falling back to the current page's row count or inventing `0`).
  * Publishes `total` as a read-only member output (`number | null`).
@@ -62,17 +61,13 @@ const { t, te, locale } = useI18n();
 const panel = usePanelContext();
 const member = useMember();
 
-const datumName: "rows" | "objects" = "rows" in member.projection.data
-  ? "rows"
-  : "objects" in member.projection.data
-    ? "objects"
-    : (() => {
-        throw new Error(`Projection ${member.projection.id} declares neither 'rows' nor 'objects' datum`);
-      })();
-
-const datumDeclaration = directReadDeclaration(member.projection, member.projection.data[datumName]!);
-const isCompleteList = datumName === "rows" && datumDeclaration?.result === "panelRecordList";
-const datumState = useMemberData(datumName);
+const datum = member.projection.data.rows;
+if (!datum) {
+  throw new Error(`Projection ${member.projection.id} declares no 'rows' datum`);
+}
+const datumDeclaration = directReadDeclaration(member.projection, datum);
+const isCompleteList = datumDeclaration?.result === "panelRecordList";
+const datumState = useMemberData("rows");
 
 const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => {
   const cfg = member.projection.config;
@@ -133,26 +128,6 @@ const parsedData = computed<ParsedCountData>(() => {
   }
 
   const value = state.value;
-  if (datumName === "objects") {
-    const response = value as unknown as PlatformOntologyObjectsResponse;
-    if (response.status === "refused") {
-      return {
-        kind: "forbidden",
-        total: null,
-        notice: response.reason || t("platform.graphStatusRefused"),
-      };
-    }
-    if (response.status !== "ok") {
-      return {
-        kind: "error",
-        total: null,
-        notice: response.reason || (response.status === "unavailable" ? t("platform.graphStatusUnavailable") : t("platform.dataUnreachable")),
-      };
-    }
-    const hasTotal = typeof response.total === "number" && Number.isFinite(response.total);
-    return { kind: "ready", total: hasTotal ? response.total : null };
-  }
-
   if (Array.isArray(value)) {
     const rows = value as unknown as readonly PlatformObjectRecord[];
     return { kind: "ready", total: rows.length };

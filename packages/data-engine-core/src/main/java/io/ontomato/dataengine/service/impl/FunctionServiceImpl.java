@@ -12,6 +12,7 @@ import io.ontomato.dataengine.service.QueryPackage;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
@@ -32,6 +33,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -223,9 +225,29 @@ public class FunctionServiceImpl implements FunctionService {
 	}
 
   @Override
-	public List<Function> queryList(String operation, String className, String domainId) {
-		return functionDao.queryList(operation, className, domainId);
-	}
+  public List<Function> queryList(String operation, String className, String domainId) {
+    return functionDao.queryList(operation, className, domainId);
+  }
+
+  @Override
+  public List<Function> listVisible(String operation, String className, User user) {
+    var visible = visibleTo(user);
+    return queryList(operation, className, user.getDomainId()).stream().filter(visible).toList();
+  }
+
+  @Override
+  public long countVisible(User user) {
+    var visible = visibleTo(user);
+    var ids = functionDao.queryReadCandidates(user.getDomainId()).stream()
+        .filter(visible).map(Function::getId).toList();
+    return functionDao.countByIds(user.getDomainId(), ids);
+  }
+
+  private Predicate<Function> visibleTo(User user) {
+    var subject = definitions.subject(user);
+    return function -> Function.OPERATION_PRODUCT.equals(function.getOperation())
+        || definitions.canRead(subject, access(function, Verb.USE));
+  }
 
   @Override
   public JSONObject form(JSONObject request, String lang, String domainId) {

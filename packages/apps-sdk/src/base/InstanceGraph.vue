@@ -42,14 +42,11 @@ import type {
   PlatformGraphNeighborsResult,
   PlatformGraphNode,
   PlatformGraphRelationStatus,
-  PlatformGraphSchema,
-  PlatformGraphTypeCount,
   PlatformObjectGraph,
 } from "../panel/platform-objects";
 import {
   encodeGraphNodeId,
   layoutInstanceRadial,
-  layoutTypeColumns,
   placeExpandedNeighbors,
   summarizeGraphRelations,
 } from "./ontology-graph-layout";
@@ -92,8 +89,7 @@ const GENERATION_POLL_INTERVAL_MS = 2000;
 /**
  * Projection-level interactive graph powered by G6 (`@ontomato/foundation-ui/graph/g6`).
  *
- * Supports three modes:
- * - `"type"`: arranges declared types and relation kinds in layer columns with per-type counts and access statuses.
+ * Supports two modes:
  * - `"overview"`: renders a sampled grouped graph overview (`overview` and optional deferred `connections` ports) with
  *   per-group spiral clusters, obstacle-avoiding group headings, toggleable inter-group aggregated edges, generation /
  *   empty / truncation notices, and snapshot version-conflict recovery.
@@ -106,21 +102,19 @@ const GENERATION_POLL_INTERVAL_MS = 2000;
  */
 const props = withDefaults(
   defineProps<{
-    /** `"type"` draws types & relation kinds; `"overview"` draws sampled grouped overview; `"instance"` explores neighbors. */
-    mode?: "type" | "instance" | "overview";
+    /** `"overview"` draws a sampled grouped overview; `"instance"` explores neighbors. */
+    mode?: "instance" | "overview";
     /** Starting node identity for instance mode; when omitted/null, reads `overview` (when bound) or `start()`. */
     start?: PanelObjectValue | null;
     /** Currently selected node identity. */
     selected?: PanelObjectValue | null;
-    /** Currently selected type ID in type mode (e.g. `"platform:Action"`). */
-    selectedType?: string | null;
     /** Active highlighted group ID in overview mode (e.g. synced with a group/type filter). */
     selectedGroup?: string | null;
     /** Search string that highlights drawn matches without hiding other nodes or querying upstream. */
     query?: string | null;
     /** Accessible graph label; falls back to the projection's name. */
     label?: string;
-    /** Initial enabled layers; defaults to all layers present in schema or loaded nodes. */
+    /** Initial enabled layers; defaults to all layers present in loaded nodes. */
     layers?: readonly string[] | null;
     /** Viewport fitting & label scaling mode: `"fit"` shows the whole graph in panorama without forced zoom-in; `"readable"` holds labels at screen size. Defaults to `"fit"` when `overview` is bound, `"readable"` otherwise. */
     fitMode?: "fit" | "readable";
@@ -159,7 +153,6 @@ const props = withDefaults(
     mode: undefined,
     start: null,
     selected: null,
-    selectedType: null,
     selectedGroup: null,
     query: "",
     label: undefined,
@@ -186,8 +179,6 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** Emitted in overview or instance mode when a reader selects a node (full identity) or clears selection. */
   "update:selected": [node: PanelObjectValue | null];
-  /** Emitted in type mode when a reader selects a type node or clears selection. */
-  "update:selectedType": [typeId: string | null];
   /** Emitted in overview mode when a reader selects a cluster group heading. */
   "update:selectedGroup": [groupId: string | null];
   /** Emitted when the aggregated-edges display setting changes. */
@@ -381,14 +372,12 @@ function createMemberGraphSource(ctx: PanelMemberContext): PlatformObjectGraph {
     throw new Error(t("platform.dataAwaiting"));
   };
   if (!ctx.projection.data.neighbors) throw new Error(`Member '${ctx.key}' declares no 'neighbors' datum`);
-  const readSchema = ctx.projection.data.schema ? useMemberRead("schema") : undefined;
   const readCounts = ctx.projection.data.counts ? useMemberRead("counts") : undefined;
   const readStart = ctx.projection.data.start ? useMemberRead("start") : undefined;
   const readOverview = ctx.projection.data.overview ? useMemberRead("overview") : undefined;
   const readConnections = ctx.projection.data.connections ? useMemberRead("connections") : undefined;
   const readNeighbors = useMemberRead("neighbors");
   return {
-    ...(readSchema ? { schema: async () => unwrap<PlatformGraphSchema>(await readSchema({})) } : {}),
     ...(readCounts ? {
       counts: async () => {
         const state = await readCounts({});
@@ -511,8 +500,7 @@ const effectiveStart = computed<PanelObjectValue | null>(() => {
   return null;
 });
 
-const activeMode = computed<"type" | "overview" | "instance">(() => {
-  if (props.mode === "type") return "type";
+const activeMode = computed<"overview" | "instance">(() => {
   if (hasOverviewPort) {
     if (effectiveStart.value) return "instance";
     return "overview";
@@ -522,10 +510,6 @@ const activeMode = computed<"type" | "overview" | "instance">(() => {
 });
 
 const canReturnToOverview = computed(() => hasOverviewPort && activeMode.value === "instance");
-
-// Type-mode state
-const typeSchema = shallowRef<PlatformGraphSchema | null>(null);
-const typeCounts = shallowRef<readonly PlatformGraphTypeCount[]>([]);
 
 // Overview-mode state
 const overviewData = shallowRef<PanelGraphOverview | null>(null);
@@ -615,7 +599,6 @@ const focusedNodeId = ref<string | null>(null);
 let loadGeneration = 0;
 
 function focusAnchor(): string | undefined {
-  if (activeMode.value === "type") return props.selectedType ?? undefined;
   if (activeMode.value === "overview") return activeOverviewSelectedId.value ?? undefined;
   const chosen = props.selected ? encodeGraphNodeId(props.selected) : null;
   if (chosen && instanceNodes.value.has(chosen)) return chosen;
@@ -701,33 +684,23 @@ const overviewGroupLabelById = computed(() => {
   return map;
 });
 
-function typeDisplayName(typeId: string, labelKey?: string, explicitLabel?: string): string {
+function typeDisplayName(typeId: string, explicitLabel?: string): string {
   if (explicitLabel) return explicitLabel;
   const fromOverview = overviewGroupLabelById.value.get(typeId);
   if (fromOverview) return fromOverview;
-  return resolveKey(labelKey ?? platformObjectTypes[typeId]?.labelKey, typeId);
+  return resolveKey(platformObjectTypes[typeId]?.labelKey, typeId);
 }
 
 function layerDisplayName(layer: string): string {
   return resolveKey(`platformOntology.layers.${layer}`, layer);
 }
 
-function relationDisplayName(relationKind: string, explicitLabel?: string, labelKey?: string): string {
+function relationDisplayName(relationKind: string, explicitLabel?: string): string {
   if (explicitLabel) return resolveKey(explicitLabel, explicitLabel);
-  const fromSchema = typeSchema.value?.relationKinds.find((item) => item.id === relationKind);
-  const key = labelKey ?? fromSchema?.labelKey ?? relationLabelKeyById.get(relationKind);
-  return resolveKey(key, fromSchema?.label ?? relationKind);
+  return resolveKey(relationLabelKeyById.get(relationKind), relationKind);
 }
 
 const availableLayers = computed<readonly string[]>(() => {
-  if (activeMode.value === "type" && typeSchema.value) {
-    if (typeSchema.value.layers?.length) return typeSchema.value.layers;
-    const discovered = new Set<string>();
-    for (const spec of typeSchema.value.objectTypes) {
-      if (spec.layer) discovered.add(spec.layer);
-    }
-    return [...discovered];
-  }
   if (activeMode.value === "overview") {
     const discovered = new Set<string>();
     for (const node of overviewNodes.value.values()) {
@@ -749,7 +722,6 @@ const availableLayers = computed<readonly string[]>(() => {
 const hasDeclaredLayerSet = computed(() =>
   Boolean(
     hasExplicitLayers
-    || (activeMode.value === "type" && typeSchema.value?.layers?.length)
     || (activeMode.value === "instance" && declaredNodeIdentity.value && "layers" in declaredNodeIdentity.value),
   ),
 );
@@ -814,7 +786,7 @@ const availableTargetGroups = computed<Array<{ id: string; label: string }>>(() 
   }
   for (const node of instanceNodes.value.values()) {
     if (!byId.has(node.className)) {
-      byId.set(node.className, typeDisplayName(node.className, undefined, node.typeLabel));
+      byId.set(node.className, typeDisplayName(node.className, node.typeLabel));
     }
   }
   return [...byId.entries()].map(([id, label]) => ({ id, label }));
@@ -824,9 +796,6 @@ const availableRelationKinds = computed<Array<{ id: string; label: string }>>(()
   const byId = new Map<string, string>();
   for (const kind of overviewData.value?.relationTypes ?? []) {
     if (!byId.has(kind)) byId.set(kind, relationDisplayName(kind));
-  }
-  for (const spec of typeSchema.value?.relationKinds ?? []) {
-    byId.set(spec.id, relationDisplayName(spec.id, spec.label, spec.labelKey));
   }
   for (const edge of overviewEdges.value) {
     if (!byId.has(edge.relationKind)) {
@@ -863,31 +832,9 @@ const startNode = computed<PlatformGraphNode | null>(() =>
 useMemberOutput("startLabel", () => startNode.value?.label || null);
 useMemberOutput("startDetail", () =>
   startNode.value
-    ? `${typeDisplayName(startNode.value.className, undefined, startNode.value.typeLabel)} · ${startNode.value.primaryKey}`
+    ? `${typeDisplayName(startNode.value.className, startNode.value.typeLabel)} · ${startNode.value.primaryKey}`
     : null,
 );
-
-const visibleRelationKindLabels = computed<string[]>(() => {
-  const held = visibleKindsParam.value.value;
-  if (!Array.isArray(held) || held.length === 0) return [];
-  const byId = new Map((typeSchema.value?.relationKinds ?? []).map((item) => [item.id, item]));
-  const seen = new Set<string>();
-  const labels: string[] = [];
-  for (const item of held) {
-    const id =
-      typeof item === "string"
-        ? item
-        : item && typeof item === "object" && typeof (item as { primaryKey?: unknown }).primaryKey === "string"
-          ? (item as { primaryKey: string }).primaryKey
-          : null;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const spec = byId.get(id);
-    labels.push(relationDisplayName(id, spec?.label, spec?.labelKey));
-  }
-  return labels;
-});
-useMemberOutput("visibleRelationKindLabels", () => visibleRelationKindLabels.value);
 
 const graphStatus = computed<string | null>(() => {
   if (activeMode.value === "overview") return overviewData.value?.status ?? null;
@@ -922,81 +869,6 @@ function isLayerVisible(layer: string | undefined): boolean {
 }
 
 const queryNeedle = computed(() => (props.query ?? "").trim().toLowerCase());
-
-// ---- Type-mode computed graph ----
-const countByType = computed(() => new Map(typeCounts.value.map((entry) => [entry.type, entry])));
-
-const visibleTypeSpecs = computed(() => {
-  const schema = typeSchema.value;
-  if (!schema) return [];
-  return schema.objectTypes.filter((spec) => isLayerVisible(spec.layer));
-});
-
-const typePositions = computed(() => layoutTypeColumns(visibleTypeSpecs.value, availableLayers.value));
-
-const typeCanvasNodes = computed<GraphCanvasNode[]>(() => {
-  const needle = queryNeedle.value;
-  return visibleTypeSpecs.value.map((spec) => {
-    const baseName = typeDisplayName(spec.id, spec.labelKey, spec.label);
-    const countEntry = countByType.value.get(spec.id);
-    let label = baseName;
-    let title = baseName;
-    if (countEntry) {
-      if (countEntry.status === "ok" && countEntry.count !== undefined) {
-        label = `${baseName} (${countEntry.count})`;
-        title = label;
-      } else if (countEntry.status === "refused") {
-        label = `${baseName} · ${t("platform.graphStatusRefused")}`;
-        title = countEntry.reason ? `${label} (${countEntry.reason})` : label;
-      } else if (countEntry.status === "failed") {
-        label = `${baseName} · ${t("platform.graphStatusFailed")}`;
-        title = countEntry.reason ? `${label} (${countEntry.reason})` : label;
-      } else if (countEntry.status === "unavailable") {
-        label = `${baseName} · ${t("platform.graphStatusUnavailable")}`;
-        title = countEntry.reason ? `${label} (${countEntry.reason})` : label;
-      }
-    }
-    const position = savedPositions.value.get(spec.id) ?? typePositions.value.get(spec.id) ?? { x: 0, y: 0 };
-    const matches = !needle || baseName.toLowerCase().includes(needle) || spec.id.toLowerCase().includes(needle);
-    return {
-      id: spec.id,
-      label,
-      title,
-      category: spec.layer ?? spec.id,
-      tone: needle ? (matches ? "accent" : "muted") : "default",
-      x: position.x,
-      y: position.y,
-    };
-  });
-});
-
-const typeCanvasEdges = computed<GraphCanvasEdge[]>(() => {
-  const schema = typeSchema.value;
-  if (!schema) return [];
-  const visibleIds = new Set(visibleTypeSpecs.value.map((spec) => spec.id));
-  const needle = queryNeedle.value;
-  const matchedIds = needle
-    ? new Set(typeCanvasNodes.value.filter((node) => node.tone === "accent").map((node) => node.id))
-    : null;
-  const edges: GraphCanvasEdge[] = [];
-  for (const relation of schema.relationKinds) {
-    if (relation.typeEdges === false || !visibleIds.has(relation.from) || !kindShown(relation.id)) continue;
-    const targets = typeof relation.to === "string" ? [relation.to] : relation.to;
-    const label = edgeLabelsEnabled.value ? relationDisplayName(relation.id, relation.label, relation.labelKey) : undefined;
-    for (const target of targets) {
-      if (!visibleIds.has(target)) continue;
-      edges.push({
-        id: `${relation.id}:${relation.from}->${target}`,
-        source: relation.from,
-        target,
-        label,
-        line: relation.derived ? "dashed" : "solid",
-        tone: matchedIds ? (matchedIds.has(relation.from) || matchedIds.has(target) ? "default" : "muted") : "default",
-      });
-    }
-  }
-  return edges;
-});
 
 // ---- Overview-mode computed graph ----
 const visibleOverviewNodes = computed<readonly PlatformGraphNode[]>(() =>
@@ -1090,7 +962,7 @@ const overviewCanvasNodes = computed<GraphCanvasNode[]>(() => {
       label: node.label,
       title: node.detail
         ? `${node.label} — ${node.detail}`
-        : `${typeDisplayName(node.className, undefined, node.typeLabel)}: ${node.label}`,
+        : `${typeDisplayName(node.className, node.typeLabel)}: ${node.label}`,
       category: node.className,
       tone: needle ? (matches ? "accent" : "muted") : "default",
       x: position.x,
@@ -1276,7 +1148,7 @@ const instanceCanvasNodes = computed<GraphCanvasNode[]>(() => {
       label: node.label,
       title: node.detail
         ? `${node.label} — ${node.detail}`
-        : `${typeDisplayName(node.className, undefined, node.typeLabel)}: ${node.label}`,
+        : `${typeDisplayName(node.className, node.typeLabel)}: ${node.label}`,
       category: node.className,
       tone: needle ? (matches ? "accent" : "muted") : "default",
       x: position.x,
@@ -1306,27 +1178,21 @@ const instanceCanvasEdges = computed<GraphCanvasEdge[]>(() => {
 
 // ---- Active canvas bindings ----
 const canvasNodes = computed(() => {
-  if (activeMode.value === "type") return typeCanvasNodes.value;
   if (activeMode.value === "overview") return overviewCanvasNodes.value;
   return instanceCanvasNodes.value;
 });
 
 const canvasEdges = computed(() => {
-  if (activeMode.value === "type") return typeCanvasEdges.value;
   if (activeMode.value === "overview") return overviewCanvasEdges.value;
   return instanceCanvasEdges.value;
 });
 
 const canvasCategories = computed(() => {
-  if (activeMode.value === "type") return availableLayers.value;
   if (activeMode.value === "overview") return overviewCategories.value;
   return instanceCategories.value;
 });
 
 const canvasSelectedIds = computed<readonly string[]>(() => {
-  if (activeMode.value === "type") {
-    return props.selectedType ? [props.selectedType] : [];
-  }
   if (activeMode.value === "overview") {
     return activeOverviewSelectedId.value ? [activeOverviewSelectedId.value] : [];
   }
@@ -1340,8 +1206,7 @@ const drawnNodeCount = computed(() => {
 
 const drawnEdgeCount = computed(() => {
   if (activeMode.value === "overview") return visibleOverviewEdges.value.length;
-  if (activeMode.value === "instance") return visibleInstanceEdges.value.length;
-  return canvasEdges.value.length;
+  return visibleInstanceEdges.value.length;
 });
 
 const reportedNodeCount = computed(() => {
@@ -1400,7 +1265,6 @@ const currentNeighborProgress = computed<{ loaded: number; total: number | null;
 
 /** Screen coordinates directly above the currently selected node for the floating `.node-actions` toolbar. */
 const nodeActionPosition = computed<{ x: number; y: number } | null>(() => {
-  if (activeMode.value === "type") return null;
   const view = currentViewport.value;
   const nodeId = activeSelectedNodeId.value;
   if (!view || !nodeId) return null;
@@ -1488,22 +1352,6 @@ const instanceLegend = computed(() => {
   }));
 });
 
-const typeLegend = computed(() => {
-  const counts = new Map<string, number>();
-  for (const spec of visibleTypeSpecs.value) {
-    const layer = spec.layer ?? "";
-    counts.set(layer, (counts.get(layer) ?? 0) + 1);
-  }
-  return availableLayers.value
-    .filter((layer) => enabledLayers.value.has(layer))
-    .map((layer) => ({
-      layer,
-      label: layerDisplayName(layer),
-      count: counts.get(layer) ?? 0,
-      color: categoryColor(layer),
-    }));
-});
-
 function categoryColor(category: string): string | undefined {
   if (!paletteSize.value) return undefined;
   return `var(--chart-${graphCategorySlot(category, canvasCategories.value, paletteSize.value) + 1})`;
@@ -1564,11 +1412,6 @@ function writeSelectedNode(refValue: PanelObjectValue | null) {
   emit("update:selected", refValue);
 }
 
-function writeSelectedType(typeId: string | null) {
-  void panel.instance.output(member.key, "selectedType", typeId);
-  emit("update:selectedType", typeId);
-}
-
 function selectOverviewGroup(groupId: string) {
   const next = activeSelectedGroup.value === groupId ? null : groupId;
   localSelectedGroup.value = next;
@@ -1578,30 +1421,6 @@ function selectOverviewGroup(groupId: string) {
 }
 
 // ---- Data loading & incremental 1-hop expansion ----
-async function loadTypeMode(generation: number) {
-  clearGenerationTimer();
-  loading.value = true;
-  forbidden.value = false;
-  errorMessage.value = null;
-  versionChanged.value = false;
-  try {
-    const schemaPromise = graphSource.schema!();
-    const countsPromise = graphSource.counts ? graphSource.counts() : Promise.resolve<readonly PlatformGraphTypeCount[]>([]);
-    const [schema, counts] = await Promise.all([schemaPromise, countsPromise]);
-    if (generation !== loadGeneration) return;
-    typeSchema.value = schema;
-    typeCounts.value = counts;
-    if (!isPositionsBound.value) positionsParam.set(null);
-    await nextTick();
-    fitGraph();
-  } catch (reason: unknown) {
-    if (generation !== loadGeneration) return;
-    recordFailure(reason);
-  } finally {
-    if (generation === loadGeneration) loading.value = false;
-  }
-}
-
 function computeOverviewBaseLayout(
   nodes: readonly PlatformGraphNode[],
   edgeCount: number,
@@ -1938,14 +1757,13 @@ async function loadInstanceMode(generation: number) {
 function reload() {
   clearGenerationTimer();
   const generation = ++loadGeneration;
-  if (activeMode.value === "type") void loadTypeMode(generation);
-  else if (activeMode.value === "overview") void loadOverviewMode(generation);
+  if (activeMode.value === "overview") void loadOverviewMode(generation);
   else void loadInstanceMode(generation);
 }
 
 function recoverFromVersionChange() {
   versionChanged.value = false;
-  const currentMode = (): "type" | "instance" | "overview" => activeMode.value;
+  const currentMode = (): "instance" | "overview" => activeMode.value;
   if (hasOverviewPort && currentMode() === "instance") {
     explorationRoot.value = null;
     returnedToOverview.value = true;
@@ -2119,10 +1937,6 @@ watch(
 // ---- Canvas event handlers ----
 function handleSelect(ids: string[]) {
   const pickedId = ids[0] ?? null;
-  if (activeMode.value === "type") {
-    writeSelectedType(pickedId);
-    return;
-  }
   if (activeMode.value === "overview") {
     if (!pickedId) {
       localSelectedOverviewId.value = null;
@@ -2176,16 +1990,13 @@ function handleActivate(element: GraphCanvasElement) {
 }
 
 function handleBlank() {
-  if (activeMode.value === "type") {
-    writeSelectedType(null);
-  } else if (activeMode.value === "overview") {
+  if (activeMode.value === "overview") {
     localSelectedOverviewId.value = null;
     focusedNodeId.value = null;
-    writeSelectedNode(null);
   } else {
     focusedNodeId.value = rootNodeId.value;
-    writeSelectedNode(null);
   }
+  writeSelectedNode(null);
 }
 
 function handleMove(id: string, position: GraphCanvasPoint) {
@@ -2317,21 +2128,12 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-if="showLegend && (activeMode === 'type' ? typeLegend.length : instanceLegend.length)" class="sdk-ontology-graph-legend">
-      <template v-if="activeMode === 'type'">
-        <span v-for="item in typeLegend" :key="item.layer" class="sdk-ontology-graph-legend-item" :data-graph-legend-layer="item.layer">
-          <i class="sdk-ontology-graph-dot" :style="{ background: item.color }" />
-          {{ item.label }}
-          <b>{{ item.count }}</b>
-        </span>
-      </template>
-      <template v-else>
-        <span v-for="item in instanceLegend" :key="item.className" class="sdk-ontology-graph-legend-item" :data-graph-legend-type="item.className">
-          <i class="sdk-ontology-graph-dot" :style="{ background: item.color }" />
-          {{ item.label }}
-          <b>{{ item.count }}</b>
-        </span>
-      </template>
+    <div v-if="showLegend && instanceLegend.length" class="sdk-ontology-graph-legend">
+      <span v-for="item in instanceLegend" :key="item.className" class="sdk-ontology-graph-legend-item" :data-graph-legend-type="item.className">
+        <i class="sdk-ontology-graph-dot" :style="{ background: item.color }" />
+        {{ item.label }}
+        <b>{{ item.count }}</b>
+      </span>
       <span class="sdk-ontology-graph-sep" />
       <span class="sdk-ontology-graph-legend-item">
         <i class="sdk-ontology-graph-line" />{{ t("platform.graphEdgeStored") }}
@@ -2495,7 +2297,7 @@ onBeforeUnmount(() => {
       </el-button>
 
       <div
-        v-if="activeMode !== 'type' && activeSelectedNode && nodeActionPosition"
+        v-if="activeSelectedNode && nodeActionPosition"
         class="sdk-ontology-graph-node-actions"
         :style="{ left: `${nodeActionPosition.x}px`, top: `${nodeActionPosition.y}px` }"
         role="toolbar"

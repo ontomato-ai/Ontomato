@@ -1743,6 +1743,61 @@ describe("ontology-objects cleaned builtin panel", () => {
     }
   });
 
+  // The panel lays its attribute forms out by naming fields; a field the owner sends that the layout does not name is never drawn.
+  it("draws the owner's attribute option table in the row editor and the create-attribute dialog", async () => {
+    const textColumn = (path: string, label: string) =>
+      ({ path, label, control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false });
+    const optionsField = {
+      path: "/options",
+      label: "Options",
+      control: {
+        kind: "object-array",
+        defaultItem: { value: "", label: "" },
+        itemKeyPath: "/value",
+        presentation: "table",
+        itemFields: [textColumn("/value", "Value"), textColumn("/label", "Display name")],
+      },
+      valueSchema: { type: "array" },
+      required: false,
+      readOnly: false,
+    };
+    const withOptions = (form: { fields: Array<{ path: string }>; values: Record<string, unknown> }) => ({
+      ...form,
+      fields: [...form.fields, optionsField],
+      values: { ...form.values, options: [] },
+    });
+    const route = mountObjectsRoute(
+      { selected: { className: OBJECT_TYPE, primaryKey: "warehouse" } },
+      {
+        onRead(body) {
+          if ("operations" in body) return undefined;
+          const member = body.memberPath[0]?.member;
+          if (member === "attributeRowForm") {
+            const key = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
+            const found = sampleAttributes.find((item) => item.primaryKey === key)!;
+            return Response.json({ status: "ready", value: withOptions(editAttributeForm(found)) });
+          }
+          if (member === "attributeForm" && body.dataName === "createForm") {
+            return Response.json({ status: "ready", value: withOptions(createAttributeForm(sampleObjectTypes)) });
+          }
+          return undefined;
+        },
+      },
+    );
+    const { app, element } = await route.open();
+    const columns = (scope: Element | null) =>
+      [...(scope?.querySelectorAll('[data-field="/options"] .sdk-form-table th') ?? [])].map((th) => th.textContent?.trim()).filter(Boolean);
+    try {
+      await expandAttributeRow(element, "Code");
+      await vi.waitFor(() => expect(columns(element.querySelector(".ot-attr-editor"))).toEqual(["Value", "Display name"]));
+
+      route.controller()!.applyState({ creatingAttribute: true });
+      await vi.waitFor(() => expect(columns(document.querySelector(".el-dialog"))).toEqual(["Value", "Display name"]));
+    } finally {
+      app.unmount();
+    }
+  });
+
   it("OO-06: toggles attribute inline detail via whole-row click, Enter/Space, trailing chevron indicator, and dirty-form leave guard", async () => {
     let allowLeave = false;
     const confirmLeave = vi.fn(async () => allowLeave);

@@ -61,7 +61,7 @@ const props = withDefaults(
     compact?: boolean;
     /** Omit the leading status icon. Defaults to `false`. */
     hideIcon?: boolean;
-    /** Hide the banner completely when bound projection text resolves empty. Defaults to `false`. */
+    /** Also hide an empty banner without an explicit record field driving its visibility. Defaults to `false`. */
     hideWhenEmpty?: boolean;
   }>(),
   {
@@ -267,12 +267,25 @@ const bodyText = computed(() => {
 });
 
 const isHidden = computed(() => {
-  if (!props.hideWhenEmpty) return false;
   if (slots.default) return false;
-  if (resolvedBound.value.state === "loading") return false;
-  if (resolvedBound.value.state === "empty") return true;
+  const { state, record, fieldText } = resolvedBound.value;
+  if (state === "loading") return false;
+  if (boundDatum?.name === "record") {
+    const bodyField = hasTemplate.value ? undefined : props.field;
+    const sourceField = bodyField || props.toneField;
+    if (sourceField && state === "empty") return true;
+    if (sourceField && record) {
+      const sourceText = bodyField
+        ? fieldText
+        : displayFieldText(rawRecordField(record, sourceField), locale.value, translate);
+      const hasBoundTone = !bodyField && asTone(record.tones?.[sourceField]);
+      if (!sourceText.trim() && !hasBoundTone) return true;
+    }
+  }
+  if (!props.hideWhenEmpty) return false;
+  if (state === "empty") return true;
   if (hasTemplate.value) {
-    return Boolean(boundDatum && resolvedBound.value.state !== "ready");
+    return Boolean(boundDatum && state !== "ready");
   }
   return !resolvedTitle.value && !bodyText.value;
 });

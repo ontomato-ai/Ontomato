@@ -162,7 +162,7 @@
             <row-target-sync :target="attrRef" class="attrs-row-editor">
               <projection :key="attrRef.primaryKey" slot="attributeRowForm" :inputs="{ target: attrRef }">
                 <template #default>
-                  <object-form-fields :fields="['/showName', '/attrDesc']"></object-form-fields>
+                  <object-form-fields :fields="['/showName', '/attrDesc', '/options']"></object-form-fields>
                   <div class="attrs-switches">
                     <object-form-fields :fields="['/enable', '/businessKey', '/primaryKey']"></object-form-fields>
                   </div>
@@ -187,7 +187,7 @@
       <div class="attrs-create-body">
         <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate">
           <template #default>
-            <object-form-fields :fields="['/className', '/name', '/type', '/showName', '/attrDesc']"></object-form-fields>
+            <object-form-fields :fields="['/className', '/name', '/type', '/showName', '/attrDesc', '/options']"></object-form-fields>
             <div class="attrs-create-switches">
               <object-form-fields :fields="['/enable', '/businessKey', '/primaryKey']"></object-form-fields>
             </div>

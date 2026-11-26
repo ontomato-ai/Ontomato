@@ -329,6 +329,24 @@ test("checkProjectionConfigSources rejects one member value written in two place
   assert.match(violations[1]!.message, /writes 'type' in its config/u);
 });
 
+test("checkProjectionConfigSources rejects a fixed value written where the member is placed", () => {
+  const members = { trial: { config: { type: "primary" } } };
+  const html = [
+    '<projection slot="trial" :values="{ title: \'Save first\', disabled: dirty, count: 3, zoomed: true, empty: null }"></projection>',
+    '<projection slot="trial" :values="{ title: t(\'x\'), label: `a${b}` }"></projection>',
+    '<projection slot="trial" :values="pageValues"></projection>',
+    '<projection slot="trial" :inputs="{ target: ref }"></projection>',
+  ].join("\n");
+  const violations = checkProjectionConfigSources(members, html, "panel.html");
+  assert.deepEqual(violations.map(({ kind, found, line }) => ({ kind, found, line })), [
+    { kind: "projection-config-literal", found: "title", line: 1 },
+    { kind: "projection-config-literal", found: "count", line: 1 },
+    { kind: "projection-config-literal", found: "zoomed", line: 1 },
+    { kind: "projection-config-literal", found: "empty", line: 1 },
+  ]);
+  assert.match(violations[0]!.message, /writes 'title' as a fixed value.*belongs in the member's config/u);
+});
+
 test("checkProjectionConfigSources accepts an input a member declares as coming from the slot", () => {
   const members = { rowDetail: { inputs: { target: { fromSlot: true } }, config: { actions: "footer" } } };
   const html = '<projection slot="rowDetail" :inputs="{ target: ref }"></projection>';

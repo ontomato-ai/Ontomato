@@ -12,5 +12,9 @@ public interface OrganizationDirectory {
     record Snapshot(List<Unit> units, List<Position> positions, List<Membership> memberships,
         List<PositionAssignment> positionAssignments, List<Grant> grants) {}
 
+    record Counts(long units, long positions, long grants) {}
+
     Snapshot snapshot(String domainId);
+
+    Counts countInDomain(String domainId);
 }

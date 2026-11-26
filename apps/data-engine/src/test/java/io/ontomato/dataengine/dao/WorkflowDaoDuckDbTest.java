@@ -97,6 +97,32 @@ class WorkflowDaoDuckDbTest {
     }
 
     @Test
+    void countsOnlyTheDomainAndRequestedRevisionScope() {
+        dao.initIndex();
+        Workflow active = workflow("active");
+        dao.insertDraft(active);
+        active.setVersion(dao.publishVersion(active));
+        active.setStatus(Workflow.STATUS_ACTIVE);
+        dao.updateLifecycle(active);
+        Workflow missingRevision = workflow("missing-revision");
+        dao.insertDraft(missingRevision);
+        missingRevision.setVersion(1);
+        missingRevision.setStatus(Workflow.STATUS_ACTIVE);
+        dao.updateLifecycle(missingRevision);
+        dao.insertDraft(workflow("draft"));
+        Workflow foreign = workflow("foreign");
+        foreign.setDomainId("d2");
+        dao.insertDraft(foreign);
+
+        assertEquals(3, dao.count(null, null, "d1"));
+        assertEquals(1, dao.count(null, Workflow.STATUS_DRAFT, "d1"));
+        assertEquals(1, dao.count(null, Workflow.STATUS_ACTIVE, "d1"));
+        assertEquals(0, dao.count("missing-revision", Workflow.STATUS_ACTIVE, "d1"));
+        assertEquals(1, dao.count("active", Workflow.STATUS_ACTIVE, "d1"));
+        assertEquals(0, dao.count("foreign", null, "d1"));
+    }
+
+    @Test
     void savingTheSameWorkflowUpdatesInPlaceInsteadOfDuplicating() {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));

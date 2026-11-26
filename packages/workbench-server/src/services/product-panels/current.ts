@@ -169,9 +169,7 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
   await requireObject({ create: definitionKinds[kind] }, credentials);
   const other = t(currentProductTables[kind === "panel" ? "projection" : "panel"]);
   const collision = await client.query(
-    `SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2
-     UNION ALL SELECT id FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2
-     UNION ALL SELECT asset_id FROM ${t("product_asset_revisions")} WHERE domain_id=$1 AND asset_id=$2 LIMIT 1`,
+    `SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2 LIMIT 1`,
     [owner.domainId, id],
   );
   if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");

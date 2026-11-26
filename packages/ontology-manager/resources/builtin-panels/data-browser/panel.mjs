@@ -1,15 +1,65 @@
 import { computed, ref, shallowRef, watch } from "vue";
 import {
   mountPanel,
-  panelAddress,
   usePanelBack,
   usePanelContext,
   usePanelNarrow,
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
+/*
+ * The object browser: reads instance records through official projections (`InstanceGraph`, `ObjectList`, `ObjectHeader`,
+ * `ObjectSummary`, `ReferencePicker`, `ObjectForm`, `OperationButton`). It owns two sets of projections — the business
+ * ontology's instances and the four-layer platform ontology's instances — and chooses between them by the `dataSource`
+ * it is given. Every entry it offers follows what the selected instance's own read published.
+ */
+
+const PROJECTION = "platform:ProductProjection";
 const OBJECT_TYPE = "platform:ObjectType";
+const ONTOLOGY_TYPE = "platform:OntologyType";
 const ATTRIBUTE = "platform:Attribute";
+
+const BUSINESS_SOURCES = {
+  instanceGraph: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001",
+  graphSearchClassPicker: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002",
+  graphSearchResults: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000003",
+  nodeHeader: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000004",
+  nodeSummary: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000005",
+  classPicker: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000006",
+  classCatalogProbe: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000007",
+  classNamesProbe: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000015",
+  classAttributesProbe: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000008",
+  instanceTable: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009",
+  detailBinding: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000010",
+  detailBindingSummary: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000011",
+  detailPanelForm: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000012",
+  detailPanelPicker: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000013",
+  clearDetailPanel: "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000014",
+};
+
+const PLATFORM_SOURCES = {
+  instanceGraph: "builtin-product-db-capability-instance-graph",
+  graphSearchClassPicker: "builtin-product-db-capability-search-class-filter",
+  graphSearchResults: "builtin-product-db-capability-search-results",
+  nodeHeader: "builtin-product-db-capability-instance-title",
+  nodeSummary: "builtin-product-db-capability-instance-summary",
+  classPicker: "builtin-product-db-capability-class-picker",
+  classCatalogProbe: "builtin-product-db-capability-class-catalog-probe",
+  classNamesProbe: "builtin-product-db-capability-class-labels-probe",
+  classAttributesProbe: null,
+  instanceTable: "builtin-product-db-capability-instance-table",
+  detailBinding: null,
+  detailBindingSummary: null,
+  detailPanelForm: null,
+  detailPanelPicker: null,
+  clearDetailPanel: null,
+};
+
+const SOURCES = { business: BUSINESS_SOURCES, platform: PLATFORM_SOURCES };
+
+const SELECTION_STATES = [
+  "selectedClass", "selectedNode", "graphStart", "graphSearchClass", "graphSearchClassName", "filters", "sort",
+];
 
 function parseAttributeName(primaryKey) {
   if (typeof primaryKey !== "string" || !primaryKey) return null;
@@ -42,6 +92,24 @@ await mountPanel({
     const drawerSize = computed(() => (narrow.value ? "100%" : "400px"));
     const dialogWidth = computed(() => (narrow.value ? "94%" : "560px"));
 
+    // Which projections every member reads: the panel's own choice, written before the first frame is drawn.
+    function applySource(source) {
+      const chosen = SOURCES[source] ?? BUSINESS_SOURCES;
+      instance.state.setState(Object.fromEntries(Object.entries(chosen).map(([slot, id]) => [
+        `${slot}Source`, id === null ? null : { className: PROJECTION, primaryKey: id },
+      ])));
+    }
+    const dataSource = computed(() => instance.state.values.value.dataSource ?? "business");
+    watch(dataSource, source => applySource(source), { immediate: true });
+    // An instance of one ontology means nothing in the other: the reader's next selection starts the other half clean.
+    watch(dataSource, (_source, previous) => {
+      if (previous === undefined) return;
+      instance.state.setState({
+        ...Object.fromEntries(SELECTION_STATES.map(name => [name, null])),
+        search: "",
+      });
+    });
+
     const state = computed(() => instance.state.values.value);
     const viewMode = computed(() => (state.value.viewMode === "table" ? "table" : "graph"));
     const isGraphMode = computed(() => viewMode.value === "graph");
@@ -55,25 +123,46 @@ await mountPanel({
     const selectedClass = computed(() => state.value.selectedClass ?? null);
     const selectedClassKey = computed(() => selectedClass.value?.primaryKey ?? "");
 
-    // The probe's read-only listing of platform:ObjectType records: reading it re-renders the labels below as names load.
+    // What this panel can configure a presentation for is a business class: the four-layer half configures none.
+    watch(
+      [selectedClass, dataSource],
+      ([reference, source]) => {
+        const next = source === "business" ? reference : null;
+        const current = instance.state.values.value.businessClass ?? null;
+        if ((current?.className ?? null) === (next?.className ?? null) && (current?.primaryKey ?? null) === (next?.primaryKey ?? null)) return;
+        instance.state.set("businessClass", next);
+      },
+      { immediate: true },
+    );
+
+    // The probe's read-only listing of the type records: reading it re-renders the labels below as names load.
     const classNamesListed = usePanelOutput("classNamesProbe", "listed");
+    /** A type's display name, whichever ontology the type belongs to. */
     function resolveClassDisplayName(className) {
       void classNamesListed.value;
       if (!className) return "";
-      return instance.objectName(OBJECT_TYPE, className) || className;
+      return instance.objectName(OBJECT_TYPE, className)
+        || instance.objectName(ONTOLOGY_TYPE, className)
+        || className;
     }
 
     const selectedNode = computed(() => state.value.selectedNode ?? null);
     const hasSelectedNode = computed(() => Boolean(selectedNode.value?.className && selectedNode.value?.primaryKey));
     const nodeHeaderStatus = usePanelOutput("nodeHeader", "status");
     const nodeHeaderLabel = usePanelOutput("nodeHeader", "label");
+    const nodeHeaderTypeLabel = usePanelOutput("nodeHeader", "typeLabel");
+    const nodeDetailPath = usePanelOutput("nodeHeader", "detailPath");
     const selectedNodeFallbackTitle = computed(() => {
       if (nodeHeaderLabel.value) return nodeHeaderLabel.value;
       const node = selectedNode.value;
       if (!node) return "";
       return instance.objectName(node.className, node.primaryKey) || node.primaryKey;
     });
-    const selectedNodeClassLabel = computed(() => resolveClassDisplayName(selectedNode.value?.className ?? ""));
+    const selectedNodeClassLabel = computed(() => {
+      const node = selectedNode.value;
+      if (!node) return "";
+      return nodeHeaderTypeLabel.value || resolveClassDisplayName(node.className);
+    });
 
     // Graph mode, stats, sampling/truncation details & version sync for graph search.
     const graphActiveMode = usePanelOutput("instanceGraph", "activeMode");
@@ -163,13 +252,16 @@ await mountPanel({
       }
     });
 
+    /** The class type this panel's type lists carry: whichever ontology it reads now. */
+    const classReferenceType = computed(() => (dataSource.value === "platform" ? ONTOLOGY_TYPE : OBJECT_TYPE));
+
     watch(graphSearchClassNameState, (next, prev) => {
       if (next === prev) return;
       const currentKey = instance.state.values.value.graphSearchClass?.primaryKey ?? null;
       if (currentKey !== next) {
         instance.state.set(
           "graphSearchClass",
-          next ? { className: OBJECT_TYPE, primaryKey: next } : null,
+          next ? { className: classReferenceType.value, primaryKey: next } : null,
         );
       }
     });
@@ -274,12 +366,10 @@ await mountPanel({
       instance.state.set("selectedNode", null);
     }
 
+    /** The selected instance's own read decides whether this panel can open a full detail page for it. */
     function openSelectedNodeDetail() {
-      const node = selectedNode.value;
-      if (!node?.className || !node?.primaryKey) return;
-      void navigate(panelAddress("/browser/views", {
-        selected: { className: node.className, primaryKey: node.primaryKey },
-      })).catch(() => undefined);
+      if (!nodeDetailPath.value) return;
+      void navigate(nodeDetailPath.value).catch(() => undefined);
     }
 
     function exploreSelectedNode() {
@@ -432,11 +522,11 @@ await mountPanel({
       instance.state.setState({ filters: null, sort: null, search: "" });
     }
 
-    function openInstanceDetail(reference) {
+    /** A row without a detail address of its own becomes the graph's starting node, so its relations can be read. */
+    function focusTableRowInGraph(reference) {
       if (!reference?.className || !reference?.primaryKey) return;
-      void navigate(panelAddress("/browser/views", {
-        selected: { className: reference.className, primaryKey: reference.primaryKey },
-      })).catch(() => undefined);
+      const target = { className: reference.className, primaryKey: reference.primaryKey };
+      instance.state.setState({ viewMode: "graph", graphStart: target, selectedNode: target });
     }
 
     // Presentation configuration dialog (local UI toggle only, never enters URL).
@@ -510,6 +600,8 @@ await mountPanel({
       selectedNode,
       hasSelectedNode,
       nodeHeaderStatus,
+      nodeDetailPath,
+      openSelectedNodeDetail,
       selectedNodeFallbackTitle,
       selectedNodeClassLabel,
       isGraphInstanceMode,
@@ -536,7 +628,6 @@ await mountPanel({
       clearGraphSearchClass,
       focusSearchedInstance,
       clearSelectedNode,
-      openSelectedNodeDetail,
       exploreSelectedNode,
       tableSearchInput,
       submitTableSearch,
@@ -555,7 +646,7 @@ await mountPanel({
       applyFilters,
       resetAppliedFilters,
       onListClearFilters,
-      openInstanceDetail,
+      focusTableRowInGraph,
       canConfigure,
       configureDialog,
       openConfigureDialog,

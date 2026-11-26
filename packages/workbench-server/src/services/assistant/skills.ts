@@ -6,13 +6,14 @@ import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import path from "node:path";
 import { runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import type { PageSkillContext, PageSkillLocator } from "@ontomato/contracts/page-skills";
-import type { SkillCatalogReason, SkillInfo } from "@ontomato/contracts/skills";
+import type { SkillCatalogReason } from "@ontomato/contracts/skills";
 import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
 import { SkillSourceRecordError, type SkillPackageContext } from "../../core/skills/providers";
-import { skillRegistryManager } from "../../core/skills/registry/manager";
+import { skillRegistryManager, skillSourceLabel } from "../../core/skills/registry/manager";
+import type { SkillEntry } from "../../core/skills/types";
 import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
-import { isStoredProtectedSkillRef, pageSkillDefaultAgent, readSkillView, resolveCurrentPageSkillMember, validateApplicationPageSkillEntry, type AuthorizedPageSkillMember } from "../skills/view";
+import { isStoredProtectedSkillRef, pageSkillDefaultAgent, readSkillView, resolveCurrentPageSkillMember, validateApplicationPageSkillEntry, type AuthorizedPageSkillMember, type SkillView } from "../skills/view";
 import {
   publishOntologyAssistantSkill, publishSkill, publishSkillPackage, workbenchBuiltinSkillRoot,
 } from "../agent-runtime/skills";
@@ -42,26 +43,33 @@ function platformSkills() {
     const root = workbenchBuiltinSkillRoot(skill);
     const parsed = readSkillMarkdown(path.join(root, "SKILL.md"));
     if (!parsed) throw new Error(`Missing platform skill: ${name}`);
-    return { root, skill, title: name, description: parsed.manifest.description };
+    return { kind: "platform" as const, root, skill, manifest: parsed.manifest };
   });
 }
 
-function builtinSkillOptions(locale?: string): AssistantSkillOption[] {
-  return [
-    { skill: GOVERNANCE_SKILL, title: tForLocale(locale, "assistant.default.knowledge-governance.name"), description: tForLocale(locale, "assistant.default.knowledge-governance.description") },
-    ...platformSkills().map(({ root: _root, ...entry }) => ({ ...entry,
-      title: entry.skill.name === "assistant-report" ? tForLocale(locale, "assistant.skills.report.title") : entry.title,
-      description: entry.skill.name === "assistant-report" ? tForLocale(locale, "assistant.skills.report.description") : entry.description })),
-    { skill: ANALYST_SKILL, title: tForLocale(locale, "assistant.skills.analyst.title"),
-      description: tForLocale(locale, "assistant.skills.analyst.description") },
-  ];
-}
+type AssistantSkillSource = SkillEntry | ReturnType<typeof platformSkills>[number]
+  | { kind: "governance" | "analyst" | "legacy"; skill: RuntimeSkillRef };
 
-function sourceLabel(skill: SkillInfo) {
-  const restriction = skill.writeRestriction;
-  return restriction?.kind === "provider"
-    ? `provider "${restriction.providerName}" (${restriction.providerId})`
-    : skill.isPublic ? "the public skill packages" : "the domain skill packages";
+function assistantSkillOption(entry: AssistantSkillSource, locale?: string): AssistantSkillOption {
+  const { skill } = entry;
+  if ("source" in entry) {
+    const { title, description } = skillManager.describeSkill(entry, locale);
+    return { skill, title, description };
+  }
+  switch (entry.kind) {
+    case "governance":
+      return { skill, title: tForLocale(locale, "assistant.default.knowledge-governance.name"),
+        description: tForLocale(locale, "assistant.default.knowledge-governance.description") };
+    case "analyst":
+      return { skill, title: tForLocale(locale, "assistant.skills.analyst.title"),
+        description: tForLocale(locale, "assistant.skills.analyst.description") };
+    case "platform":
+      return skill.name === "assistant-report"
+        ? { skill, title: tForLocale(locale, "assistant.skills.report.title"), description: tForLocale(locale, "assistant.skills.report.description") }
+        : { skill, title: skill.name, description: entry.manifest.description };
+    case "legacy":
+      return { skill, title: skill.name, description: "" };
+  }
 }
 
 export async function registerAssistantSkills() {
@@ -71,30 +79,44 @@ export async function registerAssistantSkills() {
     await publishSkill(skill.path, { namespace: { kind: "provider", provider: "workbench" }, name: skill.id });
 }
 
-export async function readAssistantSkillView(domainId: string, initiatorCredentials: AssistantCredentials, userId?: string) {
-  const view = await readSkillView(domainId, initiatorCredentials, userId);
-  const entries = view.registry.getSkills();
-  const builtins = builtinSkillOptions(initiatorCredentials.locale);
-  const builtinKeys = new Set(builtins.map(option => runtimeSkillKey(option.skill)));
-  const options = new Map(builtins
-    .filter(option => !view.unavailableStoredPageSkill(option.skill))
-    .map(option => [runtimeSkillKey(option.skill), option]));
-  for (const info of skillManager.describeSkills(entries, initiatorCredentials.locale)) {
-    const key = runtimeSkillKey(info.skill);
-    if (builtinKeys.has(key))
-      throw new InvalidSkillPackageError(`Skill ${info.id} from ${sourceLabel(info)} conflicts with a built-in skill of the same identity`);
-    options.set(key, { skill: info.skill, title: info.title, description: info.description });
+function assistantSkillSources(view: SkillView) {
+  const builtins: AssistantSkillSource[] = [
+    { kind: "governance", skill: GOVERNANCE_SKILL },
+    ...platformSkills(),
+    { kind: "analyst", skill: ANALYST_SKILL },
+  ];
+  const builtinKeys = new Set(builtins.map(({ skill }) => runtimeSkillKey(skill)));
+  const sources = new Map<string, AssistantSkillSource>();
+  for (const entry of builtins) {
+    if (!view.unavailableStoredPageSkill(entry.skill)) sources.set(runtimeSkillKey(entry.skill), entry);
   }
-  // Legacy public mappings can supply the catalogue label independently of their publisher.
+  for (const entry of view.registry.getSkills()) {
+    const key = runtimeSkillKey(entry.skill);
+    if (builtinKeys.has(key))
+      throw new InvalidSkillPackageError(`Skill ${entry.skill.name} from ${skillSourceLabel(entry.source)} conflicts with a built-in skill of the same identity`);
+    sources.set(key, entry);
+  }
+  // Legacy public mappings can supply a catalogue entry independently of their publisher.
   for (const { locator } of view.pageSkills) {
     const skill = view.publicPageSkill(locator);
-    if (skill && !isStoredProtectedSkillRef(skill) && !options.has(runtimeSkillKey(skill)))
-      options.set(runtimeSkillKey(skill), { skill, title: skill.name, description: "" });
+    if (!skill || isStoredProtectedSkillRef(skill)) continue;
+    const key = runtimeSkillKey(skill);
+    if (!sources.has(key)) sources.set(key, { kind: "legacy", skill });
   }
+  return sources;
+}
+
+export async function countAssistantSkills(domainId: string, credentials: AssistantCredentials): Promise<number> {
+  return assistantSkillSources(await readSkillView(domainId, credentials)).size;
+}
+
+export async function readAssistantSkillView(domainId: string, initiatorCredentials: AssistantCredentials, userId?: string) {
+  const view = await readSkillView(domainId, initiatorCredentials, userId);
+  const sources = assistantSkillSources(view);
   return {
     ...view,
-    options: [...options.values()],
-    hasSkill: (ref: RuntimeSkillRef) => options.has(runtimeSkillKey(ref)),
+    options: [...sources.values()].map(entry => assistantSkillOption(entry, initiatorCredentials.locale)),
+    hasSkill: (ref: RuntimeSkillRef) => sources.has(runtimeSkillKey(ref)),
   };
 }
 

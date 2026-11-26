@@ -363,9 +363,9 @@ it("re-measures and re-fits RecordGraph and InstanceGraph when their container s
     componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {},
     outputs: {},
-    config: { mode: "type" },
+    config: {},
     data: {
-      schema: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "schema", params: {} },
+      start: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "start", params: {} },
       counts: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "counts", params: {} },
       neighbors: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "neighbors", params: {} },
     },
@@ -398,19 +398,11 @@ it("re-measures and re-fits RecordGraph and InstanceGraph when their container s
           value: [{ primaryKey: "e1", label: "belongsTo", fields: { source: "n1", target: "n2" } }] as never,
         };
       }
-      if (req.dataName === "schema") {
-        return {
-          status: "ready",
-          value: {
-            objectTypes: [{ className: USER, name: "User", layer: "governance" }],
-            relationKinds: [],
-          } as never,
-        };
-      }
-      if (req.dataName === "counts") {
-        return { status: "ready", value: { counts: [{ className: USER, count: 1, status: "ok" }] } as never };
-      }
-      return { status: "ready", value: { groups: [] } as never };
+      const node = { className: USER, primaryKey: "u1", label: "User", layer: "governance" };
+      return {
+        status: "ready",
+        value: (req.dataName === "start" ? { node } : { node, neighbors: [], edges: [], relations: [] }) as never,
+      };
     },
     `<div class="graphs">
       <Projection slot="obj" class="definite-box" style="height: 600px" />

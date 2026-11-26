@@ -40,7 +40,6 @@ import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-depend
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
@@ -112,7 +111,6 @@ beforeAll(async () => {
   state.schema = `direct_panel_host_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
@@ -609,7 +607,6 @@ it("reads the authoritative operation type table while isolating stale published
   expect(table.resultSchemas.actionDefinition).toMatchObject({ properties: { effects: { type: "array" } } });
   expect(table.resultSchemas.actionExplanation).toMatchObject({ properties: { codeSegments: { type: "array" } } });
   expect(table.resultSchemas.sdkComponentDefinition).toMatchObject({ properties: { componentId: { type: "string" } } });
-  expect(table.resultSchemas.panelOntologyObjects).toMatchObject({ properties: { items: { type: "array" } } });
   const customerReads = {
     query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page", size: "size", filters: "recordFilters", sort: "recordSort" }, result: "panelRecordQuery" },
     record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },

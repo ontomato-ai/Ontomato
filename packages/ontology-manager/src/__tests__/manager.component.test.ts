@@ -51,12 +51,12 @@ describe("Manager legacy routes in the service router", () => {
   it("redirects legacy /browser/data/:className and /data paths to the data-browser panel with deep-link state", async () => {
     const classHost = await mountRedirects("/browser/data/Order");
     expect(classHost.router.currentRoute.value.fullPath).toBe(
-      "/browser/data?selectedClass=Order&viewMode=table",
+      "/browser/data?selectedClass=platform:ObjectType~Order&viewMode=table",
     );
 
     const graphModeHost = await mountRedirects("/browser/data/Order?viewMode=graph");
     expect(graphModeHost.router.currentRoute.value.fullPath).toBe(
-      "/browser/data?selectedClass=Order&viewMode=graph",
+      "/browser/data?selectedClass=platform:ObjectType~Order&viewMode=graph",
     );
 
     const legacyDataHost = await mountRedirects("/data");
@@ -64,7 +64,7 @@ describe("Manager legacy routes in the service router", () => {
 
     const legacyDataClassHost = await mountRedirects("/data/Customer");
     expect(legacyDataClassHost.router.currentRoute.value.fullPath).toBe(
-      "/browser/data?selectedClass=Customer&viewMode=table",
+      "/browser/data?selectedClass=platform:ObjectType~Customer&viewMode=table",
     );
   });
 });

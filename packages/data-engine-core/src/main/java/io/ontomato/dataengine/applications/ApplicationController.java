@@ -47,7 +47,6 @@ public class ApplicationController {
         return user;
     }
     public record Batch(List<ApplicationCatalog.Builtin> applications) {}
-    public record Publication(ApplicationCatalog.Declaration declaration, String releaseId) {}
     public record Connected(String id, ApplicationCatalog.Declaration declaration, String upstream, String upstreamPrefix) {}
     /** Domain applications submit their entry and uses inside their assigned application path. */
     public record PanelEntry(String path, String renderer) {}
@@ -231,13 +230,14 @@ public class ApplicationController {
     }
     @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping(value = "/platform/applications", params = "purpose=navigation")
-    public R<?> navigation() {
-        return R.of(catalog.visible(current()));
+    public R<?> navigation(@RequestParam(defaultValue = "false") boolean countOnly) {
+        var user = current();
+        return R.of(countOnly ? catalog.navigationCount(user) : catalog.visible(user));
     }
 
     @GetMapping("/platform/applications")
     public R<?> list(@RequestParam(defaultValue="navigation") String purpose) {
-        if (!purpose.equals("schedules")) return navigation();
+        if (!purpose.equals("schedules")) return navigation(false);
         var user = current();
         return R.of(catalog.all().stream().filter(a -> catalog.inDomain(a,user) && a.getString("scheduleAdapter") != null).toList());
     }
@@ -247,15 +247,4 @@ public class ApplicationController {
     }
     public record IconUpdate(String icon) {}
     @PutMapping("/platform/applications/{id}/icon") public R<?> updateIcon(@PathVariable String id,@RequestBody IconUpdate body){catalog.updateIcon(id,body.icon(),current());return R.of(Map.of("icon",body.icon()));}
-    @PutMapping("/platform/applications/{id}/hosted-publication")
-    public R<JSONObject> publish(@PathVariable String id, @RequestBody Publication body) {
-        return R.of(catalog.publish(id, body.declaration(), body.releaseId(), current()));
-    }
-    @PutMapping("/platform/applications/{id}/product-publication")
-    public R<JSONObject> publishProduct(@PathVariable String id, @RequestBody ProductPublication body, HttpServletRequest request) {
-        authentication.authenticate(request);
-        return R.of(catalog.publishProduct(id, body.declaration(), body.releaseId(), current(), body.ownerFacts()));
-    }
-
-    public record ProductPublication(ApplicationCatalog.Declaration declaration, String releaseId, OwnerFacts ownerFacts) {}
 }

@@ -49,7 +49,6 @@ import analysisAgentMcpRouter from "../api/routes/analysis-agent-mcp";
 import opsAgentMcpRouter from "../api/routes/ops-agent-mcp";
 import preferencesRouter from "../api/routes/preferences";
 import personalWorkspaceRouter from "../api/routes/personal-workspace";
-import productAssetsRouter from "../api/routes/product-assets";
 import { objectDetailsRouter } from "../api/routes/object-details";
 import {businessDefinitionsRouter,definitionTriggersRouter} from "../api/routes/business-definitions";
 import { createChartProjectionsRouter, productPanelsRouter, productProjectionsRouter, productPanelsInternalRouter, panelOperationsRouter } from "../api/routes/product-panels";
@@ -79,7 +78,6 @@ import {
 } from "../logging/log-context";
 import { startArtifactCleanupScheduler } from "../platform/diagnosis/artifact-retention-cleanup";
 import { initializeConnection } from "../infrastructure/connection";
-import { registerProductResource } from "../services/product-governance/grants";
 import { requestLogger as accessLogger, errorHandler } from "../api/middleware";
 import { buildTestAccess } from "../api/build-test-access";
 import { getDefaultLocale, tApp } from "../i18n/index";
@@ -237,9 +235,8 @@ export function createWorkbenchApp(): Express {
   app.use("/api/feedback", feedbackRouter);
   app.use("/api/preferences", preferencesRouter);
   app.use("/api/personal-workspace", personalWorkspaceRouter);
-  app.use("/api/product-assets/definitions", businessDefinitionsRouter);
-  app.use("/api/product-assets/triggers", definitionTriggersRouter);
-  app.use("/api/product-assets", productAssetsRouter);
+  app.use("/api/business-definitions", businessDefinitionsRouter);
+  app.use("/api/business-definition-triggers", definitionTriggersRouter);
   app.use("/api/object-details", objectDetailsRouter);
   app.use("/api", panelOperationsRouter);
   app.use(DOMAIN_COMPONENTS_PATH, domainComponentsRouter);
@@ -277,7 +274,7 @@ export async function startWorkbench(
   initializeWorkbenchLogging();
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
-  await initializeConnection(registerProductResource);
+  await initializeConnection();
   const { registerBuiltinProducts, installRegisteredPanelDependencies } = await import("../services/product-panels/builtin-products");
   await registerBuiltinProducts();
   // Production images carry the apps SDK next to the web pages; development serves neither from a build.

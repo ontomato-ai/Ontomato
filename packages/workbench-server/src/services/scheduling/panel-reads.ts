@@ -12,7 +12,7 @@ import {
   platformTaskRunSchema,
   platformTaskSchema,
 } from "@ontomato/contracts/platform-schedules";
-import { createScheduledTaskReads } from "@ontomato/platform-schedules/panel-reads";
+import { createScheduledTaskReads, type ScheduledApplicationsStatus } from "@ontomato/platform-schedules/panel-reads";
 import { config } from "../../config/application";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -24,7 +24,10 @@ const SCHEDULE_RUN_REREAD_MS = 5_000;
 
 const applicationCatalogResponse = z.object({ success: z.literal(true), data: applicationCatalogSchema });
 
-export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, signal?: AbortSignal) {
+export function createScheduledTaskReadAdapter(
+  viewer: AssistantCredentials, signal?: AbortSignal,
+  reuseApplicationsStatus?: (load: () => Promise<ScheduledApplicationsStatus>) => Promise<ScheduledApplicationsStatus>,
+) {
   const options = {
     headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers),
     signal,
@@ -33,7 +36,7 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
   const taskPath = (id: string) => `${base}/${encodeURIComponent(id)}`;
   const locale = resolveLocale(viewer.locale);
   const catalogPath = `${config.dataQuery.baseUrl.replace(/\/$/, "")}/platform/applications?purpose=schedules`;
-  async function loadApplicationsStatus() {
+  async function loadApplicationsStatus(): Promise<ScheduledApplicationsStatus> {
     const [response, catalog] = await Promise.all([
       backendGet("scheduled-task-applications", `${base}/applications`, options),
       backendGet("scheduled-task-application-names", catalogPath, options),
@@ -56,6 +59,9 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
     }
     return { applications: resolved, missingIds };
   }
+  const applicationsStatus = reuseApplicationsStatus
+    ? () => reuseApplicationsStatus(loadApplicationsStatus)
+    : loadApplicationsStatus;
   const reads = createScheduledTaskReads({
     async list() {
       const response = await backendGet("scheduled-task-list", base, options);
@@ -74,9 +80,9 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
       const response = await backendGet("scheduled-task-run", `${taskPath(id)}/runs/${encodeURIComponent(runId)}`, options);
       return platformTaskRunSchema.parse(JSON.parse(response.text));
     },
-    applicationsStatus: loadApplicationsStatus,
+    applicationsStatus,
     async applications() {
-      const { applications, missingIds } = await loadApplicationsStatus();
+      const { applications, missingIds } = await applicationsStatus();
       if (missingIds.length > 0) {
         throw new Error(`The application catalog has no scheduled application '${missingIds[0]}'`);
       }

@@ -113,7 +113,7 @@ function cloneReadDeclarations(
 let cachedSchemaTypes: readonly PlatformOntologyType[] | undefined;
 
 /**
- * Assembles the full read-only `platform:OntologyType.schema` entries for every layered type:
+ * Assembles the full read-only platform ontology catalogue entries for every layered type:
  * base identity/layer/labelKey, owner-declared public type details (when present), declared
  * named reads from `platformObjectTypes`, and registered owner operation signatures.
  *

@@ -18,8 +18,8 @@ it('accepts only a registered opaque frame and never returns the platform creden
   expect(port.onmessage).not.toBeNull();
   await port.onmessage!({data:{channel:APP_BRIDGE_CHANNEL,id:'initialize',operation:'initialize',payload:null}});
   expect(JSON.stringify(postMessage.mock.calls)).not.toContain('never-expose');
-  await port.onmessage!({data:{channel:APP_BRIDGE_CHANNEL,id:'request',operation:'request',payload:{path:'/product-assets/query',service:'',method:'GET',headers:[],body:null}}});
-  expect(host.request).toHaveBeenCalledWith(frame.contentWindow,'/product-assets/query',expect.objectContaining({method:'GET'}),'');
+  await port.onmessage!({data:{channel:APP_BRIDGE_CHANNEL,id:'request',operation:'request',payload:{path:'/business-definitions/customers',service:'',method:'GET',headers:[],body:null}}});
+  expect(host.request).toHaveBeenCalledWith(frame.contentWindow,'/business-definitions/customers',expect.objectContaining({method:'GET'}),'');
   vi.mocked(host.request!).mockResolvedValueOnce(new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('data: ready\n\n'));controller.close();}}),{headers:{'content-type':'text/event-stream'}}));
   await port.onmessage!({data:{channel:APP_BRIDGE_CHANNEL,id:'stream',operation:'request',payload:{path:'/assistant/sessions/stream',service:'',method:'GET',headers:[],body:null}}});
   expect(postMessage.mock.calls.some(([message])=>message.id==='stream'&&message.result?.stream===true)).toBe(true);
