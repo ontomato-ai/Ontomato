@@ -9,7 +9,7 @@ This non-menu detail page inspects and maintains one `platform:Application` at `
 - `entriesView`: `"list"` (`entriesList` `ObjectList`) or `"bulk"` (`entriesForm` `ObjectForm`).
 - `editingEntryId`: `"__new__"` or an existing entry ID to open the single-entry `entryForm` dialog (public state only, not written to the URL).
 - `inspectedPanel`: the `platform:ProductPanel` inspected in the Panels & Projections tab.
-- `grantDialog` / `grantPrincipalKind` / `grantUser` / `grantRole` / `grantPrincipalId` / `grantVerb`: add-grant dialog state bound to `userPicker`, `rolePicker`, and `grantSubmit`.
+- `grantDialog` / `grantPrincipalKind` / `grantUser` / `grantRole` / `grantPrincipalId`: add-use-grant dialog state bound to `userPicker`, `rolePicker`, and `grantSubmit`.
 
 ## Common flows
 

@@ -68,13 +68,6 @@
           "type": "string"
         }
       },
-      "grantVerb": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "default": "use"
-      },
       "copyDialog": {
         "type": {
           "kind": "scalar",
@@ -536,7 +529,7 @@
             "state": "grantPrincipalId"
           },
           "verb": {
-            "state": "grantVerb"
+            "literal": "use"
           },
           "remove": {
             "literal": false
@@ -635,7 +628,7 @@
         "tab.identity": "基本信息",
         "tab.entries": "入口",
         "tab.assets": "面板与投影",
-        "tab.grants": "权限与共享",
+        "tab.grants": "使用授权",
         "entries.count": "{count} 个入口",
         "entries.add": "添加入口",
         "entries.editTitle": "编辑入口",
@@ -672,13 +665,12 @@
         "grants.principal": "成员",
         "grants.role": "角色",
         "grants.use": "使用",
-        "grants.edit": "维护",
         "grants.revoke": "撤销",
         "grants.add": "添加授权",
         "grants.dialogTitle": "添加授权",
         "grants.shareTitle": "向本域成员共享",
         "grants.sharedDesc": "已向本域所有成员开放使用权限。",
-        "grants.privateDesc": "当前仅对下方授权的成员与角色开放。",
+        "grants.privateDesc": "使用授权列在下方。",
         "grants.enableShare": "开启域内共享",
         "grants.disableShare": "关闭域内共享",
         "grants.selectMember": "搜索或选择成员",
@@ -709,7 +701,7 @@
         "tab.identity": "Basics",
         "tab.entries": "Entries",
         "tab.assets": "Panels & projections",
-        "tab.grants": "Permissions & sharing",
+        "tab.grants": "Use grants",
         "entries.count": "{count} entries",
         "entries.add": "Add entry",
         "entries.editTitle": "Edit entry",
@@ -746,13 +738,12 @@
         "grants.principal": "Member",
         "grants.role": "Role",
         "grants.use": "Use",
-        "grants.edit": "Maintain",
         "grants.revoke": "Revoke",
         "grants.add": "Add grant",
         "grants.dialogTitle": "Add grant",
         "grants.shareTitle": "Share with domain members",
-        "grants.sharedDesc": "All members in this domain can open this application.",
-        "grants.privateDesc": "Only the granted members and roles below can open it.",
+        "grants.sharedDesc": "All members in this domain have the application use grant.",
+        "grants.privateDesc": "Use grants are listed below.",
         "grants.enableShare": "Enable domain sharing",
         "grants.disableShare": "Disable domain sharing",
         "grants.selectMember": "Search or select a member",
@@ -783,7 +774,7 @@
         "tab.identity": "基本資訊",
         "tab.entries": "入口",
         "tab.assets": "面板與投影",
-        "tab.grants": "權限與共享",
+        "tab.grants": "使用授權",
         "entries.count": "{count} 個入口",
         "entries.add": "新增入口",
         "entries.editTitle": "編輯入口",
@@ -820,13 +811,12 @@
         "grants.principal": "成員",
         "grants.role": "角色",
         "grants.use": "使用",
-        "grants.edit": "維護",
         "grants.revoke": "撤銷",
         "grants.add": "新增授權",
         "grants.dialogTitle": "新增授權",
         "grants.shareTitle": "向本域成員共享",
         "grants.sharedDesc": "已向本域所有成員開放使用權限。",
-        "grants.privateDesc": "目前僅對下方授權的成員與角色開放。",
+        "grants.privateDesc": "使用授權列在下方。",
         "grants.enableShare": "開啟域內共享",
         "grants.disableShare": "關閉域內共享",
         "grants.selectMember": "搜尋或選擇成員",

@@ -241,7 +241,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void domainEntryDescriptionsRoundTripAndRejectInvalidValues() throws Exception {
         var viewer = new QueryAccessService.GrantUser("owner", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        when(access.canMaintain(any(), eq(viewer))).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, viewer, null);
         panelGrants.put("info-panel", true);
 
         var writer = "/platform/applications/app-descriptions/panel-uses";
@@ -321,7 +321,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void startupKeepsTheBuiltinAndQuarantinesOnlyTheConflictingDomainUse() throws Exception {
         var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
         when(identity.getCurrentUser()).thenReturn(operator);
-        when(access.canMaintain(any(), eq(operator))).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, operator, null);
         allowOtherPanels = true;
 
         var id = "app-ontology-panels";
@@ -440,7 +440,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(owner);
         allowOtherPanels = true;
-        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         var path = "/platform/applications/app-school/panel-uses";
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content("""
             {"entry":{"path":"/applications/app-school","renderer":"panels"},"initialOpenEntryIds":[],
@@ -528,7 +528,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void changingOnlyEntryInputsEmitsItsBoundRoot() throws Exception {
         var author = new QueryAccessService.GrantUser("author", "domain");
         when(identity.getCurrentUser()).thenReturn(author);
-        when(access.canMaintain(any(), eq(author))).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, author, null);
         allowOtherPanels = true;
         var path = "/platform/applications/app-root-inputs/panel-uses";
         var registration = """
@@ -573,7 +573,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void catalogueNameOrderUsesReaderLanguageAndPagesAcrossEqualNames() throws Exception {
         var owner = new QueryAccessService.GrantUser("owner", "domain");
         when(identity.getCurrentUser()).thenReturn(owner);
-        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         for (var id : List.of("app-a", "app-b", "app-c", "app-d"))
             catalog.publish(id, builtin(id, "native").declaration(), "release", owner);
         jdbc.update("""
@@ -597,7 +597,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void catalogueUpdatedOrderPagesByDescendingTimestampThenId() throws Exception {
         var owner = new QueryAccessService.GrantUser("owner", "domain");
         when(identity.getCurrentUser()).thenReturn(owner);
-        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         for (var id : List.of("app-a", "app-b", "app-c"))
             catalog.publish(id, builtin(id, "native").declaration(), "release", owner);
         jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00+00' WHERE id = 'app-a'");
@@ -627,8 +627,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var foreign = new QueryAccessService.GrantUser("foreign", "another-domain");
         when(identity.getCurrentUser()).thenReturn(owner);
         allowOtherPanels = true;
-        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
-        when(grants.allowedFor("domain", "owner", "app-catalogue", "edit")).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         catalog.builtins("data-engine", List.of(builtin("browser", "native")));
         catalog.publish("app-hosted", builtin("hosted", "native").declaration(), "release", owner);
         catalog.publish("app-private-foreign", builtin("foreign", "native").declaration(), "release", foreign);
@@ -730,7 +729,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void typedFormsReportFieldErrorsAndDraftCreationNeverOverwritesARegisteredApplication() throws Exception {
         var owner = new QueryAccessService.GrantUser("owner", "domain");
         when(identity.getCurrentUser()).thenReturn(owner);
-        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         allowOtherPanels = true;
 
         var form = http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON).content("""
@@ -841,7 +840,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void validatesOnlyNewAndChangedIconsWhilePreservingLegacyIcons() throws Exception {
         var owner = new QueryAccessService.GrantUser("owner", "domain");
         when(identity.getCurrentUser()).thenReturn(owner);
-        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, owner, null);
         var path = "/platform/applications/app-icon-proof/panel-uses";
         var registration = JSON.parseObject("""
             {"entry":{"path":"/applications/app-icon-proof","renderer":"panels"},"initialOpenEntryIds":[],

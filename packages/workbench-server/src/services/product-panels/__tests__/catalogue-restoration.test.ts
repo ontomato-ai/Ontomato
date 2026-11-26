@@ -9,7 +9,6 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { backendGet } from "../../../utils/backend-client";
-import { readProductGrantRecords } from "../../product-governance/grants";
 import { createApplicationReadAdapter, toApplicationPanelRecord } from "../application-catalogue";
 import { currentProductGrants, currentProductUsedBy, listCurrentProducts } from "../catalog";
 import { createProductProjectionReadAdapter, toProductProjectionPanelRecord } from "../catalog-reads";
@@ -28,10 +27,6 @@ vi.mock("../component-catalogue", () => ({
       ],
     },
   }]]),
-}));
-vi.mock("../../product-governance/grants", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../../product-governance/grants")>(),
-  readProductGrantRecords: vi.fn(),
 }));
 vi.mock("../../../utils/backend-client", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../utils/backend-client")>(),
@@ -98,27 +93,20 @@ it("forwards application catalogue sorting and its opaque cursor to Java", async
   expect(request.searchParams.get("cursor")).toBe("name-en.app-example.QWxwaGE");
 });
 
-it("gets application grants only for an application whose owner allows edit, with domain sharing from its use grant", async () => {
-  const row = {
-    id: "app-grants", names: { en: "Application" }, descriptions: { en: "" }, icon: "layout-grid",
-    source: "domain", canMaintain: true, canGrant: false, canEditEntries: true, entryCount: 0,
-    entry: { path: "/applications/app-grants" }, panelUses: [], groups: [],
-  };
-  const response = (canGrant: boolean) => ({
-    text: JSON.stringify({ success: true, data: { ...row, canGrant } }),
-  } as Awaited<ReturnType<typeof backendGet>>);
-  vi.mocked(backendGet).mockResolvedValueOnce(response(false)).mockResolvedValueOnce(response(true));
+it("gets use grants from the application owner and propagates its edit refusal", async () => {
   const grants = [
     { principalKind: "role", principalId: "reader", verb: "use" },
     { principalKind: "domain", principalId: "*", verb: "use" },
   ] as const;
-  vi.mocked(readProductGrantRecords).mockResolvedValueOnce({ grants: [...grants] });
+  vi.mocked(backendGet)
+    .mockRejectedValueOnce(Object.assign(new Error("Application access denied"), { status: 403 }))
+    .mockResolvedValueOnce({ text: JSON.stringify({ success: true, data: { grants } }) } as Awaited<ReturnType<typeof backendGet>>);
 
   const adapter = createApplicationReadAdapter(owner, viewer);
-  await expect(adapter.grants(row.id)).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
-  expect(readProductGrantRecords).not.toHaveBeenCalled();
-  await expect(adapter.grants(row.id)).resolves.toEqual({ grants, shared: true });
-  expect(readProductGrantRecords).toHaveBeenCalledWith(row.id, viewer);
+  await expect(adapter.grants("app-grants")).rejects.toMatchObject({ status: 403 });
+  await expect(adapter.grants("app-grants")).resolves.toEqual({ grants, shared: true });
+  expect(backendGet).toHaveBeenLastCalledWith("application-use-grants",
+    expect.stringMatching(/\/platform\/applications\/app-grants\/use-grants$/), expect.any(Object));
 });
 
 
