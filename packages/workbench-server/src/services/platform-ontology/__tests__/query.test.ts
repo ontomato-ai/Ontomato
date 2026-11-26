@@ -32,6 +32,7 @@ import {
   USER,
   WORKFLOW,
   platformObjectTypes,
+  platformRelationGroups,
   platformRelationKinds,
 } from "@ontomato/contracts/platform-object-types";
 import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
@@ -331,8 +332,14 @@ beforeEach(() => {
     }
     if (url.endsWith("/workflow/grants")) {
       return okJson([
-        { roleId: "r-1", roleCode: "Approver", capabilityKind: "ACTION", capabilityId: "act-1", inForce: true },
-        { roleId: "r-1", roleCode: "Approver", capabilityKind: "ACTION", capabilityId: "act-retired", inForce: false },
+        {
+          roleId: "r-1", roleCode: "Approver", capabilityKind: "ACTION", capabilityId: "act-1",
+          workflowId: "wf-1", stepNo: 1, activatedByWorkflowVersion: "2", scope: { kind: "all" }, inForce: true,
+        },
+        {
+          roleId: "r-1", roleCode: "Approver", capabilityKind: "ACTION", capabilityId: "act-retired",
+          workflowId: "wf-1", stepNo: 2, activatedByWorkflowVersion: "1", scope: { kind: "all" }, inForce: false,
+        },
       ]);
     }
     if (url.endsWith("/authorization/policies/graph-facts")) {
@@ -363,24 +370,20 @@ beforeEach(() => {
 });
 
 describe("platform-ontology composite query", () => {
-  it("exposes all four layers, declared layered object types, and 44 relation kinds directly from contracts", async () => {
+  it("exposes all four layers, declared layered object types, and every declared relation kind directly from contracts", async () => {
     const schema = await readPlatformOntologySchema();
     const expectedTypes = Object.entries(platformObjectTypes).filter(([, decl]) => Boolean(decl.layer));
     expect(schema.layers).toEqual(["fact", "capability", "governance", "product"]);
     expect(schema.objectTypes).toHaveLength(expectedTypes.length);
     expect(schema.relationKinds).toBe(platformRelationKinds);
-    expect(schema.relationKinds).toHaveLength(44);
 
     expect(schema.objectTypes.map((t) => t.id)).toEqual(expectedTypes.map(([id]) => id));
     expect(schema.objectTypes.every((t) => t.labelKey.startsWith("platformOntology.types."))).toBe(true);
     expect(schema.relationKinds.every((r) => r.labelKey === `platformOntology.relations.${r.id}`)).toBe(true);
-
-    const publishedRelations = schema.relationKinds.filter((r) => r.id.startsWith("user.published-"));
-    expect(publishedRelations).toHaveLength(3);
-    expect(publishedRelations.every((r) => r.derived === false)).toBe(true);
+    expect(schema.relationKinds.every((r) => platformRelationGroups.includes(r.group))).toBe(true);
 
     const derivedIds = schema.relationKinds.filter((r) => r.derived).map((r) => r.id);
-    expect(derivedIds).toEqual(["role.can-author-workflow", "role.owns-workflow-step", "panel.provides-skill"]);
+    expect(derivedIds).toEqual(["role.owns-workflow-step", "panel.provides-skill"]);
 
     expect(platformOntologySchemaResponseSchema.parse(schema)).toEqual(schema);
     expect(panelReadResultSchemas.panelGraphSchema.parse(schema)).toEqual(schema);
@@ -597,14 +600,10 @@ describe("platform-ontology composite query", () => {
 
     const ossNeighbors = await readPlatformOntologyNeighbors(ossOwner, { locale: "en" }, {
       node: { className: ossStart.className, primaryKey: ossStart.primaryKey },
-      relationKinds: ["user.created-action", "user.published-action"],
+      relationKinds: ["user.holds-role"],
     });
-    expect(ossNeighbors.edges).toHaveLength(2);
-    expect(ossNeighbors.edges.map((e) => e.relationKind).sort()).toEqual([
-      "user.created-action",
-      "user.published-action",
-    ]);
-    expect(ossNeighbors.edges.every((e) => e.derived === false)).toBe(true);
+    expect(ossNeighbors.node).toMatchObject({ className: USER, primaryKey: "system" });
+    expect(ossNeighbors.neighbors).toEqual([]);
   });
 
   it.each([
@@ -652,15 +651,14 @@ describe("platform-ontology composite query", () => {
     const node = { className: USER, primaryKey: owner.userId };
     const neighbors = await readPlatformOntologyNeighbors(owner, credentials, {
       node,
-      relationKinds: ["user.created-action"],
+      relationKinds: ["user.holds-role"],
     }, "Alice Fallback");
 
     expect(neighbors.node).toMatchObject({ ...node, label: "Alice Fallback" });
-    expect(neighbors.edges).toContainEqual(expect.objectContaining({
-      relationKind: "user.created-action",
-      from: node,
-      to: { className: ACTION, primaryKey: "act-1" },
-    }));
+    expect(neighbors.edges).toEqual([]);
+    expect(neighbors.relations).toEqual([
+      expect.objectContaining({ relationKind: "user.holds-role", status, edgeCount: 0 }),
+    ]);
   });
 
   it("expands 1-hop neighbors for a User with both outgoing and incoming edges and isolates per-relation 403 refusal", async () => {
@@ -672,17 +670,16 @@ describe("platform-ontology composite query", () => {
 
     expect(res.node).toMatchObject({ className: "platform:User", primaryKey: "user-1", label: "Alice", layer: "governance" });
 
-    // Alice created & published act-1 (two distinct edges), created wf-1, created & published metric-1, holds role r-1 (Approver)
+    // Alice holds role r-1 (Approver) and runs the ops agent; what she created and reviewed is provenance,
+    // which stays on the node's own detail instead of being drawn as an edge.
     const edgeKinds = res.edges.map((e) => `${e.relationKind}:${e.to.primaryKey}`).sort();
     expect(edgeKinds).toEqual([
       "agent.executes-as-user:user-1",
-      "user.created-action:act-1",
-      "user.created-metric-view:metric-1",
-      "user.created-workflow:wf-1",
       "user.holds-role:r-1",
-      "user.published-action:act-1",
-      "user.published-metric-view:metric-1",
     ]);
+    expect(res.node.detail).toBe(
+      "alice · Created: Approve Order、Order Approval、Order Total · Reviewed: Approve Order、Order Total",
+    );
     expect(res.neighbors).toContainEqual({
       className: ROLE,
       primaryKey: "r-1",
@@ -692,8 +689,7 @@ describe("platform-ontology composite query", () => {
 
     const statusByKind = new Map(res.relations.map((r) => [r.relationKind, r]));
     expect(statusByKind.get("agent.executes-as-user")).toMatchObject({ status: "ok", edgeCount: 1 });
-    expect(statusByKind.get("user.published-workflow")).toMatchObject({ status: "ok", edgeCount: 0 });
-    expect(statusByKind.get("user.created-action")).toMatchObject({ status: "ok", edgeCount: 1 });
+    expect(statusByKind.get("user.member-of-org-unit")).toMatchObject({ status: "ok", edgeCount: 0 });
   });
 
   it("computes cross-layer neighbors for ObjectType including Definition (excluding platform:* definitions)", async () => {
@@ -992,17 +988,22 @@ describe("platform-ontology composite query", () => {
             entry: { path: "/applications/app-ops", renderer: "panels", entryKey: "main" },
             scheduleAdapter: null,
             releaseId: null,
-            panelUses: [
-              {
-                id: "use-main",
-                panelId: "panel-main",
-                path: "/applications/app-ops/main",
-                pageKey: "main",
-                names: { en: "Main" },
-              },
-            ],
           },
         ]);
+      }
+      if (url.endsWith("/platform/applications/app-ops")) {
+        return okJson({
+          id: "app-ops",
+          panelUses: [
+            {
+              id: "use-main",
+              panelId: "panel-main",
+              path: "/applications/app-ops/main",
+              pageKey: "main",
+              names: { en: "Main" },
+            },
+          ],
+        });
       }
       throw new Error(`Unexpected GET URL: ${url}`);
     });
@@ -1424,7 +1425,7 @@ describe("platform-ontology composite query", () => {
     ]);
   });
 
-  it("resolves all four role relations bidirectionally using roleId as primaryKey and rejects roleCode as primaryKey", async () => {
+  it("resolves a role's governed relations using roleId as primaryKey and rejects roleCode as primaryKey", async () => {
     const roleCenter = platformOntologyNeighborsResponseSchema.parse(
       await readPlatformOntologyNeighbors(owner, credentials, {
         node: { className: ROLE, primaryKey: "r-1" },
@@ -1447,50 +1448,21 @@ describe("platform-ontology composite query", () => {
           to: { className: ROLE, primaryKey: "r-1" },
         }),
         expect.objectContaining({
-          relationKind: "role.can-execute-action",
-          direction: "outgoing",
-          from: { className: ROLE, primaryKey: "r-1" },
-          to: { className: ACTION, primaryKey: "act-1" },
-        }),
-        expect.objectContaining({
-          relationKind: "role.can-author-workflow",
-          direction: "outgoing",
-          from: { className: ROLE, primaryKey: "r-1" },
-          to: { className: WORKFLOW, primaryKey: "wf-1" },
-        }),
-        expect.objectContaining({
           relationKind: "role.owns-workflow-step",
           direction: "outgoing",
           from: { className: ROLE, primaryKey: "r-1" },
           to: { className: WORKFLOW, primaryKey: "wf-1" },
+          authorization: { stepNo: 1, version: 2, scope: "all", scopeLabel: "All data" },
         }),
       ]),
     );
-    expect(roleCenter.edges).toHaveLength(4);
-
-    // Reverse direction from Action and Workflow also emits roleId as primaryKey with roleCode label
-    const actionNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: ACTION, primaryKey: "act-1" },
-      relationKinds: ["role.can-execute-action"],
-    });
-    expect(actionNeighbors.edges).toEqual([
-      expect.objectContaining({
-        relationKind: "role.can-execute-action",
-        direction: "incoming",
-        from: { className: ROLE, primaryKey: "r-1" },
-        to: { className: ACTION, primaryKey: "act-1" },
-      }),
-    ]);
-    expect(actionNeighbors.neighbors).toEqual([
-      { className: ROLE, primaryKey: "r-1", label: "Approver", layer: "governance" },
-    ]);
+    expect(roleCenter.edges).toHaveLength(2);
 
     const workflowNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
       node: { className: WORKFLOW, primaryKey: "wf-1" },
-      relationKinds: ["role.can-author-workflow", "role.owns-workflow-step"],
+      relationKinds: ["role.owns-workflow-step"],
     });
-    expect(workflowNeighbors.edges.map((e) => `${e.relationKind}:${e.from.primaryKey}`).sort()).toEqual([
-      "role.can-author-workflow:r-1",
+    expect(workflowNeighbors.edges.map((e) => `${e.relationKind}:${e.from.primaryKey}`)).toEqual([
       "role.owns-workflow-step:r-1",
     ]);
     expect(workflowNeighbors.neighbors).toEqual([
@@ -1503,42 +1475,6 @@ describe("platform-ontology composite query", () => {
         node: { className: ROLE, primaryKey: "Approver" },
       }),
     ).rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
-  });
-
-  it("uses workflow authoring facts even when legacy platform access would allow another role", async () => {
-    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
-    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/authorization/policies/graph-facts")) {
-        return graphFacts({ roleWorkflowAuthoring: [{ roleId: "r-author", workflowId: "wf-1", policyId: "p-1", verb: "EDIT" }] });
-      }
-      if (url.endsWith("/workflow/platform-access")) {
-        return okJson([{ roleId: "r-1", roleCode: "Approver", apiPermissions: ["/workflow/save"], managementRole: true }]);
-      }
-      return baseImpl(endpoint, url, body, opts);
-    });
-    const result = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: WORKFLOW, primaryKey: "wf-1" },
-      relationKinds: ["role.can-author-workflow"],
-    });
-    expect(result.edges.map(edge => edge.from.primaryKey)).toEqual(["r-author"]);
-  });
-
-  it("shows independent action grants and deduplicates roles with step authorization", async () => {
-    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
-    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/authorization/policies/graph-facts")) {
-        return graphFacts({ roleActionGrants: [
-          { roleId: "r-1", actionId: "act-1", policyId: "p-1" },
-          { roleId: "r-standalone", actionId: "act-1", policyId: "p-2", scopeKind: "all" },
-        ] });
-      }
-      return baseImpl(endpoint, url, body, opts);
-    });
-    const result = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: ACTION, primaryKey: "act-1" },
-      relationKinds: ["role.can-execute-action"],
-    });
-    expect(result.edges.map(edge => edge.from.primaryKey).sort()).toEqual(["r-1", "r-standalone"]);
   });
 
   it("keeps user.holds-role edges keyed by roleId even when /workflow/platform-access is refused", async () => {
@@ -1569,22 +1505,22 @@ describe("platform-ontology composite query", () => {
     ]);
   });
 
-  it("maps workflow step roleCode to roleId, skips unknown step names, and surfaces role directory refusal/failure", async () => {
+  it("keeps only the workflow steps in force and surfaces grant read refusal and failure", async () => {
     const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/workflow/query")) {
+      if (url.endsWith("/workflow/grants")) {
         return okJson([
           {
-            id: "wf-1",
-            name: "Order Approval",
-            version: 2,
-            steps: [
-              { actionId: "act-1", roleCode: "Approver" },
-              { actionId: "act-1", roleCode: "UnmatchedStepRole" },
-            ],
-            createdBy: "user-1",
-            reviewedBy: "user-2",
+            roleId: "r-1", roleCode: "Approver", capabilityKind: "ACTION", capabilityId: "act-1",
+            workflowId: "wf-1", stepNo: 2, activatedByWorkflowVersion: "3",
+            scope: { kind: "self_organization", className: "Order", field: "orgId" }, inForce: true,
           },
+          {
+            roleId: "r-2", roleCode: "Operator", capabilityKind: "ACTION", capabilityId: "act-2",
+            workflowId: "wf-1", stepNo: 1, activatedByWorkflowVersion: "2", scope: { kind: "all" }, inForce: false,
+          },
+          // A directly granted action has no workflow step and belongs to the policy's action edge instead.
+          { roleId: "r-1", roleCode: "Approver", capabilityKind: "ACTION", capabilityId: "act-3", inForce: true },
         ]);
       }
       return baseImpl(endpoint, url, body, opts);
@@ -1600,16 +1536,20 @@ describe("platform-ontology composite query", () => {
         relationKind: "role.owns-workflow-step",
         from: { className: ROLE, primaryKey: "r-1" },
         to: { className: WORKFLOW, primaryKey: "wf-1" },
+        authorization: {
+          stepNo: 2,
+          version: 3,
+          scope: "self_organization",
+          scopeLabel: "Own organization",
+          scopeField: "Order.orgId",
+        },
       }),
     ]);
-    expect(okRes.neighbors).toEqual([
-      { className: ROLE, primaryKey: "r-1", label: "Approver", layer: "governance" },
-    ]);
 
-    // When role directory is refused, relationStatus reports refused instead of ok with 0 edges
+    // When the grant directory is refused, relationStatus reports refused instead of ok with 0 edges
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/workflow/platform-access") || url.endsWith("/workflow/grants")) {
-        throw new BackendResponseError(403, JSON.stringify({ message: "Role directory forbidden" }));
+      if (url.endsWith("/workflow/grants")) {
+        throw new BackendResponseError(403, JSON.stringify({ message: "Grants forbidden" }));
       }
       return baseImpl(endpoint, url, body, opts);
     });
@@ -1622,10 +1562,10 @@ describe("platform-ontology composite query", () => {
       expect.objectContaining({ relationKind: "role.owns-workflow-step", status: "refused", edgeCount: 0 }),
     ]);
 
-    // When role directory fails, relationStatus reports failed
+    // When the grant directory fails, relationStatus reports failed
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/workflow/platform-access") || url.endsWith("/workflow/grants")) {
-        throw new BackendResponseError(500, JSON.stringify({ message: "Role directory down" }));
+      if (url.endsWith("/workflow/grants")) {
+        throw new BackendResponseError(500, JSON.stringify({ message: "Grants down" }));
       }
       return baseImpl(endpoint, url, body, opts);
     });
@@ -1636,27 +1576,6 @@ describe("platform-ontology composite query", () => {
     expect(failedRes.edges).toEqual([]);
     expect(failedRes.relations).toEqual([
       expect.objectContaining({ relationKind: "role.owns-workflow-step", status: "failed", edgeCount: 0 }),
-    ]);
-
-    // When role directory is unavailable, relationStatus reports unavailable
-    const readers: {
-      roles(): Promise<
-        Awaited<ReturnType<PlatformOntologyOwnerReaders["roles"]>> |
-        { ok: false; status: "unavailable"; reason: string }
-      >;
-    } = PlatformOntologyOwnerReaders.prototype;
-    vi.spyOn(readers, "roles").mockResolvedValueOnce({
-      ok: false,
-      status: "unavailable",
-      reason: "Roles unavailable",
-    });
-    const unavailableRes = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: WORKFLOW, primaryKey: "wf-1" },
-      relationKinds: ["role.owns-workflow-step"],
-    });
-    expect(unavailableRes.edges).toEqual([]);
-    expect(unavailableRes.relations).toEqual([
-      { relationKind: "role.owns-workflow-step", status: "unavailable", edgeCount: 0, reason: "Roles unavailable" },
     ]);
   });
 
@@ -1983,7 +1902,101 @@ describe("platform-ontology composite query", () => {
     ]);
   });
 
-  it("evaluates all 6 product grant relations bidirectionally, skips domain:*:use and projections, and annotates domain-shared details", async () => {
+  it("reads one policy's grants as entry, action and object edges with the verb, entry and scope on the edge", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/authorization/policies/graph-facts")) {
+        return graphFacts({
+          policyGrants: [
+            { policyId: "pol-1", targetKind: "ENTRY", targetKey: "app-1/use-main", verb: "ENTER", scope: null },
+            {
+              policyId: "pol-1", targetKind: "ACTION", targetKey: "act-1", verb: "EXECUTE",
+              scope: { kind: "self_organization", className: "Order", field: "orgId" },
+            },
+            { policyId: "pol-1", targetKind: "PANEL", targetKey: "panel-1", verb: "USE", scope: null },
+            { policyId: "pol-1", targetKind: "PROJECTION", targetKey: "proj-1", verb: "EDIT", scope: null },
+            { policyId: "pol-1", targetKind: "WORKFLOW", targetKey: "wf-1", verb: "EDIT", scope: null },
+            // A CREATE grant names no record: it is creation authority for that class, so it stays off the graph.
+            { policyId: "pol-1", targetKind: "WORKFLOW", targetKey: "", verb: "CREATE", scope: null },
+            { policyId: "pol-2", targetKind: "AGENT", targetKey: "agent-1", verb: "USE", scope: null },
+          ],
+        });
+      }
+      if (url.endsWith("/platform/governance/policies")) {
+        return okJson({ policies: [{ id: "pol-1", name: "Order Operations Policy" }] });
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+    vi.mocked(backendGet).mockImplementation(async (_endpoint, url) => {
+      if (url.includes("/platform/applications?purpose=navigation")) {
+        return okJson([
+          {
+            id: "app-1",
+            kind: "product",
+            names: { en: "Order Workspace" },
+            descriptions: {},
+            icon: "grid",
+            rail: "apps",
+            category: "business",
+            sort: 1,
+            entry: { path: "/applications/app-1", renderer: "panels", entryKey: "main" },
+            scheduleAdapter: null,
+            releaseId: null,
+          },
+        ]);
+      }
+      throw new Error(`Unexpected GET URL: ${url}`);
+    });
+
+    const policyCenter = platformOntologyNeighborsResponseSchema.parse(
+      await readPlatformOntologyNeighbors(owner, credentials, {
+        node: { className: PERMISSION_POLICY, primaryKey: "pol-1" },
+      }),
+    );
+
+    expect(policyCenter.node.detail).toBe("Can create: Workflow");
+    expect(policyCenter.edges.map((edge) => `${edge.relationKind}:${edge.to.primaryKey}`).sort()).toEqual([
+      "permission-policy.can-enter-application:app-1",
+      "permission-policy.can-execute-action:act-1",
+      "permission-policy.can-use-object:panel-1",
+      "permission-policy.can-use-object:proj-1",
+      "permission-policy.can-use-object:wf-1",
+    ]);
+    expect(policyCenter.edges.find((edge) => edge.relationKind === "permission-policy.can-enter-application")
+      ?.authorization).toEqual({ verb: "ENTER", verbLabel: "Enter", entry: "app-1/use-main", entryLabel: "use-main" });
+    expect(policyCenter.edges.find((edge) => edge.relationKind === "permission-policy.can-execute-action")
+      ?.authorization).toEqual({
+      verb: "EXECUTE",
+      verbLabel: "Execute",
+      scope: "self_organization",
+      scopeLabel: "Own organization",
+      scopeField: "Order.orgId",
+    });
+    expect(policyCenter.edges.find((edge) => edge.relationKind === "permission-policy.can-use-object"
+      && edge.to.primaryKey === "proj-1")?.authorization).toEqual({ verb: "EDIT", verbLabel: "Edit" });
+
+    // The edges read the same way from their target side.
+    const appIncoming = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: APPLICATION, primaryKey: "app-1" },
+      relationKinds: ["permission-policy.can-enter-application"],
+    });
+    expect(appIncoming.edges).toEqual([
+      expect.objectContaining({
+        relationKind: "permission-policy.can-enter-application",
+        direction: "incoming",
+        from: { className: PERMISSION_POLICY, primaryKey: "pol-1" },
+        to: { className: APPLICATION, primaryKey: "app-1" },
+      }),
+    ]);
+
+    const actionIncoming = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ACTION, primaryKey: "act-1" },
+      relationKinds: ["permission-policy.can-execute-action"],
+    });
+    expect(actionIncoming.edges.map((edge) => edge.from.primaryKey)).toEqual(["pol-1"]);
+  });
+
+  it("annotates domain-shared product details on agents, panels and projections", async () => {
     const panelRow = {
       id: "panel-1",
       definition: {
@@ -2022,192 +2035,29 @@ describe("platform-ontology composite query", () => {
       if (sql.includes("product_projections")) return { rows: [projRow] };
       return { rows: [] };
     });
-    vi.mocked(backendGet).mockImplementation(async (_endpoint, url) => {
-      if (url.includes("/platform/applications?purpose=navigation")) {
-        return okJson([
-          {
-            id: "app-1",
-            kind: "product",
-            names: { en: "Order Workspace", "zh-CN": "订单工作台" },
-            descriptions: {},
-            icon: "grid",
-            rail: "apps",
-            category: "business",
-            sort: 1,
-            entry: { path: "/applications/app-1", renderer: "panels", entryKey: "main" },
-            scheduleAdapter: null,
-            releaseId: null,
-            panelUses: [],
-          },
-        ]);
-      }
-      throw new Error(`Unexpected GET URL: ${url}`);
-    });
-
-    const domainGrants = [
-      { resourceId: "agent-1", principalKind: "domain", principalId: "*", verb: "use" },
-      { resourceId: "panel-1", principalKind: "domain", principalId: "*", verb: "use" },
-      { resourceId: "panel-bare", principalKind: "domain", principalId: "*", verb: "use" },
-      { resourceId: "app-1", principalKind: "domain", principalId: "*", verb: "use" },
-      { resourceId: "agent-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "use" },
-      { resourceId: "agent-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "view" },
-      { resourceId: "agent-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "edit" },
-      { resourceId: "panel-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "use" },
-      { resourceId: "panel-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "view" },
-      { resourceId: "app-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "edit" },
-      { resourceId: "proj-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "use" },
-      { resourceId: "agent-1", principalKind: "principal", principalId: "user-1", principalName: "Alice Display", verb: "use" },
-      { resourceId: "agent-1", principalKind: "principal", principalId: "user-1", principalName: "Alice Display", verb: "view" },
-      { resourceId: "panel-1", principalKind: "principal", principalId: "user-1", principalName: "Alice Display", verb: "edit" },
-      { resourceId: "proj-1", principalKind: "principal", principalId: "user-1", principalName: "Alice Display", verb: "edit" },
-    ];
-
     const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
       if (url.endsWith("/product-governance/domain-grants")) {
-        return okJson({ grants: domainGrants });
+        return okJson({
+          grants: [
+            { resourceId: "agent-1", principalKind: "domain", principalId: "*", verb: "use" },
+            { resourceId: "panel-1", principalKind: "domain", principalId: "*", verb: "use" },
+            { resourceId: "panel-bare", principalKind: "domain", principalId: "*", verb: "use" },
+          ],
+        });
       }
       return baseImpl(endpoint, url, body, opts);
     });
 
-    // 1. Role outgoing product grant edges
-    const roleProductEdges = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: ROLE, primaryKey: "r-1" },
-      relationKinds: ["role.can-use-product", "role.can-view-product", "role.can-edit-product"],
-    });
-    expect(
-      roleProductEdges.edges.map((e) => `${e.relationKind}:${e.to.className}:${e.to.primaryKey}`).sort(),
-    ).toEqual([
-      "role.can-edit-product:platform:AgentDefinition:agent-1",
-      "role.can-edit-product:platform:Application:app-1",
-      "role.can-use-product:platform:AgentDefinition:agent-1",
-      "role.can-use-product:platform:ProductPanel:panel-1",
-      "role.can-view-product:platform:AgentDefinition:agent-1",
-    ]);
-    // Domain-shared details appear on neighbor product nodes
-    expect(roleProductEdges.neighbors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          className: AGENT_DEFINITION,
-          primaryKey: "agent-1",
-          detail: "enabled · 全本域可用",
-        }),
-        expect.objectContaining({
-          className: PRODUCT_PANEL,
-          primaryKey: "panel-1",
-          detail: "Shows live orders · 全本域可用",
-        }),
-        expect.objectContaining({
-          className: APPLICATION,
-          primaryKey: "app-1",
-          detail: "product · 全本域可用",
-        }),
-      ]),
-    );
-
-    // 2. User outgoing product grant edges (proj-1 skipped, domain:*:use never expanded)
-    const userProductEdges = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: USER, primaryKey: "user-1" },
-      relationKinds: ["user.can-use-product", "user.can-view-product", "user.can-edit-product"],
-    });
-    expect(
-      userProductEdges.edges.map((e) => `${e.relationKind}:${e.to.className}:${e.to.primaryKey}`).sort(),
-    ).toEqual([
-      "user.can-edit-product:platform:ProductPanel:panel-1",
-      "user.can-use-product:platform:AgentDefinition:agent-1",
-      "user.can-view-product:platform:AgentDefinition:agent-1",
-    ]);
-
-    // 3. Object list carries domain-shared detail for Agent, Panel (with & without base description), and Application
     const panelList = await readPlatformOntologyObjects(owner, credentials, { type: PRODUCT_PANEL });
     expect(panelList.items).toEqual([
       { node: { className: PRODUCT_PANEL, primaryKey: "panel-bare" }, label: "Bare Shared Panel", detail: "全本域可用" },
       { node: { className: PRODUCT_PANEL, primaryKey: "panel-1" }, label: "Order Overview Panel", detail: "Shows live orders · 全本域可用" },
     ]);
 
-    // 4. Reverse direction from Agent uses principalName when subjects/roles directories are refused
-    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/product-governance/domain-grants")) {
-        return okJson({ grants: domainGrants });
-      }
-      if (url.endsWith("/workflow/subjects") || url.endsWith("/workflow/platform-access") || url.endsWith("/workflow/grants")) {
-        throw new BackendResponseError(403, JSON.stringify({ message: "Identity directory forbidden" }));
-      }
-      return baseImpl(endpoint, url, body, opts);
-    });
-
-    const agentIncoming = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: AGENT_DEFINITION, primaryKey: "agent-1" },
-      relationKinds: [
-        "role.can-use-product", "role.can-view-product", "role.can-edit-product",
-        "user.can-use-product", "user.can-view-product", "user.can-edit-product",
-      ],
-    });
-    expect(agentIncoming.node.detail).toBe("enabled · 全本域可用");
-    expect(agentIncoming.edges.map((e) => `${e.relationKind}:${e.from.primaryKey}`).sort()).toEqual([
-      "role.can-edit-product:r-1",
-      "role.can-use-product:r-1",
-      "role.can-view-product:r-1",
-      "user.can-use-product:user-1",
-      "user.can-view-product:user-1",
-    ]);
-    expect(agentIncoming.neighbors).toEqual(
-      expect.arrayContaining([
-        { className: ROLE, primaryKey: "r-1", label: "Approver", layer: "governance" },
-        { className: USER, primaryKey: "user-1", label: "Alice Display", layer: "governance" },
-      ]),
-    );
-
-    // 5. From ProductPanel, can-view-product is not applicable; only use/edit emit edges
-    const panelIncoming = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: PRODUCT_PANEL, primaryKey: "panel-1" },
-      relationKinds: [
-        "role.can-use-product", "role.can-view-product", "role.can-edit-product",
-        "user.can-use-product", "user.can-view-product", "user.can-edit-product",
-      ],
-    });
-    expect(panelIncoming.edges.map((e) => `${e.relationKind}:${e.from.primaryKey}`).sort()).toEqual([
-      "role.can-use-product:r-1",
-      "user.can-edit-product:user-1",
-    ]);
-
-    // 6. When one product catalog (AgentDefinition) is refused, Role still gets edges to readable panels & apps
-    vi.mocked(listAgentDefinitions).mockRejectedValueOnce(new HttpError(403, "Grant read refused", "PRODUCT_FORBIDDEN"));
-    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/product-governance/domain-grants")) {
-        return okJson({ grants: domainGrants });
-      }
-      return baseImpl(endpoint, url, body, opts);
-    });
-    const partialCatalogRes = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: ROLE, primaryKey: "r-1" },
-      relationKinds: ["role.can-use-product", "role.can-edit-product"],
-    });
-    expect(partialCatalogRes.edges.map((e) => `${e.relationKind}:${e.to.primaryKey}`).sort()).toEqual([
-      "role.can-edit-product:app-1",
-      "role.can-use-product:panel-1",
-    ]);
-
-    // 7. When /product-governance/domain-grants returns 403, product grant relations report refused and product nodes render without shared tag
-    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
-      if (url.endsWith("/product-governance/domain-grants")) {
-        throw new BackendResponseError(403, JSON.stringify({ message: "Domain grants forbidden" }));
-      }
-      return baseImpl(endpoint, url, body, opts);
-    });
-    const refusedGrants = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: ROLE, primaryKey: "r-1" },
-      relationKinds: ["role.can-use-product", "role.can-view-product"],
-    });
-    expect(refusedGrants.relations).toEqual([
-      expect.objectContaining({ relationKind: "role.can-use-product", status: "refused", edgeCount: 0 }),
-      expect.objectContaining({ relationKind: "role.can-view-product", status: "refused", edgeCount: 0 }),
-    ]);
-
-    const agentsWithoutGrants = await readPlatformOntologyObjects(owner, credentials, { type: AGENT_DEFINITION });
-    expect(agentsWithoutGrants.status).toBe("ok");
-    expect(agentsWithoutGrants.items).toEqual([
-      { node: { className: AGENT_DEFINITION, primaryKey: "agent-1" }, label: "Ops Assistant", detail: "enabled" },
+    const agents = await readPlatformOntologyObjects(owner, credentials, { type: AGENT_DEFINITION });
+    expect(agents.items).toEqual([
+      { node: { className: AGENT_DEFINITION, primaryKey: "agent-1" }, label: "Ops Assistant", detail: "enabled · 全本域可用" },
     ]);
   });
 });

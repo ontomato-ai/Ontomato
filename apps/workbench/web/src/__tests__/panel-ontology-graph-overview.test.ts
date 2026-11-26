@@ -797,6 +797,7 @@ it("keeps backward-compatible type and instance modes working without overview p
             derived: false,
             owner: "java-action",
             labelKey: "platformOntology.relations.actionHasOwner",
+            group: "dependency",
           },
         ],
       });

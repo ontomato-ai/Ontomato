@@ -115,6 +115,8 @@ function relationKindRecord(spec: PlatformRelationKindDeclaration): PlatformObje
       to: target,
       derived: String(spec.derived),
       labelKey: spec.labelKey,
+      group: spec.group,
+      ...(spec.typeEdges === false && { typeGraphNote: `platformOntology.relationNotes.${spec.id}` }),
     },
   };
 }
