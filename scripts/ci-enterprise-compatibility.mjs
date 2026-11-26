@@ -69,21 +69,21 @@ function getDevelop() {
   return request(`${githubApi}/git/ref/heads/develop`, "GitHub develop lookup", { headers: githubHeaders });
 }
 
-function matchesEvent(pull, eventPull, repositoryId) {
+function matchesDispatch(pull, headSha, repositoryId) {
   return pull.state === "open" && pull.draft === false &&
     pull.base?.ref === "develop" && pull.head?.repo?.id === repositoryId &&
-    pull.head.sha === eventPull.head.sha;
+    pull.head.sha === headSha;
 }
 
-async function resolvePull(number, eventPull, repositoryId) {
+async function resolvePull(number, headSha, repositoryId) {
   const deadline = performance.now() + 30_000;
   let pull = await getPull(number);
   // GitHub computes mergeability asynchronously. Only that pending state is polled.
-  while (matchesEvent(pull, eventPull, repositoryId) && pull.mergeable === null && performance.now() < deadline) {
+  while (matchesDispatch(pull, headSha, repositoryId) && pull.mergeable === null && performance.now() < deadline) {
     await delay(2_000);
     pull = await getPull(number);
   }
-  return matchesEvent(pull, eventPull, repositoryId) ? pull : null;
+  return matchesDispatch(pull, headSha, repositoryId) ? pull : null;
 }
 
 async function selectMerge(pull) {
@@ -211,19 +211,23 @@ function reportResult(description, note) {
 }
 
 async function run() {
-  const { number, pull_request: eventPull, repository } = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8"));
-  if (!isId(number) || !isSha(eventPull?.head?.sha)) {
-    throw new BridgeError("CI infrastructure: invalid GitHub pull request event.");
+  const { inputs, repository } = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8"));
+  const { pr_number: prNumber, head_sha: headSha } = inputs ?? {};
+  const number = Number(prNumber);
+  const runnerRepositoryId = Number(env.GITHUB_REPOSITORY_ID);
+  const repositoryId = isId(runnerRepositoryId) ? runnerRepositoryId : repository?.id;
+  if (!isId(number) || String(number) !== prNumber || !isSha(headSha) || !isId(repositoryId)) {
+    throw new BridgeError("CI infrastructure: invalid GitHub dispatch inputs or repository ID.");
   }
-  const pull = await resolvePull(number, eventPull, repository.id);
+  const pull = await resolvePull(number, headSha, repositoryId);
   if (!pull) {
-    reportResult("Skipped: pull request event is stale or no longer eligible.");
+    reportResult("Skipped: pull request dispatch is stale or no longer eligible.");
     return;
   }
 
   async function isCurrent() {
     const [current, base] = await Promise.all([getPull(number), report.publicSha ? getDevelop() : null]);
-    if (!matchesEvent(current, eventPull, repository.id)) return false;
+    if (!matchesDispatch(current, headSha, repositoryId)) return false;
     if (!report.publicSha) return true;
     return current.mergeable === true && current.merge_commit_sha === report.publicSha &&
       current.base.sha === pull.base.sha && base.object?.sha === pull.base.sha;

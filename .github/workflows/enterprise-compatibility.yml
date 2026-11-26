@@ -4,17 +4,49 @@ on:
   pull_request_target:
     branches: [develop]
     types: [opened, reopened, synchronize, ready_for_review, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number
+        required: true
+        type: string
+      head_sha:
+        description: Expected pull request head SHA
+        required: true
+        type: string
 
 permissions: {}
 
 jobs:
-  bridge:
+  forward:
+    # GitHub runs pull_request_target from the default branch.
     if: >-
+      github.event_name == 'pull_request_target' &&
+      github.ref == 'refs/heads/main' &&
       github.ref_protected &&
       github.event.pull_request.state == 'open' &&
       !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.id == github.event.repository.id &&
       (github.event.action != 'edited' || github.event.changes.base.ref.from)
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch enterprise compatibility on develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          gh workflow run enterprise-compatibility.yml
+          --repo "$GITHUB_REPOSITORY" --ref develop
+          --raw-field "pr_number=$PR_NUMBER" --raw-field "head_sha=$HEAD_SHA"
+
+  bridge:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/develop' &&
+      github.ref_protected
     runs-on: ubuntu-24.04
     environment: enterprise-pr-compat-develop
     timeout-minutes: 13
@@ -23,7 +55,7 @@ jobs:
       pull-requests: read
       statuses: write
     concurrency:
-      group: enterprise-pr-compat-${{ github.event.number }}
+      group: enterprise-pr-compat-${{ inputs.pr_number }}
       cancel-in-progress: true
     steps:
       - name: Check out the trusted workflow revision
