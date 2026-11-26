@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.service.RuntimeCodeClient;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
@@ -9,6 +11,7 @@ import java.util.*;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 @RequestMapping("/platform/agent-channel")
 public class AgentChannelController {
   private final OntologyAgentAccess access;
@@ -235,7 +238,8 @@ public class AgentChannelController {
   @PostMapping("/read")
   public Object read(@RequestBody Map<String,Object> input,HttpServletRequest request) throws Exception {
     var execution=execution(body(input),request); var owner=execution.actor().owner();
-    if(OntologyAgentStore.RETRIEVER.equals(execution.agent()) || ActionCreationService.AGENT.equals(execution.agent())) callers.requireQuery(execution.actor());
+    if(OntologyAgentStore.RETRIEVER.equals(execution.agent())) retrieval.requireUse(owner);
+    else if(ActionCreationService.AGENT.equals(execution.agent())) callers.requireQuery(execution.actor());
     String fileId=body(input).getString("fileId");
     if(fileId!=null) {
       AgentJson.id(fileId);

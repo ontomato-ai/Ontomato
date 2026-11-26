@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +20,7 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SystemUtils;
 
 @RestController
+@Owned
 public class DslController {
 	
 	@Autowired

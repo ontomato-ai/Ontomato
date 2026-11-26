@@ -25,7 +25,6 @@ import {
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
   READ_MEMBER_ACCESS_CONTEXT,
-  REFRESH_POLICY_API_CATALOG,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
   REMOVE_USER,
@@ -89,7 +88,6 @@ const recordLabelSchema = z.object({ label: z.string().min(1) }).passthrough();
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const emptyInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
-const refreshCatalogResultSchema = z.object({ refreshed: z.boolean() }).strict();
 const jsonReadResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonObjectSchema });
 
 function policyReadTargetId(target?: { kind: string; primaryKey?: string } | null): string {
@@ -889,32 +887,6 @@ export const governanceServerOperations = [
         target,
         "PERMISSION_POLICY_DELETE_FAILED",
         [PERMISSION_POLICY, ROLE],
-      );
-    },
-  },
-  {
-    handlerRef: REFRESH_POLICY_API_CATALOG,
-    labelKey: "panels.governance.policy.operations.refreshApiCatalog",
-    kind: "action",
-    binding: { kind: "PlatformOperation", id: REFRESH_POLICY_API_CATALOG },
-    effect: "write",
-    batch: false,
-    targetType: PERMISSION_POLICY,
-    targetSchema: z.null(),
-    inputSchema: emptyInputSchema,
-    resultSchema: refreshCatalogResultSchema,
-    execute(host: Host): Promise<SinglePanelOperationOutcome> {
-      return postAction(
-        host,
-        "/panel/governance/policies/api-permissions/refresh",
-        {},
-        "POLICY_API_CATALOG_REFRESH_FAILED",
-        "The owner could not refresh the API permission catalog",
-        data => ({
-          kind: "success",
-          data: refreshCatalogResultSchema.parse(data),
-          affected: { objects: [], objectTypes: [PERMISSION_POLICY] },
-        }),
       );
     },
   },

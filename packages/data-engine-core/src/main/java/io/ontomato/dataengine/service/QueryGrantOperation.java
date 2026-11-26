@@ -44,7 +44,9 @@ public enum QueryGrantOperation {
   WRITE_QUERY("/writeFunctionOperation/query"),
   WRITE_VECTOR_APPEND("/writeFunctionOperation/appendVector"),
   WRITE_VECTOR_UPDATE("/writeFunctionOperation/updateVector"),
-  WRITE_VECTOR_DELETE("/writeFunctionOperation/deleteVector");
+  WRITE_VECTOR_DELETE("/writeFunctionOperation/deleteVector"),
+  ATTACH_VECTOR_RESOURCE("/vectorResource/upload"),
+  DETACH_VECTOR_RESOURCE("/vectorResource/delete");
 
   static final Set<QueryGrantOperation> QUERY = Set.of(DATA_OVERVIEW, DATA_SCHEMA, DATA_DSL_REFERENCE,
       DATA_QUERY, DATA_DISTINCT, METRIC_RECALL, METRIC_SEARCH, METRIC_DESCRIBE, METRIC_FORM,

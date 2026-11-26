@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /** Java interprets business output; all Python processes belong to the runtime. */
@@ -15,6 +16,10 @@ import org.springframework.stereotype.Service;
 public class PythonExecuteServiceImpl implements PythonExecuteService {
   private final RuntimeCodeClient runtime;
   private final QueryGrantService grants;
+  @Value("${WORKBENCH_INTERNAL_URL:}")
+  private String workbenchInternalUrl;
+  @Value("${ONTOPRAXIS_BASE_URL:}")
+  private String praxisBaseUrl;
 
   public PythonExecuteServiceImpl(RuntimeCodeClient runtime, QueryGrantService grants) {
     this.runtime = runtime;
@@ -77,10 +82,20 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
                   com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
     Map<String, String> values = new java.util.HashMap<>();
     values.put("ONTOMATO_ONTOLOGY_URL", runtime.ontologyUrl());
+    if (workbenchInternalUrl != null && !workbenchInternalUrl.isBlank()) {
+      values.put(
+          "ONTOMATO_PRAXIS_URL",
+          workbenchInternalUrl.replaceAll("/+$", "") + "/api/praxis");
+    } else if (praxisBaseUrl != null && !praxisBaseUrl.isBlank()) {
+      values.put("ONTOMATO_PRAXIS_URL", praxisBaseUrl.replaceAll("/+$", ""));
+    }
+    Map<String, String> secrets = new java.util.HashMap<>();
+    if (token != null) secrets.put("ONTOMATO_TK", token);
+    if (authority.callerToken() != null) secrets.put("ONTOMATO_CALLER_TK", authority.callerToken());
     Map<String, Object> request = Map.of(
         "language", "python", "locale", lang == null ? "en" : lang, "files", files, "entry", "program.py", "arguments", List.of(),
         "outputPaths", token == null ? List.of() : List.of("query-status.json"),
-        "environment", Map.of("values", values, "secrets", token == null ? Map.of() : Map.of("ONTOMATO_TK", token)),
+        "environment", Map.of("values", values, "secrets", secrets),
         "libraries", List.of(),
         "limits", Map.of("wallTimeMs", timeout, "cpuSeconds", Math.max(1, timeoutMinutes) * 60));
     boolean settled = false;

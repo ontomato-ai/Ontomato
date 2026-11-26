@@ -60,6 +60,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   private final AuthorizationSubjects subjects = mock(AuthorizationSubjects.class);
   private final AuthorizationStore policy = mock(AuthorizationStore.class);
   private final ActionService actions = mock(ActionService.class);
+  private final ActionAuthorization actionAccess = mock(ActionAuthorization.class);
   private final UserDetail alice = user("alice", "sales");
   private final UserDetail bob = user("bob", "sales");
   private UserCredentials credentials;
@@ -75,7 +76,6 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     credentials = new UserCredentials(jdbc, identity, "test-seal");
     var definitions = new CapabilityDefinitions(new AuthorizationService(subjects, policy,
         new ManagementOperations(List.of(new PlatformTasks.Operations())), null, null), identities);
-    var actionAccess = mock(ActionAuthorization.class);
     when(actionAccess.standalone(any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.ALL);
     var capabilities = new TriggerCapabilities(actions, actionAccess, mock(io.ontomato.dataengine.service.WorkflowService.class), definitions, "http://unused");
     var action = new Action();
@@ -87,9 +87,13 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     date.setName("at");
     date.setType(Parameter.TYPE_TIME);
     var function = new Function();
+    function.setDomainId("sales");
+    function.setOperation(Function.OPERATION_WRITE);
+    function.setCode("# ontomato-python:2\nprint('done')");
     function.setParameters(List.of(date));
     action.setFunction(function);
     when(actions.queryById("a")).thenReturn(action);
+    when(actions.queryList(eq(Action.STATUS_PUBLISHED), isNull(), isNull(), eq("sales"))).thenReturn(List.of(action));
     when(actions.queryList(isNull(), isNull(), isNull(), eq("sales"))).thenReturn(List.of(action));
     for (var member : List.of(alice, bob, user("alice", "another-domain"))) {
       when(identity.creator(member.getDomainId(), member.getId())).thenReturn(member);
@@ -147,6 +151,8 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     var def = TaskDefinition.input(actionInput(), "Asia/Shanghai", false);
     String id = "trigger-post-balances";
     store.insert(id, "sales", "alice", "alice", List.of("bob"), def, null, array(), "en", "PUBLISHED", null, null, false);
+    assertEquals(Set.of(id), store.registeredIds("sales", Set.of(id, "missing-trigger")));
+    assertTrue(store.registeredIds("another-domain", Set.of(id)).isEmpty());
     var runId = UUID.randomUUID();
     var privateResult = "Alice's private result";
     transactions.executeWithoutResult(tx -> store.admit(store.get(id, true), "alice", runId, "manual", null));
@@ -342,6 +348,29 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     assertNull(trigger.pause());
     assertNull(trigger.nextRunAt());
     assertEquals(2, trigger.revision());
+  }
+
+  @Test
+  void actionAdmissionRefusesUngrantableTargetsAndPausesWhenTheGrantIsRevoked() throws Exception {
+    var id = UUID.randomUUID();
+    tasks.create(id, actionInput(), "en", true);
+    var runId = UUID.randomUUID();
+    tasks.manual(id.toString(), runId, "en");
+
+    var denied = new ActionAuthorization.Denied("ACTION_NOT_GRANTED", "No role grants this action");
+    when(actionAccess.standalone(any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.DENIED);
+    when(actionAccess.requireExecution(any(), any(), any(), any())).thenThrow(denied);
+    http.perform(get("/platform/triggers/targets")).andExpect(status().isOk())
+        .andExpect(jsonPath("$.actions").isEmpty());
+    http.perform(post("/platform/triggers/{id}/runs", id).header("Idempotency-Key", UUID.randomUUID()))
+        .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("PERMISSION_DENIED"))
+        .andExpect(jsonPath("$.error.message").value(denied.getMessage()));
+
+    when(actions.executeScheduled(any(), any(), any(), any(), any(), anyInt(), any())).thenThrow(denied);
+    scheduler.dispatch(runId);
+    assertEquals("permission_denied", store.run(runId).error().code());
+    assertEquals(denied.getMessage(), store.run(runId).error().message());
+    assertEquals("permission_denied", store.get(id.toString(), false).pause().code());
   }
 
   @Test

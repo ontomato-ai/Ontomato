@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 
 @Data
 @NoArgsConstructor
-public class UserDetail implements User, UserPermissionable {
+public class UserDetail implements User {
 
     @Schema(description = "User ID")
     private String id;
@@ -23,9 +23,6 @@ public class UserDetail implements User, UserPermissionable {
 
     @Schema(description = "Role")
     private List<String> roles;
-
-    @Schema(description = "Menu permission")
-    private List<String> menuPermissions;
 
     @Schema(description = "API permission")
     private List<String> apiPermissions;

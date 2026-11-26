@@ -129,6 +129,8 @@ function projectionIdsOf(shown: HostedPanelSource, includeCandidates = false): s
 /** What the host hands a panel's instance: where it is, what its address asks for, and where it reports. */
 export interface DirectPanelRun {
   overlayRoot?: HTMLElement;
+  windowOverlayRoot?: HTMLElement;
+  overlayContainer?: () => HTMLElement | null | undefined;
   shown?: () => boolean;
   /** Output names wired by the parent of a placed panel. */
   readonly boundOutputs?: ReadonlySet<string>;
@@ -240,6 +242,9 @@ export type { ProductDefinitionChangedEvent as DefinitionChanged } from "@ontoma
 
 export const panelHostKey: InjectionKey<PanelHostPort> = Symbol("panel-host");
 
+/** The page region a panel's ordinary overlays belong to; whole-window overlays still use the window root. */
+export const panelOverlayContainerKey: InjectionKey<Ref<HTMLElement | null>> = Symbol("panel-overlay-container");
+
 /** The platform's panel host, or nothing where panels cannot be opened. */
 export function usePanelHostPort(): PanelHostPort | null {
   return inject(panelHostKey, null);
@@ -349,22 +354,42 @@ export function newPanelInstanceName(): string {
   return `panel-${++instances}`;
 }
 
-export function createPanelOverlayRoot(instance: string, shown: () => boolean) {
-  const element = document.createElement("div");
-  element.className = "panel-host-overlay-root";
-  element.dataset.panelInstance = instance;
-  element.dataset.panelOverlayRoot = "";
+export function createPanelOverlayRoot(
+  instance: string,
+  shown: () => boolean,
+  container?: () => HTMLElement | null | undefined,
+) {
+  const make = () => {
+    const root = document.createElement("div");
+    root.className = "panel-host-overlay-root";
+    root.dataset.panelInstance = instance;
+    root.dataset.panelOverlayRoot = "";
+    return root;
+  };
+  const windowElement = make();
+  document.body.append(windowElement);
+  const element = container ? make() : windowElement;
+  const stopContainer = container
+    ? watch(() => container() ?? null, (target) => {
+        const next = target ?? document.body;
+        if (element.parentElement !== next) next.append(element);
+      }, { immediate: true, flush: "sync" })
+    : undefined;
   const stop = watch(shown, (visible) => {
-    element.hidden = !visible;
-    element.style.display = visible ? "" : "none";
-    element.inert = !visible;
+    for (const root of new Set([element, windowElement])) {
+      root.hidden = !visible;
+      root.style.display = visible ? "" : "none";
+      root.inert = !visible;
+    }
   }, { immediate: true, flush: "sync" });
-  document.body.append(element);
   return {
     element,
+    windowElement,
     dispose() {
       stop();
+      stopContainer?.();
       element.remove();
+      if (windowElement !== element) windowElement.remove();
     },
   };
 }
@@ -422,6 +447,8 @@ export interface PanelInstanceOptions {
   confirmLeaveUnsaved?: DirectPanelRun["confirmLeaveUnsaved"];
   /** Current signed-in user's public display info. */
   currentUser?: DirectPanelRun["currentUser"];
+  /** The page region this instance's ordinary overlays belong to. */
+  overlayContainer?: () => HTMLElement | null | undefined;
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -615,11 +642,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (!replaceDirect(next, deepLinkInitial, effectiveAddress)) return;
     const { element, template, css } = codedPanelTarget(next.panel.content.html);
     adoptStyle(css);
-    const overlay = createPanelOverlayRoot(instance, shownToReader);
+    const overlay = createPanelOverlayRoot(instance, shownToReader, options.overlayContainer);
     dropOverlay = overlay.dispose;
     let mount: DirectPanelMount;
     try {
-      mount = await port.coded(next, directRun(next, mergedInitial, overlay.element), { element, template });
+      mount = await port.coded(next, directRun(next, mergedInitial, overlay), { element, template });
     } catch (failure) {
       overlay.dispose();
       if (!active || source.value !== next) return;
@@ -680,9 +707,14 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /** What an instance in this document reports to its host, as a frame would in its messages. */
-  function directRun(next: HostedPanelSource, requested: PanelHostState, overlayRoot: HTMLElement): DirectPanelRun {
+  function directRun(
+    next: HostedPanelSource,
+    requested: PanelHostState,
+    overlay: Pick<ReturnType<typeof createPanelOverlayRoot>, "element" | "windowElement">,
+  ): DirectPanelRun {
     return {
-      overlayRoot,
+      overlayRoot: overlay.element,
+      windowOverlayRoot: overlay.windowElement,
       shown: shownToReader,
       pageKey: port.pageKey,
       url: () => address.value,
@@ -698,6 +730,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
       ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
       ...(options.currentUser ? { currentUser: options.currentUser } : {}),
+      ...(options.overlayContainer ? { overlayContainer: options.overlayContainer } : {}),
     };
   }
 

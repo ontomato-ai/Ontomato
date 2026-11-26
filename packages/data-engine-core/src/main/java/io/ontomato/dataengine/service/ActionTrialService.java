@@ -50,6 +50,13 @@ public class ActionTrialService {
 
   public JSONObject trialSavedAction(String actionId, JSONObject sampleInput, JSONObject parameterValues,
       String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+    return trialSavedAction(actionId, sampleInput, parameterValues, lang, user, permission,
+        timeoutMinutes, null);
+  }
+
+  public JSONObject trialSavedAction(String actionId, JSONObject sampleInput, JSONObject parameterValues,
+      String lang, User user, UserDataPermission permission, int timeoutMinutes, String callerToken)
+      throws Exception {
     if (actionId == null || actionId.isBlank()) throw invalid("id: expected a nonempty action id");
     String domain = user.getDomainId();
     Action action = actions.queryById(actionId);
@@ -116,7 +123,8 @@ public class ActionTrialService {
       var sandboxTarget = ExecutionTarget.actionTrial(sandboxId, sampleClasses, expiresAt);
       var admission = authorization.requireExecution(subject, action,
           new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone(), sandboxTarget);
-      var result = execute(trialId, action, bound, params, lang, user, permission, timeoutMinutes, sandboxTarget, admission);
+      var result = execute(trialId, action, bound, params, lang, user, permission, timeoutMinutes,
+          sandboxTarget, admission, callerToken);
       var trial = trials.record(trialId, domain, action.getId(), digest, result, user.getId());
       String status = trials.statusCode(trial);
       return JSONObject.of("trialId", trial.id(), "actionId", actionId, "digest", digest,
@@ -136,7 +144,7 @@ public class ActionTrialService {
 
   private PythonExecuteResult execute(String trialId, Action action, Function function, JSONObject params,
       String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target,
-      CapabilityGrantLookup.Admission admission) throws Exception {
+      CapabilityGrantLookup.Admission admission, String callerToken) throws Exception {
     long started = System.currentTimeMillis();
     try {
       if (action.getTarget() != null) {
@@ -154,7 +162,8 @@ public class ActionTrialService {
       var grant = ActionRuntimeGrant.capture(action, user, params,
           new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone());
       Object[] execution = programs.execute(trialId, function, user.getId(), permission, target.sandboxId(),
-          lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, snapshot, target, grant));
+          lang, timeoutMinutes, user.getDomainId(),
+          new ABCProgramService.ExecutionContext(null, snapshot, target, grant, callerToken));
       PythonExecuteResult result = (PythonExecuteResult) execution[1];
       if (ActionTrialStore.passed(result)) {
         if (execution[0] != null)

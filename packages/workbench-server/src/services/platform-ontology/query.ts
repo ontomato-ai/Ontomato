@@ -18,7 +18,6 @@ import type {
   PlatformOntologyTypeCount,
 } from "@ontomato/contracts/platform-ontology";
 import { matchesObjectType, objectUnionTypes, panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
-import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import {
   platformObjectTypes,
   type PlatformRelationKindDeclaration,
@@ -309,16 +308,21 @@ function extractPanelContainedIds(
   return { projectionIds, panelIds };
 }
 
-async function readDomainSharedProductIds(readers: PlatformOntologyOwnerReaders): Promise<ReadonlySet<string>> {
-  const res = await readers.domainProductGrants();
-  if (!res.ok) return new Set();
-  const ids = new Set<string>();
-  for (const grant of res.data) {
-    if (grant.principalKind === "domain" && grant.principalId === "*" && grant.verb === "use") {
-      ids.add(grant.resourceId);
-    }
+async function readDomainSharedProductIds(
+  readers: PlatformOntologyOwnerReaders,
+  kind: "AGENT" | "PANEL" | "APPLICATION",
+): Promise<ReadonlySet<string>> {
+  const facts = await readers.authorizationGraphFacts();
+  if (!facts.ok) return new Set();
+  const { domainPolicyId, entries, policyGrants } = facts.data;
+  const shared = policyGrants.filter(grant => grant.policyId === domainPolicyId);
+  if (kind === "APPLICATION") {
+    const openEntries = new Set(shared.filter(grant => grant.targetKind === "ENTRY" && grant.verb === "ENTER")
+      .map(grant => grant.targetKey));
+    return new Set(entries.filter(entry => openEntries.has(entry.id)).map(entry => entry.applicationId));
   }
-  return ids;
+  return new Set(shared.filter(grant => grant.targetKind === kind && grant.verb === "USE")
+    .map(grant => grant.targetKey));
 }
 
 function withDomainSharedDetail(
@@ -754,7 +758,7 @@ async function readObjectsOfType(
       const res = await readers.agentDefinitions();
       if (!res.ok) return res;
       const sharedIds = includeDomainShared && res.data.length > 0
-        ? await readDomainSharedProductIds(readers)
+        ? await readDomainSharedProductIds(readers, "AGENT")
         : new Set<string>();
       return {
         ok: true,
@@ -801,7 +805,7 @@ async function readObjectsOfType(
       const res = await readers.productPanels();
       if (!res.ok) return res;
       const sharedIds = includeDomainShared && res.data.length > 0
-        ? await readDomainSharedProductIds(readers)
+        ? await readDomainSharedProductIds(readers, "PANEL")
         : new Set<string>();
       return {
         ok: true,
@@ -824,7 +828,7 @@ async function readObjectsOfType(
       const res = await readers.applications();
       if (!res.ok) return res;
       const sharedIds = includeDomainShared && res.data.length > 0
-        ? await readDomainSharedProductIds(readers)
+        ? await readDomainSharedProductIds(readers, "APPLICATION")
         : new Set<string>();
       return {
         ok: true,

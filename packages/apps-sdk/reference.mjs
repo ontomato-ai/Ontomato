@@ -58,21 +58,25 @@ function eventDescriptions(file) {
  */
 function portsOf(meta, file) {
   const events = eventDescriptions(file);
+  const declaredProps = meta.props.filter((prop) => !prop.global).map((prop) => ({
+    name: prop.name,
+    type: plain(propType(prop)),
+    required: prop.required,
+    ...(prop.default === undefined ? {} : { default: plain(prop.default) }),
+    description: plain(prop.description),
+  }));
   return {
-    props: meta.props.filter((prop) => !prop.global).map((prop) => ({
-      name: kebab(prop.name),
-      type: plain(propType(prop)),
-      required: prop.required,
-      ...(prop.default === undefined ? {} : { default: plain(prop.default) }),
-      description: plain(prop.description),
-    })),
-    events: meta.events.map((event) => ({ name: kebab(event.name), type: plain(event.type), description: plain(events.get(event.name)) })),
-    slots: meta.slots.map((slot) => ({ name: slot.name, type: plain(slot.type), description: plain(slot.description) })),
+    declaredProps,
+    ports: {
+      props: declaredProps.map((prop) => ({ ...prop, name: kebab(prop.name) })),
+      events: meta.events.map((event) => ({ name: kebab(event.name), type: plain(event.type), description: plain(events.get(event.name)) })),
+      slots: meta.slots.map((slot) => ({ name: slot.name, type: plain(slot.type), description: plain(slot.description) })),
+    },
   };
 }
 
 function component(meta, file, lines) {
-  const ports = portsOf(meta, file);
+  const { ports } = portsOf(meta, file);
   table(lines, ["Prop", "Type", "Required", "Default", "Description"], ports.props.map((prop) => [
     `\`${prop.name}\``, `\`${cell(prop.type)}\``, prop.required ? "yes" : "no", prop.default === undefined ? "" : `\`${cell(prop.default)}\``, cell(prop.description),
   ]));
@@ -85,7 +89,7 @@ function component(meta, file, lines) {
 }
 
 /**
- * Each public component's ports, by `<module>#<export>` as the catalogue names it: what a component directory shows
+ * Each public component's declared props and template ports, by `<module>#<export>` as the catalogue names it: what a component directory shows
  * beside the component's meaning, read from the same source as the reference.
  */
 export function componentPorts({ root, tsconfig, entries }) {
@@ -354,7 +358,7 @@ export function baseComponentIds(source) {
 
 /**
  * Resolves a component's author-facing `config` prop entries strictly from its declared `metadata.configProps` list.
- * Each declared name (camelCase or kebab-case) must match an actual Vue prop of the component and appear at most once;
+ * Each declared name must match the Vue prop's source name and appear at most once;
  * undeclared props (host-only inputs, platform-fixed styles, single-page knobs) are never emitted to author-facing docs.
  */
 export function resolveDeclaredConfig(metadata, declaredProps, { requireDeclaration = false, defaultToAll = false } = {}) {
@@ -369,11 +373,7 @@ export function resolveDeclaredConfig(metadata, declaredProps, { requireDeclarat
   if (!Array.isArray(metadata.configProps)) {
     throw new Error(`Catalogue component '${metadata.componentId}' declared a non-array \`configProps\``);
   }
-  const byName = new Map();
-  for (const prop of declaredProps) {
-    byName.set(prop.name, prop);
-    byName.set(prop.name.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase()), prop);
-  }
+  const byName = new Map(declaredProps.map((prop) => [prop.name, prop]));
   const resolved = [];
   const seen = new Set();
   for (const rawName of metadata.configProps) {
@@ -432,12 +432,10 @@ export function componentPageMarkdown(version, component, typeDefinitions = new 
   if (component.config?.length) {
     lines.push("Configuration (the projection's `config`):", "");
     const referencedTypes = new Set();
-    // A projection's config names each property as the component's source does, in camelCase.
     for (const prop of component.config) {
-      const name = prop.name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
       const fallback = prop.default !== undefined && prop.default !== "undefined" ? `, default ${prop.default}` : "";
       const printedType = prop.type.replace(/ \| undefined$/, "");
-      lines.push(`- \`${name}\` (${printedType}${prop.required ? ", required" : ""}${fallback}): ${prop.description || "—"}`);
+      lines.push(`- \`${prop.name}\` (${printedType}${prop.required ? ", required" : ""}${fallback}): ${prop.description || "—"}`);
       for (const match of printedType.matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/gu)) {
         if (typeDefinitions.has(match[1])) referencedTypes.add(match[1]);
       }

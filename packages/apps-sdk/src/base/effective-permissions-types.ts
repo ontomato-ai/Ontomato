@@ -1,8 +1,3 @@
-export interface EffectivePermissionMenuGroup {
-  readonly name?: string;
-  readonly items: readonly string[];
-}
-
 export interface EffectivePermissionOrgRoleGrant {
   readonly role: string;
   readonly recipient?: string;
@@ -31,14 +26,11 @@ export interface EffectivePermissionOrgShareItem {
   readonly roles: readonly EffectivePermissionShareRole[];
 }
 
-export interface EffectivePermissionApiItem {
-  readonly key: string;
-  readonly method?: string;
-  readonly urlPattern?: string;
-  readonly apiName?: string;
-  readonly permission?: string;
-  readonly module?: string;
-  readonly label: string;
+export interface EffectiveManagementOperationItem {
+  key: string;
+  label: string;
+  access?: string;
+  operationId?: string;
 }
 
 export interface EffectivePermissionDataRow {

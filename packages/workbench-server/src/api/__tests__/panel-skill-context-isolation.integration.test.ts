@@ -100,8 +100,7 @@ beforeAll(async () => {
   await ensureAssistantSchema(state.pool);
   await ensureAgentExecutionSchema(state.pool);
 
-  const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
-  installWorkbenchIdentity({ requireDomainId: () => domainId, requirePermission } as unknown as WorkbenchIdentity);
+  installWorkbenchIdentity({ requireDomainId: () => domainId } as unknown as WorkbenchIdentity);
   const { default: assistantRouter } = await import("../routes/assistant");
   const { assistantExecutionRouter } = await import("../routes/assistant-execution");
   const { unwrapCallbackCredential } = await import("../../services/agent-runtime/callback-credential");

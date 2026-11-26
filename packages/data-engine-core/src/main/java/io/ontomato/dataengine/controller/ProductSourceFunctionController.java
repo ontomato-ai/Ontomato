@@ -1,11 +1,14 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 public class ProductSourceFunctionController {
     public static final String PATH="/ontology/products/service/source-function";
     private final WorkbenchServiceAuthentication authentication;

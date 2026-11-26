@@ -29,6 +29,7 @@
         "id": "browser-data",
         "pageKey": "browser-data",
         "panelId": "builtin-product-data-browser",
+        "defaultAgent": { "kind": "preset", "agentKind": "regular" },
         "path": "/browser/data",
         "icon": "objects",
         "names": {
@@ -50,6 +51,7 @@
         "id": "browser-object-detail",
         "pageKey": "browser-object-detail",
         "panelId": "builtin-product-object-detail",
+        "defaultAgent": { "kind": "preset", "agentKind": "regular" },
         "path": "/browser/views"
       }
     ]

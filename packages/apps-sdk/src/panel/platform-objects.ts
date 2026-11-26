@@ -24,7 +24,7 @@ import type {
 
 /*
  * How the SDK reads and writes one platform object type (overall design 3.2): a projection binds
- * `PlatformObjectType:platform:ScheduledTask`, and this registry says what reading one, listing them, reading the owner's
+ * `PlatformObjectType:platform:Function`, and this registry says what reading one, listing them, reading the owner's
  * form for one and saving it mean for that type. It sits beside the handler registry and for the same reason: a component
  * is generic, and the type it is bound to decides which client answers.
  *

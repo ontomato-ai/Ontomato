@@ -412,7 +412,7 @@ function readAdapters(
       createForm: (_selection, params) => governance.users.createForm(formParams(params)),
       effectivePermissions: selection => governance.users.effectivePermissions(selection.primaryKey!),
       effectiveOrgShares: selection => governance.users.effectiveOrgShares(selection.primaryKey!),
-      effectiveApiPermissions: selection => governance.users.effectiveApiPermissions(selection.primaryKey!),
+      effectiveManagementOperations: selection => governance.users.effectiveManagementOperations(selection.primaryKey!),
       effectiveSubjectDataPermissions: selection => governance.users.effectiveDataPermissions(selection.primaryKey!, "subject"),
       effectiveManagedDataPermissions: selection => governance.users.effectiveDataPermissions(selection.primaryKey!, "managed"),
       effectiveDataPermissions: selection => governance.users.effectiveDataPermissions(selection.primaryKey!, "effective"),

@@ -13,6 +13,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.DependsOn;
@@ -144,6 +145,12 @@ public class TaskStore {
         SELECT t.* FROM trigger_def t WHERE t.domain_id=? AND (?::text IS NULL OR t.app_id=?)
         AND (?::text IS NULL OR t.target_kind=?) AND (?::text IS NULL OR t.status=?)
         """, TaskStore::task, domain, app, app, kind, kind, status, status);
+  }
+
+  public Set<String> registeredIds(String domain, Set<String> ids) {
+    return Set.copyOf(new NamedParameterJdbcTemplate(db).queryForList(
+        "SELECT id FROM trigger_def WHERE domain_id=:domain AND id IN (:ids)",
+        Map.of("domain", domain, "ids", ids), String.class));
   }
 
   public long creatorCount(String domain, String creator, String app) {

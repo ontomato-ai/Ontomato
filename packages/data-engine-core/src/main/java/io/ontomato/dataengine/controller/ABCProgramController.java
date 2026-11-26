@@ -1,5 +1,11 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+
+import org.springframework.stereotype.Component;
+
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +32,17 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class ABCProgramController {
+
+    @Component
+    static final class Operations implements ManagementOperations.Contributor {
+        static final String EXECUTE = "programs.execute";
+        @Override
+        public java.util.List<ManagementOperations.Operation> managementOperations() {
+            return java.util.List.of(
+                    new ManagementOperations.Operation(EXECUTE, "Execute a data program", ManagementOperations.Access.READ));
+        }
+    }
+
 	
 	@Autowired
     private IdentityService identityService;
@@ -36,6 +53,7 @@ public class ABCProgramController {
 	@Autowired
 	private BusinessConfigService businessConfigService;
 
+	@ManagementEndpoint(Operations.EXECUTE)
 	@PostMapping("/abcProgram/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {

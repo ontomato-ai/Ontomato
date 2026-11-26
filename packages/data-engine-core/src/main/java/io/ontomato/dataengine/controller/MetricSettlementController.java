@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.MetricSettlementService;
@@ -16,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 /** The built-in workbench adopts a dataset only under its current user's authority. */
 @RestController
+@Owned
 public class MetricSettlementController {
   private final WorkbenchServiceAuthentication workbench;
   private final QueryAccessService authorization;

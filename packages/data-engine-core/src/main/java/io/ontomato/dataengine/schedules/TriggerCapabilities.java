@@ -11,8 +11,10 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.ExecutionTarget;
+import io.ontomato.dataengine.service.PythonProgramProtocol;
 import io.ontomato.dataengine.service.WorkflowService;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
 import java.net.URI;
@@ -53,12 +55,16 @@ class TriggerCapabilities {
     return new ScheduleException(403, "PERMISSION_DENIED", "The member cannot use the trigger target");
   }
 
-  Action action(TaskDefinition definition, String domain) {
+  private Action action(TaskDefinition definition, String domain, String locale) {
     var action = actions.queryById(definition.targetId());
     if (action == null || !domain.equals(action.getDomainId()) || !Action.STATUS_PUBLISHED.equals(action.getStatus()))
       throw missing();
+    var function = action.getFunction();
+    if (function == null || !domain.equals(function.getDomainId())) throw missing();
+    String unavailable = PythonProgramProtocol.unavailableReason(function.getCode(), locale);
+    if (unavailable != null) throw new ScheduleException(422, "TARGET_UNAVAILABLE", unavailable);
     for (var name : definition.content().path("runStartParameters")) {
-      if (action.getFunction().getParameters().stream().noneMatch(parameter ->
+      if (function.getParameters().stream().noneMatch(parameter ->
           name.asText().equals(parameter.getName()) && Parameter.TYPE_TIME.equals(parameter.getType())))
         throw new ScheduleException(422, "TARGET_UNAVAILABLE", "Not a scalar date parameter: " + name.asText());
     }
@@ -71,19 +77,23 @@ class TriggerCapabilities {
     return workflow;
   }
 
-  void verifyTarget(TaskDefinition definition, String domain) {
+  void verifyTarget(TaskDefinition definition, String domain, String locale) {
     switch (definition.targetKind()) {
-      case "action" -> action(definition, domain);
+      case "action" -> action(definition, domain, locale);
       case "workflow" -> workflow(definition, domain);
       default -> throw new IllegalArgumentException("Not a native trigger target");
     }
   }
 
-  void authorize(TaskDefinition definition, User user) {
+  void authorize(TaskDefinition definition, User user, String locale) {
     var subject = definitions.subject(user);
     if ("action".equals(definition.targetKind())) {
-      if (!actionAccess.standalone(subject, action(definition, user.getDomainId()), ExecutionTarget.LIVE).admitted())
-        throw denied();
+      try {
+        actionAccess.requireExecution(subject, action(definition, user.getDomainId(), locale),
+            new Standalone(), ExecutionTarget.LIVE);
+      } catch (ActionAuthorization.Denied refused) {
+        throw new ScheduleException(403, "PERMISSION_DENIED", refused.getMessage());
+      }
     } else if (!definitions.allows(subject, access(workflow(definition, user.getDomainId()), Verb.USE))) {
       throw denied();
     }
@@ -123,7 +133,7 @@ class TriggerCapabilities {
   JsonNode start(ScheduleApplication.Execution execution, ScheduleApplication.Actor actor) throws Exception {
     var definition = execution.definition();
     if ("action".equals(definition.targetKind())) {
-      var action = action(definition, execution.domainId());
+      var action = action(definition, execution.domainId(), execution.locale());
       var started = java.time.Instant.now().toString();
       var parameters = com.alibaba.fastjson2.JSON.parseObject(definition.content().get("parameters").toString());
       definition.content().path("runStartParameters").forEach(name -> parameters.put(name.asText(), started));
@@ -135,7 +145,7 @@ class TriggerCapabilities {
       state.set("executionDetails", object("parameters", parameters, "executionAt", started, "executionId", execution.runId()));
       return state;
     }
-    authorize(definition, actor.user());
+    authorize(definition, actor.user(), execution.locale());
     var response = http.send(praxisRunRequest(execution, actor), HttpResponse.BodyHandlers.ofString());
     var body = parse(response.body());
     if (response.statusCode() == 401)

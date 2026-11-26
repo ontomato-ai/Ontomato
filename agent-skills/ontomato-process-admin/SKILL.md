@@ -1,6 +1,6 @@
 ---
 name: ontomato-process-admin
-description: 以域管理员身份在 Ontomato 上把公司业务流程固化下来：组织架构、成员、岗位、角色与角色的 API/菜单/数据权限、组织授权、Action、Workflow 与 runContract、任务触发、激活授权和可用性验收。用于「建组织/角色/权限」「把这条公司流程固化」「发布流程并授权」「新建任务触发」这类任务。
+description: 以域管理员身份在 Ontomato 上把公司业务流程固化下来：组织架构、成员、岗位、角色与角色的管理操作、入口、对象和数据权限、组织授权、Action、Workflow 与 runContract、任务触发、激活授权和可用性验收。用于「建组织/角色/权限」「把这条公司流程固化」「发布流程并授权」「新建任务触发」这类任务。
 ---
 
 # Ontomato 固定业务流程管理
@@ -47,16 +47,16 @@ Ontomato 负责定义、发布和授权能力；Ontopraxis 把生效的 Workflow
   └── 岗位（sys_role_post_rlt）
 
 岗位（sys_post）
-  ├── API 权限（sys_post_api_rlt）
-  ├── 菜单权限（sys_post_menu_rlt）
+  ├── 管理操作（接口策略，分查看和更改）
+  ├── 具体入口与对象授权（对象策略）
   └── 数据权限（sys_data_permission：行/字段）
 ```
 
 要点：
 
-- **角色不直接持有 API/菜单权限**。角色持有岗位，岗位持有权限；用户通过“有效角色 → 岗位 → 权限”获得能力。
+- 角色关联权限策略，用户通过有效角色获得策略里的管理操作、入口和对象授权。
 - **组织授权是“把角色授予某个组织范围”**，不是把权限授予人。它决定谁在哪些组织里“有效持有”这些角色。
-- **岗位有两种**：`postType=1` 是 API/菜单管理岗，`postType=2` 是数据岗（`fullData=1` 表示全部数据权限）。域创建时平台会建一个管理员 API 岗和一个全量数据岗。
+- **权限策略有两种**。 `postType=1` 是接口策略，授予管理操作。 `postType=2` 是对象策略，包含具体入口、对象和行列权限（`fullData=1` 表示全部业务数据权限）。管理员角色按发行规则固定拥有全部管理操作。
 - **角色 `roleType`**：`1` 是管理角色（域创建时的 `admin`），普通业务角色用 `0`。不要随手建管理角色。
 - **一个域只有一棵组织树**（`Each domain can maintain only one organization tree!`），第一个单位是根，其余必须挂在根下面。
 - **单位 `code` 缺省时由平台生成 `org-<uuid>`**；`unit/save` 会忽略传入的 `code`（实测），不要依赖自造 code。
@@ -134,8 +134,7 @@ node client.mjs org-tree        # 单位/岗位/成员/组织授权快照
 node client.mjs roles           # roleName 就是流程步骤的 roleCode
 node client.mjs subjects        # 域内主体及其有效角色
 node client.mjs posts           # 岗位
-node client.mjs api-list        # 全部 API 权限项
-node client.mjs menu-list       # 全部菜单权限项
+node client.mjs management-catalog  # 属主登记的管理操作
 ```
 
 ### 3.2 建组织单位
@@ -173,7 +172,7 @@ node client.mjs post-save '{
 }'
 ```
 
-- `postType=1`：API/菜单管理岗；`postType=2`：数据岗。
+- `postType=1` 是接口策略，`postType=2` 是对象策略。
 - `fullData=1`：全部数据权限；否则用数据权限项逐类配置。
 - 岗位建好后，才能给角色挂岗位、给岗位配权限。
 
@@ -204,13 +203,12 @@ node client.mjs role-posts <roleId> <postId1,postId2>
 ### 3.7 配岗位权限
 
 ```bash
-# 看/替换岗位 API 权限
-node client.mjs post-api <postId>
-node client.mjs post-api <postId> <apiId1,apiId2>
+# 查看/替换策略的管理操作
+node client.mjs post-management <policyId>
+node client.mjs post-management <policyId> <operationId1,operationId2>
 
-# 看/替换岗位菜单权限
-node client.mjs post-menu <postId>
-node client.mjs post-menu <postId> <menuId1,menuId2>
+# 查看具体入口与对象授权；在权限策略页配置入口与对象
+node client.mjs post-objects <policyId>
 
 # 数据权限：dataType 1=行，2=字段
 node client.mjs post-data <postId>
@@ -223,10 +221,9 @@ node client.mjs data-permission-save '{
 node client.mjs data-permission-delete <dataPermissionId>
 ```
 
-- `api-list` 里每一项的 `id` 是 `post-api` 要的 ID；`permission` 是接口路径/标识。
-- `menu-list` 同理；菜单权限决定侧栏可见项。
+- `management-catalog` 返回管理操作 ID 及查看或更改类型。把所需操作 ID 提交给接口策略。
 - 数据权限的 `permission` 是**字符串化的 JSON**：行权限是 DSL 条件；字段权限是 `{"字段名":0|1|2}`（0 不可见 / 1 可见 / 2 仅分组）。
-- 修改是替换语义：先 `post-api <postId>` 读出全部，再提交完整集合。
+- 修改是替换语义：先 `post-management <policyId>` 读出全部，再提交完整集合。
 
 ### 3.8 组织授权（把角色授予组织范围）
 
@@ -308,6 +305,7 @@ node client.mjs grant-save '{
 - `approvalMode`：`auto | human | twoKeys`。`twoKeys` 目前**没有双人实现**，只被编译成普通 human 步。
 - 创建型 Action 必须 `print(json.dumps({...}, ensure_ascii=False))`，返回 `targetClass` 和 `run_id`（或 `id`）。Praxis 用这两个字段自动绑定新业务对象；只返回 `{"completed":true}` 会导致后续 `$business.*` 派单和审批跑 ID 全部断链。
 - `function.parameters` 中声明的每个参数都是必填，脚本里的 `or 默认值` 不会让参数契约变成可选。人工 `decide` 无法临时补参数，因此页面流程需要由步骤输入预先绑定，或不要声明该参数、让脚本自行生成。
+- Action 需要启动或推进 Praxis 时，用 `query_runtime` 的 `praxis_start_run`、`praxis_get_run`、`praxis_assign_step`、`praxis_decide_step`、`praxis_inbox` 等脚手架，不要手写 `18600` 或自己拼 `/api/praxis`。被指定承办主体是正常业务参数，每个 human step 单独声明字符串参数，并传 `praxis_step_candidates()` 返回的 `principal`（通常是 `loginCode`），不要传任意成员 ID 或 `assignedBy`。平台把当前登录人的 `ONTOMATO_CALLER_TK` 作为独立运行时 secret 注入，并提供 `ONTOMATO_PRAXIS_URL`；不要把 token 声明成 Action 参数、写进业务对象、确认消息、日志或 `print`。沙箱试跑携带的是试跑发起人的真实 token，因此调用 Praxis 可能产生真实外部副作用，重试前先按业务 id 查询已有 Run。
 
 ### 4.1 申请单与任职历史必须分开
 
@@ -593,8 +591,8 @@ node client.mjs trigger-run <triggerId>
 | `roles / role-save` | 角色 |
 | `role-members / role-posts` | 角色成员/岗位 |
 | `posts / post-save` | 岗位 |
-| `api-list / menu-list` | 权限项 |
-| `post-api / post-menu / post-data` | 岗位 API/菜单/数据权限 |
+| `management-catalog` | 属主登记的管理操作 |
+| `post-management / post-objects / post-data` | 管理操作、入口与对象、数据权限 |
 | `data-permission-save / data-permission-delete` | 数据权限 |
 | `actions / action-get / action-save / action-reexplain / action-publish / action-retire` | Action |
 | `wf-save / wf-query / wf-activate / wf-deactivate / wf-delete` | Workflow |
@@ -614,10 +612,10 @@ node client.mjs trigger-run <triggerId>
 2. `unit/save` 忽略传入 `code`，自动生成 `org-<uuid>`；不要拿 code 当业务主键。
 3. 删除单位/岗位/授权有引用检查；先清子项、成员、授权。
 4. `position-save` 必须带 `assigneeIds` 数组；空数组是“清空”，缺字段是错误。
-5. `role-members` / `role-posts` / `post-api` / `post-menu` 底层都是 **replace**；客户端做了并集，手工调接口要自己保全。
+5. `role-members` / `role-posts` / `post-management` 底层都是 **replace**；客户端做了并集，手工调接口要自己保全。
 6. `role-save` 缺 `roleDesc` 会 NPE；客户端已补默认值。
 7. `roleType=1` 是管理角色；普通业务角色用 `0`。
-8. 角色不直接持有 API/菜单权限；权限挂在岗位上。
+8. 角色关联权限策略。管理员角色按发行规则固定拥有全部管理操作。
 9. 数据权限的 `permission` 是字符串化 JSON；行/字段两种 `dataType`。
 10. `Action` 发布后代码冻结；要改新建动作。
 11. `approvalMode=twoKeys` 没有双人实现，只编译成 human。

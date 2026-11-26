@@ -55,6 +55,8 @@ class TriggerExecutionTest {
     action.setDomainId("domain");
     action.setStatus(Action.STATUS_PUBLISHED);
     var function = new Function();
+    function.setDomainId("domain");
+    function.setCode("# ontomato-python:2\nprint('done')");
     function.setParameters(List.of(date("first"), date("second")));
     action.setFunction(function);
     when(actions.queryById("post")).thenReturn(action);
@@ -75,6 +77,27 @@ class TriggerExecutionTest {
     assertNotEquals(execution.scheduledAt(), Instant.parse(started));
     assertEquals("completed", result.path("status").asText());
     assertEquals("published", result.path("result").asText());
+  }
+
+  @Test void actionUsingTheRetiredProtocolIsRefusedBeforeDispatch() throws Exception {
+    var action = new Action();
+    action.setDomainId("domain");
+    action.setStatus(Action.STATUS_PUBLISHED);
+    var function = new Function();
+    function.setDomainId("domain");
+    function.setCode("print('retired')");
+    action.setFunction(function);
+    when(actions.queryById("post")).thenReturn(action);
+    var def = new TaskDefinition("Posting", null, object("parameters", object()), null,
+        object(), "UTC", null, null, "action", "post");
+    var actor = actor("executor", "executor-login");
+    var execution = execution(def, actor, "schedule", Instant.now());
+
+    var refused = assertThrows(ScheduleException.class, () -> capabilities.start(execution, actor));
+    assertEquals("TARGET_UNAVAILABLE", refused.code);
+    assertEquals(io.ontomato.dataengine.service.PythonProgramProtocol.unavailableReason(function.getCode(), "en"),
+        refused.getReason());
+    verify(actions, never()).executeScheduled(any(), any(), any(), any(), any(), anyInt(), any());
   }
 
   @Test void malformedDynamicFieldsAreRefusedBeforeSaving() {

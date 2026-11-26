@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +41,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @RestController
+@Owned
 public class WorkflowController {
 
     private static final String CHANGE = "workflow.lifecycle.change";
@@ -203,6 +207,7 @@ public class WorkflowController {
      * stored value carrying a copy of it. Roles are folded in through the same resolution authorization
      * uses, so a graph drawn from this cannot claim authority the executor would refuse.</p>
      */
+    @ManagementEndpoint(GovernanceDirectoryController.MEMBERS_READ)
     @PostMapping("/workflow/subjects")
     @ResponseBody
     public JSONObject subjects(@RequestBody(required = false) JSONObject param) {
@@ -231,13 +236,8 @@ public class WorkflowController {
         return ret;
     }
 
-    /**
-     * Which roles may perform platform operations here, and which operations.
-     *
-     * <p>Answers "which role may create a workflow" from the same chain the request interceptor
-     * enforces, so the cross-layer graph can draw role-to-workflow authority without claiming a
-     * permission the platform does not actually check.</p>
-     */
+    /** Role directory and platform grants for workflow administration. */
+    @ManagementEndpoint(GovernanceDirectoryController.ROLES_READ)
     @PostMapping("/workflow/platform-access")
     @ResponseBody
     public JSONObject platformAccess(@RequestBody(required = false) JSONObject param) {
@@ -252,9 +252,8 @@ public class WorkflowController {
                 JSONObject item = new JSONObject();
                 item.put("roleId", role.roleId());
                 item.put("roleCode", role.roleCode());
-                item.put("apiPermissions", JSONArray.of(role.apiPermissions().toArray()));
-                // A management role holds every enabled operation by rule, so its listed paths are empty
-                // by design; the flag is what lets a reader know it may still author.
+                item.put("managementOperations", JSONArray.of(role.managementOperations().toArray()));
+                item.put("canCreateWorkflow", role.canCreateWorkflow());
                 item.put("managementRole", role.managementRole());
                 data.add(item);
             }

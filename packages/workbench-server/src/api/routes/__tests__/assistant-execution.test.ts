@@ -289,7 +289,7 @@ it.each([
   ["POST", "ontology/role/saveOrUpdate", "http://ontology.test/role/saveOrUpdate"],
   ["POST", "ontology/organization/unit/save", "http://ontology.test/organization/unit/save"],
   ["POST", "ontology/post/saveOrUpdate", "http://ontology.test/post/saveOrUpdate"],
-  ["GET", "ontology/sysop/refreshApiPermission", "http://ontology.test/sysop/refreshApiPermission"],
+  ["GET", "ontology/platform/governance/policy-configuration/management-catalog", "http://ontology.test/platform/governance/policy-configuration/management-catalog"],
   ["POST", "ontology/action/save", "http://ontology.test/action/save"],
   ["POST", "ontology/action/delete", "http://ontology.test/action/delete"],
   ["POST", "ontology/metricView/save", "http://ontology.test/metricView/save"],

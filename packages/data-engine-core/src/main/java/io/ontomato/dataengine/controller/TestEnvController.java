@@ -1,5 +1,11 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+
+import org.springframework.stereotype.Component;
+
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+
 import java.io.InputStream;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,10 +23,24 @@ import io.ontomato.dataengine.util.SystemUtils;
 
 @RestController
 public class TestEnvController {
+
+    @Component
+    static final class Operations implements ManagementOperations.Contributor {
+        static final String READ = "test-environment.read";
+        static final String CHANGE = "test-environment.change";
+        @Override
+        public java.util.List<ManagementOperations.Operation> managementOperations() {
+            return java.util.List.of(
+                    new ManagementOperations.Operation(READ, "Read test environment status", ManagementOperations.Access.READ),
+                    new ManagementOperations.Operation(CHANGE, "Import test environment definitions and data", ManagementOperations.Access.CHANGE));
+        }
+    }
+
 	
 	@Autowired
 	private EnvService envService;
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@GetMapping("/testEnv/importSchema")
     @ResponseBody
     public JSONObject importSchema() {
@@ -36,6 +56,7 @@ public class TestEnvController {
 		return ret;
 	}
 	
+	@ManagementEndpoint(Operations.READ)
 	@GetMapping("/testEnv/mode")
 	@ResponseBody
 	public JSONObject mode() {
@@ -50,6 +71,7 @@ public class TestEnvController {
 		return ret;
 	}
 
+	@ManagementEndpoint(Operations.CHANGE)
 	@PostMapping("/testEnv/importData")
     @ResponseBody
     public JSONObject importTestData(@RequestParam(value = "file") MultipartFile file) {

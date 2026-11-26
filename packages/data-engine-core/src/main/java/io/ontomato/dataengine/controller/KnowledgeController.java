@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.KnowledgeService;
@@ -9,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 @RequestMapping("/knowledge")
 public class KnowledgeController {
 

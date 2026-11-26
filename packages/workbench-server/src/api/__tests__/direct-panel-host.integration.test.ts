@@ -1235,6 +1235,9 @@ it("rejects an unavailable default agent before accepting a proposed application
   );
   await assistant(governanceId, "knowledge-governance", [anotherDomain]);
   await assistant(randomUUID(), "regular", []);
+  // A page registered to a preset hands that preset the skill; only a user-built agent has to select it first.
+  const builderId = randomUUID();
+  await assistant(builderId, builderId, []);
 
   const proposed = (
     defaultAgent?: { kind: "preset"; agentKind: string } | { kind: "id"; id: string }, useId = "manage", locale?: string,
@@ -1250,7 +1253,10 @@ it("rejects an unavailable default agent before accepting a proposed application
       }),
     });
   const governance = { kind: "preset", agentKind: "knowledge-governance" } as const;
-  const missingSkill = await proposed(governance);
+  expect((await proposed(governance)).status).toBe(204);
+
+  const userAgent = { kind: "id", id: builderId } as const;
+  const missingSkill = await proposed(userAgent);
   expect(missingSkill.status).toBe(409);
   const missingSkillBody = await missingSkill.json();
   expect(missingSkillBody.error).toEqual({
@@ -1260,8 +1266,8 @@ it("rejects an unavailable default agent before accepting a proposed application
   expect(missingSkillBody.details).toEqual({ useId: "manage" });
 
   await state.pool!.query(`UPDATE "${state.schema}".assistant_agents SET skills=$2::jsonb WHERE id=$1`,
-    [governanceId, JSON.stringify([ref])]);
-  expect((await proposed(governance)).status).toBe(204);
+    [builderId, JSON.stringify([ref])]);
+  expect((await proposed(userAgent)).status).toBe(204);
   expect((await proposed({ kind: "preset", agentKind: "regular" })).status).toBe(204);
   expect((await proposed()).status).toBe(204);
 

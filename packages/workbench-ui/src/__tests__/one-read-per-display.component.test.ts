@@ -202,7 +202,7 @@ describe("one display reads a member once", () => {
       data: {
         record: { status: "ready", value: { fields: { directRoles: ["Analyst"] } } },
         orgShares: { status: "empty" },
-        apiPermissions: { status: "empty" },
+        managementOperations: { status: "empty" },
         subjectData: { status: "empty" },
         managedData: { status: "empty" },
         effectiveData: { status: "empty" },
@@ -211,13 +211,13 @@ describe("one display reads a member once", () => {
 
     const wrapper = mountIn(member, EffectivePermissionsView, { record: { fields: { directRoles: ["Analyst"] } } });
     expect(wrapper.text()).toContain("Analyst");
-    expect(reads).toEqual(["orgShares", "apiPermissions", "subjectData", "managedData", "effectiveData"]);
+    expect(reads).toEqual(["orgShares", "managementOperations", "subjectData", "managedData", "effectiveData"]);
 
     reads.length = 0;
     mountIn(member, EffectivePermissionsView, {
       record: { fields: { directRoles: ["Analyst"] } },
       orgShares: [],
-      apiPermissions: [],
+      managementOperations: [],
       subjectData: [],
       managedData: [],
       effectiveData: [],

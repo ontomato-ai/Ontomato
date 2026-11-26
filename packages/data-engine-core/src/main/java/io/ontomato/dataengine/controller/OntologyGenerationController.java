@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
+
 import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.JSON;
@@ -18,6 +20,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 @RequestMapping("/ontology/ai/generation")
 public class OntologyGenerationController {
   @org.springframework.beans.factory.annotation.Autowired

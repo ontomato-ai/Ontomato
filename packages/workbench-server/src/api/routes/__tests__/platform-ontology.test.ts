@@ -57,8 +57,8 @@ beforeEach(async () => {
   });
   vi.mocked(backendPost).mockImplementation(async (_endpoint, url) => ({
     text: JSON.stringify(
-      url.endsWith("/product-governance/domain-grants")
-        ? { grants: [] }
+      url.endsWith("/authorization/policies/graph-facts")
+        ? { rolePolicies: [], domainPolicyId: "default", entries: [], policyGrants: [] }
         : { success: true, data: [] },
     ),
     headers: new Headers(),

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.bean.VectorResource;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.metricView.MetricView;
@@ -395,22 +397,52 @@ class JacksonAgentBoundaryTest {
 
   @Test
   void testContextRefusesBatchVectorUploadsBeforeEitherWriterRuns() throws Exception {
-    var contexts = mock(DataSandboxService.class);
+    var identity = mock(IdentityService.class);
+    var contexts = spy(new DataSandboxService(null, identity, null, null, null, null, null));
     var vectors = mock(VectorResourceService.class);
     var writes = mock(WriteFunctionOperationService.class);
     var controller = new VectorResourceController();
     ReflectionTestUtils.setField(controller, "buildTests", contexts);
+    ReflectionTestUtils.setField(controller, "identity", identity);
     ReflectionTestUtils.setField(controller, "vectorResourceService", vectors);
     ReflectionTestUtils.setField(controller, "writes", writes);
-    when(contexts.resolve(any())).thenReturn(new ExecutionTarget("ctx", "sandbox", List.of("person"), 1L));
-    var response = MockMvcBuilders.standaloneSetup(controller).build()
-        .perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/vectorResource/upload")
-            .param("items", "[{}]"))
-        .andExpect(status().isOk()).andReturn().getResponse();
-    var body = JSON.parseObject(response.getContentAsString());
-    assertFalse(body.getBooleanValue("success"));
-    assertEquals("The test context supports only single-resource uploads.", body.getString("message"));
+    String context = "{\"kind\":\"build-test\",\"contextId\":\"ctx\"}";
+    when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("tester", "domain-a"));
+    doReturn(new ExecutionTarget("ctx", "sandbox", List.of("person"), Long.MAX_VALUE))
+        .when(contexts).require("ctx", "tester", "domain-a");
+    var http = MockMvcBuilders.standaloneSetup(controller)
+        .addFilters(new BuildTestExecutionFilter(contexts))
+        .addInterceptors(new BuildTestAccessInterceptor())
+        .setControllerAdvice(new BaseControllerAdvice())
+        .build();
+
+    http.perform(multipart("/vectorResource/upload")
+            .header(DataSandboxService.HEADER, context).param("items", "[{}]"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.message").value("Only single-resource uploads are supported in a sandbox"));
     verifyNoInteractions(vectors, writes);
+
+    var saved = new VectorResource();
+    saved.setPath("sandbox/path.txt");
+    when(writes.appendVectorAndReturn("person", "note", "p1", "text", null, "txt", "sandbox", "domain-a"))
+        .thenReturn(saved);
+    http.perform(multipart("/vectorResource/upload").header(DataSandboxService.HEADER, context)
+            .param("className", "person").param("attrName", "note").param("objectId", "p1")
+            .param("content", "text").param("suffix", "txt"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.path").value("sandbox/path.txt"));
+    http.perform(post("/vectorResource/delete").header(DataSandboxService.HEADER, context)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"className":"person","attrName":"note","objectId":"p1","path":"sandbox/path.txt"}
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+    verify(writes).appendVectorAndReturn("person", "note", "p1", "text", null, "txt", "sandbox", "domain-a");
+    verify(writes).deleteVector("person", "note", "p1", "path.txt", "sandbox", "domain-a");
+    verifyNoInteractions(vectors);
   }
 
   @Test

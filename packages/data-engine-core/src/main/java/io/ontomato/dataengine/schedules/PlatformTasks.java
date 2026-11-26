@@ -61,6 +61,7 @@ public class PlatformTasks {
     var user = identities.getCurrentUser();
     if (user == null || user.getId() == null || user.getDomainId() == null || !user.isEnable())
       throw new ScheduleException(401, "UNAUTHENTICATED", "A current domain user is required");
+    identities.getCurrentCredentialExpiresAt();
     return user;
   }
 
@@ -248,8 +249,8 @@ public class PlatformTasks {
     var member = executor(editor, effectiveExecutor);
     boolean self = member.getId().equals(editor.getId());
     if (!definition.application()) {
-      if (publish) capabilities.authorize(definition, member);
-      else capabilities.verifyTarget(definition, editor.getDomainId());
+      if (publish) capabilities.authorize(definition, member, locale);
+      else capabilities.verifyTarget(definition, editor.getDomainId(), locale);
       boolean needsKey = publish && "workflow".equals(definition.targetKind());
       if (needsKey && self) credentials.prepareForSetup(editor);
       return new Prepared(definition, array(), needsKey && !self && !credentials.hasValidKey(member.getDomainId(), member.getId()));

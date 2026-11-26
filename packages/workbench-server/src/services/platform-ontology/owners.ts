@@ -2,10 +2,6 @@ import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
 import { z } from "zod";
 import {
-  domainProductGrantsResponseSchema,
-  type DomainProductGrantEntry,
-} from "@ontomato/contracts/product-governance";
-import {
   builtinProductPanelInputSchema,
   builtinProductProjectionInputSchema,
   productPanelInputSchema,
@@ -766,13 +762,6 @@ export class PlatformOntologyOwnerReaders {
         const className = asString(row.className);
         return policyId && className ? [{ policyId, className }] : [];
       });
-    });
-  }
-
-  domainProductGrants(): Promise<OwnerReadResult<DomainProductGrantEntry[]>> {
-    return this.memo("java:/product-governance/domain-grants", async () => {
-      const raw = await this.postDataEngine("/product-governance/domain-grants", {});
-      return domainProductGrantsResponseSchema.parse(raw).grants;
     });
   }
 

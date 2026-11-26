@@ -44,7 +44,7 @@ structure, allowed imports, CSS/UI guardrails, and bindings automatically):
 
 ```text
 sdk current                              # current SDK release info
-sdk read docs/components.md              # grouped overview of panel-usable components (a few KB)
+sdk read docs/components.md              # grouped overview: one line per panel-usable component
 sdk read docs/components/<Name>.md       # one component's full data, config, slots, and events
 panel type <id> [--read <name>]          # object type reads, parameters, resultSchema, and operations
 panel projections [--component <id>] [--object-type <typeId>] [--q <text>]  # find reusable projections
@@ -115,3 +115,7 @@ machine checks cannot enforce:
 
 When the platform supplies `application-design`, read it before designing or polishing a panel. For delegated retrieval,
 use the product's analyst skill and follow [agent delegation](GUIDE.md#agent-delegation).
+
+When an Action starts or advances a workflow, use the `query_runtime` `praxis_*` scaffold with the
+platform-provided `ONTOMATO_PRAXIS_URL` and `ONTOMATO_CALLER_TK`. Never declare the caller token as an
+Action parameter, print it, or expose it through a panel.

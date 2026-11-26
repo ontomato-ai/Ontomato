@@ -20,17 +20,13 @@ import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
-import { ensureAssistantPresetUpgradesSchema } from "../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
 import {
   GOVERNANCE_KIND,
-  GOVERNANCE_PANEL_ID,
-  GOVERNANCE_PRESET_VERSION,
   GOVERNANCE_SKILL,
   GOVERNANCE_SKILLS,
 } from "../../services/assistant/governance-definition";
 import { initializeDomainPresetAgents, initializeExistingDomainPresetAgents } from "../../services/assistant/preset-initialization";
 import { assistantStore } from "../../services/assistant/store";
-import { panelSkillRef } from "../../services/product-panels/skill-identity";
 import { errorHandler } from "../middleware/error-handler";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
@@ -64,7 +60,7 @@ const publications: { domainId: string; ids: string[] }[] = [];
 const registrations: { domainId: string; id: string }[] = [];
 let failRegistrationFor: string | undefined;
 const startupDomain = "domain-enumerated-by-java";
-const presetKinds = ["regular", "analysis", GOVERNANCE_KIND].sort();
+const presetKinds = ["regular", "analysis", GOVERNANCE_KIND, "modeling", "product-layer", "admin"].sort();
 
 function initializeViaService(domainId: string, token?: string) {
   return fetch(`${state.base}/internal/assistant/domains/${domainId}/initialize-presets`, {
@@ -100,7 +96,7 @@ function exposeBusinessKnowledgeEntry(domainId: string) {
   panelSourcesByDomain.set(domainId, [{
     applicationId: "ontology",
     useId: "business-knowledge",
-    panelId: GOVERNANCE_PANEL_ID,
+    panelId: "builtin-product-business-knowledge",
     path: "/ontology/knowledge",
     entrance: { applicationId: "ontology", entryKey: "business-knowledge", pageKey: "business-knowledge" },
   }]);
@@ -114,14 +110,6 @@ async function storedGovernanceRow(domainId: string) {
   return result.rows[0] ?? null;
 }
 
-async function upgradeRecordCount(domainId: string) {
-  const result = await state.pool!.query(
-    `SELECT 1 FROM "${state.schema}".assistant_preset_upgrades WHERE domain_id=$1 AND kind=$2 AND version=$3`,
-    [domainId, GOVERNANCE_KIND, GOVERNANCE_PRESET_VERSION],
-  );
-  return result.rowCount ?? 0;
-}
-
 async function expectReadOnlyAgentLists(domainId: string) {
   const owner = { domainId, userId: "admin" };
   const readAgents = () => state.pool!.query(
@@ -130,7 +118,6 @@ async function expectReadOnlyAgentLists(domainId: string) {
   const { rows } = await readAgents();
   const definitionIds = rows.filter(row => row.kind !== "app-builder" && row.kind !== "ops-diagnosis").map(row => row.id).sort();
   const chatAgentIds = rows.map(row => row.id);
-  const upgrades = await upgradeRecordCount(domainId);
 
   expect((await assistantStore.agents(domainId)).map(agent => agent.id).sort()).toEqual(definitionIds);
   expect((await assistantStore.channelAgents(domainId)).map(agent => agent.id).sort()).toEqual(rows.map(row => row.id));
@@ -149,13 +136,6 @@ async function expectReadOnlyAgentLists(domainId: string) {
   }
 
   expect((await readAgents()).rows).toEqual(rows);
-  expect(await upgradeRecordCount(domainId)).toBe(upgrades);
-}
-
-async function governanceSettingsSkills(domainId: string, agentId: string) {
-  const response = await api(domainId, "GET", `assistant/agent-definitions/${agentId}`);
-  expect(response.status, await response.clone().text()).toBe(200);
-  return (await response.json() as { skills: unknown[] }).skills;
 }
 
 beforeAll(async () => {
@@ -170,7 +150,6 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureAssistantSchema(state.pool);
   await ensureAssistantDefaultPromptSchema(state.pool);
-  await ensureAssistantPresetUpgradesSchema(state.pool);
   await ensureAgentExecutionSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
 
@@ -184,11 +163,8 @@ beforeAll(async () => {
     prompts: [{ from: path.join(workbenchServerResourceRoot, "prompts"), to: "." }],
   });
 
-  const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
   installWorkbenchIdentity({
     requireDomainId: () => "unused",
-    requirePermission,
-    assertPermission: async () => undefined,
   } as unknown as WorkbenchIdentity);
 
   const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");
@@ -336,40 +312,8 @@ it("publishes only domain presets once and retries when publication fails", asyn
 
 });
 
-it("upgrades existing domains at startup once the registered governance panel is exposed", async () => {
-  const domainId = "domain-deferred";
-  const panelRef = panelSkillRef(domainId, GOVERNANCE_PANEL_ID);
-  const existingId = randomUUID();
-  await state.pool!.query(
-    `INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind, name, description, system_prompt, skills, sort_order)
-     VALUES ($1, $2, $3, 'Knowledge governance', 'Existing', NULL, $4::jsonb, 2)`,
-    [existingId, domainId, GOVERNANCE_KIND, JSON.stringify(GOVERNANCE_SKILLS)],
-  );
-  priorAgentPolicies.set(existingId, domainId);
-
-  await initializeDomainPresetAgents(domainId);
-  expect((await assistantStore.agents(domainId)).map(agent => agent.kind).sort()).toEqual(presetKinds);
-  expect(await storedGovernanceRow(domainId)).toEqual({ id: existingId, skills: GOVERNANCE_SKILLS });
-  expect(await upgradeRecordCount(domainId)).toBe(0);
-
-  await seedBuiltinBusinessKnowledgePanel();
-  await initializeDomainPresetAgents(domainId);
-  expect(await upgradeRecordCount(domainId)).toBe(0);
-
-  exposeBusinessKnowledgeEntry(domainId);
-  await expectReadOnlyAgentLists(domainId);
-
-  // The existing domain is known only to PG, and the other domain exists only in Java.
-  await initializeExistingDomainPresetAgents();
-  expect((await assistantStore.agents(startupDomain)).map(agent => agent.kind).sort()).toEqual(presetKinds);
-  expect(await storedGovernanceRow(domainId)).toEqual({ id: existingId, skills: [...GOVERNANCE_SKILLS, panelRef] });
-  expect(await upgradeRecordCount(domainId)).toBe(1);
-  expect(publications.filter(row => row.domainId === domainId).flatMap(row => row.ids)).not.toContain(existingId);
-});
-
 it("only creates agents through the service-token initialization endpoint and never re-adds an admin-removed skill", async () => {
   const domainId = "domain-visible-new";
-  const panelRef = panelSkillRef(domainId, GOVERNANCE_PANEL_ID);
   await seedBuiltinBusinessKnowledgePanel();
   exposeBusinessKnowledgeEntry(domainId);
 
@@ -382,9 +326,7 @@ it("only creates agents through the service-token initialization endpoint and ne
   const presets = await assistantStore.channelAgents(domainId);
   expect(presets.map(agent => agent.kind).sort()).toEqual([...presetKinds, "app-builder", "ops-diagnosis"].sort());
   const stored = (await storedGovernanceRow(domainId))!;
-  expect(stored.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
-  expect(await governanceSettingsSkills(domainId, stored.id)).toContainEqual(panelRef);
-  expect(await upgradeRecordCount(domainId)).toBe(1);
+  expect(stored.skills).toEqual(GOVERNANCE_SKILLS);
   expect((await initialize()).status).toBe(204);
   expect(await assistantStore.channelAgents(domainId)).toEqual(presets);
   await expectReadOnlyAgentLists(domainId);
@@ -401,6 +343,4 @@ it("only creates agents through the service-token initialization endpoint and ne
 
   expect((await initialize()).status).toBe(204);
   expect(await storedGovernanceRow(domainId)).toEqual({ id: stored.id, skills: [GOVERNANCE_SKILL] });
-  expect(await governanceSettingsSkills(domainId, stored.id)).not.toContainEqual(panelRef);
-  expect(await upgradeRecordCount(domainId)).toBe(1);
 });

@@ -42,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
 @RestController
+@Owned
 public class BusinessConfigController {
 
     private static final String GENERAL_READ = "settings.general.read";
@@ -51,7 +52,7 @@ public class BusinessConfigController {
     private static final String CONNECTIONS_TEST = "settings.connections.test";
     private static final String CONNECTIONS_PROBE = "settings.connections.probe-sandbox";
     private static final String VECTORS_READ = "settings.vectors.read";
-    private static final String VECTORS_CHANGE = "settings.vectors.change";
+    static final String VECTORS_CHANGE = "settings.vectors.change";
     private static final String DIAGNOSTIC_READ = "records.monitoring.config.read";
 
     @Component

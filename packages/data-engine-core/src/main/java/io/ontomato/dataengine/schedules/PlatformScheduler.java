@@ -187,6 +187,12 @@ public class PlatformScheduler {
       }
     } catch (io.ontomato.dataengine.service.authorization.ActionAuthorization.Denied error) {
       failure(run, "permission_denied", error.getMessage(), true);
+    } catch (io.ontomato.dataengine.service.OwnerRefusal error) {
+      switch (error.code()) {
+        case "ACTION_NOT_FOUND", "ACTION_NOT_EXECUTABLE" ->
+            failure(run, "target_unavailable", error.getMessage(), true);
+        default -> failure(run, "start_failed", error.getMessage(), false);
+      }
     } catch (io.ontomato.dataengine.service.agent.AgentHttpException error) {
       if (error.status() == 403) failure(run, "permission_denied", error.getMessage(), true);
       else if (error.status() == 401) failure(run, "creator_unavailable", "Trigger executor is unavailable", true);

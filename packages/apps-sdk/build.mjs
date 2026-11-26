@@ -226,15 +226,15 @@ async function main() {
   const catalogue = check.appsSdkComponentCatalogSchema.parse({
     version,
     components: components.map(({ metadata }) => {
-      const declared = ports.get(`${metadata.module}#${metadata.exportName}`);
+      const { declaredProps, ports: templatePorts } = ports.get(`${metadata.module}#${metadata.exportName}`);
       // Derive panel usability from runtime facts unless explicitly overridden: a component is usable in a registered
       // panel if it declares projection `data` or is registered in `baseComponents` as a panel template tag.
       const panelUsable = metadata.panelUsable ?? (metadata.data !== undefined || panelBaseIds.has(metadata.componentId));
       const restMetadata = { ...metadata };
       delete restMetadata.configProps;
-      const resolvedConfig = resolveDeclaredConfig(metadata, declared.props, { requireDeclaration: panelUsable });
+      const resolvedConfig = resolveDeclaredConfig(metadata, declaredProps, { requireDeclaration: panelUsable });
       // A component with no author-facing configuration declares none rather than an empty list.
-      return { ...restMetadata, panelUsable, ...(resolvedConfig?.length ? { config: resolvedConfig } : {}), ports: declared };
+      return { ...restMetadata, panelUsable, ...(resolvedConfig?.length ? { config: resolvedConfig } : {}), ports: templatePorts };
     }),
     uiPrimitives,
     uiDirectives,

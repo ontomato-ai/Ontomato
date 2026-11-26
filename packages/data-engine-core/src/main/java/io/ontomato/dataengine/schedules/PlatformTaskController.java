@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.schedules;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Owned
 @RequestMapping("/platform/triggers")
 @RequiredArgsConstructor
 public class PlatformTaskController {

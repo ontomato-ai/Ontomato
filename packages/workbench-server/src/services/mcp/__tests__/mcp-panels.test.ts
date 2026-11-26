@@ -80,7 +80,6 @@ vi.mock("../../../infrastructure/agent-runtime/client", () => ({
 }));
 vi.mock("../../product-governance/grants", () => ({
   productGrantAllowed: vi.fn(async () => false),
-  readProductGrantRecords: vi.fn(async () => ({ grants: [] })),
   requireProductGrant: vi.fn(async () => undefined),
 }));
 vi.mock("../../assistant/authorization", () => ({

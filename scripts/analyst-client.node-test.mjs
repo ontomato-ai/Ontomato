@@ -131,9 +131,9 @@ test("pending selects generated revisions and never substitutes a DSL for missin
   } finally { console.log = print; await new Promise(resolve => server.close(resolve)); }
 });
 
-test("run reports missing legacy permission, grant scope, and authentication refused by the server", async () => {
+test("run reports operation refusal, grant scope, and authentication refused by the server", async () => {
   const cases = [
-    [200, {success:false,code:403,message:"Operation permission is required: /action/execute"}, /no capability grants/],
+    [200, {success:false,code:403,message:"Operation permission is required: /action/execute"}, /Operation permission is required: \/action\/execute/],
     [200, {success:false,message:"No role grants this action to the current subject"}, /No current role grant/],
     [200, {success:false,message:"Target is not readable or is outside the granted scope"}, /outside the scope granted/],
     [200, {success:false,message:"Action preconditions are not met: status is closed"}, /Business precondition failed: status is closed/],
