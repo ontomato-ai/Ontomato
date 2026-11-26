@@ -17,7 +17,7 @@ This panel manages domain workflows (`platform:Workflow`): searching the catalog
    - `grantCaseScopedSteps`: steps authorized per run for the current assignee (no role-level grant written on activation).
    - `grantInForce`: role capability grants currently in force for the active revision.
    - `grantSuperseded`: historical grant rows left by earlier revisions (no longer granted).
-   - `grantDirect`: direct domain grants not owned by any workflow (unaffected by workflow deactivation).
+   - `grantDirect`: direct grants on actions referenced by the selected workflow’s steps (unaffected by workflow deactivation).
 
 ## Common assistant tasks
 

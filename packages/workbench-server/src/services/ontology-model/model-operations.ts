@@ -247,6 +247,12 @@ function draftPrimaryKeyClass(target: PanelOperationTarget | null, values: Recor
   }
 }
 
+/** Whether this save sends the attribute's option values, including an explicitly empty list that clears them. */
+function submitsOptions(save: z.infer<typeof saveInputSchema>) {
+  if (save.submittedFields === undefined) return save.values.options !== undefined;
+  return save.submittedFields.some(pointer => formFieldKey(pointer, "/") === "options");
+}
+
 function editSubmitsPrimaryKey(save: z.infer<typeof saveInputSchema>) {
   if (save.submittedFields === undefined) return save.values.primaryKey !== undefined;
   return save.submittedFields.some(pointer => formFieldKey(pointer, "/") === "primaryKey");
@@ -409,6 +415,7 @@ export const ontologyModelServerOperations = [
           enable: values.enable,
           businessKey: values.businessKey,
           primaryKey: values.primaryKey,
+          ...(values.options !== undefined && { options: values.options }),
         };
       } else {
         const key = parseAttributePrimaryKey(target.primaryKey);
@@ -454,6 +461,8 @@ export const ontologyModelServerOperations = [
           attrDesc: edited.data.attrDesc,
           enable: edited.data.enable,
           businessKey: edited.data.businessKey,
+          // The owner keeps the stored options unless this save sends them; an empty list clears them.
+          ...(submitsOptions(save) && { options: values.options ?? [] }),
           ...(includePrimaryKey && { primaryKey: edited.data.primaryKey }),
         };
       }

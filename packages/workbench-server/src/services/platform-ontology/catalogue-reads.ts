@@ -1,4 +1,4 @@
-import type { PanelRecord } from "@ontomato/contracts/panel-projection";
+import type { PanelRecord, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyType, PlatformOntologyTypeCount } from "@ontomato/contracts/platform-ontology";
 import { ONTOLOGY_RELATION_KIND, platformObjectTypes, type PlatformRelationKindDeclaration } from "@ontomato/contracts/platform-object-types";
 import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
@@ -96,6 +96,16 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
   const text = (key: string) => tForLocale(viewer.locale, key);
   const word = (key: string) => text(`panels.platformOntology.${key}`);
   const relationDisplay = createRelationKindDisplayMap(viewer.locale);
+  const typeLabel = (id: string) => text(platformObjectTypes[id].labelKey!);
+  const typeRef = (id: string) => ({
+    kind: "reference" as const, className: ONTOLOGY_TYPE, primaryKey: id, label: typeLabel(id),
+  });
+  const endpointLabels = {
+    fromLabel: word("fromObject"),
+    toLabel: word("toObject"),
+    derived: word("derived"),
+    owner: word("owner"),
+  };
 
   function typeCatalogRow(spec: PlatformOntologyType): PanelRecord {
     const hasDetails = Boolean(platformTypeDetails[spec.id]);
@@ -112,6 +122,7 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
       fieldLabels: {
         typeId: word("typeId"),
         layer: word("layer"),
+        definition: word("definition"),
       },
     };
   }
@@ -141,43 +152,82 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
     };
   }
 
-  function typeRelationRow(
-    relation: PlatformRelationKindDeclaration, direction: "outgoing" | "incoming", peer: string,
-  ): PanelRecord {
+  function relationEdge(relation: PlatformRelationKindDeclaration, target: string): PanelRecord {
     return {
-      primaryKey: `${direction}:${relation.id}:${peer}`,
-      label: relationDisplay.get(relation.id)?.label ?? text(relation.labelKey),
+      className: ONTOLOGY_RELATION_KIND,
+      primaryKey: relationTargets(relation).length === 1 ? relation.id : `${relation.id}::${target}`,
+      label: relationDisplay.get(relation.id)!.label,
       fields: {
-        direction, relationKind: relation.id, peer,
-        peerLabel: text(platformObjectTypes[peer].labelKey!),
+        fromclass: relation.from,
+        toclass: target,
+        relationKind: relation.id,
+        fromLabel: typeLabel(relation.from),
+        toLabel: typeLabel(target),
         derived: relation.derived,
+        owner: relation.owner,
       },
+      fieldLabels: endpointLabels,
       tones: {
-        direction: direction === "outgoing" ? "info" : "default",
         derived: relation.derived ? "info" : "success",
       },
     };
   }
 
+  function graphEdges(): PanelRecord[] {
+    return PLATFORM_ONTOLOGY_RELATION_KINDS.flatMap(relation =>
+      relationTargets(relation).map(target => relationEdge(relation, target)),
+    );
+  }
+
+  function list(): PanelRecord[] {
+    return PLATFORM_ONTOLOGY_LAYERS.flatMap(layer =>
+      PLATFORM_ONTOLOGY_TYPES
+        .filter(spec => spec.layer === layer)
+        .sort((left, right) => left.labelKey.localeCompare(right.labelKey))
+        .map(typeCatalogRow),
+    );
+  }
+
+  async function countRows(): Promise<PanelRecord[]> {
+    const { counts } = await readPlatformOntologyCounts(owner, viewer);
+    return PLATFORM_ONTOLOGY_LAYERS.flatMap(layer =>
+      counts
+        .filter(entry => entry.layer === layer)
+        .sort((left, right) => PLATFORM_ONTOLOGY_TYPE_MAP.get(left.type)!.labelKey
+          .localeCompare(PLATFORM_ONTOLOGY_TYPE_MAP.get(right.type)!.labelKey))
+        .map(typeCountRow),
+    );
+  }
+
+  async function instanceGraphClasses(): Promise<PanelRecord[]> {
+    const byType = new Map((await countRows()).map(row => [row.primaryKey, row]));
+    return list().map(row => {
+      const count = byType.get(row.primaryKey)!;
+      return {
+        ...row,
+        fields: { ...row.fields, ...count.fields },
+        fieldLabels: { ...row.fieldLabels, ...count.fieldLabels },
+        tones: count.tones,
+      };
+    });
+  }
+
   return {
-    list(): PanelRecord[] {
-      return PLATFORM_ONTOLOGY_LAYERS.flatMap(layer =>
-        PLATFORM_ONTOLOGY_TYPES
-          .filter(spec => spec.layer === layer)
-          .sort((left, right) => left.labelKey.localeCompare(right.labelKey))
-          .map(typeCatalogRow),
-      );
+    list,
+    countRows,
+    instanceGraphClasses,
+
+    count(): PanelRecordQuery {
+      return { rows: [], total: PLATFORM_ONTOLOGY_TYPES.length };
     },
 
-    async countRows(): Promise<PanelRecord[]> {
-      const { counts } = await readPlatformOntologyCounts(owner, viewer);
-      return PLATFORM_ONTOLOGY_LAYERS.flatMap(layer =>
-        counts
-          .filter(entry => entry.layer === layer)
-          .sort((left, right) => PLATFORM_ONTOLOGY_TYPE_MAP.get(left.type)!.labelKey
-            .localeCompare(PLATFORM_ONTOLOGY_TYPE_MAP.get(right.type)!.labelKey))
-          .map(typeCountRow),
-      );
+    async graphNodes(): Promise<PanelRecord[]> {
+      return (await instanceGraphClasses()).map(row => ({
+        ...row,
+        label: row.fields.countStatus === "ok"
+          ? `${row.label} (${row.fields.countDisplay})`
+          : `${row.label} · ${row.fields.countDisplay}`,
+      }));
     },
 
     async record(type: string): Promise<PanelRecord> {
@@ -233,13 +283,23 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
 
     typeRelations(type: string): PanelRecord[] {
       requireType(type);
-      const outgoing = PLATFORM_ONTOLOGY_RELATION_KINDS
-        .filter(relation => relation.from === type)
-        .flatMap(relation => relationTargets(relation).map(peer => typeRelationRow(relation, "outgoing", peer)));
-      const incoming = PLATFORM_ONTOLOGY_RELATION_KINDS
-        .filter(relation => relationTargets(relation).includes(type))
-        .map(relation => typeRelationRow(relation, "incoming", relation.from));
-      return [...outgoing, ...incoming];
+      const edges = graphEdges();
+      return [
+        ...edges.filter(row => row.fields.fromclass === type).map(row => ({
+          ...row,
+          fields: {
+            ...row.fields,
+            direction: row.fields.toclass === type ? "both" : "outgoing",
+            peer: row.fields.toclass, peerLabel: row.fields.toLabel,
+          },
+          tones: { ...row.tones, direction: "info" as const },
+        })),
+        ...edges.filter(row => row.fields.toclass === type && row.fields.fromclass !== type).map(row => ({
+          ...row,
+          fields: { ...row.fields, direction: "incoming", peer: row.fields.fromclass, peerLabel: row.fields.fromLabel },
+          tones: { ...row.tones, direction: "default" as const },
+        })),
+      ];
     },
 
     async reads(type: string): Promise<PanelRecord[]> {
@@ -267,22 +327,56 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
 
     relationKinds(): PanelRecord[] {
       return PLATFORM_ONTOLOGY_RELATION_KINDS.map((relation) => {
-        const display = relationDisplay.get(relation.id);
+        const display = relationDisplay.get(relation.id)!;
         return {
           className: ONTOLOGY_RELATION_KIND,
           primaryKey: relation.id,
-          label: display?.label ?? text(relation.labelKey),
-          ...(display ? { subtitle: display.endpoints } : {}),
+          label: display.label,
+          subtitle: display.endpoints,
           fields: {
             id: relation.id,
             from: relation.from,
             to: relation.to,
-            ...(display ? { fromLabel: display.fromLabel, toLabel: display.toLabel, endpoints: display.endpoints } : {}),
+            fromLabel: display.fromLabel, toLabel: display.toLabel, endpoints: display.endpoints,
+            relationKind: relation.id,
             derived: relation.derived,
             owner: relation.owner,
           },
         };
       });
+    },
+
+    relationCount(): PanelRecordQuery {
+      return { rows: [], total: PLATFORM_ONTOLOGY_RELATION_KINDS.length };
+    },
+
+    graphEdges,
+
+    relationRecord(key: string): PanelRecord {
+      const [id, target] = key.split("::");
+      const relation = PLATFORM_ONTOLOGY_RELATION_KINDS.find(kind => kind.id === id);
+      if (!relation) throw new HttpError(404, `Unknown relation kind: ${key}`, "OBJECT_NOT_FOUND");
+      const targets = relationTargets(relation);
+      if (target !== undefined && (targets.length === 1 || !targets.includes(target) || key !== `${id}::${target}`)) {
+        throw new HttpError(404, `Unknown relation edge: ${key}`, "OBJECT_NOT_FOUND");
+      }
+      return {
+        className: ONTOLOGY_RELATION_KIND,
+        primaryKey: key,
+        label: relationDisplay.get(id)!.label,
+        fields: {
+          fromObject: typeRef(relation.from),
+          ...(target !== undefined || targets.length === 1
+            ? { toObject: typeRef(target ?? targets[0]!) }
+            : { targetObjects: targets.map(typeRef) }),
+          derived: relation.derived,
+          owner: relation.owner,
+        },
+        fieldLabels: {
+          fromObject: endpointLabels.fromLabel, toObject: endpointLabels.toLabel,
+          targetObjects: word("targetObjects"), derived: endpointLabels.derived, owner: endpointLabels.owner,
+        },
+      };
     },
   };
 }

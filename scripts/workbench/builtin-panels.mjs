@@ -29,7 +29,7 @@ export async function stageBuiltinPanels({ directory, members, applications, che
       const folder = join(source, entry.name);
       const { panelId } = await checkSource(folder, checks, { builtinEntryIds });
       if (panels.has(panelId)) throw new Error(`Duplicate platform panel ${panelId}: ${panels.get(panelId).folder} and ${folder}`);
-      const files = existsSync(join(folder, "recipes.md")) ? [...sourceFiles, "recipes.md"] : sourceFiles;
+      const files = [...sourceFiles, ...["recipes.md", "projections.json"].filter(file => existsSync(join(folder, file)))];
       panels.set(panelId, { folder, relative: `${member.name}/${entry.name}`, files });
     }
   }

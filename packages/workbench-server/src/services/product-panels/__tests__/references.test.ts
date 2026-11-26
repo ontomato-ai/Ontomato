@@ -1,15 +1,20 @@
-import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { productProjectionInputSchema, type ProductPanelInput } from "@ontomato/contracts/product-panels";
+import { definePanel, type DirectPanelPortType, type PanelMember } from "@ontomato/contracts/panel-manifest";
+import { productProjectionInputSchema, type BuiltinProductPanelInput, type BuiltinProductProjectionInput, type ProductPanelInput } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
+import { installContentLayout } from "../../../content/layout";
 import {
   findPanelUsers, findProjectionPanelUsers, productReferenceKey, validateCurrentProductReferences,
-  validateObjectDetailPanelMapping, validatePersonalPlacement,
+  validateBuiltinProductReferences, validateObjectDetailPanelMapping, validatePersonalPlacement,
 } from "../references";
 
 vi.mock("../../../infrastructure/postgres", () => ({ qualifiedTable: (name: string) => name }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: async () => undefined }));
 vi.mock("../../product-governance/grants", () => ({ requireProductGrant: async () => undefined }));
+
+beforeAll(() => {
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+});
 
 const owner = { domainId: "domain-1", userId: "user-1" };
 const viewer = { token: "token-1", locale: "en" };
@@ -37,11 +42,18 @@ const rows = [
   { id: "missing-manifest", definition: { name: "Unreadable" } },
 ];
 
-function storedClient(panels: { id: string; definition: unknown }[], preferences: unknown[] = []): PoolClient {
-  const query = vi.fn(async (sql: string) => {
+function storedClient(panels: { id: string; definition: unknown }[], preferences: unknown[] = [],
+  projections: Record<string, BuiltinProductProjectionInput> = {},
+): PoolClient {
+  const query = vi.fn(async (sql: string, params: string[]) => {
     if (sql.includes("FROM product_panels")) return { rows: panels.map(panel => ({ ...panel, domainId: owner.domainId })) };
     if (sql.includes("FROM product_object_details")) return { rows: [] };
     if (sql.includes("FROM user_preferences")) return { rows: preferences };
+    if (sql.includes("FROM builtin_product_projections")) {
+      const [id] = params;
+      const definition = projections[id];
+      return { rows: definition ? [{ id, definition, domainId: null, ownerId: null }] : [] };
+    }
     throw new Error(`Unexpected query: ${sql}`);
   });
   return { query } as unknown as PoolClient;
@@ -118,5 +130,77 @@ it("checks object identity fields against read parameters when a connected proje
   )).resolves.toBeUndefined();
   await expect(validateCurrentProductReferences(owner, viewer, "projection", "attributes", attributes,
     connected({ kind: "scalar", type: "string" }),
+  )).rejects.toMatchObject({ status: 409, code: "PRODUCT_PORT_IN_USE" });
+});
+
+const businessId = "builtin-product-business-summary";
+const platformId = "builtin-product-platform-summary";
+const businessType = { kind: "object", objectType: "platform:ObjectType" } as const;
+const platformType = { kind: "object", objectType: "platform:OntologyType" } as const;
+const unionType = { kind: "object-union", objectTypes: [businessType.objectType, platformType.objectType] } satisfies DirectPanelPortType;
+const version = { kind: "scalar", type: "string" } as const;
+const candidateTarget = { fromState: "choice", candidates: { projectionIds: [businessId, platformId] } } satisfies PanelMember["target"];
+const builtinProjection = (inputs: BuiltinProductProjectionInput["inputs"], outputs = {}): BuiltinProductProjectionInput => ({
+  ...projection, visibility: "platform", inputs, outputs,
+});
+
+function connectedPanel(type: DirectPanelPortType, wiring: PanelMember): BuiltinProductPanelInput {
+  return {
+    ...leaf,
+    visibility: "platform",
+    manifest: definePanel({
+      state: { choice: { type: { kind: "object", objectType: "platform:ProductProjection" } }, selected: { type } },
+      members: { summary: wiring },
+    }),
+  };
+}
+
+const noCatalogue = async (): Promise<never> => { throw new Error("These projections have no reads"); };
+const verifyBuiltin = (panel: BuiltinProductPanelInput, business: BuiltinProductProjectionInput, platform: BuiltinProductProjectionInput) =>
+  validateBuiltinProductReferences(new Map([["builtin-product-summaries", panel]]), new Map([
+    [businessId, business], [platformId, platform],
+  ]), noCatalogue);
+
+it.each(["object", "list"] as const)("checks candidate coverage for %s inputs while accepting candidate-specific inputs", async kind => {
+  const wrap = <T extends typeof businessType | typeof platformType | typeof unionType>(type: T) =>
+    kind === "list" ? { kind: "list" as const, items: type } : type;
+  const panel = connectedPanel(wrap(unionType), {
+    target: candidateTarget,
+    inputs: { target: { state: "selected" }, version: { literal: "draft" } },
+  });
+  const business = builtinProjection({ target: wrap(businessType), version });
+  const platform = builtinProjection({ target: wrap(platformType) });
+  await expect(verifyBuiltin(panel, business, platform)).resolves.toBeUndefined();
+  await expect(verifyBuiltin(panel, builtinProjection({ target: wrap(businessType) }), platform)).rejects.toThrow(/version/u);
+  await expect(verifyBuiltin(panel, business, builtinProjection({ target: wrap(businessType) }))).rejects.toThrow(/platform:OntologyType/u);
+  await expect(verifyBuiltin(panel, business, builtinProjection({ target: kind === "list"
+    ? { kind: "list", items: { kind: "object", objectType: "platform:User" } }
+    : { kind: "object", objectType: "platform:User" },
+  }))).rejects.toThrow(/target/u);
+});
+
+it("keeps fixed inputs and every candidate's outputs strict", async () => {
+  const fixed = connectedPanel(unionType, { target: { projectionId: businessId }, inputs: { target: { state: "selected" } } });
+  await expect(verifyBuiltin(fixed, builtinProjection({ target: unionType }), builtinProjection({}))).resolves.toBeUndefined();
+  await expect(verifyBuiltin(fixed, builtinProjection({ target: businessType }), builtinProjection({}))).rejects.toThrow(/target/u);
+
+  const dynamic = connectedPanel(unionType, { target: candidateTarget, outputs: { selected: { state: "selected" } } });
+  const business = builtinProjection({}, { selected: businessType });
+  await expect(verifyBuiltin(dynamic, business, builtinProjection({}, { selected: platformType }))).resolves.toBeUndefined();
+  await expect(verifyBuiltin(dynamic, business, builtinProjection({}))).rejects.toThrow(/selected/u);
+});
+
+it("protects the whole candidate group when a connected projection is updated", async () => {
+  const editableId = "platform-summary";
+  const panel = connectedPanel(unionType, {
+    target: { fromState: "choice", candidates: { projectionIds: [businessId, editableId] } },
+    inputs: { target: { state: "selected" }, version: { literal: "draft" } },
+  });
+  const business = builtinProjection({ target: businessType, version });
+  const platform = { ...projection, inputs: { target: platformType } };
+  const client = storedClient([{ id: "summaries", definition: panel }], [], { [businessId]: business });
+  await expect(validateCurrentProductReferences(owner, viewer, "projection", editableId, platform, client)).resolves.toBeUndefined();
+  await expect(validateCurrentProductReferences(owner, viewer, "projection", editableId,
+    { ...platform, inputs: { target: businessType } }, client,
   )).rejects.toMatchObject({ status: 409, code: "PRODUCT_PORT_IN_USE" });
 });

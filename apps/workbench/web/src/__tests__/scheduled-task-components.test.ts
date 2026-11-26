@@ -149,12 +149,10 @@ it("collapses options beyond maxVisible into a More menu and shows the selected 
     data: { status: "ready", value: [{ key: "", label: "Owner total", count: 60 }, ...counts] },
   });
   instance.state.set("selected", "app-7");
-  const change = vi.fn();
   const update = vi.fn();
   const view = draw(SegmentedControl, () => ({
     maxVisible: 6,
     defaultValue: "",
-    onChange: change,
     "onUpdate:modelValue": update,
   }), provide);
   const inlineOptions = view.querySelectorAll<HTMLButtonElement>('button[role="radio"]');
@@ -179,7 +177,6 @@ it("collapses options beyond maxVisible into a More menu and shows the selected 
   expect(inlineOptions[0]!.getAttribute("aria-checked")).toBe("true");
   expect(trigger.classList.contains("active")).toBe(false);
   expect(trigger.textContent).toContain("More");
-  expect(change.mock.calls).toEqual([["app-6"], [""]]);
   expect(update.mock.calls).toEqual([["app-6"], [""]]);
 });
 

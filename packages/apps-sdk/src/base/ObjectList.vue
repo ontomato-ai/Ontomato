@@ -166,6 +166,7 @@ import {
   isRecordTag,
   rawRecordField,
   recordFieldArrayItems,
+  recordFieldDisplayValue,
   referenceDisplayLabel,
   scalarFieldText,
   toChildFieldReference,
@@ -518,11 +519,6 @@ const emit = defineEmits<{
   choose: [value: ObjectListSelection | null];
   /** Emitted when the explicit multi-selection set changes. */
   "update:checked": [value: readonly ObjectListRef[]];
-  /**
-   * Emitted when the object references of the current result batch change: the current page when the owner's read
-   * pages (`cursor` or `page`), or all matching rows when the read does not page; empty when no rows are shown.
-   */
-  "update:listed": [value: readonly ObjectListRef[]];
   /** Emitted when a reader clicks a reference cell carrying an owner-supplied object reference. */
   navigate: [reference: PlatformFieldReference, columnKey: string];
   /** Emitted when a reader clicks a parent-scoped child reference cell or inline child reference item. */
@@ -2055,7 +2051,7 @@ function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string
     const mappedLabel = columnMapped(row, column)?.label;
     return mappedLabel ?? derived.text;
   }
-  return displayFieldText(rawRecordField(row, column.key), locale.value, t, column.listSeparator ?? ", ");
+  return displayFieldText(recordFieldDisplayValue(row, column.key), locale.value, t, column.listSeparator ?? ", ");
 }
 /** A column's secondary line text in a row, when `subtitleKey` is configured. */
 function columnSubtitleText(row: PlatformObjectRecord, column: ObjectListColumn): string {
@@ -2509,31 +2505,16 @@ function selectInitially(listed: readonly PlatformObjectRecord[]) {
   }
 }
 
-let lastListedSignature: string | null = null;
-function publishListed(refs: readonly ObjectListRef[]) {
-  const signature = JSON.stringify(refs);
-  if (signature === lastListedSignature) return;
-  lastListedSignature = signature;
-  if (placement.outputs?.listed) {
-    void panel.instance.output(member.key, "listed", refs as unknown as RuntimeJsonValue);
-  }
-  emit("update:listed", refs);
-}
-
 watch(
   datumState,
   (state) => {
     if (state.status === "loading" || (state.status === "ready" && state.refreshing)) return;
     if (state.status === "empty") {
       pendingScrollToTop = false;
-      publishListed([]);
       selectInitially([]);
       return;
     }
-    if (state.status !== "ready" || parsedData.value.status !== "ok") {
-      publishListed([]);
-      return;
-    }
+    if (state.status !== "ready" || parsedData.value.status !== "ok") return;
     const allLoaded = rawRows.value;
     if (isChildObjectSelection && selectedStateType?.kind === "child-object" && childSelectionParent.value) {
       panel.instance.nameChildObjects(childSelectionParent.value, selectedStateType.collection, allLoaded);
@@ -2550,7 +2531,6 @@ watch(
       }
       for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
     }
-    publishListed(listedRefs.value);
     selectInitially(rows.value);
     if (pendingScrollToTop) {
       pendingScrollToTop = false;
@@ -2573,14 +2553,6 @@ const localFilterSignature = computed(() => {
   ]);
 });
 
-if (hasSupplement) {
-  watch(listedRefs, (refs) => {
-    if (datumState.value.status === "ready" && parsedData.value.status === "ok") {
-      publishListed(refs);
-    }
-  });
-}
-
 if (pageMode === "none") {
   watch(
     localFilterSignature,
@@ -2589,7 +2561,6 @@ if (pageMode === "none") {
       if (datumState.value.status !== "ready" || parsedData.value.status !== "ok") return;
       scrollTop.value = 0;
       if (scrollContainerRef.value) scrollContainerRef.value.scrollTop = 0;
-      publishListed(listedRefs.value);
     },
     { flush: "sync" },
   );
@@ -3090,9 +3061,10 @@ function choose(row: PlatformObjectRecord) {
   if (openTarget) {
     highlightedIdentity.value = rowIdentityKey(row);
     void panel.navigate(openTarget);
+    return;
   }
   if (!rowSelectable) {
-    if (!openTarget) highlightedIdentity.value = rowIdentityKey(row);
+    highlightedIdentity.value = rowIdentityKey(row);
     return;
   }
   const identity = rowIdentityKey(row);
@@ -3315,7 +3287,7 @@ const listHasTwoLines = computed(() =>
 );
 
 function fieldValue(row: PlatformObjectRecord, key: string): string {
-  return displayFieldText(rawRecordField(row, key), locale.value, t);
+  return displayFieldText(recordFieldDisplayValue(row, key), locale.value, t);
 }
 
 function referenceField(row: PlatformObjectRecord, key: string): PanelRecordReferenceFieldValue | null {

@@ -36,7 +36,7 @@ import {
 } from "./source-codec";
 import { threeWayMergeFiles } from "./three-way-merge";
 
-const PREFERRED_FILES = [APPLICATION_SOURCE_FILE, "panel.json", "panel.html", "index.html"];
+const PREFERRED_FILES = [APPLICATION_SOURCE_FILE, "panel.json", "panel.html"];
 const PAGE_SIZE = 100;
 
 export interface BuilderProjectSummary {
@@ -62,7 +62,7 @@ export interface BuilderPreviewEntry {
 }
 
 export interface BuilderProjectDetail extends BuilderProjectSummary {
-  sourceKind: "panel" | "hosted" | "empty";
+  sourceKind: "panel" | "empty";
   materialized: boolean;
   headCommit: string | null;
   openPath: string | null;
@@ -125,7 +125,7 @@ export async function authorizeBuilderProject(
 
   if (options.skipLiveRead) {
     const detail = await applicationCatalogueClient(credentials).record(appId);
-    if (detail.source === "builtin" || (!detail.canEditEntries && !(project && detail.entry.path.startsWith("/apps/")))) {
+    if (detail.source === "builtin" || !detail.canEditEntries) {
       throw new HttpError(403, "Application cannot be edited in App Builder", "FORBIDDEN");
     }
     if (!detail.canMaintain) {
@@ -146,7 +146,7 @@ export async function authorizeBuilderProject(
   if (!live.applicationMeta.canMaintain) {
     throw new HttpError(403, "Application edit permission required", "PRODUCT_FORBIDDEN");
   }
-  const metadata = live.snapshot.kind === "panel" ? live.snapshot.application.declaration : live.snapshot.declaration;
+  const metadata = live.snapshot.application.declaration;
   return { appId, published: true, project, live, metadata, runtime };
 }
 
@@ -173,19 +173,15 @@ export async function listBuilderProjects(
     cursor = result.nextCursor;
   }
 
-  const navigation = await client.navigation();
-  const hostedIds = new Set(navigation.filter(app => app.entry.path.startsWith("/apps/")
-    && app.releaseId && app.kind !== "connected" && app.kind !== "link").map(app => app.id));
-  const candidates = catalogueRows.filter(
-    row => row.source === "domain" && row.canMaintain && (row.canEditEntries || hostedIds.has(row.id)),
+  const editableApps = catalogueRows.filter(
+    row => row.source === "domain" && row.canMaintain && row.canEditEntries,
   );
 
   const [drafts, projectMap] = await Promise.all([
     appBuilderProjectStore.listDraftsByCreator(owner.domainId, owner.userId),
-    appBuilderProjectStore.listByAppIds(owner.domainId, candidates.map(row => row.id)),
+    appBuilderProjectStore.listByAppIds(owner.domainId, editableApps.map(row => row.id)),
   ]);
 
-  const editableApps = candidates.filter(row => row.canEditEntries || projectMap.has(row.id));
   const publishedIds = new Set(editableApps.map(row => row.id));
   const workspaceStatus = new Map<string, Workspace>();
   const boundProjects = [
@@ -319,7 +315,7 @@ export async function getBuilderProject(
     workingFiles = files;
   }
 
-  let sourceKind: "panel" | "hosted" | "empty" = "empty";
+  let sourceKind: "panel" | "empty" = "empty";
   let previewEntries: BuilderPreviewEntry[] = [];
   let conflictFiles: string[] = [];
 
@@ -336,33 +332,25 @@ export async function getBuilderProject(
         } else if (parsed.kind === "legacy-single-panel") {
           sourceKind = "panel";
           previewEntries = [{ id: "main", panelId: "root", label: "Preview", path: `/applications/${appId}/main` }];
-        } else if (parsed.kind === "hosted") {
-          sourceKind = "hosted";
         }
       } catch (error) {
         if (!(error instanceof z.ZodError) && !(error instanceof HttpError && error.code === "APPLICATION_SOURCE_INVALID")) throw error;
         // Malformed intermediate files in working tree still show as panel source so user/agent can fix them.
         sourceKind = workingFiles.some(f => f.path === APPLICATION_SOURCE_FILE || f.path === "panel.json")
           ? "panel"
-          : workingFiles.some(f => f.path === "index.html")
-            ? "hosted"
-            : "empty";
+          : "empty";
       }
     }
   } else if (live) {
-    if (live.snapshot.kind === "panel") {
-      sourceKind = "panel";
-      previewEntries = previewEntriesFromManifest(live.snapshot.application, credentials.locale);
-    } else {
-      sourceKind = "hosted";
-    }
+    sourceKind = "panel";
+    previewEntries = previewEntriesFromManifest(live.snapshot.application, credentials.locale);
   }
 
   let drift: DriftReport = { hasDrift: false, items: [] };
   if (live && project?.lastSyncedFingerprint) {
     const liveFingerprint = computeLiveFingerprint(live.snapshot);
     const appLabel = localizedNameOf(
-      live.snapshot.kind === "panel" ? live.snapshot.application.declaration.names : live.snapshot.declaration.names,
+      live.snapshot.application.declaration.names,
       credentials.locale,
       appId,
     );
@@ -490,7 +478,6 @@ export async function ensureMaterializedWorkspace(
     if (existing) return existing;
 
     const { snapshot } = await readLiveApplicationSnapshot(owner.domainId, appId, credentials, { claimUnclaimed: true, client });
-    if (snapshot.kind !== "panel") throw new HttpError(409, "Application source is unavailable", "SOURCE_NOT_MATERIALIZED");
     const name = localizedNameOf(snapshot.application.declaration.names, credentials.locale, appId);
     const workspace = workspaceSchema.parse(await runtime.request("/v1/workspaces", "POST", { name }));
     const { commit } = z.object({ commit: workspaceCommitSchema }).parse(
@@ -528,7 +515,7 @@ export async function readApplicationSourceFiles(
       return pa - pb || a.path.localeCompare(b.path);
     });
   }
-  if (ctx.live?.snapshot.kind === "panel") {
+  if (ctx.live) {
     const derived = serializeApplicationSource(ctx.live.snapshot);
     return derived.map(file => ({ path: file.path, size: Buffer.byteLength(file.content, "utf8") }));
   }
@@ -549,7 +536,7 @@ export async function readApplicationSourceFile(
     const bytes = await ctx.runtime.bytes(`/v1/workspaces/${ctx.project.workspaceId}/files/content?${params}`);
     return { path: filePath, bytes };
   }
-  if (ctx.live?.snapshot.kind === "panel") {
+  if (ctx.live) {
     const derived = serializeApplicationSource(ctx.live.snapshot);
     const match = derived.find(file => file.path === filePath);
     if (!match) throw new HttpError(404, `File '${filePath}' not found`, "NOT_FOUND");
@@ -660,11 +647,6 @@ export async function syncApplicationBuilderSource(
   const live = await readLiveApplicationSnapshot(owner.domainId, appId, credentials, { claimUnclaimed: true });
 
   const liveFingerprint = computeLiveFingerprint(live.snapshot);
-
-  if (live.snapshot.kind !== "panel") {
-    await appBuilderProjectStore.markSynced(owner.domainId, appId, liveFingerprint, ws.headCommit, false);
-    return { commit: ws.headCommit, mergedPaths: [], conflictFiles: [], hasConflicts: false };
-  }
 
   const [baseFiles, oursFiles] = await Promise.all([
     existing.lastSyncedCommit
@@ -832,7 +814,7 @@ export async function publishApplicationBuilderSource(
   if (ctx.published && ctx.live && ctx.project.lastSyncedFingerprint) {
     const liveFingerprint = computeLiveFingerprint(ctx.live.snapshot);
     const appLabel = localizedNameOf(
-      ctx.live.snapshot.kind === "panel" ? ctx.live.snapshot.application.declaration.names : ctx.live.snapshot.declaration.names,
+      ctx.live.snapshot.application.declaration.names,
       credentials.locale,
       appId,
     );
@@ -869,7 +851,6 @@ export async function publishApplicationBuilderSource(
     throw new HttpError(400, "This commit has no publishable application files", "COMMIT_NOT_PUBLISHABLE");
   }
 
-  let hostedReleaseId: string | null = null;
   if (parsed.kind === "panel-app") {
     await applyPanelSourceToPlatform(
       owner,
@@ -913,29 +894,6 @@ export async function publishApplicationBuilderSource(
       ...parsed.panel,
     };
     await applyPanelSourceToPlatform(owner, credentials, appId, ctx.published, manifest, [{ id: panelId, input: panelInput }], []);
-  } else {
-    // Legacy hosted application (`index.html`).
-    const displayName = input.name?.trim()
-      || (ctx.project.draftMeta && localizedNameOf(ctx.project.draftMeta.names, credentials.locale, appId))
-      || (ctx.live?.snapshot.kind === "hosted"
-        ? localizedNameOf(ctx.live.snapshot.declaration.names, credentials.locale, appId)
-        : appId);
-    const icon = input.icon
-      ?? (ctx.live?.snapshot.kind === "hosted" ? ctx.live.snapshot.declaration.icon : ctx.project.draftMeta?.icon)
-      ?? recommendApplicationIcon(displayName);
-    const declaration = ctx.live?.snapshot.kind === "hosted"
-      ? { ...ctx.live.snapshot.declaration, icon }
-      : { names: defaultLocalizedMap(displayName), descriptions: ctx.project.draftMeta?.descriptions ?? {}, icon, groups: [] };
-    const { publishWorkspace } = await import("../workspaces/hosted-apps");
-    const hosted = await publishWorkspace(
-      owner,
-      ctx.project.workspaceId,
-      input.commit,
-      declaration,
-      credentials,
-      { appId, workspaceOwnerId: appWorkspaceSlot(appId) },
-    );
-    hostedReleaseId = hosted.releaseId;
   }
 
   // Re-read authoritative live snapshot and update baseline fingerprint + clear draft_meta.
@@ -947,7 +905,6 @@ export async function publishApplicationBuilderSource(
       domainId: owner.domainId,
       appId,
       commitId: input.commit,
-      hostedReleaseId,
       publishedBy: owner.userId,
     }, client);
   });
@@ -956,8 +913,7 @@ export async function publishApplicationBuilderSource(
 }
 
 /**
- * Rolls back a published application to a previous release (re-publishing its commit for panel apps,
- * or re-activating the hosted release for legacy hosted apps). Enforces the same drift gate as publish.
+ * Rolls back a published panel application by re-publishing its commit through the same drift gate.
  */
 export async function rollbackApplicationBuilderRelease(
   owner: AssistantOwner,
@@ -972,45 +928,6 @@ export async function rollbackApplicationBuilderRelease(
   const releases = await appBuilderProjectStore.listReleases(owner.domainId, appId);
   const target = releases.find(r => r.id === releaseId);
   if (!target) throw new HttpError(404, "Release not found", "NOT_FOUND");
-
-  if (ctx.live.snapshot.kind === "hosted" && target.hostedReleaseId) {
-    const workspace = workspaceSchema.parse(await ctx.runtime.request(`/v1/workspaces/${ctx.project.workspaceId}`));
-    if (workspace.activeRunId) throw new HttpError(409, "A conversation is currently modifying this application", "WORKSPACE_BUSY");
-    // Enforce drift gate before hosted rollback too.
-    if (ctx.project.lastSyncedFingerprint) {
-      const liveFingerprint = computeLiveFingerprint(ctx.live.snapshot);
-      const drift = diffFingerprints(ctx.project.lastSyncedFingerprint, liveFingerprint, {
-        applicationLabel: localizedNameOf(ctx.live.snapshot.declaration.names, credentials.locale, appId),
-      });
-      if (drift.hasDrift) {
-        throw new HttpError(
-          409,
-          "The live application definition changed outside App Builder; sync before rolling back",
-          "APPLICATION_SOURCE_DRIFT",
-          { driftItems: drift.items },
-        );
-      }
-    }
-    const { rollbackWorkspace } = await import("../workspaces/hosted-apps");
-    await rollbackWorkspace(
-      owner,
-      ctx.project.workspaceId,
-      target.hostedReleaseId,
-      ctx.live.snapshot.declaration,
-      credentials,
-      { appId },
-    );
-    const freshLive = await readLiveApplicationSnapshot(owner.domainId, appId, credentials, { claimUnclaimed: false });
-    await appBuilderProjectStore.markSynced(owner.domainId, appId, computeLiveFingerprint(freshLive.snapshot), target.commitId, true);
-    const recorded = await appBuilderProjectStore.recordRelease({
-      domainId: owner.domainId,
-      appId,
-      commitId: target.commitId,
-      hostedReleaseId: target.hostedReleaseId,
-      publishedBy: owner.userId,
-    });
-    return { appId, releaseId: recorded.id, commit: target.commitId };
-  }
 
   // For panel apps, rollback is simply re-publishing the target release's commit through the same drift-guarded pipeline.
   return publishApplicationBuilderSource(owner, credentials, appId, { commit: target.commitId });

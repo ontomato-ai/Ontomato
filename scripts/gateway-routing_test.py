@@ -90,6 +90,7 @@ class GatewayRoutingTest(unittest.TestCase):
                 for source, target, service in [
                     ("/api/data-query/", "/", "java"),
                     ("/api/resources/", "/api/resources/", "node"),
+                    ("/api/praxis/", "/api/praxis/", "node"),
                     (f"/{legacy}/", "/", "java"),
                     ("/assets/", web_mount + "assets/", "web"),
                 ]:

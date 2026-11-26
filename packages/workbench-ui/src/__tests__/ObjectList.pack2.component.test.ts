@@ -6,7 +6,7 @@ import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import { BUSINESS_KNOWLEDGE } from "@ontomato/contracts/platform-object-types";
-import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../apps-sdk/src/panel/direct";
+import { createDirectPanelInstance, readMemberDatum, type PanelMemberReadRequest } from "../../../apps-sdk/src/panel/direct";
 import PanelMember from "../../../apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../apps-sdk/src/panel/text";
 import ObjectListRowActions from "../../../apps-sdk/src/base/ObjectListRowActions.vue";
@@ -59,6 +59,7 @@ function mountDirectList(
   options: {
     messages?: Record<string, Record<string, string>>;
     memberProps?: Record<string, Record<string, unknown>>;
+    navigate?: (path: string) => Promise<void>;
   } = {},
 ) {
   const instance = createDirectPanelInstance(manifest, {
@@ -67,6 +68,7 @@ function mountDirectList(
     label: () => "ObjectList Pack 2C",
     text: createPanelText(options.messages ?? {}, ref("en"), "en"),
     ...noOperations,
+    navigate: options.navigate ?? unused,
     readProjection: async (id) => projections[id]!,
     read: async (request) => answer(request),
   });
@@ -119,7 +121,50 @@ function buildListProjection(
   } as unknown as DirectProjection;
 }
 
+it("waits for the new projection's object type before reading from its owner", async () => {
+  const target = { className: "platform:ObjectType", primaryKey: "course" };
+  const projection: DirectProjection = {
+    ...buildListProjection("details", {}),
+    inputs: { target: { kind: "object", objectType: target.className } },
+    data: { record: { source: { object: { input: "target" } }, read: "record", params: {} } },
+  };
+  const read = vi.fn(async (): Promise<ProductPanelReadResponse> => ({ status: "empty" }));
+  const wiring = { inputs: { target: { state: "selected" }, version: { state: "version" } } };
+  const readTarget = (className: string) => readMemberDatum(read, projection, [{ member: "details" }], wiring, "record",
+    { target: { ...target, className }, version: "draft" }, {});
+  await expect(readTarget("platform:OntologyType")).resolves.toEqual({ status: "awaiting" });
+  expect(read).not.toHaveBeenCalled();
+  await expect(readTarget(target.className)).resolves.toEqual({ status: "empty" });
+  expect(read).toHaveBeenCalledWith({ memberPath: [{ member: "details" }], dataName: "record", inputs: { target } });
+});
+
 describe("ObjectList Pack 2C features", () => {
+  it("opens rows with an address and chooses rows without one on double-click", async () => {
+    const manifest = definePanel({ state: {}, members: { list: { target: { projectionId: "list" } } } });
+    const choose = vi.fn();
+    const navigate = vi.fn(async () => {});
+    const openPath = "/browser/views?selected=details";
+    const { element } = mountDirectList(manifest, {
+      list: buildListProjection("list", { layout: "table", columns: [{ key: "label", label: "Name" }], rowActivation: "dblclick", openOutput: "detailPath" }),
+    }, () => ({
+      status: "ready",
+      value: { total: 2, fieldLabels: {}, rows: [
+        { className: BUSINESS_KNOWLEDGE, primaryKey: "details", label: "Details", fields: {}, outputs: { detailPath: openPath } },
+        { className: BUSINESS_KNOWLEDGE, primaryKey: "inline", label: "Inline", fields: {}, outputs: { detailPath: null } },
+      ] },
+    }), { memberProps: { list: { onChoose: choose } }, navigate });
+    const row = (label: string) => [...element.querySelectorAll("tbody tr")].find(tr => tr.textContent?.includes(label));
+    await vi.waitFor(() => expect(row("Inline")).toBeDefined(), { timeout: 5_000 });
+    const dblclick = () => new MouseEvent("dblclick", { bubbles: true });
+    row("Details")!.dispatchEvent(dblclick());
+    expect(navigate).toHaveBeenCalledWith(openPath);
+    expect(choose).not.toHaveBeenCalled();
+    navigate.mockClear();
+    row("Inline")!.dispatchEvent(dblclick());
+    expect(choose).toHaveBeenCalledWith({ className: BUSINESS_KNOWLEDGE, primaryKey: "inline" });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("renders value-carried tag tones/icons in kind:tags, resolves per-item valueMap, ignores row.tones on tag arrays, and supports tagEffect='plain'", async () => {
     const manifest = definePanel({
       state: {},

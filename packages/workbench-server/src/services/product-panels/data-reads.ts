@@ -647,6 +647,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ),
     },
     [ONTOLOGY_TYPE]: {
+      count: async () => (await ontology()).count(),
       schema: async () => (await ontology()).schema(),
       counts: async () => (await ontology()).counts(),
       countRows: async () => (await ontology()).countRows(),
@@ -654,6 +655,11 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       neighbors: async (_selection, params) => (await ontology()).neighbors(params),
       objects: async (_selection, params) => (await ontology()).objects(params),
       list: async () => (await ontology()).list(),
+      graphNodes: async () => (await ontology()).graphNodes(),
+      instanceGraphClasses: async () => (await ontology()).instanceGraphClasses(),
+      instanceSearch: async (_selection, params) => (await ontology()).instanceSearch(params),
+      instances: async (_selection, params) => (await ontology()).instances(params),
+      instanceRecord: async (_selection, params) => (await ontology()).instanceRecord(params),
       record: async selection => (await ontology()).record(selection.primaryKey!),
       properties: async (_selection, params) => (await ontology()).properties(params.type as string),
       typeRelations: async (_selection, params) => (await ontology()).typeRelations(params.type as string),
@@ -662,6 +668,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [ONTOLOGY_RELATION_KIND]: {
       list: async () => (await ontology()).relationKinds(),
+      count: async () => (await ontology()).relationCount(),
+      graphEdges: async () => (await ontology()).graphEdges(),
+      record: async selection => (await ontology()).relationRecord(selection.primaryKey!),
     },
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),

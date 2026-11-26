@@ -525,7 +525,7 @@
           <div class="pd-layout-controls">
             <span class="pd-layout-control">
               <span>{{ t('layout.mode') }}</span>
-              <sdk-segmented v-model="layoutConfig.mode" :options="layoutModeOptions" size="small" @change="onLayoutSettingChanged"></sdk-segmented>
+              <sdk-segmented v-model="layoutConfig.mode" :options="layoutModeOptions" size="small" @update:model-value="onLayoutSettingChanged"></sdk-segmented>
             </span>
             <span v-if="layoutConfig.mode === 'grid'" class="pd-layout-control">
               <span>{{ t('layout.columns') }}</span>

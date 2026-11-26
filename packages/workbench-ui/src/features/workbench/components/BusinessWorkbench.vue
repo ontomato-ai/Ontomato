@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
-import { ElMessage } from "element-plus";
+import { ElLoading, ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { isNavigationFailure, NavigationFailureType, useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 import {
@@ -33,6 +33,7 @@ import {
 } from "../features";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 defineOptions({ inheritAttrs: false });
+const vLoading = ElLoading.directive;
 const artifactRenderers = [
   { path: /\.clarification\.json$/i, component: ClarificationRenderer },
 ];
@@ -625,13 +626,19 @@ watch(
   },
 );
 
-/** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
+/** Open a board from the workbench's dashboard list. */
 function openDashboardApplication(dashboardId: string) {
-  closeDashboards();
   if (props.internalPages) {
+    closeDashboards();
     void display.navigate(panelAddress(props.internalPages.dashboard, { dashboardId }), { history: "push" });
     return;
   }
+  openDashboardPage(dashboardId);
+}
+
+/** The dashboard entry loads its own application before opening the saved board. */
+function openDashboardPage(dashboardId: string) {
+  closeDashboards();
   void router.push({ path: routes.dashboards.path, query: { dashboardId } });
 }
 
@@ -722,27 +729,28 @@ function appearanceSaved(value: WorkbenchAppearance) {
         <div class="legacy-task-avatar"><ClipboardList :size="22" aria-hidden="true" /></div>
         <div><strong>{{ allTasksLabel }}</strong><p>{{ locale === 'zh-CN' ? '跨智能体统一任务看板' : locale === 'zh-TW' ? '跨智慧代理任務總覽' : 'Tasks across agents' }}</p></div>
       </header>
-      <p v-if="tasksLoading && !taskSessions.length" class="session-note" role="status">{{ t('common.loading') }}</p>
-      <p v-if="tasksError" class="session-note" role="alert">{{ labels.loadFailed }} <button type="button" @click="loadAnalysisTasks()">{{ labels.retry }}</button></p>
-      <p v-else-if="!tasksLoading && !taskSessions.length" class="session-note">{{ labels.noSessions }}</p>
-      <div v-if="taskSessions.length" class="session-list legacy-task-list">
-        <section v-for="group in taskGroups" :key="group.key" class="legacy-task-group" :aria-label="group.label">
-          <h2><span class="history-list-marker" :data-status="group.key" aria-hidden="true" />{{ group.label }} ({{ group.sessions.length }})</h2>
-          <ul>
-            <li v-for="session in group.sessions" :key="session.id" class="session-item" :class="{ active: session.id === conversationId }">
-              <button type="button" class="session-open" :aria-current="session.id === conversationId ? 'page' : undefined" @click="openAnalysisTask(session)">
-                <span class="session-title">{{ session.title || labels.newConversation }}</span>
-                <span class="history-list-meta">
-                  {{ formatRelativeTime(session.createdAt) }}
-                  <template v-if="analysisTaskStatus(session)">
-                    <span class="legacy-task-status" :data-status="analysisTaskStatus(session)">{{ taskStatusLabels[analysisTaskStatus(session)!] }}</span>
-                  </template>
-                </span>
-              </button>
-            </li>
-          </ul>
-        </section>
-        <button v-if="taskCursor" type="button" class="more" :disabled="tasksLoading" @click="loadAnalysisTasks(true)">{{ labels.more }}</button>
+      <div v-loading="tasksLoading && !taskSessions.length" class="legacy-task-body" :aria-busy="tasksLoading" :element-loading-text="t('common.loading')">
+        <p v-if="tasksError" class="legacy-task-note" role="alert">{{ labels.loadFailed }} <button type="button" @click="loadAnalysisTasks()">{{ labels.retry }}</button></p>
+        <p v-else-if="!tasksLoading && !taskSessions.length" class="legacy-task-note">{{ labels.noSessions }}</p>
+        <div v-if="taskSessions.length" class="session-list legacy-task-list">
+          <section v-for="group in taskGroups" :key="group.key" class="legacy-task-group" :aria-label="group.label">
+            <h2><span class="history-list-marker" :data-status="group.key" aria-hidden="true" />{{ group.label }} ({{ group.sessions.length }})</h2>
+            <ul>
+              <li v-for="session in group.sessions" :key="session.id" class="session-item" :class="{ active: session.id === conversationId }">
+                <button type="button" class="session-open" :aria-current="session.id === conversationId ? 'page' : undefined" @click="openAnalysisTask(session)">
+                  <span class="session-title">{{ session.title || labels.newConversation }}</span>
+                  <span class="history-list-meta">
+                    {{ formatRelativeTime(session.createdAt) }}
+                    <template v-if="analysisTaskStatus(session)">
+                      <span class="legacy-task-status" :data-status="analysisTaskStatus(session)">{{ taskStatusLabels[analysisTaskStatus(session)!] }}</span>
+                    </template>
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </section>
+          <button v-if="taskCursor" type="button" class="more" :disabled="tasksLoading" @click="loadAnalysisTasks(true)">{{ labels.more }}</button>
+        </div>
       </div>
     </template>
     <template v-if="$slots.welcome" #welcome="scope">
@@ -772,8 +780,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
     <template #artifact-actions="{ artifact, title, caption }">
       <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
            into cards there, a chart file is put on the board as it is. -->
-      <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
-      <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardApplication" />
+      <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardPage" />
+      <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardPage" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="!internalPages && sessionId && runId" :session-id="sessionId" :run-id="runId" />

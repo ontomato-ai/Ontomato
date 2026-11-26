@@ -7,7 +7,7 @@ import {
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { AGENT_DEFINITION, APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
-import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
+import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication, isPlatformCatalogApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationPanelUseSchema, isApplicationPanelUse, registerApplicationPanelUsesRequestSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
@@ -204,7 +204,7 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
   return {
     async navigation() {
       const response = await backendGet("application-navigation", url(`${applicationPath}?purpose=navigation`), options());
-      return ownerData(response.text, applicationCatalogSchema);
+      return ownerData(response.text, applicationCatalogSchema).filter(isPlatformCatalogApplication);
     },
     async query(params: Record<string, unknown>) {
       const { page, ...rest } = querySchema.parse(params);
@@ -380,7 +380,7 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
         }
         const openPath = app.entry.path.startsWith("/__external/") || app.kind === "link"
           ? app.entry.path
-          : isPanelApplication(app) || app.kind === "hosted" || app.kind === "connected"
+          : isPanelApplication(app) || app.kind === "connected"
             ? applicationRootPath(app.id)
             : (app.entry.home ?? app.entry.path);
         return {

@@ -69,6 +69,19 @@ export function rawRecordField(record: PlatformObjectRecord, key: string): Panel
   return record.fields[key];
 }
 
+/**
+ * The field value a page shows: when the owner declares display text for the value in `valueLabels`, that text replaces
+ * the value on screen; the record's own value is untouched for sorting, forms and the operations that read it.
+ */
+export function recordFieldDisplayValue(
+  record: PlatformObjectRecord,
+  key: string,
+): PanelRecordFieldValue | undefined {
+  const raw = rawRecordField(record, key);
+  if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "boolean") return raw;
+  return record.valueLabels?.[key] ?? raw;
+}
+
 /** Format a scalar field value for UI display, localizing booleans in the reader's language. */
 export function scalarFieldText(value: PanelRecordFieldScalar, translate: (key: string) => string): string {
   if (typeof value === "boolean") return translate(value ? "platform.booleanTrue" : "platform.booleanFalse");

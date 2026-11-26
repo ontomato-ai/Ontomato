@@ -23,7 +23,6 @@ export function platformLayoutRoute(children: RouteRecordRaw[], component: Route
         props: { applicationId: "home" },
         meta: { workbench: true, ownHeader: true },
       },
-      { path: "/products/:productAssetId", component: () => import("./pages/ProductRoute.vue"), props:route=>({productAssetId:route.params.productAssetId,applicationId:typeof route.query.applicationId==='string'?route.query.applicationId:undefined}), meta: {workbench:true} },
       {
         path: "/applications/:applicationId/:panelPath(.*)?",
         component: () => import("./pages/ApplicationEntryRoute.vue"),

@@ -111,6 +111,9 @@ public class OntologyQueryService {
       JSONObject field = new JSONObject();
       for (String key : List.of("name", "type", "primaryKey", "attrDesc", "indicators"))
         field.put(key, attr.get(key));
+      if (attr.get("options") instanceof List<?> options && !options.isEmpty()) {
+        field.put("options", options);
+      }
       attrs.add(field);
     }
     result.put("attrs", attrs);

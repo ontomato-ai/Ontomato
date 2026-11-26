@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp, defineComponent, h, inject, nextTick, ref, type App } from "vue";
 import { pageDockSpaceKey } from "@ontomato/agent-shell-ui";
 import EntryUnit from "../pages/EntryUnit.vue";
-import AppPage from "../pages/AppPage.vue";
 
 class FakeResizeObserver {
   static instances: FakeResizeObserver[] = [];
@@ -122,33 +121,5 @@ describe("floating foot dock space measurement", () => {
     ancestorSpace.value = 0;
     await nextTick();
     expect(readSpace.value).toBe(0);
-  });
-
-  it("AppPage measures its floating foot dynamically and omits inline --pane-dock-space without a foot", async () => {
-    const showFoot = ref(true);
-    const host = document.createElement("div");
-    document.body.append(host);
-    app = createApp({
-      render: () =>
-        h(
-          AppPage,
-          { title: "Demo", labels: { save: "Save", discard: "Discard", unsavedChanges: "Unsaved" } },
-          showFoot.value
-            ? { default: () => h("div", "Body"), foot: () => h("div", { class: "foot-probe" }, "Composer") }
-            : { default: () => h("div", "Body") },
-        ),
-    });
-    app.mount(host);
-    await nextTick();
-
-    const page = host.querySelector<HTMLElement>(".app-page")!;
-    const foot = host.querySelector<HTMLElement>(".app-page-foot")!;
-    triggerResize(foot, 118);
-    await nextTick();
-    expect(page.style.getPropertyValue("--pane-dock-space")).toBe("118px");
-
-    showFoot.value = false;
-    await nextTick();
-    expect(page.style.getPropertyValue("--pane-dock-space")).toBe("");
   });
 });

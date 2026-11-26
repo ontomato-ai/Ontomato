@@ -8,8 +8,10 @@ import { directReadRowType } from "@ontomato/contracts/panel-projection";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
   G6GraphCanvas,
+  graphCategorySlot,
   layoutByForce,
   layoutByRelations,
+  readGraphPalette,
   type GraphCanvasEdge,
   type GraphCanvasElement,
   type GraphCanvasNodeViewportBox,
@@ -23,6 +25,7 @@ import { usePanelContext } from "../panel/context";
 import { useMember, useMemberOutput, useMemberParam } from "../panel/member";
 import type { PanelFieldValue } from "../panel/state";
 import { savePanelFile } from "../panel/save-file";
+import { categorizedGraphView, categoryLegendEntries, toggledCategory } from "./object-graph-categories";
 import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
 import {
   PENDING_GRAPH_EDGE_ID,
@@ -43,9 +46,20 @@ import type { ObjectListRef } from "./object-list-types";
  * node, else the most connected, never smaller than names can be read at: a graph too large for that is panned. On an
  * editable graph a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`,
  * `connectTo`) for the owner's new edge — the canvas draws no edge of its own and writes nothing to the owner.
+ *
+ * A graph whose nodes carry categories takes each category's colour, and where the projection asks for it, a legend of
+ * them the reader clicks to fold a category away — its nodes and their edges — and click again to bring it back; an edge
+ * the projection marks as derived is drawn dashed. Both read only what the projection configures, so they serve any
+ * graph whose records say what kind they are and which of them are derived.
  */
 const props = withDefaults(defineProps<{
   edgeEnds?: EdgeEndsConfig; editable?: boolean; categories?: readonly string[]; nodeCategory?: string;
+  /** The names the legend gives the categories, by category; any other category is named by its own value. */
+  categoryLabels?: Readonly<Record<string, string>>;
+  /** JSON Pointer into each edge record's `fields` naming the one that draws the edge dashed when it holds `true`. */
+  edgeDashedField?: string;
+  /** Offers the categories as a legend the reader clicks to hide and show them; the projection decides whether it does. */
+  showCategoryLegend?: boolean;
   nodeSize?: number; labelSize?: number; layout?: "relations" | "force";
   highlightBanner?: boolean; showFocusButton?: boolean; hint?: string;
   /** Single-page presentation option: background CSS colour composited behind exported PNG layers. */
@@ -64,6 +78,9 @@ const props = withDefaults(defineProps<{
   pendingEdge?: PendingGraphEdge | null;
 }>(), {
   editable: undefined,
+  categoryLabels: undefined,
+  edgeDashedField: undefined,
+  showCategoryLegend: undefined,
   highlightBanner: undefined,
   showFocusButton: undefined,
   exportBackground: undefined,
@@ -82,13 +99,15 @@ const emit = defineEmits<{
 
 const previewMarkerId = `sdk-graph-connect-arrow-${useId().replace(/:/g, "")}`;
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const panel = usePanelContext();
 const { instance } = panel;
 const member = useMember();
 const nodeCategory = props.nodeCategory ?? member.projection.config.nodeCategory;
 if (nodeCategory !== undefined && typeof nodeCategory !== "string") throw new Error(`The projection in member '${member.key}' names nodeCategory with no JSON Pointer`);
-const resolved = useGraphRecords(props.edgeEnds, nodeCategory);
+const edgeDashedField = props.edgeDashedField ?? member.projection.config.edgeDashedField;
+if (edgeDashedField !== undefined && typeof edgeDashedField !== "string") throw new Error(`The projection in member '${member.key}' names edgeDashedField with no JSON Pointer`);
+const resolved = useGraphRecords(props.edgeEnds, nodeCategory, edgeDashedField);
 /** How large the nodes and their names are drawn, in screen pixels; the canvas's own sizes when a dedicated graph sets none. */
 const look = { nodeSize: props.nodeSize, labelSize: props.labelSize };
 /** The categories in a fixed order: the n-th takes the platform palette's n-th colour. */
@@ -99,6 +118,24 @@ const categories = computed(() => {
   return listed as string[];
 });
 const editable = computed(() => props.editable ?? member.projection.config.editable === true);
+const categoryLabels = computed(() => {
+  const configured = props.categoryLabels ?? member.projection.config.categoryLabels ?? {};
+  if (!configured || typeof configured !== "object" || Array.isArray(configured) || !Object.values(configured).every((name) => typeof name === "string"))
+    throw new Error(`The projection in member '${member.key}' names categoryLabels that is not a list of names`);
+  return configured as Readonly<Record<string, string>>;
+});
+const showsCategoryLegend = computed(() => props.showCategoryLegend ?? member.projection.config.showCategoryLegend === true);
+/** A name the projection configures, as the reader reads it: a message key in their language, any other text itself. */
+const translate = (text: string) => (te(text) ? t(text) : panel.t(text));
+/** The categories the legend offers, in the projection's order; none where the projection names none. */
+const categoryLegend = computed(() =>
+  showsCategoryLegend.value ? categoryLegendEntries(categories.value, categoryLabels.value, translate) : [],
+);
+/** The categories the reader has folded away, which the graph leaves out until they click them again. */
+const hiddenCategories = ref<ReadonlySet<string>>(new Set());
+function toggleCategory(category: string) {
+  hiddenCategories.value = toggledCategory(hiddenCategories.value, category);
+}
 const layoutMode = computed<"relations" | "force">(() => {
   const mode = props.layout ?? member.projection.config.layout;
   return mode === "force" ? "force" : "relations";
@@ -111,6 +148,9 @@ const canvasHint = computed(() => {
 });
 const exportBackground = computed(() => props.exportBackground?.trim() || undefined);
 const exportFilename = computed(() => props.exportFilename?.trim() || undefined);
+
+/** The graph as the reader sees it: the categories they folded away, and the edges that end at them, are left out. */
+const view = computed(() => categorizedGraphView(resolved.value.nodes, resolved.value.links, hiddenCategories.value));
 
 /** The type each datum reads: a chosen node or edge is an object of that type. */
 const typeOf = (datum: "nodes" | "edges") => {
@@ -146,13 +186,19 @@ const FIT_PADDING = 56;
  */
 const element = ref<HTMLElement | null>(null);
 const room = ref<LayoutRoom | null>(null);
+/** How many colours the edition's categorical palette gives, so a legend swatch takes the colour the node takes. */
+const paletteSize = ref(0);
 const measure = (width: number, height: number) => {
   room.value = { width: Math.max(0, width - 2 * FIT_PADDING), height: Math.max(0, height - 2 * FIT_PADDING) };
 };
 onMounted(() => {
   const { width, height } = element.value!.getBoundingClientRect();
+  paletteSize.value = readGraphPalette(element.value!).length;
   measure(width, height);
 });
+/** The colour the graph draws a category in, as its legend swatch shows it. */
+const categoryColor = (category: string) =>
+  `var(--chart-${graphCategorySlot(category, categories.value, paletteSize.value) + 1})`;
 const computedLayout = computed(() =>
   layoutMode.value === "force"
     ? layoutByForce(resolved.value.nodes, resolved.value.links, room.value!, look)
@@ -171,6 +217,9 @@ const endpointKeyOf = (value: RuntimeJsonValue | null, type: string): string | n
 const keysOf = (value: RuntimeJsonValue | null, type: string) => new Set(Array.isArray(value) ? value.flatMap((item) => keyOf(item, type)) : []);
 const selectedNodes = computed(() => keyOf(selectedNode.value.value, nodeType));
 const selectedEdges = computed(() => keyOf(selectedEdge.value.value, edgeType));
+
+/** The chosen node the graph draws, if it draws one: a node of a category the reader folded away is out of view. */
+const drawnChosen = computed(() => selectedNodes.value.find((id) => view.value.nodes.some((node) => node.id === id)) ?? null);
 
 // Keep owner labels registered on the panel instance so pageContext names graph selections and endpoints clearly.
 watch(
@@ -389,11 +438,11 @@ useMemberOutput("pathHops", () =>
     ? pathResult.value.hops
     : null,
 );
-useMemberOutput("nodeCount", () => resolved.value.nodes.length);
-useMemberOutput("edgeCount", () => resolved.value.links.length);
+useMemberOutput("nodeCount", () => view.value.nodes.length);
+useMemberOutput("edgeCount", () => view.value.links.length);
 
 /** Every node where the reader put it, else where its relations place it. */
-const drawnNodes = computed(() => resolved.value.nodes.map((node) => ({
+const drawnNodes = computed(() => view.value.nodes.map((node) => ({
   ...node, ...computedLayout.value.positions.get(node.id), ...saved.value[node.id], tone: nodeToneOf(node.id),
 })));
 /** Purely visual uncommitted edge shown while the reader completes a new-relation dialog (never written to the owner). */
@@ -411,7 +460,7 @@ const activePendingEdge = computed<PendingGraphEdge | null>(() => {
   return null;
 });
 const drawnEdges = computed<GraphCanvasEdge[]>(() => {
-  const base: GraphCanvasEdge[] = resolved.value.links.map((edge) => ({ ...edge, tone: edgeToneOf(edge.id) }));
+  const base: GraphCanvasEdge[] = view.value.links.map((edge) => ({ ...edge, tone: edgeToneOf(edge.id) }));
   const pending = activePendingEdge.value;
   if (pending) {
     base.push({
@@ -706,7 +755,7 @@ const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 /** The whole graph, or — where it would be too small to read — the part around the chosen node, else the most connected. */
 function fit() {
   if (!canvas.value) return;
-  const chosen = selectedNodes.value.find((id) => computedLayout.value.positions.has(id));
+  const chosen = drawnChosen.value;
   const maxZoom = layoutMode.value === "force" ? 1 : 1.15;
   void canvas.value.fit({ maxZoom, keepNames: true, padding: FIT_PADDING, around: chosen ?? computedLayout.value.root })
     .then((whole) => {
@@ -726,7 +775,7 @@ let fitted = false;
 watch(canvas, (drawn) => drawn && fit(), { flush: "post" });
 /** The part a reader chose, in the middle of the view. */
 function focusChosen() {
-  void canvas.value!.focus(selectedNodes.value[0]!);
+  void canvas.value!.focus(drawnChosen.value!);
 }
 const ZOOM_STEP = 1.25;
 /**
@@ -892,6 +941,28 @@ async function download() {
           @viewport="viewed"
           @resized="resized"
         />
+        <!-- The categories the graph is drawn in: one click folds a category away with its edges, the next brings it back. -->
+        <div
+          v-if="categoryLegend.length"
+          class="sdk-object-graph-canvas-legend"
+          role="group"
+          :aria-label="t('platform.graphCategories')"
+          data-graph-category-legend
+        >
+          <button
+            v-for="entry in categoryLegend"
+            :key="entry.category"
+            type="button"
+            class="sdk-object-graph-canvas-legend-item"
+            :class="{ 'is-hidden': hiddenCategories.has(entry.category) }"
+            :aria-pressed="!hiddenCategories.has(entry.category)"
+            :title="entry.label"
+            :data-graph-category="entry.category"
+            @click="toggleCategory(entry.category)"
+          >
+            <i :style="{ background: categoryColor(entry.category) }"></i>{{ entry.label }}
+          </button>
+        </div>
         <div
           v-if="connectPorts && hoverPortHandles.length"
           class="sdk-object-graph-connect-ports"
@@ -970,7 +1041,7 @@ async function download() {
               <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
             </svg>
           </button>
-          <button v-if="showFocusButton" type="button" data-graph-action="focus-selected" :disabled="!selectedNodes.length" :title="t('platform.graphFocusSelected')" :aria-label="t('platform.graphFocusSelected')" @click="focusChosen">
+          <button v-if="showFocusButton" type="button" data-graph-action="focus-selected" :disabled="drawnChosen === null" :title="t('platform.graphFocusSelected')" :aria-label="t('platform.graphFocusSelected')" @click="focusChosen">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <circle cx="8" cy="8" r="2.5" /><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" />
             </svg>
@@ -1142,6 +1213,57 @@ async function download() {
   border-radius: var(--radius-md);
   background: var(--el-bg-color-overlay);
   box-shadow: var(--elevation-overlay, 0 4px 16px rgba(15, 23, 42, 0.08));
+}
+.sdk-object-graph-canvas-legend {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline-start: 18px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: calc(100% - 36px);
+  padding: var(--spacing-xs);
+  border: 1px solid var(--el-border-color-lighter, var(--ui-divider));
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay, 0 4px 16px rgba(15, 23, 42, 0.08));
+}
+.sdk-object-graph-canvas-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--spacing-xs) / 1.5);
+  max-width: 220px;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sdk-object-graph-canvas-legend-item i {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.sdk-object-graph-canvas-legend-item:not(.is-hidden):hover {
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-primary);
+}
+/* A folded category keeps its name at hand, its swatch greyed: the click brings it back. */
+.sdk-object-graph-canvas-legend-item.is-hidden {
+  color: var(--el-text-color-placeholder);
+  text-decoration: line-through;
+}
+.sdk-object-graph-canvas-legend-item.is-hidden i {
+  opacity: 0.35;
 }
 .sdk-object-graph-canvas-tools button {
   display: grid;

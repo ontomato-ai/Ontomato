@@ -101,9 +101,8 @@ async function mountLayout(path: string, granted: string[]) {
 }
 
 describe("the platform layout", () => {
-  it("renders published product and panel applications under App Builder in the second rail group", async () => {
+  it("renders panel applications under App Builder in the second rail group", async () => {
     const { wrapper, router } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
-    router.addRoute({ path: "/products/:productAssetId", component: page("product") });
     router.addRoute({ path: "/applications/:applicationId/:panelPath(.*)?", component: page("application") });
     router.addRoute({ path: "/home", component: page("home") });
     const catalog = catalogFixture();
@@ -125,7 +124,6 @@ describe("the platform layout", () => {
     const labels = groups[1]!.findAll(".rail-row").map(row => row.attributes("aria-label") ?? row.text().trim());
     expect(labels).toEqual([
       applications.find(app => app.id === "app-builder")!.label,
-      "Report · App Builder",
       "Operations panel · App Builder",
     ]);
     // An application the reader opens from the rail opens in the platform (big main's ruling, 2026-11-21): no new tab.

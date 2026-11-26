@@ -72,8 +72,7 @@
             "source": "/fromclass",
             "target": "/toclass"
           },
-          "nodeCategory": "/className",
-          "layout": "force"
+          "nodeCategory": "/className"
         },
         "state": {
           "selectedNode": "selectedNode",

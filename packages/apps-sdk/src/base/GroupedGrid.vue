@@ -72,7 +72,7 @@ import {
   resolveOperationInputFields,
 } from "./operation-dispatch";
 import { isActionValuesEnvelope, wrapActionOperationInput, type OperationInputField } from "./operation-input-schema";
-import { displayFieldText } from "./record-field";
+import { displayFieldText, recordFieldDisplayValue } from "./record-field";
 import OperationInputDialog from "./OperationInputDialog.vue";
 
 /**
@@ -144,9 +144,9 @@ const props = withDefaults(
     allowHide?: boolean;
     /** Optional per-item row actions (same shape as `ObjectList.rowActions`). */
     rowActions?: ObjectListRowActionsConfig;
-    /** Fallback text shown when there are no groups and no items. */
+    /** Panel message key (or plain text) shown when there are no groups and no items. */
     emptyText?: string;
-    /** Fallback text shown inside an empty group when `#group-empty` is not provided. */
+    /** Panel message key (or plain text) shown inside an empty group when `#group-empty` is not provided. */
     emptyGroupText?: string;
     /** Localized fallback title rendered when a group's title is empty (never falls back to raw group ID). */
     emptyGroupTitle?: string;
@@ -706,7 +706,7 @@ const gridDataResult = computed<DataStateResult<readonly GroupedGridGroup[]>>(()
   return { status: "ready", value: renderedGroups.value };
 });
 
-const dataStateLabels = useDataStateLabels(() => props.emptyText || t("platform.dataEmpty"));
+const dataStateLabels = useDataStateLabels(() => (props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty")));
 
 useMemberOutput("status", () => gridDataResult.value.status);
 useMemberOutput("groupCount", () => (gridDataResult.value.status === "ready" ? renderedGroups.value.length : 0));
@@ -1042,7 +1042,7 @@ function resolveConversationPrefill(item: GroupedGridItem, action: ResolvedRowAc
         if (key === "className") return ref.className;
         if (key === "label") return item.row.label;
         if (key === "ref") return refJson;
-        return displayFieldText(item.row.fields[key], locale.value, t);
+        return displayFieldText(recordFieldDisplayValue(item.row, key), locale.value, t);
       })
     : "";
   if (!interpolated.trim()) {
@@ -1551,7 +1551,7 @@ const gridCssVars = computed(() => ({
           <div v-if="!showGroupHeaders || !isGroupCollapsed(group.id)" class="sdk-grouped-grid-group-body">
             <div v-if="group.items.length === 0" class="sdk-grouped-grid-group-empty">
               <slot name="group-empty" :group="{ id: group.id, title: group.title, order: group.order }">
-                <span class="sdk-grouped-grid-group-empty-text">{{ emptyGroupText || t("platform.dataEmpty") }}</span>
+                <span class="sdk-grouped-grid-group-empty-text">{{ emptyGroupText ? panel.t(emptyGroupText) : t("platform.dataEmpty") }}</span>
               </slot>
             </div>
 

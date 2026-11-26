@@ -60,7 +60,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   "update:modelValue": [value: ScalarValue];
-  change: [value: ScalarValue];
 }>();
 
 const { t, te } = useI18n();
@@ -148,7 +147,6 @@ function select(option: ResolvedOption) {
   if (props.disabled || option.disabled || option.value === currentValue.value) return;
   const finish = () => {
     emit("update:modelValue", option.value);
-    emit("change", option.value);
   };
   let applied: boolean | Promise<boolean> = true;
   if (props.state) {

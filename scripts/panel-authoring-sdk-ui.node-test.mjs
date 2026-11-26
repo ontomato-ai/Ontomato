@@ -217,7 +217,7 @@ test("checkPanelWorkspace accepts manifest.components for Vue slots, ObjectList 
           operations: {
             approve: {
               operation: "knowledge.approve",
-              target: { row: true },
+              target: "row",
               params: {
                 principalId: { rowField: "principalId" },
                 remove: { literal: true },
