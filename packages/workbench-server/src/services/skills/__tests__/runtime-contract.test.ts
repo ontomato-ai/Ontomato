@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { installContentLayout } from "../../../content/layout";
 import { readSkillPackage } from "../../../core/skills/package";
 import { standardSkillFrontmatterSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { parse } from "yaml";
 import type { ProtectedSkillOffering, SkillPackageContext } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
@@ -26,6 +27,8 @@ function storedSkillResources(domainId: string, resources: { panel: string[]; pr
 }
 
 const referenceQuery = vi.hoisted(() => vi.fn());
+const assertManagement = vi.hoisted(() => vi.fn());
+vi.mock("../../../identity/management", () => ({ assertManagement }));
 const decideSkill = vi.hoisted(() => vi.fn<[_request: ObjectDecisionRequest],
   { allowed: true } | { allowed: false; reason: string; code: string }>());
 vi.mock("../../product-governance/authorization", async (importOriginal) => {
@@ -103,6 +106,7 @@ const panelReference = (name = "panel-skill"): RuntimeSkillRef => ({ namespace: 
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }); });
 const pageDirectory = () => Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
 beforeEach(() => {
+  assertManagement.mockReset().mockResolvedValue(undefined);
   referenceQuery.mockReset();
   decideSkill.mockReset().mockReturnValue({ allowed: true });
   panelOfferings = []; protectedPanelOfferings = []; conflictOfferings = []; panelCalls = []; panelListError = null;
@@ -115,6 +119,9 @@ it("round-trips a standard package byte-for-byte and lists and reads its files",
   expect(imported.skill).toEqual(reference);
   expect(imported.title).toBe(reference.name);
   expect(imported.writeRestriction).toBeNull();
+  expect((await skillManager.getAllSkills(domain, credentials)).skills).toContainEqual(imported);
+  expect((await skillManager.searchSkills(domain, "portable sample", credentials)).skills).toContainEqual(imported);
+  await expect(skillManager.getSkillInfo(domain, reference.name, credentials)).resolves.toEqual(imported);
   const exported = new AdmZip(await skillManager.exportSkill(domain, reference.name, credentials));
   for (const [name, content] of Object.entries(files)) expect(exported.readFile(name)).toEqual(Buffer.from(content));
   const front = parse(exported.readAsText("SKILL.md").split("---")[1]);
@@ -124,20 +131,34 @@ it("round-trips a standard package byte-for-byte and lists and reads its files",
   expect(await skillManager.readSkillFile(domain, reference.name, "references/guide.md", credentials)).toBe(files["references/guide.md"]);
 });
 
-it("separates catalogue VIEW from runtime USE and refuses a denied run before publishing", async () => {
+it("denies library reads without management read permission while allowing the agent to publish its selected skill", async () => {
   await skillManager.importSkill(domain, zip(), credentials, true);
-  decideSkill.mockImplementation(request => "verb" in request && request.verb === "USE"
-    ? { allowed: false, reason: "Use denied", code: "OBJECT_FORBIDDEN" }
-    : { allowed: true });
-  expect((await skillManager.getAllSkills(domain, credentials)).skills.some(skill => skill.id === reference.name)).toBe(true);
-  expect((await assistantSkillCatalog(domain, credentials)).skills.some(skill => skill.skill.name === reference.name)).toBe(false);
-  await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [reference] }, credentials))
-    .rejects.toMatchObject({ status: 403, code: "OBJECT_FORBIDDEN" });
-  expect(decideSkill).toHaveBeenCalledWith({
-    target: { domainId: domain, kind: "SKILL", id: reference.name },
-    ownerFacts: { ownerId: null, state: "PUBLISHED" },
-    verb: "USE",
+  panelOfferings = [panelSkill()];
+  assertManagement.mockImplementation(async ({ id }: { id: string }) => {
+    if (id === workbenchManagement.skillLibraryRead.id) throw new HttpError(403, "Read denied", "PERMISSION_DENIED");
   });
+  for (const read of [
+    () => skillManager.getAllSkills(domain, credentials),
+    () => skillManager.searchSkills(domain, "sample", credentials),
+    () => skillManager.searchSkills(domain, "", credentials),
+    () => skillManager.getSkillInfo(domain, reference.name, credentials),
+    () => skillManager.listSkillFiles(domain, reference.name, credentials),
+    () => skillManager.readSkillFile(domain, reference.name, "SKILL.md", credentials),
+    () => skillManager.requireSkillResource(domain, reference.name, credentials),
+    () => skillManager.exportSkill(domain, reference.name, credentials),
+    () => skillManager.getSkillReferences(domain, reference.name, referenceAccess),
+  ]) await expect(read()).rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
+  await expect(skillManager.requireSkillResource(domain, "panel-skill", credentials))
+    .resolves.toMatchObject({ source: { kind: "provider" } });
+  vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
+  const digest = "a".repeat(64);
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    if (url.endsWith("/platform/page-skills")) return pageDirectory();
+    const { skill } = JSON.parse(String(init.body));
+    return Response.json({ skill, digest, description: "A portable sample" }, { status: 201 });
+  }));
+  await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [reference] }, credentials))
+    .resolves.toMatchObject({ skills: [{ skill: reference, digest }] });
 });
 
 it("keeps an older package's ontomato.* metadata in the package and reads none of it", async () => {

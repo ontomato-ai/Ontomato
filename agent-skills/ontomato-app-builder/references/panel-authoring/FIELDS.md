@@ -57,7 +57,7 @@ input sources such as another member's read-only output. The inline shorthand ac
 | `component` | Yes | Component name from the released SDK catalogue. Use its package-qualified ID if the name is ambiguous. |
 | `type` | No | Default owner type ID from the type table for this member's reads and operations. |
 | `target` | No | Panel state field holding the target object (or object list), or {fromSlot: true} when supplied by an enclosing Vue slot via <Projection :inputs="{ target: ref }">. |
-| `data` | No | Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, or {fromSlot: true}. |
+| `data` | No | Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, {output: {member, name, path?}} for another member's read-only output, or {fromSlot: true}. |
 | `operation` | No | Single operation ID from the owner's entry in the type table. |
 | `operationParams` | No | Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' \| 'label'}, {rowField: fieldKey}, {formField: '/fieldPath'}, or {formFields: {key: '/fieldPath'}}. |
 | `operations` | No | Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?, draft?} where target may be 'row', {rowField: key} when the target is a field of the clicked row, {state: fieldName}, or {literal: ref}, and draft names a form member in this panel. Omit target on an ObjectList placement to address the clicked row. |
@@ -75,6 +75,18 @@ input sources such as another member's read-only output. The inline shorthand ac
 | `sourceCard` | No | Optional for MetricChart. Use {dashboardId, cardId} to bind an existing dashboard card through the chart owner, or omit it and bind MetricChart data directly. |
 | `name` | No | Projection display name. Defaults to the member name. |
 | `description` | No | Projection description. Defaults to the member name. |
+
+## Where a member's value is written
+
+| Written at | It holds |
+| --- | --- |
+| the member's `config` in `panel.json` | the fixed configuration: columns, labels, layout, sizes |
+| `:values` where the member is placed | the same configuration keys, for the ones that change with the page (disabled while the draft is dirty, the title being edited); a key written in both places fails the offline check |
+| `:inputs` where the member is placed | only the ports the component catalogue lists as inputs, and only inside another component's scoped slot |
+
+A placement that carries `:inputs` is drawn as an instance of its own: it does not share the member's registration,
+form draft or published outputs with the rest of the panel. That is how a row's detail or an array item gets its own
+data, and it is not a way to pass a value — a value that follows the page goes in `:values`.
 
 ## Form controls and operation inputs
 

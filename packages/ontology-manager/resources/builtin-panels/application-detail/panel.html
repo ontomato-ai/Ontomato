@@ -220,7 +220,7 @@
       @back="goBack"
     >
       <template #title>
-        <projection slot="headerTitle" :fallback-title="selectedKey || t('panel.name')"></projection>
+        <projection slot="headerTitle" :values="{ fallbackTitle: selectedKey || t('panel.name') }"></projection>
       </template>
       <template v-if="recordReady" #actions>
         <sdk-button v-if="openPath" @click="openApplication">
@@ -445,7 +445,7 @@
       <template #footer>
         <div v-if="canGrant && grantDialogOpen" class="apps-dialog-footer">
           <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection slot="grantSubmit" :disabled="!grantPrincipalId" @done="onGrantAdded"></projection>
+          <projection slot="grantSubmit" :values="{ disabled: !grantPrincipalId }" @done="onGrantAdded"></projection>
         </div>
       </template>
     </sdk-dialog>

@@ -372,8 +372,7 @@
         <projection
           v-if="selectedKey"
           slot="header"
-          :title="liveTitle"
-          :fallback-title="selectedKey"
+          :values="{ title: liveTitle, fallbackTitle: selectedKey }"
         >
           <template v-if="detailReady" #leading>
             <span class="agent-detail-avatar" :style="avatarStyle(liveIcon)" aria-hidden="true">
@@ -690,7 +689,15 @@
           <div class="agent-detail-share-actions">
             <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
             <projection v-else slot="shareEnable" @done="onShareDone"></projection>
-            <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t("grants.add") }}</sdk-button>
+          </div>
+        </div>
+        <div class="agent-detail-share-bar">
+          <div class="agent-detail-share-left">
+            <strong class="agent-detail-section-title">{{ t("grants.title") }}</strong>
+            <span class="agent-detail-muted">{{ t("grants.intro") }}</span>
+          </div>
+          <div class="agent-detail-share-actions">
+            <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t("grants.submit") }}</sdk-button>
           </div>
         </div>
         <projection slot="grantsList"></projection>
@@ -719,11 +726,11 @@
       <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
     </div>
 
-    <!-- Single-select 3-level grant dialog backed by ReferencePicker & bound OperationButton -->
+    <!-- Single-select 3-level add-to-policy dialog backed by ReferencePicker & bound OperationButton -->
     <sdk-dialog
       v-if="grantEntryAllowed"
       v-model="grantDialogOpen"
-      :title="t('grants.dialogTitle')"
+      :title="t('grants.title')"
       width="480px"
       append-to-body
       destroy-on-close
@@ -747,7 +754,7 @@
           <sdk-button @click="grantDialogOpen = false">{{ t("action.cancel") }}</sdk-button>
           <projection
             slot="grantSubmit"
-            :disabled="!canSubmitGrant"
+            :values="{ disabled: !canSubmitGrant }"
             @done="onGrantAdded"
           ></projection>
         </div>

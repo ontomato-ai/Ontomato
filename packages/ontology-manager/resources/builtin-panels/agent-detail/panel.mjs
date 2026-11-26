@@ -263,11 +263,11 @@ await mountPanel({
 
     let resolveSeq = 0;
     watch(
-      [skillsMemberRef, () => JSON.stringify(heldSkillRefs.value)],
-      ([member]) => {
+      [skillsMemberRef, canEdit, selectedKey, () => JSON.stringify(heldSkillRefs.value)],
+      ([member, editable]) => {
         const seq = ++resolveSeq;
         const held = heldSkillRefs.value;
-        if (!member || held.length === 0) {
+        if (!member || !editable || held.length === 0) {
           resolvedHeldSkills.value = [];
           return;
         }
@@ -282,20 +282,23 @@ await mountPanel({
     );
 
     const skillOptionsState = computed(() => skillOptionsRef.value?.value ?? null);
-    const skillsLoading = computed(() => !skillOptionsState.value || skillOptionsState.value.status === "loading");
+    const skillsLoading = computed(() => canEdit.value && (!skillOptionsState.value || skillOptionsState.value.status === "loading"));
     const skillsError = computed(() => {
+      if (!canEdit.value) return "";
       const current = skillOptionsState.value;
       if (!current || (current.status !== "error" && current.status !== "forbidden")) return "";
       const message = typeof current.message === "string" ? current.message.trim() : "";
       return message || t("skills.loadError");
     });
     const skillCatalogOptions = computed(() => {
+      if (!canEdit.value) return [];
       const current = skillOptionsState.value;
       return current?.status === "ready" && Array.isArray(current.value?.options)
         ? current.value.options
         : [];
     });
     const skillDiagnostics = computed(() => {
+      if (!canEdit.value) return [];
       const current = skillOptionsState.value;
       return current?.status === "ready" && Array.isArray(current.value?.diagnostics)
         ? current.value.diagnostics
@@ -323,7 +326,7 @@ await mountPanel({
           value: skill,
           label: skill.name,
           description: "",
-          unavailable: { reason: "" },
+          unavailable: canEdit.value ? { reason: "" } : null,
         }));
       return [
         ...skillCatalogOptions.value.map((item) => ({

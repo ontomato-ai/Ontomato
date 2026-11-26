@@ -48,7 +48,8 @@
         "type": "platform:Action",
         "operation": "actions.checkSandboxPermission",
         "config": {
-          "size": "small"
+          "size": "small",
+          "notifySuccess": false
         },
         "id": "builtin-product-402f0e44-57be-4243-b6d8-82dcbc9f5302"
       },

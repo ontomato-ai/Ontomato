@@ -14,7 +14,8 @@ import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant} fro
 import {projectionSourceTypes} from '../../services/product-assets/invalidation';
 import {platformObjectTypes} from '../../services/product-assets/platform-objects';
 import {readPlatformProjectionObject} from '../../services/product-assets/object-read';
-import {registeredProductGraph} from '../../services/product-assets/ontology';
+import {addAuthorizationEdges} from '../../services/product-assets/ontology';
+import {readProductAssetGraph} from '../../services/product-panels/asset-graph-read';
 import {migratePlatformProjection} from '../../services/product-assets/platform-migration';
 import {migrateDashboardPage} from '../../services/product-assets/dashboard-migration';
 import {synchronizePlatformAssets,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
@@ -39,7 +40,7 @@ router.post('/:id/create-page',wrap(async(req,res)=>{
   res.json({asset:await saveProduct(owner,randomUUID(),{name,description:source.description,visibility:'private',document:{...source.document,kind:'page',isTemplate:false}},0,credentials)});
 }));
 router.get("/types", wrap(async (_req,res) => { res.json({types:productTypes,schema:cachedZodToJsonSchema(productAuthoringSchema,{target:"jsonSchema7"})}); }));
-router.get('/graph',wrap(async(req,res)=>{const {owner,credentials}=context(req);res.json({graph:await registeredProductGraph(owner,await listProducts(owner),credentials)});}));
+router.get('/graph',wrap(async(req,res)=>{const {owner,credentials}=context(req);res.json({graph:await addAuthorizationEdges(await readProductAssetGraph(owner,credentials),owner,credentials)});}));
 router.get('/validation/default-projections',wrap(async(req,res)=>{const c=context(req);res.json(await validateDefaultProjections(c.owner,c.credentials));}));
 router.get('/platform-object-types',wrap(async(_req,res)=>{res.json({objectTypes:platformObjectTypes()});}));
 router.get('/projections',wrap(async(req,res)=>{const input=z.object({kind:z.enum(['ObjectType','Definition','MetricView','Action']),id:z.string().min(1).max(200)}).parse(req.query);res.json(await discoverProjections(context(req).owner,input.kind,input.id));}));

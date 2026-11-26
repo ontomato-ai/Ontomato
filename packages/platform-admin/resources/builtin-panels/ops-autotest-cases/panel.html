@@ -196,7 +196,7 @@
         <div v-if="selectedKey" class="ops-cases-detail-header">
           <div class="ops-cases-detail-top">
             <div class="ops-cases-detail-title">
-              <projection slot="detailHeader" :fallback-title="selectedKey"></projection>
+              <projection slot="detailHeader" :values="{ fallbackTitle: selectedKey }"></projection>
             </div>
             <div class="ops-cases-detail-controls">
               <projection slot="deleteCaseSet" @done="onDeleteDone"></projection>

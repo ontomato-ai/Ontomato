@@ -116,7 +116,7 @@
       @back="goBack"
     >
       <template #title>
-        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <projection v-if="selectedKey" slot="header" :values="{ fallbackTitle: selectedKey }"></projection>
         <h1 v-else class="mv-detail-title">{{ isCreateMode ? createTitle : t("metricViews.title") }}</h1>
       </template>
       <template #actions>

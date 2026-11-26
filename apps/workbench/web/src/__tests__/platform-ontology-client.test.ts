@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { bindingKey, clientSends } from "@ontomato/contracts/panel-client-requests";
-import { ACTION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER } from "@ontomato/contracts/platform-object-types";
+import {
+  ACTION,
+  ONTOLOGY_RELATION_KIND,
+  ONTOLOGY_TYPE,
+  PERMISSION_POLICY,
+  USER,
+} from "@ontomato/contracts/platform-object-types";
 import {
   createPlatformOntologyClient,
   platformOntologyAdapters,
@@ -46,12 +52,13 @@ describe("platform-ontology SDK client & adapters", () => {
       ],
       relationKinds: [
         {
-          id: "user.created-action",
-          from: USER,
+          id: "permission-policy.can-execute-action",
+          from: PERMISSION_POLICY,
           to: ACTION,
-          labelKey: "platformOntology.relations.user.created-action",
+          labelKey: "platformOntology.relations.permission-policy.can-execute-action",
           derived: false,
-          owner: "java-action",
+          owner: "java-authorization",
+          group: "authorization",
         },
       ],
     };
@@ -77,15 +84,15 @@ describe("platform-ontology SDK client & adapters", () => {
           neighbors: [{ className: ACTION, primaryKey: "a-1", label: "Approve", layer: "capability" }],
           edges: [
             {
-              id: "user.created-action:platform:User:u-1->platform:Action:a-1",
-              relationKind: "user.created-action",
+              id: "permission-policy.can-execute-action:platform:PermissionPolicy:p-1->platform:Action:a-1",
+              relationKind: "permission-policy.can-execute-action",
               from: { className: USER, primaryKey: "u-1" },
               to: { className: ACTION, primaryKey: "a-1" },
               direction: "outgoing",
               derived: false,
             },
           ],
-          relations: [{ relationKind: "user.created-action", status: "ok", edgeCount: 1 }],
+          relations: [{ relationKind: "permission-policy.can-execute-action", status: "ok", edgeCount: 1 }],
         });
       }
       return new Response("Not found", { status: 404 });
@@ -98,7 +105,8 @@ describe("platform-ontology SDK client & adapters", () => {
     // Concurrent schema reads coalesce into one HTTP request
     const [types, relations] = await Promise.all([typeAdapter.list!(), relationAdapter.list!()]);
     expect(types.map((t) => t.primaryKey)).toEqual([USER, ACTION]);
-    expect(relations.map((r) => r.primaryKey)).toEqual(["user.created-action"]);
+    expect(relations.map((r) => r.primaryKey)).toEqual(["permission-policy.can-execute-action"]);
+    expect(relations[0]?.fields.group).toBe("authorization");
     expect(calls.filter((c) => c.path === "/platform-ontology/schema")).toHaveLength(1);
 
     const counts = await typeAdapter.graph!.counts!();

@@ -18,8 +18,13 @@ export const panelModuleSpecifiers = {
   sdk: "@ontomato/sdk/panel",
 } as const;
 
+/** Where a member's own inputs come from, and where a value that follows the page goes. */
 export const projectionSlotInputsGuidance =
-  "Use :inputs on <projection> only inside a component's scoped slot. Bind other inputs in panel.json with { state }, { state, field }, or { output }.";
+  "Use :inputs on <projection> only inside a component's scoped slot, where an instance is the row's or the item's. Bind the member's other inputs in panel.json with { state }, { state, field }, or { output }, and pass a value that follows the page with :values.";
+
+/** What a placement on `<Projection>` may carry. */
+export const projectionPlacementGuidance =
+  "An attribute on <Projection> configures nothing: write a fixed value in the member's config in panel.json, and a value that follows the page through :values. <Projection> takes slot, inputs, values, class, style, key, ref, listeners and Vue control directives.";
 
 export type PanelModuleSpecifier = typeof panelModuleSpecifiers[keyof typeof panelModuleSpecifiers];
 
@@ -136,7 +141,10 @@ export type SdkAuthoringViolationKind =
   | "forbidden-selector"
   | "forbidden-export"
   | "forbidden-direct-api"
-  | "projection-inputs-outside-slot";
+  | "projection-inputs-outside-slot"
+  | "projection-placement-attribute"
+  | "projection-config-duplicate"
+  | "projection-config-literal";
 
 export interface SdkAuthoringViolation {
   readonly file: string;
@@ -172,17 +180,7 @@ interface TemplateOpeningTag {
   readonly insideScopedSlot: boolean;
 }
 
-const overlayTags = new Set(["sdk-dialog", "sdk-drawer", "sdk-popover", "sdk-popconfirm", "sdk-tooltip"]);
-const htmlVoidTags = new Set([
-  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
-]);
 const templateTagNameChar = /[A-Za-z0-9_.:-]/u;
-
-function canSupplySlotProps(tag: string): boolean {
-  const lower = tag.toLowerCase();
-  if (overlayTags.has(lower) || overlayTags.has(toKebabCase(tag))) return false;
-  return lower === "projection" || lower === "component" || tag.includes("-") || /^[A-Z]/u.test(tag);
-}
 
 /** Skip a Vue `{{ ... }}` mustache interpolation while respecting string literals inside it. */
 function findMustacheEnd(source: string, openIndex: number): number {
@@ -436,6 +434,82 @@ function toKebabCase(name: string): string {
   return name.replace(/(?!^)[A-Z]/g, letter => "-" + letter).toLowerCase();
 }
 
+const overlayTags = new Set(["sdk-dialog", "sdk-drawer", "sdk-popover", "sdk-popconfirm", "sdk-tooltip"]);
+const htmlVoidTags = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
+]);
+
+/** Whether a tag's slot passes it values, which is what a placement inside it receives as member inputs. */
+function canSupplySlotProps(tag: string): boolean {
+  const lower = tag.toLowerCase();
+  if (overlayTags.has(lower) || overlayTags.has(toKebabCase(tag))) return false;
+  return lower === "projection" || lower === "component" || tag.includes("-") || /^[A-Z]/u.test(tag);
+}
+
+/** The names a placement on `<Projection>` may carry beyond its own inputs: nothing there configures the component. */
+const placementAttributeName = /^(?:slot|inputs|values|class|style|key|ref)$/u;
+
+function isPlacementAttribute(name: string): boolean {
+  if (/^(?:@|v-on:)/u.test(name)) return true;
+  if (/^v-(?:if|else|else-if|for|show|once|pre|cloak)(?:$|\.)/u.test(name)) return true;
+  if (/^(?:#|v-slot(?::|$))/u.test(name)) return true;
+  const bound = /^(?::|v-bind:)(.+)$/u.exec(name);
+  return placementAttributeName.test(bound ? bound[1]! : name);
+}
+
+/** Whether the text is a value written as it is, rather than something the page computes. */
+function isConstantLiteral(value: string): boolean {
+  const text = value.trim();
+  if (/^(?:true|false|null)$/u.test(text)) return true;
+  if (/^-?\d+(?:\.\d+)?$/u.test(text)) return true;
+  if (/^'(?:[^'\\]|\\.)*'$/u.test(text) || /^"(?:[^"\\]|\\.)*"$/u.test(text)) return true;
+  return /^`[^`$]*`$/u.test(text);
+}
+
+/**
+ * The statically written entries of an object literal, or `null` when the expression does not show them (a reference
+ * to another value, a spread, a computed key).
+ */
+function objectLiteralEntries(expression: string): { key: string; value: string }[] | null {
+  const text = expression.trim();
+  if (!text.startsWith("{") || !text.endsWith("}")) return null;
+  const body = text.slice(1, -1);
+  const segments: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let start = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]!;
+    if (quote !== null) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+    else if ("{[(".includes(ch)) depth++;
+    else if ("}])".includes(ch)) depth--;
+    else if (ch === "," && depth === 0) {
+      segments.push(body.slice(start, i));
+      start = i + 1;
+    }
+  }
+  segments.push(body.slice(start));
+  const entries: { key: string; value: string }[] = [];
+  for (const segment of segments) {
+    const entry = segment.trim();
+    if (!entry) continue;
+    if (entry.startsWith("...") || entry.startsWith("[")) return null;
+    const quoted = /^(?:"([^"]*)"|'([^']*)'|`([^`]*)`)\s*(?::|$)([\s\S]*)$/u.exec(entry);
+    const bare = quoted ? null : /^([A-Za-z_$][\w$]*)\s*(?::|$)([\s\S]*)$/u.exec(entry);
+    if (!quoted && !bare) return null;
+    entries.push({
+      key: quoted ? (quoted[1] ?? quoted[2] ?? quoted[3]!) : bare![1]!,
+      value: quoted ? quoted[4]! : bare![2]!,
+    });
+  }
+  return entries;
+}
+
 function makeViolation(
   source: string,
   file: string,
@@ -499,6 +573,82 @@ export function checkAuthoringTheme(
         replacement,
         message,
       });
+    }
+  }
+  return violations;
+}
+
+/** One member of a panel's declaration, as far as where its component's values are written matters. */
+export interface ProjectionConfigMember {
+  readonly config?: Readonly<Record<string, unknown>>;
+  readonly inputs?: Readonly<Record<string, unknown>>;
+}
+
+function duplicateValueViolation(file: string, member: string, name: string, where: string): SdkAuthoringViolation {
+  return {
+    file,
+    line: 1,
+    column: 1,
+    kind: "projection-config-duplicate",
+    found: name,
+    replacement: null,
+    message: `Member '${member}' writes '${name}' ${where}; a value has one owner: a fixed one in the member's config, a value that follows the page through its input.`,
+  };
+}
+
+/**
+ * Check that one member writes one value in one place: its fixed configuration in the declaration, or its input, never
+ * both, and never the same input in the declaration and where the member is placed.
+ */
+export function checkProjectionConfigSources(
+  members: Readonly<Record<string, ProjectionConfigMember>>,
+  template: string | undefined,
+  file: string,
+): SdkAuthoringViolation[] {
+  const violations: SdkAuthoringViolation[] = [];
+  for (const [member, declaration] of Object.entries(members)) {
+    const config = declaration.config ?? {};
+    for (const name of Object.keys(declaration.inputs ?? {})) {
+      if (Object.hasOwn(config, name)) violations.push(duplicateValueViolation(file, member, name, "in both config and inputs"));
+    }
+  }
+  if (template === undefined) return violations;
+  const sanitized = template
+    .replace(/<!--[\s\S]*?-->/gu, match => match.replace(/[^\r\n]/gu, " "))
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, match => match.replace(/[^\r\n]/gu, " "))
+    .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/giu, match => match.replace(/[^\r\n]/gu, " "));
+  for (const tag of scanTemplateOpeningTags(sanitized)) {
+    if (tag.tagName.toLowerCase() !== "projection") continue;
+    const slot = tag.attributes.find(attr => attr.name === "slot" || attr.name === ":slot" || attr.name === "v-bind:slot");
+    if (slot?.value === undefined) continue;
+    const member = slot.value.trim();
+    const declaration = members[member];
+    if (!declaration) continue;
+    for (const attr of tag.attributes) {
+      const bound = /^(?::|v-bind:)(inputs|values)$/u.exec(attr.name);
+      if (!bound || attr.value === undefined) continue;
+      const written = objectLiteralEntries(attr.value);
+      for (const { key: name, value } of written ?? []) {
+        if (Object.hasOwn(declaration.config ?? {}, name)) {
+          violations.push(makeViolation(
+            template, file, tag.tagStart + attr.nameOffset, "projection-config-duplicate", name, null,
+            `Member '${member}' writes '${name}' in its config and again in the placement's :${bound[1]}; keep the value where it belongs: fixed presentation in config, a value that follows the page in :values.`,
+          ));
+        } else if (Object.hasOwn(declaration.inputs ?? {}, name)
+          // `{ fromSlot: true }` declares that the slot supplies this input: the placement is its only source.
+          && !(bound[1] === "inputs" && "fromSlot" in (declaration.inputs![name] as object))) {
+          violations.push(makeViolation(
+            template, file, tag.tagStart + attr.nameOffset, "projection-config-duplicate", name, null,
+            `Member '${member}' binds input '${name}' in its declaration and again in the placement's :${bound[1]}; one input has one source.`,
+          ));
+        }
+        if (bound[1] === "values" && isConstantLiteral(value)) {
+          violations.push(makeViolation(
+            template, file, tag.tagStart + attr.nameOffset, "projection-config-literal", name, null,
+            `Member '${member}' writes '${name}' as a fixed value where the member is placed; a value that never changes belongs in the member's config, and :values carries only the ones that follow the page.`,
+          ));
+        }
+      }
     }
   }
   return violations;
@@ -581,6 +731,12 @@ export function checkAuthoringTemplate(
         violations.push(makeViolation(
           template, file, tag.tagStart + attr.nameOffset, "projection-inputs-outside-slot",
           attr.name, null, projectionSlotInputsGuidance,
+        ));
+      }
+      if (rawTag.toLowerCase() === "projection" && !isPlacementAttribute(lowerAttr)) {
+        violations.push(makeViolation(
+          template, file, tag.tagStart + attr.nameOffset, "projection-placement-attribute",
+          attr.name, null, projectionPlacementGuidance,
         ));
       }
       if ((lowerAttr === "is" || lowerAttr === ":is" || lowerAttr === "v-bind:is") && attr.value !== undefined) {

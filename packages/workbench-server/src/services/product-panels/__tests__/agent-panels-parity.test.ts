@@ -53,7 +53,7 @@ describe("agent-settings and agent-detail builtin panels", () => {
       showChangeSummary: true,
       changeSummaryTitle: "detail.changeSummary",
     });
-    expect(html).toContain(":title=\"liveTitle\"");
+    expect(html).toContain(':values="{ title: liveTitle, fallbackTitle: selectedKey }"');
     expect(html).toContain("#leading");
     expect(html).toContain("#field-icon=");
     expect(html).toContain("t('form.avatarColor')");

@@ -3,7 +3,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { useAppTheme } from "@ontomato/platform-shell";
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import type { DirectPanelMount } from "./direct-mount";
-import { forwardDirectProjectionAttrs } from "./projection-attrs";
+import { placementListeners } from "./projection-attrs";
 
 /** The run a panel's component mounted in the platform's document draws its members from. */
 export const directMountKey: InjectionKey<DirectPanelMount> = Symbol("ontomato.panel.directMount");
@@ -11,8 +11,10 @@ export const directMountKey: InjectionKey<DirectPanelMount> = Symbol("ontomato.p
 /**
  * `<Projection slot="…"/>` in a panel run in the platform's document: the run's member, drawn by the directly rendered
  * panel's own member component inside the member's container, as a directly rendered layout places each member.
- * Optional `:inputs="{ ... }"` passes slot-scoped input values (such as a row's `{ target: ref }` inside `ObjectList`'s
- * `#row-detail` or `#cell-*` slot) into an isolated instance of that member.
+ * `:inputs="{ ... }"` passes what a slot supplies to an instance of its own (a row's `{ target: ref }` inside
+ * `ObjectList`'s `#row-detail` or `#cell-*` slot). `:values="{ ... }"` passes the values that follow the page — a title,
+ * a disabled state. `class`/`style` size the container; `@event` listeners are the page's. No other attribute configures
+ * the component: a fixed value is the member's `config`.
  */
 export default defineComponent({
   // eslint-disable-next-line vue/multi-word-component-names
@@ -21,6 +23,7 @@ export default defineComponent({
   props: {
     slot: { type: String, required: true },
     inputs: { type: Object as PropType<Readonly<Record<string, RuntimeJsonValue>>>, default: undefined },
+    values: { type: Object as PropType<Readonly<Record<string, RuntimeJsonValue>>>, default: undefined },
   },
   setup(props, { attrs, slots, expose }) {
     const mount = inject(directMountKey);
@@ -48,8 +51,8 @@ export default defineComponent({
       };
       if (attrs.style !== undefined) containerProps.style = attrs.style;
       return h("div", containerProps, [
-        cloneVNode(mount.member(props.slot, slots, props.inputs), {
-          ...forwardDirectProjectionAttrs(attrs),
+        cloneVNode(mount.member(props.slot, slots, props.inputs, props.values), {
+          ...placementListeners(attrs),
           ref: memberRef,
         }),
       ]);
