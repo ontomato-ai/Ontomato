@@ -1,7 +1,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { mountPanel, usePanelContext, usePanelOperation, usePanelOutput } from "@ontomato/sdk/panel";
 
-const TASK = "platform:ScheduledTask";
+const TASK = "platform:Trigger";
 
 await mountPanel({
   setup() {
@@ -55,13 +55,17 @@ await mountPanel({
     const expandedRunIds = ref([]);
     const isRunning = computed(() => Boolean(detailRunning.value || focusRunning.value));
 
+    const statusModel = computed({
+      get: () => (typeof values.value.status === "string" ? values.value.status : ""),
+      set: (next) => instance.state.set("status", typeof next === "string" ? next : ""),
+    });
     const searchModel = computed({
       get: () => (typeof values.value.search === "string" ? values.value.search : ""),
       set: (next) => instance.state.set("search", typeof next === "string" ? next : ""),
     });
-    const hasActiveFilters = computed(() => Boolean(values.value.app || searchModel.value.trim()));
+    const hasActiveFilters = computed(() => Boolean(values.value.app || statusModel.value || searchModel.value.trim()));
     function clearFilters() {
-      instance.state.setState({ app: "", search: "" });
+      instance.state.setState({ app: "", status: "", search: "" });
     }
 
     const runsDrawerTitle = computed(() => {
@@ -252,7 +256,8 @@ await mountPanel({
     function notifyRunNowOutcome(outcome, taskId) {
       const run = outcome.data;
       if (run?.status === "completed") {
-        notify({ kind: "success", text: t("message.runCompleted") });
+        const key = run.snapshot?.targetKind === "workflow" ? "message.runWorkflowStarted" : "message.runCompleted";
+        notify({ kind: "success", text: t(key) });
       } else if (run?.status === "skipped") {
         notify({ kind: "warning", text: t("message.runSkipped", { reason: runReason(run.error) }) });
       } else if (run?.status === "failed") {
@@ -287,7 +292,7 @@ await mountPanel({
         }
         return;
       }
-      if (operation === "setEnabled") {
+      if (operation === "setEnabled" || operation === "publish" || operation === "unuse") {
         const task = outcome.data;
         if (task?.enabled && task.pause) {
           notify({ kind: "warning", text: t("message.stillPaused", { reason: task.pause.message }) });
@@ -318,6 +323,25 @@ await mountPanel({
           notify({ kind: "warning", text: t("message.stillPaused", { reason: task.pause.message }) });
         } else {
           notify({ kind: "success", text: task?.enabled ? t("message.enabled") : t("message.disabled") });
+        }
+        instance.refreshObjects();
+      },
+      onError: notifyActionError,
+    });
+    const opSetStatus = usePanelOperation("opSetStatus", "setStatus", {
+      available: canOperateSelected,
+      onSettled(receipt) {
+        const outcome = outcomeOf(receipt);
+        if (outcome.kind !== "success") return refused(outcome, selectedId.value);
+        const task = outcome.data;
+        if (task?.enabled && task.pause) {
+          notify({ kind: "warning", text: t("message.stillPaused", { reason: task.pause.message }) });
+        } else if (task?.status === "PUBLISHED") {
+          notify({ kind: "success", text: t("message.published") });
+        } else if (task?.status === "UNUSED") {
+          notify({ kind: "success", text: t("message.unused") });
+        } else {
+          notify({ kind: "success", text: t("message.saved") });
         }
         instance.refreshObjects();
       },
@@ -493,6 +517,7 @@ await mountPanel({
     // Keep refs referenced cleanly if inspected by tooling.
     void detailRevision;
     void opEnable;
+    void opSetStatus;
     void opRunNow;
     void opDelete;
 
@@ -516,6 +541,7 @@ await mountPanel({
       focusResultPath,
       isRunning,
       tasksStatus,
+      statusModel,
       searchModel,
       hasActiveFilters,
       clearFilters,

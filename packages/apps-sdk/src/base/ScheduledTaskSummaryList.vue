@@ -20,8 +20,8 @@ import type { ObjectListRef } from "./object-list-types";
 import { rawRecordField } from "./record-field";
 import type { ScheduledTaskCardActions, ScheduledTaskPresentation, ScheduledTaskSummaryItem } from "./scheduled-task-summary-types";
 
-/** The personal workspace attention summary and the full cards for the same scheduled tasks. */
-const scheduledTaskType = "platform:ScheduledTask";
+/** The personal workspace attention summary and the full cards for the same task triggers. */
+const scheduledTaskType = "platform:Trigger";
 const toggleOperation = "setEnabled";
 
 const props = withDefaults(
@@ -113,7 +113,7 @@ function parseTaskRecord(row: PlatformObjectRecord): ScheduledTaskSummaryItem {
   const activeRunId = readStr(row, "activeRunId");
   const enabledRaw = rawRecordField(row, "enabled");
   const enabled = enabledRaw === undefined ? true : Boolean(enabledRaw);
-  const lastRunStatus = readStr(row, "lastRunStatus", "status")
+  const lastRunStatus = readStr(row, "lastRunStatus", "lastRun")
     ?? (typeof lastRunObj?.status === "string" ? lastRunObj.status : null);
   const lastRunFinishedAt = readStr(row, "lastRunFinishedAt", "lastFinishedAt")
     ?? (typeof lastRunObj?.finishedAt === "string" ? lastRunObj.finishedAt : null);
@@ -123,6 +123,8 @@ function parseTaskRecord(row: PlatformObjectRecord): ScheduledTaskSummaryItem {
     ?? (typeof lastRunObj?.resultSummary === "string" ? lastRunObj.resultSummary : null);
   const nextRunAt = readStr(row, "nextRunAt");
   const revision = rawRecordField(row, "revision");
+  const version = rawRecordField(row, "version");
+  const targetKind = readStr(row, "targetKind");
 
   return {
     id: row.primaryKey,
@@ -135,11 +137,18 @@ function parseTaskRecord(row: PlatformObjectRecord): ScheduledTaskSummaryItem {
     lastRunErrorMessage,
     lastRunSummary,
     nextRunAt,
+    targetKind,
     ...(presentation.value === "cards" ? {
-      applicationId: readStr(row, "application", "appId"),
-      applicationName: readStr(row, "applicationName", "appName"),
+      applicationId: readStr(row, "application", "appId", "targetId"),
+      applicationName: readStr(row, "targetName", "applicationName", "appName"),
       applicationType: readStr(row, "applicationType", "appType"),
-      applicationIcon: readStr(row, "applicationIcon", "appIcon"),
+      applicationIcon: readStr(row, "targetIcon", "applicationIcon", "appIcon"),
+      definitionStatus: readStr(row, "definitionStatus"),
+      statusCode: readStr(row, "status"),
+      version: typeof version === "number" ? version : null,
+      executorId: readStr(row, "executorId"),
+      reviewedBy: readStr(row, "reviewedBy"),
+      coauthorIds: readStr(row, "coauthorIds"),
       description: readStr(row, "settings", "description") ?? row.subtitle,
       schedule: readStr(row, "frequency", "scheduleExpression", "cron"),
       revision: typeof revision === "number" ? revision : null,
@@ -246,7 +255,11 @@ function statusText(task: ScheduledTaskSummaryItem): string {
   if (isRunning(task)) return translate("ontology.productTaskRunning", isZh.value ? "运行中" : "Running");
   if (task.pauseMessage) return translate("ontology.productTaskPaused", isZh.value ? "已暂停" : "Paused");
   if (!task.enabled) return translate("ontology.productTaskDisabled", isZh.value ? "已停用" : "Disabled");
-  if (task.lastRunStatus === "completed") return translate("ontology.productHomeTaskCompleted", isZh.value ? "已完成" : "Completed");
+  if (task.lastRunStatus === "completed") {
+    return task.targetKind === "workflow"
+      ? t("platformSchedules.runStatus.workflowStarted")
+      : translate("ontology.productHomeTaskCompleted", isZh.value ? "已完成" : "Completed");
+  }
   if (task.lastRunStatus === "failed") return translate("ontology.productHomeTaskFailed", isZh.value ? "执行失败" : "Failed");
   if (task.lastRunStatus === "skipped") return translate("ontology.productHomeTaskSkipped", isZh.value ? "已跳过" : "Skipped");
   return translate("ontology.productHomeTaskPending", isZh.value ? "待运行" : "Pending");
@@ -315,6 +328,8 @@ function taskKey(task: ScheduledTaskSummaryItem): string {
 
 function applicationIcon(task: ScheduledTaskSummaryItem) {
   if (task.applicationIcon && hasAppIcon(task.applicationIcon)) return appIcon(task.applicationIcon);
+  if (task.targetKind === "workflow") return appIcon("workflow");
+  if (task.targetKind === "action") return appIcon("play");
   const kind = task.applicationType === "agent" ? "bot" : task.applicationType;
   if (kind && hasAppIcon(kind)) return appIcon(kind);
   return appIcon(task.applicationId && hasAppIcon(task.applicationId) ? task.applicationId : "app-window");
@@ -328,6 +343,9 @@ function toggleDetails(task: ScheduledTaskSummaryItem) {
 
 function runStatus(task: ScheduledTaskSummaryItem): string {
   const status = task.activeRunId ? "running" : task.lastRunStatus;
+  if (status === "completed" && task.targetKind === "workflow") {
+    return t("platformSchedules.runStatus.workflowStarted");
+  }
   switch (status) {
     case "running":
     case "completed":
@@ -477,11 +495,14 @@ async function dispatchCardOperation(task: ScheduledTaskSummaryItem, name: strin
               <component :is="applicationIcon(task)" :size="16" aria-hidden="true" />
               {{ task.applicationName || task.applicationId }}
             </span>
+            <span v-if="task.definitionStatus" class="sdk-sts-card-status">
+              {{ task.definitionStatus }}<template v-if="task.version != null"> · v{{ task.version }}</template>
+            </span>
             <span class="sdk-sts-card-badge">
               <span class="sdk-sts-dot" :class="statusDotClass(task)" aria-hidden="true" />
               {{ task.stateLabel || statusText(task) }}
             </span>
-            <span class="sdk-sts-card-switch" @click.stop>
+            <span v-if="!task.statusCode || task.statusCode === 'PUBLISHED'" class="sdk-sts-card-switch" @click.stop>
               <ElSwitch
                 :model-value="task.enabled"
                 :loading="switches.get(taskKey(task))?.busy"
@@ -522,6 +543,11 @@ async function dispatchCardOperation(task: ScheduledTaskSummaryItem, name: strin
               <span>{{ runStatus(task) }}</span>
               <span v-if="task.lastRunFinishedAt || task.lastRunStartedAt">{{ formatDate((task.lastRunFinishedAt || task.lastRunStartedAt)!) }}</span>
               <span v-if="task.revision != null" :title="task.row?.fieldLabels?.revision">{{ '#' + task.revision }}</span>
+            </p>
+            <p v-if="task.executorId || task.reviewedBy || task.coauthorIds" class="sdk-sts-card-governance">
+              <span v-if="task.executorId">{{ task.row?.fieldLabels?.executorId ?? t('platformSchedules.panelFields.executorId') }}: {{ task.executorId }}</span>
+              <span v-if="task.reviewedBy">{{ task.row?.fieldLabels?.reviewedBy ?? t('platformSchedules.panelFields.reviewedBy') }}: {{ task.reviewedBy }}</span>
+              <span v-if="task.coauthorIds">{{ task.row?.fieldLabels?.coauthorIds ?? t('platformSchedules.panelFields.coauthorIds') }}: {{ task.coauthorIds }}</span>
             </p>
             <p v-if="task.lastRunSummary && !task.lastRunErrorMessage">{{ formatSummaryExcerpt(task.lastRunSummary) }}</p>
           </div>
@@ -673,11 +699,17 @@ async function dispatchCardOperation(task: ScheduledTaskSummaryItem, name: strin
   overflow-wrap: anywhere;
 }
 
-.sdk-sts-card-badge {
+.sdk-sts-card-badge,
+.sdk-sts-card-status {
   padding: 2px 7px;
   border-radius: 999px;
   background: var(--el-fill-color-light);
   font-size: var(--text-xs, 12px);
+}
+
+.sdk-sts-card-governance {
+  font-size: var(--text-xs, 12px);
+  color: var(--el-text-color-secondary);
 }
 
 .sdk-sts-card-title,

@@ -20,8 +20,8 @@ test("offline panel check expands a qualified component from its package declara
   await Promise.all([sdk, workspace, release].map(directory => mkdir(directory)));
   const json = (directory, file, value) => writeFile(join(directory, file), JSON.stringify(value));
   const packageName = "@example/tools";
-  const operation = "schedules.runNow";
-  const objectType = "platform:ScheduledTask";
+  const operation = "triggers.runNow";
+  const objectType = "platform:Trigger";
   const item = {
     componentId: packageName + ":ScheduleCards", module: packageName, exportName: "ScheduleCards",
     role: "control", meaning: "Shows scheduled tasks and starts one.",

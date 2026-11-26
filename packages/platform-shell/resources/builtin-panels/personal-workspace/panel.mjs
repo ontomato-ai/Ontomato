@@ -440,7 +440,7 @@ await mountPanel({
     }
 
     function onSelectTask(task) {
-      const ref = task?.ref ?? (task?.id ? { className: "platform:ScheduledTask", primaryKey: task.id } : null);
+      const ref = task?.ref ?? (task?.id ? { className: "platform:Trigger", primaryKey: task.id } : null);
       if (!ref?.className || !ref?.primaryKey) return;
       const targetPath = task?.row?.outputs?.openPath || taskPathFromPrimaryKey(ref.primaryKey);
       if (openModeTasks.value === "page") {

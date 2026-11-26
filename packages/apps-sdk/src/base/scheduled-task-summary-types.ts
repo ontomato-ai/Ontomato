@@ -25,6 +25,13 @@ export interface ScheduledTaskSummaryItem {
   readonly applicationName?: string | null;
   readonly applicationType?: string | null;
   readonly applicationIcon?: string | null;
+  readonly targetKind?: string | null;
+  readonly definitionStatus?: string | null;
+  readonly statusCode?: string | null;
+  readonly version?: number | null;
+  readonly executorId?: string | null;
+  readonly reviewedBy?: string | null;
+  readonly coauthorIds?: string | null;
   readonly description?: string | null;
   readonly schedule?: string | null;
   readonly revision?: number | null;
