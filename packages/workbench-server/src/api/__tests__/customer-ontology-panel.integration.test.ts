@@ -102,14 +102,16 @@ function javaOwner(app: express.Express) {
     reader(req);
     const pattern = req.body.answer.steps[0].graph.patterns[0];
     const [{ type: [kind], from }] = pattern.relationship;
-    ownerCalls.push(`dsl ${kind} from ${from} limit ${req.body.answer.steps[0].output.limit.count}`);
+    const { offset, count } = req.body.answer.steps[0].output.limit;
+    ownerCalls.push(`dsl ${kind} from ${from} limit ${count} offset ${offset}`);
     if (kind === "org_to_audit") {
       res.status(403).json({ success: false, message: "Class audit is outside the authorized scope" });
       return;
     }
     // The anchor org sits at the relationship's target end, so its people come back from the incoming direction.
     expect(from).toBe(1);
-    res.json({ data: [{ answer: [{ id: "p1", name: "Alice", team: "Ops" }, { id: "p3", name: "Bob", team: "" }] }] });
+    const people = [{ id: "p1", name: "Alice", team: "Ops" }, { id: "p3", name: "Bob", team: "" }];
+    res.json({ data: [{ answer: people.slice(offset, offset + count) }] });
   });
 }
 
@@ -133,7 +135,10 @@ const projections: Record<string, object> = {
   detail: recordOf(person),
   hidden: recordOf({ className: "person", primaryKey: "p2" }),
   missing: recordOf({ className: "person", primaryKey: "p9" }),
-  staff: neighborsOf("person_to_org", { node: { literal: org }, limit: { literal: 1 } }),
+  staff: {
+    ...neighborsOf("person_to_org", { node: { literal: org }, limit: { literal: 1 } }),
+    componentId: "@ontomato/sdk:OntologyGraph",
+  },
   audits: neighborsOf("org_to_audit", { node: { literal: org } }),
   crossed: neighborsOf("person_to_org", { node: { literal: org }, relationKinds: { literal: ["org_to_audit"] } }),
 };
@@ -210,8 +215,8 @@ function request(method: string, resource: string, body?: object) {
   });
 }
 
-async function read(member: string, dataName: string) {
-  const response = await request("POST", "product-panels/read", { source: use, memberPath: [{ member }], dataName, inputs: {} });
+async function read(member: string, dataName: string, runtimeParams?: Record<string, number>) {
+  const response = await request("POST", "product-panels/read", { source: use, memberPath: [{ member }], dataName, inputs: {}, runtimeParams });
   expect(response.status, member).toBe(200);
   return productPanelReadResponseSchema.parse(await response.json());
 }
@@ -251,8 +256,14 @@ it("reads a relationship's neighbors from the anchor's end, marking truncation a
       from: { className: "person", primaryKey: "p1" }, to: { className: "org", primaryKey: "o1" },
     }],
     relations: [{ relationKind: "person_to_org", status: "ok", edgeCount: 1, truncated: true }],
+    nextOffset: 1, total: null,
   } });
-  expect(ownerCalls).toEqual(["dsl person_to_org from 1 limit 2"]);
+  expect(await read("staff", "neighbors", { offset: 1 })).toMatchObject({ status: "ready", value: {
+    neighbors: [{ primaryKey: "p3" }],
+    relations: [{ relationKind: "person_to_org", status: "ok", edgeCount: 1, truncated: false }],
+    nextOffset: null, total: 2,
+  } });
+  expect(ownerCalls).toEqual(["dsl person_to_org from 1 limit 2 offset 0", "dsl person_to_org from 1 limit 2 offset 1"]);
 
   expect(await read("audits", "neighbors")).toMatchObject({ status: "ready", value: {
     node: { primaryKey: "o1" }, neighbors: [], edges: [],

@@ -121,6 +121,7 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
       node: panelReadParameterSchemas.graphNode.parse(params.node),
       relationKinds: panelReadParameterSchemas.relationKinds.optional().parse(params.relationKinds),
       limit: panelReadParameterSchemas.neighborsLimit.optional().parse(params.limit),
+      offset: panelReadParameterSchemas.nonNegativeInt.optional().parse(params.offset),
     }),
   };
 }

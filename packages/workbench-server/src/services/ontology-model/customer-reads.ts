@@ -100,6 +100,7 @@ export interface CustomerOntologyNeighborsParams {
   node: CustomerOntologyNodeRef;
   relationKinds?: readonly string[];
   limit?: number;
+  offset?: number;
 }
 
 export interface CustomerOntologyFormParams {
@@ -473,7 +474,7 @@ function planRelation(catalog: readonly ClassRelationship[], relationshipId: str
 
 /**
  * The per-relation DSL, following the object detail page's loadViewLinks: anchor and target at idx 0/1, the
- * relationship's own from/to, rows sorted by the target's primary key, and one row over the limit to detect truncation.
+ * relationship's own from/to, and distinct target rows sorted by primary key before pagination.
  */
 function neighborsDsl(
   anchor: CustomerOntologyNodeRef,
@@ -481,13 +482,17 @@ function neighborsDsl(
   relationKind: string,
   { direction, targetClass }: NeighborDirection,
   targetAttributes: readonly ClassAttribute[],
-  limit: number,
+  count: number,
+  offset: number,
 ): Record<string, unknown> {
   const targetPrimaryKey = primaryKeyName(targetAttributes);
   const fields = [...new Set([
     targetPrimaryKey,
     ...targetAttributes.filter(attribute => attribute.enable && attribute.businessKey).map(attribute => attribute.name),
-  ])].map(name => ({ variable: "target", field: name, as: name }));
+  ])].map(name => ({
+    variable: "target", field: name, as: name,
+    ...(name === targetPrimaryKey && { distinct: true }),
+  }));
   return {
     problem: "",
     answer: { steps: [{
@@ -510,20 +515,17 @@ function neighborsDsl(
         to_user: true,
         fields,
         sort: { fields: [{ variable: "target", field: targetPrimaryKey, order: "asc" }] },
-        limit: { count: limit + 1, offset: 0 },
+        limit: { count, offset },
       },
     }] },
   };
 }
 
-/**
- * Assembles the neighbors response from the anchor record and each relation's direction results. This is the one
- * place that knows the result's field names, so A's final schema rename or reshape lands here only.
- */
 function assembleCustomerNeighbors(
   anchor: CustomerOntologyNodeRef & { label: string },
   limit: number,
-  reads: readonly NeighborRelationRead[],
+  offset: number,
+  read: NeighborRelationRead,
   attributesOf: (className: string) => readonly ClassAttribute[],
   typeLabels: ReadonlyMap<string, string>,
 ): PanelRelationNeighbors {
@@ -531,73 +533,67 @@ function assembleCustomerNeighbors(
   const anchorRef = { className: anchor.className, primaryKey: anchor.primaryKey };
   const anchorTypeLabel = typeLabels.get(anchor.className);
   const edges: PanelRelationNeighbors["edges"] = [];
-  const relations: PanelRelationNeighbors["relations"] = [];
   const neighbors = new Map<string, PlatformOntologyNode>();
+  let status: "ok" | "refused" | "failed" = read.unknownReason ? "failed" : "ok";
+  let reason = read.unknownReason;
+  let truncated = false;
+  // A self-relation is one ordered edge stream: outgoing first, then incoming.
+  // With just one direction the DSL already applied the offset.
+  let skip = read.directions.length > 1 ? offset : 0;
 
-  for (const read of reads) {
-    let status: "ok" | "refused" | "failed" = "ok";
-    let reason: string | undefined = read.unknownReason;
-    let truncated = false;
-    const seenEdges = new Set<string>();
-    if (read.unknownReason) status = "failed";
-
-    for (const { direction, targetClass, result } of read.directions) {
-      if (!result.ok) {
-        // The loudest honest status names the relation; a self-loop's two sides can disagree.
-        if (severity[result.status] > severity[status]) {
-          status = result.status;
-          reason = result.reason;
-        }
-        continue;
+  for (const { direction, targetClass, result } of read.directions) {
+    if (!result.ok) {
+      if (severity[result.status] > severity[status]) {
+        status = result.status;
+        reason = result.reason;
       }
-      truncated = truncated || result.rows.length > limit;
-      const attributes = attributesOf(targetClass);
-      const targetPrimaryKey = primaryKeyName(attributes);
-      for (const row of result.rows.slice(0, limit)) {
-        const neighborPrimaryKey = displayText(row[targetPrimaryKey]);
-        const id = `${read.relationKind}:${direction}:${anchor.primaryKey}:${neighborPrimaryKey}`;
-        if (seenEdges.has(id)) continue;
-        seenEdges.add(id);
-        const neighbor = { className: targetClass, primaryKey: neighborPrimaryKey };
-        // from and to follow the relationship's own direction; direction is relative to the anchor.
-        edges.push({
-          id,
-          relationKind: read.relationKind,
-          ...(read.label && { label: read.label }),
-          from: direction === "outgoing" ? anchorRef : neighbor,
-          to: direction === "outgoing" ? neighbor : anchorRef,
-          direction,
-          derived: false,
+      continue;
+    }
+    const take = limit - edges.length;
+    truncated = truncated || result.rows.length > skip + take;
+    const page = result.rows.slice(skip, skip + take);
+    skip = Math.max(0, skip - result.rows.length);
+    const attributes = attributesOf(targetClass);
+    const targetPrimaryKey = primaryKeyName(attributes);
+    for (const row of page) {
+      const neighborPrimaryKey = displayText(row[targetPrimaryKey]);
+      const neighbor = { className: targetClass, primaryKey: neighborPrimaryKey };
+      edges.push({
+        id: `${read.relationKind}:${direction}:${anchor.primaryKey}:${neighborPrimaryKey}`,
+        relationKind: read.relationKind,
+        ...(read.label && { label: read.label }),
+        from: direction === "outgoing" ? anchorRef : neighbor,
+        to: direction === "outgoing" ? neighbor : anchorRef,
+        direction,
+        derived: false,
+      });
+      const neighborKey = `${targetClass}:${neighborPrimaryKey}`;
+      if (!neighbors.has(neighborKey)) {
+        const typeLabel = typeLabels.get(targetClass);
+        neighbors.set(neighborKey, {
+          ...neighbor,
+          label: recordLabel(attributes, neighborPrimaryKey, row),
+          ...(typeLabel && { typeLabel }),
+          layer: "fact",
         });
-        const neighborKey = `${targetClass}:${neighborPrimaryKey}`;
-        if (!neighbors.has(neighborKey)) {
-          const typeLabel = typeLabels.get(targetClass);
-          neighbors.set(neighborKey, {
-            className: targetClass,
-            primaryKey: neighborPrimaryKey,
-            label: recordLabel(attributes, neighborPrimaryKey, row),
-            ...(typeLabel && { typeLabel }),
-            layer: "fact",
-          });
-        }
       }
     }
-
-    relations.push({
-      relationKind: read.relationKind,
-      ...(read.label && { label: read.label }),
-      status,
-      edgeCount: seenEdges.size,
-      ...(reason ? { reason } : {}),
-      truncated,
-    });
   }
 
   return {
     node: { ...anchorRef, label: anchor.label, ...(anchorTypeLabel && { typeLabel: anchorTypeLabel }), layer: "fact" },
     neighbors: [...neighbors.values()],
     edges,
-    relations,
+    relations: [{
+      relationKind: read.relationKind,
+      ...(read.label && { label: read.label }),
+      status,
+      edgeCount: edges.length,
+      ...(reason ? { reason } : {}),
+      truncated,
+    }],
+    nextOffset: status === "ok" && truncated ? offset + edges.length : null,
+    total: status === "ok" && !truncated && (offset === 0 || edges.length > 0) ? offset + edges.length : null,
   };
 }
 
@@ -722,7 +718,7 @@ export function createCustomerOntologyReadAdapter(
       return buildCustomerFormDescription(typeId, attributes, "create", undefined, params);
     },
 
-    async neighbors(relationshipId, { node, relationKinds, limit: requested }) {
+    async neighbors(relationshipId, { node, relationKinds, limit: requested, offset = 0 }) {
       // The source names its relationship; a parameter cannot point the read at another one.
       if (relationKinds?.some(kind => kind !== relationshipId))
         throw new HttpError(400, "relationKinds can only name the source relationship", "PANEL_INPUT_TYPE_MISMATCH");
@@ -732,7 +728,7 @@ export function createCustomerOntologyReadAdapter(
         readObject(node.className, node.primaryKey, anchorAttributes),
         classRelationships(node.className),
       ]);
-      const plans = [planRelation(catalog, relationshipId, node.className)];
+      const plan = planRelation(catalog, relationshipId, node.className);
       const typeLabels = new Map<string, string>();
       for (const relation of catalog) {
         if (relation.fromShowName) typeLabels.set(relation.fromclass, relation.fromShowName);
@@ -741,29 +737,31 @@ export function createCustomerOntologyReadAdapter(
 
       // The attributes each class needs are read once per call and reused; a self-loop's target is the anchor's own class.
       const attributesByClass = new Map<string, ClassAttribute[]>([[node.className, anchorAttributes]]);
+      const directions = "directions" in plan ? plan.directions : [];
       await Promise.all(
-        [...new Set(plans.flatMap(plan => ("directions" in plan ? plan.directions : []).map(({ targetClass }) => targetClass)))]
+        [...new Set(directions.map(({ targetClass }) => targetClass))]
           .filter(targetClass => !attributesByClass.has(targetClass))
           .map(async targetClass => { attributesByClass.set(targetClass, await classAttributes(targetClass)); }),
       );
 
-      const reads: NeighborRelationRead[] = await Promise.all(plans.map(async plan => {
-        if (!("directions" in plan))
-          return { relationKind: plan.relationKind, directions: [], unknownReason: plan.unknownReason };
-        const directions = await Promise.all(plan.directions.map(async direction => ({
-          ...direction,
-          result: await readNeighborEdges(neighborsDsl(
-            node, primaryKeyName(anchorAttributes), plan.relationKind, direction,
-            attributesByClass.get(direction.targetClass)!, limit,
-          )),
-        })));
-        return { relationKind: plan.relationKind, label: plan.label, directions };
-      }));
-
+      // Both sides of a self-relation share the page. Each query returns only the prefix that can affect it.
+      const queryOffset = directions.length > 1 ? 0 : offset;
+      const queryCount = offset - queryOffset + limit + 1;
+      const directionReads = await Promise.all(directions.map(async direction => ({
+        ...direction,
+        result: await readNeighborEdges(neighborsDsl(
+          node, primaryKeyName(anchorAttributes), plan.relationKind, direction,
+          attributesByClass.get(direction.targetClass)!, queryCount, queryOffset,
+        )),
+      })));
+      const read = "unknownReason" in plan
+        ? { ...plan, directions: directionReads }
+        : { relationKind: plan.relationKind, label: plan.label, directions: directionReads };
       return assembleCustomerNeighbors(
         { ...node, label: anchorRecord.label },
         limit,
-        reads,
+        offset,
+        read,
         className => attributesByClass.get(className)!,
         typeLabels,
       );
