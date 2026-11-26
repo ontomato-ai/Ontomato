@@ -556,7 +556,9 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       const summaryPreview = resultSummary ? previewMarkdownText(resultSummary) : undefined;
       return {
         primaryKey: resolvedRunId ?? task.id,
-        label: triggerLabel && statusLabel ? `${triggerLabel} · ${statusLabel}` : task.title,
+        // The run header in the small panel draws the dot, the status and the trigger itself; a label here
+        // would print the status and the trigger a second time.
+        label: "",
         ...(errorText || summaryPreview ? { subtitle: errorText ?? summaryPreview } : {}),
         fieldLabels: {
           status: translate("platformSchedules.runFields.status"),
