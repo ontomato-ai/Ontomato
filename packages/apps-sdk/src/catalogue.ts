@@ -817,7 +817,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Draws one callout — information, reminder, warning, success or danger — from the page's own copy, a record, or a metric result; use for a notice in a detail card or a block of guidance.\n\n- Its tone is the placement's, a field of the record, or an exact-match mapping of the value: nothing is inferred from the wording.\n- The words are static or localized, or already-provided values filled into a fixed `{fieldKey}` sentence — no calculation, thresholds or branching.\n- Asked to, it hides itself when it has nothing to say, so a card never carries an empty frame.",
+      "Draws one callout — information, reminder, warning, success or danger — from the page's own copy, a record, or a metric result; use for a notice in a detail card or a block of guidance.\n\n- Its tone is the placement's, a field of the record, or an exact-match mapping of the value: nothing is inferred from the wording.\n- The words are static or localized, or already-provided values filled into a fixed `{fieldKey}` sentence — no calculation, thresholds or branching.\n- When the banner relies on a record field (`field` for the body, or `toneField` when there is no body field), an empty field hides the entire banner, including any static title. Banners containing only static content still render.\n- For other banners, `hideWhenEmpty` can hide an empty frame.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {

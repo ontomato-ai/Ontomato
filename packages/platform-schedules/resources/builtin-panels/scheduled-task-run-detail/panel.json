@@ -100,6 +100,7 @@
         "config": {
           "tone": "danger",
           "toneField": "error",
+          "titleKey": "errorTitle",
           "field": "error",
           "hideWhenEmpty": true,
           "compact": true
