@@ -192,6 +192,10 @@ beforeAll(async () => {
       all: false,
     }])) });
   });
+  app.post("/java/platform/identity/principals", (req, res) => {
+    expect([viewer.token, "executor"]).toContain(req.header("tk"));
+    res.json({ options: [] });
+  });
   app.post("/java/authorization/objects/product-access", (req, res) => {
     expect(req.header("tk")).toBe(viewer.token);
     const { target, ownerFacts } = req.body;

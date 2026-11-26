@@ -41,8 +41,9 @@ import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
+import { readPrincipalDirectory } from "../identity/principal-directory";
 import { requireObject } from "../product-governance/authorization";
-import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
 import { readHomePanel } from "../platform-home/service";
 import { platformHomeStore } from "../platform-home/store";
 import {
@@ -199,25 +200,9 @@ async function resolveOwnerNames(
   viewer: AssistantCredentials,
 ): Promise<Map<string, string>> {
   const uniqueIds = [...new Set(ownerIds.filter((id): id is string => typeof id === "string" && id.length > 0))];
-  const names = new Map<string, string>();
-  if (!uniqueIds.length) return names;
-  try {
-    const { options } = await searchProductGrantPrincipals("principal", undefined, 100, viewer);
-    for (const option of options) names.set(option.id, option.name);
-  } catch {
-    // Fall back to per-user resolution or raw owner IDs when principal listing is unavailable.
-  }
-  const missing = uniqueIds.filter(id => !names.has(id));
-  if (missing.length) {
-    try {
-      const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
-      const { options } = await createAgentOptionReadAdapters(viewer).users.resolve(missing);
-      for (const option of options) names.set(option.primaryKey, option.label);
-    } catch {
-      // Keep raw owner IDs when the user directory service is unavailable.
-    }
-  }
-  return names;
+  if (!uniqueIds.length) return new Map();
+  const { options } = await readPrincipalDirectory(viewer, { kind: "member", ids: uniqueIds });
+  return new Map(options.map(({ id, name }) => [id, name]));
 }
 
 function visibilityLabel(locale: string | undefined, visibility: ProductVisibility): string {
@@ -287,7 +272,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
 
   function ownerDisplayName(ownerId: string | null, ownerNames: ReadonlyMap<string, string>): string {
     if (ownerId === null) return appWord("platformOwner");
-    return ownerNames.get(ownerId) ?? ownerId;
+    return ownerNames.get(ownerId) ?? "";
   }
 
   function toPanelSummaryRecord(item: ListedPanelSummary, ownerNames: ReadonlyMap<string, string>): PanelRecord {
@@ -969,7 +954,7 @@ export function toProductProjectionPanelRecord(
   const isChart = row.componentId === METRIC_CHART_COMPONENT && row.visibility !== "platform";
   const isBuiltin = row.visibility === "platform" || isBuiltinProductId(row.id);
   const componentDisplay = extra?.componentLabel || shortComponentName(row.componentId);
-  const ownerDisplay = row.ownerId === null ? word("platformOwner") : (extra?.ownerLabel || row.ownerId);
+  const ownerDisplay = row.ownerId === null ? word("platformOwner") : (extra?.ownerLabel ?? "");
   const scopeLabel = row.visibility === "platform"
     ? word("scopePlatform")
     : row.visibility === "domain"
@@ -1049,18 +1034,6 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
   const language = resolveLocale(viewer.locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.projection.${key}`);
 
-  async function resolveOwnerLabels(ownerIds: readonly (string | null)[]): Promise<Map<string, string>> {
-    const ids = [...new Set(ownerIds.filter((id): id is string => typeof id === "string" && id.length > 0))];
-    if (!ids.length) return new Map();
-    try {
-      const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
-      const { options } = await createAgentOptionReadAdapters(viewer).users.resolve(ids);
-      return new Map(options.map(item => [item.primaryKey, item.label]));
-    } catch {
-      return new Map();
-    }
-  }
-
   async function resolveComponentLabels(): Promise<Map<string, string>> {
     try {
       const catalogue = await readAuthorComponentCatalogue(owner, viewer);
@@ -1110,7 +1083,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         }),
       );
       const [ownerLabels, componentLabels] = await Promise.all([
-        resolveOwnerLabels(listed.items.map(item => item.ownerId)),
+        resolveOwnerNames(listed.items.map(item => item.ownerId), viewer),
         resolveComponentLabels(),
       ]);
       return {
@@ -1184,7 +1157,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
     async record(primaryKey: string): Promise<PanelRecord> {
       const projection = await rawRecord(primaryKey);
       const [ownerLabels, componentLabels, domainShared, usage] = await Promise.all([
-        resolveOwnerLabels([projection.ownerId]),
+        resolveOwnerNames([projection.ownerId], viewer),
         resolveComponentLabels(),
         projection.editable
           ? catalogueGrants(owner, viewer, "projection", primaryKey).then(result => result.shared)

@@ -257,16 +257,4 @@ public class ProductGrantService implements InitializingBean {
         }
     }
 
-    public List<ProductPrincipalLookup.PrincipalOption> searchPrincipals(String kind, String keyword, int limit) {
-        var user = identity.getCurrentUser();
-        if (user == null || user.getDomainId() == null)
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
-        int capped = Math.max(1, Math.min(limit, 100));
-        String term = keyword == null ? "" : keyword.strip();
-        return switch (kind) {
-            case "principal" -> principals.searchPrincipals(user.getDomainId(), term, capped);
-            case "role" -> principals.searchRoles(user.getDomainId(), term, capped);
-            default -> throw new IllegalArgumentException("Expected principal or role kind");
-        };
-    }
 }

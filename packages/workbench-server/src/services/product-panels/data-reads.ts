@@ -25,7 +25,8 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
-import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
+import { readPrincipalDirectory } from "../identity/principal-directory";
+import type { ProductOwner } from "../product-governance/grants";
 import { addAuthorizationEdges } from "../product-assets/ontology";
 import { readProductAssetGraph } from "./asset-graph-read";
 
@@ -437,12 +438,14 @@ function readAdapters(
       options: async (_selection, params) => {
         const keyword = panelReadParameterSchemas.keyword.optional().parse(params.keyword);
         const page = panelReadParameterSchemas.page.optional().parse(params.page);
-        const { options: items } = await searchProductGrantPrincipals("role", keyword, page?.size ?? 100, viewer);
+        const { options: items } = await readPrincipalDirectory(viewer, {
+          kind: "role", ...(keyword ? { keyword } : {}), limit: page?.size ?? 100,
+        });
         return { options: items.map(({ id, name }) => ({ primaryKey: id, value: id, label: name })) };
       },
       resolve: async (_selection, params) => {
         const values = panelReadParameterSchemas.optionValues.parse(params.values);
-        const { options: items } = await searchProductGrantPrincipals("role", undefined, 100, viewer);
+        const { options: items } = await readPrincipalDirectory(viewer, { kind: "role", limit: 100 });
         const byId = new Map(items.map(item => [item.id, item.name]));
         return {
           options: values

@@ -14,14 +14,6 @@ const productGrantRecordSchema = z.object({
 });
 export type ProductGrantRecord = z.infer<typeof productGrantRecordSchema>;
 
-export const productGrantPrincipalOptionSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-}).strict();
-export const productGrantPrincipalsResponseSchema = z.object({
-  options: z.array(productGrantPrincipalOptionSchema),
-}).strict();
-
 /** The domain use grant is the source of the domain sharing state. */
 export const productGrantsResponseSchema = z.object({
   grants: z.array(productGrantRecordSchema),
