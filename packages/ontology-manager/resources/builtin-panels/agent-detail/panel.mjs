@@ -351,6 +351,14 @@ await mountPanel({
       return Array.isArray(currentValue) ? currentValue.length : 0;
     }
 
+    // Card titles and descriptions are clamped to keep the grid even, so the hover tooltip carries the full text.
+    function skillTooltip(option) {
+      const lines = [option.label, option.unavailable?.reason, option.description].filter(
+        (line) => typeof line === "string" && line.length > 0,
+      );
+      return lines.length ? lines.join("\n") : undefined;
+    }
+
     function toggleSkill(currentValue, option, disabled, set) {
       if (disabled) return;
       const list = Array.isArray(currentValue) ? currentValue : [];
@@ -528,6 +536,7 @@ await mountPanel({
       displayedSkills,
       isSkillSelected,
       selectedSkillCount,
+      skillTooltip,
       toggleSkill,
       grantEntryAllowed,
       grantDialogOpen,

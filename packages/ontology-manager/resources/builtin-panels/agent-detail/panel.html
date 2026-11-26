@@ -704,7 +704,7 @@
                           'is-unavailable': Boolean(skill.unavailable),
                           'is-disabled': disabled || (Boolean(skill.unavailable) && !isSkillSelected(value, skill)),
                         }"
-                        :title="skill.unavailable?.reason || skill.description || undefined"
+                        :title="skillTooltip(skill)"
                         @click="toggleSkill(value, skill, disabled, set)"
                       >
                         <div class="agent-detail-skill-header">
