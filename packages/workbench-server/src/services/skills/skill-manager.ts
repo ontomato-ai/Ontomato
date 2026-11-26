@@ -73,7 +73,7 @@ class SkillManager {
     return { id: skill.skill.name, skill: skill.skill, isPublic,
       path: skill.source.kind === "provider" ? undefined : skill.source.path,
       writeRestriction: skillWriteRestriction(skill),
-      title: labels?.title ?? skill.skill.name, description: labels?.description ?? skill.manifest.description };
+      title: labels?.title ?? skill.displayTitle ?? skill.skill.name, description: labels?.description ?? skill.manifest.description };
   }
   describeSkills(entries: readonly SkillEntry[], locale?: string): SkillInfo[] {
     return entries.map((entry) => this.describeSkill(entry, locale));

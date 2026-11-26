@@ -24,6 +24,8 @@ export type SkillSource =
 export interface SkillEntry {
   skill: RuntimeSkillRef;
   manifest: SkillManifest;
+  /** Provider-supplied display title when the package name is opaque. */
+  displayTitle?: string;
   source: SkillSource;
   provide(context?: SkillPackageContext): Promise<SkillPackage>;
 }

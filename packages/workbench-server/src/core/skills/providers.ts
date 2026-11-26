@@ -59,6 +59,8 @@ export interface ProtectedSkillOffering {
   entrances: readonly PageSkillEntrance[];
   resourceIds: readonly string[];
   readManifest(skill: RuntimeSkillRef): Promise<StandardSkillFrontmatter>;
+  /** Display title for an opaque protected skill name, when the source has one. */
+  readDisplayTitle?(): Promise<string>;
   provide(skill: RuntimeSkillRef, context?: SkillPackageContext): Promise<SkillPackage>;
 }
 

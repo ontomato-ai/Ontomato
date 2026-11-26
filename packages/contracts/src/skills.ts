@@ -35,7 +35,8 @@ export type SkillWriteRestriction =
 
 /**
  * A skill as the platform lists it. The package itself is standard frontmatter only; the title is the edition's label
- * for a built-in skill, otherwise the skill's name, and the description is the label's or the package's own.
+ * for a built-in skill, a provider-supplied display title when the package name is opaque, otherwise the skill's name,
+ * and the description is the label's or the package's own.
  */
 export interface SkillInfo {
   id: string;
