@@ -79,7 +79,7 @@ export function recordFieldDisplayValue(
 ): PanelRecordFieldValue | undefined {
   const raw = rawRecordField(record, key);
   if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "boolean") return raw;
-  return record.valueLabels?.[key]?.[String(raw)] ?? raw;
+  return record.valueLabels?.[key] ?? raw;
 }
 
 /** Format a scalar field value for UI display, localizing booleans in the reader's language. */
