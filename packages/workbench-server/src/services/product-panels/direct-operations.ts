@@ -14,7 +14,7 @@ import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { describeObjectAction, objectActionOperation, resolveObjectAction } from "../action/object-actions";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { requireDirectPanelMember } from "./current";
 import { resolvePinnedInputs } from "./input-wiring";
 import { resolvePanelMemberPath, type ResolvedPanelPathStep } from "./member-path";

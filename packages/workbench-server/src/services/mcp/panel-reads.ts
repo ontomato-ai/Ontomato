@@ -2,7 +2,7 @@ import type { McpToolDesc } from "@ontomato/contracts/mcp";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { assertManagement } from "../../identity/management";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { workbenchProduct } from "../../product/installed";

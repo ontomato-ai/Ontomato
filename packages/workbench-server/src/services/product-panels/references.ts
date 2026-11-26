@@ -18,7 +18,7 @@ import { currentProductRows, findCurrentProduct, type CurrentProductKind } from 
 import { isBuiltinProductId, isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { requireCurrentDefinitionUse } from "./access";
 import { readPanelComponentCatalogue, readPanelDomainComponents, readProjectionComponent, type ComponentScope } from "./component-catalogue";
 import { listObjectDetailPanelMappings } from "./object-detail";

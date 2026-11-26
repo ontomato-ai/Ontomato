@@ -33,10 +33,7 @@ import {
 } from "./product-panels";
 import {
   changeProductDomainGrantRequestSchema,
-  changeProductPanelDomainGrantResponseSchema,
-  changeProductGrantRequestSchema,
   productGrantChangeResponseSchema,
-  productGrantsResponseSchema,
 } from "./product-governance";
 
 test("the product catalog accepts HTTP queries and returns cursor pages of summaries", () => {
@@ -237,17 +234,9 @@ test("a blocked deletion returns exactly the corresponding used-by details", () 
   assert.equal(productPanelUsedBySchema.safeParse({ ...panel, classNames: [42] }).success, false);
 });
 
-test("product governance lists domain grants and changes domain sharing through its own request", () => {
-  const domainGrant = { principalKind: "domain", principalId: "domain", verb: "use" };
-  const grants = { grants: [domainGrant, { principalKind: "role", principalId: "editor", verb: "edit" }] };
-  assert.deepEqual(productGrantsResponseSchema.parse(grants), grants);
-  const revoke = { principalKind: "role", principalId: "editor", verb: "edit", remove: true };
-  assert.deepEqual(changeProductGrantRequestSchema.parse(revoke), revoke);
-  assert.equal(changeProductGrantRequestSchema.safeParse({ ...domainGrant, remove: true }).success, false);
+test("product governance changes domain sharing through its own request", () => {
   assert.deepEqual(changeProductDomainGrantRequestSchema.parse({ shared: false }), { shared: false });
   assert.deepEqual(productGrantChangeResponseSchema.parse({ success: true }), { success: true });
-  const panelSharing = { success: true, skippedProjectionIds: ["restricted"] };
-  assert.deepEqual(changeProductPanelDomainGrantResponseSchema.parse(panelSharing), panelSharing);
 });
 
 test("declares typed catalogue reads that reuse the current product records and list responses", async () => {

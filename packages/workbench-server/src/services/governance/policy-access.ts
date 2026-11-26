@@ -7,7 +7,7 @@ import { config } from "../../config/application";
 import { getPostgresPool } from "../../infrastructure/postgres";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost } from "../../utils/backend-client";
-import { productDefinitionOwnerHeaders } from "../product-governance/grants";
+import { productDefinitionOwnerHeaders } from "../product-governance/service-authentication";
 import { readPanelDependencies } from "../product-panels/entry-dependency-store";
 import { listObjectDetailPanelMappings } from "../product-panels/object-detail";
 import { loadPolicyWorkbenchCatalog, readPolicyWorkbenchObjects, type PolicyWorkbenchCatalog } from "./policy-catalog";

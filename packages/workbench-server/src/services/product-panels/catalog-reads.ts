@@ -43,7 +43,7 @@ import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { readPrincipalDirectory } from "../identity/principal-directory";
 import { requireObject } from "../product-governance/authorization";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { readHomePanel } from "../platform-home/service";
 import { platformHomeStore } from "../platform-home/store";
 import {

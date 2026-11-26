@@ -22,7 +22,7 @@ import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { objectActionDeclaration, readRefusal, storedObjectActionSchema } from "./object-actions";
 import { sandboxPermissionPresentation } from "../product-panels/sandbox-permission";
 import { operationHost } from "../product-panels/operation-host";

@@ -31,8 +31,8 @@ vi.mock("../../../infrastructure/postgres", async original => ({
   ...await original<typeof import("../../../infrastructure/postgres")>(),
   getPostgresPool: () => ({ query: mocks.query }),
 }));
-vi.mock("../../product-governance/grants", async original => ({
-  ...await original<typeof import("../../product-governance/grants")>(),
+vi.mock("../../product-governance/service-authentication", async original => ({
+  ...await original<typeof import("../../product-governance/service-authentication")>(),
   productDefinitionOwnerHeaders: () => ({}),
 }));
 vi.mock("../../../identity/management", () => ({

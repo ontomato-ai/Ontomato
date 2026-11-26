@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
-import io.ontomato.dataengine.service.ProductGrantService.OwnerFacts;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;

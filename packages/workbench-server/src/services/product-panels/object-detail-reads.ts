@@ -7,7 +7,7 @@ import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { currentDefinitionAccess, usableCurrentIds } from "./access";
 import { findDetailPanel, findObjectDetailPanelId } from "./object-detail";
 

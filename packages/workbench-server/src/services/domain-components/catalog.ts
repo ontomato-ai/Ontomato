@@ -13,7 +13,7 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { requireAllowed, requireObject, retireObject, writeFirstPublication } from "../product-governance/authorization";
 import { currentDefinition, currentDefinitionAccess } from "../product-panels/access";
 import { declarationChanges, findComponentUsers } from "../product-panels/component-users";
