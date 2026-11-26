@@ -50,7 +50,10 @@
           "sessionId": "sessionId"
         },
         "config": {
-          "showHeader": false
+          "showHeader": false,
+          "greetingKey": "chat.greeting",
+          "descriptionKey": "chat.description",
+          "placeholderKey": "chat.placeholder"
         },
         "name": "Operations diagnosis conversation",
         "description": "Persistent operations diagnosis AgentChat shared across pure-chat, side-by-side, and floating-composer states."
@@ -79,16 +82,12 @@
           "rename": {
             "type": "platform:AgentSession",
             "operation": "agentSessions.rename",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           },
           "delete": {
             "type": "platform:AgentSession",
             "operation": "agentSessions.delete",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           }
         },
         "config": {

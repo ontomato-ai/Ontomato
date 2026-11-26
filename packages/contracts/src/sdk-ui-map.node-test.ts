@@ -13,6 +13,7 @@ import {
   checkAuthoringStyles,
   checkAuthoringTemplate,
   checkAuthoringTheme,
+  checkProjectionConfigSources,
   componentModuleImports,
   componentOfficialSpecifiers,
   isComponentOfficialSpecifier,
@@ -254,29 +255,96 @@ test("checkAuthoringScript, checkAuthoringStyles, and checkAuthoringTheme report
   assert.equal(themeViolations[0]!.replacement, "--sdk-color-primary");
 });
 
-test("checkAuthoringTemplate rejects projection input attributes outside scoped component slots", () => {
+test("checkAuthoringTemplate rejects attributes that would configure a projection where it is placed", () => {
+  const cases = ["disabled", ":disabled", "v-bind:title", "fallback-title", ":columns", "size"] as const;
+  for (const attribute of cases) {
+    const html = `<projection slot="a" ${attribute}="value"></projection>`;
+    const violations = checkAuthoringTemplate(`<!-- Panel template -->\n  ${html}`, "panel.html");
+    assert.equal(violations.length, 1, html);
+    assert.equal(violations[0]?.kind, "projection-placement-attribute", html);
+    assert.equal(violations[0]?.file, "panel.html");
+    assert.equal(violations[0]?.line, 2);
+    assert.equal(violations[0]?.column, html.indexOf(`${attribute}=`) + 3);
+    assert.equal(violations[0]?.found, attribute);
+    assert.match(violations[0]!.message, /configures nothing.*config.*:values/u);
+  }
+});
+
+test("checkAuthoringTemplate rejects projection inputs outside a component's scoped slot", () => {
   const cases = [
     ['<projection slot="a" :inputs="{ className: key }"/>', ":inputs"],
     ['<section><div><PROJECTION slot="a" inputs="key"/></div></section>', "inputs"],
     ['<two-pane-layout><template #default><projection slot="a" v-bind:inputs="{ x: key }"></projection></template></two-pane-layout>', "v-bind:inputs"],
-    ['<sdk-drawer><template #header="{ close }"><projection slot="a" :inputs="{ x: key }"></projection></template></sdk-drawer>', ":inputs"],
-    ['<SdkPopover v-slot="scope"><projection slot="a" :inputs="{ x: scope }"/></SdkPopover>', ":inputs"],
+    ['<sdk-drawer><template #header="{ close }"><projection slot="a" :inputs="{ x: close }"></projection></template></sdk-drawer>', ":inputs"],
     ['<div><template #default="scope"><projection slot="a" :inputs="{ x: scope }"/></template></div>', ":inputs"],
-    ['<my-card><template v-slot:item=" "><projection slot="a" :inputs="{ x: key }"/></template></my-card>', ":inputs"],
     ['<my-card v-slot="scope"/><projection slot="a" :inputs="{ x: key }"/>', ":inputs"],
-    ['<my-card><input><template #item="scope"></template></my-card><projection slot="a" :inputs="{ x: key }"/>', ":inputs"],
-    ['<Projection slot="a" v-slot="scope" :inputs="{ x: key }"/>', ":inputs"],
   ] as const;
   for (const [html, attribute] of cases) {
     const violations = checkAuthoringTemplate(`<!-- Panel template -->\n  ${html}`, "panel.html");
     assert.equal(violations.length, 1, html);
     assert.equal(violations[0]?.kind, "projection-inputs-outside-slot", html);
-    assert.equal(violations[0]?.file, "panel.html");
     assert.equal(violations[0]?.line, 2);
     assert.equal(violations[0]?.column, html.indexOf(`${attribute}=`) + 3);
     assert.equal(violations[0]?.found, attribute);
-    assert.match(violations[0]!.message, /scoped slot.*panel\.json/u);
+    assert.match(violations[0]!.message, /scoped slot.*panel\.json.*:values/u);
   }
+});
+
+test("checkAuthoringTemplate accepts a projection placed anywhere, with page values wherever it is", () => {
+  const cases = [
+    '<my-card><template #item="{ item }"><projection slot="a" :inputs="{ className: item }"/></template></my-card>',
+    '<projection slot="a" :values="{ title: title, disabled: dirty }" class="box" style="min-height: 40px"></projection>',
+    '<section><div><PROJECTION slot="a" values="key"/></div></section>',
+    '<projection slot="a" :values="{ title: title, disabled: dirty }"></projection>',
+    '<projection slot="a" v-if="ready" v-show="shown" :key="key" ref="memberRef" @choose="choose"></projection>',
+    '<projection :slot="countMember(item.id)" @row-action="onRowAction"></projection>',
+    '<my-card v-slot="scope"><projection slot="a" :inputs="{ x: scope }"/></my-card>',
+    '<sdk-drawer><template #header="{ close }"><projection slot="a" :values="{ x: close }"></projection></template></sdk-drawer>',
+  ] as const;
+  for (const html of cases) {
+    assert.deepEqual(checkAuthoringTemplate(html, "panel.html"), [], html);
+  }
+});
+
+test("checkProjectionConfigSources rejects one member value written in two places", () => {
+  const members = {
+    list: { config: { columns: [{ key: "label" }], emptyText: "list.empty" }, inputs: { className: { state: "chosen" } } },
+    trial: { config: { type: "primary" } },
+  };
+  const html = [
+    '<projection slot="list" :inputs="{ className: row.className }"></projection>',
+    '<projection slot="trial" :values="{ type: type }"></projection>',
+    '<projection slot="trial" :values="{ disabled: dirty }"></projection>',
+    '<projection slot="list" :values="viewValues"></projection>',
+    '<projection slot="trial" :values="{ title: title }"></projection>',
+    '<projection slot="trial" :inputs="{ type: type }"></projection>',
+  ].join("\n");
+  const violations = checkProjectionConfigSources(members, html, "panel.html");
+  assert.deepEqual(violations.map(({ kind, found, line }) => ({ kind, found, line })), [
+    { kind: "projection-config-duplicate", found: "className", line: 1 },
+    { kind: "projection-config-duplicate", found: "type", line: 2 },
+    { kind: "projection-config-duplicate", found: "type", line: 6 },
+  ]);
+  assert.match(violations[0]!.message, /binds input 'className' in its declaration/u);
+  assert.match(violations[1]!.message, /writes 'type' in its config/u);
+});
+
+test("checkProjectionConfigSources accepts an input a member declares as coming from the slot", () => {
+  const members = { rowDetail: { inputs: { target: { fromSlot: true } }, config: { actions: "footer" } } };
+  const html = '<projection slot="rowDetail" :inputs="{ target: ref }"></projection>';
+  assert.deepEqual(checkProjectionConfigSources(members, html, "panel.html"), []);
+});
+
+test("checkProjectionConfigSources rejects config and inputs of one member naming the same value", () => {
+  const violations = checkProjectionConfigSources(
+    { header: { config: { fallbackTitle: "x", subtitle: "" }, inputs: { fallbackTitle: { state: "selected" } } } },
+    undefined,
+    "panel.json",
+  );
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0]!.kind, "projection-config-duplicate");
+  assert.equal(violations[0]!.found, "fallbackTitle");
+  assert.equal(violations[0]!.file, "panel.json");
 });
 
 test("checkAuthoringTemplate accepts projection inputs in row, field, and custom scoped slots", () => {

@@ -258,7 +258,7 @@
     <projection
       v-else-if="hasBoard"
       slot="boardGrid"
-      :empty-group-title="t('group.untitled')"
+      :values="{ emptyGroupTitle: t('group.untitled') }"
       @layout-change="onLayoutChange"
       @row-action="onCardRowAction"
     >
@@ -422,11 +422,12 @@
           :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label)"
           slot="chartCard"
           :inputs="{ target: itemRef }"
-          :title="title || row.label"
-          :file-override="draftOverride ? draftOverride.fileOverride : undefined"
-          :view-mode="getCardViewMode(itemRef.primaryKey)"
-          :zoomed="isCardZoomed(itemRef.primaryKey)"
-          min-height="100%"
+          :values="{
+            title: title || row.label,
+            fileOverride: draftOverride ? draftOverride.fileOverride : undefined,
+            viewMode: getCardViewMode(itemRef.primaryKey),
+            zoomed: isCardZoomed(itemRef.primaryKey),
+          }"
           class="db-card-projection db-card-projection--chart"
           @update:view-mode="(mode) => setCardViewMode(itemRef.primaryKey, mode)"
           @update:zoomed="(open) => setCardZoomed(itemRef.primaryKey, open)"
@@ -449,9 +450,11 @@
           :ref="(el) => setCardRef(itemRef.primaryKey, el, title || row.label)"
           slot="metricCard"
           :inputs="{ target: itemRef }"
-          :field="cardFieldString(row, 'valueField')"
-          :unit="cardFieldString(row, 'unit')"
-          :formats="cardFormats(row)"
+          :values="{
+            field: cardFieldString(row, 'valueField'),
+            unit: cardFieldString(row, 'unit'),
+            formats: cardFormats(row),
+          }"
           class="db-card-projection db-card-projection--metric"
           @truncation-change="(hint) => setCardTruncation(itemRef.primaryKey, hint)"
         ></projection>

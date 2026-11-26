@@ -332,7 +332,8 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
         boolean validVerb = switch (kind) {
             case ENTRY -> verb == Verb.ENTER;
             case PANEL, PROJECTION, COMPONENT, APPLICATION -> Set.of(Verb.USE, Verb.EDIT, Verb.CREATE).contains(verb);
-            case AGENT, METRIC, READ_FUNCTION, WORKFLOW, WRITE_FUNCTION, TRIGGER, SKILL -> Set.of(Verb.USE, Verb.VIEW, Verb.EDIT, Verb.CREATE).contains(verb);
+            case AGENT, METRIC, READ_FUNCTION, WORKFLOW, WRITE_FUNCTION, TRIGGER -> Set.of(Verb.USE, Verb.VIEW, Verb.EDIT, Verb.CREATE).contains(verb);
+            case SKILL -> false;
             case ACTION -> Set.of(Verb.VIEW, Verb.EDIT, Verb.CREATE, Verb.EXECUTE).contains(verb);
         };
         if (!validVerb || id == null || (verb == Verb.CREATE ? !id.isEmpty() : id.isBlank())

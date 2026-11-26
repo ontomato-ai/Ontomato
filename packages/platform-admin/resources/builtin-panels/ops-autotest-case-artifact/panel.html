@@ -234,10 +234,10 @@
 
       <div v-if="selectedKey" v-show="detailReady" class="ops-case-detail-scroll shell-dock-room">
         <div class="ops-case-detail-stack">
-          <projection slot="header" :fallback-title="fallbackTitle">
+          <projection slot="header" :values="{ fallbackTitle }">
             <template #actions>
               <div class="ops-case-actions">
-                <projection slot="diagnose" :disabled="hasEvidence === false"></projection>
+                <projection slot="diagnose" :values="{ disabled: hasEvidence === false }"></projection>
                 <projection slot="download"></projection>
               </div>
             </template>

@@ -1,7 +1,7 @@
 /* eslint-disable vue/one-component-per-file, vue/multi-word-component-names */
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { defineComponent, h, nextTick, reactive, ref, computed } from "vue";
+import { defineComponent, h, nextTick, reactive, ref, computed, type PropType } from "vue";
 import * as VueNamespace from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { appIcon } from "@ontomato/platform-shell";
@@ -79,14 +79,18 @@ async function mountOpsFrame(options: {
   const ProjectionStub = defineComponent({
     name: "Projection",
     inheritAttrs: false,
-    props: { slot: { type: String, required: true } },
+    props: {
+      slot: { type: String, required: true },
+      // A member's page values arrive where it is placed, not as attributes on the placement.
+      values: { type: Object as PropType<Readonly<Record<string, unknown>>>, default: undefined },
+    },
     setup(props, { attrs }) {
       if (props.slot === "chat") {
         chatMounts += 1;
       }
       return () => {
         if (props.slot === "chat") {
-          chatProps = { ...attrs };
+          chatProps = { ...attrs, ...(props.values ?? {}) };
           chatListeners = {
             onExpand: attrs.onExpand as (() => void) | undefined,
             onEntryTriggered: attrs.onEntryTriggered as ((payload: Record<string, unknown>) => void) | undefined,
@@ -95,7 +99,7 @@ async function mountOpsFrame(options: {
         }
         return h("div", {
           "data-projection": props.slot,
-          "data-collapsed": props.slot === "chat" ? String(Boolean(attrs.collapsed)) : undefined,
+          "data-collapsed": props.slot === "chat" ? String(Boolean(props.values?.collapsed)) : undefined,
         });
       };
     },

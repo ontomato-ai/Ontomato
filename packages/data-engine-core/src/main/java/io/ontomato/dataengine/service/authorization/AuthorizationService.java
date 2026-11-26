@@ -105,6 +105,8 @@ public final class AuthorizationService {
     private Decision decideObject(SubjectContext ctx, ObjectAccess access) {
         var target = access.target();
         if (!sameDomain(ctx, target)) return differentDomain();
+        if (target.kind() == Kind.SKILL)
+            return Decision.denied("OBJECT_FORBIDDEN", "Skill packages are managed through the skill library.");
         var ownership = access.ownerFacts() == null ? OwnershipAdmission.Result.PASS_TO_POLICY
                 : OwnershipAdmission.decide(ctx.identity().userId(), target.kind(), access.verb(),
                         access.ownerFacts(), false);
@@ -118,7 +120,7 @@ public final class AuthorizationService {
 
     private Decision decideCreate(SubjectContext ctx, Kind kind) {
         var target = new ObjectTarget(ctx.identity().domainId(), kind, "");
-        if (subjects.objectEntitlement(ctx.identity().userId(), target, Verb.CREATE) || has(ctx, target, Verb.CREATE))
+        if (kind != Kind.SKILL && (subjects.objectEntitlement(ctx.identity().userId(), target, Verb.CREATE) || has(ctx, target, Verb.CREATE)))
             return Decision.ALLOWED;
         return Decision.denied("CREATE_FORBIDDEN", "You are not allowed to create this type of object.");
     }

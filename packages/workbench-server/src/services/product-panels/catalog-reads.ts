@@ -5,7 +5,6 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
   directProjectionPortsSchema,
-  projectionReadReferences,
   type PanelFormDescription,
   type PanelFormField,
   type PanelRecord,
@@ -52,6 +51,9 @@ import {
 } from "./catalog";
 import { readAuthorComponentCatalogue } from "./component-catalogue";
 import { readCurrentPanel, readCurrentProjection } from "./current";
+import {
+  addProjectionGraphReferences, assetGraphNode, createAssetGraph, objectTypeGraphNode, panelGraphMembers, resolveObjectTypeLabel,
+} from "./asset-graph";
 
 const jsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });
 const configBooleanSchema = z.boolean();
@@ -61,29 +63,6 @@ const configStringArraySchema = z.array(z.string());
 type FormParams = { values?: Record<string, unknown>; changedField?: string | null };
 type CatalogueKind = "projection" | "panel";
 const option = (value: string, label: string) => ({ value, label, description: null, disabled: false, disabledReason: null });
-
-function createAssetGraphBuilder() {
-  const nodes = new Map<string, ProductGraph["nodes"][number]>();
-  const edges = new Map<string, ProductGraph["edges"][number]>();
-  return {
-    addNode(node: ProductGraph["nodes"][number]) {
-      if (!nodes.has(node.id)) nodes.set(node.id, node);
-    },
-    addEdge(
-      source: string,
-      target: string,
-      relation: ProductGraph["edges"][number]["relation"],
-      storage: ProductGraph["edges"][number]["storage"] = "product-index",
-    ) {
-      if (!nodes.has(source) || !nodes.has(target)) return;
-      const key = JSON.stringify([source, target, relation]);
-      if (!edges.has(key)) edges.set(key, { source, target, relation, storage });
-    },
-    build(): ProductGraph {
-      return { nodes: [...nodes.values()], edges: [...edges.values()] };
-    },
-  };
-}
 
 function toReferenceGraphRecord(primaryKey: string, className: string, label: string, graph: ProductGraph): PanelRecord {
   return {
@@ -704,87 +683,30 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
       } catch {
         // Keep IDs as labels when auxiliary lookup is unavailable.
       }
-      const graph = createAssetGraphBuilder();
-      const centerId = `asset:${panel.id}`;
-      graph.addNode({
-        id: centerId,
-        assetId: panel.id,
-        name: panel.name || panel.id,
-        kind: "page",
-        category: "composition",
-        revision: panel.revision,
-        ...(panel.template !== undefined ? { isTemplate: panel.template } : {}),
-      });
-      const addProjectionMember = (id: string) => {
-        const nodeId = `asset:${id}`;
-        graph.addNode({
-          id: nodeId,
-          assetId: id,
-          name: projectionNames.get(id) ?? id,
-          kind: "object-projection",
-          category: "element",
-        });
-        graph.addEdge(centerId, nodeId, "contains", "product-index");
-      };
-      const addPanelMember = (id: string) => {
-        if (id === panel.id) return;
-        const nodeId = `asset:${id}`;
-        graph.addNode({
-          id: nodeId,
-          assetId: id,
-          name: panelNames.get(id) ?? id,
-          kind: "page",
-          category: "composition",
-        });
-        graph.addEdge(centerId, nodeId, "contains", "product-index");
-      };
-      for (const member of Object.values(panel.manifest.members)) {
-        const target = member.target;
-        if ("projectionId" in target) {
-          addProjectionMember(target.projectionId);
-        } else if ("panelId" in target) {
-          addPanelMember(target.panelId);
-        } else if ("fromState" in target) {
-          const candidates = target.candidates;
-          if ("projectionIds" in candidates) {
-            for (const id of candidates.projectionIds) addProjectionMember(id);
-          } else if ("panelIds" in candidates) {
-            for (const id of candidates.panelIds) addPanelMember(id);
-          }
-        }
+      const graph = createAssetGraph();
+      const center = assetGraphNode("panel", panel);
+      graph.addNode(center);
+      for (const { id, kind } of panelGraphMembers(panel)) {
+        const names = kind === "projection" ? projectionNames : panelNames;
+        const node = assetGraphNode(kind, { id, name: names.get(id) ?? id });
+        graph.addNode(node);
+        graph.addEdge(center.id, node.id, "contains");
       }
       for (const entry of usage.applicationEntries) {
-        const appNodeId = `asset:${entry.applicationId}`;
-        graph.addNode({
-          id: appNodeId,
-          assetId: entry.applicationId,
-          name: entry.applicationName || entry.applicationId,
-          kind: "application",
-          category: "bundle",
-        });
-        graph.addEdge(appNodeId, centerId, "navigates", "product-index");
+        const node = assetGraphNode("application", { id: entry.applicationId, name: entry.applicationName });
+        graph.addNode(node);
+        graph.addEdge(node.id, center.id, "navigates");
       }
       for (const parent of usage.panels) {
         if (parent.id === panel.id) continue;
-        const parentNodeId = `asset:${parent.id}`;
-        graph.addNode({
-          id: parentNodeId,
-          assetId: parent.id,
-          name: parent.name || parent.id,
-          kind: "page",
-          category: "composition",
-        });
-        graph.addEdge(parentNodeId, centerId, "contains", "product-index");
+        const node = assetGraphNode("panel", { id: parent.id, name: parent.name });
+        graph.addNode(node);
+        graph.addEdge(node.id, center.id, "contains");
       }
       for (const className of usage.classNames) {
-        const classNodeId = `object-type:${className}`;
-        graph.addNode({
-          id: classNodeId,
-          name: className,
-          kind: "object-type",
-          category: "ontology",
-        });
-        graph.addEdge(centerId, classNodeId, "renders", "ontology");
+        const node = objectTypeGraphNode(className, resolveObjectTypeLabel(className, resolveLocale(viewer.locale)) ?? className);
+        graph.addNode(node);
+        graph.addEdge(center.id, node.id, "renders", "ontology");
       }
       return toReferenceGraphRecord(panel.id, PRODUCT_PANEL, panel.name || panel.id, graph.build());
     },
@@ -945,15 +867,9 @@ function shortComponentName(componentId: string): string {
   return componentId.split(":").pop() || componentId || "—";
 }
 
-function resolveObjectTypeLabel(typeId: string, language: string): string {
-  const entry = Object.hasOwn(platformObjectTypes, typeId) ? platformObjectTypes[typeId] : undefined;
-  if (entry?.labelKey) return tForLocale(language, entry.labelKey);
-  return typeId;
-}
-
 function formatBoundObjectTypes(typeIds: readonly string[], language: string): string | undefined {
   if (!typeIds.length) return undefined;
-  const labels = typeIds.map(id => resolveObjectTypeLabel(id, language));
+  const labels = typeIds.map(id => resolveObjectTypeLabel(id, language) ?? id);
   if (labels.length <= 2) return labels.join(", ");
   return `${labels.slice(0, 2).join(", ")} +${labels.length - 2}`;
 }
@@ -1261,7 +1177,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
       return objectTypes
         .map((typeId) => {
           const entry = Object.hasOwn(platformObjectTypes, typeId) ? platformObjectTypes[typeId] : undefined;
-          const label = resolveObjectTypeLabel(typeId, language);
+          const label = resolveObjectTypeLabel(typeId, language) ?? typeId;
           const layer = entry?.layer;
           const groupLabel = layer ? tForLocale(language, `platformOntology.layers.${layer}`) : customGroupLabel;
           const rank = layer ? (layerOrder.get(layer) ?? platformOntologyLayers.length) : -1;
@@ -1326,50 +1242,14 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         rawRecord(primaryKey),
         currentProductUsedBy(owner, viewer, "projection", primaryKey).catch(() => ({ panels: [], hiddenCount: 0 })),
       ]);
-      const graph = createAssetGraphBuilder();
-      const centerId = `asset:${projection.id}`;
-      graph.addNode({
-        id: centerId,
-        assetId: projection.id,
-        name: projection.name || projection.id,
-        kind: "object-projection",
-        category: "element",
-        revision: projection.revision,
-      });
-      for (const ref of projectionReadReferences(projection)) {
-        if (ref.kind === "ObjectType" || ref.kind === "PlatformObjectType") {
-          const nodeId = `object-type:${ref.id}`;
-          graph.addNode({
-            id: nodeId,
-            name: resolveObjectTypeLabel(ref.id, language),
-            kind: "object-type",
-            category: "ontology",
-          });
-          graph.addEdge(centerId, nodeId, ref.kind === "ObjectType" ? "renders" : "depends-on", "ontology");
-        } else if (ref.kind === "MetricView") {
-          const nodeId = `metric:${ref.id}`;
-          graph.addNode({ id: nodeId, name: ref.id, kind: "metric", category: "ontology" });
-          graph.addEdge(centerId, nodeId, "renders", "ontology");
-        } else if (ref.kind === "Action") {
-          const nodeId = `action:${ref.id}`;
-          graph.addNode({ id: nodeId, name: ref.id, kind: "action", category: "ontology" });
-          graph.addEdge(centerId, nodeId, "renders", "ontology");
-        } else {
-          const nodeId = `definition:${ref.id}`;
-          graph.addNode({ id: nodeId, name: ref.id, kind: "definition", category: "ontology" });
-          graph.addEdge(centerId, nodeId, "depends-on", "ontology");
-        }
-      }
+      const graph = createAssetGraph();
+      const center = assetGraphNode("projection", projection);
+      graph.addNode(center);
+      addProjectionGraphReferences(graph, projection, id => resolveObjectTypeLabel(id, language) ?? id);
       for (const panel of usage.panels) {
-        const panelNodeId = `asset:${panel.id}`;
-        graph.addNode({
-          id: panelNodeId,
-          assetId: panel.id,
-          name: panel.name || panel.id,
-          kind: "page",
-          category: "composition",
-        });
-        graph.addEdge(panelNodeId, centerId, "contains", "product-index");
+        const node = assetGraphNode("panel", { id: panel.id, name: panel.name });
+        graph.addNode(node);
+        graph.addEdge(node.id, center.id, "contains");
       }
       return toReferenceGraphRecord(projection.id, PRODUCT_PROJECTION, projection.name || projection.id, graph.build());
     },

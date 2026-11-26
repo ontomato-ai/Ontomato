@@ -55,7 +55,8 @@
         "target": "selected",
         "operation": "actions.trial",
         "config": {
-          "type": "default"
+          "type": "default",
+          "notifySuccess": false
         },
         "id": "builtin-product-08e8b2a3-6240-4083-8bac-f14502bc063f"
       },
@@ -65,7 +66,8 @@
         "operation": "actions.setStatus",
         "config": {
           "type": "primary",
-          "labelKey": "publish"
+          "labelKey": "publish",
+          "notifySuccess": false
         },
         "id": "builtin-product-f7e570c5-cbe8-4b64-b429-15e9a7abf111"
       },

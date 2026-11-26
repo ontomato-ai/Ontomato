@@ -34,9 +34,9 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
     AgentShell: defineComponent({
       name: "AgentShell",
       props: ["agentId", "sessionId"],
-      setup(_props, { expose }) {
+      setup(props, { expose, slots }) {
         expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); }, fill: (text: string) => { filled.push(text); } });
-        return () => h("div");
+        return () => h("div", props.sessionId ? slots["artifact-actions"]?.({}) : undefined);
       },
     }),
     ShellNavBody: { name: "ShellNavBody", template: "<div />" },
@@ -54,6 +54,12 @@ vi.mock("../assistant-host", () => ({
   createPanelOperationSettings: () => ({ read: async () => null }),
 }));
 vi.mock("../components/DatasetActions.vue", () => ({ default: { template: "<div />" } }));
+vi.mock("../components/ChartFileActions.vue", () => ({
+  default: {
+    emits: ["openDashboard"],
+    template: '<button class="open-chart-dashboard" @click="$emit(\'openDashboard\', \'new-dashboard\')">Open dashboard</button>',
+  },
+}));
 vi.mock("../components/WorkbenchAppearanceDialog.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../../diagnosis/components/TurnDiagnoseButton.vue", () => ({ default: { template: "<div />" } }));
 
@@ -86,7 +92,10 @@ async function openChat(query: Record<string, string>, standalone = false) {
   const path = standalone ? "/applications/app-data-agent-workbench/workbench" : platformRoutes.chat.path;
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path, component: { render: () => null } }],
+    routes: [
+      { path, component: { render: () => null } },
+      { ...platformRoutes.dashboards, component: { render: () => null } },
+    ],
   });
   await router.push({ path, query });
   const internalPages = standalone ? {
@@ -118,6 +127,18 @@ it("restores the standalone application's active conversation from its address a
 
   reopened.shell.vm.$emit("update:sessionId", null);
   await vi.waitFor(() => expect(reopened.router.currentRoute.value.query.sessionId).toBeUndefined());
+});
+
+it("opens a dashboard saved from a DataAgent conversation through the dashboard entry", async () => {
+  const sessionId = "44444444-4444-4444-8444-444444444444";
+  const { router, shell } = await openChat({ standalone: "1", sessionId }, true);
+
+  await shell.get(".open-chart-dashboard").trigger("click");
+
+  await vi.waitFor(() => {
+    expect(router.currentRoute.value.path).toBe(platformRoutes.dashboards.path);
+    expect(router.currentRoute.value.query).toEqual({ dashboardId: "new-dashboard" });
+  });
 });
 
 describe("a link to one agent", () => {

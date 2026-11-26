@@ -1,4 +1,6 @@
 {
+  "skillLibraryRead": { "id": "skills.library.read", "name": "Read the skill library", "access": "read" },
+  "skillLibraryChange": { "id": "skills.library.change", "name": "Change the skill library", "access": "change" },
   "feedbackRead": { "id": "feedback.read", "name": "Read user feedback", "access": "read" },
   "feedbackExport": { "id": "feedback.export", "name": "Export user feedback", "access": "read" },
   "publishedMcpRead": { "id": "mcp.published.read", "name": "Read published MCP services", "access": "read" },

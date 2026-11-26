@@ -3,7 +3,6 @@ import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platfo
 import { externalMcpServiceAdapters } from "../../../../../packages/apps-sdk/src/panel/external-mcp-service";
 import { modelOptionAdapters } from "../../../../../packages/apps-sdk/src/panel/model-option";
 import { ontologyMetadataAdapters } from "../../../../../packages/apps-sdk/src/panel/ontology-metadata";
-import { skillAdapters } from "../../../../../packages/apps-sdk/src/panel/skill";
 import { userAdapters } from "../../../../../packages/apps-sdk/src/panel/user";
 import type { PlatformRequests } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
 import { platformResources } from "../../../../../packages/apps-sdk/src/resources";
@@ -43,16 +42,12 @@ it("resolves each user choice and keeps the owner's reason for an unavailable me
   expect(request).toHaveBeenCalledTimes(4);
 });
 
-it("keeps held skills, MCP services and object types in order when their catalogues omit a value", async () => {
-  const active = { name: "active", namespace: { kind: "provider", provider: "workbench" } };
-  const removed = { ...active, name: "removed" };
+it("keeps held MCP services and object types in order when their catalogues omit a value", async () => {
   const service = "ad4c9a59-bab6-4373-bfcf-198d3230e851";
   const missingService = "ad4c9a59-bab6-4373-bfcf-198d3230e852";
-  const [skills] = skillAdapters(json({ skills: [{ skill: active, title: "Active skill", description: "" }] }));
   const [services] = externalMcpServiceAdapters(json([{ id: service, name: "Active service" }]));
   const [classes] = ontologyMetadataAdapters(json({ success: true, data: { classDef: [{ className: "Order" }] } }));
   for (const [adapter, values] of [
-    [skills, [removed, active, removed]],
     [services, [missingService, service, missingService]],
     [classes, ["Legacy", "Order", "Legacy"]],
   ] as const) {

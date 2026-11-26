@@ -454,7 +454,7 @@ test("short list row operations, fromSlot nested projections, object-union targe
   });
   const extraComponents = [...components, summary];
 
-  // 1. ObjectList declares row operations directly on the projection (`target: { row: true }` + row params).
+  // 1. ObjectList declares row operations directly on the projection (`target: "row"` + row params).
   const listWithRowOps = panelAuthoringMemberSchema.parse({
     component: "ObjectList",
     type,
@@ -462,7 +462,7 @@ test("short list row operations, fromSlot nested projections, object-union targe
     operations: {
       approve: {
         operation: approve.id,
-        target: { row: true },
+        target: "row",
         params: {
           force: { literal: true },
           note: { state: "search" },
@@ -473,6 +473,17 @@ test("short list row operations, fromSlot nested projections, object-union targe
     },
   });
   assert("component" in listWithRowOps);
+  // The row and state targets have one spelling each: `"row"` and `{state: …}`; an ObjectList omits the target for the row.
+  const withTarget = (target: unknown) => ({
+    component: "ObjectList" as const,
+    type,
+    data: { rows: "query" as const },
+    operations: { approve: { operation: approve.id, target } },
+  });
+  assert.doesNotThrow(() => panelAuthoringMemberSchema.parse(withTarget("row")));
+  assert.doesNotThrow(() => panelAuthoringMemberSchema.parse(withTarget({ state: "search" })));
+  assert.throws(() => panelAuthoringMemberSchema.parse(withTarget({ row: true })), /Invalid input/);
+  assert.throws(() => panelAuthoringMemberSchema.parse(withTarget("search")), /Invalid input/);
   const listExpanded = expandPanelAuthoringMember("items", listWithRowOps, {
     state, components: extraComponents, typeTable,
   });
@@ -508,6 +519,18 @@ test("short list row operations, fromSlot nested projections, object-union targe
     params: {},
   });
   assert.equal(detailExpanded.placement.inputs, undefined);
+
+  // 3. A read parameter takes another member's read-only output as its value, typed by the read's own signature.
+  const searchFromOutput = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type,
+    data: { rows: { read: "query", params: { search: { output: { member: "graph", name: "version" } } } } },
+  });
+  assert("component" in searchFromOutput);
+  const searchExpanded = expand("searchResults", searchFromOutput);
+  assert.deepEqual(searchExpanded.projection.data.rows.params, { search: { input: "search" } });
+  assert.deepEqual(searchExpanded.projection.inputs, { search });
+  assert.deepEqual(searchExpanded.placement.inputs, { search: { output: { member: "graph", name: "version" } } });
 
   // 3. Removed listColumn / listRowDetail / formField / item / itemField syntax is rejected.
   assert.equal(panelAuthoringMemberSchema.safeParse({

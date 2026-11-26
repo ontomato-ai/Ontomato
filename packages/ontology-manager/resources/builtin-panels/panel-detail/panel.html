@@ -372,7 +372,7 @@
       @back="goBack"
     >
       <template #title>
-        <projection v-if="selectedKey" slot="headerTitle" :fallback-title="selectedKey"></projection>
+        <projection v-if="selectedKey" slot="headerTitle" :values="{ fallbackTitle: selectedKey }"></projection>
         <span v-else>{{ t('panel.detailName') }}</span>
       </template>
       <template #actions>
@@ -525,7 +525,7 @@
           <div class="pd-layout-controls">
             <span class="pd-layout-control">
               <span>{{ t('layout.mode') }}</span>
-              <sdk-segmented v-model="layoutConfig.mode" :options="layoutModeOptions" size="small" @change="onLayoutSettingChanged"></sdk-segmented>
+              <sdk-segmented v-model="layoutConfig.mode" :options="layoutModeOptions" size="small" @update:model-value="onLayoutSettingChanged"></sdk-segmented>
             </span>
             <span v-if="layoutConfig.mode === 'grid'" class="pd-layout-control">
               <span>{{ t('layout.columns') }}</span>
@@ -676,7 +676,7 @@
               <div class="pd-section-bar">
                 <h2 class="pd-section-title">{{ t('members.projectionRecord') }}</h2>
               </div>
-              <projection slot="memberProjectionHeader" :fallback-title="memberProjectionKey">
+              <projection slot="memberProjectionHeader" :values="{ fallbackTitle: memberProjectionKey }">
                 <template #actions>
                   <div class="pd-detail-actions">
                     <sdk-button size="small" type="primary" plain @click="openMemberProjection">
@@ -727,7 +727,15 @@
             <div class="pd-share-actions">
               <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
               <projection v-else slot="shareEnable" @done="onShareDone"></projection>
-              <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('action.addGrant') }}</sdk-button>
+            </div>
+          </div>
+          <div class="pd-share-bar">
+            <div class="pd-share-left">
+              <strong class="pd-section-title">{{ t('grants.title') }}</strong>
+              <span class="pd-muted">{{ t('grants.intro') }}</span>
+            </div>
+            <div class="pd-share-actions">
+              <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('grants.submit') }}</sdk-button>
             </div>
           </div>
           <projection slot="grantsList"></projection>
@@ -767,19 +775,18 @@
           <projection
             v-if="copyDialogOpen && copyEntryAllowed"
             slot="copySubmit"
-            :label-key="copyActionLabelKey"
-            :disabled="!canSubmitCopy"
+            :values="{ labelKey: copyActionLabelKey, disabled: !canSubmitCopy }"
             @done="onCopyDone"
           ></projection>
         </div>
       </template>
     </sdk-dialog>
 
-    <!-- Add Grant dialog using official ReferencePicker & OperationButton -->
+    <!-- Add-to-policy dialog using official ReferencePicker & OperationButton -->
     <sdk-dialog
       v-if="grantEntryAllowed"
       v-model="grantDialogOpen"
-      :title="t('grants.dialogTitle')"
+      :title="t('grants.title')"
       width="480px"
       append-to-body
       destroy-on-close
@@ -789,10 +796,7 @@
           <projection slot="policyPicker"></projection>
         </sdk-form-item>
         <sdk-form-item :label="t('grants.verb')">
-          <sdk-select v-model="grantVerbModel" style="width: 100%">
-            <sdk-option value="USE" :label="t('grants.use')"></sdk-option>
-            <sdk-option value="EDIT" :label="t('grants.edit')"></sdk-option>
-          </sdk-select>
+          <sdk-segmented v-model="grantVerbModel" :options="grantVerbOptions" size="default"></sdk-segmented>
         </sdk-form-item>
       </sdk-form>
       <template #footer>
@@ -801,7 +805,7 @@
           <projection
             v-if="grantDialogOpen && grantEntryAllowed"
             slot="grantSubmit"
-            :disabled="!canSubmitGrant"
+            :values="{ disabled: !canSubmitGrant }"
             @done="onGrantAdded"
           ></projection>
         </div>

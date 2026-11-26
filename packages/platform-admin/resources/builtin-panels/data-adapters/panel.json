@@ -38,7 +38,8 @@
         "operation": "dataAdapters.checkSandboxPermission",
         "config": {
           "labelKey": "sandbox.check",
-          "size": "small"
+          "size": "small",
+          "notifySuccess": false
         },
         "id": "builtin-product-cf97d22c-223c-40ce-bf6d-d5ac86412ce4"
       },
@@ -86,7 +87,8 @@
           }
         },
         "config": {
-          "labelKey": "test.run"
+          "labelKey": "test.run",
+          "showResult": false
         },
         "name": "Test connection",
         "description": "Test the unsaved single-source adapter or selected multi-source data source without saving",

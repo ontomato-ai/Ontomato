@@ -280,6 +280,11 @@ export function expandPanelAuthoringMember(
         inputTypes.set(port, parameterPortType(parameterId));
         return [param, { input: port }] as const;
       }
+      // Another member's read-only output reaches this read through this placement's input of the same name.
+      if ("output" in supplied) {
+        const port = inputTypes.has(param) ? `${name}_${param}` : param;
+        return [param, bindMemberInput(port, supplied, paramPath, parameterPortType(parameterId))] as const;
+      }
       if (!panelReadInputMatches(parameterId, stateInputType(supplied, paramPath)))
         fail(paramPath, `State '${supplied.state}' has an incompatible type for '${parameterId}'`);
       const existing = inputBindings.get(param);
@@ -572,10 +577,8 @@ export function expandPanelAuthoringMember(
     if (operation.target.source !== "none" && !opReadsDraft) {
       if (normalized.target === "row") {
         target = { row: true };
-      } else if (typeof normalized.target === "string") {
-        target = bindInput(opTargetPort, normalized.target, `${opPath}.target`);
       } else if (normalized.target !== undefined) {
-        if ("row" in normalized.target || "rowField" in normalized.target || "literal" in normalized.target) {
+        if ("rowField" in normalized.target || "literal" in normalized.target) {
           target = normalized.target;
         } else {
           target = bindInput(opTargetPort, normalized.target.state, `${opPath}.target`);

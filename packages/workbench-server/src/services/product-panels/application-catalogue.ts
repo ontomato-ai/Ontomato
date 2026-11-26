@@ -10,7 +10,6 @@ import { AGENT_DEFINITION, APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } f
 import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication, isPlatformCatalogApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationPanelUseSchema, isApplicationPanelUse, registerApplicationPanelUsesRequestSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
-import type { ProductGraph } from "@ontomato/contracts/product-graph";
 import { applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { readFavorites } from "../platform-home/service";
 import { config } from "../../config/application";
@@ -23,6 +22,7 @@ import type { ProductOwner } from "../product-governance/grants";
 import { listDefaultAgentOptions } from "../assistant/default-agents";
 import { listCurrentProducts } from "./catalog";
 import { readCurrentPanel } from "./current";
+import { assetGraphNode, createAssetGraph, panelGraphMembers } from "./asset-graph";
 
 const applicationPath = "/platform/applications";
 const cataloguePath = `${applicationPath}/catalogue`;
@@ -568,104 +568,43 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
           .then(result => new Map(result.items.map(item => [item.id, item.name || item.id])))
           .catch(() => new Map<string, string>()),
       ]);
-      const nodes = new Map<string, ProductGraph["nodes"][number]>();
-      const edges = new Map<string, ProductGraph["edges"][number]>();
-      const addNode = (node: ProductGraph["nodes"][number]) => {
-        if (!nodes.has(node.id)) nodes.set(node.id, node);
-      };
-      const addEdge = (
-        source: string,
-        target: string,
-        relation: ProductGraph["edges"][number]["relation"],
-        storage: ProductGraph["edges"][number]["storage"] = "product-index",
-      ) => {
-        if (!nodes.has(source) || !nodes.has(target)) return;
-        const key = JSON.stringify([source, target, relation]);
-        if (!edges.has(key)) edges.set(key, { source, target, relation, storage });
-      };
-
+      const graph = createAssetGraph();
       const appLabel = localizedApplicationText(detail.names, language) ?? detail.id;
-      const appNodeId = `asset:${detail.id}`;
-      addNode({
-        id: appNodeId,
-        assetId: detail.id,
-        name: appLabel,
-        kind: "application",
-        category: "bundle",
-      });
+      const app = assetGraphNode("application", { id: detail.id, name: appLabel });
+      graph.addNode(app);
 
       const panelIds = [
         ...(detail.framePanelId ? [detail.framePanelId] : []),
         ...detail.panelUses.filter(isApplicationPanelUse).map(use => use.panelId).filter(Boolean),
       ];
       const uniquePanelIds = [...new Set(panelIds)];
-      for (const panelId of uniquePanelIds) {
-        const panelNodeId = `asset:${panelId}`;
-        addNode({
-          id: panelNodeId,
-          assetId: panelId,
-          name: panels.get(panelId) ?? panelId,
-          kind: "page",
-          category: "composition",
-        });
-        addEdge(appNodeId, panelNodeId, "navigates", "product-index");
+      for (const id of uniquePanelIds) {
+        const node = assetGraphNode("panel", { id, name: panels.get(id) ?? id });
+        graph.addNode(node);
+        graph.addEdge(app.id, node.id, "navigates");
       }
 
-      // Populate outgoing Panel -> Projection / nested Panel relationships for accessible panels.
+      // Populate outgoing relationships for accessible panels.
       const accessiblePanelIds = uniquePanelIds.filter(panelId => panels.has(panelId));
       const loadedPanels = await Promise.all(
         accessiblePanelIds.map(panelId => readCurrentPanel(owner, viewer, panelId).catch(() => null)),
       );
       for (const loaded of loadedPanels) {
         if (!loaded) continue;
-        const sourceId = `asset:${loaded.id}`;
-        const addProj = (projId: string) => {
-          const projNodeId = `asset:${projId}`;
-          addNode({
-            id: projNodeId,
-            assetId: projId,
-            name: projectionNames.get(projId) ?? projId,
-            kind: "object-projection",
-            category: "element",
-          });
-          addEdge(sourceId, projNodeId, "contains", "product-index");
-        };
-        const addNestedPanel = (childPanelId: string) => {
-          if (childPanelId === loaded.id) return;
-          const childNodeId = `asset:${childPanelId}`;
-          addNode({
-            id: childNodeId,
-            assetId: childPanelId,
-            name: panels.get(childPanelId) ?? childPanelId,
-            kind: "page",
-            category: "composition",
-          });
-          addEdge(sourceId, childNodeId, "contains", "product-index");
-        };
-        for (const member of Object.values(loaded.manifest.members)) {
-          const target = member.target;
-          if ("projectionId" in target) {
-            addProj(target.projectionId);
-          } else if ("panelId" in target) {
-            addNestedPanel(target.panelId);
-          } else if ("fromState" in target) {
-            const candidates = target.candidates;
-            if ("projectionIds" in candidates) {
-              for (const projId of candidates.projectionIds) addProj(projId);
-            } else if ("panelIds" in candidates) {
-              for (const childPanelId of candidates.panelIds) addNestedPanel(childPanelId);
-            }
-          }
+        for (const { id, kind } of panelGraphMembers(loaded)) {
+          const names = kind === "projection" ? projectionNames : panels;
+          const node = assetGraphNode(kind, { id, name: names.get(id) ?? id });
+          graph.addNode(node);
+          graph.addEdge(`asset:${loaded.id}`, node.id, "contains");
         }
       }
 
-      const graph: ProductGraph = { nodes: [...nodes.values()], edges: [...edges.values()] };
       return {
         primaryKey: detail.id,
         className: APPLICATION,
         label: appLabel,
         fields: {
-          graph: { kind: "json", value: graph },
+          graph: { kind: "json", value: graph.build() },
         },
       };
     },

@@ -2,6 +2,9 @@ import { z } from "zod";
 import { runtimeSkillRefSchema, type RuntimeSkillRef } from "./agent-runtime-skills";
 import { runtimeKeySchema } from "./agent-runtime-values";
 
+export const agentSkillTargetSchema = z.union([z.string().uuid(), z.literal("draft")]);
+export type AgentSkillTarget = z.infer<typeof agentSkillTargetSchema>;
+
 export const skillCatalogReasonSchema = z.enum([
   "record_missing", "invalid_definition", "component_missing", "operation_unregistered",
 ]);

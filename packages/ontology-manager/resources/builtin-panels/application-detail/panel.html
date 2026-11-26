@@ -190,7 +190,7 @@
       @back="goBack"
     >
       <template #title>
-        <projection slot="headerTitle" :fallback-title="selectedKey || t('panel.name')"></projection>
+        <projection slot="headerTitle" :values="{ fallbackTitle: selectedKey || t('panel.name') }"></projection>
       </template>
       <template v-if="recordReady" #actions>
         <sdk-button v-if="openPath" @click="openApplication">

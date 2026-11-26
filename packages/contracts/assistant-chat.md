@@ -14,7 +14,7 @@ the complete selectable skill catalogue and per-run package preparation.
 
 | Method/path | Input | Output (200 unless listed) |
 | --- | --- | --- |
-| GET `/agent-skills` | — | `AssistantSkillCatalog`; complete provider/domain choices |
+| GET `/agent-skills` | `agentTarget` as an agent ID or `draft` | `AssistantSkillCatalog` for the agent the caller can edit or create |
 | GET `/agent-definitions` | — | `AssistantAgentDefinitionList` |
 | GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |

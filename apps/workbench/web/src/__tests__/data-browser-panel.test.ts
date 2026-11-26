@@ -965,6 +965,8 @@ describe("builtin-product-data-browser panel", () => {
 
       await vi.waitFor(() => {
         expect(route.readLog.some((r) => r.member === "graphSearchResults" && r.inputs.search === "ORD")).toBe(true);
+        // The graph member's own read-only version reaches the search read as a parameter; no state copies it.
+        expect(route.readLog.some((r) => r.member === "graphSearchResults" && r.inputs.version === "v-1")).toBe(true);
         expect(element.querySelector("[data-graph-candidates]")?.textContent).toContain("ORD-001");
       });
 

@@ -1,3 +1,4 @@
+import { agentDefinitionTypeDetail } from "@ontomato/contracts/platform-type-details/agent-definition";
 import platformSchedules from "@ontomato/platform-schedules/locales/en";
 
 // Generated from the original frontend messages using the keys the migrated pages actually use; extended as more pages are migrated.
@@ -1360,6 +1361,13 @@ export default {
       "governance": "Governance",
       "product": "Product"
     },
+    "relationGroups": {
+      "structure": "Structure",
+      "dependency": "Dependency",
+      "assembly": "Assembly",
+      "authorization": "Authorization",
+      "organization": "Organization"
+    },
     "types": {
       "publishedMcpService": "Published MCP service",
       "auditLog": "Audit log",
@@ -1441,16 +1449,7 @@ export default {
       "user": {
         "holds-role": "Holds role",
         "member-of-org-unit": "Member of unit",
-        "holds-org-position": "Holds position",
-        "created-action": "Created action",
-        "created-workflow": "Created workflow",
-        "created-metric-view": "Created metric view",
-        "published-action": "Published action",
-        "published-workflow": "Published workflow",
-        "published-metric-view": "Published metric view",
-        "can-use-product": "Can use product",
-        "can-view-product": "Can view product",
-        "can-edit-product": "Can edit product"
+        "holds-org-position": "Holds position"
       },
       "org-unit": {
         "has-child": "Has sub-unit",
@@ -1462,16 +1461,14 @@ export default {
         "grants-role": "Grants role"
       },
       "permission-policy": {
-        "governs-object-type": "Governs object type"
+        "governs-object-type": "Governs object type",
+        "can-enter-application": "Can enter application",
+        "can-execute-action": "Can execute action",
+        "can-use-object": "Can use object"
       },
       "role": {
         "uses-permission-policy": "Uses permission policy",
-        "can-execute-action": "Can execute action",
-        "can-author-workflow": "Can author workflow",
-        "owns-workflow-step": "Owns workflow step",
-        "can-use-product": "Can use product",
-        "can-view-product": "Can view product",
-        "can-edit-product": "Can edit product"
+        "owns-workflow-step": "Owns workflow step"
       },
       "projection": {
         "uses-component": "Uses component",
@@ -1490,10 +1487,31 @@ export default {
         "executes-as-user": "Executes as user"
       }
     },
+    "relationNotes": {
+      "projection": {
+        "binds-target": "A projection can bind any type."
+      }
+    },
+    "relationVerbs": {
+      "use": "Use",
+      "view": "View",
+      "edit": "Edit",
+      "create": "Create",
+      "execute": "Execute",
+      "enter": "Enter"
+    },
+    "scopes": {
+      "all": "All data",
+      "self_organization": "Own organization",
+      "self_subtree": "Own organization and sub-units",
+      "self_descendants": "Own sub-units",
+      "initiated_by_self": "Initiated by the subject",
+      "assigned_to_self": "Assigned to the subject"
+    },
     "typeDetails": {
       "agentDefinition": {
         "definition": "A reusable agent configuration that defines its instructions, model, skills, tools, data scope, and execution identity.",
-        "rules": "Creating an agent requires the analysis-agent permission. Listing agents and viewing configurations require the object view grant. Editing, deleting, and managing grants require the object edit grant. Chatting with or invoking an agent requires the object use grant. The definition service exposes only skill references the reader may use, and the execution identity service validates changes to the execution user.",
+        "rules": agentDefinitionTypeDetail.rules,
         "properties": {
           "id": "The stable identifier of the agent definition.",
           "name": "The name shown in agent lists and selectors.",

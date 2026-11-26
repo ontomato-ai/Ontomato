@@ -636,11 +636,7 @@
         <projection
           slot="chat"
           class="ops-chat-projection"
-          :show-header="false"
-          :collapsed="isFloating"
-          :greeting-key="'chat.greeting'"
-          :description-key="'chat.description'"
-          :placeholder-key="'chat.placeholder'"
+          :values="{ collapsed: isFloating }"
           @update:session-id="onSessionIdUpdate"
           @expand="onChatExpand"
           @entry-triggered="onEntryTriggered"

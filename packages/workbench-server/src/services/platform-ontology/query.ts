@@ -1,6 +1,7 @@
 import type {
   PlatformOntologyCountsResponse,
   PlatformOntologyEdge,
+  PlatformOntologyEdgeAuthorization,
   PlatformOntologyEdgeBinding,
   PlatformOntologyLayer,
   PlatformOntologyNeighborsRequest,
@@ -23,16 +24,17 @@ import {
   type PlatformRelationKindDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
-import type { ProductGrantVerb } from "@ontomato/contracts/product-governance";
 import { tForLocale } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import type { AuthorizationGraphFacts } from "../governance/policy-access";
 import type { ProductOwner } from "../product-governance/grants";
 import { panelSkillRef } from "../product-panels/skill-identity";
 import {
   PlatformOntologyOwnerReaders,
   type OwnerReadResult,
+  type RawGrantScope,
   type RawProductPanel,
   type RawProductProjection,
 } from "./owners";
@@ -83,6 +85,7 @@ interface RawEdgeCandidate {
   toLabel?: string;
   toDetail?: string;
   binding?: PlatformOntologyEdgeBinding;
+  authorization?: PlatformOntologyEdgeAuthorization;
 }
 
 interface RelationEvalResult {
@@ -326,135 +329,107 @@ function withDomainSharedDetail(
   return baseDetail ? `${baseDetail} · ${tag}` : tag;
 }
 
-type ProductGrantTargetType = typeof AGENT_DEFINITION | typeof PRODUCT_PANEL | typeof APPLICATION;
-
-interface ProductGrantRelationConfig {
-  fromType: typeof ROLE | typeof USER;
-  principalKind: "role" | "principal";
-  verb: ProductGrantVerb;
-  targetTypes: readonly ProductGrantTargetType[];
-}
-
-const PRODUCT_GRANT_RELATIONS: Readonly<Record<string, ProductGrantRelationConfig>> = {
-  "role.can-use-product": {
-    fromType: ROLE,
-    principalKind: "role",
-    verb: "use",
-    targetTypes: [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION],
-  },
-  "role.can-view-product": {
-    fromType: ROLE,
-    principalKind: "role",
-    verb: "view",
-    targetTypes: [AGENT_DEFINITION],
-  },
-  "role.can-edit-product": {
-    fromType: ROLE,
-    principalKind: "role",
-    verb: "edit",
-    targetTypes: [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION],
-  },
-  "user.can-use-product": {
-    fromType: USER,
-    principalKind: "principal",
-    verb: "use",
-    targetTypes: [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION],
-  },
-  "user.can-view-product": {
-    fromType: USER,
-    principalKind: "principal",
-    verb: "view",
-    targetTypes: [AGENT_DEFINITION],
-  },
-  "user.can-edit-product": {
-    fromType: USER,
-    principalKind: "principal",
-    verb: "edit",
-    targetTypes: [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION],
-  },
+/** The object kinds one policy grants, keyed by the verb it grants them with. */
+const POLICY_OBJECT_KINDS: Readonly<Record<string, string>> = {
+  PANEL: PRODUCT_PANEL,
+  PROJECTION: PRODUCT_PROJECTION,
+  COMPONENT: SDK_COMPONENT,
+  AGENT: AGENT_DEFINITION,
+  METRIC: METRIC_VIEW,
+  READ_FUNCTION: FUNCTION,
+  WRITE_FUNCTION: FUNCTION,
+  WORKFLOW: WORKFLOW,
 };
 
-async function readReadableProductTargets(
-  readers: PlatformOntologyOwnerReaders,
-  targetTypes: readonly ProductGrantTargetType[],
-): Promise<Map<string, { className: ProductGrantTargetType; label: string }>> {
-  const targets = new Map<string, { className: ProductGrantTargetType; label: string }>();
-  await Promise.all(
-    targetTypes.map(async (targetType) => {
-      if (targetType === AGENT_DEFINITION) {
-        const res = await readers.agentDefinitions();
-        if (res.ok) {
-          for (const agent of res.data) targets.set(agent.id, { className: AGENT_DEFINITION, label: agent.name });
-        }
-        return;
-      }
-      if (targetType === PRODUCT_PANEL) {
-        const res = await readers.productPanels();
-        if (res.ok) {
-          for (const panel of res.data) targets.set(panel.id, { className: PRODUCT_PANEL, label: panel.name });
-        }
-        return;
-      }
-      const res = await readers.applications();
-      if (res.ok) {
-        for (const app of res.data) targets.set(app.id, { className: APPLICATION, label: app.name });
-      }
-    }),
-  );
-  return targets;
+function verbLabel(locale: string | undefined, verb: string): string {
+  return tForLocale(locale, `platformOntology.relationVerbs.${verb.toLowerCase()}`);
 }
 
-async function evaluateProductGrantRelation(
-  readers: PlatformOntologyOwnerReaders,
-  config: ProductGrantRelationConfig,
-  node: PlatformOntologyNodeRef,
-): Promise<RelationEvalResult> {
-  const grantsRes = await readers.domainProductGrants();
-  if (!grantsRes.ok) return { status: grantsRes.status, reason: grantsRes.reason, edges: [] };
+function scopeAuthorization(locale: string | undefined, scope: RawGrantScope | null | undefined): PlatformOntologyEdgeAuthorization {
+  if (!scope) return {};
+  return {
+    scope: scope.kind,
+    scopeLabel: tForLocale(locale, `platformOntology.scopes.${scope.kind}`),
+    ...(scope.className && scope.field ? { scopeField: `${scope.className}.${scope.field}` } : {}),
+  };
+}
 
-  if (node.className === config.fromType) {
-    const matching = grantsRes.data.filter(
-      (grant) =>
-        grant.principalKind === config.principalKind &&
-        grant.verb === config.verb &&
-        grant.principalId === node.primaryKey,
-    );
-    if (matching.length === 0) return { status: "ok", edges: [] };
-    const productTargets = await readReadableProductTargets(readers, config.targetTypes);
-    const edges: RawEdgeCandidate[] = [];
-    for (const grant of matching) {
-      const target = productTargets.get(grant.resourceId);
-      if (!target) continue;
-      edges.push({
-        from: { className: config.fromType, primaryKey: node.primaryKey },
-        to: { className: target.className, primaryKey: grant.resourceId },
-        ...(grant.principalName ? { fromLabel: grant.principalName } : {}),
-        toLabel: target.label,
+/**
+ * Reads the object grants a policy stores and returns them as edges from that policy.
+ *
+ * Entry grants read as `permission-policy.can-enter-application` with the entry on the edge, action
+ * grants as `permission-policy.can-execute-action` with their scope, and every other granted object
+ * as `permission-policy.can-use-object` with the verb on the edge. A `CREATE` grant carries an empty
+ * target id because it allows creating that class rather than naming one record: it never becomes an
+ * edge and is reported on the policy node instead.
+ */
+function policyGrantEdges(
+  facts: AuthorizationGraphFacts,
+  center: PlatformOntologyNodeRef,
+  locale: string | undefined,
+): Record<"application" | "action" | "object", RawEdgeCandidate[]> {
+  const result: Record<"application" | "action" | "object", RawEdgeCandidate[]> = {
+    application: [], action: [], object: [],
+  };
+  const from = (policyId: string): PlatformOntologyNodeRef => ({ className: PERMISSION_POLICY, primaryKey: policyId });
+  const touches = (ref: PlatformOntologyNodeRef): boolean =>
+    ref.className === center.className && ref.primaryKey === center.primaryKey;
+  for (const grant of facts.policyGrants) {
+    if (!grant.targetKey) continue;
+    const authorization: PlatformOntologyEdgeAuthorization = {
+      verb: grant.verb,
+      verbLabel: verbLabel(locale, grant.verb),
+      ...scopeAuthorization(locale, grant.scope),
+    };
+    if (grant.targetKind === "ENTRY") {
+      const [appId, useId] = grant.targetKey.split("/");
+      if (!appId) continue;
+      const policy = from(grant.policyId);
+      const target = { className: APPLICATION, primaryKey: appId };
+      if (!touches(policy) && !touches(target)) continue;
+      result.application.push({
+        from: policy,
+        to: target,
+        ...(useId ? {
+          authorization: {
+            ...authorization,
+            entry: grant.targetKey,
+            entryLabel: useId,
+          },
+        } : { authorization }),
       });
+      continue;
     }
-    return { status: "ok", edges };
-  }
-
-  if (config.targetTypes.includes(node.className as ProductGrantTargetType)) {
-    const edges: RawEdgeCandidate[] = [];
-    for (const grant of grantsRes.data) {
-      if (
-        grant.principalKind !== config.principalKind ||
-        grant.verb !== config.verb ||
-        grant.resourceId !== node.primaryKey
-      ) {
-        continue;
-      }
-      edges.push({
-        from: { className: config.fromType, primaryKey: grant.principalId },
-        to: { className: node.className, primaryKey: node.primaryKey },
-        ...(grant.principalName ? { fromLabel: grant.principalName } : {}),
-      });
+    if (grant.targetKind === "ACTION") {
+      const policy = from(grant.policyId);
+      const target = { className: ACTION, primaryKey: grant.targetKey };
+      if (!touches(policy) && !touches(target)) continue;
+      result.action.push({ from: policy, to: target, authorization });
+      continue;
     }
-    return { status: "ok", edges };
+    const className = POLICY_OBJECT_KINDS[grant.targetKind];
+    if (!className) continue;
+    const policy = from(grant.policyId);
+    const target = { className, primaryKey: grant.targetKey };
+    if (!touches(policy) && !touches(target)) continue;
+    result.object.push({ from: policy, to: target, authorization });
   }
+  return result;
+}
 
-  return { status: "ok", edges: [] };
+/**
+ * The class names one policy may create records of. The grant carries no target id because it allows
+ * creating that class, so it is reported on the policy node rather than drawn as an edge.
+ */
+function policyCreatableTypes(facts: AuthorizationGraphFacts, policyId: string, locale: string | undefined): string[] {
+  const types = new Set<string>();
+  for (const grant of facts.policyGrants) {
+    if (grant.policyId !== policyId || grant.verb !== "CREATE") continue;
+    const className = POLICY_OBJECT_KINDS[grant.targetKind];
+    if (!className) continue;
+    types.add(tForLocale(locale, platformObjectTypes[className]!.labelKey!));
+  }
+  return [...types];
 }
 
 type InstanceMetadata = Partial<Record<"description" | "status" | "version" | "enabled", string | number | boolean>>;
@@ -478,11 +453,70 @@ export function platformOntologyOwnerReadError(status: Exclude<PlatformOntologyS
 }
 
 /** Lists all objects of a single declared type for counts, object picker, and label lookup. */
+/** How many names the user node's provenance summary keeps before it stops listing and shows the rest as `+N`. */
+const PROVENANCE_NAME_LIMIT = 3;
+
+function nameSummary(names: readonly string[]): string {
+  const head = names.slice(0, PROVENANCE_NAME_LIMIT).join("、");
+  return names.length > PROVENANCE_NAME_LIMIT ? `${head} +${names.length - PROVENANCE_NAME_LIMIT}` : head;
+}
+
+/**
+ * The actions, workflows and metric views a user created or reviewed, summarised onto the user node.
+ *
+ * Being the creator or the reviewer of a definition is provenance rather than authority, so it is not
+ * drawn as an edge; the names stay readable on the user node instead.
+ */
+async function readUserProvenance(
+  readers: PlatformOntologyOwnerReaders,
+  locale: string | undefined,
+): Promise<ReadonlyMap<string, string[]>> {
+  const [actionsRes, workflowsRes, metricsRes] = await Promise.all([
+    readers.actions(),
+    readers.workflows(),
+    readers.metricViews(),
+  ]);
+  const rows = [
+    ...(actionsRes.ok ? actionsRes.data : []),
+    ...(workflowsRes.ok ? workflowsRes.data : []),
+    ...(metricsRes.ok ? metricsRes.data : []),
+  ];
+  const rawIds = new Set(rows.flatMap((row) => [row.createdBy, row.reviewedBy]).filter((id): id is string => Boolean(id)));
+  const userIds = new Map<string, string>();
+  for (const rawId of rawIds) userIds.set(rawId, await readers.normalizeSubjectId(rawId));
+  const created = new Map<string, string[]>();
+  const reviewed = new Map<string, string[]>();
+  const add = (bucket: Map<string, string[]>, rawId: string | null | undefined, name: string) => {
+    if (!rawId) return;
+    const key = userIds.get(rawId)!;
+    const names = bucket.get(key) ?? [];
+    names.push(name);
+    bucket.set(key, names);
+  };
+  for (const row of rows) {
+    add(created, row.createdBy, row.name);
+    add(reviewed, row.reviewedBy, row.name);
+  }
+  const summaries = new Map<string, string[]>();
+  for (const userId of new Set([...created.keys(), ...reviewed.keys()])) {
+    const createdNames = created.get(userId) ?? [];
+    const reviewedNames = reviewed.get(userId) ?? [];
+    summaries.set(userId, [
+      ...(createdNames.length > 0
+        ? [`${tForLocale(locale, "panels.platformOntology.userCreated")}: ${nameSummary(createdNames)}`] : []),
+      ...(reviewedNames.length > 0
+        ? [`${tForLocale(locale, "panels.platformOntology.userPublished")}: ${nameSummary(reviewedNames)}`] : []),
+    ]);
+  }
+  return summaries;
+}
+
 async function readObjectsOfType(
   readers: PlatformOntologyOwnerReaders,
   typeId: string,
   includeDomainShared = true,
 ): Promise<OwnerObjectsResult> {
+  const locale = readers.credentials.locale;
 
   switch (typeId) {
     case OBJECT_TYPE: {
@@ -632,13 +666,17 @@ async function readObjectsOfType(
     case USER: {
       const res = await readers.subjects();
       if (!res.ok) return res;
+      const provenance = await readUserProvenance(readers, locale);
       return {
         ok: true,
-        data: res.data.map((subj) => ({
-          node: { className: USER, primaryKey: subj.id },
-          label: subj.displayName || subj.loginCode || subj.id,
-          detail: subj.loginCode,
-        })),
+        data: res.data.map((subj) => {
+          const parts = [subj.loginCode, ...provenance.get(subj.id) ?? []].filter((part): part is string => Boolean(part));
+          return {
+            node: { className: USER, primaryKey: subj.id },
+            label: subj.displayName || subj.loginCode || subj.id,
+            ...(parts.length > 0 && { detail: parts.join(" · ") }),
+          };
+        }),
       };
     }
     case ROLE: {
@@ -683,12 +721,19 @@ async function readObjectsOfType(
     case PERMISSION_POLICY: {
       const res = await readers.permissionPolicies();
       if (!res.ok) return res;
+      const facts = await readers.authorizationGraphFacts();
       return {
         ok: true,
-        data: res.data.map((policy) => ({
-          node: { className: PERMISSION_POLICY, primaryKey: policy.id },
-          label: policy.name,
-        })),
+        data: res.data.map((policy) => {
+          const creatable = facts.ok ? policyCreatableTypes(facts.data, policy.id, locale) : [];
+          return {
+            node: { className: PERMISSION_POLICY, primaryKey: policy.id },
+            label: policy.name,
+            ...(creatable.length > 0 && {
+              detail: `${tForLocale(locale, "panels.platformOntology.policyCreates")}: ${creatable.join("、")}`,
+            }),
+          };
+        }),
       };
     }
     case ORG_GRANT: {
@@ -1045,6 +1090,7 @@ async function evaluateRelationKind(
   spec: PlatformRelationKindDeclaration,
   node: PlatformOntologyNodeRef,
 ): Promise<RelationEvalResult> {
+  const locale = readers.credentials.locale;
   switch (spec.id) {
     case "object-type.has-attribute": {
       const res = await readers.ontologyMeta();
@@ -1299,144 +1345,27 @@ async function evaluateRelationKind(
       return { status: "ok", edges: [] };
     }
 
-    case "role.can-execute-action": {
-      const [grants, facts] = await Promise.all([readers.grants(), readers.authorizationGraphFacts()]);
-      if (!grants.ok) return { status: grants.status, reason: grants.reason, edges: [] };
-      if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
-      const edges = new Map<string, RawEdgeCandidate>();
-      function add(roleId: string, actionId: string, roleCode?: string) {
-        if (
-          (node.className === ROLE && roleId === node.primaryKey) ||
-          (node.className === ACTION && actionId === node.primaryKey)
-        ) {
-          edges.set(JSON.stringify([roleId, actionId]), {
-            from: { className: ROLE, primaryKey: roleId },
-            to: { className: ACTION, primaryKey: actionId },
-            fromLabel: roleCode,
-          });
-        }
-      }
-      for (const grant of facts.data.roleActionGrants) add(grant.roleId, grant.actionId);
-      for (const grant of grants.data) {
-        if (!grant.inForce || grant.capabilityKind !== "ACTION" || !grant.capabilityId || !grant.roleId) continue;
-        add(grant.roleId, grant.capabilityId, grant.roleCode ?? undefined);
-      }
-      return { status: "ok", edges: [...edges.values()] };
-    }
-
-    case "role.can-author-workflow": {
-      const facts = await readers.authorizationGraphFacts();
-      if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
-      const edges = new Map<string, RawEdgeCandidate>();
-      for (const { roleId, workflowId } of facts.data.roleWorkflowAuthoring) {
-        if (
-          (node.className === ROLE && roleId === node.primaryKey) ||
-          (node.className === WORKFLOW && workflowId === node.primaryKey)
-        ) {
-          edges.set(JSON.stringify([roleId, workflowId]), {
-            from: { className: ROLE, primaryKey: roleId },
-            to: { className: WORKFLOW, primaryKey: workflowId },
-          });
-        }
-      }
-      return { status: "ok", edges: [...edges.values()] };
-    }
-
     case "role.owns-workflow-step": {
-      const [wfRes, rolesRes] = await Promise.all([
-        readers.workflows(),
-        readers.roles(),
-      ]);
-      if (!wfRes.ok) return { status: wfRes.status, reason: wfRes.reason, edges: [] };
-      if (!rolesRes.ok) return { status: rolesRes.status, reason: rolesRes.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const wf of wfRes.data) {
-        const roleCodes = new Set(wf.steps.map((s) => s.roleCode).filter((c): c is string => Boolean(c)));
-        for (const roleCode of roleCodes) {
-          const role = rolesRes.data.byCode.get(roleCode);
-          if (!role) continue;
-          if (
-            (node.className === ROLE && role.id === node.primaryKey) ||
-            (node.className === WORKFLOW && wf.id === node.primaryKey)
-          ) {
-            edges.push({
-              from: { className: ROLE, primaryKey: role.id },
-              to: { className: WORKFLOW, primaryKey: wf.id },
-              fromLabel: role.code ?? undefined,
-              toLabel: wf.name,
-            });
-          }
-        }
-      }
-      return { status: "ok", edges };
-    }
-
-    case "user.created-action":
-    case "user.published-action": {
-      const res = await readers.actions();
+      const res = await readers.grants();
       if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const field = spec.id === "user.created-action" ? "createdBy" : "reviewedBy";
       const edges: RawEdgeCandidate[] = [];
-      for (const action of res.data) {
-        const rawUser = action[field];
-        if (!rawUser) continue;
-        const userId = await readers.normalizeSubjectId(rawUser);
+      for (const grant of res.data) {
+        if (!grant.inForce || !grant.roleId || !grant.workflowId || !grant.stepNo) continue;
         if (
-          (node.className === USER && userId === node.primaryKey) ||
-          (node.className === ACTION && action.id === node.primaryKey)
+          (node.className === ROLE && grant.roleId === node.primaryKey) ||
+          (node.className === WORKFLOW && grant.workflowId === node.primaryKey)
         ) {
           edges.push({
-            from: { className: USER, primaryKey: userId },
-            to: { className: ACTION, primaryKey: action.id },
-            toLabel: action.name,
-          });
-        }
-      }
-      return { status: "ok", edges };
-    }
-
-    case "user.created-workflow":
-    case "user.published-workflow": {
-      const res = await readers.workflows();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const field = spec.id === "user.created-workflow" ? "createdBy" : "reviewedBy";
-      const edges: RawEdgeCandidate[] = [];
-      for (const wf of res.data) {
-        const rawUser = wf[field];
-        if (!rawUser) continue;
-        const userId = await readers.normalizeSubjectId(rawUser);
-        if (
-          (node.className === USER && userId === node.primaryKey) ||
-          (node.className === WORKFLOW && wf.id === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: USER, primaryKey: userId },
-            to: { className: WORKFLOW, primaryKey: wf.id },
-            toLabel: wf.name,
-          });
-        }
-      }
-      return { status: "ok", edges };
-    }
-
-    case "user.created-metric-view":
-    case "user.published-metric-view": {
-      const res = await readers.metricViews();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const field = spec.id === "user.created-metric-view" ? "createdBy" : "reviewedBy";
-      const edges: RawEdgeCandidate[] = [];
-      for (const m of res.data) {
-        const rawUser = m[field];
-        if (!rawUser) continue;
-        const userId = await readers.normalizeSubjectId(rawUser);
-        if (
-          (node.className === USER && userId === node.primaryKey) ||
-          (node.className === METRIC_VIEW && m.id === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: USER, primaryKey: userId },
-            to: { className: METRIC_VIEW, primaryKey: m.id },
-            toLabel: m.name,
+            from: { className: ROLE, primaryKey: grant.roleId },
+            to: { className: WORKFLOW, primaryKey: grant.workflowId },
+            fromLabel: grant.roleCode ?? undefined,
+            authorization: {
+              stepNo: grant.stepNo,
+              ...(grant.activatedByWorkflowVersion
+                ? { version: Number(grant.activatedByWorkflowVersion) }
+                : {}),
+              ...scopeAuthorization(locale, grant.scope),
+            },
           });
         }
       }
@@ -1616,9 +1545,11 @@ async function evaluateRelationKind(
     case "application.uses-panel": {
       const appsRes = await readers.applications();
       if (!appsRes.ok) return { status: appsRes.status, reason: appsRes.reason, edges: [] };
+      const entriesRes = await readers.applicationPanelUses();
+      if (!entriesRes.ok) return { status: entriesRes.status, reason: entriesRes.reason, edges: [] };
       const edges: RawEdgeCandidate[] = [];
       for (const app of appsRes.data) {
-        for (const panelId of app.panelIds) {
+        for (const panelId of entriesRes.data.get(app.id) ?? []) {
           if (
             (node.className === APPLICATION && app.id === node.primaryKey) ||
             (node.className === PRODUCT_PANEL && panelId === node.primaryKey)
@@ -1805,13 +1736,17 @@ async function evaluateRelationKind(
       return { status: "ok", edges };
     }
 
-    case "role.can-use-product":
-    case "role.can-view-product":
-    case "role.can-edit-product":
-    case "user.can-use-product":
-    case "user.can-view-product":
-    case "user.can-edit-product":
-      return evaluateProductGrantRelation(readers, PRODUCT_GRANT_RELATIONS[spec.id], node);
+    case "permission-policy.can-enter-application":
+    case "permission-policy.can-execute-action":
+    case "permission-policy.can-use-object": {
+      const facts = await readers.authorizationGraphFacts();
+      if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
+      const granted = policyGrantEdges(facts.data, node, locale);
+      const collected = spec.id === "permission-policy.can-enter-application"
+        ? granted.application
+        : spec.id === "permission-policy.can-execute-action" ? granted.action : granted.object;
+      return { status: "ok", edges: collected };
+    }
 
     default:
       return { status: "unavailable", reason: `Unhandled relation kind: ${spec.id}`, edges: [] };
@@ -1899,6 +1834,7 @@ export async function readPlatformOntologyNeighbors(
         direction,
         derived: spec.derived,
         ...(candidate.binding ? { binding: candidate.binding } : {}),
+        ...(candidate.authorization ? { authorization: candidate.authorization } : {}),
       });
 
       if (candidate.fromLabel) hintLabels.set(fromKey, { label: candidate.fromLabel, detail: candidate.fromDetail });

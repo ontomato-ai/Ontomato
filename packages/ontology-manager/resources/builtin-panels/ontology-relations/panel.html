@@ -99,7 +99,7 @@
         <span v-if="countText" class="relations-count">{{ countText }}</span>
       </div>
       <div class="relations-table-host">
-        <projection slot="catalogue" :columns="relationColumns" @choose="open">
+        <projection slot="catalogue" @choose="open">
           <template #empty>
             <sdk-empty :description="t('list.empty')"></sdk-empty>
           </template>

@@ -24,8 +24,10 @@
   header (omit it for headerless pages):
   - `title` (string) or `#title` slot (for example `<projection slot="headerTitle"></projection>` using `ObjectHeader`)
   - For a single-line `ObjectHeader` inside `#title`, set `config.subtitle: ""` (and `config.statusField` when the
-    owner type declares a status field), pass `:fallback-title="selectedKey"` to the projection, and place descriptive
-    content in `#description` with `TypedValue`.
+    owner type declares a status field), pass the value the page holds as `:values="{ fallbackTitle: selectedKey }"`
+    and place descriptive content in `#description` with `TypedValue`. A value that never changes belongs in the
+    member's `config` instead; no other attribute on `<Projection>` configures the component, and a value written in
+    both places is an offline-check error.
   - optional `back-label` + `@back` (wired to `navigate(CATALOG_PATH)` or `usePanelBack`)
   - Always declare `<template #actions>` for custom actions and put visibility conditions inside. Unmount actions that
     are unavailable in the current view or mode with `v-if` (or gate them with `usePanelOperation(..., { available })`)

@@ -851,6 +851,10 @@ ${gridItems}
       get: () => (values.value.grantVerb === "EDIT" ? "EDIT" : "USE"),
       set: (next) => state.set("grantVerb", next === "EDIT" ? "EDIT" : "USE"),
     });
+    const grantVerbOptions = computed(() => [
+      { value: "USE", label: t("grants.use") },
+      { value: "EDIT", label: t("grants.edit") },
+    ]);
     const grantPolicyId = computed(() =>
       typeof values.value.grantPolicyId === "string" ? values.value.grantPolicyId : "",
     );
@@ -1068,6 +1072,7 @@ ${gridItems}
       grantEntryAllowed,
       grantDialogOpen,
       grantVerbModel,
+      grantVerbOptions,
       grantPolicyId,
       canSubmitGrant,
       openCopyDialog,

@@ -564,7 +564,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
           startedAt: translate("platformSchedules.runFields.startedAt"),
           scheduledAt: translate("platformSchedules.runFields.scheduledAt"),
           duration: translate("platformSchedules.runFields.duration"),
-          timeZone: translate("platformSchedules.panelFields.timeZone"),
+          timeZone: translate("platformSchedules.runFields.timeZone"),
           error: translate("platformSchedules.runFields.error"),
           resultSummary: translate("platformSchedules.runFields.resultSummary"),
           snapshotSummary: translate("platformSchedules.runFields.snapshotSummary"),

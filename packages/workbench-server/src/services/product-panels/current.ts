@@ -9,8 +9,8 @@ import { domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { matchesDirectPanelValue, panelPortAccepts } from "@ontomato/contracts/panel-manifest";
 import type { PoolClient } from "pg";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { currentProductColumns, currentProductRecord, currentProductTables, findCurrentProduct, findCurrentProducts, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
-import { qualifiedTable as t } from "../../infrastructure/postgres";
+import { currentProductColumns, currentProductRecord, currentProductRows, currentProductTables, findCurrentProduct, findCurrentProducts, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
+import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
@@ -114,6 +114,17 @@ export async function readCurrentProjectionRecords(
 export async function readCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
   const { row, editable } = await readCurrentRecord(owner, credentials, "panel", id, reportMissingToAuthor);
   return panelDefinition(row, editable);
+}
+
+export async function readAccessibleCurrentDefinitions(
+  owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind,
+) {
+  const { rows } = await getPostgresPool().query<CurrentProductRow>(
+    `SELECT ${currentProductColumns} FROM ${currentProductRows(kind)} AS definitions
+     WHERE domain_id IS NULL OR domain_id=$1 ORDER BY id`, [owner.domainId],
+  );
+  const { decisions } = await currentDefinitionAccess(kind, rows, owner.domainId, credentials, false);
+  return rows.filter((_, index) => decisions[index].allowed);
 }
 
 export async function readCurrentPanelLabel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {

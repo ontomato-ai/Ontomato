@@ -82,9 +82,8 @@ const importSkillImpact: PanelImpactInspector = {
   handlerRef: `${IMPORT_SKILL}.inspect-impact`,
   async inspect({ initiator: { owner, credentials }, locale }, calls) {
     const { file, overwrite } = importedInput(calls[0]!.input);
-    if (!overwrite) return null;
     let existing;
-    try { existing = await (await loadSkillManager()).importedSkill(owner.domainId, file.bytes, credentials); }
+    try { existing = await (await loadSkillManager()).inspectImport(owner.domainId, file.bytes, credentials, overwrite === true); }
     // An unreadable package needs no confirmation; the import itself refuses it.
     catch (error) { if (error instanceof InvalidSkillPackageError) return null; throw error; }
     if (!existing) return null;
@@ -158,14 +157,20 @@ export const skillServerOperations = [
     inspectImpact: deleteSkillImpact,
     async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
       const skillManager = await loadSkillManager();
-      let info;
-      try { info = await skillManager.getSkillInfo(host.initiator.owner.domainId, target.primaryKey, host.initiator.credentials); }
-      catch (error) { if (error instanceof HttpError && error.status < 500) return undefined; throw error; }
-      if (info.writeRestriction === null) return undefined;
+      const { owner, credentials } = host.initiator;
+      let restriction;
+      try { restriction = await skillManager.getDeleteSkillRestriction(owner.domainId, target.primaryKey, credentials); }
+      catch (error) {
+        if (!(error instanceof HttpError)) throw error;
+        if (error.code === "SKILL_NOT_FOUND") return undefined;
+        if (error.code === "PERMISSION_DENIED") return { reason: error.message };
+        throw error;
+      }
+      if (restriction === null) return undefined;
       return {
-        reason: info.writeRestriction.kind === "public"
+        reason: restriction.kind === "public"
           ? tForLocale(host.locale, "panels.skill.readOnlyPublic")
-          : tForLocale(host.locale, "panels.skill.readOnlyProvider", { provider: info.writeRestriction.providerName }),
+          : tForLocale(host.locale, "panels.skill.readOnlyProvider", { provider: restriction.providerName }),
       };
     },
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
