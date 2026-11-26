@@ -72,13 +72,13 @@ const formParams = { values: { input: "values" }, changedField: { input: "change
 const referencePicker = (id: string, objectType: string) => {
   const source = { type: { kind: "PlatformObjectType" as const, id: objectType } };
   const skill = objectType === SKILL;
-  const agentParam = skill ? { agentTarget: { input: "agentTarget" } } : {};
+  const agentParam: Record<string, { input: string }> = skill ? { agentTarget: { input: "agentTarget" } } : {};
   return projection(id, {
     componentId: "@ontomato/sdk:ReferencePicker",
     inputs: skill ? { agentTarget: { kind: "scalar", type: "string" } } : { values: { kind: "json" } },
     data: {
-      options: { source, read: "options", params: { ...agentParam } },
-      selected: { source, read: "resolve", params: skill ? { ...agentParam } : { values: { input: "values" } } },
+      options: { source, read: "options", params: agentParam },
+      selected: { source, read: "resolve", params: skill ? agentParam : { values: { input: "values" } } },
     },
   });
 };
