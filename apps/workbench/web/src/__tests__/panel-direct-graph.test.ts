@@ -32,10 +32,10 @@ import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/sr
 import { memberProjectionId } from "../../../../../packages/apps-sdk/src/panel/projection-element";
 
 /*
- * Direct-read regression for ObjectGraph, OntologyGraph, and ObjectRelations:
- * - ObjectGraph reads `nodes` and `edges` (`panelRecordList`) with `config.edgeEnds` (`source`, `target`) instead of
+ * Direct-read regression for RecordGraph, InstanceGraph, and ObjectRelations:
+ * - RecordGraph reads `nodes` and `edges` (`panelRecordList`) with `config.edgeEnds` (`source`, `target`) instead of
  *   legacy `projection.graph`, edits the paired form field through `useFormField`, and shows forbidden/error states.
- * - OntologyGraph reads `schema`, `counts`, `start`, and `neighbors` through the member read port with no resource
+ * - InstanceGraph reads `schema`, `counts`, `start`, and `neighbors` through the member read port with no resource
  *   adapters registered, preserving type/instance behavior, complete `{ className, primaryKey }` identities, drag
  *   positions, viewport, layer filters, query highlights, three-state relation notices, and forbidden/error states.
  * - ObjectRelations reads `neighbors` through `useMemberData` with no resource adapters registered, groups by relation
@@ -195,7 +195,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("draws direct ObjectGraph in a direct panel via PanelMember with member.formField and no resource adapters", async () => {
+it("draws direct RecordGraph in a direct panel via PanelMember with member.formField and no resource adapters", async () => {
   const projections: Record<string, ProductProjection> = {
     "agent-form": {
       ...meta,
@@ -212,7 +212,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
       ...meta,
       id: "agent-data-scope",
       name: "Data scope",
-      componentId: "@ontomato/sdk:ObjectGraph",
+      componentId: "@ontomato/sdk:RecordGraph",
       inputs: {},
       outputs: {},
       config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
@@ -276,7 +276,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
 
   const adjacentBtn = await vi.waitFor(() => {
     const button = element.querySelector<HTMLButtonElement>(".sdk-object-graph-adjacent");
-    if (!button || button.disabled) throw new Error("Direct PanelMember ObjectGraph adjacent button is not ready");
+    if (!button || button.disabled) throw new Error("Direct PanelMember RecordGraph adjacent button is not ready");
     return button;
   }, { timeout: 5000 });
   expect(reads.map((r) => r.dataName).sort()).toEqual(["edges", "form", "nodes"]);
@@ -286,7 +286,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
   });
 });
 
-it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired form field using config.edgeEnds", async () => {
+it("draws direct RecordGraph in a frame via frameMemberData and edits the paired form field using config.edgeEnds", async () => {
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
   const { createPanelInstance } = await import("../../../../../packages/apps-sdk/src/panel/instance");
   const { panelContextKey } = await import("../../../../../packages/apps-sdk/src/panel/context");
@@ -346,7 +346,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
       ...meta,
       id: "agent-data-scope",
       name: "Data scope",
-      componentId: "@ontomato/sdk:ObjectGraph",
+      componentId: "@ontomato/sdk:RecordGraph",
       inputs: {},
       outputs: {},
       config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
@@ -426,7 +426,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
   // Renders the graph from direct `nodes`/`edges` datums with `Order` marked adjacent to `Customer`.
   const adjacentBtn = await vi.waitFor(() => {
     const button = element.querySelector<HTMLButtonElement>(".sdk-object-graph-adjacent");
-    if (!button || button.disabled) throw new Error("ObjectGraph adjacent button is not ready");
+    if (!button || button.disabled) throw new Error("RecordGraph adjacent button is not ready");
     return button;
   });
   expect(adjacentBtn.textContent).toContain("1");
@@ -439,18 +439,18 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
   });
 });
 
-it("shows forbidden and error datum states on direct ObjectGraph without pretending the graph is empty", async () => {
+it("shows forbidden and error datum states on direct RecordGraph without pretending the graph is empty", async () => {
   const { createPanelInstance } = await import("../../../../../packages/apps-sdk/src/panel/instance");
   const { panelContextKey, projectionKey } = await import("../../../../../packages/apps-sdk/src/panel/context");
   const { panelMemberKey } = await import("../../../../../packages/apps-sdk/src/panel/member");
-  const { default: ObjectGraph } = await import("../../../../../packages/apps-sdk/src/base/ObjectGraph.vue");
+  const { default: RecordGraph } = await import("../../../../../packages/apps-sdk/src/base/RecordGraph.vue");
   const { formFieldSlotKey } = await import("../../../../../packages/apps-sdk/src/panel/slot-context");
 
   const scopeProjection: ProductProjection = {
     ...meta,
     id: "agent-data-scope",
     name: "Data scope",
-    componentId: "@ontomato/sdk:ObjectGraph",
+    componentId: "@ontomato/sdk:RecordGraph",
     inputs: {},
     outputs: {},
     config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
@@ -555,7 +555,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
         })),
         index: computed(() => undefined),
       });
-      return () => h(ObjectGraph, { edgeEnds: { source: "/fromclass", target: "/toclass" } });
+      return () => h(RecordGraph, { edgeEnds: { source: "/fromclass", target: "/toclass" } });
     },
   }))
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }))
@@ -603,12 +603,12 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
   await vi.waitFor(() => expect(chooseScope).toHaveBeenCalledWith("/classNames", ["Order"]));
 });
 
-it("drives direct OntologyGraph in type and instance modes through member reads with no resource adapters", async () => {
+it("drives direct InstanceGraph in type and instance modes through member reads with no resource adapters", async () => {
   const graphProjection: ProductProjection = {
     ...meta,
     id: "capability-graph",
     name: "Capability map",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {
       mode: { kind: "scalar", type: "string" },
       selected: { kind: "object-union", layers: allLayers },
@@ -771,12 +771,12 @@ it("drives direct OntologyGraph in type and instance modes through member reads 
   expect(lastNeighborRead.inputs.layers).toEqual(["capability", "governance", "product"]);
 });
 
-it("surfaces forbidden and error host read states on direct OntologyGraph without showing empty graph", async () => {
+it("surfaces forbidden and error host read states on direct InstanceGraph without showing empty graph", async () => {
   const graphProjection: ProductProjection = {
     ...meta,
     id: "capability-graph",
     name: "Capability map",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: { mode: { kind: "scalar", type: "string" }, node: { kind: "object-union", layers: allLayers } },
     outputs: {},
     config: {},
@@ -1033,7 +1033,7 @@ it("syncs string relation kinds from education panel state to ObjectRelations an
   expect(element.querySelector(group)).not.toBeNull();
 });
 
-it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberData and platformOntologyAdapters", async () => {
+it("draws direct InstanceGraph and ObjectRelations in a frame via frameMemberData and platformOntologyAdapters", async () => {
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
   const { platformOntologyAdapters } = await import("../../../../../packages/apps-sdk/src/panel/platform-ontology");
   const { createPanelInstance } = await import("../../../../../packages/apps-sdk/src/panel/instance");
@@ -1077,7 +1077,7 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
       ...meta,
       id: "capability-graph",
       name: "Capability map",
-      componentId: "@ontomato/sdk:OntologyGraph",
+      componentId: "@ontomato/sdk:InstanceGraph",
       inputs: {
         mode: { kind: "scalar", type: "string" },
         selected: { kind: "object-union", layers: allLayers },
@@ -1170,7 +1170,7 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
     element.remove();
   };
 
-  // OntologyGraph loads start + neighbors via frameMemberData; ObjectRelations awaits selection.
+  // InstanceGraph loads start + neighbors via frameMemberData; ObjectRelations awaits selection.
   await vi.waitFor(() => expect(canvasRecorder.nodes).toHaveLength(2));
   expect(element.querySelector(".sdk-object-relations-prompt")).not.toBeNull();
 
@@ -1185,14 +1185,14 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
   await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: USER, primaryKey: "u-1" }));
 });
 
-it("keeps newly discovered layers visible when OntologyGraph expands without declared layers", async () => {
+it("keeps newly discovered layers visible when InstanceGraph expands without declared layers", async () => {
   const ROLE = "platform:Role";
   const explicitTypes = { kind: "object-union" as const, objectTypes: [USER, ROLE, ACTION] as [string, ...string[]] };
   const graphProjection: ProductProjection = {
     ...meta,
     id: "dynamic-layers-graph",
     name: "Dynamic layers graph",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {
       start: explicitTypes,
       selected: explicitTypes,
@@ -1269,7 +1269,7 @@ it("keeps newly discovered layers visible when OntologyGraph expands without dec
 it("draws only the relation kinds the panel's state holds, in type and instance modes", async () => {
   const kindsType = { kind: "list" as const, items: { kind: "object" as const, objectType: ONTOLOGY_RELATION_KIND } };
   const graphProjection: ProductProjection = {
-    ...meta, id: "kinds-graph", name: "Kinds", componentId: "@ontomato/sdk:OntologyGraph",
+    ...meta, id: "kinds-graph", name: "Kinds", componentId: "@ontomato/sdk:InstanceGraph",
     inputs: { mode: { kind: "scalar", type: "string" }, node: { kind: "object-union", layers: allLayers } },
     outputs: { visibleRelationKinds: kindsType },
     config: {},
@@ -1333,11 +1333,11 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
   expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]);
 });
 
-it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations and OntologyGraph and promotes start via bound start output", async () => {
+it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations and InstanceGraph and promotes start via bound start output", async () => {
   const nodeUnion = { kind: "object-union" as const, layers: allLayers };
   const kindsType = { kind: "list" as const, items: { kind: "object" as const, objectType: ONTOLOGY_RELATION_KIND } };
   const graphProjection: ProductProjection = {
-    ...meta, id: "sync-graph", name: "Sync Graph", componentId: "@ontomato/sdk:OntologyGraph",
+    ...meta, id: "sync-graph", name: "Sync Graph", componentId: "@ontomato/sdk:InstanceGraph",
     inputs: { mode: { kind: "scalar", type: "string" }, start: nodeUnion, selected: nodeUnion, node: nodeUnion },
     outputs: { selected: nodeUnion, visibleRelationKinds: kindsType },
     config: {},
@@ -1419,7 +1419,7 @@ it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations an
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-relations-group")).toHaveLength(2));
   await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]));
 
-  // Changing the ObjectRelations multi-select filter updates shared panel state and filters OntologyGraph too
+  // Changing the ObjectRelations multi-select filter updates shared panel state and filters InstanceGraph too
   const selectTrigger = element.querySelector<HTMLElement>(".sdk-object-relations-filter-select .el-select__wrapper")
     ?? element.querySelector<HTMLElement>(".sdk-object-relations-filter-select");
   expect(selectTrigger).not.toBeNull();
@@ -1464,7 +1464,7 @@ it("syncs visibleLayers and expandedNodes bidirectionally and publishes startLab
     ...meta,
     id: "stateful-graph",
     name: "Stateful Graph",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {
       mode: { kind: "scalar", type: "string" },
       start: nodeUnion,

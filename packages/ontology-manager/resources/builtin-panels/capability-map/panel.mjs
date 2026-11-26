@@ -3,7 +3,7 @@ import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel
 
 /*
  * Four-layer capability map coordinator. All business reads and presentations live in official SDK projections
- * (`OntologyGraph`, `ObjectList`, `ReferencePicker`, `ObjectHeader`, `ObjectSummary`, `ObjectRelations`). This module
+ * (`InstanceGraph`, `ObjectList`, `ReferencePicker`, `ObjectHeader`, `ObjectSummary`, `ObjectRelations`). This module
  * coordinates typed panel state (keeping URL-compatible `selectedType` synced with `selectedTypeRef`) and owner-backed
  * cross-type search focusing (collapsing unrelated nodes to a match and its one-hop neighbors).
  */

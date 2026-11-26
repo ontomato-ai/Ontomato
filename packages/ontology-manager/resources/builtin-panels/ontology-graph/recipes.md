@@ -1,6 +1,6 @@
 # 本体图谱页的常见做法
 
-这一页全部由平台官方投影组装：页头统计（`ObjectCount`）、左栏资源列表（`ObjectList`）、中间共用图谱画布（`ObjectGraph`）、右栏路径选择器（`ReferencePicker`）与元素详情（`ObjectHeader`、`TypedValue`、`ObjectRefCard`、`ObjectList`）。画布工具条在画布左下角：放大、缩小、适应画布、重新布局、下载 PNG；也支持滚轮缩放。
+这一页全部由平台官方投影组装：页头统计（`ObjectCount`）、左栏资源列表（`ObjectList`）、中间共用图谱画布（`RecordGraph`）、右栏路径选择器（`ReferencePicker`）与元素详情（`ObjectHeader`、`TypedValue`、`ObjectRefCard`、`ObjectList`）。画布工具条在画布左下角：放大、缩小、适应画布、重新布局、下载 PNG；也支持滚轮缩放。
 
 ## 看页面上是什么
 

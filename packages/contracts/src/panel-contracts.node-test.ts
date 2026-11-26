@@ -278,7 +278,7 @@ test("short panel members can open the page composer with an explicit agent and 
 test("short members can name distinct data owners but need a read or operation", async () => {
   const { panelAuthoringMemberSchema } = await import("./panel-check");
   const graph = {
-    component: "ObjectGraph", type: "platform:ObjectType",
+    component: "RecordGraph", type: "platform:ObjectType",
     data: { nodes: "list", edges: { type: "platform:Relationship", read: "list" } },
   };
   assert.deepEqual(panelAuthoringMemberSchema.parse(graph), graph);
@@ -1877,7 +1877,7 @@ test("panel definition snapshots do not carry entry skill context", () => {
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
   const projection = productProjectionInputSchema.parse({
-    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectGraph",
+    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:RecordGraph",
     data: {
       nodes: { source: { type: platformType(OBJECT_TYPE) }, read: "list", params: {} },
       edges: { source: { type: platformType(RELATIONSHIP) }, read: "list", params: {} },
@@ -1910,7 +1910,7 @@ test("a graph has two admitted sources and can use either a form field or separa
 test("a named relationship is a binding identity and supplies no inferred edge selection type", () => {
   const relationship = { kind: "Relationship", id: "manages" };
   const projection = productProjectionInputSchema.parse({
-    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
+    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:InstanceGraph",
     inputs: { node: { kind: "object", objectType: "Employee" } }, outputs: {}, config: {},
     data: { neighbors: { source: { type: relationship }, read: "neighbors", params: { node: { input: "node" } } } },
   });
@@ -2492,7 +2492,7 @@ test("typed list state supports both object collections and string arrays, inclu
 test("mixed graphs declare selected node types separately from the read bindings", () => {
   const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers], objectTypes: [ONTOLOGY_TYPE] };
   const projection = productProjectionInputSchema.parse({
-    name: "Platform ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
+    name: "Platform ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:InstanceGraph",
     inputs: { start: nodeIdentity }, outputs: { selectedNode: nodeIdentity }, config: {},
     data: { neighbors: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "neighbors", params: { node: { input: "start" } } } },
   });
