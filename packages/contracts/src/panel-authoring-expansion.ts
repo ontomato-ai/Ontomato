@@ -572,10 +572,8 @@ export function expandPanelAuthoringMember(
     if (operation.target.source !== "none" && !opReadsDraft) {
       if (normalized.target === "row") {
         target = { row: true };
-      } else if (typeof normalized.target === "string") {
-        target = bindInput(opTargetPort, normalized.target, `${opPath}.target`);
       } else if (normalized.target !== undefined) {
-        if ("row" in normalized.target || "rowField" in normalized.target || "literal" in normalized.target) {
+        if ("rowField" in normalized.target || "literal" in normalized.target) {
           target = normalized.target;
         } else {
           target = bindInput(opTargetPort, normalized.target.state, `${opPath}.target`);

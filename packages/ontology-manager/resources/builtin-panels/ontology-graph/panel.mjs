@@ -323,17 +323,17 @@ await mountPanel({
     watch(objectListStatus, updateKnownObjectKeys, { immediate: true });
     watch(relationListStatus, updateKnownRelationKeys, { immediate: true });
 
-    function onObjectsListed(refs) {
+    watch(usePanelOutput("objectList", "listed"), (refs) => {
       listedObjects.value = Array.isArray(refs) ? refs : [];
       updateKnownObjectKeys();
       if (browseHighlightActive) syncBrowseHighlight();
-    }
+    });
 
-    function onRelationsListed(refs) {
+    watch(usePanelOutput("relationList", "listed"), (refs) => {
       listedRelations.value = Array.isArray(refs) ? refs : [];
       updateKnownRelationKeys();
       if (browseHighlightActive) syncBrowseHighlight();
-    }
+    });
 
     const setFilter = (value) => {
       filter.value = value;
@@ -508,8 +508,6 @@ await mountPanel({
       objectFilteredCount,
       relationFilteredCount,
       listEmpty,
-      onObjectsListed,
-      onRelationsListed,
       onObjectChosen,
       onRelationChosen,
       onNavigateObject,

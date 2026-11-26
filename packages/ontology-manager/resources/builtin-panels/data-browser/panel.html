@@ -550,13 +550,13 @@
   <section ref="rootRef" class="db-root">
     <!-- Hidden probes: class display labels for graph inspector, default class auto-selection, attributes, and presentation capability. -->
     <div v-if="isGraphMode" class="db-probe" aria-hidden="true">
-      <projection slot="classNamesProbe" @update:listed="onClassNamesListed"></projection>
+      <projection slot="classNamesProbe"></projection>
     </div>
     <div v-if="isTableMode" class="db-probe" aria-hidden="true">
       <projection slot="classCatalogProbe"></projection>
     </div>
     <div v-if="isTableMode && selectedClassKey" class="db-probe" aria-hidden="true">
-      <projection slot="classAttributesProbe" @update:listed="onAttributesListed"></projection>
+      <projection slot="classAttributesProbe"></projection>
       <projection slot="detailBinding"></projection>
     </div>
 
