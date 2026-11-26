@@ -49,6 +49,7 @@
         "config": {
           "layout": "accordion",
           "subtitleField": "name",
+          "subtitleStyle": "identifier",
           "rowExpandMode": "multiple",
           "searchable": false,
           "fallbackToFirst": false,

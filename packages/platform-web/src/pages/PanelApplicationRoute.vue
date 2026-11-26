@@ -66,6 +66,7 @@ const props = defineProps<{
    * full, the router's address is the page's.
    */
   address?: string;
+  legacyDashboardLayout?: boolean;
   takeOpenedEntry?: () => ApplicationEntryResolution | undefined;
   objectRefresh?: DisplayObjectRefresh | null;
   liveState?: DisplayStateUpdate | null;
@@ -547,6 +548,7 @@ const activeBesideFrameManifest = computed(() =>
     : undefined,
 );
 const frameState = computed((): FrameState => {
+  if (props.applicationId === "dashboards" && props.legacyDashboardLayout) return { legacyDashboardLayout: true };
   if (outerFrame) return outerFrame.frameState.value;
   let named: FrameState;
   let hasSegment: boolean;

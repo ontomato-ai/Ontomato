@@ -30,6 +30,7 @@ import {
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
 import {
+  candidateProjectionIds,
   matchesDirectPanelValue,
   normalizePanelDeepLinkState,
   panelStateValueSchema,
@@ -120,8 +121,9 @@ export interface PanelSdkRelease {
 export type HostedPanelSource = PanelHostSource;
 
 /** The projections a source places directly: its members whose target is a fixed projection. */
-function projectionIdsOf(shown: HostedPanelSource): string[] {
-  return Object.values(shown.panel.manifest.members).flatMap(member => ("projectionId" in member.target ? [member.target.projectionId] : []));
+function projectionIdsOf(shown: HostedPanelSource, includeCandidates = false): string[] {
+  return Object.values(shown.panel.manifest.members).flatMap(({ target }) =>
+    "projectionId" in target ? [target.projectionId] : includeCandidates ? candidateProjectionIds(target) : []);
 }
 
 /** What the host hands a panel's instance: where it is, what its address asks for, and where it reports. */
@@ -758,6 +760,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   function reconcileSnapshot(snapshot: PanelDefinitionSnapshot) {
     const shown = source.value;
+    for (const id of Object.keys(snapshot.unavailableProjections ?? {})) pendingForbiddenProjections.add(id);
     if (shown && snapshot.members) {
       for (const member of snapshot.members) {
         if (member.status !== "forbidden" || member.memberPath.length !== 1) continue;
@@ -813,7 +816,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       }
       const current = source.value;
       if (!current) return;
-      const projectionIds = new Set(projectionIdsOf(current));
+      const projectionIds = new Set(projectionIdsOf(current, true));
       const directProjections = new Map<string, { id: string; revision?: number }>();
       for (const revision of pending.values()) {
         if (revision.kind === "projection" && projectionIds.has(revision.id)) {

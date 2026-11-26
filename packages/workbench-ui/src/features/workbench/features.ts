@@ -7,14 +7,14 @@ export const PANEL_APPLICATION_PAGE_ID = "panel-application";
  * A panel application's page beside the conversation, at the address the conversation's page parameter names. It is
  * named by the panel itself, as its instance reports what the reader looks at, so its label is that report's.
  */
-export function panelApplicationPageFeature(label: string, address: string): ShellFeatureDeclaration {
+export function panelApplicationPageFeature(label: string, address: string, withConversation = true): ShellFeatureDeclaration {
   return {
     id: PANEL_APPLICATION_PAGE_ID,
     label,
     icon: "dashboard",
     availability: "page",
     listed: false,
-    withConversation: true,
+    withConversation,
     scrollsItself: true,
     address,
   };

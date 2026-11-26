@@ -135,42 +135,7 @@
             "chart": "line"
           },
           "controlsVisibility": "hover",
-          "saveOperation": "saveLayout",
-          "rowActions": {
-            "maxVisible": 0,
-            "items": [
-              {
-                "kind": "operation",
-                "operation": "renameCard",
-                "labelKey": "card.rename",
-                "prefill": true
-              },
-              {
-                "kind": "local",
-                "id": "parameters",
-                "labelKey": "card.parameters",
-                "when": {
-                  "field": "kind",
-                  "equals": "metric"
-                }
-              },
-              {
-                "kind": "local",
-                "id": "metricSource",
-                "labelKey": "card.metricSource",
-                "when": {
-                  "field": "kind",
-                  "equals": "metric"
-                }
-              },
-              {
-                "kind": "operation",
-                "operation": "deleteCard",
-                "labelKey": "card.delete",
-                "tone": "danger"
-              }
-            ]
-          }
+          "saveOperation": "saveLayout"
         },
         "name": "Dashboard grid",
         "description": "Grouped dashboard canvas (12-column metrics and 24-column charts) with drag reordering, resizing, draft preview, and group management",

@@ -358,6 +358,22 @@ describe("ObjectHeader", () => {
     expect(mounted.container.querySelector(".custom-action")?.textContent).toBe("Cancel");
   });
 
+  it("reads the subtitle in the body font unless the placement marks it an identifier", async () => {
+    const plain = mountWithI18n(
+      defineComponent({ setup: () => () => h(ObjectHeader, { title: "Nightly report", subtitle: "Runs every day at 09:00" }) }),
+    );
+    const identifier = mountWithI18n(
+      defineComponent({ setup: () => () => h(ObjectHeader, { title: "Nightly report", subtitle: "report.nightly.v2", subtitleStyle: "identifier" }) }),
+    );
+    cleanups.push(() => plain.unmount(), () => identifier.unmount());
+    await nextTick();
+
+    const plainSubtitle = plain.container.querySelector<HTMLElement>(".sdk-object-header-subtitle")!;
+    const identifierSubtitle = identifier.container.querySelector<HTMLElement>(".sdk-object-header-subtitle")!;
+    expect(plainSubtitle.classList.contains("is-identifier")).toBe(false);
+    expect(identifierSubtitle.classList.contains("is-identifier")).toBe(true);
+  });
+
   it("draws the shared status dot with the status text when statusStyle is dot", async () => {
     const mounted = mountWithI18n(
       defineComponent({

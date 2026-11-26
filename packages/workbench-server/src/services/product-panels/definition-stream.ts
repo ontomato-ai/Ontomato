@@ -1,11 +1,13 @@
 import type {PanelDefinitionSnapshot,PanelMemberSnapshot,ProductDefinitionTarget,ProductDefinitionRevision,ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
 import {productPanelSchema,type ProductDefinitionChangedEvent,type ProductPanel} from '@ontomato/contracts/product-panels';
+import {candidateProjectionIds} from '@ontomato/contracts/panel-manifest';
 import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
 import {currentProductRecord,findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
 import {requireCurrentDefinitionUse} from './access';
 import {resolvePanelMemberPath} from './member-path';
+import {readCurrentProjectionRecords} from './current';
 
 type AuthorStream = {
   owner: ProductOwner;
@@ -50,23 +52,36 @@ export async function snapshotPanelDefinitions(
   const root = { id: panel.id, revision: panel.revision };
   const fixedMembers = Object.entries(panel.manifest.members).filter(([, { target }]) =>
     'projectionId' in target || 'panelId' in target);
-  const members = await Promise.all(fixedMembers.map(async ([member]): Promise<PanelMemberSnapshot> => {
-    const memberPath = [{ member }] as [{ member: string }];
-    try {
-      const resolved = await resolvePanelMemberPath(owner, credentials, panel, memberPath);
-      const { id, revision } = resolved.kind === 'projection' ? resolved.projection : resolved.panel;
-      return { status: 'ready', memberPath, target: { kind: resolved.kind, id }, revision };
-    } catch (error) {
-      if (error instanceof HttpError && error.status === 403) return { status: 'forbidden', memberPath };
-      throw error;
-    }
-  }));
+  const candidates = Object.values(panel.manifest.members).flatMap(({ target }) => candidateProjectionIds(target));
+  const [members, candidateRecords] = await Promise.all([
+    Promise.all(fixedMembers.map(async ([member]): Promise<PanelMemberSnapshot> => {
+      const memberPath = [{ member }] as [{ member: string }];
+      try {
+        const resolved = await resolvePanelMemberPath(owner, credentials, panel, memberPath);
+        const { id, revision } = resolved.kind === 'projection' ? resolved.projection : resolved.panel;
+        return { status: 'ready', memberPath, target: { kind: resolved.kind, id }, revision };
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 403) return { status: 'forbidden', memberPath };
+        throw error;
+      }
+    })),
+    candidates.length ? readCurrentProjectionRecords(owner, credentials, candidates) : new Map(),
+  ]);
   const projections = new Map<string, { id: string; revision: number }>();
   for (const member of members) {
     if (member.status === 'ready' && member.target.kind === 'projection')
       projections.set(member.target.id, { id: member.target.id, revision: member.revision });
   }
-  return { panel: root, members, projections: [...projections.values()] };
+  const unavailableProjections: NonNullable<PanelDefinitionSnapshot['unavailableProjections']> = {};
+  for (const [id, item] of candidateRecords) {
+    if (item.ok) projections.set(id, { id, revision: item.projection.revision });
+    else if (item.error instanceof HttpError && (item.error.status === 403 || item.error.status === 404)) {
+      unavailableProjections[id] = {
+        status: 'unavailable', httpStatus: item.error.status, message: item.error.message,
+      };
+    } else throw item.error;
+  }
+  return { panel: root, members, projections: [...projections.values()], ...(Object.keys(unavailableProjections).length && { unavailableProjections }) };
 }
 export async function requireDefinition(owner:ProductOwner,credentials:AssistantCredentials,kind:CurrentProductKind,id:string){
   const row=await currentDefinition(owner.domainId,kind,id);

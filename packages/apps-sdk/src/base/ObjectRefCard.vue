@@ -12,7 +12,7 @@ import { projectionElement } from "../panel/projection-element";
 import {
   asTone,
   extractMetricRow,
-  useOptionalMemberDatum,
+  useMemberDatumWhenNotGiven,
   type DisplayDataStateKind,
 } from "./display-value";
 import { resolveLocalizedText } from "./localized-text";
@@ -26,6 +26,9 @@ const KNOWN_ICONS = new Set<string>(applicationIconKeys);
  * to navigate to that object's detail entry. Reads a reference field (`field`) or the bound object itself from its
  * `record` (`panelRecord`) or metric `result` (`metricOutput`) datum, or accepts a direct `reference` / `record` prop
  * standalone or inside a slot. Directly composes blocks such as a relationship's "Source card → Target card".
+ *
+ * One display reads once: a `reference` or `record` handed by a parent is drawn alone and no datum is read; `null` says
+ * the parent has nothing yet, `undefined` leaves the read to this card.
  */
 const props = withDefaults(
   defineProps<{
@@ -139,7 +142,12 @@ const panel = inject(panelContextKey, null);
 const slot = inject(projectionKey, null);
 const memberGetter = inject(panelMemberKey, null);
 const member = memberGetter?.() ?? null;
-const boundDatum = useOptionalMemberDatum(member, ["record", "result"] as const);
+// A reference or record handed by a parent is drawn alone: the parent read the datum, so this component adds no read.
+const boundDatum = useMemberDatumWhenNotGiven(
+  member,
+  ["record", "result"] as const,
+  props.reference !== undefined || props.record !== undefined,
+);
 
 const projectionObjectType = computed<string | undefined>(() => {
   if (!slot) return undefined;

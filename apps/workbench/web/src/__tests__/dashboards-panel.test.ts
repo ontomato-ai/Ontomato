@@ -371,6 +371,7 @@ function initialBoardState(): MockBoardState {
 
 async function openDashboardsPanel(options: {
   initialPath?: string;
+  legacyLayout?: boolean;
   state?: MockBoardState;
   onRead?: (request: ProductPanelReadRequest) => void;
   onOperation?: (operationId: string, call: PanelOperationCall) => Record<string, unknown> | undefined;
@@ -422,6 +423,7 @@ async function openDashboardsPanel(options: {
             component: PanelApplicationRoute,
             props: {
               applicationId: appId,
+              legacyDashboardLayout: options.legacyLayout,
               registerPageController: (controller: { fillForm?: (req: Record<string, unknown>) => Promise<unknown> }) => {
                 pageController = controller;
                 return () => {
@@ -653,6 +655,26 @@ async function openDashboardsPanel(options: {
 }
 
 describe("builtin-product-dashboards panel", () => {
+  it("keeps group and chart controls available in DataAgent without the platform-only board and metric controls", async () => {
+    const { element } = await openDashboardsPanel({ initialPath: "/dashboards?dashboardId=d1", legacyLayout: true });
+    await vi.waitFor(() => {
+      expect(element.querySelector('.db-canvas--legacy')).not.toBeNull();
+      expect(element.querySelector('[data-action="group-menu"]')).not.toBeNull();
+      expect(element.querySelector('[data-action="card-toggle-view"]')).not.toBeNull();
+      expect(element.querySelector('[data-action="card-zoom"]')).not.toBeNull();
+      expect(element.querySelector('[data-action="card-parameters"]')).not.toBeNull();
+    });
+    expect(element.querySelector('[data-member="createBoard"]')).toBeNull();
+    const metric = element.querySelector(".db-card-projection--metric")!.closest(".sdk-grouped-grid-item")!;
+    (metric.querySelector(".sdk-object-list-action-more-btn") as HTMLButtonElement).click();
+    const menuId = metric.querySelector(".sdk-object-list-action-more-btn")?.getAttribute("aria-controls");
+    const menu = () => menuId ? document.getElementById(menuId) : null;
+    await vi.waitFor(() => expect(menu()?.querySelector('[data-operation="renameCard"]')).toBeTruthy());
+    expect(menu()?.querySelector('[data-operation="deleteCard"]')).toBeTruthy();
+    expect(menu()?.querySelector('[data-local-action="parameters"]')).toBeNull();
+    expect(menu()?.querySelector('[data-local-action="metricSource"]')).toBeNull();
+  });
+
   it("lists boards in tabs, renders groups including empty groups with independent chart/metric cards, and creates a board", async () => {
     const { element, dispatched } = await openDashboardsPanel();
 
@@ -672,6 +694,7 @@ describe("builtin-product-dashboards panel", () => {
     // D-05: topbar has no extra Add group or Refresh all toolbar, and createBoard uses the default button style.
     expect(element.querySelector('[data-action="add-group"]')).toBeNull();
     expect(element.querySelector('[data-action="refresh-all"]')).toBeNull();
+    await vi.waitFor(() => expect(element.querySelector('[data-member="createBoard"] button')).not.toBeNull());
     const createBtn = element.querySelector<HTMLButtonElement>('[data-member="createBoard"] button')!;
     expect(createBtn).not.toBeNull();
     expect(createBtn.classList.contains("el-button--primary")).toBe(false);

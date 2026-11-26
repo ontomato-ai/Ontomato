@@ -319,6 +319,10 @@ export const panelMemberTargetSchema = z.union([
 ]);
 export type PanelMemberTarget = z.infer<typeof panelMemberTargetSchema>;
 
+export function candidateProjectionIds(target: PanelMemberTarget): readonly string[] {
+  return "fromState" in target && "projectionIds" in target.candidates ? target.candidates.projectionIds : [];
+}
+
 const literalValue = z.object({ literal: runtimeJsonValueSchema }).strict();
 const itemValue = z.object({ item: z.literal(true) }).strict();
 const commandInputSchema = z.union([literalValue, panelStateRefSchema, itemValue]);

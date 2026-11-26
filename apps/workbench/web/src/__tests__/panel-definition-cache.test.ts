@@ -3,6 +3,8 @@ import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
+import { panelAddress } from "@ontomato/contracts/panel-host";
+import { PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { BundledPanelProjection, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
@@ -135,6 +137,85 @@ afterEach(() => {
 });
 
 describe("panel definition cache & bundled projections", () => {
+  it("uses the mounted candidate bundle, fetches an unbundled selection once, and applies revocation on return to the foreground", async () => {
+    const ref = (id: string) => ({ className: PRODUCT_PROJECTION, primaryKey: id });
+    const manifest = definePanel({
+      state: { choice: { type: { kind: "object", objectType: PRODUCT_PROJECTION }, deepLink: true, default: ref(PROJ_A_ID) } },
+      members: { listA: { target: { fromState: "choice", candidates: { projectionIds: [PROJ_A_ID, PROJ_B_ID] } } } },
+    });
+    const base = makePanel();
+    const panel = { ...base, manifest, content: { ...base.content, html: '<div id="app"><projection slot="listA"></projection></div>' } };
+    const first = makeProjection(PROJ_A_ID, 1, "First candidate");
+    const second = makeProjection(PROJ_B_ID, 1, "Second candidate");
+    const denied = { status: "unavailable", httpStatus: 403, message: "No use grant" };
+    let revoked = false;
+    const { sent, router } = openPage(request => {
+      if (request.path === `/api/data-query/platform/applications/${APP_ID}/panel-uses`) {
+        return Response.json({
+          data: { applicationId: APP_ID, entry: { path: `/applications/${APP_ID}`, renderer: "panels" }, panelUses: [useEntry] },
+        });
+      }
+      if (request.path === `/api/product-panels/${PANEL_ID}`) {
+        return Response.json({
+          panel,
+          projections: { [first.id]: revoked ? denied : { status: "ready", projection: first } },
+        });
+      }
+      if (request.path === `/api/product-panels/${PANEL_ID}/snapshot`) {
+        return Response.json({
+          panel: { id: panel.id, revision: panel.revision },
+          projections: [first, second].filter(projection => !revoked || projection.id !== first.id)
+            .map(({ id, revision }) => ({ id, revision })),
+          ...(revoked && { unavailableProjections: { [first.id]: denied } }),
+        });
+      }
+      if (request.path === `/api/product-projections/${first.id}`) {
+        return revoked ? new Response(null, { status: 403 }) : Response.json({ projection: first });
+      }
+      if (request.path === `/api/product-projections/${second.id}`) return Response.json({ projection: second });
+      if (request.path === "/api/product-panels/read") {
+        return Response.json({ status: "ready", value: (request.body as { operations?: true }).operations ? {} : [] });
+      }
+      return nothingAt(request);
+    });
+    // A definition from a previous mount does not authorize a new dynamic selection.
+    setCachedProjection({ projection: second });
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await router.push(useEntry.path);
+    const page = mountPlatformPage(() => h(RouterView), router);
+    const projectionGets = () => sent.filter(({ method, path }) => method === "GET" && path.startsWith("/api/product-projections/"));
+    try {
+      await vi.waitFor(() => expect(page.element.textContent).toContain("First candidate"));
+      expect(projectionGets()).toEqual([]);
+
+      await router.push(panelAddress(useEntry.path, { choice: ref(second.id) }, manifest));
+      await vi.waitFor(() => expect(page.element.textContent).toContain("Second candidate"));
+      expect(projectionGets().map(({ path }) => path)).toEqual([`/api/product-projections/${second.id}`]);
+
+      await router.push(useEntry.path);
+      await vi.waitFor(() => expect(page.element.textContent).toContain("First candidate"));
+      revoked = true;
+      visibility.mockReturnValue("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.waitFor(() => expect(page.element.querySelector('[data-state="forbidden"]')).not.toBeNull());
+      expect(page.element.textContent).not.toContain("First candidate");
+      expect(projectionGets().map(({ path }) => path)).toEqual([`/api/product-projections/${second.id}`]);
+    } finally {
+      page.app.unmount();
+    }
+
+    const reopened = mountPlatformPage(() => h(RouterView), router);
+    try {
+      await vi.waitFor(() => expect(reopened.element.querySelector('[data-state="forbidden"]')).not.toBeNull());
+      expect(projectionGets().some(({ path }) => path.endsWith(first.id))).toBe(false);
+    } finally {
+      reopened.app.unmount();
+    }
+  });
+
   it("cold open bundles fixed projections in 1 panel request (0 individual projection GETs), isolates 403, and re-entry reuses cached definitions while always fetching fresh business data", async () => {
     const panel = makePanel(1, "Panel v1");
     const projA = makeProjection(PROJ_A_ID, 1, "Tasks A v1");
