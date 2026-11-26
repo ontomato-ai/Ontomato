@@ -21,7 +21,6 @@ import {
   platformTaskRunSchema,
   platformTaskSchema,
   type PlatformScheduleForm,
-  type PlatformTask,
   type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
 import { isApplicationPanelUse, type ApplicationEntryResolution, type ApplicationPanelUse, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
@@ -61,7 +60,9 @@ const examples = JSON.parse(
 const example = (list: "creates" | "forms" | "runs", name: string) => examples[list].find((entry) => entry.name === name)!.response;
 
 /** The reader's scheduled task: the contract's own operations-diagnosis example, as the trial's test task is. */
-export const task: PlatformTask = platformTaskSchema.parse(example("creates", "operations-autotest"));
+const operationsTrigger = platformTaskSchema.parse(example("creates", "operations-autotest"));
+if (operationsTrigger.targetKind !== "application") throw new Error("Expected an operations application trigger");
+export const task = operationsTrigger;
 
 /** The task's application's form for what the task holds, as the operations application answers it. */
 export const taskForm: PlatformScheduleForm = platformScheduleFormSchema.parse({
@@ -351,7 +352,7 @@ export function isPanelDataRead({ method, path }: Sent) {
 /** The trigger's record as the registered read returns it in the frame's language. */
 export const triggerRecord: PanelRecord = {
   primaryKey: task.id, label: task.title,
-  fields: { application: task.appId, settings: "", state: "on", nextRun: task.nextRunAt },
+  fields: { application: task.appId, settings: "", state: "on", nextRun: task.nextRunAt ?? "" },
   fieldLabels: { application: "Application", settings: "Settings", state: "Status", nextRun: "Next run" },
 };
 
