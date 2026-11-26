@@ -52,15 +52,15 @@ const props = withDefaults(defineProps<{
   exportBackground?: string;
   /** Single-page presentation option: exported PNG filename template (`{date}` expands to local `YYYY-MM-DD`). */
   exportFilename?: string;
-  /** Internal style overrides supplied by dedicated platform graph components (never exposed on `ObjectGraph`). */
+  /** Internal style overrides supplied by dedicated platform graph components (never exposed on `RecordGraph`). */
   styleOverrides?: GraphCanvasStyleOverrides;
-  /** Internal toolbar layout supplied by dedicated platform graph components (never exposed on `ObjectGraph`). */
+  /** Internal toolbar layout supplied by dedicated platform graph components (never exposed on `RecordGraph`). */
   toolbarPlacement?: "floating" | "top-four";
-  /** Internal hover connection-port overlay enabled only by `VisualModelingGraph`. */
+  /** Internal hover connection-port overlay enabled only by `ModelingGraphEditor`. */
   connectPorts?: boolean;
-  /** Internal uncommitted visual pending edge preview enabled only by `VisualModelingGraph`. */
+  /** Internal uncommitted visual pending edge preview enabled only by `ModelingGraphEditor`. */
   showPendingEdge?: boolean;
-  /** Optional explicit visual pending edge preview supplied by `VisualModelingGraph`. */
+  /** Optional explicit visual pending edge preview supplied by `ModelingGraphEditor`. */
   pendingEdge?: PendingGraphEdge | null;
 }>(), {
   editable: undefined,
@@ -89,14 +89,8 @@ const member = useMember();
 const nodeCategory = props.nodeCategory ?? member.projection.config.nodeCategory;
 if (nodeCategory !== undefined && typeof nodeCategory !== "string") throw new Error(`The projection in member '${member.key}' names nodeCategory with no JSON Pointer`);
 const resolved = useGraphRecords(props.edgeEnds, nodeCategory);
-/** How large the nodes and their names are drawn, in screen pixels; the canvas's own sizes when the projection sets none. */
-function sizeOf(name: "nodeSize" | "labelSize"): number | undefined {
-  const size = props[name] ?? member.projection.config[name];
-  if (size !== undefined && (typeof size !== "number" || !(size > 0)))
-    throw new Error(`The projection in member '${member.key}' names a ${name} that is not a positive number`);
-  return size;
-}
-const look = { nodeSize: sizeOf("nodeSize"), labelSize: sizeOf("labelSize") };
+/** How large the nodes and their names are drawn, in screen pixels; the canvas's own sizes when a dedicated graph sets none. */
+const look = { nodeSize: props.nodeSize, labelSize: props.labelSize };
 /** The categories in a fixed order: the n-th takes the platform palette's n-th colour. */
 const categories = computed(() => {
   const listed = props.categories ?? member.projection.config.categories ?? [];
@@ -109,26 +103,14 @@ const layoutMode = computed<"relations" | "force">(() => {
   const mode = props.layout ?? member.projection.config.layout;
   return mode === "force" ? "force" : "relations";
 });
-const showHighlightBanner = computed(() => {
-  const value = props.highlightBanner ?? member.projection.config.highlightBanner;
-  return value !== false;
-});
-const showFocusButton = computed(() => {
-  const value = props.showFocusButton ?? member.projection.config.showFocusButton;
-  return value !== false;
-});
+const showHighlightBanner = computed(() => props.highlightBanner !== false);
+const showFocusButton = computed(() => props.showFocusButton !== false);
 const canvasHint = computed(() => {
   const value = props.hint ?? member.projection.config.hint;
   return typeof value === "string" && value.trim() ? value.trim() : "";
 });
-const exportBackground = computed(() => {
-  const value = props.exportBackground ?? member.projection.config.exportBackground;
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-});
-const exportFilename = computed(() => {
-  const value = props.exportFilename ?? member.projection.config.exportFilename;
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-});
+const exportBackground = computed(() => props.exportBackground?.trim() || undefined);
+const exportFilename = computed(() => props.exportFilename?.trim() || undefined);
 
 /** The type each datum reads: a chosen node or edge is an object of that type. */
 const typeOf = (datum: "nodes" | "edges") => {

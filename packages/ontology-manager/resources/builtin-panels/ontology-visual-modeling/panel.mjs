@@ -348,7 +348,7 @@ await mountPanel({
       }
     }
 
-    // Double-clicking a node or edge on VisualModelingGraph emits choose with real object identity.
+    // Double-clicking a node or edge on ModelingGraphEditor emits choose with real object identity.
     async function onGraphChoose(reference) {
       if (!reference?.primaryKey) return;
       if (reference.className === RELATIONSHIP_TYPE) {

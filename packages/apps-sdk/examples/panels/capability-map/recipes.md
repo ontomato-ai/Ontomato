@@ -55,5 +55,5 @@ Click **Current user** (`resetToCurrentUser`) to clear `start` and return to the
 ## Layer filter and viewport
 
 The layer filter pills, expanded instance set, manually dragged node positions and canvas viewport live inside
-`OntologyGraph` as internal view state rather than panel state, so toggling a layer or panning never mutates deep links
+`InstanceGraph` as internal view state rather than panel state, so toggling a layer or panning never mutates deep links
 or page context selection.

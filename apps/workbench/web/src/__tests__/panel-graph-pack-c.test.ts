@@ -178,14 +178,14 @@ afterEach(() => {
 });
 
 function mountGraphMember(options: {
-  componentId: "@ontomato/sdk:ObjectGraph" | "@ontomato/sdk:OntologyModelGraph" | "@ontomato/sdk:VisualModelingGraph";
+  componentId: "@ontomato/sdk:RecordGraph" | "@ontomato/sdk:OntologyTypeGraph" | "@ontomato/sdk:ModelingGraphEditor";
   config?: Record<string, unknown>;
   initial?: Record<string, unknown>;
   slots?: Record<string, (scope: Record<string, unknown>) => unknown>;
   onChoose?: (value: ObjectListRef) => void;
 }) {
   const projectionId = `proj-${options.componentId.split(":")[1]}`;
-  const includeConnect = options.componentId !== "@ontomato/sdk:OntologyModelGraph";
+  const includeConnect = options.componentId !== "@ontomato/sdk:OntologyTypeGraph";
   const projection: DirectProjection = {
     ...baseRecord,
     id: projectionId,
@@ -303,11 +303,11 @@ function mountGraphMember(options: {
   return { host, instance };
 }
 
-describe("ObjectGraph Pack C enhancements (G3 + G4)", () => {
+describe("RecordGraph Pack C enhancements (G3 + G4)", () => {
   it("emits choose with real object identity on double-click while keeping single-click selection-only", async () => {
     const chosen: ObjectListRef[] = [];
     const { instance } = mountGraphMember({
-      componentId: "@ontomato/sdk:ObjectGraph",
+      componentId: "@ontomato/sdk:RecordGraph",
       onChoose: (value) => chosen.push(value),
     });
     await vi.waitFor(() => expect(canvasState.nodes).toHaveLength(2), { timeout: 5000 });
@@ -334,27 +334,6 @@ describe("ObjectGraph Pack C enhancements (G3 + G4)", () => {
       { className: OBJECT_TYPE, primaryKey: "org" },
       { className: RELATIONSHIP, primaryKey: "works-in" },
     ]);
-  });
-
-  it("forwards single-page exportBackground and dated exportFilename to G6 exportImage and file download", async () => {
-    const { host } = mountGraphMember({
-      componentId: "@ontomato/sdk:ObjectGraph",
-      config: {
-        exportBackground: "#f5f7fa",
-        exportFilename: "custom-graph-{date}.png",
-      },
-    });
-    await vi.waitFor(() => expect(canvasState.nodes).toHaveLength(2), { timeout: 5000 });
-    await nextTick();
-
-    const downloadBtn = host.querySelector<HTMLButtonElement>("[data-graph-action='download']");
-    expect(downloadBtn).not.toBeNull();
-    downloadBtn!.click();
-    await flushUi();
-
-    expect(canvasState.exportCalls).toEqual([{ background: "#f5f7fa" }]);
-    expect(savedFiles).toHaveLength(1);
-    expect(savedFiles[0]!.suggestedName).toMatch(/^custom-graph-\d{4}-\d{2}-\d{2}\.png$/);
   });
 });
 
@@ -566,10 +545,10 @@ describe("ProductAssetGraph (D1, panelUsable: false)", () => {
   });
 });
 
-describe("OntologyModelGraph (D2, panelUsable: false)", () => {
+describe("OntologyTypeGraph (D2, panelUsable: false)", () => {
   it("applies fixed ontology graph styling and dated solid-background PNG export", async () => {
     const { host } = mountGraphMember({
-      componentId: "@ontomato/sdk:OntologyModelGraph",
+      componentId: "@ontomato/sdk:OntologyTypeGraph",
     });
     await vi.waitFor(() => expect(canvasState.nodes).toHaveLength(2));
     await nextTick();
@@ -600,11 +579,11 @@ describe("OntologyModelGraph (D2, panelUsable: false)", () => {
   });
 });
 
-describe("VisualModelingGraph (D2 + D3 + D4 + G3, panelUsable: false)", () => {
+describe("ModelingGraphEditor (D2 + D3 + D4 + G3, panelUsable: false)", () => {
   it("renders top-left 4-action toolbar with right slots, halo/pill styles, 4-direction hover connect ports, pending edge, and choose", async () => {
     const chosen: ObjectListRef[] = [];
     const { host, instance } = mountGraphMember({
-      componentId: "@ontomato/sdk:VisualModelingGraph",
+      componentId: "@ontomato/sdk:ModelingGraphEditor",
       onChoose: (value) => chosen.push(value),
       slots: {
         "toolbar-actions": (scope) => h("span", { class: "custom-toolbar-slot" }, `nodes:${scope.nodeCount}`),

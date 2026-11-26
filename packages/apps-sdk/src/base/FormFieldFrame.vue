@@ -10,7 +10,7 @@ import { formControlsKey } from "./form-controls";
 
 /**
  * The shared presentation frame of one form field — whether drawn by `FormFieldControl` or by a `formField` member
- * (`ReferencePicker`, `ObjectGraph`). It owns the field's label, required/changed markers, help/read-only note,
+ * (`ReferencePicker`, `RecordGraph`). It owns the field's label, required/changed markers, help/read-only note,
  * validation error placement, non-blocking `warning`, optional "Reset to default" action (when `defaultValue !==
  * undefined`, including `null`), and switches top-level fields between `stacked` and settings `rows` layouts.
  */

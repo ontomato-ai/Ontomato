@@ -4,7 +4,7 @@
  * workspace candidate (`panel.json`) and the registered panel input from this single source.
  *
  * Layer filter, expanded instance nodes, dragged positions and canvas viewport are internal view state of
- * `OntologyGraph` and deliberately stay out of panel state.
+ * `InstanceGraph` and deliberately stay out of panel state.
  */
 const allLayers = ["fact", "capability", "governance", "product"];
 const graphNodeObject = { kind: "object-union", layers: allLayers, objectTypes: ["platform:OntologyType"] };
