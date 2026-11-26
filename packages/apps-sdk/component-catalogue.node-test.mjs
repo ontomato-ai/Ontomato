@@ -112,7 +112,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       assert.ok(statusField);
       assert.ok(list.ports.props.some(({ name }) => name === "status-field"));
       const page = readFileSync(join(sdk, "docs/components/ObjectList.md"), "utf8");
-      const configLine = page.split("\n").find((line) => line.startsWith("- \`statusField\` ("));
+      const configLine = page.split("\n").find((line) => line.startsWith("- `statusField` ("));
       assert.ok(configLine);
 
       const workspace = join(out, "list-config");
