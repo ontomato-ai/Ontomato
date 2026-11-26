@@ -12,6 +12,7 @@ import java.util.Set;
 
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.LangService;
+
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DBSchemaUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,8 @@ import io.ontomato.dataengine.dataAdapter.DslExecutionMode;
 import io.ontomato.dataengine.util.HttpRequestUtil;
 
 import cn.hutool.core.lang.UUID;
+
+import static io.ontomato.dataengine.service.impl.OntologyModelServiceImpl.OPTION_KEY;
 
 @Slf4j
 @Service
@@ -629,6 +632,9 @@ public class AdminServiceImpl implements AdminService {
 						attrDefJson.put("bizzKey", attrDef.get("bizzkey"));
 						attrDefJson.put("enable", attrDef.get("enable"));
 						attrDefJson.put("primaryKey", attrDef.get("primaryKey"));
+						if (attrDef.get(OPTION_KEY) instanceof List<?> options && !options.isEmpty()) {
+							attrDefJson.put(OPTION_KEY, options);
+						}
 						if (attrDef.get("indicators") != null) {
 							JSONArray indicatorDefs = new JSONArray();
 							for (Map<String, Object> indicatorDef : (List<Map<String, Object>>)attrDef.get("indicators")) {
@@ -692,6 +698,9 @@ public class AdminServiceImpl implements AdminService {
 						attrDef.put("bizzkey", ad.get("bizzKey"));
 						attrDef.put("enable", ad.get("enable"));
 						attrDef.put("primaryKey", ad.get("primaryKey"));
+						if (ad.containsKey(OPTION_KEY)) {
+							OntologyModelServiceImpl.importAttributeOptions((String) cd.get("name"), attrDef, ad.get(OPTION_KEY));
+						}
 						if (ad.get("indicators") != null) {
 							List<Map<String, Object>> indicatorDefs = new ArrayList<Map<String, Object>>();
 							for (Map<String, Object> id : (List<Map<String, Object>>)ad.get("indicators")) {

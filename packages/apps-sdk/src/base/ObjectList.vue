@@ -166,6 +166,7 @@ import {
   isRecordTag,
   rawRecordField,
   recordFieldArrayItems,
+  recordFieldDisplayValue,
   referenceDisplayLabel,
   scalarFieldText,
   toChildFieldReference,
@@ -2055,7 +2056,7 @@ function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string
     const mappedLabel = columnMapped(row, column)?.label;
     return mappedLabel ?? derived.text;
   }
-  return displayFieldText(rawRecordField(row, column.key), locale.value, t, column.listSeparator ?? ", ");
+  return displayFieldText(recordFieldDisplayValue(row, column.key), locale.value, t, column.listSeparator ?? ", ");
 }
 /** A column's secondary line text in a row, when `subtitleKey` is configured. */
 function columnSubtitleText(row: PlatformObjectRecord, column: ObjectListColumn): string {
@@ -3316,7 +3317,7 @@ const listHasTwoLines = computed(() =>
 );
 
 function fieldValue(row: PlatformObjectRecord, key: string): string {
-  return displayFieldText(rawRecordField(row, key), locale.value, t);
+  return displayFieldText(recordFieldDisplayValue(row, key), locale.value, t);
 }
 
 function referenceField(row: PlatformObjectRecord, key: string): PanelRecordReferenceFieldValue | null {

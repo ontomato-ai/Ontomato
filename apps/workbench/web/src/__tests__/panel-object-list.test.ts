@@ -3401,3 +3401,37 @@ it("renders pending ellipsis in #cell slot fallback while supplement is loading"
     expect(element.querySelector(".sdk-object-list-tag")?.textContent?.trim()).toBe("24 students");
   });
 });
+
+it("shows the owner's declared display name for a status value and keeps the value for the record", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "declared-name-list": {
+      ...meta,
+      id: "declared-name-list",
+      name: "Declared names",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { statusField: "status" },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: { selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    members: { list: { target: { projectionId: "declared-name-list" }, outputs: { selected: { state: "selected" } } } },
+  });
+  const rows = [
+    { primaryKey: "k-1", label: "Order", fields: { status: "APPROVED" }, valueLabels: { status: "Approved" }, tones: { status: "success" as const } },
+    { primaryKey: "k-2", label: "Invoice", fields: { status: "SHIPPED" } },
+  ];
+  const { element } = mountDirect(manifest, projections, () => ready({ rows, total: 2 }));
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-items")).toHaveLength(1));
+  const items = [...element.querySelectorAll<HTMLElement>(".sdk-object-list-item-btn")];
+  const named = items[0]!.querySelector<HTMLElement>(".sdk-object-list-item-head .sdk-object-list-tag");
+  expect(named?.textContent?.trim()).toBe("Approved");
+  expect(named?.dataset.tone).toBe("success");
+  // A value without a declared name keeps showing the value itself.
+  expect(items[1]!.querySelector(".sdk-object-list-item-head .sdk-object-list-tag")?.textContent?.trim()).toBe("SHIPPED");
+  // The record still carries the stored value.
+  expect(rows[0]!.fields.status).toBe("APPROVED");
+});

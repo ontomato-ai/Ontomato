@@ -28,6 +28,7 @@ import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OntologyModelService;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeCreate;
+import io.ontomato.dataengine.service.OntologyModelService.AttributeOption;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeView;
 import io.ontomato.dataengine.service.OntologyModelService.ClassDeletion;
@@ -64,14 +65,14 @@ public class OntologyModelController {
 	}
 
 	public record AttributeCreateRequest(String className, String name, String showName, String type, String attrDesc,
-			Boolean enable, Boolean businessKey, Boolean primaryKey) {
+			Boolean enable, Boolean businessKey, Boolean primaryKey, List<AttributeOption> options) {
 	}
 
 	public record AttributeUpdateRequest(String className, String name, String showName, String attrDesc,
-			Boolean enable, Boolean businessKey, Boolean primaryKey) {
+			Boolean enable, Boolean businessKey, Boolean primaryKey, List<AttributeOption> options) {
 		public AttributeUpdateRequest(String className, String name, String showName, String attrDesc,
 				Boolean enable, Boolean businessKey) {
-			this(className, name, showName, attrDesc, enable, businessKey, null);
+			this(className, name, showName, attrDesc, enable, businessKey, null, null);
 		}
 	}
 
@@ -251,7 +252,7 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return ResponseEntity.status(201).body(service.createAttribute(body.className(),
 				new AttributeCreate(body.name(), body.showName(), body.type(), body.attrDesc(), body.enable(),
-						body.businessKey(), body.primaryKey()),
+						body.businessKey(), body.primaryKey(), body.options()),
 				SystemUtils.getCurUser(), lang));
 	}
 
@@ -260,7 +261,7 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.updateAttribute(body.className(), body.name(),
 				new AttributeUpdate(body.showName(), body.attrDesc(), body.enable(), body.businessKey(),
-						body.primaryKey()),
+						body.primaryKey(), body.options()),
 				SystemUtils.getCurUser(), lang);
 	}
 
