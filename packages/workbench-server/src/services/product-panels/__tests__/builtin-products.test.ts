@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -31,6 +31,54 @@ beforeAll(() => {
 });
 
 describe("readBuiltinProducts", () => {
+  it("loads short and formal candidates from their owner directory before checking references", async () => {
+    const { readBuiltinProducts } = await import("../builtin-products");
+    const bundle = await mkdtemp(path.join(tmpdir(), "builtin-candidates-"));
+    const reader = path.join(bundle, "reader");
+    const owner = path.join(bundle, "owner");
+    const shortId = "builtin-product-short-count";
+    const formalId = "builtin-product-formal-count";
+    const formal = {
+      name: "Formal count", description: "", visibility: "platform", componentId: "@ontomato/sdk:ObjectCount",
+      inputs: {}, outputs: {}, config: {},
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: "platform:ObjectType" } }, read: "count", params: {} } },
+    };
+    const short = { component: "ObjectCount", type: "platform:ObjectType", data: { rows: "count" } };
+    const candidates = [
+      { id: shortId, input: short },
+      { id: formalId, input: formal },
+    ];
+    try {
+      await writeFile(path.join(bundle, "index.json"), JSON.stringify(["reader", "owner"]));
+      for (const [directory, name, members] of [
+        [reader, "reader", { count: { target: { fromState: "choice", candidates: { projectionIds: [shortId, formalId] } } } }],
+        [owner, "owner", {}],
+      ] as const) {
+        await mkdir(directory);
+        await writeFile(path.join(directory, "registration.json"), JSON.stringify({
+          panels: [{ id: `builtin-product-${name}`, input: { name, description: "" } }],
+        }));
+        await writeFile(path.join(directory, "panel.json"), JSON.stringify({
+          manifest: { state: { choice: { type: { kind: "object", objectType: "platform:ProductProjection" } } }, members },
+        }));
+        await writeFile(path.join(directory, "panel.html"), "<main></main>");
+      }
+      const file = path.join(owner, "projections.json");
+      await writeFile(file, JSON.stringify(candidates));
+      const { projections } = await readBuiltinProducts(bundle);
+      expect(projections.get(shortId)?.data.rows?.read).toBe("count");
+      expect(projections.get(formalId)?.data.rows?.read).toBe("count");
+
+      await writeFile(file, JSON.stringify([candidates[0]]));
+      await expect(readBuiltinProducts(bundle)).rejects.toThrow(new RegExp(formalId));
+
+      await writeFile(file, JSON.stringify([candidates[0], { id: formalId, input: { ...formal, componentId: "@ontomato/sdk:MissingCount" } }]));
+      await expect(readBuiltinProducts(bundle)).rejects.toMatchObject({ code: "PANEL_COMPONENT_UNAVAILABLE" });
+    } finally {
+      await rm(bundle, { recursive: true, force: true });
+    }
+  });
+
   it("loads and validates every shipped builtin panel and platform projection against startup schemas", async () => {
     const { readBuiltinProducts } = await import("../builtin-products");
     const packagesRoot = path.resolve(__dirname, "../../../../..");

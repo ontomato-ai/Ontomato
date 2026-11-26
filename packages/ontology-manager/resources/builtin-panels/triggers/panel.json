@@ -66,9 +66,7 @@
         "operations": {
           "disable": {
             "operation": "triggers.setStatus",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "status": {
                 "literal": "UNUSED"
@@ -80,9 +78,7 @@
           },
           "publish": {
             "operation": "triggers.setStatus",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "status": {
                 "literal": "PUBLISHED"
@@ -94,9 +90,7 @@
           },
           "remove": {
             "operation": "triggers.delete",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           }
         },
         "config": {

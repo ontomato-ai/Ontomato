@@ -25,6 +25,7 @@ import {
   SDK_COMPONENT,
   TRIGGER,
   USER,
+  platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -643,5 +644,121 @@ describe("platform ontology catalogue reads", () => {
         }),
       ]),
     );
+  });
+
+  it("keeps counts and graph labels distinct for readable, refused, failed and unavailable owners", async () => {
+    stubOwnerHttp({
+      "/action/queryList": () => jsonResponse({}, 403),
+      "/workflow/subjects": () => jsonResponse({}, 500),
+    });
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    const classes = panelReadResultSchemas.panelRecordList.parse(await reads.instanceGraphClasses());
+    const nodes = panelReadResultSchemas.panelRecordList.parse(await reads.graphNodes());
+    for (const rows of [classes, nodes]) {
+      const row = (type: string) => rows.find(entry => entry.primaryKey === type)!;
+      expect(row(OBJECT_TYPE).fields).toMatchObject({ countDisplay: "2", countStatus: "ok", layerId: "fact" });
+      expect(row(FUNCTION).fields).toMatchObject({ countDisplay: "0", countStatus: "ok" });
+      for (const [type, status] of [[ACTION, "refused"], [USER, "failed"], [SCHEDULED_TASK, "unavailable"]]) {
+        expect(row(type).fields.countStatus).toBe(status);
+        expect(row(type).fields).not.toHaveProperty("count");
+        expect(row(type).fields.countDisplay).toMatch(/^\D+$/);
+      }
+    }
+    for (const node of nodes) expect(node.label).toContain(node.fields.countDisplay);
+  });
+
+  it("uses the same edge identities in the canvas, incident relations and record reads", () => {
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    const multi = "projection.binds-target";
+    const single = "action.uses-function";
+    const edges = panelReadResultSchemas.panelRecordList.parse(reads.graphEdges());
+    expect(edges.find(row => row.primaryKey === single)?.fields).toMatchObject({
+      fromclass: ACTION, toclass: FUNCTION, relationKind: single,
+    });
+    const boundEdges = edges.filter(row => row.fields.relationKind === multi);
+    expect(boundEdges.map(row => row.fields.toclass).sort()).toEqual(reads.list().map(row => row.primaryKey).sort());
+    const kind = panelReadResultSchemas.panelRecord.parse(reads.relationRecord(multi));
+    expect(kind.fields.targetObjects).toEqual(boundEdges.map(row => expect.objectContaining({ primaryKey: row.fields.toclass })));
+    expect(kind.fields).not.toHaveProperty("toObject");
+    const key = `${multi}::${ACTION}`;
+    expect(boundEdges.find(row => row.primaryKey === key)?.fields.toclass).toBe(ACTION);
+    expect(reads.typeRelations(ACTION).find(row => row.primaryKey === key)?.fields).toMatchObject({
+      direction: "incoming", fromclass: PRODUCT_PROJECTION, toclass: ACTION,
+    });
+    expect(reads.relationRecord(key).fields).toMatchObject({
+      fromObject: { primaryKey: PRODUCT_PROJECTION }, toObject: { primaryKey: ACTION },
+    });
+    expect(reads.relationRecord(single).fields.toObject).toMatchObject({ primaryKey: FUNCTION });
+    expect(() => reads.relationRecord(`${multi}::unknown`)).toThrow(expect.objectContaining({ status: 404 }));
+  });
+
+  it("declares only parameters that the live instance reads consume", () => {
+    const { reads } = platformObjectTypes[ONTOLOGY_TYPE];
+    expect(reads?.instanceSearch).toMatchObject({
+      params: { className: "className", search: "keyword", page: "page" },
+    });
+    expect((reads?.instanceSearch as { params: object }).params).not.toHaveProperty("version");
+    for (const param of ["version", "filters", "sort"]) {
+      expect((reads?.instances as { params: object }).params).not.toHaveProperty(param);
+    }
+  });
+
+  it("distinguishes owner refusal from an empty single-type result and a missing object", async () => {
+    stubOwnerHttp({
+      "/workflow/query": () => jsonResponse({}, 403),
+      "/workflow/subjects": () => jsonResponse({}, 500),
+    });
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    await expect(reads.instanceSearch({ className: "platform:Workflow" })).rejects.toMatchObject({ status: 403 });
+    await expect(reads.instances({ className: "platform:Workflow" })).rejects.toMatchObject({ status: 403 });
+    await expect(reads.instanceSearch({ className: FUNCTION })).resolves.toMatchObject({ rows: [], total: 0 });
+    await expect(reads.instanceRecord({ object: { className: FUNCTION, primaryKey: "missing" } }))
+      .rejects.toMatchObject({ status: 404 });
+    await expect(reads.instanceRecord({ object: { className: USER, primaryKey: owner.userId } }))
+      .rejects.toMatchObject({ status: 502 });
+    await expect(reads.instanceRecord({ object: { className: SCHEDULED_TASK, primaryKey: "timer" } }))
+      .rejects.toMatchObject({ status: 503 });
+  });
+
+  it("preserves real instance targets, owner fields and detail navigation through pagination", async () => {
+    const { seenRequests } = stubOwnerHttp();
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    expect(await reads.instanceSearch({ search: "  " })).toMatchObject({ rows: [], total: 0 });
+    expect(seenRequests).toHaveLength(0);
+    const page = panelReadResultSchemas.panelRecordQuery.parse(await reads.instances({
+      className: ACTION, search: "Order", page: { number: 2, size: 1 },
+    }));
+    expect(page).toMatchObject({
+      rows: [{
+        className: ACTION, primaryKey: "act-2", fields: { status: "DRAFT" },
+        outputs: { detailPath: "/ontology/assets/actions/detail?selected=act-2" },
+      }],
+      total: 2,
+      hasMore: false,
+    });
+    const detail = panelReadResultSchemas.panelRecord.parse(await reads.instanceRecord({
+      object: { className: ACTION, primaryKey: "act-2" },
+    }));
+    expect(detail.outputs).toMatchObject(page.rows[0].outputs!);
+    const hits = await reads.instanceSearch({ className: ACTION, search: "Cancel Order" });
+    expect(hits.rows).toMatchObject([{ className: ACTION, primaryKey: "act-2" }]);
+  });
+
+  it("filters edges and returns only the neighbors reached by the requested page", async () => {
+    stubOwnerHttp();
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    const params = {
+      node: { className: USER, primaryKey: owner.userId },
+      relationKinds: ["user.created-action"],
+      direction: "outgoing" as const, targetClass: ACTION, limit: 1,
+    };
+    const first = panelReadResultSchemas.panelGraphNeighbors.parse(await reads.neighbors(params));
+    const second = panelReadResultSchemas.panelGraphNeighbors.parse(await reads.neighbors({ ...params, offset: first.nextOffset! }));
+    expect(first.nextOffset).toBe(1);
+    expect(second.nextOffset).toBeNull();
+    expect(second.total).toBe(2);
+    expect([...first.neighbors, ...second.neighbors].map(node => node.primaryKey).sort()).toEqual(["act-1", "act-2"]);
+    await expect(reads.neighbors({ ...params, direction: "incoming" })).resolves.toMatchObject({ edges: [], total: 0 });
+    await expect(reads.neighbors({ ...params, targetClass: FUNCTION })).resolves.toMatchObject({ edges: [], total: 0 });
   });
 });

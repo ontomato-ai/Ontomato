@@ -34,8 +34,6 @@ const props = withDefaults(
     template?: string;
     /** Panel message key (resolved via `panel.t`) or platform i18n key resolving the template in the active locale. */
     templateKey?: string;
-    /** Locale-keyed map of templates (for example `{ en: "{name} · {count} items", "zh-CN": "{name} · 共 {count} 项" }`). */
-    templates?: Readonly<Record<string, string>>;
     /** Direct `PlatformObjectRecord` when used standalone or inside a slot without a bound datum. */
     record?: PlatformObjectRecord | null;
     /** Direct key-value map (such as a metric row or slot payload) when used standalone without a bound datum. */
@@ -56,7 +54,6 @@ const props = withDefaults(
   {
     template: "",
     templateKey: undefined,
-    templates: undefined,
     record: undefined,
     values: undefined,
     rowIndex: 0,
@@ -152,7 +149,6 @@ const resolvedTemplate = computed(() => {
   }
   return resolveLocalizedText({
     key: props.templateKey,
-    map: props.templates,
     fallback: props.template,
     locale: locale.value,
     panelText: panel?.t,

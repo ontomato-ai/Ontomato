@@ -317,9 +317,9 @@ export const panelReadParameterSchemas = {
   layers: platformOntologyNeighborsRequestSchema.shape.layers.unwrap(),
   ontologyType: platformOntologyObjectsRequestSchema.shape.type,
   className: panelObjectRefSchema.shape.className,
-  neighborsLimit: positiveInteger.max(100),
-  neighborDirection: z.enum(["incoming", "outgoing", "both"]),
-  nonNegativeInt: z.number().int().nonnegative(),
+  neighborsLimit: platformOntologyNeighborsRequestSchema.shape.limit.unwrap(),
+  neighborDirection: platformOntologyNeighborsRequestSchema.shape.direction.unwrap(),
+  nonNegativeInt: platformOntologyNeighborsRequestSchema.shape.offset.unwrap(),
   recordFilters: recordFiltersSchema,
   recordSort: recordSortSchema,
   ontologyParameter: runtimeJsonValueSchema,
@@ -868,6 +868,8 @@ export {
 const simpleControls = [
   z.object({
     kind: z.literal("text"), multiline: z.boolean().optional(),
+    /** Presentation only changes how the string is drawn: a plain input (default) or a multiline Markdown editor that counts characters as the reader writes. */
+    presentation: z.enum(["input", "markdown"]).optional(),
     secret: z.boolean().optional(),
     clearable: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
@@ -942,7 +944,6 @@ const simpleControls = [
     )),
   }).strict(),
   z.object({ kind: z.literal("switch") }).strict(),
-  z.object({ kind: z.literal("markdown") }).strict(),
   z.object({ kind: z.literal("avatar") }).strict(),
   /** The owner keeps the icon's string key, including keys written by older releases. */
   z.object({ kind: z.literal("application-icon") }).strict(),

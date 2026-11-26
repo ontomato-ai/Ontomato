@@ -221,7 +221,6 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(declared.get("ObjectList").outputs, {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
-      listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
       expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
     });
@@ -405,7 +404,10 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(Object.keys(declared.get("ObjectList").readOnlyOutputs ?? {}).sort(), [
       "activeLabel", "checkedCount", "filteredCount", "listed", "loadedCount", "selectedLabel", "status", "total",
     ]);
-    assert.deepEqual(declared.get("ObjectList").readOnlyOutputs.listed, declared.get("ObjectList").outputs.listed);
+    assert.deepEqual(declared.get("ObjectList").readOnlyOutputs.listed, {
+      kind: "list", items: { kind: "object", objectType: "@binding" },
+    });
+    assert.equal("listed" in declared.get("ObjectList").outputs, false, "listed is a read-only output, never writable state");
     assert.deepEqual(declared.get("ObjectCount").readOnlyOutputs, {
       total: { kind: "scalar", type: "number" },
     });
