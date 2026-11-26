@@ -321,14 +321,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
       runRecords: { source: "object", parameterMode: "fixed", params: { cursor: "cursor" }, result: "panelRecordQuery" },
       runRecord: {
-        source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" },
-        requiredParams: ["runId"], result: "panelRecord",
-        outputs: {
-          resultPath: { kind: "scalar", type: "string" },
-          isRunning: { kind: "scalar", type: "boolean" },
-        },
-      },
-      latestRunRecord: {
         source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" }, result: "panelRecord",
         outputs: {
           status: { kind: "scalar", type: "string" },

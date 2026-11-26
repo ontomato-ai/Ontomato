@@ -518,10 +518,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
         ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
       };
     },
-    async runRecord(primaryKey: string, runId: string): Promise<PanelRecord> {
-      return runRecord(await api.run(primaryKey, runId), translate);
-    },
-    async latestRunRecord(primaryKey: string, requestedRunId?: string): Promise<PanelRecord> {
+    async runRecord(primaryKey: string, requestedRunId?: string): Promise<PanelRecord> {
       const task = await api.task(primaryKey);
       const explicitRunId = requestedRunId?.trim() || null;
       const resolvedRunId = explicitRunId ?? task.activeRunId ?? task.lastRun?.id ?? null;
@@ -556,9 +553,11 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       const cleanedResult = rawOutput ? cleanMarkdownParagraphs(rawOutput) : undefined;
       const resultSummary = run?.resultSummary ?? fallback?.resultSummary ?? undefined;
       const resultPath = run?.resultLink?.path ?? (explicitRunId ? "" : task.latestResult?.link.path ?? "");
+      const summaryPreview = resultSummary ? previewMarkdownText(resultSummary) : undefined;
       return {
         primaryKey: resolvedRunId ?? task.id,
-        label: task.title,
+        label: triggerLabel && statusLabel ? `${triggerLabel} · ${statusLabel}` : task.title,
+        ...(errorText || summaryPreview ? { subtitle: errorText ?? summaryPreview } : {}),
         fieldLabels: {
           status: translate("platformSchedules.runFields.status"),
           trigger: translate("platformSchedules.runFields.trigger"),
@@ -588,6 +587,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
           ...(resultSummary ? { resultSummary } : {}),
           ...(run && run.executionDetails !== null ? { executionDetails: { kind: "json" as const, value: run.executionDetails } } : {}),
           ...(resultPath ? { resultPath } : {}),
+          ...(run ? { hasResultLink: run.resultLink !== null } : {}),
         },
         tones: {
           ...(rawStatus ? { status: runStatusTone(rawStatus) } : {}),

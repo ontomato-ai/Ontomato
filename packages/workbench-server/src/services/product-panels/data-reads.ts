@@ -675,8 +675,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       runs: (selection, params) => schedules.runs(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
       run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
       runRecords: (selection, params) => schedules.runRecords(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
-      runRecord: (selection, params) => schedules.runRecord(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
-      latestRunRecord: (selection, params) => schedules.latestRunRecord(
+      runRecord: (selection, params) => schedules.runRecord(
         selection.primaryKey!,
         panelReadParameterSchemas.scheduledRunId.optional().parse(params.runId),
       ),

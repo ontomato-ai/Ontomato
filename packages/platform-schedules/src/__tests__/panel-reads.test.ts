@@ -148,7 +148,7 @@ it("classifies task attention groups and supports counts(by='attention')", async
   ]);
 });
 
-it("loads latestRunRecord with full run output, pause notice without run, and summary fallback", async () => {
+it("loads runRecord with full run output, pause notice without run, and summary fallback", async () => {
   const baseTask = platformTaskSchema.parse(examples.creates[0]!.response);
   const completedRun = platformTaskRunSchema.parse(examples.runs.find(item => item.response.status === "completed")!.response);
   const taskWithCompletedRun = {
@@ -227,7 +227,7 @@ it("loads latestRunRecord with full run output, pause notice without run, and su
     },
   }, "en", translate);
 
-  const completed = await reads.latestRunRecord(taskWithCompletedRun.id);
+  const completed = await reads.runRecord(taskWithCompletedRun.id);
   expect(completed.primaryKey).toBe(fullRun.id);
   expect(completed.fields).toMatchObject({
     status: "Completed",
@@ -243,7 +243,7 @@ it("loads latestRunRecord with full run output, pause notice without run, and su
     isRunning: false,
   });
 
-  const pausedEmpty = await reads.latestRunRecord(pausedNoRunTask.id);
+  const pausedEmpty = await reads.runRecord(pausedNoRunTask.id);
   expect(pausedEmpty.fields).toMatchObject({
     pauseMessage: "Credential expired",
     timeZone: pausedNoRunTask.timeZone,
@@ -251,7 +251,7 @@ it("loads latestRunRecord with full run output, pause notice without run, and su
   expect(pausedEmpty.fields.status).toBeUndefined();
   expect(pausedEmpty.fields.startedAt).toBeUndefined();
 
-  const fallback = await reads.latestRunRecord(fallbackTask.id);
+  const fallback = await reads.runRecord(fallbackTask.id);
   expect(fallback.fields).toMatchObject({
     status: "Failed",
     trigger: "Manual",

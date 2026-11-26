@@ -111,14 +111,8 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
         ? withReadDirective(page, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
         : page;
     },
-    async runRecord(primaryKey: string, runId: string) {
+    async runRecord(primaryKey: string, runId?: string) {
       const row = await reads.runRecord(primaryKey, runId);
-      return row.outputs?.isRunning === true
-        ? withReadDirective(row, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
-        : row;
-    },
-    async latestRunRecord(primaryKey: string, runId?: string) {
-      const row = await reads.latestRunRecord(primaryKey, runId);
       return row.outputs?.isRunning === true
         ? withReadDirective(row, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
         : row;
