@@ -47,15 +47,6 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["MetricView:*"],
   }),
   defineComponentMeta({
-    componentId: "ProductAsset",
-    module: "@ontomato/sdk",
-    exportName: "ProductAsset",
-    role: "presentation",
-    group: "layout",
-    meaning:
-      "Embeds an existing product asset as the application's pinned release draws it; an unavailable asset or an unsupported host is reported instead of drawing another page.",
-  }),
-  defineComponentMeta({
     componentId: "EChart",
     module: "@ontomato/sdk/chart",
     exportName: "EChart",

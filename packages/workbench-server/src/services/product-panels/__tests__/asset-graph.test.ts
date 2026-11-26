@@ -95,7 +95,8 @@ it.each([
 it("excludes legacy nodes and relations outside the current reference graph", () => {
   const { nodes, edges } = buildProductAssetGraph(sources);
   const legacyKinds = ["navigation", "widget", "widget-group", "agent-profile", "object-view", "collection-view", "metric-widget", "action-view"];
-  expect(nodes.some(node => node.category === "legacy" || legacyKinds.includes(node.kind))).toBe(false);
+  expect(nodes.map(node => node.category)).not.toContain("legacy");
+  expect(nodes.some(node => legacyKinds.includes(node.kind))).toBe(false);
   expect(edges.some(edge => ["use", "edit", "embodies", "tools", "context"].includes(edge.relation))).toBe(false);
 });
 

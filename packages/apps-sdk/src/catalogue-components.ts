@@ -14,7 +14,6 @@ import { packageComponent, type ComponentPackageReader } from "./panel/component
 const LAZY: Record<string, () => Promise<Component>> = {
   ...baseComponents,
   MetricViewData: () => import("@ontomato/ontology-manager/app-components/MetricViewData.vue"),
-  ProductAsset: () => import("./ProductAsset.vue").then((module) => module.default),
   EChart: () => import("@ontomato/foundation-ui/chart").then((module) => module.EChart),
   FormFields: () => import("@ontomato/foundation-ui/form").then((module) => module.FormFields),
   CodeEditor: () => import("@ontomato/foundation-ui/code").then((module) => module.CodeEditor),

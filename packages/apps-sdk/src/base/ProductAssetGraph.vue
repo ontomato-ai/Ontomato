@@ -4,7 +4,6 @@ import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElDialog } from "element-plus/es/components/dialog/index";
 import { ElTooltip } from "element-plus/es/components/tooltip/index";
-import { productDefaultTexts } from "@ontomato/contracts/product-assets";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberData, useMemberOutput, useMemberParam } from "../panel/member";
 import { useDataStateLabels } from "./data-state-labels";
@@ -106,46 +105,12 @@ function translate(keys: readonly string[], fallback: string, params?: Record<st
 
 const dataStateLabels = useDataStateLabels();
 
-const DEFAULT_TEXT_KEYS = new Map<string, readonly [string, string]>([
-  [productDefaultTexts.homeName, ["ontology.productDefaultHomeName", "Home"]],
-  [productDefaultTexts.homeDescription, ["ontology.productDefaultHomeDescription", "Default home page"]],
-  [productDefaultTexts.initialHomeName, ["ontology.productHomeTitle", "Home"]],
-  [productDefaultTexts.apps, ["ontology.productHomeResources", "Resources"]],
-  [productDefaultTexts.data, ["ontology.productHomeFollowedData", "Followed data"]],
-  [productDefaultTexts.tasks, ["ontology.productSourceTasks", "Task activity"]],
-  [productDefaultTexts.conversations, ["ontology.productDefaultContinueWork", "Continue work"]],
-  [productDefaultTexts.objects, ["ontology.productDefaultFavorites", "Favorites"]],
-  [productDefaultTexts.recent, ["ontology.productSourceRecent", "Recent visits"]],
-  [productDefaultTexts.legacyAssistant, ["ontology.productHomeAskHeading", "Data Q&A"]],
-  [productDefaultTexts.legacyAssistantDescription, ["ontology.productHomeAskDescription", "Ask questions about your data"]],
-  [productDefaultTexts.legacyConversations, ["ontology.productHomeContinueAnalysis", "Analysis conversations"]],
-  [productDefaultTexts.legacyObjects, ["ontology.productDefaultPinnedObjects", "Pinned objects"]],
-  [productDefaultTexts.platformPageDescription, ["ontology.productDefaultPlatformPageDescription", "Platform page"]],
-  [productDefaultTexts.graphDomainMembers, ["ontology.productDomainMembers", "Domain members"]],
-  [productDefaultTexts.graphNameUnavailable, ["ontology.productNameUnavailable", "Name unavailable"]],
-  [productDefaultTexts.graphAgentDefinition, ["ontology.productAgentDefinition", "Referenced agent"]],
-  [productDefaultTexts.graphRoleUnavailable, ["ontology.productRoleNameUnavailable", "Role name unavailable"]],
-  [productDefaultTexts.graphPrincipalUnavailable, ["ontology.productPrincipalNameUnavailable", "Member name unavailable"]],
-  [productDefaultTexts.graphMetricUnavailable, ["ontology.productMetricViewNameUnavailable", "Metric view name unavailable"]],
-  [productDefaultTexts.graphActionUnavailable, ["ontology.productActionNameUnavailable", "Action name unavailable"]],
-  [productDefaultTexts.graphDefinitionUnavailable, ["ontology.productDefinitionNameUnavailable", "Definition name unavailable"]],
-  [productDefaultTexts.graphObjectTypeUnavailable, ["ontology.productObjectTypeNameUnavailable", "Object type name unavailable"]],
-  [productDefaultTexts.graphApplicationUnavailable, ["ontology.productApplicationNameUnavailable", "Application name unavailable"]],
-]);
-
-function displayNodeName(value: string): string {
-  const mapped = DEFAULT_TEXT_KEYS.get(value);
-  if (!mapped) return value;
-  return translate([mapped[0]], mapped[1]);
-}
-
 const COLUMN_LABELS: Record<ProductAssetGraphCategory, readonly [string, string]> = {
   principal: ["ontology.productGraphPrincipals", "Members and roles"],
   bundle: ["ontology.productBundle", "Delivery bundles"],
   composition: ["ontology.productComposition", "Composition assets"],
   element: ["ontology.productProjection", "Projection assets"],
   ontology: ["ontology.productOntologyElements", "Ontology elements"],
-  legacy: ["ontology.productLegacyAssets", "Assets to migrate"],
 };
 
 function columnLabel(category: ProductAssetGraphCategory): string {
@@ -173,10 +138,6 @@ function edgeLabel(relation: string): string {
 
 const KIND_LABELS: Record<string, readonly [string, string]> = {
   "object-projection": ["ontology.productObjectView", "Object View"],
-  "collection-view": ["ontology.productCollectionView", "Collection View"],
-  "metric-widget": ["ontology.productMetricWidget", "Metric Widget"],
-  "action-view": ["ontology.productActionView", "Action View"],
-  navigation: ["ontology.productNavigation", "Navigation"],
   application: ["ontology.productApplication", "Application"],
   "object-type": ["ontology.productTargetObjectType", "Object type"],
   metric: ["ontology.productTargetMetricView", "Metric view"],
@@ -516,10 +477,10 @@ defineExpose({ fit, zoomIn, zoomOut, actualSize, scale });
               @click="activateNode(node)"
               @keydown.enter.prevent="activateNode(node)"
             >
-              <title>{{ displayNodeName(node.name) }} · {{ nodeKindLabel(node) }} · {{ node.assetId ?? node.id }}</title>
+              <title>{{ node.name }} · {{ nodeKindLabel(node) }} · {{ node.assetId ?? node.id }}</title>
               <rect :width="PRODUCT_ASSET_CARD_WIDTH" :height="PRODUCT_ASSET_CARD_HEIGHT" rx="6" />
               <svg x="10" y="6" :width="PRODUCT_ASSET_CARD_WIDTH - 20" height="24">
-                <text x="0" y="16">{{ displayNodeName(node.name) }}</text>
+                <text x="0" y="16">{{ node.name }}</text>
               </svg>
               <text x="10" y="42" class="node-kind">
                 {{ nodeKindLabel(node) }}{{ node.revision ? ` · r${node.revision}` : "" }}

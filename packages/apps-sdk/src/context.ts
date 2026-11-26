@@ -22,16 +22,12 @@ import {
   type ManagerRequest,
   type MetricViewsClient,
 } from "@ontomato/ontology-manager/clients";
-import { contextProducts, type ContextProducts } from "./context-products";
 import type { SdkEdition } from "./edition";
-import type {ProductNavigationTarget} from '@ontomato/contracts/product-page-state';
 import type {AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import {connectAppBridge,expandHostPageComposer,type PanelBridgeHost} from './bridge';
 
 /** What an app gets from the platform shell it runs in. */
 export interface AppContext {
-  /** Mount an existing asset through the shell runtime; dispose when the container is removed. Live apps only. */
-  mountProductAsset(element:HTMLElement,assetId:string):()=>void;
   readonly executionContext: AppExecutionContext;
   /** The signed-in user, for display only; null in the open-source edition. */
   readonly user: AppHostUser | null;
@@ -53,11 +49,8 @@ export interface AppContext {
    * parameters that `execute({ id, parameters })` takes. `execute` resolves to the execution result.
    */
   readonly actions: ActionsClient;
-  /** Product assets use the same IDs and revision checks as manual authoring. */
-  readonly products: ContextProducts;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
-  navigate(target:ProductNavigationTarget):Promise<void>;
   /**
    * Tells the platform what the reader looks at: the app's own page and the object selected on it, or `null`. Call it
    * when the page starts, when the reader moves to another page of the app, and when they select an object or clear
@@ -213,13 +206,8 @@ export function createContext(host: AppHost, appearance: ContextAppearance): App
     (status) => host.onAuthFailure(status),
   );
   const metricViews = createMetricViewsClient(transport);
-  const products = contextProducts(transport);
   const actions=createActionsClient(transport);
   const context: AppContext = {
-    mountProductAsset(element,assetId){
-      if(!host.mountProductAsset)throw new Error('This platform version does not support product asset embedding');
-      return host.mountProductAsset(window,element,assetId);
-    },
     get executionContext() { return host.executionContext(window); },
     user: snapshot.user,
     locale: readonly(locale),
@@ -233,12 +221,7 @@ export function createContext(host: AppHost, appearance: ContextAppearance): App
       }
       return result;
     }},
-    products,
-    navigate: ((target:string|ProductNavigationTarget)=>{
-      if(typeof target==='string')return host.navigate(target);
-      if(!host.navigateProduct)throw new Error('This platform does not support typed product navigation');
-      return host.navigateProduct(window,target);
-    }) as AppContext['navigate'],
+    navigate: path => host.navigate(path),
     // The page's own window tells the shell which of its app frames speaks.
     setPageContext(value) {
       checkPageContext(value);

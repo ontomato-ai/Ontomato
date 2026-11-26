@@ -15,7 +15,6 @@ import { objectDetailsRouter } from "../routes/object-details";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { config } from "../../config/application";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
@@ -76,7 +75,6 @@ beforeAll(async () => {
   state.schema = `object_detail_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
 
   const app = express();

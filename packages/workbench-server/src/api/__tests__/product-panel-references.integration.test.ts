@@ -25,7 +25,6 @@ import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-
 import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { installContentLayout } from "../../content/layout";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
@@ -89,7 +88,6 @@ beforeAll(async () => {
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureAssistantSchema(state.pool);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
