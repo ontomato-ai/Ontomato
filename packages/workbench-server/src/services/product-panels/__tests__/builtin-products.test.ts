@@ -500,7 +500,9 @@ describe("readBuiltinProducts", () => {
       const owned = [...projections.keys()];
       expect(owned.some(id => id.includes("capability"))).toBe(true);
       expect(map.content.html).toContain("<projection v-if=\"mode === 'type'\" slot=\"types\">");
-      expect(graph.content.html).not.toContain("productGraph");
+      // The type half keeps its own product asset graph dialog: the shell reuses the panel, it does not trim it.
+      expect(graph.content.html).toContain('slot="productGraph"');
+      expect(graph.manifest.members).toHaveProperty("productGraph");
     } finally {
       await rm(bundle, { recursive: true, force: true });
     }

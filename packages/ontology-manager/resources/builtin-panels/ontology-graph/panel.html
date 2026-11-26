@@ -540,6 +540,10 @@
           <projection slot="relationStats"></projection>
         </div>
         <sdk-button
+          data-action="product-relation-graph"
+          @click="openProductGraph"
+        >{{ t("ontologyGraph.productRelationGraph") }}</sdk-button>
+        <sdk-button
           text
           icon="refresh-cw"
           :loading="refreshing"
@@ -889,4 +893,21 @@
     </div>
 
   </section>
+
+  <sdk-dialog
+    v-model="productGraphOpen"
+    :title="t('ontologyGraph.productGraphTitle')"
+    fullscreen
+    append-to-body
+    destroy-on-close
+    data-product-graph-dialog
+  >
+    <div class="og-product-graph-body">
+      <projection
+        v-if="productGraphOpen"
+        slot="productGraph"
+        @open="onOpenProductAsset"
+      ></projection>
+    </div>
+  </sdk-dialog>
 </div>
