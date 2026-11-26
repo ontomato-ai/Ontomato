@@ -99,6 +99,60 @@ test("the built SDK's components.json is the catalogue its contract declares", (
   return import(pathToFileURL(join(out, version, "node/panel-check.mjs")).href).then(async ({
     applicationIconKeys, appsSdkComponentCatalogSchema, appsSdkReleaseManifestSchema, panelModuleImports,
   }) => {
+    await t.test("the release uses runtime prop names for configuration", (configTest) => {
+      for (const component of written.components) {
+        for (const prop of component.config ?? []) {
+          assert.doesNotMatch(prop.name, /-/u, `${component.componentId}.config.${prop.name}`);
+        }
+      }
+
+      const sdk = join(out, version);
+      const list = written.components.find(({ componentId }) => componentId === "ObjectList");
+      const statusField = list.config.find(({ name }) => name === "statusField");
+      assert.ok(statusField);
+      assert.ok(list.ports.props.some(({ name }) => name === "status-field"));
+      const page = readFileSync(join(sdk, "docs/components/ObjectList.md"), "utf8");
+      const configLine = page.split("\n").find((line) => line.startsWith("- \`statusField\` ("));
+      assert.ok(configLine);
+
+      const workspace = join(out, "list-config");
+      mkdirSync(workspace);
+      writeFileSync(join(workspace, "registration.json"), JSON.stringify({
+        panels: [{ id: "list-config", mode: "create", input: { name: "List", description: "", visibility: "domain" } }],
+      }));
+      writeFileSync(join(workspace, "panel.html"), '<div id="app"><projection slot="list"></projection></div>');
+      const writePanel = (key) => writeFileSync(join(workspace, "panel.json"), JSON.stringify({
+        manifest: { state: {}, members: {
+          list: { id: "list-config-rows", component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" },
+            config: { [key]: "status" } },
+        } },
+      }));
+      const typeTable = join(out, "list-config-types.json");
+      writeFileSync(typeTable, JSON.stringify({
+        objectTypes: {
+          "platform:BusinessKnowledge": { reads: {
+            query: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordQuery" },
+          }, operations: [] },
+        },
+        resultSchemas: { panelRecordQuery: { type: "object" } },
+      }));
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
+      const args = [cli, "panel", "check", workspace, "--sdk-dir", sdk, "--type-table", typeTable];
+      const check = () => execFileSync(process.execPath, args, { encoding: "utf8", stdio: "pipe" });
+
+      configTest.diagnostic(`components.json ObjectList.config: ${JSON.stringify(statusField)}`);
+      configTest.diagnostic(`docs/components/ObjectList.md: ${configLine}`);
+      writePanel("status-field");
+      assert.throws(check, (error) => {
+        assert.equal(error.status, 1);
+        assert.match(error.stderr, /config\.status-field is not in the author-facing documentation .*documented config keys: .*\bstatusField\b/u);
+        configTest.diagnostic(error.stderr.trim());
+        return true;
+      });
+      writePanel("statusField");
+      assert.equal(JSON.parse(check()).status, "valid");
+    });
+
     await t.test("an external Vue author can generate a package catalogue and check a panel with this release", (authorTest) => {
       const author = mkdtempSync(join(tmpdir(), "external-component-author-"));
       authorTest.after(() => rmSync(author, { recursive: true, force: true }));
@@ -275,7 +329,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       start: anyObject,
       visibleRelationKinds: relationKindList,
     });
-    for (const propName of ["show-relation-filter", "allow-set-start", "show-summary", "collapse-empty-groups"]) {
+    for (const propName of ["showRelationFilter", "allowSetStart", "showSummary", "collapseEmptyGroups"]) {
       const prop = declared.get("ObjectRelations").config.find((entry) => entry.name === propName);
       assert.equal(prop?.required, false, `ObjectRelations.${propName} is optional`);
       assert.match(prop?.type ?? "", /boolean/, `ObjectRelations.${propName} is boolean`);
@@ -283,7 +337,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     }
     // The upload control runs its operation through the platform's upload contract without baking in domain-specific overwrite flows.
     assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "operation")?.required, true);
-    assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on"), undefined);
+    assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwriteOn"), undefined);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
     const listLayout = declared.get("ObjectList").config.find(prop => prop.name === "layout");
     assert.equal(listLayout?.required, false);
@@ -299,29 +353,29 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(opLabel?.required, false);
     assert.match(opLabel?.type ?? "", /string/);
     assert.equal(declared.get("OperationButton").config.find(prop => prop.name === "placement"), undefined);
-    const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitle-lines");
+    const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitleLines");
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);
     assert.match(subtitleLines?.description ?? "", /visible lines in a compact summary/);
-    const showRowIndex = declared.get("ObjectList").config.find(prop => prop.name === "show-row-index");
+    const showRowIndex = declared.get("ObjectList").config.find(prop => prop.name === "showRowIndex");
     assert.equal(showRowIndex?.required, false);
     assert.match(showRowIndex?.type ?? "", /boolean/);
     assert.equal(showRowIndex?.default, "false");
-    const pinPrimaryColumn = declared.get("ObjectList").config.find(prop => prop.name === "pin-primary-column");
+    const pinPrimaryColumn = declared.get("ObjectList").config.find(prop => prop.name === "pinPrimaryColumn");
     assert.equal(pinPrimaryColumn?.required, false);
     assert.match(pinPrimaryColumn?.type ?? "", /boolean/);
     assert.equal(pinPrimaryColumn?.default, "false");
-    const rowActivation = declared.get("ObjectList").config.find(prop => prop.name === "row-activation");
+    const rowActivation = declared.get("ObjectList").config.find(prop => prop.name === "rowActivation");
     assert.equal(rowActivation?.required, false);
     assert.match(rowActivation?.type ?? "", /"click"/);
     assert.match(rowActivation?.type ?? "", /"dblclick"/);
     assert.match(rowActivation?.type ?? "", /"expand"/);
     assert.equal(rowActivation?.default, '"click"');
-    const showPageJumper = declared.get("ObjectList").config.find(prop => prop.name === "show-page-jumper");
+    const showPageJumper = declared.get("ObjectList").config.find(prop => prop.name === "showPageJumper");
     assert.equal(showPageJumper?.required, false);
     assert.match(showPageJumper?.type ?? "", /boolean/);
     assert.equal(showPageJumper?.default, "true");
-    const showRangeBar = declared.get("ObjectList").config.find(prop => prop.name === "show-range-bar");
+    const showRangeBar = declared.get("ObjectList").config.find(prop => prop.name === "showRangeBar");
     assert.equal(showRangeBar?.required, false);
     assert.match(showRangeBar?.type ?? "", /boolean/);
     assert.equal(showRangeBar?.default, "false");
@@ -331,7 +385,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const countAppearance = declared.get("ObjectCount").config.find(prop => prop.name === "appearance");
     assert.equal(countAppearance?.required, false);
     assert.match(countAppearance?.type ?? "", /badge/);
-    const countOmit = declared.get("ObjectCount").config.find(prop => prop.name === "omit-when-unavailable");
+    const countOmit = declared.get("ObjectCount").config.find(prop => prop.name === "omitWhenUnavailable");
     assert.equal(countOmit?.required, false);
     assert.match(countOmit?.type ?? "", /boolean/);
     const appMenuPorts = declared.get("AppMenu").ports;
@@ -354,8 +408,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const pickerPlaceholder = declared.get("ReferencePicker").config.find(prop => prop.name === "placeholder");
     assert.equal(pickerPlaceholder?.required, false);
     assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "clearable")?.required, false);
-    assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "group-by")?.required, false);
-    const summaryShowTitle = declared.get("ObjectSummary").config.find(prop => prop.name === "show-title");
+    assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "groupBy")?.required, false);
+    const summaryShowTitle = declared.get("ObjectSummary").config.find(prop => prop.name === "showTitle");
     assert.equal(summaryShowTitle?.required, false);
     assert.match(summaryShowTitle?.type ?? "", /boolean/);
     assert.equal(summaryShowTitle?.default, "true");
@@ -365,7 +419,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(summaryDensity?.type ?? "", /"comfortable"/);
     assert.match(summaryDensity?.type ?? "", /"compact"/);
     assert.equal(summaryDensity?.default, '"comfortable"');
-    assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
+    assert.ok(declared.get("ObjectSummary").ports.props.some(prop => prop.name === "show-title"));
     const readerFormat = declared.get("ObjectTextReader").config.find((prop) => prop.name === "format");
     assert.equal(readerFormat?.required, false);
     for (const mode of ["auto", "plain", "markdown", "code", "table", "diff"]) {
@@ -373,8 +427,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     }
     assert.equal(declared.get("PanelData").config, undefined, "a component with no configuration declares none");
     const metricChartConfigNames = (declared.get("MetricChart").config ?? []).map((prop) => prop.name);
-    assert.ok(metricChartConfigNames.includes("file-override"), "MetricChart exposes file-override for live draft preview");
-    assert.ok(metricChartConfigNames.includes("min-height"), "MetricChart exposes min-height for grid cell sizing");
+    assert.ok(metricChartConfigNames.includes("fileOverride"), "MetricChart exposes fileOverride for live draft preview");
+    assert.ok(metricChartConfigNames.includes("minHeight"), "MetricChart exposes minHeight for grid cell sizing");
     const groupedGrid = declared.get("GroupedGrid");
     assert.ok(groupedGrid, "GroupedGrid is published in the SDK component catalogue");
     assert.deepEqual(groupedGrid.inputs, {
@@ -390,8 +444,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     ]);
     const groupedGridConfigNames = (groupedGrid.config ?? []).map((prop) => prop.name);
     for (const expectedProp of [
-      "columns", "row-height", "gap", "group-key-field", "groups-field", "section-field",
-      "editable", "row-actions", "items", "groups", "show-group-headers", "show-item-headers", "allow-hide",
+      "columns", "rowHeight", "gap", "groupKeyField", "groupsField", "sectionField",
+      "editable", "rowActions", "items", "groups", "showGroupHeaders", "showItemHeaders", "allowHide",
     ]) {
       assert.ok(groupedGridConfigNames.includes(expectedProp), `GroupedGrid config includes ${expectedProp}`);
     }
@@ -497,7 +551,7 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
     }
     const recordGraph = declared.get("RecordGraph");
     const recordGraphConfigNames = (recordGraph.config ?? []).map((prop) => prop.name);
-    for (const reclaimedGraphProp of ["node-size", "label-size", "highlight-banner", "show-focus-button", "export-background", "export-filename"]) {
+    for (const reclaimedGraphProp of ["nodeSize", "labelSize", "highlightBanner", "showFocusButton", "exportBackground", "exportFilename"]) {
       assert.equal(
         recordGraphConfigNames.includes(reclaimedGraphProp),
         false,
@@ -513,25 +567,25 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
     // platform-fixed styles, deleted props, and duplicate wiring/locale-map props stay out of `components.json`
     // and `docs/components/<ComponentId>.md`.
     const excludedAuthorConfigs = [
-      ["AgentChat", ["client", "agent-id", "agent", "labels", "session-id"]],
-      ["ObjectList", ["leading-icon-kind", "leading-icon-size", "skeleton-count", "tabs-variant", "inline-rename", "expanded-keys", "search-submit", "row-tone-map", "row-action-icon-variant"]],
-      ["GroupedGrid", ["section-columns", "section-row-heights", "section-order", "section-min-col-spans", "section-resize-axes"]],
+      ["AgentChat", ["client", "agentId", "agent", "labels", "sessionId"]],
+      ["ObjectList", ["leadingIconKind", "leadingIconSize", "skeletonCount", "tabsVariant", "inlineRename", "expandedKeys", "searchSubmit", "rowToneMap", "rowActionIconVariant"]],
+      ["GroupedGrid", ["sectionColumns", "sectionRowHeights", "sectionOrder", "sectionMinColSpans", "sectionResizeAxes"]],
       ["ObjectCount", ["labels"]],
-      ["ObjectSummary", ["text-field"]],
-      ["ObjectHeader", ["record", "danger-operations", "primary-operation"]],
-      ["ObjectForm", ["show-required-mark"]],
-      ["FileUploadControl", ["overwrite-on"]],
+      ["ObjectSummary", ["textField"]],
+      ["ObjectHeader", ["record", "dangerOperations", "primaryOperation"]],
+      ["ObjectForm", ["showRequiredMark"]],
+      ["FileUploadControl", ["overwriteOn"]],
       ["ReferencePicker", ["placeholders"]],
-      ["InteractiveGraphCanvas", ["style-overrides"]],
-      ["InstanceGraph", ["mode", "start", "selected", "selected-type", "selected-group", "query", "layers", "show-layer-filter", "show-hint", "show-aggregate-toggle", "show-edge-label-toggle", "show-zoom-controls", "show-refresh-control", "neighbor-filter"]],
-      ["ObjectRelations", ["selected", "visible-relation-kinds"]],
+      ["InteractiveGraphCanvas", ["styleOverrides"]],
+      ["InstanceGraph", ["mode", "start", "selected", "selectedType", "selectedGroup", "query", "layers", "showLayerFilter", "showHint", "showAggregateToggle", "showEdgeLabelToggle", "showZoomControls", "showRefreshControl", "neighborFilter"]],
+      ["ObjectRelations", ["selected", "visibleRelationKinds"]],
       ["PageHeader", ["compact"]],
       ["RecordTemplate", ["templates", "record"]],
-      ["InfoBanner", ["tone-map", "titles", "texts", "templates"]],
-      ["ObjectRefCard", ["record", "captions", "button-labels"]],
-      ["MetricCard", ["labels", "units", "descriptions", "value-size"]],
-      ["AnnotatedCode", ["stale-label", "stale-hint", "segments-title", "summary-title", "empty-summary-text", "legend-label"]],
-      ["ConversationEntry", ["agent-picker-variant"]],
+      ["InfoBanner", ["toneMap", "titles", "texts", "templates"]],
+      ["ObjectRefCard", ["record", "captions", "buttonLabels"]],
+      ["MetricCard", ["labels", "units", "descriptions", "valueSize"]],
+      ["AnnotatedCode", ["staleLabel", "staleHint", "segmentsTitle", "summaryTitle", "emptySummaryText", "legendLabel"]],
+      ["ConversationEntry", ["agentPickerVariant"]],
     ];
     for (const [componentId, forbiddenProps] of excludedAuthorConfigs) {
       const names = new Set((declared.get(componentId).config ?? []).map((prop) => prop.name));
@@ -539,11 +593,10 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
       const configSection = pageMd.match(/Configuration \(the projection's `config`\):([\s\S]*?)(?:\n\n[A-Z]|$)/u)?.[1] ?? "";
       for (const propName of forbiddenProps) {
         assert.equal(names.has(propName), false, `${componentId}.config must not expose '${propName}'`);
-        const camel = propName.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
         assert.doesNotMatch(
           configSection,
-          new RegExp(`^- \`${camel}\`\\b`, "mu"),
-          `docs/components/${componentId}.md Configuration must not list '${camel}'`,
+          new RegExp(`^- \`${propName}\`\\b`, "mu"),
+          `docs/components/${componentId}.md Configuration must not list '${propName}'`,
         );
       }
     }
@@ -563,22 +616,22 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
     }
     // Status semantic tones travel on values or record.tones — never via ObjectList.rowToneMap or InfoBanner.toneMap.
     const objectListConfigNames = (declared.get("ObjectList").config ?? []).map((prop) => prop.name);
-    assert.equal(objectListConfigNames.includes("row-tone-map"), false, "ObjectList must not expose row-tone-map");
-    assert.equal(objectListConfigNames.includes("row-tone-field"), true, "ObjectList retains row-tone-field");
-    for (const removed of ["search-submit", "leading-icon-kind", "inline-rename"]) {
+    assert.equal(objectListConfigNames.includes("rowToneMap"), false, "ObjectList must not expose rowToneMap");
+    assert.equal(objectListConfigNames.includes("rowToneField"), true, "ObjectList retains rowToneField");
+    for (const removed of ["searchSubmit", "leadingIconKind", "inlineRename"]) {
       assert.equal(objectListConfigNames.includes(removed), false, `ObjectList must not expose removed prop ${removed}`);
     }
     const infoBannerConfigNames = (declared.get("InfoBanner").config ?? []).map((prop) => prop.name);
-    assert.equal(infoBannerConfigNames.includes("tone-map"), false, "InfoBanner must not expose tone-map");
-    assert.equal(infoBannerConfigNames.includes("tone-field"), true, "InfoBanner retains tone-field");
+    assert.equal(infoBannerConfigNames.includes("toneMap"), false, "InfoBanner must not expose toneMap");
+    assert.equal(infoBannerConfigNames.includes("toneField"), true, "InfoBanner retains toneField");
     const conversationConfigNames = (declared.get("ConversationEntry").config ?? []).map((prop) => prop.name);
-    assert.equal(conversationConfigNames.includes("agent-picker-variant"), false, "ConversationEntry must not expose agent-picker-variant");
+    assert.equal(conversationConfigNames.includes("agentPickerVariant"), false, "ConversationEntry must not expose agentPickerVariant");
     assert.equal(groupedGridConfigNames.includes("sections"), true, "GroupedGrid exposes unified ordered sections prop");
-    for (const removed of ["section-order", "section-columns", "section-row-heights", "section-min-col-spans", "section-resize-axes"]) {
+    for (const removed of ["sectionOrder", "sectionColumns", "sectionRowHeights", "sectionMinColSpans", "sectionResizeAxes"]) {
       assert.equal(groupedGridConfigNames.includes(removed), false, `GroupedGrid must not expose removed prop ${removed}`);
     }
     const objectHeaderConfigNames = (declared.get("ObjectHeader").config ?? []).map((prop) => prop.name);
-    for (const removed of ["danger-operations", "primary-operation"]) {
+    for (const removed of ["dangerOperations", "primaryOperation"]) {
       assert.equal(objectHeaderConfigNames.includes(removed), false, `ObjectHeader must not expose removed prop ${removed}`);
     }
     // Verify Group F public general capabilities are reflected in catalogue metadata and config.
@@ -716,13 +769,13 @@ test("the @ontomato/sdk/ui entry exports every SDK_UI_COMPONENTS primitive and d
 test("resolveDeclaredConfig emits strictly declared author-facing props and rejects missing, unknown, or duplicate entries", () => {
   const vueProps = [
     { name: "layout", type: "string", description: "", required: false },
-    { name: "page-size", type: "number", description: "", required: false },
-    { name: "host-client", type: "object", description: "", required: false },
+    { name: "pageSize", type: "number", description: "", required: false },
+    { name: "hostClient", type: "object", description: "", required: false },
   ];
   assert.deepEqual(
     resolveDeclaredConfig({ componentId: "Demo", configProps: ["layout", "pageSize"] }, vueProps, { requireDeclaration: true })
       ?.map((p) => p.name),
-    ["layout", "page-size"],
+    ["layout", "pageSize"],
   );
   assert.equal(
     resolveDeclaredConfig({ componentId: "PanelData", configProps: [] }, [], { requireDeclaration: true }),
@@ -741,7 +794,12 @@ test("resolveDeclaredConfig emits strictly declared author-facing props and reje
     /is not declared on its Vue component/,
   );
   assert.throws(
-    () => resolveDeclaredConfig({ componentId: "Demo", configProps: ["pageSize", "page-size"] }, vueProps, { requireDeclaration: true }),
+    () => resolveDeclaredConfig({ componentId: "Demo", configProps: ["pageSize", "pageSize"] }, vueProps, { requireDeclaration: true }),
     /declares duplicate `configProps` prop/,
   );
+});
+
+test("resolveDeclaredConfig keeps the runtime name of a multiword prop", () => {
+  const pageSize = { name: "pageSize", type: "number", description: "", required: false };
+  assert.equal(resolveDeclaredConfig({ componentId: "Demo", configProps: ["pageSize"] }, [pageSize])[0].name, "pageSize");
 });
