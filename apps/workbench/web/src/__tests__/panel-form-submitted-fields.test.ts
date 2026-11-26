@@ -5,7 +5,7 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { AGENT_DEFINITION, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { confirmDiscard,
+import { answerSkillPickerRead, confirmDiscard,
   formSaveCalls, humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, panelWithSlots, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -19,8 +19,8 @@ import { confirmDiscard,
  * emptied list from an untouched one; a field counted only when its value differs; a draft's absent field filled in.
  */
 
-const sql = { namespace: { kind: "domain", domainId: "domain-1" }, name: "sql" };
-const chart = { namespace: { kind: "domain", domainId: "domain-1" }, name: "chart" };
+const sql = { namespace: { kind: "domain" as const, domainId: "domain-1" }, name: "sql" };
+const chart = { namespace: { kind: "domain" as const, domainId: "domain-1" }, name: "chart" };
 const stored: PanelFormValues = {
   name: "Analyst", description: "", icon: null, enabled: true, systemPrompt: "",
   modelSelection: { modelId: null }, skills: [sql], classNames: [], enabledMcpServiceIds: [], executionUserId: null,
@@ -51,14 +51,15 @@ const formInputs = {
   changedField: { kind: "scalar", type: "string" },
 } as const;
 const formParams = { values: { input: "values" }, changedField: { input: "changedField" } };
-const referencePicker = (id: string, objectType: string) => {
-  const source = { type: { kind: "PlatformObjectType" as const, id: objectType } };
+const skillPicker = (id: string) => {
+  const source = { type: { kind: "PlatformObjectType" as const, id: SKILL } };
+  const agentTarget = { input: "agentTarget" };
   return projection(id, {
     componentId: "@ontomato/sdk:ReferencePicker",
-    inputs: { values: { kind: "json" } },
+    inputs: { agentTarget: { kind: "scalar", type: "string" } },
     data: {
-      options: { source, read: "options", params: {} },
-      selected: { source, read: "resolve", params: { values: { input: "values" } } },
+      options: { source, read: "options", params: { agentTarget } },
+      selected: { source, read: "resolve", params: { agentTarget } },
     },
   });
 };
@@ -71,13 +72,13 @@ const projections: Record<string, ProductProjection> = {
     },
     operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
   }),
-  "agent-skills": referencePicker("agent-skills", SKILL),
+  "agent-skills": skillPicker("agent-skills"),
 };
 const manifest = definePanel({
   state: { selectedAgent: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
   members: {
     definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
-    skills: { target: { projectionId: "agent-skills" }, inputs: {} },
+    skills: { target: { projectionId: "agent-skills" }, inputs: { agentTarget: { state: "selectedAgent", field: "primaryKey" } } },
   },
 });
 const panel = panelRecord("panel-submitted", "Agents", manifest, { definition: { "field-skills": "skills" } });
@@ -91,9 +92,7 @@ function owner(request: Sent, held: PanelFormValues): Response | undefined {
     const { values } = request.body as { values?: PanelFormValues };
     return Response.json({ fields, values: { ...held, ...values }, errors: [], save });
   }
-  if (request.path === "/api/assistant/agent-skills")
-    return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
-  return undefined;
+  return answerSkillPickerRead(request, [AGENT], [{ skill: sql, label: "SQL" }, { skill: chart, label: "Charts" }]);
 }
 
 async function open(shown: PanelFormValues = stored) {

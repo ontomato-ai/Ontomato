@@ -40,8 +40,7 @@ import { METRIC_CHART_COMPONENT } from "@ontomato/contracts/product-panels";
 import { protectedSkillRef } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { installWorkbenchIdentity } from "../../../identity/installed";
-import type { WorkbenchIdentity } from "../../../identity/types";
+import { assertManagement } from "../../../identity/management";
 import { getPostgresPool } from "../../../infrastructure/postgres";
 import { AuthFailedError, BackendResponseError, backendGet, backendPost } from "../../../utils/backend-client";
 import { HttpError } from "../../../utils/errors";
@@ -93,7 +92,7 @@ vi.mock("../../product-panels/object-detail", () => ({
   listObjectDetailPanelMappings: vi.fn(),
 }));
 
-const assertPermissionMock = vi.fn();
+vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn() }));
 const pgQueryMock = vi.fn();
 const allowedUseIds = vi.fn<[], string[]>();
 const decideProductObjects = vi.fn(async (requests: ObjectDecisionRequest[]) => requests.map(request => {
@@ -153,10 +152,7 @@ function graphFacts(data: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  assertPermissionMock.mockResolvedValue(undefined);
-  installWorkbenchIdentity({
-    assertPermission: assertPermissionMock,
-  } as unknown as WorkbenchIdentity);
+  vi.mocked(assertManagement).mockResolvedValue(undefined);
 
   vi.mocked(getPostgresPool).mockReturnValue({
     query: async (sql: string, params?: unknown[]) => {
@@ -446,7 +442,10 @@ describe("platform-ontology composite query", () => {
     ]));
 
     const role = byId.get(ROLE);
-    expect(Object.keys(role?.reads ?? {}).sort()).toEqual(["createForm", "form", "options", "query", "record", "resolve"]);
+    expect(Object.keys(role?.reads ?? {}).sort()).toEqual([
+      "contributionPolicies", "contributionWorkflowSteps",
+      "createForm", "form", "options", "query", "record", "resolve",
+    ]);
     expect(role?.operations?.map((op) => op.id)).toEqual([`${ROLE}.save`, DELETE_ROLE]);
 
     const definition = byId.get(DEFINITION);
@@ -455,7 +454,7 @@ describe("platform-ontology composite query", () => {
   });
 
   it("coalesces shared owners in counts and separates ok, refused, and failed statuses across all four layers", async () => {
-    assertPermissionMock.mockRejectedValueOnce(new HttpError(403, "Missing analysis-agent permission", "PERMISSION_DENIED"));
+    vi.mocked(assertManagement).mockRejectedValueOnce(new HttpError(403, "Cannot read the skill library", "PERMISSION_DENIED"));
     allowedUseIds.mockReturnValue(["proj-kb", "panel-main"]);
     pgQueryMock.mockImplementation(async (sql: string) => {
       if (sql.includes("product_projections")) {
@@ -662,8 +661,6 @@ describe("platform-ontology composite query", () => {
   });
 
   it("expands 1-hop neighbors for a User with both outgoing and incoming edges and isolates per-relation 403 refusal", async () => {
-    assertPermissionMock.mockRejectedValueOnce(new HttpError(403, "No agent admin menu", "PERMISSION_DENIED"));
-
     const res = await readPlatformOntologyNeighbors(owner, credentials, {
       node: { className: "platform:User", primaryKey: "user-1" },
     });
@@ -1234,8 +1231,8 @@ describe("platform-ontology composite query", () => {
       from: { className: "platform:ProductPanel", primaryKey: "panel-main" },
     });
 
-    // 9. Refused analysis-agent permission isolates panel.provides-skill cleanly
-    assertPermissionMock.mockRejectedValueOnce(new HttpError(403, "No analysis-agent permission", "PERMISSION_DENIED"));
+    // 9. A refused skill library read isolates panel.provides-skill.
+    vi.mocked(assertManagement).mockRejectedValueOnce(new HttpError(403, "Cannot read the skill library", "PERMISSION_DENIED"));
     const refusedSkillPanel = await readPlatformOntologyNeighbors(owner, credentials, {
       node: { className: "platform:ProductPanel", primaryKey: "panel-main" },
       relationKinds: ["panel.provides-skill"],

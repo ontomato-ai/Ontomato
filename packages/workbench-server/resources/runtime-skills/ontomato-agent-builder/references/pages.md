@@ -16,7 +16,7 @@ Write a link in an answer as the page's path, for example `[Customer assistant](
 | --- | --- | --- |
 | `list` | `GET /api/assistant/agent-definitions` | `{"agents":[...]}` — every definition of the domain. |
 | `get <id>` | `GET /api/assistant/agent-definitions/<id>` | One definition with the fields in [forms](forms.md). |
-| `skills` | `GET /api/assistant/agent-skills` | `{"skills":[{"skill":{"namespace":...,"name":...},"title":"...","description":"..."}]}` — the skills this caller may select. |
+| `skills <id or draft>` | `GET /api/assistant/agent-skills?agentTarget=<id or draft>` | `{"skills":[{"skill":{"namespace":...,"name":...},"title":"...","description":"..."}]}` for the specified agent or a new agent. |
 | `models` | `GET /api/data-query/model-options` | `{"models":[{"ref":"<provider>/<model>","name":"...","type":"chat",...}],"defaultModelId":...,"embeddingModelId":...}`. |
 | `execution-users [keyword]` | `GET /api/data-query/platform/agent-execution/options` | `{"canSetExecutionUser":boolean,"users":[{"id":"...","name":"..."}]}` — the real domain users a governance administrator may choose. |
 

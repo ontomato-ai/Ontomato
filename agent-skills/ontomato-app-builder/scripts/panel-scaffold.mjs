@@ -196,7 +196,7 @@ export function managementPanel(type, checks, typeTable, {
     '  <section class="detail-page">',
     `    <page-header :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="goBack">`,
     "      <template #title>",
-    ...(record ? [`        ${member("header", ' v-if="selectedKey" :fallback-title="selectedKey"')}`, '        <span v-else>{{ t("detail.choose") }}</span>']
+    ...(record ? [`        ${member("header", ' v-if="selectedKey" :values="{ fallbackTitle: selectedKey }"')}`, '        <span v-else>{{ t("detail.choose") }}</span>']
       : ['        <span>{{ selectedKey ?? t("detail.choose") }}</span>']),
     "      </template>",
     ...(singleButtons.length ? [

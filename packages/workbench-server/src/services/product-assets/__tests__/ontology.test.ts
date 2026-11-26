@@ -3,10 +3,10 @@ const mocks=vi.hoisted(()=>({query:vi.fn(),post:vi.fn()}));
 const grants=vi.hoisted(()=>({read:vi.fn()}));
 vi.mock('../../product-governance/grants',()=>({readProductGrantRecords:grants.read}));
 vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,backendGet:vi.fn(),buildBackendHeaders:()=>({tk:'caller'})}));
+vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,buildBackendHeaders:()=>({tk:'caller'})}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({queryServiceToken:'service-only'})}}));
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://ontology.test'}}}));
-import {synchronizeProductOntology,ontologyRegistration,registeredProductGraph} from '../ontology';
+import {synchronizeProductOntology,ontologyRegistration,addAuthorizationEdges} from '../ontology';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 beforeEach(()=>{vi.resetAllMocks();});
 it('retains a failed registration for retry and acknowledges only the synchronized revision',async()=>{
@@ -24,28 +24,18 @@ it('registers ontology faces and bundles without moving Page composition into th
   expect(ontologyRegistration(productAssetSchema.parse({...base,id:'page',document:{kind:'page',children:[]}}))).toBeNull();
   expect(ontologyRegistration(productAssetSchema.parse({...base,id:'view',document:{kind:'object-projection',renders:{kind:'ObjectType',id:'Person'},renderer:'text',fields:['name']}}))).toMatchObject({targetKind:'ObjectType',targetId:'Person'});
 });
-it('does not label a locally derived renders edge as synchronized when the ontology revision is stale',async()=>{
-  const asset=productAssetSchema.parse({name:'View',visibility:'private',ownerId:'human',id:'view',revision:2,editable:true,createdAt:'now',updatedAt:'now',document:{kind:'metric-widget',renders:{kind:'MetricView',id:'count'},parameters:{},valueField:'count'}});
-  mocks.query.mockResolvedValue({rows:[]});
-  mocks.post.mockResolvedValue({text:JSON.stringify({nodes:[{id:'view',name:'View',kind:'metric-widget',revision:1}],edges:[{source:'view',relation:'renders',target_kind:'MetricView',target_id:'count',is_default:false}]})});
-  await expect(registeredProductGraph({domainId:'domain',userId:'human'},[asset])).rejects.toMatchObject({code:'PRODUCT_ONTOLOGY_PENDING'});
-  expect(mocks.query.mock.calls.map(([sql])=>sql)).toEqual([expect.stringMatching(/^SELECT /)]);
-});
-it('includes use and edit governance edges for bundles the caller can edit',async()=>{
-  const base={name:'App',visibility:'private',ownerId:'human',revision:1,createdAt:'now',updatedAt:'now',document:{kind:'application',applicationId:'app',children:[]}};
-  const editable=productAssetSchema.parse({...base,id:'app',editable:true});
-  const visible=productAssetSchema.parse({...base,id:'other',editable:false,document:{...base.document,applicationId:'other'}});
-  mocks.query.mockResolvedValue({rows:[]});
-  mocks.post.mockImplementation(async(_name:string,url:string)=>({text:JSON.stringify(url.endsWith('/role/getRoleInfoPage')?{data:{data:[{id:'reader',roleName:'业务查看者'}]}}:{nodes:[{id:'app',name:'App',kind:'application',revision:1},{id:'other',name:'App',kind:'application',revision:1}],edges:[]})}));
-  grants.read.mockResolvedValue({grants:[
-    {principalKind:'role',principalId:'reader',verb:'use'},
-    {principalKind:'role',principalId:'reader',verb:'edit'},
-    {principalKind:'role',principalId:'inspector',verb:'view'},
+it('uses catalogue grant eligibility and isolates authorization read failures by application',async()=>{
+  const nodes=['denied','managed','visible'].map(assetId=>({
+    id:`asset:${assetId}`,assetId,name:assetId,kind:'application',category:'bundle' as const,
+  }));
+  grants.read.mockRejectedValueOnce(new Error('Unavailable')).mockResolvedValueOnce({grants:[
+    {principalKind:'role',principalId:'reader',principalName:'业务查看者',verb:'use'},
   ]});
-  const graph=await registeredProductGraph({domainId:'domain',userId:'human'},[editable,visible],{token:'caller'});
-  expect(graph.edges).toContainEqual({source:'grant:role:reader',target:'asset:app',relation:'use',storage:'governance'});
-  expect(graph.edges).toContainEqual({source:'grant:role:reader',target:'asset:app',relation:'edit',storage:'governance'});
-  expect(graph.nodes.some(node=>node.id==='grant:role:inspector')).toBe(false);
-  expect(grants.read.mock.calls.map(call=>call[0])).toEqual(['app']);
-  expect(graph.nodes.find(node=>node.id==='grant:role:reader')?.name).toBe('业务查看者');
+  const graph=await addAuthorizationEdges(
+    {graph:{nodes,edges:[]},grantableApplicationIds:new Set(['denied','managed'])},
+    {domainId:'domain',userId:'human'},{token:'caller'},
+  );
+  expect(grants.read.mock.calls.map(([id])=>id)).toEqual(['denied','managed']);
+  expect(graph.edges).toContainEqual({source:'grant:role:reader',target:'asset:managed',relation:'use',storage:'governance'});
+  expect(graph.nodes).toContainEqual({id:'grant:role:reader',name:'业务查看者',kind:'role',category:'principal'});
 });

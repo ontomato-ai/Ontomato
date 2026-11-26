@@ -6,7 +6,8 @@ import { backendPost, buildBackendHeaders } from '../../utils/backend-client';
 import { config } from '../../config/application';
 import type { AssistantCredentials } from '../../platform/agent-runtime/runtime';
 import type { ProductOwner } from '../product-governance/grants';
-import {registeredProductGraph} from './ontology';
+import {addAuthorizationEdges} from './ontology';
+import {readProductAssetGraph} from '../product-panels/asset-graph-read';
 
 /** Resolve service-owned definitions under the caller's identity, never a cached author identity. */
 export async function expandedProductDependencies(owner:ProductOwner,credentials:AssistantCredentials,root:ProductAsset,assets:ProductAsset[]){
@@ -30,6 +31,6 @@ export async function expandedProductDependencies(owner:ProductOwner,credentials
       }
     }
   }
-  const graph=await registeredProductGraph(owner,[...new Map([root,...assets].map(asset=>[asset.id,asset])).values()],credentials);
+  const graph=await addAuthorizationEdges(await readProductAssetGraph(owner,credentials),owner,credentials);
   return {...result,graph,references:[...new Map(expanded.map(reference=>[`${reference.kind}:${reference.id}`,reference])).values()]};
 }

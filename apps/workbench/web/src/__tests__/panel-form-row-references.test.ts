@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { AGENT_DEFINITION, SKILL } from "@ontomato/contracts/platform-object-types";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, panelWithSlots, registered, writePanelDocument, type Sent,
+  answerSkillPickerRead, humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, panelWithSlots, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -29,6 +29,7 @@ const fields: Field[] = [
     kind: "object",
     fields: [field("/parameters", "Parameters", {
       kind: "object-array",
+      numbered: true,
       itemKeyPath: "/name",
       defaultItem: { name: "", skills: [] },
       itemFields: [
@@ -73,10 +74,10 @@ const projections: Record<string, ProductProjection> = {
   },
   "parameter-skills": {
     ...current, id: "parameter-skills", name: "Parameter skills", componentId: "@ontomato/sdk:ReferencePicker",
-    inputs: { values: { kind: "json" } },
+    inputs: { agentTarget: { kind: "scalar", type: "string" } },
     data: {
-      options: { source: skillSource, read: "options", params: {} },
-      selected: { source: skillSource, read: "resolve", params: { values: { input: "values" } } },
+      options: { source: skillSource, read: "options", params: { agentTarget: { input: "agentTarget" } } },
+      selected: { source: skillSource, read: "resolve", params: { agentTarget: { input: "agentTarget" } } },
     },
   },
 };
@@ -86,6 +87,7 @@ const manifest = definePanel({
     definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selected" } } },
     skills: {
       target: { projectionId: "parameter-skills" },
+      inputs: { agentTarget: { state: "selected", field: "primaryKey" } },
     },
   },
 });
@@ -107,14 +109,9 @@ async function open(slots: string[], shown = panel) {
       const { values } = request.body as { values?: PanelFormValues };
       return Response.json({ fields, values: values ?? stored, errors: [], save });
     }
-    if (request.path === "/api/assistant/agent-skills") {
-      return Response.json({ skills: [
-        { skill: sql, title: "SQL", description: "" },
-        { skill: chart, title: "Charts", description: "" },
-        { skill: review, title: "Review", description: "" },
-      ] });
-    }
-    return intents(request) ?? nothingAt(request);
+    return intents(request) ?? answerSkillPickerRead(request, [ID], [
+      { skill: sql, label: "SQL" }, { skill: chart, label: "Charts" }, { skill: review, label: "Review" },
+    ]) ?? nothingAt(request);
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();

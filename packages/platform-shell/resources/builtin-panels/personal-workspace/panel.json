@@ -521,6 +521,9 @@
         "data": {
           "rows": "list"
         },
+        "config": {
+          "emptyText": "empty.tasks"
+        },
         "name": "My scheduled tasks",
         "description": "Scheduled task attention summary, priority sections, and inline resolve actions.",
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000009"

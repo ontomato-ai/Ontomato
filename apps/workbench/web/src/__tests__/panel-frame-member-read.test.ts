@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { frameMemberData } from "../../../../../packages/apps-sdk/src/panel/frame-member";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
@@ -30,9 +30,26 @@ const tasks: ProductProjection = {
   ...record, id: "tasks", name: "Tasks", componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
   data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
 };
+const skills: ProductProjection = {
+  ...record, id: "skills", name: "Skills", componentId: "@ontomato/sdk:ReferencePicker",
+  inputs: { agentTarget: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
+  data: {
+    selected: {
+      source: { type: { kind: "PlatformObjectType", id: SKILL } }, read: "resolve",
+      params: { agentTarget: { input: "agentTarget" } },
+    },
+  },
+};
 const panel = definePanel({
-  state: { status: { type: { kind: "scalar", type: "string" } } },
-  members: { list: { target: { projectionId: knowledge.id }, inputs: { status: { state: "status" } } }, tasks: { target: { projectionId: tasks.id } } },
+  state: {
+    status: { type: { kind: "scalar", type: "string" } },
+    agentTarget: { type: { kind: "scalar", type: "string" } },
+  },
+  members: {
+    list: { target: { projectionId: knowledge.id }, inputs: { status: { state: "status" } } },
+    tasks: { target: { projectionId: tasks.id } },
+    skills: { target: { projectionId: skills.id }, inputs: { agentTarget: { state: "agentTarget" } } },
+  },
 });
 const instance = () => createPanelInstance(panel, {
   text: (key) => key, pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: { status: "pending" }, ...noOperations, readProjection: async () => { throw new Error("unused"); },
@@ -69,4 +86,22 @@ it("keeps reading a type through its resource module while the module is there, 
   const data = frameMemberData(tasks, "tasks", instance(), () => ({}), read);
   expect(await data.read("rows", {})).toEqual({ status: "ready", value: [{ primaryKey: "t-1", label: "Nightly", fields: {} }] });
   expect(read).not.toHaveBeenCalled();
+});
+
+it("resolves held skills in order through the owner using the bound agent target", async () => {
+  const agentTarget = "ad4c9a59-bab6-4373-bfcf-198d3230e851";
+  const active = { name: "active", namespace: { kind: "provider", provider: "workbench" } };
+  const removed = { ...active, name: "removed" };
+  const unavailable = { primaryKey: "removed", value: removed, label: "Removed", unavailable: { reason: "Unavailable skill" } };
+  const available = { primaryKey: "active", value: active, label: "Active skill" };
+  const values = [removed, active, removed];
+  const read = vi.fn(async (_request: PanelMemberReadRequest) => ({
+    status: "ready" as const, value: { options: [unavailable, available, unavailable] },
+  }));
+  const data = frameMemberData(skills, "skills", instance(), () => ({ agentTarget }), read);
+  const resolved = await data.read("selected", { values });
+  expect(resolved).toEqual({ status: "ready", value: { options: [unavailable, available, unavailable] } });
+  expect(read.mock.calls).toEqual([[{
+    memberPath: [{ member: "skills" }], dataName: "selected", inputs: { agentTarget }, runtimeParams: { values },
+  }]]);
 });

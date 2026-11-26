@@ -15,7 +15,8 @@ import {
   type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
-import { assertPermission } from "../../identity/installed";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import { assertManagement } from "../../identity/management";
 import { getPostgresPool } from "../../infrastructure/postgres";
 import { currentProductRows, type CurrentProductRow } from "../../infrastructure/product-current";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
@@ -375,16 +376,6 @@ export class PlatformOntologyOwnerReaders {
     return this.parseDataEngineResponse(endpoint, response.text);
   }
 
-  private analysisAgentPermission(): Promise<OwnerReadResult<true>> {
-    return this.memo("perm:analysis-agent", async () => {
-      await assertPermission(
-        { token: this.credentials.token, apiKey: this.credentials.apiKey },
-        ["analysis-agent"],
-      );
-      return true as const;
-    });
-  }
-
   ontologyMeta(): Promise<OwnerReadResult<RawOntologyMeta>> {
     return this.memo("java:/admin/getMetas", async () => {
       const data = asRecord(await this.postDataEngine("/admin/getMetas", {})) ?? {};
@@ -736,9 +727,8 @@ export class PlatformOntologyOwnerReaders {
   }
 
   async skills(): Promise<OwnerReadResult<RawSkill[]>> {
-    const perm = await this.analysisAgentPermission();
-    if (!perm.ok) return perm;
     return this.memo("node:assistant-skills", async () => {
+      await assertManagement(workbenchManagement.skillLibraryRead, this.owner, this.credentials);
       const catalog = await assistantSkillCatalog(this.owner.domainId, this.credentials);
       return catalog.skills.map((item) => ({
         primaryKey: runtimeSkillKey(item.skill),

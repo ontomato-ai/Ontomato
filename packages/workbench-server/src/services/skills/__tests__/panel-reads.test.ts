@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { panelOptionListSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { installContentLayout } from "../../../content/layout";
 import { registerSkillProvider } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
@@ -46,6 +47,10 @@ afterAll(async () => {
 beforeEach(() => {
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "test-service-token");
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    if (url.endsWith("/internal/workbench-management/require")) {
+      expect(JSON.parse(String(init.body))).toEqual({ domainId: domain, operationId: workbenchManagement.skillLibraryRead.id });
+      return new Response(null, { status: 204 });
+    }
     if (url.endsWith("/authorization/objects/decide-batch")) {
       const { requests } = JSON.parse(String(init.body));
       return Response.json({ decisions: requests.map(() => ({ allowed: true })) });

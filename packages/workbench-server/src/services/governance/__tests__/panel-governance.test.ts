@@ -256,6 +256,79 @@ describe("governance panel read adapter", () => {
   });
 });
 
+describe("governance role contribution reads", () => {
+  it("reads the role's permission policies and its in-force workflow steps from the role owner", async () => {
+    const { requests } = await startBackend((path, body) => {
+      if (body.id !== "r-analyst") {
+        return { success: false, code: "ROLE_NOT_FOUND", message: "Role not found in the current domain." };
+      }
+      if (path === "/panel/governance/roles/contribution/permission-policies") {
+        return {
+          success: true,
+          data: [{
+            primaryKey: "p-data",
+            className: PERMISSION_POLICY,
+            label: "Data policy",
+            fields: { policyName: "Data policy", policyType: "Data permissions" },
+          }],
+        };
+      }
+      if (path === "/panel/governance/roles/contribution/workflow-steps") {
+        return {
+          success: true,
+          data: [{
+            primaryKey: "w-1:1",
+            className: "platform:Workflow",
+            label: "Expense approval",
+            fields: { workflowName: "Expense approval", step: "1. Manager approval", scope: "Own organization" },
+          }],
+        };
+      }
+      return { success: true, data: [] };
+    });
+    const adapter = createGovernanceReadAdapters({ token: "tok", locale: "en" });
+
+    const policies = await adapter.roles.contributionPolicies("r-analyst");
+    expect(requests[0]).toEqual({
+      path: "/panel/governance/roles/contribution/permission-policies",
+      body: { id: "r-analyst" },
+    });
+    expect(policies).toEqual([{
+      primaryKey: "p-data",
+      className: PERMISSION_POLICY,
+      label: "Data policy",
+      fields: { policyName: "Data policy", policyType: "Data permissions" },
+    }]);
+
+    const steps = await adapter.roles.contributionWorkflowSteps("r-analyst");
+    expect(requests[1]).toEqual({
+      path: "/panel/governance/roles/contribution/workflow-steps",
+      body: { id: "r-analyst" },
+    });
+    expect(steps[0]?.fields.step).toBe("1. Manager approval");
+
+    await expect(adapter.roles.contributionPolicies("r-missing")).rejects.toMatchObject({
+      status: 404,
+      code: "ROLE_NOT_FOUND",
+      message: "Role not found in the current domain.",
+    });
+  });
+
+  it("declares both contribution reads on platform:Role so a panel may bind them", () => {
+    const reads = platformObjectTypes[ROLE].reads ?? {};
+    expect(reads.contributionPolicies).toMatchObject({
+      source: "object",
+      result: "panelRecordList",
+      rowType: PERMISSION_POLICY,
+    });
+    expect(reads.contributionWorkflowSteps).toMatchObject({
+      source: "object",
+      result: "panelRecordList",
+      rowType: "platform:Workflow",
+    });
+  });
+});
+
 describe("governance panel server operations", () => {
   it.each([ROLE, PERMISSION_POLICY, ORG_UNIT, ORG_POSITION])("reports the identity of a newly created %s", async objectType => {
     const primaryKey = "owner-created";

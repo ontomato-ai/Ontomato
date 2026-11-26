@@ -55,12 +55,6 @@
           "type": "string"
         }
       },
-      "graphVersion": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
       "positions": {
         "type": {
           "kind": "json"
@@ -173,7 +167,10 @@
                 "state": "graphSearchClassName"
               },
               "version": {
-                "state": "graphVersion"
+                "output": {
+                  "member": "instanceGraph",
+                  "name": "graphVersion"
+                }
               }
             }
           }

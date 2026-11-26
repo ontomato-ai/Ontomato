@@ -19,7 +19,6 @@ import {
   type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
-import { assertPermission } from "../../identity/installed";
 import { tApp } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -27,8 +26,8 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
-import { registeredProductGraph } from "../product-assets/ontology";
-import { listProducts } from "../product-assets/store";
+import { addAuthorizationEdges } from "../product-assets/ontology";
+import { readProductAssetGraph } from "./asset-graph-read";
 
 import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createDataAdapterConfigReads } from "../admin/data-adapters-panel";
@@ -193,8 +192,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     const { createSkillReadAdapter } = await import("../skills/panel-reads");
     return createSkillReadAdapter(owner, viewer, callerUserName);
   };
-  const skills = async () => {
-    await assertPermission(viewer, ["analysis-agent"]);
+  const agentSkills = async (target: unknown) => {
+    const { requireAgentSkillSelection } = await import("../assistant/definitions");
+    await requireAgentSkillSelection(owner, viewer, readParams.agentSkillTarget.parse(target));
     return skillLibrary();
   };
   const feedback = async () => {
@@ -447,6 +447,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: selection => governance.roles.record(selection.primaryKey!),
       form: (selection, params) => governance.roles.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => governance.roles.createForm(formParams(params)),
+      contributionPolicies: selection => governance.roles.contributionPolicies(selection.primaryKey!),
+      contributionWorkflowSteps: selection => governance.roles.contributionWorkflowSteps(selection.primaryKey!),
     },
     [PERMISSION_POLICY]: {
       options: () => governance.policies.options(),
@@ -488,11 +490,13 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       form: (selection, params) => governance.orgGrants.form(selection.primaryKey!, formParams(params)),
     },
     [SKILL]: {
-      async options() {
-        return (await skills()).options();
+      async options(_selection, params) {
+        return (await agentSkills(params.agentTarget)).options();
       },
       async resolve(_selection, params) {
-        return (await skills()).resolve({ values: params.values as SkillResolveRequest["values"] });
+        return (await agentSkills(params.agentTarget)).resolve({
+          values: params.values as SkillResolveRequest["values"],
+        });
       },
       async query(_selection, params) {
         return (await skillLibrary()).query(params);
@@ -535,7 +539,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       detailPanelForm: (selection, params) => objectDetail.form(selection.primaryKey!, formParams(params).values),
       inlineForm: (selection, params) => model.inlineForm(selection.typeId, selection.primaryKey!, formParams(params)),
       productGraph: async () => {
-        const graph = await registeredProductGraph(owner, await listProducts(owner), viewer);
+        const graph = await addAuthorizationEdges(await readProductAssetGraph(owner, viewer), owner, viewer);
         return {
           className: OBJECT_TYPE,
           primaryKey: "product-graph",

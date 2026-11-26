@@ -45,7 +45,7 @@ function checkObjectFormOperations(file, members) {
 }
 
 async function checkPanelAuthoringSources({
-  directory, files, descriptorFile, theme, html, module, checks,
+  directory, files, descriptorFile, theme, html, module, members, checks,
 }) {
   const violations = [];
   if (theme && checks.checkAuthoringTheme) {
@@ -53,6 +53,9 @@ async function checkPanelAuthoringSources({
   }
   if (html !== undefined && checks.checkAuthoringTemplate) {
     violations.push(...checks.checkAuthoringTemplate(html, resolve(directory, "panel.html")));
+  }
+  if (checks.checkProjectionConfigSources) {
+    violations.push(...checks.checkProjectionConfigSources(members ?? {}, html, descriptorFile));
   }
   if (module !== undefined && checks.checkAuthoringScript) {
     violations.push(...await checks.checkAuthoringScript(module, resolve(directory, "panel.mjs")));
@@ -139,6 +142,7 @@ export async function checkBuiltinPanelSource(
     theme: document.theme,
     html: sourceTexts["panel.html"],
     module: sourceTexts["panel.mjs"],
+    members: parsed.data.members,
     checks,
   });
 
@@ -282,6 +286,7 @@ async function workspaceDefinition(
       descriptorFile,
       html: result.data.content.html,
       module: result.data.content.module,
+      members: manifest?.members,
       checks,
     });
 
