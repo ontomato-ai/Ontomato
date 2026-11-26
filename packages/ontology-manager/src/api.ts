@@ -538,13 +538,6 @@ export function createManagerClient(
     return source as WorkflowRecord[];
   }
 
-  /**
-   * The domain's triggers, from the capability controller that owns them.
-   *
-   * <p>This used to read `/platform/scheduled-tasks`. That table is the kernel's schedule of an application's effect,
-   * which is one condition kind — not the object an operator authors. Reading it here made the page look like it could
-   * configure triggers when it was only listing somebody else's tasks.</p>
-   */
   return {
     /** The data engine's endpoints as the platform's shared pages read them (the agents' model pages): the `data`. */
     dataEngine: {
