@@ -57,8 +57,9 @@ beforeAll(async () => {
 afterAll(async () => { await server?.close(); });
 
 it("lists a code panel's protected skill from the bundled current SDK and saves its selection", async () => {
+  expect((await fetch(base + "/agent-skills")).status).toBe(400);
   const [listed, saved] = await Promise.all([
-    fetch(base + "/agent-skills"),
+    fetch(`${base}/agent-skills?agentTarget=${agentId}`),
     fetch(`${base}/agent-definitions/${agentId}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Renamed", description: "", icon: null, enabled: true, systemPrompt: "", skills: [skill] }),
@@ -239,7 +240,7 @@ it("catalogue diagnostics isolate an admitted broken projection across list, poi
 
   const goodRef = currentMember(good).ref;
   const member = currentMember(broken);
-  for (const url of [server.origin + "/api/skills", base + "/agent-skills"]) {
+  for (const url of [server.origin + "/api/skills", `${base}/agent-skills?agentTarget=${agentId}`]) {
     const response = await fetch(url);
     expect(response.status).toBe(200);
     const catalogue = await response.json();

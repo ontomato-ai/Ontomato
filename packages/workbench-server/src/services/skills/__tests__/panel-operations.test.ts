@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AdmZip from "adm-zip";
 import { AGENT_DEFINITION, DELETE_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { installContentLayout } from "../../../content/layout";
 import { registerSkillProvider } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
@@ -14,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   filterReadableAgentDefinitions: vi.fn(),
   listAnalysisAgentSkillReferences: vi.fn(),
   removeAnalysisAgentSkillReferences: vi.fn(),
-  restoreAnalysisAgentSkillReferences: vi.fn(),
 }));
 
 vi.mock("../../assistant/definitions", () => ({
@@ -23,7 +23,6 @@ vi.mock("../../assistant/definitions", () => ({
 vi.mock("../../assistant/skill-references", () => ({
   listAnalysisAgentSkillReferences: mocks.listAnalysisAgentSkillReferences,
   removeAnalysisAgentSkillReferences: mocks.removeAnalysisAgentSkillReferences,
-  restoreAnalysisAgentSkillReferences: mocks.restoreAnalysisAgentSkillReferences,
 }));
 
 configureI18n({
@@ -98,27 +97,22 @@ afterAll(async () => {
   await fs.rm(publicSkillsRoot, { recursive: true, force: true });
 });
 
-let refused: "EDIT" | "CREATE" | null;
-let retired: unknown[];
+const { skillLibraryRead, skillLibraryChange } = workbenchManagement;
+let refused: string | undefined;
 beforeEach(() => {
-  refused = null;
-  retired = [];
+  refused = undefined;
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "test-service-token");
   mocks.filterReadableAgentDefinitions.mockReset();
   mocks.listAnalysisAgentSkillReferences.mockReset().mockResolvedValue([]);
   mocks.removeAnalysisAgentSkillReferences.mockReset().mockResolvedValue(0);
-  mocks.restoreAnalysisAgentSkillReferences.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    if (url.endsWith("/authorization/objects/retire")) {
-      retired.push(JSON.parse(String(init.body)));
-      return new Response(null, { status: 204 });
-    }
-    if (url.endsWith("/authorization/objects/decide-batch")) {
-      const { requests } = JSON.parse(String(init.body));
-      return Response.json({ decisions: requests.map((request: { create?: string; verb?: string }) =>
-        (request.create ? "CREATE" : request.verb) === refused
-          ? { allowed: false, code: "SKILL_FORBIDDEN", reason: "Skill operation denied" }
-          : { allowed: true }) });
+    if (url.endsWith("/internal/workbench-management/require")) {
+      const { operationId, domainId } = JSON.parse(String(init.body));
+      expect(domainId).toBe(domain);
+      expect([skillLibraryRead.id, skillLibraryChange.id]).toContain(operationId);
+      return operationId === refused
+        ? Response.json({ message: "Skill operation denied" }, { status: 403 })
+        : new Response(null, { status: 204 });
     }
     if (url.endsWith("/platform/page-skills")) {
       return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
@@ -150,6 +144,7 @@ describe("skill panel server operations", () => {
   });
 
   it("inspects readable agent references and reads the skill title", async () => {
+    refused = skillLibraryRead.id;
     await installDomainSkill("custom-skill");
     const agent1 = "11111111-1111-4111-8111-111111111111";
     const agent2 = "22222222-2222-4222-8222-222222222222";
@@ -160,6 +155,7 @@ describe("skill panel server operations", () => {
     mocks.filterReadableAgentDefinitions.mockResolvedValue(new Set([agent1]));
 
     const target = { kind: "object" as const, objectType: SKILL, primaryKey: "custom-skill" };
+    await expect(deleteOp.unavailable(host, target)).resolves.toBeUndefined();
     expect(await deleteOp.targetLabel(host, target)).toBe("custom-skill");
     expect(await deleteOp.inspectImpact!.inspect(host, [{ target, input: {} }])).toEqual({
       summary: "This deletes the selected skill and removes its references from 1 agent(s).",
@@ -170,6 +166,7 @@ describe("skill panel server operations", () => {
   });
 
   it("deletes a writable domain skill and returns affected skill and readable agents", async () => {
+    refused = skillLibraryRead.id;
     const dir = await installDomainSkill("removable-skill");
     const agent1 = "11111111-1111-4111-8111-111111111111";
     mocks.listAnalysisAgentSkillReferences.mockResolvedValue([
@@ -183,10 +180,6 @@ describe("skill panel server operations", () => {
     );
 
     expect(mocks.removeAnalysisAgentSkillReferences).toHaveBeenCalledWith(domain, "removable-skill");
-    expect(retired).toContainEqual({
-      target: { domainId: domain, kind: "SKILL", id: "removable-skill" },
-      ownerFacts: { ownerId: null, state: "PUBLISHED" },
-    });
     expect(outcome).toEqual({
       kind: "success",
       data: {},
@@ -202,22 +195,34 @@ describe("skill panel server operations", () => {
     await expect(fs.stat(dir)).rejects.toThrow();
   });
 
-  it("refuses deletion without EDIT or for read-only public/provider packages", async () => {
+  it("restores the package directory if cleaning agent references fails", async () => {
+    const dir = await installDomainSkill("delete-failed-skill");
+    mocks.filterReadableAgentDefinitions.mockResolvedValue(new Set());
+    const failure = new Error("Reference update failed");
+    mocks.removeAnalysisAgentSkillReferences.mockRejectedValue(failure);
+    await expect(deleteOp.execute(host, { kind: "object", objectType: SKILL, primaryKey: "delete-failed-skill" }))
+      .rejects.toBe(failure);
+    await expect(fs.readFile(path.join(dir, "SKILL.md"), "utf8")).resolves.toContain("name: delete-failed-skill");
+  });
+
+  it("refuses deletion without change permission or for read-only public/provider packages", async () => {
     const domainSkill = await installDomainSkill("protected-check");
     const pubDir = path.join(publicSkillsRoot, "builtin-skill");
     await fs.mkdir(pubDir, { recursive: true });
     await fs.writeFile(path.join(pubDir, "SKILL.md"), "---\nname: builtin-skill\ndescription: Builtin\n---\n");
 
-    refused = "EDIT";
-    expect(await deleteOp.execute(
-      host,
-      { kind: "object", objectType: SKILL, primaryKey: "protected-check" },
-    )).toEqual({
+    refused = skillLibraryChange.id;
+    const target = { kind: "object" as const, objectType: SKILL, primaryKey: "protected-check" };
+    await expect(deleteOp.inspectImpact.inspect(host, [{ target, input: {} }]))
+      .rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
+    await expect(deleteOp.unavailable(host, target)).resolves.toHaveProperty("reason");
+    expect(await deleteOp.execute(host, target)).toEqual({
       kind: "refusal",
-      code: "SKILL_FORBIDDEN",
+      code: "PERMISSION_DENIED",
       message: "Skill operation denied",
     });
     await expect(fs.stat(domainSkill)).resolves.toBeDefined();
+    refused = undefined;
 
     const zhHost: PanelOperationHost = {
       ...host,
@@ -263,9 +268,10 @@ describe("skill panel server operations", () => {
   });
 
   describe("skills.import", () => {
-    const zip = (name: string, body = "Body") => {
+    const zip = (name: string, body = "Body", files: Record<string, string> = {}) => {
       const archive = new AdmZip();
       archive.addFile(`${name}/SKILL.md`, Buffer.from(`---\nname: ${name}\ndescription: Imported\n---\n${body}\n`));
+      for (const [file, content] of Object.entries(files)) archive.addFile(`${name}/${file}`, Buffer.from(content));
       const bytes = archive.toBuffer();
       return { name: `${name}.zip`, mime: "application/zip", size: bytes.length, bytes };
     };
@@ -283,7 +289,8 @@ describe("skill panel server operations", () => {
     });
 
     it("imports a new skill, refuses an existing name with its id, and overwrites only after the named confirmation", async () => {
-      const first = zip("imported-skill");
+      refused = skillLibraryRead.id;
+      const first = zip("imported-skill", "Body", { "references/old.md": "Old reference" });
       expect(await importOp.inspectImpact!.inspect(host, [{ target: null, input: call(first, true) }])).toBeNull();
       expect(await importOp.execute(host, null, call(first))).toEqual({
         kind: "success", message: "Imported skill imported-skill.", data: { id: "imported-skill", title: "imported-skill" },
@@ -303,6 +310,7 @@ describe("skill panel server operations", () => {
       expect(await importOp.execute(host, null, call(second, true))).toMatchObject({ kind: "success" });
       const installed = path.join(root, "data", "domain-skills", domain, "imported-skill", "SKILL.md");
       expect(await fs.readFile(installed, "utf8")).toContain("Revised");
+      await expect(fs.stat(path.join(path.dirname(installed), "references", "old.md"))).rejects.toMatchObject({ code: "ENOENT" });
     });
 
     it("refuses an unreadable package and an import without permission", async () => {
@@ -311,9 +319,14 @@ describe("skill panel server operations", () => {
       expect(await importOp.execute(host, null, { file: broken })).toEqual({
         kind: "refusal", code: "INVALID_SKILL_PACKAGE", message: "This file is not a valid skill package: Cannot read skill ZIP",
       });
-      refused = "CREATE";
-      expect(await importOp.execute(host, null, call(zip("denied-skill")))).toEqual({
-        kind: "refusal", code: "SKILL_FORBIDDEN", message: "Skill operation denied",
+      refused = skillLibraryChange.id;
+      const uploaded = zip("denied-skill");
+      for (const overwrite of [false, true]) {
+        await expect(importOp.inspectImpact.inspect(host, [{ target: null, input: call(uploaded, overwrite) }]))
+          .rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
+      }
+      expect(await importOp.execute(host, null, call(uploaded))).toEqual({
+        kind: "refusal", code: "PERMISSION_DENIED", message: "Skill operation denied",
       });
     });
   });

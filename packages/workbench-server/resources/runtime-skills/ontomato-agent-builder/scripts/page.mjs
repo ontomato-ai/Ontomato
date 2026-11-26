@@ -80,7 +80,10 @@ async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === "list") return print(await request("GET", definitions));
   if (command === "get") return print(await request("GET", `${definitions}/${encodeURIComponent(required(args[0], "An agent id"))}`));
-  if (command === "skills") return print(await request("GET", `${workbench}/api/assistant/agent-skills`));
+  if (command === "skills") {
+    const query = new URLSearchParams({ agentTarget: required(args[0], "An agent id or draft") });
+    return print(await request("GET", `${workbench}/api/assistant/agent-skills?${query}`));
+  }
   if (command === "models") return print((await request("GET", `${ontology}/model-options`)).data);
   if (command === "execution-users")
     return print(await request("GET", `${ontology}/platform/agent-execution/options?${new URLSearchParams({ keyword: args[0] ?? "", pageNum: "1", pageSize: "100" })}`));

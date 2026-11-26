@@ -9,6 +9,7 @@ const AGENT_DEFINITION = "platform:AgentDefinition";
 const type = (id) => ({ type: { kind: "PlatformObjectType", id } });
 const shownAgent = { object: { input: "agent" } };
 const agent = { kind: "object", objectType: AGENT_DEFINITION };
+const agentTarget = { kind: "scalar", type: "string" };
 const read = (source, name) => ({ source, read: name, params: {} });
 
 const projection = (id, name, description, component, ports) => ({
@@ -27,6 +28,13 @@ const picker = (objectType) => ({
   data: {
     options: read(type(objectType), "options"),
     selected: read(type(objectType), "resolve"),
+  },
+});
+
+const skillPicker = (target) => ({
+  data: {
+    options: { ...read(type("platform:Skill"), "options"), params: { agentTarget: target } },
+    selected: { ...read(type("platform:Skill"), "resolve"), params: { agentTarget: target } },
   },
 });
 
@@ -53,7 +61,9 @@ export default [
   projection("agent-model-choice", "Agent model", "The model an agent runs on, from the domain's model options; none keeps the domain default.",
     "ReferencePicker", picker("platform:ModelOption")),
   projection("agent-skill-choice", "Agent skills", "The skills an agent may use, from the skill catalogue the reader may choose from.",
-    "ReferencePicker", picker("platform:Skill")),
+    "ReferencePicker", { inputs: { agentTarget }, ...skillPicker({ input: "agentTarget" }) }),
+  projection("draft-agent-skill-choice", "Draft agent skills", "The skills available while creating an agent.",
+    "ReferencePicker", skillPicker({ literal: "draft" })),
   projection("agent-executor-choice", "Agent runs as", "The user an agent's work runs as; the identity service decides who may change it.",
     "ReferencePicker", picker("platform:User")),
   projection("agent-data-scope", "Agent data scope", "The ontology classes an agent works on, chosen on the class and relationship graph; none keeps the default scope.", "RecordGraph", {

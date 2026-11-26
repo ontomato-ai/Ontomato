@@ -4,11 +4,11 @@ import { asyncHandler } from "../utils/http";
 import { describeAgentDefinitionForm } from "../../services/assistant/definition-form";
 import { AgentDefinitionFieldError } from "../../services/assistant/definition-form-schema";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
-import { requirePermission } from "../../identity/installed";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
 import { readAnalysisScope } from "../../services/assistant/analysis-scope";
 import {
   readAgentDefinition,
+  requireAgentSkillSelection,
   listAgentDefinitions,
   deleteAgentDefinition,
   saveAgentDefinition,
@@ -20,6 +20,7 @@ import { platformService } from "../middleware/platform-service";
 import { initializeDomainPresetAgents } from "../../services/assistant/preset-initialization";
 import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
+import { agentSkillTargetSchema } from "@ontomato/contracts/skills";
 import {
   assistantAgentInputSchema,
   assistantAgentUpdateInputSchema,
@@ -75,8 +76,10 @@ router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId"
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
 }));
-router.get("/agent-skills", requirePermission(["analysis-agent"]), wrap(async (req, res) => {
+const agentSkillsQuery = z.object({ agentTarget: agentSkillTargetSchema }).strict();
+router.get("/agent-skills", wrap(async (req, res) => {
   const c = context(req);
+  await requireAgentSkillSelection(c.owner, c.credentials, agentSkillsQuery.parse(req.query).agentTarget);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials));
 }));
 export const assistantInternalRouter = Router();

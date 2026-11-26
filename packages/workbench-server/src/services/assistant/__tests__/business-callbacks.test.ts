@@ -251,7 +251,9 @@ it("keeps platform-mode URLs from page.mjs, dashboard-skill and app-builder insi
     const targetPath = new URL(declaration.baseUrl).pathname + "/" + suffix;
     expect(targetPath.startsWith(new URL(declaration.baseUrl).pathname + "/")).toBe(true);
     seen.push({ kind, method: req.method, targetPath, tk: req.header("tk") });
-    const unwrapped = await callWithCredential(targetPath, declaration.credential, "X-Ontomato-Callback-Credential", req.method);
+    const search = new URL(req.originalUrl, "http://relay.test").search;
+    if (suffix === "api/assistant/agent-skills") expect(search).toBe("?agentTarget=draft");
+    const unwrapped = await callWithCredential(targetPath + search, declaration.credential, "X-Ontomato-Callback-Credential", req.method);
     expect(unwrapped.status).toBe(200);
     if (kind === "ontology" && suffix.startsWith("model-options")) {
       res.json({ data: [] });
@@ -287,7 +289,7 @@ it("keeps platform-mode URLs from page.mjs, dashboard-skill and app-builder insi
 
     const pageScript = path.resolve(workbenchServerResourceRoot, "resources/runtime-skills/ontomato-agent-builder/scripts/page.mjs");
     await runNodeScript(pageScript, ["list"], sessionEnv);
-    await runNodeScript(pageScript, ["skills"], sessionEnv);
+    await runNodeScript(pageScript, ["skills", "draft"], sessionEnv);
     await runNodeScript(pageScript, ["models"], sessionEnv);
     await runNodeScript(pageScript, ["execution-users"], sessionEnv);
 

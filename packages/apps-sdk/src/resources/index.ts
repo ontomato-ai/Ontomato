@@ -1,7 +1,7 @@
 import { FUNCTION, METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
 import {
   ACTION, AGENT_DEFINITION, DASHBOARD_CARD, ATTRIBUTE, EXTERNAL_MCP_SERVICE, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_RELATION_KIND,
-  ONTOLOGY_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER,
+  ONTOLOGY_TYPE, RELATIONSHIP, SCHEDULED_TASK, USER,
 } from "@ontomato/contracts/platform-object-types";
 import type { PlatformResources } from "../panel/platform-objects";
 
@@ -17,7 +17,6 @@ const platformOntology = () => import("../panel/platform-ontology").then((module
 export const platformResources: PlatformResources = {
   objects: {
     [AGENT_DEFINITION]: () => import("../panel/agent-definition").then((module) => module.agentDefinitionAdapters),
-    [SKILL]: () => import("../panel/skill").then((module) => module.skillAdapters),
     [MODEL_OPTION]: () => import("../panel/model-option").then((module) => module.modelOptionAdapters),
     [EXTERNAL_MCP_SERVICE]: () => import("../panel/external-mcp-service").then((module) => module.externalMcpServiceAdapters),
     [USER]: () => import("../panel/user").then((module) => module.userAdapters),
