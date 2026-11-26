@@ -251,18 +251,31 @@ describe("policy access", () => {
   it("dispatches all registered read and write operations for the selected policy", async () => {
     const target = { kind: "object", objectType: PERMISSION_POLICY, primaryKey: policyId } as const;
     const actor = { credentials: viewer, owner: { domainId, userId: "viewer" } };
-    const usage = { roleCount: 2, userCount: 5, roles: [{ id: "role-1", name: "Sales" }] };
+    const usage = {
+      roleCount: 2,
+      userCount: 5,
+      roles: [{ id: "role-1", name: "Sales" }],
+      kindLabels: { PANEL: "Panel", COMPONENT: "Component", ACTION: "Action", AGENT: "Agent" },
+      verbLabels: { USE: "Use", VIEW: "View", EDIT: "Edit", EXECUTE: "Execute", ENTER: "Enter", CREATE: "Create" },
+    };
     const host: PanelOperationHost = {
       initiator: actor,
       executor: actor,
-      request: vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: usage }), { status: 200 })),
+      request: vi.fn().mockImplementation(async () => new Response(JSON.stringify({ success: true, data: usage }), { status: 200 })),
       requestWorkbench: vi.fn(),
     };
     const previewHandler = registeredPanelOperation(PREVIEW_POLICY_ENTRY_GRANT)?.handler;
     if (!previewHandler || previewHandler.effect !== "read") throw new Error("Missing previewEntryGrant read op");
     expect(await previewHandler.execute(host, { target, input: { entryIds: [entryId] } })).toMatchObject({
       kind: "json",
-      value: { policyId },
+      value: {
+        policyId,
+        targetPolicyRoles: usage.roles,
+        candidates: expect.arrayContaining([
+          expect.objectContaining({ kind: "PANEL", kindLabel: "Panel", verb: "USE", verbLabel: "Use" }),
+          expect.objectContaining({ kind: "ACTION", kindLabel: "Action", verb: "EXECUTE", verbLabel: "Execute" }),
+        ]),
+      },
     });
 
     const revokePreviewHandler = registeredPanelOperation(PREVIEW_POLICY_ENTRY_REVOKE)?.handler;
@@ -276,7 +289,7 @@ describe("policy access", () => {
           { kind: "PANEL", id: "orders-panel", verb: "USE", scope: null, label: "orders-panel" },
           { kind: "ACTION", id: "standalone", verb: "EXECUTE", scope, label: "standalone" },
         ]),
-        impact: usage,
+        impact: { roleCount: usage.roleCount, userCount: usage.userCount, roles: usage.roles },
       },
     });
     expect(host.request).toHaveBeenCalledWith(
@@ -286,10 +299,18 @@ describe("policy access", () => {
 
     const pendingHandler = registeredPanelOperation(LIST_PENDING_POLICY_GRANTS)?.handler;
     if (!pendingHandler || pendingHandler.effect !== "read") throw new Error("Missing listPending read op");
-    post.mockResolvedValueOnce(json({ policyId, canManage: true, targetPolicyRoleIds: [], items: [] }));
+    post.mockResolvedValueOnce(json({
+      policyId, canManage: true, targetPolicyRoleIds: ["role-1"],
+      items: [{ id: 1, source: "entry", changeKey: "k", actorId: "u1", entryId, kind: "PANEL", targetId: "orders-panel", verb: "USE", scope: null }],
+    }));
     expect(await pendingHandler.execute(host, { target, input: {} })).toMatchObject({
       kind: "json",
-      value: { policyId, canManage: true, items: [] },
+      value: {
+        policyId,
+        canManage: true,
+        targetPolicyRoles: usage.roles,
+        items: [expect.objectContaining({ kind: "PANEL", kindLabel: "Panel", verb: "USE", verbLabel: "Use" })],
+      },
     });
 
     const inspectHandler = registeredPanelOperation(INSPECT_POLICY_ACCESS)?.handler;

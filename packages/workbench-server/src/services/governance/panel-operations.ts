@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema, type RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
@@ -105,8 +105,35 @@ const policyUsageSchema = z.object({
   roleCount: z.number().int().nonnegative(),
   userCount: z.number().int().nonnegative(),
   roles: z.array(z.object({ id: z.string().min(1), name: z.string() })),
+  kindLabels: z.record(z.string(), z.string()),
+  verbLabels: z.record(z.string(), z.string()),
 }).strict();
 const jsonReadResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonObjectSchema });
+
+async function readPolicyUsage(host: PanelOperationHost, policyId: string) {
+  const envelope = await ownerPost(host, "/panel/governance/policies/usage", { id: policyId }, ownerEnvelopeSchema);
+  if (!envelope.success) {
+    throw new HttpError(422, envelope.message ?? "The owner could not read the policy impact",
+      "PERMISSION_POLICY_USAGE_UNAVAILABLE");
+  }
+  return policyUsageSchema.parse(envelope.data);
+}
+
+function labelGrantList(
+  items: unknown,
+  kindLabels: Record<string, string>,
+  verbLabels: Record<string, string>,
+): RuntimeJsonObject[] {
+  return (items as RuntimeJsonObject[]).map(item => {
+    const kind = String(item.kind);
+    const verb = String(item.verb);
+    return {
+      ...item,
+      kindLabel: kindLabels[kind] ?? kind,
+      verbLabel: verbLabels[verb] ?? verb,
+    };
+  });
+}
 
 function policyReadTargetId(target?: { kind: string; primaryKey?: string } | null): string {
   if (!target || target.kind !== "object" || !target.primaryKey) {
@@ -1035,9 +1062,17 @@ export const governanceServerOperations = [
     async execute(host: PanelOperationHost, call) {
       const policyId = policyReadTargetId(call.target);
       const { entryIds } = previewPolicyEntryGrantInputSchema.parse(call.input);
+      const [preview, usage] = await Promise.all([
+        previewEntryGrantPayload(host.executor.credentials, host.executor.owner.domainId, policyId, entryIds),
+        readPolicyUsage(host, policyId),
+      ]);
       return {
         kind: "json" as const,
-        value: await previewEntryGrantPayload(host.executor.credentials, host.executor.owner.domainId, policyId, entryIds),
+        value: {
+          ...preview,
+          targetPolicyRoles: usage.roles,
+          candidates: labelGrantList(preview.candidates, usage.kindLabels, usage.verbLabels),
+        },
       };
     },
   },
@@ -1074,15 +1109,12 @@ export const governanceServerOperations = [
     async execute(host: PanelOperationHost, call) {
       const policyId = policyReadTargetId(call.target);
       const { entryId } = previewEntryRevokeInputSchema.parse(call.input);
-      const preview = await policyEntryRevokePreviewPayload(
-        host.executor.credentials, host.executor.owner.domainId, policyId, entryId,
-      );
-      const envelope = await ownerPost(host, "/panel/governance/policies/usage", { id: policyId }, ownerEnvelopeSchema);
-      if (!envelope.success) {
-        throw new HttpError(422, envelope.message ?? "The owner could not read the policy impact",
-          "PERMISSION_POLICY_USAGE_UNAVAILABLE");
-      }
-      const usage = policyUsageSchema.parse(envelope.data);
+      const [preview, usage] = await Promise.all([
+        policyEntryRevokePreviewPayload(
+          host.executor.credentials, host.executor.owner.domainId, policyId, entryId,
+        ),
+        readPolicyUsage(host, policyId),
+      ]);
       return {
         kind: "json" as const,
         value: {
@@ -1124,9 +1156,17 @@ export const governanceServerOperations = [
     resultSchema: jsonReadResultSchema,
     async execute(host: PanelOperationHost, call) {
       const policyId = policyReadTargetId(call.target);
+      const [pending, usage] = await Promise.all([
+        listPendingPolicyGrantsPayload(host.executor.credentials, host.executor.owner.domainId, policyId),
+        readPolicyUsage(host, policyId),
+      ]);
       return {
         kind: "json" as const,
-        value: await listPendingPolicyGrantsPayload(host.executor.credentials, host.executor.owner.domainId, policyId),
+        value: {
+          ...pending,
+          targetPolicyRoles: usage.roles,
+          items: labelGrantList(pending.items, usage.kindLabels, usage.verbLabels),
+        },
       };
     },
   },
