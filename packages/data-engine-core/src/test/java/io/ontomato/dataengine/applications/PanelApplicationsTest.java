@@ -26,7 +26,7 @@ class PanelApplicationsTest {
     private final TransactionTemplate tx = mock(TransactionTemplate.class);
     private final ApplicationAccess access = mock(ApplicationAccess.class);
     private final PanelResources panels = mock(PanelResources.class);
-    private final ProductPrincipalLookup grants = mock(ProductPrincipalLookup.class);
+    private final IdentityPrincipalDirectory grants = mock(IdentityPrincipalDirectory.class);
     private final User user = mock(User.class);
     private final ApplicationCatalog catalog;
     private final io.ontomato.dataengine.service.authorization.AuthorizationService authorization =
