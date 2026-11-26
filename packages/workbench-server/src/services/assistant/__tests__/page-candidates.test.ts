@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   opsDiagnosis: vi.fn<[], Promise<AgentRow | undefined>>(),
   profile: vi.fn<[{ domainId: string; userId: string }, string[]], Promise<Map<string, string>>>(),
   findByUse: vi.fn(),
-  observeAccess: vi.fn<[], Promise<void>>(),
+  managementAccess: vi.fn<[], Promise<void>>(),
   homePanelId: vi.fn<[], Promise<string | null>>(),
 }));
 
@@ -44,8 +44,8 @@ vi.mock("../store", () => ({ assistantStore: { channelAgents: mocks.agents } }))
 vi.mock("../authorization", () => ({
   allowedAgents: async (agents: AgentRow[]) => agents.filter(agent => Object.values(agentIds).includes(agent.id) || grantedIds.includes(agent.id)),
 }));
-vi.mock("../../../identity/installed", () => ({
-  workbenchIdentity: () => ({ assertObserveAccess: mocks.observeAccess }),
+vi.mock("../../../identity/management", () => ({
+  assertManagement: mocks.managementAccess,
 }));
 vi.mock("../../product-assets/agent-profile", () => ({ agentsWithProductProfiles: mocks.profile }));
 vi.mock("../../product-panels/skill-provider", () => ({
@@ -252,7 +252,7 @@ beforeEach(() => {
     ids.includes(agentIds.productProfile) ? [[agentIds.productProfile, "profile-1"]] : [],
   ));
   mocks.opsDiagnosis.mockResolvedValue(undefined);
-  mocks.observeAccess.mockResolvedValue(undefined);
+  mocks.managementAccess.mockReset().mockResolvedValue(undefined);
   mocks.homePanelId.mockResolvedValue(null);
   mocks.agents.mockResolvedValue([
     agentRow(agentIds.regular, "regular", [], { sortOrder: 0 }),
@@ -648,7 +648,7 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
   expect(opsPage.defaultAgentId).toBe(opsId);
   expect(opsPage.presetAgentIds).toEqual({ regular: agentIds.regular, "ops-diagnosis": opsId });
 
-  // Non-observer page: ops-diagnosis is NOT offered as a candidate.
+  // The data browser does not offer the diagnosis agent.
   const nonOpsPage = await listAssistantAgents(
     owner,
     credentials,
@@ -657,10 +657,10 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
   expect(nonOpsPage.agents.map((a) => a.id)).toEqual([agentIds.regular]);
   expect(nonOpsPage.presetAgentIds).toEqual({ regular: agentIds.regular });
 
-  // The legacy diagnose permission makes no difference to agent use or an already admitted page.
-  mocks.observeAccess.mockRejectedValue(new HttpError(403, "Observe permission required", "FORBIDDEN"));
+  // Diagnosis candidate selection depends on entry admission and agent use.
+  mocks.managementAccess.mockRejectedValue(new HttpError(403, "Management denied", "FORBIDDEN"));
   expect((await listAssistantAgents(owner, credentials)).agents.map((a) => a.id)).toEqual([agentIds.regular, builderId, opsId]);
-  const deniedObserverPage = await listAssistantAgents(
+  const diagnosisPage = await listAssistantAgents(
     owner,
     credentials,
     queryFromSearch({
@@ -668,12 +668,11 @@ it("uses only agent authorization for ops-diagnosis in chat and still verifies t
       member: JSON.stringify({ source: opsSource, memberPath: [], ref: opsTurnRef }),
     }),
   );
-  expect(deniedObserverPage.agents.map((a) => a.id)).toEqual([agentIds.regular, opsId]);
-  expect(deniedObserverPage.presetAgentIds).toEqual({ regular: agentIds.regular, "ops-diagnosis": opsId });
-  expect(mocks.observeAccess).not.toHaveBeenCalled();
+  expect(diagnosisPage.agents.map((a) => a.id)).toEqual([agentIds.regular, opsId]);
+  expect(diagnosisPage.presetAgentIds).toEqual({ regular: agentIds.regular, "ops-diagnosis": opsId });
+  expect(mocks.managementAccess).not.toHaveBeenCalled();
 
   // Revoking USE removes diagnosis from the directory.
-  mocks.observeAccess.mockResolvedValue(undefined);
   grantedIds = grantedIds.filter((id) => id !== opsId);
   expect((await listAssistantAgents(owner, credentials)).agents.map((a) => a.id)).toEqual([agentIds.regular, builderId]);
 });
