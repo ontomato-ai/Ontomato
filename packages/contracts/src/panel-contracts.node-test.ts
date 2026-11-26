@@ -3283,6 +3283,19 @@ test("an object control must declare the child fields a reader fills", async () 
   assert.equal(parses({ kind: "code", language: "json" }).success, true);
 });
 
+test("a Markdown string is a text control in its Markdown presentation, with no kind of its own", async () => {
+  const { panelFormFieldSchema } = await import("./panel-projection");
+  const field = { ...editableField, path: "/prompt", label: "Prompt", valueSchema: { type: "string" } };
+  const parses = (control: unknown) => panelFormFieldSchema.safeParse({ ...field, control });
+
+  // The owner's value stays a plain string; only how it is drawn changes.
+  assert.equal(parses({ kind: "text", presentation: "markdown" }).success, true);
+  assert.equal(parses({ kind: "text" }).success, true);
+  // Markdown is no longer a control kind of its own.
+  assert.equal(parses({ kind: "markdown" }).success, false);
+  assert.equal(parses({ kind: "text", presentation: "rich-text" }).success, false);
+});
+
 test("object form fields declare discriminated variants, validate invariants, and prune inactive values recursively", () => {
   const opt = (value: string | number, label: string, disabled = false) => ({
     value, label, description: null, disabled, disabledReason: disabled ? "Unavailable" : null,

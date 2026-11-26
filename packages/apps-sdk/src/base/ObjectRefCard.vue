@@ -39,8 +39,6 @@ const props = withDefaults(
     caption?: string;
     /** Panel message key (resolved via `panel.t`) or platform i18n key for `caption`. */
     captionKey?: string;
-    /** Locale-keyed map for `caption`. */
-    captions?: Readonly<Record<string, string>>;
     /** Explicit primary display name override. */
     title?: string;
     /** Field/column key providing the primary display name when reading from `record` or metric `result`. */
@@ -75,8 +73,6 @@ const props = withDefaults(
     buttonLabel?: string;
     /** Panel message key or platform i18n key for `buttonLabel`. */
     buttonLabelKey?: string;
-    /** Locale-keyed map for `buttonLabel`. */
-    buttonLabels?: Readonly<Record<string, string>>;
     /** Whether clicking the card navigates when a target reference is present. Defaults to `true`. */
     clickable?: boolean;
     /** Tighter padding for dense relationship strips and inline cards. Defaults to `false`. */
@@ -92,7 +88,6 @@ const props = withDefaults(
     field: undefined,
     caption: undefined,
     captionKey: undefined,
-    captions: undefined,
     title: undefined,
     titleField: undefined,
     subtitle: undefined,
@@ -110,7 +105,6 @@ const props = withDefaults(
     buttonSize: "default",
     buttonLabel: undefined,
     buttonLabelKey: undefined,
-    buttonLabels: undefined,
     clickable: true,
     compact: false,
     emptyText: "—",
@@ -328,7 +322,6 @@ const resolved = computed<ResolvedCard>(() => {
 const resolvedCaption = computed(() =>
   resolveLocalizedText({
     key: props.captionKey,
-    map: props.captions,
     fallback: props.caption,
     locale: locale.value,
     panelText: panel?.t,
@@ -368,7 +361,6 @@ const monogram = computed(() => {
 const resolvedButtonLabel = computed(() => {
   const custom = resolveLocalizedText({
     key: props.buttonLabelKey,
-    map: props.buttonLabels,
     fallback: props.buttonLabel,
     locale: locale.value,
     panelText: panel?.t,

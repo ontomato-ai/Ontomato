@@ -39,7 +39,7 @@ const field = (path: string, label: string, control: PanelFormDescription["field
 const fields: PanelFormDescription["fields"] = [
   field("/name", "Name", { kind: "text" }, { required: true }),
   field("/enabled", "Enabled", { kind: "switch" }),
-  field("/systemPrompt", "Instructions", { kind: "markdown" }),
+  field("/systemPrompt", "Instructions", { kind: "text", presentation: "markdown" }),
   field("/modelSelection/modelId", "Model", reference(MODEL_OPTION, false)),
   field("/skills", "Skills", reference(SKILL, true)),
   field("/classNames", "Data scope", reference(OBJECT_TYPE, true), { help: "Nothing chosen keeps the default scope" }),

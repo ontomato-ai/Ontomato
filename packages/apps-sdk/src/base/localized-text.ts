@@ -73,17 +73,3 @@ export function readConfigString(
   }
   return undefined;
 }
-
-/** Reads a string-map property from a raw projection config record. */
-export function readConfigStringMap(
-  config: Readonly<Record<string, unknown>> | undefined,
-  key: string,
-): Readonly<Record<string, string>> | undefined {
-  if (!config) return undefined;
-  const raw = config[key];
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const entries = Object.entries(raw as Record<string, unknown>).filter(
-    (entry): entry is [string, string] => typeof entry[1] === "string",
-  );
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-}
