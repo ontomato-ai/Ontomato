@@ -85,7 +85,7 @@ let fabDrag: {
   moved: boolean;
   target: HTMLElement;
 } | null = null;
-let suppressFabClick = false;
+let suppressFabClickUntil = 0;
 
 const fabStyle = computed(() => fabPosition.value
   ? { right: `${fabPosition.value.right}px`, bottom: `${fabPosition.value.bottom}px` }
@@ -102,6 +102,8 @@ function syncFabPosition() {
   const element = fab.value;
   if (!element || !folded.value) return;
   fabArea ??= composerFabArea(element);
+  // Another visible page may have been dragged since this instance was drawn; storage is their shared place.
+  rememberedFabPosition = readComposerFabPosition() ?? rememberedFabPosition;
   const current = rememberedFabPosition ?? fabPosition.value ?? currentComposerFabPosition(element, fabArea);
   const next = clampFabPosition(current);
   fabPosition.value = next;
@@ -143,8 +145,7 @@ function finishFabDrag(event?: PointerEvent) {
   rememberedFabPosition = clampFabPosition(fabPosition.value);
   fabPosition.value = rememberedFabPosition;
   writeComposerFabPosition(rememberedFabPosition);
-  suppressFabClick = true;
-  window.setTimeout(() => (suppressFabClick = false), 0);
+  suppressFabClickUntil = performance.now() + 300;
 }
 
 function startFabDrag(event: PointerEvent) {
@@ -162,7 +163,7 @@ function startFabDrag(event: PointerEvent) {
 }
 
 function activateFab() {
-  if (suppressFabClick) return;
+  if (performance.now() < suppressFabClickUntil) return;
   unfold();
 }
 
