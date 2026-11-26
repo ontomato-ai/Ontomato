@@ -41,8 +41,12 @@
       },
       "pane": {
         "type": { "kind": "scalar", "type": "string" },
-        "default": "side",
+        "default": "closed",
         "deepLink": true
+      },
+      "expandedApps": {
+        "type": { "kind": "list", "items": { "kind": "scalar", "type": "string" } },
+        "default": []
       },
       "publishDrawerOpen": {
         "type": { "kind": "scalar", "type": "boolean" },
@@ -79,7 +83,7 @@
         "component": "ObjectList",
         "type": "platform:Application",
         "data": { "rows": "builderProjects" },
-        "state": { "selected": "app" },
+        "state": { "selected": "app", "expandedKeys": "expandedApps" },
         "operations": {
           "deleteDraft": "applications.deleteDraft",
           "deletePublished": "applications.delete"
@@ -89,7 +93,10 @@
           "leadingIconField": "icon",
           "statusField": "statusTag",
           "fallbackToFirst": true,
+          "searchable": false,
           "showFooter": false,
+          "rowActivation": "expand",
+          "rowExpandMode": "multiple",
           "emptyText": "empty.noApps",
           "rowActions": {
             "maxVisible": 1,
@@ -98,7 +105,7 @@
                 "kind": "local",
                 "id": "newChat",
                 "labelKey": "action.newConversation",
-                "icon": "sparkles",
+                "icon": "square-pen",
                 "iconOnly": true
               },
               {
@@ -137,7 +144,6 @@
           "statusStyle": "dot",
           "pagination": "load-more",
           "pageSize": 10,
-          "showFooter": false,
           "emptyText": "empty.noSessions"
         }
       },
