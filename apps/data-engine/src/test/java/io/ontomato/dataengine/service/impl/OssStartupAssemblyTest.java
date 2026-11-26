@@ -37,10 +37,10 @@ class OssStartupAssemblyTest {
         var jdbc = mock(JdbcTemplate.class);
         var legacy = mock(ProductGrantService.class);
         var authorization = new AnonymousAuthorization(legacy, jdbc);
-        var presets = new PresetAgentPolicies(authorization, legacy, authorization);
+        var presets = new PresetAgentPolicies(authorization, authorization);
         var target = new ObjectTarget("1", Kind.AGENT, "preset");
 
-        presets.initialize("1", PresetAgentPolicies.Source.WORKBENCH, List.of(target.id()), List.of());
+        presets.initialize("1", List.of(target.id()));
 
         for (Verb verb : List.of(Verb.USE, Verb.VIEW, Verb.EDIT)) {
             assertTrue(authorization.objectEntitlement("system", target, verb));

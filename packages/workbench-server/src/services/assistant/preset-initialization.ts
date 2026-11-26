@@ -43,7 +43,7 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
       `SELECT model_selection FROM ${table("ops_diagnosis_settings")} WHERE domain_id=$1`,
       [domainId],
     )).rows[0]?.model_selection ?? null;
-    const createdIds: string[] = [];
+    const ids: string[] = [];
     for (const preset of domainPresets) {
       const icon = "icon" in preset ? preset.icon : null;
       const modelSelection = preset.kind === OPS_DIAGNOSIS_KIND && legacyDiagnosisModel
@@ -54,7 +54,7 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
          VALUES($1,$2,$3,$4,$5,$6,NULL,$7::jsonb,$8,$9) ON CONFLICT(domain_id,kind) DO NOTHING RETURNING id`,
         [randomUUID(), domainId, preset.kind, preset.name, preset.description, icon, modelSelection, JSON.stringify(preset.skills), preset.sortOrder],
       );
-      for (const { id } of rows) createdIds.push(id);
+      for (const { id } of rows) ids.push(id);
     }
     if (upgradeGovernance) await upgradeGovernancePreset(client, domainId);
 
@@ -63,14 +63,10 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
        VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
       [domainId, presetPublicationKind, presetPublicationVersion],
     );
-    if (publication.rowCount) {
-      const { rows } = await client.query<{ id: string }>(
-        `SELECT id FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=ANY($2::text[])`,
-        [domainId, domainPresets.map(preset => preset.kind)],
-      );
+    if (publication.rowCount && ids.length) {
       await backendPost(
         "published-agent-presets", `${config.dataQuery.baseUrl}/authorization/objects/published-agent-presets`,
-        { domainId, ids: rows.map(({ id }) => id), createdIds }, { headers: productGovernanceServiceHeaders(), retries: 1 },
+        { domainId, ids }, { headers: productGovernanceServiceHeaders(), retries: 1 },
       );
     }
   });

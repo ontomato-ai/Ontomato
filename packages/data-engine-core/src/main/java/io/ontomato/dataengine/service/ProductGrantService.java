@@ -46,11 +46,6 @@ public class ProductGrantService implements InitializingBean {
             (row, index) -> new ProductGrants.Grant(row.getString(1), row.getString(2), row.getString(3)), domainId, id);
     }
 
-    /** Read the recorded audience while an installation is moving to object policies. */
-    public List<ProductGrants.Grant> legacyPresetGrants(String domainId, String id) {
-        return resourceGrants(domainId, id);
-    }
-
     public record OwnerFacts(String ownerId, String state) {}
 
     public Map<String, Boolean> allowedBatch(Collection<String> ids, String verb) {

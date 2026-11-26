@@ -22,7 +22,7 @@ vi.mock("../../../utils/backend-client", () => ({ backendGet: mocks.get, backend
 
 import { initializeDomainPresetAgents, initializeExistingDomainPresetAgents } from "../preset-initialization";
 
-it("moves only the pending preset publication and startup does not restore withdrawn access", async () => {
+it("publishes only newly inserted presets and never restores withdrawn access on startup", async () => {
   const domains = new Map([
     ["pending", new Map([["regular", "legacy-id"]])],
     ["already-published", new Map([["regular", "withdrawn-id"]])],
@@ -49,9 +49,6 @@ it("moves only the pending preset publication and startup does not restore withd
         markers.add(first);
         return { rowCount: 1 };
       }
-      if (sql.includes("SELECT id FROM assistant_agents")) {
-        return { rows: [...staged.get(first)!.values()].map(id => ({ id })) };
-      }
       return { rows: [] };
     };
     await callback({ query });
@@ -61,18 +58,18 @@ it("moves only the pending preset publication and startup does not restore withd
 
   const failure = new Error("Policy write failed");
   mocks.post.mockRejectedValueOnce(failure).mockImplementation(async (_name, _url, body) => {
-    for (const id of body.createdIds) granted.add(id);
+    for (const id of body.ids) granted.add(id);
   });
   await expect(initializeDomainPresetAgents("pending")).rejects.toBe(failure);
   expect(publications.has("pending")).toBe(false);
   expect([...domains.get("pending")!.values()]).toEqual(["legacy-id"]);
 
   await initializeExistingDomainPresetAgents();
-  const { ids, createdIds } = mocks.post.mock.calls[1][2];
-  expect(ids).toContain("legacy-id");
-  expect(createdIds).toEqual(ids.filter((id: string) => id !== "legacy-id"));
-  expect(granted.size).toBeGreaterThan(0);
-  const revoked = createdIds[0];
+  const ids = [...domains.get("pending")!.values()].filter(id => id !== "legacy-id");
+  expect(ids).toHaveLength(4);
+  expect(mocks.post.mock.calls[1][2]).toEqual({ domainId: "pending", ids });
+  const revoked = ids[0];
+  expect(granted.has(revoked)).toBe(true);
   granted.delete(revoked);
 
   await initializeExistingDomainPresetAgents();

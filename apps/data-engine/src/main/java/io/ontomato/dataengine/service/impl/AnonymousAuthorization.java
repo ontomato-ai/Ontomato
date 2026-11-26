@@ -71,8 +71,7 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     }
 
     @Override
-    public void initialize(String domainId, PresetAgentPolicies.Source source, List<String> created,
-            Map<String, List<PresetAgentPolicies.AgentGrant>> legacyByRole) {
+    public void initialize(String domainId, List<String> ids) {
         // The anonymous subject already has these agent verbs and has no roles.
     }
 

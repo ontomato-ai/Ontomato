@@ -24,20 +24,18 @@ public class PublishedAgentPresetsController {
         this.workbench = workbench;
     }
 
-    public record Presets(String domainId, List<UUID> ids, List<UUID> createdIds) {}
+    public record Presets(String domainId, List<UUID> ids) {}
 
     @PostMapping(PATH)
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void initialize(HttpServletRequest request, @RequestBody Presets presets) {
         workbench.authenticate(request);
         if (presets.domainId() == null || presets.domainId().isBlank() || presets.ids() == null
-                || presets.createdIds() == null || presets.ids().stream().anyMatch(Objects::isNull)
-                || !presets.ids().containsAll(presets.createdIds())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The domain, preset IDs and their newly installed subset are required.");
+                || presets.ids().stream().anyMatch(Objects::isNull)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The domain and installed agent IDs are required.");
         }
-        var created = presets.createdIds().stream().distinct().map(UUID::toString).toList();
-        var existing = presets.ids().stream().distinct().filter(id -> !presets.createdIds().contains(id))
-                .map(UUID::toString).toList();
-        policies.initialize(presets.domainId(), PresetAgentPolicies.Source.WORKBENCH, created, existing);
+        if (!presets.ids().isEmpty()) {
+            policies.initialize(presets.domainId(), presets.ids().stream().distinct().map(UUID::toString).toList());
+        }
     }
 }
