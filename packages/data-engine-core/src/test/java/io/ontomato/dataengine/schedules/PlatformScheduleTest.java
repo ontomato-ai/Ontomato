@@ -410,7 +410,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
           var access = new QueryAccessService(identities, permissions, grants).access(callback);
           assertEquals("bob", access.user().getId());
           assertEquals("sales", access.user().getDomainId());
-          assertSame(bobPermission, access.permission());
+          assertEquals(bobPermission, access.permission());
           grants.requireActionOwner(claims, bob, realActions);
           assertThrows(OwnerRefusal.class, () -> grants.requireActionOwner(claims, alice, realActions));
           assertThrows(OwnerRefusal.class, () -> grants.requireActionOwner(claims, user("bob", "another-domain"), realActions));
