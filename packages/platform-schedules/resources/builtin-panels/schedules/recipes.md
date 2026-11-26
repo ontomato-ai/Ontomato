@@ -11,7 +11,7 @@
 - 状态 `selectedTask`：选中的任务。选中后：
   - `detailHeader.record` / `detailSummary.record` / `detailPause.record`：任务记录（`platform:ScheduledTask.record`），并在 `outputs` 上提供 `revision`、`enabled`、`paused`、`pauseCode`、`latestResultPath`、`isRunning`。
   - `history.rows`：执行记录分页列表（`platform:ScheduledTask.runRecords`，新到旧，`cursor` 取上一页的 `nextCursor`）。
-- 状态 `runId`：定位到一条运行，由 `focus.record`（`platform:ScheduledTask.runRecord`）展示完整状态、触发方式、耗时、失败原因、结果摘要、运行时配置、结果与执行详情，并在 `outputs` 上提供 `resultPath` 与 `isRunning`。
+- 状态 `runId`：定位到一条运行。`focus` 是嵌套面板 `builtin-product-scheduled-task-run-detail`（头部状态、暂停/失败提示、起止时间、输出摘要），`runDetail` 是这条运行的执行摘要（`platform:ScheduledTask.runRecord`，`runId` 给了取那一条、不给取最近一次；`outputs` 上有 `status`、`resultPath` 与 `isRunning`）。
 - 状态 `compose`：`"new"` 打开新建表单（`newForm`），`"edit"` 打开选中任务的编辑表单（`editForm`）。用 `present` 设置这一公开状态。
 
 打开某个状态的地址：使用扁平具名参数，例如 `/schedules?app=agents`、`/schedules?selectedTask=<任务ID>`，或再加 `&runId=<运行ID>` 打开某条运行。

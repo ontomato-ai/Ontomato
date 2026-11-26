@@ -43,7 +43,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -64,7 +64,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -88,7 +88,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -113,7 +113,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -135,7 +135,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -157,7 +157,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"

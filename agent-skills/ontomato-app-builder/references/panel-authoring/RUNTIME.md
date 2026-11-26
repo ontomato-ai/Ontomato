@@ -526,7 +526,10 @@ in panel templates / slots) instead of formatting business fields in panel HTML:
   `selected`, built-in per-item `rowActions`, and scoped slots (`#item`, `#item-header-actions`, `#group-header-actions`,
   `#group-empty`, `#empty`). Emits `layout-change` only when the reader finishes a drag or resize interaction.
 - `<operation-result>` (`OperationResult`): renders a read-only panel operation's result (`markdown`, `json`, `file`,
-  or multi-section `sections` with tabbed `records` tables, language-tagged `code`, and `json` panes).
+  or multi-section `sections` with an optional conclusion banner, `fields` label/value pairs, tabbed `records` tables,
+  language-tagged `code`, and `json` panes). `layout: "stacked"` draws the sections one under another instead of in tabs.
+  The banner states the outcome the operation reached in the platform field tones (`default`, `info`, `success`,
+  `warning`, `danger`); a refused, thrown, or timed-out operation stays an operation error, never a banner.
 - `<object-list>` (`ObjectList`) also supports `layout: "tabs"` (horizontal tab strip with overflow buttons, per-tab
   `rowActions`, and `#tabs-extra`), `dynamicColumns: true` (derives table columns from owner `fieldLabels` and record
   `fields` when no static `columns` are set), `showColumnToggle`, and `exportable` (current-page UTF-8 BOM CSV export).
