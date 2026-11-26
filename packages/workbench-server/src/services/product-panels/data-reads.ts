@@ -413,6 +413,11 @@ function readAdapters(
       form: (selection, params) => governance.users.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => governance.users.createForm(formParams(params)),
       effectivePermissions: selection => governance.users.effectivePermissions(selection.primaryKey!),
+      effectiveAccess: (selection, params) => governance.users.effectiveAccess(
+        selection.primaryKey!,
+        panelReadParameterSchemas.keyword.optional().parse(params.category),
+      ),
+      effectiveAccessCounts: selection => governance.users.effectiveAccessCounts(selection.primaryKey!),
       effectiveOrgShares: selection => governance.users.effectiveOrgShares(selection.primaryKey!),
       effectiveManagementOperations: selection => governance.users.effectiveManagementOperations(selection.primaryKey!),
       effectiveSubjectDataPermissions: selection => governance.users.effectiveDataPermissions(selection.primaryKey!, "subject"),
@@ -452,6 +457,11 @@ function readAdapters(
       policyCandidates: selection => governance.roles.policyCandidates(selection.primaryKey!),
       contributionPolicies: selection => governance.roles.contributionPolicies(selection.primaryKey!),
       contributionWorkflowSteps: selection => governance.roles.contributionWorkflowSteps(selection.primaryKey!),
+      effectiveAccess: (selection, params) => governance.roles.effectiveAccess(
+        selection.primaryKey!,
+        panelReadParameterSchemas.keyword.optional().parse(params.category),
+      ),
+      effectiveAccessCounts: selection => governance.roles.effectiveAccessCounts(selection.primaryKey!),
     },
     [PERMISSION_POLICY]: {
       count: () => governance.policies.count(),
