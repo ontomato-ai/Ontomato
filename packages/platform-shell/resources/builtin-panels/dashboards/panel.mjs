@@ -87,6 +87,18 @@ await mountPanel({
   setup() {
     const { instance, navigate, notify, t } = usePanelContext();
     const values = instance.state.values;
+    const legacyLayout = computed(() => instance.frameState?.()?.legacyDashboardLayout === true);
+    const cardActions = computed(() => ({
+      maxVisible: 0,
+      items: [
+        { kind: "operation", operation: "renameCard", labelKey: "card.rename", prefill: true },
+        ...(legacyLayout.value ? [] : [
+          { kind: "local", id: "parameters", labelKey: "card.parameters", when: { field: "kind", equals: "metric" } },
+          { kind: "local", id: "metricSource", labelKey: "card.metricSource", when: { field: "kind", equals: "metric" } },
+        ]),
+        { kind: "operation", operation: "deleteCard", labelKey: "card.delete", tone: "danger" },
+      ],
+    }));
 
     const dashboardRef = computed(() => values.value.dashboardId ?? null);
     const dashboardPrimaryKey = computed(() => dashboardRef.value?.primaryKey ?? null);
@@ -520,6 +532,8 @@ await mountPanel({
 
     return {
       t,
+      legacyLayout,
+      cardActions,
       hasBoard,
       hasCard,
       noBoards,

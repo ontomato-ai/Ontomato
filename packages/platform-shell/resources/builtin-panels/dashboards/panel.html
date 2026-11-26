@@ -239,18 +239,18 @@
 </style>
 
 <div id="app" v-cloak class="db-page">
-  <page-header density="bar" :title="t('panel.name')"></page-header>
+  <page-header v-if="!legacyLayout" density="bar" :title="t('panel.name')"></page-header>
   <header class="db-topbar">
     <div class="db-tabs-wrap">
       <projection slot="boardTabs" class="db-tabs-member">
-        <template #tabs-extra>
+        <template v-if="!legacyLayout" #tabs-extra>
           <projection slot="createBoard" @done="onBoardCreated"></projection>
         </template>
       </projection>
     </div>
   </header>
 
-  <main class="db-canvas">
+  <main class="db-canvas" :class="{ 'db-canvas--legacy': legacyLayout }">
     <div v-if="noBoards" class="db-no-boards" data-testid="dashboards-empty">
       <sdk-empty :description="t('empty.noBoards')"></sdk-empty>
     </div>
@@ -258,7 +258,7 @@
     <projection
       v-else-if="hasBoard"
       slot="boardGrid"
-      :values="{ emptyGroupTitle: t('group.untitled') }"
+      :values="{ emptyGroupTitle: t('group.untitled'), rowActions: cardActions }"
       @layout-change="onLayoutChange"
       @row-action="onCardRowAction"
     >
@@ -433,7 +433,7 @@
           @update:zoomed="(open) => setCardZoomed(itemRef.primaryKey, open)"
           @truncation-change="(hint) => setCardTruncation(itemRef.primaryKey, hint)"
         >
-          <template #table-footer-actions>
+          <template v-if="!legacyLayout" #table-footer-actions>
             <sdk-button
               size="small"
               text
@@ -481,6 +481,7 @@
   </sdk-dialog>
 
   <sdk-dialog
+    v-if="!legacyLayout"
     v-model="sourceDialogOpen"
     :title="sourceDialogTitle"
     width="min(520px, calc(100vw - 24px))"

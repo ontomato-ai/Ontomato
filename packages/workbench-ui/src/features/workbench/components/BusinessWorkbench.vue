@@ -103,12 +103,16 @@ const resolvePilot = usePilotPage()((address) => {
     : address;
   void display.navigate(target, { history: "replace" });
 });
+function dashboardPanelAddress(address: string) {
+  const path = address.split("?")[0];
+  return path === props.internalPages?.dashboard
+    ? routes.dashboards.path + address.slice(path.length)
+    : address;
+}
 function pilot(address: string) {
   if (!props.internalPages) return resolvePilot(address);
   const path = address.split("?")[0];
-  if (path === props.internalPages.dashboard) {
-    return resolvePilot(routes.dashboards.path + address.slice(path.length));
-  }
+  if (path === props.internalPages.dashboard || path === routes.dashboards.path) return resolvePilot(dashboardPanelAddress(address));
   if (path === props.internalPages.agents) return resolvePilot(address);
   return null;
 }
@@ -144,7 +148,7 @@ const admitPage = usePageAdmission();
 const display = useConversationDisplay({
   features: () => workbench.value.features,
   resolve: resolvePage,
-  ...(admitPage ? { admit: admitPage } : {}),
+  ...(admitPage ? { admit: (address: string) => admitPage(dashboardPanelAddress(address)) } : {}),
   serialize,
   // The shell's name and address for the page from the moment it opens; selection, highlights, public state and open forms are the page's report.
   context: (page, reported) => ({
@@ -174,6 +178,11 @@ watch(
 /** The page the display shows, mounted from its address by the assembly's registry. */
 const pilotPage = computed(() => (display.page.value ? pilot(display.page.value.address) : null));
 const pageAddress = computed(() => display.page.value?.address ?? null);
+const inStandaloneDashboard = computed(() => Boolean(props.internalPages && pageAddress.value
+  && dashboardPanelAddress(pageAddress.value).split("?")[0] === routes.dashboards.path));
+const selectedDashboardId = computed(() => inStandaloneDashboard.value
+  ? new URLSearchParams(pageAddress.value?.split("?")[1]).get("dashboardId")
+  : null);
 
 const inAgentSettings = computed(() => {
   const path = pageAddress.value?.split("?")[0];
@@ -266,6 +275,16 @@ const labels = computed(() => {
   return base;
 });
 const dashboards = props.internalPages ? useDashboardStore() : null;
+if (dashboards) {
+  dashboards.bindSurface({
+    get dashboardId() { return selectedDashboardId.value ?? ""; },
+    navigate(id) {
+      if (id) openDashboardApplication(id);
+      else void display.close();
+    },
+  });
+  onBeforeUnmount(() => dashboards.bindSurface(null));
+}
 const dashboardsOpen = ref(false);
 const dashboardMenu = ref<string | null>(null);
 
@@ -288,7 +307,7 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   features: workbenchFeatures(
     props.features,
     inPanelApplication.value
-      ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!)
+      ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!, !inStandaloneDashboard.value)
       : null,
   ),
 }));
@@ -700,9 +719,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
           <span>{{ t('analysis.myDashboards') }}</span>
           <button type="button" :aria-label="t('common.close')" @click="closeDashboards"><X :size="14" /></button>
         </header>
-        <div class="legacy-dashboard-items" :aria-busy="dashboards.loadingDashboards">
+        <div v-loading="dashboards.loadingDashboards" class="legacy-dashboard-items" :aria-busy="dashboards.loadingDashboards">
           <p v-if="!dashboards.loadingDashboards && !dashboards.dashboardItems.length">{{ t('analysis.noDashboards') }}</p>
-          <div v-for="board in dashboards.dashboardItems" :key="board.id" class="legacy-dashboard-item" :class="{ active: board.id === dashboards.currentDashboardId }">
+          <div v-for="board in dashboards.dashboardItems" :key="board.id" class="legacy-dashboard-item" :class="{ active: inStandaloneDashboard && board.id === selectedDashboardId }">
             <input v-if="dashboards.editingDashboardId === board.id" v-model="dashboards.editingDashboardName" :aria-label="t('common.rename')" maxlength="50"
               @keydown.enter.prevent="($event.target as HTMLInputElement).blur()" @keydown.esc.stop="dashboards.cancelDashboardRename()" @blur="dashboards.saveDashboardRename(board)" />
             <template v-else>
@@ -765,6 +784,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
         v-if="pilotPage"
         :key="display.page.value!.instance"
         v-bind="pilotPage.props"
+        :class="{ 'legacy-dashboard-surface': inStandaloneDashboard }"
+        v-bind:legacy-dashboard-layout="inStandaloneDashboard || undefined"
         :take-opened-entry="display.page.value?.takeOpenedEntry"
         :object-refresh="display.objectRefresh.value"
         :live-state="display.liveState.value"
