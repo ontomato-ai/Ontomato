@@ -184,7 +184,7 @@ describe("retired object view legacy links", () => {
     expect(window.location.hash.replace(/^#/, "")).toBe("/browser/views?selected=Person~person-1&returnTo=workspace");
     await router.push("/browser/data/Order");
     await settle();
-    expect(window.location.hash.replace(/^#/, "")).toBe("/browser/data?selectedClass=Order&viewMode=table");
+    expect(window.location.hash.replace(/^#/, "")).toBe("/browser/data?selectedClass=platform:ObjectType~Order&viewMode=table");
     expect(drawErrors).toEqual([]);
   });
 });

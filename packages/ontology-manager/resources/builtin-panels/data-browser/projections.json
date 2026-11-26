@@ -1,0 +1,1078 @@
+[
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001",
+    "input": {
+      "componentId": "@ontomato/sdk:InstanceGraph",
+      "inputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "start": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "selectedGroup": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "query": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "expandedNodes": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "@any"
+          }
+        },
+        "neighborFilter": {
+          "kind": "json"
+        }
+      },
+      "outputs": {
+        "selectedNode": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "selectedGroup": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "positions": {
+          "kind": "json"
+        },
+        "expandedNodes": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "@any"
+          }
+        },
+        "visibleRelationKinds": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        },
+        "neighborFilter": {
+          "kind": "json"
+        }
+      },
+      "data": {
+        "overview": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instanceGraphOverview",
+          "params": {}
+        },
+        "connections": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instanceGraphConnections",
+          "params": {}
+        },
+        "counts": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instanceGraphStatistics",
+          "params": {}
+        },
+        "neighbors": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instanceNeighbors",
+          "params": {}
+        }
+      },
+      "config": {
+        "fitMode": "fit",
+        "expandOn": "activate",
+        "showLayerFilter": false,
+        "showLegend": false,
+        "showToolbar": true,
+        "showNeighborControls": false
+      },
+      "name": "Business instance relationship graph",
+      "description": "Sampled overview and paginated one-hop neighborhood graph of business object instances with per-person saved node positions.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instanceGraphClasses",
+          "params": {}
+        }
+      },
+      "config": {
+        "placeholderKey": "db.allClasses",
+        "clearable": true,
+        "size": "default",
+        "metaField": "instanceCount"
+      },
+      "name": "Business instance graph search class filter",
+      "description": "Optional business object type filter narrowing instance graph search results.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000003",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "className": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "version": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instanceGraphSearch",
+          "params": {
+            "search": {
+              "input": "search"
+            },
+            "className": {
+              "input": "className"
+            },
+            "version": {
+              "input": "version"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "list",
+        "subtitleField": "classLabel",
+        "searchable": false,
+        "showFooter": false,
+        "showChevron": false,
+        "emptyText": "db.graphSearchEmpty"
+      },
+      "name": "Business instance graph search results",
+      "description": "Matches business instances in the current graph snapshot by keyword and optional object type.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000004",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectHeader",
+      "inputs": {
+        "object": {
+          "kind": "object",
+          "objectType": "@any"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instanceRecord",
+          "params": {
+            "object": {
+              "input": "object"
+            }
+          }
+        }
+      },
+      "config": {
+        "subtitle": "",
+        "fallbackTitle": ""
+      },
+      "name": "Selected instance title",
+      "description": "Name of the selected graph instance, whose read-only outputs offer the full detail address.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000005",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectSummary",
+      "inputs": {
+        "object": {
+          "kind": "object",
+          "objectType": "@any"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instanceRecord",
+          "params": {
+            "object": {
+              "input": "object"
+            }
+          }
+        }
+      },
+      "config": {
+        "showTitle": false,
+        "density": "compact",
+        "emptyText": "db.nodeSummaryEmpty",
+        "missingText": "db.nodeSummaryMissing"
+      },
+      "name": "Selected instance attributes",
+      "description": "Quick read-only attribute overview of the selected business instance.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000006",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "placeholderKey": "db.selectClass",
+        "clearable": false,
+        "size": "default"
+      },
+      "name": "Business object type selector",
+      "description": "Searchable dropdown to switch the active business object type in table mode.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000007",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "fallbackToFirst": true,
+        "searchable": false,
+        "showFooter": false
+      },
+      "name": "Default business object type probe",
+      "description": "Selects the first available business object type automatically when entering table mode without a selected class.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000008",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "className": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:Attribute"
+            }
+          },
+          "read": "list",
+          "params": {
+            "className": {
+              "input": "className"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "list",
+        "searchable": false,
+        "showFooter": false
+      },
+      "name": "Selected business class attributes probe",
+      "description": "Loads the selected business object type's attributes for filter and sort field selectors.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "className": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "filters": {
+          "kind": "json"
+        },
+        "sort": {
+          "kind": "json"
+        },
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "instances",
+          "params": {
+            "className": {
+              "input": "className"
+            },
+            "filters": {
+              "input": "filters"
+            },
+            "sort": {
+              "input": "sort"
+            },
+            "search": {
+              "input": "search"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "table",
+        "dynamicColumns": true,
+        "showColumnToggle": true,
+        "exportable": true,
+        "searchable": false,
+        "showChevron": false,
+        "showRowIndex": true,
+        "pinPrimaryColumn": true,
+        "rowActivation": "dblclick",
+        "showRangeBar": true,
+        "openOutput": "detailPath",
+        "emptyText": "db.tableEmpty",
+        "noMatchText": "db.tableNoMatch",
+        "pagination": "pages",
+        "pageSizes": [
+          20,
+          50,
+          100
+        ]
+      },
+      "name": "Business object instance records table",
+      "description": "Server-filtered, server-sorted, paginated multi-column table of business instances with dynamic columns, column visibility toggle, and current-page CSV export.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000010",
+    "input": {
+      "componentId": "@ontomato/sdk:InfoBanner",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "detailPanel",
+          "params": {}
+        }
+      },
+      "config": {
+        "field": "unavailableReason",
+        "hideWhenEmpty": true
+      },
+      "name": "Detail panel permission probe",
+      "description": "Reads whether the current user can configure this business object type's detail presentation.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000011",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectSummary",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "detailPanel",
+          "params": {}
+        }
+      },
+      "config": {
+        "showTitle": false,
+        "fields": [
+          "status",
+          "panelName",
+          "unavailableReason"
+        ]
+      },
+      "name": "Current detail panel binding",
+      "description": "Displays the currently configured detail panel status and name inside the presentation dialog.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000012",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectForm",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "form": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "detailPanelForm",
+          "params": {}
+        }
+      },
+      "config": {
+        "actions": "footer"
+      },
+      "operations": {
+        "saveDetailPanel": {
+          "operation": {
+            "kind": "PlatformOperation",
+            "id": "platform:ObjectType.saveDetailPanel"
+          },
+          "target": {
+            "input": "target"
+          }
+        }
+      },
+      "name": "Configure detail panel form",
+      "description": "Selects or clears the custom detail panel bound to this business object type.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000013",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "options": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ProductPanel"
+            }
+          },
+          "read": "options",
+          "params": {}
+        }
+      },
+      "config": {},
+      "name": "Detail panel picker",
+      "description": "Searches and picks a usable panel to bind as this business object type's detail panel.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000014",
+    "input": {
+      "componentId": "@ontomato/sdk:OperationButton",
+      "inputs": {
+        "objectType": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "outputs": {},
+      "data": {},
+      "config": {
+        "plain": true,
+        "labelKey": "db.restoreDefault",
+        "operation": "clearDetailPanel"
+      },
+      "operations": {
+        "clearDetailPanel": {
+          "operation": {
+            "kind": "PlatformOperation",
+            "id": "objectTypes.clearDetailPanel"
+          },
+          "target": {
+            "input": "objectType"
+          }
+        }
+      },
+      "name": "Restore default detail",
+      "description": "Clears the custom detail panel binding so the business object type falls back to the built-in read-only detail.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000015",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "searchable": false,
+        "showFooter": false
+      },
+      "name": "Business object type display labels probe",
+      "description": "Populates business object type display names for graph inspector and class scope labels.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-instance-graph",
+    "input": {
+      "componentId": "@ontomato/sdk:InstanceGraph",
+      "inputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "start": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "selectedGroup": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "query": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "expandedNodes": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "@any"
+          }
+        },
+        "neighborFilter": {
+          "kind": "json"
+        }
+      },
+      "outputs": {
+        "selectedNode": {
+          "kind": "object",
+          "objectType": "@any"
+        },
+        "selectedGroup": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "positions": {
+          "kind": "json"
+        },
+        "expandedNodes": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "@any"
+          }
+        },
+        "visibleRelationKinds": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        },
+        "neighborFilter": {
+          "kind": "json"
+        }
+      },
+      "data": {
+        "start": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "start",
+          "params": {}
+        },
+        "counts": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "counts",
+          "params": {}
+        },
+        "neighbors": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "neighbors",
+          "params": {}
+        }
+      },
+      "config": {
+        "fitMode": "fit",
+        "expandOn": "activate",
+        "showLayerFilter": false,
+        "showLegend": false,
+        "showToolbar": true,
+        "showNeighborControls": false
+      },
+      "name": "Four-layer instance relationship graph",
+      "description": "One-hop neighborhood graph of four-layer platform instances, starting from the reader's own node, with readable counts and per-person saved node positions.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-search-class-filter",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "instanceGraphClasses",
+          "params": {}
+        }
+      },
+      "config": {
+        "placeholderKey": "db.allClasses",
+        "clearable": true,
+        "size": "default",
+        "groupBy": "layer",
+        "metaField": "countDisplay"
+      },
+      "name": "Four-layer instance graph search class filter",
+      "description": "Optional four-layer type filter narrowing instance graph search results, grouped by layer with the reader's own readable count or status.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-search-results",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "className": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "instanceSearch",
+          "params": {
+            "search": {
+              "input": "search"
+            },
+            "className": {
+              "input": "className"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "list",
+        "subtitleField": "typeLabel",
+        "searchable": false,
+        "showFooter": false,
+        "showChevron": false,
+        "emptyText": "db.graphSearchEmpty"
+      },
+      "name": "Four-layer instance search results",
+      "description": "Matches four-layer instances by keyword and optional type, read live from the owners with no snapshot version.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-instance-title",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectHeader",
+      "inputs": {
+        "object": {
+          "kind": "object",
+          "objectType": "@any"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "instanceRecord",
+          "params": {
+            "object": {
+              "input": "object"
+            }
+          }
+        }
+      },
+      "config": {
+        "subtitle": "",
+        "fallbackTitle": ""
+      },
+      "name": "Selected four-layer instance title",
+      "description": "Name and type of the selected graph instance, whose read-only outputs offer the type label and any detail address.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-instance-summary",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectSummary",
+      "inputs": {
+        "object": {
+          "kind": "object",
+          "objectType": "@any"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "instanceRecord",
+          "params": {
+            "object": {
+              "input": "object"
+            }
+          }
+        }
+      },
+      "config": {
+        "showTitle": false,
+        "density": "compact",
+        "emptyText": "db.nodeSummaryEmpty",
+        "missingText": "db.nodeSummaryMissing"
+      },
+      "name": "Selected four-layer instance attributes",
+      "description": "Quick read-only attribute overview of the selected four-layer instance, as its owner reads it for this reader.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-class-picker",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "placeholderKey": "db.selectClass",
+        "clearable": false,
+        "size": "default",
+        "groupBy": "layer"
+      },
+      "name": "Four-layer type selector",
+      "description": "Searchable dropdown to switch the active four-layer type in table mode, grouped by layer.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-class-catalog-probe",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "fallbackToFirst": true,
+        "searchable": false,
+        "showFooter": false
+      },
+      "name": "Default four-layer type probe",
+      "description": "Selects the first available four-layer type automatically when entering table mode without a selected class.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-class-labels-probe",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "searchable": false,
+        "showFooter": false
+      },
+      "name": "Four-layer type display labels probe",
+      "description": "Populates four-layer type display names for graph inspector and class scope labels.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-db-capability-instance-table",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "className": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "instances",
+          "params": {
+            "className": {
+              "input": "className"
+            },
+            "search": {
+              "input": "search"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "table",
+        "dynamicColumns": true,
+        "showColumnToggle": true,
+        "exportable": true,
+        "searchable": false,
+        "showChevron": false,
+        "showRowIndex": true,
+        "pinPrimaryColumn": true,
+        "rowActivation": "dblclick",
+        "showRangeBar": true,
+        "openOutput": "detailPath",
+        "emptyText": "db.tableEmpty",
+        "noMatchText": "db.tableNoMatch",
+        "pagination": "pages",
+        "pageSizes": [
+          20,
+          50,
+          100
+        ]
+      },
+      "name": "Four-layer instance records table",
+      "description": "Paginated multi-column table of four-layer instances with dynamic columns, column visibility toggle, and current-page CSV export.",
+      "visibility": "platform"
+    }
+  }
+]

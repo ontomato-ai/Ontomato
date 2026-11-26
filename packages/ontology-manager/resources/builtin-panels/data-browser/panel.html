@@ -746,7 +746,7 @@
                 <code class="db-detail-key" :title="selectedNode?.primaryKey">{{ selectedNode?.primaryKey }}</code>
               </div>
               <div class="db-detail-head-actions">
-                <sdk-button text size="small" class="db-object-view-entry" @click="openSelectedNodeDetail">
+                <sdk-button v-if="nodeDetailPath" text size="small" class="db-object-view-entry" @click="openSelectedNodeDetail">
                   <svg class="db-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
                   <span>{{ t("db.viewFullDetail") }}</span>
                 </sdk-button>
@@ -799,7 +799,7 @@
           v-if="selectedClassKey"
           slot="instanceTable"
           :values="{ exportFileName }"
-          @choose="openInstanceDetail"
+          @choose="focusTableRowInGraph"
           @clear-filters="onListClearFilters"
         >
           <template #filters>
@@ -839,6 +839,7 @@
               <span>{{ t("db.configurePresentation") }}</span>
             </sdk-button>
             <sdk-button
+              v-if="attributeOptions.length > 0"
               text
               class="db-toolbar-text-btn"
               @click="openFilterDrawer"

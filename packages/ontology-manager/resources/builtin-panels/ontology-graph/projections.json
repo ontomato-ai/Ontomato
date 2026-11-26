@@ -1,0 +1,1432 @@
+[
+  {
+    "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectCount",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "count",
+          "params": {}
+        }
+      },
+      "config": {
+        "labelKey": "ontologyGraph.objectTypes"
+      },
+      "name": "Business ontology type count",
+      "description": "Number of declared object types in the business ontology.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2b",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectCount",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:Attribute"
+            }
+          },
+          "read": "count",
+          "params": {}
+        }
+      },
+      "config": {
+        "labelKey": "ontologyGraph.attributes"
+      },
+      "name": "Business ontology attribute count",
+      "description": "Number of declared attributes in the business ontology.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-cd13e0f3-ab1f-497f-87bd-be1733fadb2a",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectCount",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:Relationship"
+            }
+          },
+          "read": "count",
+          "params": {}
+        }
+      },
+      "config": {
+        "labelKey": "ontologyGraph.relationTypes"
+      },
+      "name": "Business ontology relation count",
+      "description": "Number of declared relationships in the business ontology.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-26d935eb-01ee-44ba-a389-b5c4f9277740",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "subtitleField": "className",
+        "searchable": false,
+        "showFooter": false,
+        "showChevron": true,
+        "searchFields": [
+          "label",
+          "primaryKey",
+          "className",
+          "showName",
+          "classDesc",
+          "searchableAttributes"
+        ],
+        "emptyText": ""
+      },
+      "name": "Business ontology object types",
+      "description": "Declared object types of the business ontology, searched and selected on the left explorer.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9dc2abcb-1a64-4e1a-b919-0b8f69a02b65",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        },
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:Relationship"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "subtitleField": "",
+        "searchable": false,
+        "showFooter": false,
+        "showChevron": true,
+        "searchFields": [
+          "label",
+          "primaryKey",
+          "desc",
+          "fromclass",
+          "toclass"
+        ],
+        "emptyText": ""
+      },
+      "name": "Business ontology relationships",
+      "description": "Declared relationships of the business ontology, searched and selected on the left explorer.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-business-relation-edges",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:Relationship"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "searchable": false,
+        "showFooter": false
+      },
+      "name": "Business ontology relationship edges",
+      "description": "Every declared relationship of the business ontology, held so the graph highlights the whole selected relation.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378",
+    "input": {
+      "componentId": "@ontomato/sdk:OntologyTypeGraph",
+      "inputs": {
+        "highlightedNodes": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:ObjectType"
+          }
+        },
+        "highlightedEdges": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:Relationship"
+          }
+        },
+        "pathFrom": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "pathTo": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "outputs": {
+        "selectedNode": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "selectedEdge": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        },
+        "positions": {
+          "kind": "json"
+        }
+      },
+      "data": {
+        "nodes": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        },
+        "edges": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:Relationship"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "edgeEnds": {
+          "source": "/fromclass",
+          "target": "/toclass"
+        },
+        "nodeCategory": "/className"
+      },
+      "name": "Business ontology graph",
+      "description": "Object types and relationships of the business ontology drawn as one graph.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-2e8cd535-4d3c-4851-88a4-840db0692aef",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "placeholderKey": "ontologyGraph.sourceObject",
+        "size": "default",
+        "clearable": true
+      },
+      "name": "Relationship path source",
+      "description": "Object type the shortest path starts at.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-bcac70a2-e318-41b5-8d33-63014541076e",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:ObjectType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "placeholderKey": "ontologyGraph.targetObject",
+        "size": "default",
+        "clearable": true
+      },
+      "name": "Relationship path target",
+      "description": "Object type the shortest path ends at.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-d900ed11-4e30-4d7c-821a-4d08e964e39d",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectHeader",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "subtitleField": "className"
+      },
+      "name": "Selected object type header",
+      "description": "Header of the selected object type, whose read-only outputs offer the modeling address.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-ce68a32e-2c46-4b9a-a5ad-dd009a90594f",
+    "input": {
+      "componentId": "@ontomato/sdk:TypedValue",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "field": "classDesc",
+        "emptyText": ""
+      },
+      "name": "Selected object type description",
+      "description": "Business description of the selected object type.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-0e433496-05dc-41a6-8d22-696811abb84d",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "className": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:Attribute"
+            }
+          },
+          "read": "list",
+          "params": {
+            "className": {
+              "input": "className"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "table",
+        "showHeader": false,
+        "showFooter": false,
+        "searchable": false,
+        "emptyText": "ontologyGraph.noAttributes",
+        "columns": [
+          {
+            "key": "label",
+            "subtitleKey": "name"
+          },
+          {
+            "key": "type",
+            "kind": "tag",
+            "width": "96px",
+            "align": "right"
+          }
+        ]
+      },
+      "name": "Selected object type attributes",
+      "description": "Attributes declared by the selected object type.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-47e75f93-efeb-4227-9079-b312605fbc00",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "className": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:Relationship"
+            }
+          },
+          "read": "list",
+          "params": {
+            "className": {
+              "input": "className"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "table",
+        "showHeader": false,
+        "showFooter": false,
+        "searchable": false,
+        "emptyText": "ontologyGraph.noRelations",
+        "columns": [
+          {
+            "key": "fromclassLabel",
+            "align": "left"
+          },
+          {
+            "key": "label",
+            "align": "center",
+            "shrink": true
+          },
+          {
+            "key": "toclassLabel",
+            "align": "right"
+          }
+        ]
+      },
+      "name": "Selected object type relationships",
+      "description": "Relationships that start at or end on the selected object type.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-a19a8a6e-cc18-41b7-bc42-a32cf61b3b6c",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectHeader",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "subtitle": ""
+      },
+      "name": "Selected relationship header",
+      "description": "Header of the selected relationship, whose read-only outputs offer the modeling address.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-e8bef137-dffe-47a0-a9f6-ed8645b8a2ad",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectRefCard",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "field": "fromObject",
+        "appearance": "button",
+        "buttonType": "default",
+        "buttonSize": "default",
+        "compact": true
+      },
+      "name": "Selected relationship source",
+      "description": "Object type the selected relationship starts at.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-cc69b26b-9bc4-49e0-9400-66c5584e7606",
+    "input": {
+      "componentId": "@ontomato/sdk:TypedValue",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "field": "label",
+        "emptyText": ""
+      },
+      "name": "Selected relationship name",
+      "description": "Display name of the selected relationship.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-9067cae3-cf39-4263-bbea-61f92c6af4f9",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectRefCard",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "field": "toObject",
+        "appearance": "button",
+        "buttonType": "default",
+        "buttonSize": "default",
+        "compact": true
+      },
+      "name": "Selected relationship target",
+      "description": "Object type the selected relationship ends at.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-type-count",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectCount",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "count",
+          "params": {}
+        }
+      },
+      "config": {
+        "labelKey": "ontologyGraph.objectTypes"
+      },
+      "name": "Four-layer ontology type count",
+      "description": "Number of types the platform's four-layer ontology declares.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-relation-count",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectCount",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyRelationKind"
+            }
+          },
+          "read": "count",
+          "params": {}
+        }
+      },
+      "config": {
+        "labelKey": "ontologyGraph.relationTypes"
+      },
+      "name": "Four-layer ontology relation count",
+      "description": "Number of relation kinds the platform's four-layer ontology declares.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-type-list",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        },
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        },
+        "supplement": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "countRows",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "subtitleField": "typeId",
+        "metaField": "countDisplay",
+        "groupBy": "layer",
+        "searchable": false,
+        "showFooter": false,
+        "showChevron": true,
+        "searchFields": [
+          "label",
+          "primaryKey",
+          "typeId",
+          "layer",
+          "definition"
+        ],
+        "emptyText": ""
+      },
+      "name": "Four-layer ontology types",
+      "description": "Types of the platform's four-layer ontology grouped by layer with each reader's own readable count or status.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-relation-list",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:OntologyRelationKind"
+        },
+        "search": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyRelationKind"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "subtitleField": "endpoints",
+        "searchable": false,
+        "showFooter": false,
+        "showChevron": true,
+        "searchFields": [
+          "label",
+          "primaryKey",
+          "endpoints",
+          "relationKind",
+          "owner"
+        ],
+        "emptyText": ""
+      },
+      "name": "Four-layer ontology relation kinds",
+      "description": "Relation kinds the platform's four-layer ontology declares, each with its two ends.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-relation-edges",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {},
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyRelationKind"
+            }
+          },
+          "read": "graphEdges",
+          "params": {}
+        }
+      },
+      "config": {
+        "layout": "list",
+        "searchable": false,
+        "showFooter": false
+      },
+      "name": "Four-layer ontology relation edges",
+      "description": "Every expanded edge of the four-layer ontology, held so the graph highlights the whole selected relation kind.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-graph",
+    "input": {
+      "componentId": "@ontomato/sdk:OntologyTypeGraph",
+      "inputs": {
+        "highlightedNodes": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:OntologyType"
+          }
+        },
+        "highlightedEdges": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:OntologyRelationKind"
+          }
+        },
+        "pathFrom": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        },
+        "pathTo": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "outputs": {
+        "selectedNode": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        },
+        "selectedEdge": {
+          "kind": "object",
+          "objectType": "platform:OntologyRelationKind"
+        },
+        "positions": {
+          "kind": "json"
+        }
+      },
+      "data": {
+        "nodes": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "graphNodes",
+          "params": {}
+        },
+        "edges": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyRelationKind"
+            }
+          },
+          "read": "graphEdges",
+          "params": {}
+        }
+      },
+      "config": {
+        "edgeEnds": {
+          "source": "/fromclass",
+          "target": "/toclass"
+        },
+        "nodeCategory": "/layerId",
+        "categories": [
+          "fact",
+          "capability",
+          "governance",
+          "product"
+        ],
+        "categoryLabels": {
+          "fact": "platformOntology.layers.fact",
+          "capability": "platformOntology.layers.capability",
+          "governance": "platformOntology.layers.governance",
+          "product": "platformOntology.layers.product"
+        },
+        "showCategoryLegend": true,
+        "edgeDashedField": "/derived"
+      },
+      "name": "Four-layer ontology graph",
+      "description": "Types and expanded relation edges of the platform's four-layer ontology, coloured and legended by layer with derived edges dashed.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-path-from",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "placeholderKey": "ontologyGraph.sourceObject",
+        "size": "default",
+        "clearable": true,
+        "groupBy": "layer"
+      },
+      "name": "Four-layer relationship path source",
+      "description": "Four-layer type the shortest path starts at.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-path-to",
+    "input": {
+      "componentId": "@ontomato/sdk:ReferencePicker",
+      "inputs": {},
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "list",
+          "params": {}
+        }
+      },
+      "config": {
+        "placeholderKey": "ontologyGraph.targetObject",
+        "size": "default",
+        "clearable": true,
+        "groupBy": "layer"
+      },
+      "name": "Four-layer relationship path target",
+      "description": "Four-layer type the shortest path ends at.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-object-header",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectHeader",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "subtitleField": "typeId",
+        "statusField": "countDisplay"
+      },
+      "name": "Selected four-layer type header",
+      "description": "Header of the selected four-layer type, whose read-only outputs offer the instance directory and modeling addresses.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-object-description",
+    "input": {
+      "componentId": "@ontomato/sdk:TypedValue",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "field": "definition",
+        "emptyText": ""
+      },
+      "name": "Selected four-layer type definition",
+      "description": "Definition of the selected four-layer type.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-object-summary",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectSummary",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "showTitle": false,
+        "fields": [
+          "layer",
+          "countDisplay",
+          "countReason",
+          "rules"
+        ]
+      },
+      "name": "Selected four-layer type summary",
+      "description": "Layer, readable count with its reason, and the use rules of the selected four-layer type.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-object-properties",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "properties",
+          "params": {
+            "type": {
+              "input": "type"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "table",
+        "showHeader": false,
+        "showFooter": false,
+        "searchable": false,
+        "emptyText": "ontologyGraph.noAttributes",
+        "columns": [
+          {
+            "key": "name",
+            "subtitleKey": "type"
+          },
+          {
+            "key": "optional",
+            "kind": "tag",
+            "width": "76px",
+            "align": "right",
+            "valueMap": {
+              "true": {
+                "labelKey": "ontologyGraph.optionalYes"
+              },
+              "false": {
+                "labelKey": "ontologyGraph.optionalNo"
+              }
+            }
+          }
+        ]
+      },
+      "name": "Selected four-layer type properties",
+      "description": "Public properties declared by the selected four-layer type.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-object-relations",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "selected": {
+          "kind": "object",
+          "objectType": "platform:OntologyRelationKind"
+        }
+      },
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "typeRelations",
+          "params": {
+            "type": {
+              "input": "type"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "table",
+        "showHeader": false,
+        "showFooter": false,
+        "searchable": false,
+        "emptyText": "ontologyGraph.noRelations",
+        "columns": [
+          {
+            "key": "label",
+            "align": "left",
+            "shrink": true
+          },
+          {
+            "key": "peerLabel",
+            "align": "right"
+          }
+        ]
+      },
+      "name": "Selected four-layer type relations",
+      "description": "Relation kinds that start at or end on the selected four-layer type, one row per expanded edge.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-object-reads",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "reads",
+          "params": {
+            "type": {
+              "input": "type"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "table",
+        "showHeader": false,
+        "showFooter": false,
+        "searchable": false,
+        "emptyText": "ontologyGraph.noReads",
+        "columns": [
+          {
+            "key": "name",
+            "width": "110px"
+          },
+          {
+            "key": "parameters",
+            "kind": "tags",
+            "emptyKey": "ontologyGraph.noneDash"
+          },
+          {
+            "key": "result",
+            "wrap": true
+          }
+        ]
+      },
+      "name": "Selected four-layer type named reads",
+      "description": "Named reads the selected four-layer type registers.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-object-operations",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectList",
+      "inputs": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "rows": {
+          "source": {
+            "type": {
+              "kind": "PlatformObjectType",
+              "id": "platform:OntologyType"
+            }
+          },
+          "read": "operations",
+          "params": {
+            "type": {
+              "input": "type"
+            }
+          }
+        }
+      },
+      "config": {
+        "layout": "table",
+        "showHeader": false,
+        "showFooter": false,
+        "searchable": false,
+        "emptyText": "ontologyGraph.noOperations",
+        "columns": [
+          {
+            "key": "id",
+            "wrap": true
+          },
+          {
+            "key": "kind",
+            "kind": "tag",
+            "width": "84px"
+          }
+        ]
+      },
+      "name": "Selected four-layer type operations",
+      "description": "Operations the selected four-layer type registers.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-relation-header",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectHeader",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:OntologyRelationKind"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "subtitle": ""
+      },
+      "name": "Selected four-layer relation header",
+      "description": "Header of the selected four-layer relation kind or expanded edge.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-relation-source",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectRefCard",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:OntologyRelationKind"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "field": "fromObject",
+        "appearance": "button",
+        "buttonType": "default",
+        "buttonSize": "default",
+        "compact": true
+      },
+      "name": "Selected four-layer relation source",
+      "description": "Type the selected four-layer relation starts at.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-relation-name",
+    "input": {
+      "componentId": "@ontomato/sdk:TypedValue",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:OntologyRelationKind"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "field": "label",
+        "emptyText": ""
+      },
+      "name": "Selected four-layer relation name",
+      "description": "Display name of the selected four-layer relation.",
+      "visibility": "platform"
+    }
+  },
+  {
+    "id": "builtin-product-og-capability-relation-targets",
+    "input": {
+      "componentId": "@ontomato/sdk:ObjectSummary",
+      "inputs": {
+        "target": {
+          "kind": "object",
+          "objectType": "platform:OntologyRelationKind"
+        }
+      },
+      "outputs": {},
+      "data": {
+        "record": {
+          "source": {
+            "object": {
+              "input": "target"
+            }
+          },
+          "read": "record",
+          "params": {}
+        }
+      },
+      "config": {
+        "showTitle": false,
+        "fields": [
+          "toObject",
+          "targetObjects"
+        ]
+      },
+      "name": "Selected four-layer relation targets",
+      "description": "The target type of one expanded edge, or every target type of a relation kind that points at several.",
+      "visibility": "platform"
+    }
+  }
+]

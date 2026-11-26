@@ -19,6 +19,9 @@
     flex-direction: column;
     gap: var(--spacing-sm);
   }
+  .og-probe {
+    display: none;
+  }
   .og-grid {
     display: grid;
     flex: 1;
@@ -513,19 +516,6 @@
       padding-bottom: calc(var(--spacing-lg) + var(--pane-dock-space, 0px));
     }
   }
-  .og-product-graph-body {
-    height: calc(100dvh - 110px);
-    min-height: 360px;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .og-product-graph-body > [data-member] {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
   @container (max-width: 560px) {
     .og-summary {
       flex-wrap: wrap;
@@ -542,15 +532,13 @@
       <template #actions>
         <div class="og-summary" :aria-label="t('ontologyGraph.statsLabel')">
           <projection slot="objectStats"></projection>
-          <span class="og-summary-sep" aria-hidden="true">·</span>
-          <projection slot="attributeStats"></projection>
+          <template v-if="hasAttributeStats">
+            <span class="og-summary-sep" aria-hidden="true">·</span>
+            <projection slot="attributeStats"></projection>
+          </template>
           <span class="og-summary-sep" aria-hidden="true">·</span>
           <projection slot="relationStats"></projection>
         </div>
-        <sdk-button
-          data-action="product-relation-graph"
-          @click="openProductGraph"
-        >{{ t("ontologyGraph.productRelationGraph") }}</sdk-button>
         <sdk-button
           text
           icon="refresh-cw"
@@ -577,6 +565,9 @@
     </div>
 
     <div v-show="showGraphWorkspace" class="og-grid">
+      <div class="og-probe" aria-hidden="true">
+        <projection slot="relationEdges"></projection>
+      </div>
       <aside class="og-explorer">
         <div class="og-search-box">
           <sdk-input
@@ -686,7 +677,23 @@
                     </span>
                   </template>
                   <template #actions>
-                    <sdk-button class="og-modeling" size="small" @click="openModeling">
+                    <sdk-button v-if="objectReady" class="og-instances" size="small" @click="exploreInstances">
+                      <span class="og-modeling-inner">
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                          <path d="M2 4.5h12M2 8h12M2 11.5h12" />
+                        </svg>
+                        {{ t("ontologyGraph.viewInstances") }}
+                      </span>
+                    </sdk-button>
+                    <sdk-button v-if="directoryPath" class="og-directory" size="small" @click="openDirectory">
+                      <span class="og-modeling-inner">
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                          <path d="M1.8 4.4a1.2 1.2 0 0 1 1.2-1.2h3l1.4 1.6h5.6a1.2 1.2 0 0 1 1.2 1.2v6a1.2 1.2 0 0 1-1.2 1.2H3a1.2 1.2 0 0 1-1.2-1.2z" />
+                        </svg>
+                        {{ t("ontologyGraph.viewDirectory") }}
+                      </span>
+                    </sdk-button>
+                    <sdk-button v-if="modelingPath" class="og-modeling" size="small" @click="openModeling">
                       <span class="og-modeling-inner">
                         <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
                           <rect x="2" y="2" width="4.5" height="4.5" rx="1" />
@@ -715,6 +722,9 @@
                 <p class="og-description">
                   <projection slot="objectDesc"></projection>
                 </p>
+                <div v-if="hasObjectSummaryExtra" class="og-section">
+                  <projection slot="objectSummaryExtra"></projection>
+                </div>
                 <div class="og-section">
                   <div class="og-section-label">
                     <span>{{ t("ontologyGraph.attributes") }}</span>
@@ -735,6 +745,18 @@
                       <span class="og-connection-name" :title="displayText">{{ displayText }}</span>
                     </template>
                   </projection>
+                </div>
+                <div v-if="hasObjectReads" class="og-section">
+                  <div class="og-section-label">
+                    <span>{{ t("ontologyGraph.reads") }}</span>
+                  </div>
+                  <projection slot="objectReads"></projection>
+                </div>
+                <div v-if="hasObjectOperations" class="og-section">
+                  <div class="og-section-label">
+                    <span>{{ t("ontologyGraph.operations") }}</span>
+                  </div>
+                  <projection slot="objectOperations"></projection>
                 </div>
               </template>
               <p v-if="navigationError" class="og-note og-failure">{{ navigationError }}</p>
@@ -782,7 +804,7 @@
                     </span>
                   </template>
                   <template #actions>
-                    <sdk-button class="og-modeling" size="small" @click="openModeling">
+                    <sdk-button v-if="modelingPath" class="og-modeling" size="small" @click="openModeling">
                       <span class="og-modeling-inner">
                         <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
                           <rect x="2" y="2" width="4.5" height="4.5" rx="1" />
@@ -866,21 +888,5 @@
       </aside>
     </div>
 
-    <sdk-dialog
-      v-model="productGraphOpen"
-      :title="t('ontologyGraph.productGraphTitle')"
-      fullscreen
-      append-to-body
-      destroy-on-close
-      data-product-graph-dialog
-    >
-      <div class="og-product-graph-body">
-        <projection
-          v-if="productGraphOpen"
-          slot="productGraph"
-          @open="onOpenProductAsset"
-        ></projection>
-      </div>
-    </sdk-dialog>
   </section>
 </div>

@@ -1,6 +1,12 @@
 # 本体图谱页的常见做法
 
-这一页全部由平台官方投影组装：页头统计（`ObjectCount`）、左栏资源列表（`ObjectList`）、中间共用图谱画布（`OntologyTypeGraph`，本体类型图的固定画法：62px 节点、13px 名字、力导排布、5px 白描边，导出用页面底色并落成 `ontology-graph-{date}.png`）、右栏路径选择器（`ReferencePicker`）与元素详情（`ObjectHeader`、`TypedValue`、`ObjectRefCard`、`ObjectList`）。画布工具条在画布左下角：放大、缩小、适应画布、重新布局、下载 PNG；也支持滚轮缩放。
+这一页全部由平台官方投影组装：页头统计（`ObjectCount`）、左栏资源列表（`ObjectList`）、中间共用图谱画布（`OntologyTypeGraph`，本体类型图的固定画法：62px 节点、13px 名字、力导排布、5px 白描边，导出用页面底色并落成 `ontology-graph-{date}.png`）、右栏路径选择器（`ReferencePicker`）与元素详情（`ObjectHeader`、`TypedValue`、`ObjectRefCard`、`ObjectSummary`、`ObjectList`）。画布工具条在画布左下角：放大、缩小、适应画布、重新布局、下载 PNG；也支持滚轮缩放。
+
+## 读哪一套本体
+
+`dataSource` 决定这一页读哪一套投影，默认 `"business"`（客户业务本体）；`"platform"` 读平台四层本体（23 类类型、44 种关系种类，画布按 `layerId` 分色并可点图例按层显隐，推导关系画虚线）。两套投影都登记在这一页的 `projections.json` 里，成员按 `dataSource` 选中的投影读；能力图谱嵌入这一页时只传 `dataSource`，不传任何投影编号。
+
+四层本体没有独立的属性实体，也没有详情页配置的读法：在 `"platform"` 下页头不显示属性数，右栏的属性平面换成公开属性、具名读法与可用操作三块；`"business"` 下这三块不挂载、不发请求。
 
 ## 看页面上是什么
 
@@ -17,7 +23,8 @@
 
 ## 跳转
 
-- 选中一个类或一条关系后可「去建模」：打开可视化建模并定位到它，同时附带 `back=playground` 来路标记（`/ontology/visual-modeling?selectedNode=<类名>&back=playground` 或 `/ontology/visual-modeling?selectedEdge=<关系名>&back=playground`）。
+- 动作只看当前元素的读法给了什么，两种来源一致：「去建模」在 `modelingPath` 有值时才出现（`/ontology/visual-modeling?selectedNode=<类名>&back=playground` 或 `?selectedEdge=<关系名>&back=playground`）；「查看实例目录」在 `directoryPath` 有值时才出现（四层里有目录页的类型才有）。
+- 「浏览该类实例」两种来源都给：被能力图谱嵌着时由它接住并切到实例半的表格；单独打开这一页时自己跳到 `/browser/data?viewMode=table&selectedClass=<类型>`。
 - 选中关系类型后，点右栏两端的对象按钮可直接切到对应对象类型。
 
 写操作：这一页只读，没有要读者确认的操作。
