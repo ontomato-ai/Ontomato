@@ -8,8 +8,6 @@
     "response":{"applications":[{"id":"agents","description":"Run an agent with your instructions","available":true,"unavailableReason":null,"taskCount":2},{"id":"operations","description":"Run automated tests or inspect as instructed","available":true,"unavailableReason":null,"taskCount":1}],"totalCount":5}
   },
   "forms": [
-    
-    
     {
       "name":"agents-empty", "appId":"agents",
       "request":{"values":{},"changedField":null,"taskId":null,"timeZone":"Asia/Shanghai"},
