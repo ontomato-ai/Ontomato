@@ -17,7 +17,7 @@ import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationFrameContextOf, isApplicationPanelUse, isFrameConversationEntry, isNativeApplicationEntry, type ApplicationEntryResolution, type ApplicationPanelUse, type BundledPanelProjection, type ProductPanel } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import { PageComposer, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
+import { PageComposer, pagePaneElementKey, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { APPLICATION, FAVORITE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
@@ -503,8 +503,11 @@ const homeUnavailableBanner = computed(() => isHomeMainEntry.value && homePanelS
  */
 const area = ref<HTMLElement | null>(null);
 if (props.navigate) {
+  const pagePane = inject(pagePaneElementKey, null);
   useAppTheme(area, () => currentResolution.value?.theme, hostThemeMode);
-  provide(panelOverlayContainerKey, area);
+  // Anchor overlays and toasts to the persistent side pane when present so cross-panel navigation (which remounts this
+  // route on path change) keeps emitted toasts visible inside the pane.
+  provide(panelOverlayContainerKey, pagePane ?? area);
 } else useApplicationTheme(() => currentResolution.value?.theme);
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
 const missing = computed(() =>

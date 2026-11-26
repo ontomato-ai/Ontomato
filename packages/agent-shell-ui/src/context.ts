@@ -100,6 +100,12 @@ export const messageContextKey: InjectionKey<Ref<MessageContext>> = Symbol("agen
 export const pageDockSpaceKey: InjectionKey<Readonly<Ref<number>>> = Symbol("page-dock-space");
 
 /**
+ * The persistent page-pane element (`contain: layout`) that stays mounted while the pane navigates between pages, so
+ * panel overlays and cross-panel toasts belong to the pane rather than a single route instance.
+ */
+export const pagePaneElementKey: InjectionKey<Readonly<Ref<HTMLElement | null>>> = Symbol("page-pane-element");
+
+/**
  * The room a page in the shell's page pane keeps after its own scrolling content, for a page that scrolls itself
  * (`ShellFeatureDeclaration.scrollsItself`) and hands it on, e.g. to the app in a frame. The pages themselves mark
  * where the content ends with the `shell-dock-room` class or the `ShellDockRoom` component, which read the same value.

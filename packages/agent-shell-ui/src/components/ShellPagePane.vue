@@ -2,7 +2,7 @@
 import { computed, inject, onBeforeUnmount, provide, ref, useSlots, watch } from "vue";
 import { Columns2, Maximize, Menu, X } from "lucide-vue-next";
 import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
-import { pageDockSpaceKey, shellContextKey, useDisplayPlacement } from "../context";
+import { pageDockSpaceKey, pagePaneElementKey, shellContextKey, useDisplayPlacement } from "../context";
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
 import ShellComposer from "./ShellComposer.vue";
@@ -46,6 +46,7 @@ const { width, resizing, beyond, startResize } = usePanelWidth((edge) => {
 const paired = computed(() => props.feature?.withConversation === true);
 const root = ref<HTMLElement | null>(null);
 useDisplayPlacement(root);
+provide(pagePaneElementKey, root);
 
 const dock = ref<HTMLElement | null>(null);
 const dockSpace = ref(0);
@@ -115,6 +116,9 @@ const paneStyle = computed(() => ({
   contain: layout;
   container-type: inline-size;
   container-name: page;
+}
+.page-pane > :deep(.el-message) {
+  max-width: calc(100% - 32px);
 }
 .page-pane.full {
   flex: 1;
