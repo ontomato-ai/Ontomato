@@ -1,22 +1,30 @@
 package io.ontomato.dataengine.schedules;
 
-import io.ontomato.dataengine.service.identity.UserCredentials;
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.ontomato.dataengine.bean.trigger.Trigger;
 import io.ontomato.dataengine.core.bean.User;
-import io.ontomato.dataengine.logging.ServiceLogContext;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.identity.UserCredentials;
 import java.time.Instant;
 import java.time.ZoneId;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -25,17 +33,29 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 @RequiredArgsConstructor
 public class PlatformTasks {
+  public static final String CHANGE = "trigger.lifecycle.change";
+
+  @org.springframework.stereotype.Component
+  static final class Operations implements ManagementOperations.Contributor {
+    @Override public List<ManagementOperations.Operation> managementOperations() {
+      return List.of(new ManagementOperations.Operation(CHANGE, "Publish triggers for another member", ManagementOperations.Access.CHANGE));
+    }
+  }
+
   private final TaskStore store;
   private final IdentityService identities;
   private final ScheduleIdentity identity;
   private final UserCredentials credentials;
   private final ScheduleApplications applications;
+  private final TriggerCapabilities capabilities;
+  private final CapabilityDefinitions definitions;
   private final TransactionTemplate transactions;
 
   @Value("${SCHEDULE_TIMEZONE:}")
   private String configuredZone;
 
   public record Created(JsonNode task, boolean created) {}
+  private record Prepared(TaskDefinition definition, JsonNode summary, boolean requiresCredential) {}
 
   private User current() {
     var user = identities.getCurrentUser();
@@ -45,467 +65,400 @@ public class PlatformTasks {
   }
 
   private String zone() {
-    return configuredZone == null || configuredZone.isBlank()
-        ? ZoneId.systemDefault().getId()
-        : configuredZone;
+    return configuredZone.isBlank() ? ZoneId.systemDefault().getId() : configuredZone;
   }
 
-  private ScheduleApplication.Actor actor(User user, String locale) {
-    return new ScheduleApplication.Actor(
-        user,
-        identity.dataPermission(user.getDomainId(), user.getId()),
-        identity.onlineToken(),
-        identity.onlineApiKey(),
-        locale);
+  private ScheduleApplication.Actor onlineActor(User user, String locale) {
+    return new ScheduleApplication.Actor(user, identity.dataPermission(user.getDomainId(), user.getId()),
+        identity.onlineToken(), identity.onlineApiKey(), locale);
+  }
+
+  private ScheduleApplication.Actor backgroundActor(User user, String key, String locale) {
+    return new ScheduleApplication.Actor(user, identity.dataPermission(user.getDomainId(), user.getId()), null, key, locale);
+  }
+
+  private User executor(User actor, String id) {
+    if (actor.getId().equals(id)) return actor;
+    var user = identity.creator(actor.getDomainId(), id);
+    if (user == null || !user.isEnable())
+      throw new ScheduleException(422, "TARGET_UNAVAILABLE", "The executor is not an active member of this domain");
+    return user;
   }
 
   private static ScheduleException missing() {
-    return new ScheduleException(404, "TASK_NOT_FOUND", "Task not found");
+    return new ScheduleException(404, "TASK_NOT_FOUND", "Trigger or run not found");
   }
 
-  private TaskStore.Task accessible(UUID id, User user, boolean lock) {
+  private Trigger accessible(String id, User user, Verb verb, boolean lock) {
     var task = store.get(id, lock);
-    if (task == null
-        || !task.domain().equals(user.getDomainId())
-        || !task.creator().equals(user.getId())) throw missing();
+    if (task == null || !task.domain().equals(user.getDomainId())) throw missing();
+    var subject = definitions.subject(user);
+    if (!definitions.canRead(subject, access(task, Verb.USE))) throw missing();
+    if (verb != Verb.VIEW) definitions.require(subject, access(task, verb));
     return task;
   }
 
   private static long revision(JsonNode value) {
     var revision = value.path("revision");
-    if (!revision.isIntegralNumber()
-        || !revision.canConvertToLong()
-        || revision.asLong() < 1
+    if (!revision.isIntegralNumber() || !revision.canConvertToLong() || revision.asLong() < 1
         || revision.asLong() > 9007199254740991L) throw bad("Invalid revision");
     return revision.asLong();
   }
 
-  private void checkRevision(TaskStore.Task task, long expected) {
+  private static void checkRevision(Trigger task, long expected) {
     if (task.revision() != expected)
-      throw new ScheduleException(
-          409, "REVISION_CONFLICT", "The task changed; reload before editing");
+      throw new ScheduleException(409, "REVISION_CONFLICT", "The trigger changed; reload before editing");
   }
 
-  private void requireIdle(UUID task) {
+  private void requireIdle(String task) {
     UUID active = store.active(task);
     if (active != null)
-      throw new ScheduleException(
-          409, "TASK_RUNNING", "Task is already running", Map.of("activeRunId", active));
+      throw new ScheduleException(409, "TASK_RUNNING", "Trigger is already running", Map.of("activeRunId", active));
   }
 
-  private void requireCapacity(ScheduleApplication provider, User user) {
-    if (provider.creatorLimit() > 0
-        && store.visible(user.getDomainId(), user.getId(), provider.id()).size()
-            >= provider.creatorLimit())
-      throw new ScheduleException(409, "TASK_LIMIT_REACHED", "Application task limit reached");
+  private void requireCapacity(TaskDefinition definition, String domain, String creator) {
+    if (!definition.application()) return;
+    int limit = applications.require(definition.appId(), domain).creatorLimit();
+    if (limit > 0 && store.creatorCount(domain, creator, definition.appId()) >= limit)
+      throw new ScheduleException(409, "TASK_LIMIT_REACHED", "Application trigger limit reached");
   }
 
-  private JsonNode view(TaskStore.Task task) {
+  private static boolean priority(Trigger task, TaskStore.RunViews runs) {
+    return task.pause() != null || runs.lastRun() != null && "failed".equals(runs.lastRun().status());
+  }
+
+  private List<JsonNode> views(List<Trigger> tasks, User user) {
+    var names = capabilities.names(user.getDomainId(), tasks);
+    var runs = store.runViews(tasks.stream().map(Trigger::id).toList(), user.getId()).stream()
+        .collect(Collectors.toMap(TaskStore.RunViews::id, Function.identity()));
+    return tasks.stream().filter(task -> runs.containsKey(task.id()))
+        .sorted(Comparator.<Trigger, Boolean>comparing(task -> priority(task, runs.get(task.id()))).reversed()
+            .thenComparing(task -> priority(task, runs.get(task.id())) ? Instant.MAX : task.nextRunAt(),
+                Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(Trigger::updatedAt, Comparator.reverseOrder()).thenComparing(Trigger::id))
+        .map(task -> view(task, runs.get(task.id()), names, user.getId())).toList();
+  }
+
+  private JsonNode view(Trigger task, User user) {
+    return views(List.of(task), user).stream().findFirst().orElseThrow(PlatformTasks::missing);
+  }
+
+  private static JsonNode view(Trigger task, TaskStore.RunViews runs, TriggerCapabilities.Names names, String member) {
     var definition = task.definition();
-    var latest = store.history(task.id(), null, null, 1);
-    var result = store.latestResult(task.id());
-    return object(
-        "id",
-        task.id(),
-        "creatorId",
-        task.creator(),
-        "title",
-        definition.title(),
-        "appId",
-        definition.appId(),
-        "content",
-        definition.content(),
-        "formRevision",
-        definition.formRevision(),
-        "summary",
-        task.summary(),
-        "frequency",
-        definition.frequency(),
-        "timeZone",
-        definition.timeZone(),
-        "notifyEmail",
-        definition.notifyEmail(),
-        "enabled",
-        task.enabled(),
-        "pause",
-        task.pause(),
-        "nextRunAt",
-        task.nextRunAt(),
-        "revision",
-        task.revision(),
-        "createdAt",
-        task.createdAt(),
-        "updatedAt",
-        task.updatedAt(),
-        "activeRunId",
-        store.active(task.id()),
-        "lastRun",
-        latest.isEmpty() ? null : latest.getFirst().summaryView(),
-        "latestResult",
-        result == null ? null : object("runId", result.id(), "link", result.resultLink()));
+    return object("id", task.id(), "creatorId", task.creator(), "executorId", task.executor(),
+        "coauthorIds", task.coauthors(), "reviewedBy", task.reviewer(), "status", task.status(), "version", task.version(),
+        "title", definition.title(), "description", definition.description(), "targetKind", definition.targetKind(),
+        "targetId", definition.targetId(), "targetName", names.forTarget(definition), "appId", definition.appId(),
+        "content", definition.content(), "formRevision", definition.formRevision(), "summary", definition.application() ? array() : task.summary(),
+        "frequency", definition.frequency(), "timeZone", definition.timeZone(), "notifyEmail", definition.notifyEmail(),
+        "enabled", task.enabled(), "pause", pauseView(task, member), "nextRunAt", task.nextRunAt(), "lastFiredAt", task.lastFiredAt(),
+        "revision", task.revision(), "createdAt", task.createdAt(), "updatedAt", task.updatedAt(),
+        "activeRunId", runs.active(), "lastRun", runs.lastRun() == null ? null : runs.lastRun().summaryView(member),
+        "latestResult", runs.latestResult() == null ? null : object("runId", runs.latestResult(), "link", runs.link()));
   }
 
-  public JsonNode list(String app) {
-    return list(app, false);
+  private static TaskStore.Failure pauseView(Trigger task, String member) {
+    return task.pause() == null || task.executor().equals(member) ? task.pause()
+        : new TaskStore.Failure(task.pause().code(), "The trigger is paused");
   }
 
-  public JsonNode list(String app, boolean includeCredentialStatus) {
+  public JsonNode list(String app, String kind, String status, boolean includeCredentialStatus, boolean countOnly) {
     var user = current();
     if (app != null && !app.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
-    var tasks = store.visible(user.getDomainId(), user.getId(), app);
-    var result = object("tasks", tasks.stream().map(this::view).toList(), "timeZone", zone());
-    if (includeCredentialStatus) {
-      var ownerTasks = app == null ? tasks : store.visible(user.getDomainId(), user.getId(), null);
-      result.put("credentialStatus", credentialStatus(user, ownerTasks));
-    }
+    if (kind != null && !Set.of("action", "workflow", "application").contains(kind)) throw bad("Invalid target kind");
+    if (status != null && !Trigger.STATUSES.contains(status)) throw bad("Invalid status");
+    var tasks = readable(user, app, kind, status);
+    if (countOnly) return object("total", tasks.size());
+    var result = object("tasks", views(tasks, user), "timeZone", zone());
+    if (includeCredentialStatus) result.put("credentialStatus", credentialStatus(user));
     return result;
   }
 
-  public JsonNode applications(String locale) {
-    var user = current();
-    var actor = actor(user, locale);
-    var result = array();
-    var tasks = store.visible(user.getDomainId(), user.getId(), null);
-    // Retired applications still serve existing tasks but are absent from the creation picker.
-    var providers = applications.all(user.getDomainId()).entrySet().stream()
-        .filter(entry -> entry.getValue().acceptsNewTasks()).toList();
-    try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
-      Executor callbacks = command -> workers.execute(ServiceLogContext.wrap(command));
-      var remoteDescriptions = new HashMap<String, CompletableFuture<ObjectNode>>();
-      for (var entry : providers) {
-        var provider = entry.getValue();
-        if (provider.remote()) {
-          String id = entry.getKey();
-          remoteDescriptions.put(id, CompletableFuture.supplyAsync(
-              () -> describeApplication(id, provider, actor), callbacks));
-        }
-      }
-      for (var entry : providers) {
-        String id = entry.getKey();
-        var remote = remoteDescriptions.get(id);
-        var descriptor = remote == null ? describeApplication(id, entry.getValue(), actor) : remote.join();
-        if (!applications.canEnter(id, user)) {
-          descriptor.put("available", false);
-          descriptor.put("unavailableReason", locale.startsWith("zh")
-              ? "没有应用入口权限" : "Application entry permission is required");
-        }
-        descriptor.put(
-            "taskCount", tasks.stream().filter(task -> id.equals(task.definition().appId())).count());
-        result.add(descriptor);
-      }
-    }
-    return object("applications", result, "totalCount", tasks.size());
+  private List<Trigger> readable(User user, String app, String kind, String status) {
+    var subject = definitions.subject(user);
+    return store.candidates(user.getDomainId(), app, kind, status).stream()
+        .filter(task -> definitions.canRead(subject, access(task, Verb.USE))).toList();
   }
 
-  private ObjectNode describeApplication(String id, ScheduleApplication provider, ScheduleApplication.Actor actor) {
-    try {
-      return (ObjectNode) provider.describe(actor);
-    } catch (RuntimeException unavailable) {
-      return object(
-          "id",
-          id,
-          "description",
-          provider.description(actor.locale()),
-          "available",
-          false,
-          "unavailableReason",
-          actor.locale().startsWith("zh")
-              ? "暂时无法确认你能否使用这个应用"
-              : "Unable to confirm whether you can use this application right now",
-          "taskCount",
-          0);
-    }
+  public List<Trigger> policyTargets(String domain) {
+    var user = current();
+    if (!domain.equals(user.getDomainId())) throw missing();
+    return readable(user, null, null, null).stream().filter(task -> !Trigger.PENDING_REVIEW.equals(task.status())).toList();
   }
+
+  public JsonNode targets() { return capabilities.targets(current()); }
 
   public JsonNode form(String appId, JsonNode input, String locale) {
     keys(input, "values", "changedField", "taskId", "timeZone");
     content(input.get("values"));
-    if (!input.has("changedField")
-        || (!input.get("changedField").isNull() && !input.get("changedField").isTextual()))
-      throw bad("Invalid changedField");
-    if (input.get("changedField").isTextual()
-        && (input.get("changedField").asText().isEmpty()
-            || input.get("changedField").asText().length() > 256))
-      throw bad("Invalid changedField");
-    if (!input.has("taskId")) throw bad("Missing taskId");
-    UUID task = input.get("taskId").isNull() ? null : UUID.fromString(input.get("taskId").asText());
+    if (!input.has("changedField") || !input.has("taskId")) throw bad("Missing application form fields");
+    String field = optionalText(input, "changedField");
+    if (field != null && (field.isEmpty() || field.length() > 256)) throw bad("Invalid changedField");
+    String task = optionalText(input, "taskId");
     var user = current();
-    if (task != null) accessible(task, user, false);
+    if (task != null) accessible(task, user, Verb.EDIT, false);
     String zone = text(input, "timeZone");
     ZoneId.of(zone);
-    var provider = applications.require(appId);
-    var actor = actor(user, locale);
-    provider.authorize(actor, input.get("values"));
-    return provider.form(
-        new ScheduleApplication.FormInput(
-            input.get("values"), input.get("changedField").asText(null), task, zone),
-        actor);
+    var provider = application(appId, user);
+    var actor = onlineActor(user, locale);
+    return provider.form(new ScheduleApplication.FormInput(input.get("values"), field, task, zone), actor);
   }
 
-  private ScheduleApplication.Validation prepare(
-      TaskDefinition definition, ScheduleApplication provider, User user, String locale) {
-    var actor = actor(user, locale);
-    provider.authorize(actor, definition.content());
-    var validation = provider.validate(definition, actor);
-    if (provider.remote()) credentials.prepareForSetup(user);
-    return validation;
+  private ScheduleApplication application(String appId, User user) {
+    var provider = applications.require(appId, user.getDomainId());
+    if (!applications.canEnter(appId, user))
+      throw new ScheduleException(403, "PERMISSION_DENIED", "Application entry permission is required");
+    return provider;
   }
 
-  public Created create(UUID id, JsonNode input, String locale, boolean enabled) {
+  private static List<String> coauthors(JsonNode input, List<String> previous) {
+    if (!input.has("coauthorIds")) return previous;
+    var values = input.get("coauthorIds");
+    if (!values.isArray()) throw bad("coauthorIds must be a member ID array");
+    return StreamSupport.stream(values.spliterator(), false).map(item -> {
+      if (!item.isTextual() || item.textValue().isBlank()) throw bad("Invalid coauthor member ID");
+      return item.textValue();
+    }).distinct().toList();
+  }
+
+  private static String executorId(JsonNode input, String creator) {
+    String id = optionalText(input, "executorId");
+    if (id == null) return creator;
+    if (id.isBlank()) throw bad("Invalid executor member ID");
+    return id;
+  }
+
+  private String review(User actor, String executor, String author, List<String> coauthors) {
+    if (actor.getId().equals(executor) && (author.equals(executor) || coauthors.contains(executor))) return null;
+    definitions.require(definitions.subject(actor), new Management(CHANGE));
+    return actor.getId();
+  }
+
+  private Prepared prepare(TaskDefinition definition, User editor, String effectiveExecutor, String locale, boolean publish) {
+    var member = executor(editor, effectiveExecutor);
+    boolean self = member.getId().equals(editor.getId());
+    if (!definition.application()) {
+      if (publish) capabilities.authorize(definition, member);
+      else capabilities.verifyTarget(definition, editor.getDomainId());
+      boolean needsKey = publish && "workflow".equals(definition.targetKind());
+      if (needsKey && self) credentials.prepareForSetup(editor);
+      return new Prepared(definition, array(), needsKey && !self && !credentials.hasValidKey(member.getDomainId(), member.getId()));
+    }
+    var provider = application(definition.appId(), publish ? member : editor);
+    boolean needsKey = publish && provider.remote();
+    boolean missing = needsKey && !self && !credentials.hasValidKey(member.getDomainId(), member.getId());
+    var actor = !publish || self || missing ? onlineActor(editor, locale) : backgroundActor(member,
+        needsKey ? credentials.forOwner(member.getDomainId(), member.getId()) : null, locale);
+    var validated = provider.validate(definition, actor);
+    if (needsKey && self) credentials.prepareForSetup(editor);
+    return new Prepared(definition.validated(validated), validated.summary(), missing);
+  }
+
+  private static Instant next(Prepared prepared, boolean enabled) {
+    if (!enabled || prepared.requiresCredential()) return null;
+    var now = Instant.now();
+    return prepared.definition().next(now, now);
+  }
+
+  private void credentialPause(String id, Prepared prepared, boolean enabled) {
+    if (enabled && prepared.requiresCredential())
+      store.jdbc().update("UPDATE trigger_def SET pause_code='credential_invalid',pause_message=? WHERE id=?",
+          "The executor must renew their background credential", id);
+  }
+
+  public Created create(UUID key, JsonNode input, String locale, boolean enabled) {
     var user = current();
+    var subject = definitions.subject(user);
+    definitions.require(subject, new Create(Kind.TRIGGER));
     var definition = TaskDefinition.input(input, zone(), false);
+    String id = key.toString();
+    String executor = executorId(input, user.getId());
+    var coauthors = coauthors(input, List.of());
+    String reviewer = enabled ? review(user, executor, user.getId(), coauthors) : null;
     var previous = store.get(id, false);
-    if (previous != null) return replay(previous, user, definition, enabled);
-    var provider = applications.require(definition.appId());
-    // A retired application keeps its history but accepts no new task: otherwise the surface it was retired in favour
-    // of would never be the only path, and the same moment could be scheduled twice.
-    if (!provider.acceptsNewTasks()) throw ScheduleJson.bad(provider.newTasksRefused(locale));
-    var validated = prepare(definition, provider, user, locale);
-    var normalized = definition.validated(validated);
-    return transactions.execute(
-        tx -> {
-          credentials.lockOwner(user.getDomainId(), user.getId());
-          store
-              .jdbc()
-              .query(
-                  "SELECT pg_advisory_xact_lock(hashtextextended(?,1))", row -> {}, id.toString());
-          var old = store.get(id, false);
-          if (old != null) return replay(old, user, normalized, enabled);
-          requireCapacity(provider, user);
-          Instant now = Instant.now();
-          store.insert(
-              id,
-              user.getDomainId(),
-              user.getId(),
-              normalized,
-              validated.summary(),
-              locale,
-              enabled ? normalized.next(now, now) : null,
-              enabled);
-          provider.attach(id, validated);
-          return new Created(view(store.get(id, false)), true);
-        });
+    if (previous != null) return replay(previous, user, definition, executor, coauthors, enabled);
+    var prepared = prepare(definition, user, executor, locale, enabled);
+    return transactions.execute(tx -> {
+      credentials.lockOwner(user.getDomainId(), user.getId());
+      var old = store.get(id, false);
+      if (old != null) return replay(old, user, prepared.definition(), executor, coauthors, enabled);
+      requireCapacity(definition, user.getDomainId(), user.getId());
+      if (!store.insert(id, user.getDomainId(), user.getId(), executor, coauthors, prepared.definition(), prepared.summary(),
+          locale, enabled ? Trigger.PUBLISHED : Trigger.PENDING_REVIEW, reviewer, next(prepared, enabled), enabled))
+        throw new ScheduleException(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused");
+      credentialPause(id, prepared, enabled);
+      return new Created(view(store.get(id, false), user), true);
+    });
   }
 
-  private Created replay(
-      TaskStore.Task old, User user, TaskDefinition definition, boolean enabled) {
-    if (old.domain().equals(user.getDomainId())
-        && old.creator().equals(user.getId())
-        && old.enabled() == enabled
-        && old.definition().equals(definition)) return new Created(view(old), false);
+  private Created replay(Trigger old, User user, TaskDefinition definition, String executor, List<String> coauthors, boolean enabled) {
+    if (old.domain().equals(user.getDomainId()) && old.creator().equals(user.getId()) && old.enabled() == enabled
+        && old.executor().equals(executor) && old.coauthors().equals(coauthors) && old.definition().equals(definition))
+      return new Created(view(old, user), false);
     throw new ScheduleException(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused");
   }
 
-  public JsonNode update(UUID id, JsonNode input, String locale) {
+  public JsonNode update(String id, JsonNode input, String locale) {
     var user = current();
-    var old = accessible(id, user, false);
+    var old = accessible(id, user, Verb.EDIT, false);
     long expected = revision(input);
     checkRevision(old, expected);
     requireIdle(id);
     var definition = TaskDefinition.input(input, zone(), true);
-    var provider = applications.require(definition.appId());
-    var validated = prepare(definition, provider, user, locale);
-    var normalized = definition.validated(validated);
-    return transactions.execute(
-        tx -> {
-          credentials.lockOwner(user.getDomainId(), user.getId());
-          var task = accessible(id, user, true);
-          checkRevision(task, expected);
-          requireIdle(id);
-          if (!task.definition().appId().equals(provider.id())) requireCapacity(provider, user);
-          applications.detach(id);
-          Instant now = Instant.now();
-          store.update(
-              task,
-              normalized,
-              validated.summary(),
-              locale,
-              task.enabled() ? normalized.next(now, now) : null);
-          provider.attach(id, validated);
-          return view(store.get(id, false));
-        });
+    String executor = executorId(input, old.creator());
+    var coauthors = coauthors(input, old.coauthors());
+    boolean publish = Trigger.PUBLISHED.equals(old.status());
+    String reviewer = publish ? review(user, executor, old.creator(), old.coauthors()) : old.reviewer();
+    var prepared = prepare(definition, user, executor, locale, publish);
+    return transactions.execute(tx -> {
+      credentials.lockOwner(old.domain(), old.creator());
+      var task = accessible(id, user, Verb.EDIT, true);
+      checkRevision(task, expected);
+      requireIdle(id);
+      if (!Objects.equals(task.definition().appId(), definition.appId()))
+        requireCapacity(definition, task.domain(), task.creator());
+      store.update(id, executor, coauthors, prepared.definition(), prepared.summary(), locale, reviewer, publish, next(prepared, task.enabled()));
+      credentialPause(id, prepared, task.enabled());
+      return view(store.get(id, false), user);
+    });
   }
 
-  public JsonNode enabled(UUID id, JsonNode input, String locale) {
+  public JsonNode enabled(String id, JsonNode input, String locale) {
     keys(input, "enabled", "revision");
     if (!input.path("enabled").isBoolean()) throw bad("Missing enabled flag");
-    var user = current();
-    var old = accessible(id, user, false);
-    long expected = revision(input);
-    checkRevision(old, expected);
-    boolean enabled = input.path("enabled").asBoolean();
-    if (enabled)
-      prepare(old.definition(), applications.require(old.definition().appId()), user, locale);
-    return transactions.execute(
-        tx -> {
-          var task = accessible(id, user, true);
-          checkRevision(task, expected);
-          Instant now = Instant.now();
-          store
-              .jdbc()
-              .update(
-                  "UPDATE platform_task SET"
-                      + " enabled=?,pause_code=NULL,pause_message=NULL,next_run_at=?,revision=revision+1,updated_at=now()"
-                      + " WHERE id=?",
-                  enabled,
-                  enabled ? TaskStore.timestamp(task.definition().next(now, now)) : null,
-                  id);
-          return view(store.get(id, false));
-        });
+    return lifecycle(id, null, input.get("enabled").booleanValue(), revision(input), locale);
   }
 
-  public void delete(UUID id, String ifMatch) {
-    if (ifMatch == null || !ifMatch.matches("\"[1-9][0-9]*\""))
-      throw bad("A quoted revision is required");
-    long expected;
-    try {
-      expected = Long.parseLong(ifMatch.substring(1, ifMatch.length() - 1));
-    } catch (NumberFormatException error) {
-      throw bad("Invalid revision");
-    }
-    var user = current();
-    transactions.executeWithoutResult(
-        tx -> {
-          var task = accessible(id, user, true);
-          checkRevision(task, expected);
-          requireIdle(id);
-          store.jdbc().update("DELETE FROM platform_task WHERE id=?", id);
-        });
+  public JsonNode status(String id, JsonNode input, String locale) {
+    keys(input, "status", "revision", "enabled");
+    String status = text(input, "status");
+    if (!Trigger.STATUSES.contains(status)) throw bad("Invalid status");
+    if (input.has("enabled") && !input.get("enabled").isBoolean()) throw bad("Invalid enabled flag");
+    return lifecycle(id, status, Trigger.PUBLISHED.equals(status) && input.path("enabled").asBoolean(true), revision(input), locale);
   }
 
-  public JsonNode manual(UUID id, UUID runId, String locale) {
+  private JsonNode lifecycle(String id, String status, boolean enabled, long revision, String locale) {
     var user = current();
-    var task = accessible(id, user, false);
+    var previous = accessible(id, user, Verb.EDIT, false);
+    checkRevision(previous, revision);
+    String state = status == null ? previous.status() : status;
+    if (enabled && !Trigger.PUBLISHED.equals(state)) throw bad("Publish a trigger before enabling it");
+    boolean publish = Trigger.PUBLISHED.equals(status);
+    String reviewer = publish || enabled ? review(user, previous.executor(), previous.creator(), previous.coauthors()) : previous.reviewer();
+    var prepared = publish || enabled ? prepare(previous.definition(), user, previous.executor(), locale, true) : null;
+    return transactions.execute(tx -> {
+      var task = accessible(id, user, Verb.EDIT, true);
+      checkRevision(task, revision);
+      store.lifecycle(id, state, enabled, reviewer, publish, next(prepared, enabled));
+      if (enabled) credentialPause(id, prepared, true);
+      return view(store.get(id, false), user);
+    });
+  }
+
+  public void delete(String id, String ifMatch) {
+    if (!ifMatch.matches("\"[1-9][0-9]*\"")) throw bad("A quoted revision is required");
+    long expected = Long.parseLong(ifMatch.substring(1, ifMatch.length() - 1));
+    var user = current();
+    transactions.executeWithoutResult(tx -> {
+      var task = accessible(id, user, Verb.EDIT, true);
+      checkRevision(task, expected);
+      requireIdle(id);
+      store.jdbc().update("DELETE FROM trigger_def WHERE id=?", id);
+    });
+  }
+
+  public JsonNode manual(String id, UUID runId, String locale) {
+    var user = current();
+    var task = accessible(id, user, Verb.USE, false);
     var old = store.run(runId);
-    if (old != null) return replayRun(id, old);
-    var provider = applications.require(task.definition().appId());
-    prepare(task.definition(), provider, user, locale);
-    return transactions.execute(
-        tx -> {
-          var locked = accessible(id, user, true);
-          checkRevision(locked, task.revision());
-          var existing = store.run(runId);
-          if (existing != null) return replayRun(id, existing);
-          requireIdle(id);
-          var run = store.admit(locked, runId, "manual", null);
-          if (run == null)
-            throw new ScheduleException(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused");
-          return run.wire();
-        });
+    if (old != null) return replayRun(id, old, user);
+    prepare(task.definition(), user, user.getId(), locale, true);
+    return transactions.execute(tx -> {
+      var locked = accessible(id, user, Verb.USE, true);
+      checkRevision(locked, task.revision());
+      var existing = store.run(runId);
+      if (existing != null) return replayRun(id, existing, user);
+      requireIdle(id);
+      var run = store.admit(locked, user.getId(), runId, "manual", null);
+      if (run == null) throw new ScheduleException(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused");
+      return run.wire(user.getId());
+    });
   }
 
-  private JsonNode replayRun(UUID id, TaskStore.Run old) {
-    if (id.equals(old.taskId()) && "manual".equals(old.trigger())) return old.wire();
+  private JsonNode replayRun(String id, TaskStore.Run old, User actor) {
+    if (id.equals(old.taskId()) && "manual".equals(old.trigger()) && actor.getId().equals(old.snapshot().executorId()))
+      return old.wire(actor.getId());
     throw new ScheduleException(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused");
   }
 
-  public JsonNode detail(UUID id) {
-    return view(accessible(id, current(), false));
+  public JsonNode detail(String id) {
+    var user = current();
+    return view(accessible(id, user, Verb.VIEW, false), user);
   }
 
-  public JsonNode detail(UUID id, UUID runId) {
-    accessible(id, current(), false);
+  private TaskStore.Run run(Trigger task, UUID runId, User user) {
     var run = store.run(runId);
-    if (run == null || !id.equals(run.taskId())) throw missing();
-    return run.wire();
+    String member = user.getId();
+    if (run == null || !task.id().equals(run.taskId()) || !task.domain().equals(run.snapshot().domainId())
+        || !(member.equals(run.snapshot().executorId()) || run.snapshot().executorId() == null && member.equals(task.creator())))
+      throw missing();
+    return run;
   }
 
-  public JsonNode history(UUID id, String cursor, int limit) {
-    accessible(id, current(), false);
+  public JsonNode detail(String id, UUID runId) {
+    var user = current();
+    return run(accessible(id, user, Verb.VIEW, false), runId, user).wire(user.getId());
+  }
+
+  public JsonNode history(String id, String cursor, int limit) {
+    var user = current();
+    var task = accessible(id, user, Verb.VIEW, false);
     if (limit < 1 || limit > 100) throw bad("Invalid limit");
-    TaskStore.Run after = null;
-    if (cursor != null) {
-      try {
-        after = store.run(UUID.fromString(cursor));
-      } catch (IllegalArgumentException invalid) {
-        throw bad("Invalid cursor");
-      }
-      if (after == null || !id.equals(after.taskId())) throw bad("Invalid cursor");
-    }
-    var rows =
-        store.history(
-            id,
-            after == null ? null : after.startedAt(),
-            after == null ? null : after.id(),
-            limit + 1);
+    var after = cursor == null ? null : run(task, UUID.fromString(cursor), user);
+    var rows = store.history(task, user.getId(), after == null ? null : after.startedAt(), after == null ? null : after.id(), limit + 1);
     var selected = rows.subList(0, Math.min(limit, rows.size()));
-    return object(
-        "runs",
-        selected.stream().map(TaskStore.Run::wire).toList(),
-        "nextCursor",
-        rows.size() > limit ? selected.getLast().id().toString() : null);
+    return object("runs", selected.stream().map(run -> run.wire(user.getId())).toList(),
+        "nextCursor", rows.size() > limit ? selected.getLast().id().toString() : null);
   }
 
-  private boolean hasRemoteTask(List<TaskStore.Task> tasks) {
-    boolean needs = false;
-    for (var task : tasks) {
-      try {
-        if (applications.require(task.definition().appId()).remote()) needs = true;
-      } catch (ScheduleException missing) {
-        if (!"APPLICATION_NOT_FOUND".equals(missing.code)) throw missing;
-      }
-    }
-    return needs;
-  }
-
-  private static boolean pausedForCredential(TaskStore.Task task) {
+  private static boolean pausedForCredential(Trigger task) {
     return task.enabled() && task.pause() != null && "credential_invalid".equals(task.pause().code());
   }
 
-  private String credentialStatus(User user, List<TaskStore.Task> tasks) {
-    if (!hasRemoteTask(tasks)) return "no-remote-tasks";
-    return tasks.stream().anyMatch(PlatformTasks::pausedForCredential)
-        || !credentials.hasValidKey(user.getDomainId(), user.getId()) ? "renewal-required" : "valid";
+  private String credentialStatus(User user) {
+    var tasks = store.executedBy(user.getDomainId(), user.getId());
+    if (tasks.isEmpty()) return "no-remote-tasks";
+    return tasks.stream().anyMatch(PlatformTasks::pausedForCredential) || !credentials.hasValidKey(user.getDomainId(), user.getId())
+        ? "renewal-required" : "valid";
   }
 
   public void renewOnVisit(String locale) {
     var user = current();
-    var tasks = store.visible(user.getDomainId(), user.getId(), null);
-    if (!hasRemoteTask(tasks)) return;
+    var tasks = store.executedBy(user.getDomainId(), user.getId());
+    if (tasks.isEmpty()) return;
+    if (!identity.interactiveLogin()) throw new ScheduleException(403, "INTERACTIVE_LOGIN_REQUIRED", "A login session is required");
     credentials.prepareForSetup(user);
-    for (var task : tasks)
-      if (pausedForCredential(task)) {
-        try {
-          var provider = applications.require(task.definition().appId());
-          var actor = actor(user, locale);
-          provider.authorize(actor, task.definition().content());
-          provider.validate(task.definition(), actor);
-          transactions.executeWithoutResult(
-              tx -> {
-                var locked = accessible(task.id(), user, true);
-                if (locked.revision() != task.revision()) return;
-                Instant now = Instant.now();
-                store
-                    .jdbc()
-                    .update(
-                        "UPDATE platform_task SET"
-                            + " pause_code=NULL,pause_message=NULL,next_run_at=?,revision=revision+1,updated_at=now()"
-                            + " WHERE id=?",
-                        TaskStore.timestamp(task.definition().next(now, now)),
-                        task.id());
-              });
-        } catch (ScheduleException invalid) {
-          if (invalid.getStatusCode().value() >= 500) throw invalid;
-          String pause =
-              switch (invalid.code) {
-                case "PERMISSION_DENIED" -> "permission_denied";
-                case "FORM_CHANGED" -> "definition_changed";
-                case "FIELD_VALIDATION_FAILED", "TARGET_UNAVAILABLE" -> "target_unavailable";
-                case "APPLICATION_NOT_FOUND" -> "application_unavailable";
-                default -> null;
-              };
-          if (pause != null)
-            store
-                .jdbc()
-                .update(
-                    "UPDATE platform_task SET"
-                        + " pause_code=?,pause_message=?,revision=revision+1,updated_at=now() WHERE"
-                        + " id=? AND revision=? AND enabled",
-                    pause,
-                    java.util.Objects.toString(invalid.getReason(), "Task requires attention"),
-                    task.id(),
-                    task.revision());
-        }
+    for (var task : tasks) {
+      if (!pausedForCredential(task)) continue;
+      try {
+        var prepared = prepare(task.definition(), user, user.getId(), locale, true);
+        store.jdbc().update("""
+            UPDATE trigger_def SET pause_code=NULL,pause_message=NULL,next_run_at=?,revision=revision+1,updated_at=now()
+            WHERE id=? AND revision=? AND enabled AND pause_code='credential_invalid'
+            """, TaskStore.timestamp(next(prepared, true)), task.id(), task.revision());
+      } catch (ScheduleException invalid) {
+        String pause = switch (invalid.code) {
+          case "PERMISSION_DENIED" -> "permission_denied";
+          case "FORM_CHANGED" -> "definition_changed";
+          case "FIELD_VALIDATION_FAILED", "TARGET_UNAVAILABLE" -> "target_unavailable";
+          case "APPLICATION_NOT_FOUND" -> "application_unavailable";
+          default -> throw invalid;
+        };
+        store.jdbc().update("""
+            UPDATE trigger_def SET pause_code=?,pause_message=?,revision=revision+1,updated_at=now()
+            WHERE id=? AND revision=? AND enabled AND pause_code='credential_invalid'
+            """, pause, invalid.getReason(), task.id(), task.revision());
       }
+    }
   }
 }
