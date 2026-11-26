@@ -19,6 +19,12 @@ defineProps<{
   categories?: readonly string[];
   /** JSON Pointer into each node record's `fields` naming its category; one colour when absent. */
   nodeCategory?: string;
+  /** The names the legend gives the categories, by category; any other category is named by its own value. */
+  categoryLabels?: Readonly<Record<string, string>>;
+  /** JSON Pointer into each edge record's `fields` naming the one that draws the edge dashed when it holds `true`. */
+  edgeDashedField?: string;
+  /** Offers the categories as a legend the reader clicks to hide and show them. */
+  showCategoryLegend?: boolean;
   /** Optional subtle operation hint shown at the bottom-right corner of the canvas. */
   hint?: string;
 }>();
@@ -74,6 +80,9 @@ const ONTOLOGY_MODEL_STYLE: GraphCanvasStyleOverrides = {
     :edge-ends="edgeEnds"
     :categories="categories"
     :node-category="nodeCategory"
+    :category-labels="categoryLabels"
+    :edge-dashed-field="edgeDashedField"
+    :show-category-legend="showCategoryLegend"
     :node-size="62"
     :label-size="13"
     layout="force"
