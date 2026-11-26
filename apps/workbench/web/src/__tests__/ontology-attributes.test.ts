@@ -268,6 +268,87 @@ function editAttributeForm(item: FixtureAttribute) {
   };
 }
 
+/**
+ * The option list exactly as the attribute owner sends it for a type that keeps declared options: a table of rows keyed
+ * by their value, with a clearable tone. The owner leaves the field out for a type that keeps none (boolean, date,
+ * vector, a primary key) and for the visual modeling sidebar.
+ */
+const OPTIONS_FIELD = {
+  path: "/options",
+  label: "Options",
+  required: false,
+  readOnly: false,
+  valueSchema: {
+    type: "array",
+    title: "Options",
+    items: {
+      type: "object",
+      required: ["value", "label"],
+      properties: {
+        value: { type: ["string", "number"] },
+        label: { type: "string", title: "Display name" },
+        tone: { type: ["string", "null"] },
+      },
+    },
+  },
+  control: {
+    kind: "object-array",
+    defaultItem: { value: "", label: "", tone: null },
+    itemKeyPath: "/value",
+    presentation: "table",
+    itemFields: [
+      { path: "/value", label: "Value", required: true, readOnly: false, valueSchema: { type: "string", title: "Value" }, control: { kind: "text" } },
+      { path: "/label", label: "Display name", required: true, readOnly: false, valueSchema: { type: "string", title: "Display name" }, control: { kind: "text" } },
+      {
+        path: "/tone",
+        label: "Tone",
+        required: false,
+        readOnly: false,
+        valueSchema: { type: ["string", "null"], title: "Tone" },
+        control: {
+          kind: "select",
+          clearable: true,
+          options: ["success", "warning", "danger"].map((value) => ({ value, label: value, description: null, disabled: false, disabledReason: null })),
+        },
+      },
+    ],
+  },
+};
+
+/** A form with the owner's option list placed where the owner places it: after the description, before the switches. */
+function withOptions<T extends { fields: Array<{ path: string }>; values: Record<string, unknown> }>(form: T): T {
+  const at = form.fields.findIndex((field) => field.path === "/attrDesc") + 1;
+  return { ...form, fields: [...form.fields.slice(0, at), OPTIONS_FIELD, ...form.fields.slice(at)], values: { ...form.values, options: [] } };
+}
+
+/** The create form as the owner describes it for a chosen type: the option list only for a type that keeps options. */
+function createAttributeFormFor(type: string) {
+  const base = createAttributeForm();
+  const form = {
+    ...base,
+    fields: [
+      ...base.fields,
+      {
+        path: "/type",
+        label: "Type",
+        control: {
+          kind: "select",
+          options: ["varchar", "boolean", "date", "vector"].map((value) => ({ value, label: value, description: null, disabled: false, disabledReason: null })),
+        },
+        valueSchema: {},
+        required: true,
+        readOnly: false,
+        refreshOnChange: true,
+      },
+      { path: "/showName", label: "Display name", control: { kind: "text" }, valueSchema: {}, required: true, readOnly: false },
+      { path: "/attrDesc", label: "Description", control: { kind: "text" }, valueSchema: {}, required: false, readOnly: false },
+      { path: "/enable", label: "Enabled", control: { kind: "switch" }, valueSchema: { type: "boolean" }, required: false, readOnly: false },
+    ],
+    values: { ...base.values, type, showName: "", attrDesc: "", enable: true },
+  };
+  return ["boolean", "date", "vector"].includes(type) ? form : withOptions(form);
+}
+
 async function expandAttributeRow(container: HTMLElement, label: string) {
   const expandBtn = await vi.waitFor(() => {
     const row = [...container.querySelectorAll<HTMLTableRowElement>(".attrs-table-host tbody tr")]
@@ -313,6 +394,7 @@ function mountAttributesRoute(options: {
   initialState?: Record<string, unknown>;
   attributes: FixtureAttribute[];
   onFormRead?: (key: string, defaultResponse: () => Response) => Response | Promise<Response>;
+  createForm?: (values: Record<string, unknown> | undefined) => unknown;
   confirmLeave?: () => boolean | Promise<boolean>;
   onListRead?: (filterClass: string, defaultResponse: () => Response) => Response | Promise<Response>;
   onOperation?: (operationId: string, targetKey: string, call: PanelOperationCall) => unknown;
@@ -471,7 +553,8 @@ function mountAttributesRoute(options: {
         return makeResponse();
       }
       if (member === "form" && body.dataName === "createForm") {
-        return Response.json({ status: "ready", value: createAttributeForm() });
+        const values = (body.runtimeParams as { values?: Record<string, unknown> } | undefined)?.values;
+        return Response.json({ status: "ready", value: options.createForm ? options.createForm(values) : createAttributeForm() });
       }
       return Response.json({ status: "empty" });
     }
@@ -1384,6 +1467,61 @@ describe("ontology-attributes builtin panel", () => {
       });
     } finally {
       nonPkMounted.app.unmount();
+    }
+  });
+
+  // The panel lays its forms out by naming fields; a field the owner sends that the layout does not name is never drawn.
+  it("draws the owner's option table in the row editor and the create dialog, and only for a type that keeps options", async () => {
+    const fixture: FixtureAttribute[] = [
+      { primaryKey: "computer.era", className: "computer", classNameLabel: "Computer", name: "era", label: "Era", type: "varchar", primaryKeyFlag: false, businessKey: false, enable: true },
+    ];
+    const route = mountAttributesRoute({
+      attributes: fixture,
+      onFormRead: () => Response.json({ status: "ready", value: withOptions(editAttributeForm(fixture[0]!)) }),
+      createForm: (values) => createAttributeFormFor(typeof values?.type === "string" ? values.type : "varchar"),
+    });
+    const { app, element } = await route.open();
+    const columns = (scope: Element | null) =>
+      [...(scope?.querySelectorAll('[data-field="/options"] .sdk-form-table th') ?? [])].map((th) => th.textContent?.trim()).filter(Boolean);
+
+    try {
+      await expandAttributeRow(element, "Era");
+      const editor = await vi.waitFor(() => {
+        const found = element.querySelector<HTMLElement>(".attrs-row-editor");
+        expect(found?.querySelector<HTMLInputElement>('[data-field="/showName"] input')?.value).toBe("Era");
+        return found!;
+      });
+      expect(editor.textContent).toContain("Options");
+      expect(columns(editor)).toEqual(["Value", "Display name", "Tone"]);
+      // Where the owner places it: after the description, before the switches.
+      const options = editor.querySelector('[data-field="/options"]')!;
+      expect(editor.querySelector('[data-field="/attrDesc"]')!.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(options.compareDocumentPosition(editor.querySelector(".attrs-switches")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      [...element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")].find((btn) => btn.textContent?.includes("New attribute"))!.click();
+      const dialog = await vi.waitFor(() => {
+        const found = document.querySelector<HTMLElement>(".el-dialog");
+        expect(found?.querySelector('[data-field="/type"]')).toBeTruthy();
+        return found!;
+      });
+      expect(columns(dialog)).toEqual(["Value", "Display name", "Tone"]);
+
+      // A type that keeps no options: the owner leaves the field out, and the dialog draws none.
+      for (const type of ["boolean", "date", "vector", "varchar"]) {
+        dialog.querySelector<HTMLElement>('[data-field="/type"] .el-select__wrapper')!.click();
+        const choice = await vi.waitFor(() => {
+          const found = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find((item) => item.textContent?.trim() === type);
+          expect(found).toBeDefined();
+          return found!;
+        });
+        choice.click();
+        await vi.waitFor(() => {
+          if (type === "varchar") expect(columns(dialog)).toEqual(["Value", "Display name", "Tone"]);
+          else expect(dialog.querySelector('[data-field="/options"]')).toBeNull();
+        });
+      }
+    } finally {
+      app.unmount();
     }
   });
 
