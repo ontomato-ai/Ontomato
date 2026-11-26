@@ -196,9 +196,9 @@ onMounted(() => {
   paletteSize.value = readGraphPalette(element.value!).length;
   measure(width, height);
 });
-/** The colour the graph draws a category in, as its legend swatch shows it. */
+/** The colour the graph draws a category in, as its legend swatch shows it: the palette's size until it is measured. */
 const categoryColor = (category: string) =>
-  `var(--chart-${graphCategorySlot(category, categories.value, paletteSize.value) + 1})`;
+  `var(--chart-${graphCategorySlot(category, categories.value, paletteSize.value || Math.max(1, categories.value.length)) + 1})`;
 const computedLayout = computed(() =>
   layoutMode.value === "force"
     ? layoutByForce(resolved.value.nodes, resolved.value.links, room.value!, look)
