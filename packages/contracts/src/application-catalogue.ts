@@ -2,6 +2,7 @@ import { z } from "zod";
 import { applicationMetadataSchema } from "./application-metadata";
 import { panelFormRequestSchema } from "./panel-projection";
 import { applicationFormSectionSchema } from "./product-catalog-query";
+import { changeProductGrantRequestSchema, productCatalogueGrantsSchema } from "./product-governance";
 import { productCurrentIdParamsSchema } from "./product-record-id";
 import {
   applicationPanelUsesManagementSchema, applicationPanelUsesResponseSchema, registerApplicationPanelUsesRequestSchema,
@@ -71,3 +72,8 @@ export const applicationSourceManifestSchema = registerApplicationPanelUsesReque
   }),
 });
 export type ApplicationSourceManifest = z.infer<typeof applicationSourceManifestSchema>;
+
+export const applicationUseGrantChangeSchema = changeProductGrantRequestSchema.extend({ verb: z.literal("use") });
+export const applicationUseGrantsSchema = productCatalogueGrantsSchema.omit({ shared: true }).extend({
+  grants: z.array(productCatalogueGrantsSchema.shape.grants.element.extend({ verb: z.literal("use") })),
+});

@@ -158,6 +158,10 @@ public class ProductGrantService implements InitializingBean {
         if(!allowed(id,"edit"))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required");
         if(!ProductGrants.isValidVerb(grant.verb())||!List.of("principal","role").contains(grant.principalKind())||grant.principalId()==null||grant.principalId().isBlank())throw new IllegalArgumentException("Invalid product Grant");
         String domain=identity.getCurrentUser().getDomainId();
+        changeGrant(domain, id, grant, remove);
+    }
+
+    private void changeGrant(String domain, String id, ProductGrants.Grant grant, boolean remove) {
         if(remove)db.update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind=? AND principal_id=? AND verb=?",domain,id,grant.principalKind(),grant.principalId(),grant.verb());
         else insert(domain,id,grant);
     }
@@ -190,6 +194,17 @@ public class ProductGrantService implements InitializingBean {
         db.update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind='domain'",domain,id);
         if(shared)insert(domain,id,new ProductGrants.Grant("domain","*","use"));
     }
+
+    @Transactional
+    public void shareApplicationUse(String domain, String id, boolean shared) {
+        lockResource(domain, id);
+        if (shared) insert(domain, id, new ProductGrants.Grant("domain", "*", "use"));
+        else db.update("""
+            DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind='domain'
+            AND principal_id='*' AND verb='use'
+            """, domain, id);
+    }
+
     public List<ProductGrants.Grant> grants(String id){
         if(!allowed(id,"edit"))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required");
         return db.query("SELECT principal_kind,principal_id,verb FROM product_grant WHERE domain_id=? AND resource_id=? ORDER BY principal_kind,principal_id,verb",(row,index)->new ProductGrants.Grant(row.getString(1),row.getString(2),row.getString(3)),identity.getCurrentUser().getDomainId(),id);
@@ -200,7 +215,26 @@ public class ProductGrantService implements InitializingBean {
 
     public List<GrantView> grantViews(String id) {
         var records = grants(id);
-        var names = grantNames(identity.getCurrentUser().getDomainId(), records);
+        return grantViews(identity.getCurrentUser().getDomainId(), records);
+    }
+
+    // The application catalogue authorizes these legacy use operations against the registered application.
+    @Transactional
+    public void changeApplicationUseGrant(String domainId, String id, ProductGrants.Grant grant, boolean remove) {
+        lockResource(domainId, id);
+        changeGrant(domainId, id, grant, remove);
+    }
+
+    public List<GrantView> applicationUseGrants(String domainId, String id) {
+        var records = db.query("""
+            SELECT principal_kind,principal_id,verb FROM product_grant
+            WHERE domain_id=? AND resource_id=? AND verb='use' ORDER BY principal_kind,principal_id
+            """, (row, index) -> new ProductGrants.Grant(row.getString(1), row.getString(2), row.getString(3)), domainId, id);
+        return grantViews(domainId, records);
+    }
+
+    private List<GrantView> grantViews(String domainId, List<ProductGrants.Grant> records) {
+        var names = grantNames(domainId, records);
         return records.stream().map(g -> new GrantView(
             g.principalKind(), g.principalId(), names.resolve(g), g.verb())).toList();
     }

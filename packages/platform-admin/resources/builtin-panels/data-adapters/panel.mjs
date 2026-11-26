@@ -123,6 +123,11 @@ await mountPanel({
       }
     });
 
+    function testErrorMessage(error) {
+      if (error instanceof Error) return error.message;
+      return typeof error === "string" ? error : String(error ?? "");
+    }
+
     function onSingleTestTrigger() {
       if (singleTestDisabled.value) return;
       singleTestTriggerRevision = singleTestRevision;
@@ -340,6 +345,7 @@ await mountPanel({
       relationshipRow,
       singleTestOutcome,
       singleTestDisabled,
+      testErrorMessage,
       onSingleTestTrigger,
       onSingleTestRead,
       onSingleTestError,

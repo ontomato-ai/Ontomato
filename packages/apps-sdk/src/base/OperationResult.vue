@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, inject, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElAlert } from "element-plus/es/components/alert/index";
+import { ElDescriptions, ElDescriptionsItem } from "element-plus/es/components/descriptions/index";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElRadio, ElRadioGroup } from "element-plus/es/components/radio/index";
 import { ElTable, ElTableColumn } from "element-plus/es/components/table/index";
@@ -42,12 +43,15 @@ const props = withDefaults(
     operationName?: string;
     /** Optional empty-state text or message key shown when neither a result nor section-specific empty text is present. */
     emptyText?: string;
+    /** Section presentation layout: `"tabs"` (default tabbed panes) or `"stack"` (all sections rendered vertically in order). */
+    layout?: "tabs" | "stack";
   }>(),
   {
     result: null,
     operationSlot: undefined,
     operationName: undefined,
     emptyText: undefined,
+    layout: "tabs",
   },
 );
 
@@ -112,6 +116,7 @@ const hasMarkdown = computed(() => props.result?.kind === "markdown" && props.re
 const json = computed(() => (props.result?.kind === "json" ? formatOperationJson(props.result.value) : ""));
 const truncation = computed(() => (props.result?.kind === "json" ? props.result.truncation ?? null : null));
 const sections = computed(() => operationResultSections(props.result));
+const banner = computed(() => (props.result?.kind === "sections" ? props.result.banner ?? null : null));
 
 function cellText(row: Record<string, PanelReadOperationRecordCell>, key: string): string {
   return formatOperationRecordCell(row[key]);
@@ -151,15 +156,114 @@ function cellText(row: Record<string, PanelReadOperationRecordCell>, key: string
       </template>
       <p v-else class="sdk-operation-empty">{{ t("platform.operationNoResult") }}</p>
     </div>
-    <div v-else-if="result.kind === 'sections'" class="sdk-operation-sections-wrap">
-      <el-tabs v-model="activeSectionId" class="sdk-operation-sections">
+    <div v-else-if="result.kind === 'sections'" class="sdk-operation-sections-wrap" :class="{ 'is-stacked': layout === 'stack' }">
+      <el-alert
+        v-if="banner"
+        :type="banner.tone"
+        :title="banner.title"
+        :closable="false"
+        show-icon
+      >
+        <pre v-if="banner.detail" class="sdk-operation-banner-detail">{{ banner.detail }}</pre>
+      </el-alert>
+      <div v-if="layout === 'stack'" class="sdk-operation-stack">
+        <section
+          v-for="section in sections"
+          :key="section.id"
+          class="sdk-operation-stack-section"
+          :data-section="section.id"
+        >
+          <template v-if="section.kind === 'fields'">
+            <el-descriptions v-if="section.items.length > 0" :column="1" border size="small" class="sdk-operation-fields">
+              <el-descriptions-item v-for="(item, index) in section.items" :key="`${item.label}-${index}`" :label="item.label">
+                {{ item.value }}
+              </el-descriptions-item>
+            </el-descriptions>
+            <p v-else class="sdk-operation-empty-note">{{ section.emptyText || t("platform.operationNoResult") }}</p>
+          </template>
+          <template v-else-if="section.kind === 'records'">
+            <div class="sdk-operation-section-heading">{{ section.label }}</div>
+            <p v-if="section.rows.length === 0 || section.columns.length === 0" class="sdk-operation-empty-note">
+              {{ section.emptyText || t("platform.operationNoResult") }}
+            </p>
+            <ul v-else-if="section.columns.length <= 2" class="sdk-operation-record-list">
+              <li v-for="(row, rowIndex) in section.rows" :key="rowIndex">
+                <span class="sdk-operation-record-primary">{{ cellText(row, section.columns[0]!.key) }}</span>
+                <span v-if="section.columns[1]" class="sdk-operation-record-secondary">{{ cellText(row, section.columns[1]!.key) }}</span>
+              </li>
+            </ul>
+            <el-table
+              v-else
+              :data="section.rows"
+              border
+              stripe
+              max-height="320"
+              class="sdk-operation-records-table"
+            >
+              <el-table-column
+                v-for="col in section.columns"
+                :key="col.key"
+                :prop="col.key"
+                :label="col.label"
+                min-width="140"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  {{ cellText(row, col.key) }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </template>
+          <template v-else-if="section.kind === 'code'">
+            <div class="sdk-operation-section-heading">{{ section.label }}</div>
+            <p v-if="section.content.trim().length === 0" class="sdk-operation-empty-note">
+              {{ section.emptyText || t("platform.operationNoResult") }}
+            </p>
+            <code-editor
+              v-else
+              :model-value="section.content"
+              :language="resolveOperationCodeLanguage(section.language)"
+              readonly
+              :min-height="160"
+            ></code-editor>
+          </template>
+          <template v-else>
+            <div class="sdk-operation-section-heading">{{ section.label }}</div>
+            <el-alert
+              v-if="section.truncation"
+              type="warning"
+              :closable="false"
+              :title="t('platform.operationTruncated', { rows: section.truncation.rowLimit ?? '—' })"
+              :description="section.truncation.hint || undefined"
+            ></el-alert>
+            <code-editor
+              :model-value="formatOperationJson(section.value)"
+              language="json"
+              readonly
+              :min-height="160"
+            ></code-editor>
+          </template>
+        </section>
+      </div>
+      <el-tabs v-else v-model="activeSectionId" class="sdk-operation-sections">
         <el-tab-pane
           v-for="section in sections"
           :key="section.id"
           :label="section.label"
           :name="section.id"
         >
-          <div v-if="section.kind === 'records'" class="sdk-operation-section-body sdk-operation-section-records">
+          <div v-if="section.kind === 'fields'" class="sdk-operation-section-body sdk-operation-section-fields">
+            <el-empty
+              v-if="section.items.length === 0"
+              :description="section.emptyText || t('platform.operationNoResult')"
+            ></el-empty>
+            <el-descriptions v-else :column="1" border size="small" class="sdk-operation-fields">
+              <el-descriptions-item v-for="(item, index) in section.items" :key="`${item.label}-${index}`" :label="item.label">
+                {{ item.value }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <div v-else-if="section.kind === 'records'" class="sdk-operation-section-body sdk-operation-section-records">
             <el-empty
               v-if="section.rows.length === 0 || section.columns.length === 0"
               :description="section.emptyText || t('platform.operationNoResult')"
@@ -305,5 +409,74 @@ function cellText(row: Record<string, PanelReadOperationRecordCell>, key: string
   margin: 0;
   color: var(--sdk-text-color-secondary, var(--el-text-color-secondary));
   font-size: var(--text-xs);
+}
+.sdk-operation-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  min-width: 0;
+}
+.sdk-operation-stack-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.sdk-operation-fields :deep(.el-descriptions__label) {
+  width: 160px;
+}
+.sdk-operation-fields :deep(.el-descriptions__content) {
+  overflow-wrap: anywhere;
+}
+.sdk-operation-banner-detail {
+  margin: var(--spacing-xs) 0 0;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  user-select: text;
+}
+.sdk-operation-section-heading {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+}
+.sdk-operation-record-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--radius-md);
+}
+.sdk-operation-record-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--text-sm);
+}
+.sdk-operation-record-list li + li {
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.sdk-operation-record-primary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  color: var(--el-text-color-primary);
+}
+.sdk-operation-record-secondary {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--el-text-color-secondary);
+}
+.sdk-operation-empty-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--el-text-color-secondary);
 }
 </style>

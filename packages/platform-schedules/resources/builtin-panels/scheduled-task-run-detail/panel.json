@@ -1,0 +1,269 @@
+{
+  "manifest": {
+    "state": {
+      "task": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ScheduledTask"
+        },
+        "external": true
+      },
+      "runId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "external": true
+      },
+      "resultPath": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "external": true
+      },
+      "isRunning": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "external": true
+      },
+      "loadStatus": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "external": true
+      }
+    },
+    "members": {
+      "header": {
+        "component": "ObjectHeader",
+        "target": "task",
+        "data": {
+          "record": {
+            "read": "latestRunRecord",
+            "params": {
+              "runId": {
+                "state": "runId"
+              }
+            }
+          }
+        },
+        "config": {
+          "subtitleField": "trigger",
+          "statusField": "status"
+        },
+        "name": "Run status header",
+        "description": "Displays the task title, trigger kind, and execution status badge.",
+        "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000001"
+      },
+      "pauseNotice": {
+        "component": "InfoBanner",
+        "target": "task",
+        "data": {
+          "record": {
+            "read": "latestRunRecord",
+            "params": {
+              "runId": {
+                "state": "runId"
+              }
+            }
+          }
+        },
+        "config": {
+          "tone": "warning",
+          "titleKey": "pauseTitle",
+          "field": "pauseMessage",
+          "hideWhenEmpty": true,
+          "compact": true
+        },
+        "name": "Task pause notice",
+        "description": "Shows the task pause reason when the scheduled task is paused.",
+        "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000002"
+      },
+      "errorNotice": {
+        "component": "InfoBanner",
+        "target": "task",
+        "data": {
+          "record": {
+            "read": "latestRunRecord",
+            "params": {
+              "runId": {
+                "state": "runId"
+              }
+            }
+          }
+        },
+        "config": {
+          "tone": "danger",
+          "toneField": "error",
+          "titleKey": "errorTitle",
+          "field": "error",
+          "hideWhenEmpty": true,
+          "compact": true
+        },
+        "name": "Run failure notice",
+        "description": "Shows the failure or skip reason when the run did not succeed.",
+        "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000003"
+      },
+      "startedAt": {
+        "component": "TypedValue",
+        "target": "task",
+        "data": {
+          "record": {
+            "read": "latestRunRecord",
+            "params": {
+              "runId": {
+                "state": "runId"
+              }
+            }
+          }
+        },
+        "config": {
+          "field": "startedAt",
+          "kind": "time",
+          "emptyText": "—"
+        },
+        "name": "Run start timestamp",
+        "description": "Displays the localized start time of the task run.",
+        "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000004"
+      },
+      "finishedAt": {
+        "component": "TypedValue",
+        "target": "task",
+        "data": {
+          "record": {
+            "read": "latestRunRecord",
+            "params": {
+              "runId": {
+                "state": "runId"
+              }
+            }
+          }
+        },
+        "config": {
+          "field": "finishedAt",
+          "kind": "time",
+          "emptyText": "—"
+        },
+        "name": "Run finish timestamp",
+        "description": "Displays the localized finish time of the task run.",
+        "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000005"
+      },
+      "summary": {
+        "component": "ObjectSummary",
+        "target": "task",
+        "data": {
+          "record": {
+            "read": "latestRunRecord",
+            "params": {
+              "runId": {
+                "state": "runId"
+              }
+            }
+          }
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "duration",
+            "timeZone",
+            "snapshotSummary",
+            "result",
+            "executionDetails"
+          ],
+          "emptyText": "noResult"
+        },
+        "name": "Run output summary",
+        "description": "Displays the run snapshot summary, cleaned execution output, and execution details.",
+        "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000006"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Scheduled task run detail",
+        "panel.description": "Pause and error notices, run status, timestamps, and output summary for a scheduled task run.",
+        "pauseTitle": "Task paused",
+        "errorTitle": "Run issue",
+        "startedAt": "Started",
+        "finishedAt": "Finished",
+        "noResult": "No text result was produced.",
+        "refresh": "Refresh run"
+      },
+      "zh-CN": {
+        "panel.name": "定时任务运行详情",
+        "panel.description": "展示单条定时任务运行的暂停与异常提示、状态、起止时间与结果摘要。",
+        "pauseTitle": "任务已暂停",
+        "errorTitle": "执行异常",
+        "startedAt": "开始时间",
+        "finishedAt": "完成时间",
+        "noResult": "本次运行未产出文本结果。",
+        "refresh": "刷新状态"
+      },
+      "zh-TW": {
+        "panel.name": "排程任務執行詳情",
+        "panel.description": "顯示單筆排程任務執行的暫停與異常提示、狀態、起訖時間與結果摘要。",
+        "pauseTitle": "任務已暫停",
+        "errorTitle": "執行異常",
+        "startedAt": "開始時間",
+        "finishedAt": "完成時間",
+        "noResult": "本次執行未產出文字結果。",
+        "refresh": "重新整理狀態"
+      },
+      "ja": {
+        "panel.name": "定期タスク実行詳細",
+        "panel.description": "定期タスク実行の一時停止・エラー通知、ステータス、開始・終了時刻、結果概要を表示します。",
+        "pauseTitle": "タスク一時停止中",
+        "errorTitle": "実行エラー",
+        "startedAt": "開始時刻",
+        "finishedAt": "完了時刻",
+        "noResult": "テキスト結果は出力されませんでした。",
+        "refresh": "状態を更新"
+      },
+      "de": {
+        "panel.name": "Ausführungsdetails der geplanten Aufgabe",
+        "panel.description": "Pausen- und Fehlerhinweise, Status, Zeitstempel und Ergebniszusammenfassung einer Aufgabenausführung.",
+        "pauseTitle": "Aufgabe pausiert",
+        "errorTitle": "Ausführungsproblem",
+        "startedAt": "Gestartet",
+        "finishedAt": "Beendet",
+        "noResult": "Es wurde kein Textergebnis erzeugt.",
+        "refresh": "Status aktualisieren"
+      },
+      "fr": {
+        "panel.name": "Détail d'exécution de tâche planifiée",
+        "panel.description": "Avis de pause et d'erreur, statut, horodatages et résumé du résultat d'une exécution.",
+        "pauseTitle": "Tâche en pause",
+        "errorTitle": "Problème d'exécution",
+        "startedAt": "Début",
+        "finishedAt": "Fin",
+        "noResult": "Aucun résultat texte n'a été produit.",
+        "refresh": "Actualiser"
+      },
+      "it": {
+        "panel.name": "Dettaglio esecuzione attività pianificata",
+        "panel.description": "Avvisi di pausa ed errore, stato, orari e riepilogo dell'output di un'esecuzione.",
+        "pauseTitle": "Attività in pausa",
+        "errorTitle": "Problema di esecuzione",
+        "startedAt": "Avviata",
+        "finishedAt": "Terminata",
+        "noResult": "Nessun risultato testuale prodotto.",
+        "refresh": "Aggiorna stato"
+      },
+      "ar": {
+        "panel.name": "تفاصيل تشغيل المهمة المجدولة",
+        "panel.description": "إشعارات الإيقاف المؤقت والخطأ والحالة والطوابع الزمنية وملخص نتيجة تشغيل المهمة.",
+        "pauseTitle": "المهمة متوقفة مؤقتًا",
+        "errorTitle": "مشكلة في التشغيل",
+        "startedAt": "وقت البدء",
+        "finishedAt": "وقت الانتهاء",
+        "noResult": "لم يتم إنتاج نتيجة نصية.",
+        "refresh": "تحديث الحالة"
+      }
+    }
+  }
+}

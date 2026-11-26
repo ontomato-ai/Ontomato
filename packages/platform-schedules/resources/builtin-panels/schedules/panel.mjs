@@ -25,9 +25,9 @@ await mountPanel({
     const detailRunning = usePanelOutput("detailHeader", "isRunning");
 
     const historyListed = usePanelOutput("history", "listed");
-    const focusStatus = usePanelOutput("focus", "status");
-    const focusResultPath = usePanelOutput("focus", "resultPath");
-    const focusRunning = usePanelOutput("focus", "isRunning");
+    const focusStatus = computed(() => (typeof values.value.focusLoadStatus === "string" ? values.value.focusLoadStatus : ""));
+    const focusResultPath = computed(() => (typeof values.value.focusResultPath === "string" ? values.value.focusResultPath : ""));
+    const focusRunning = computed(() => values.value.focusRunning === true);
 
     const opRenew = usePanelOperation("renew", "renewCredential", { entry: false });
     const renewalProblem = ref("");

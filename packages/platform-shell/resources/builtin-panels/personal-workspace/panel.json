@@ -433,7 +433,7 @@
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000007"
       },
       "favoriteDashboardCards": {
-        "component": "DashboardMetricPreview",
+        "component": "GroupedGrid",
         "type": "platform:Favorite",
         "data": {
           "rows": {
@@ -446,12 +446,86 @@
           }
         },
         "config": {
-          "maxMetrics": 6,
-          "maxCharts": 4
+          "columns": 12,
+          "rowSizing": "auto",
+          "gap": 16,
+          "sectionField": "kind",
+          "sectionOrder": [
+            "metric",
+            "chart"
+          ],
+          "colSpanField": "colSpan",
+          "rowSpanField": "rowSpan",
+          "orderField": "order",
+          "editable": false,
+          "collapsible": false,
+          "showGroupHeaders": false,
+          "showItemHeaders": true,
+          "itemSurface": "section",
+          "itemHeaderDivider": {
+            "metric": "none",
+            "chart": "line"
+          },
+          "emptyText": "empty.dashboardCards"
         },
         "name": "Pinned dashboard cards",
         "description": "Live KPI numerals and thumbnail charts for followed dashboards.",
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000008"
+      },
+      "favoriteDashboardCardsNotice": {
+        "component": "InfoBanner",
+        "type": "platform:Favorite",
+        "data": {
+          "record": "dashboardCardsStatus"
+        },
+        "config": {
+          "tone": "info",
+          "compact": true,
+          "templateKey": "dashboardCards.missing",
+          "hideWhenEmpty": true
+        },
+        "name": "Unavailable dashboard cards notice",
+        "description": "Reports how many followed dashboard cards are deleted or inaccessible.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000024"
+      },
+      "previewMetricCard": {
+        "component": "MetricCard",
+        "type": "platform:DashboardCard",
+        "target": {
+          "fromSlot": true
+        },
+        "data": {
+          "result": "result"
+        },
+        "config": {
+          "surface": "bare",
+          "showLabel": false,
+          "valueSize": "default",
+          "truncationDisplay": "icon"
+        },
+        "name": "Preview metric card",
+        "description": "KPI numeral rendered inside each followed metric preview cell.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000022"
+      },
+      "previewChartCard": {
+        "component": "MetricChart",
+        "type": "platform:DashboardCard",
+        "target": {
+          "fromSlot": true
+        },
+        "data": {
+          "template": "chartTemplate",
+          "result": "result"
+        },
+        "config": {
+          "minHeight": "220px",
+          "allowViewToggle": false,
+          "allowZoom": false,
+          "truncationDisplay": "icon"
+        },
+        "name": "Preview chart card",
+        "description": "Thumbnail chart rendered inside each followed chart preview cell.",
+        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000023"
       },
       "scheduledTasks": {
         "component": "ScheduledTaskSummaryList",
@@ -820,14 +894,14 @@
         "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000014"
       },
       "taskSummary": {
-        "component": "ScheduledTaskRunDetail",
-        "target": "selectedTask",
-        "data": {
-          "record": "latestRunRecord"
+        "target": {
+          "panelId": "builtin-product-scheduled-task-run-detail"
         },
-        "name": "Selected task recent run",
-        "description": "Pause/failure callouts, status strip, timestamps, and cleaned output for the task's latest run.",
-        "id": "builtin-product-pw10a000-4e3b-4000-8000-000000000015"
+        "inputs": {
+          "task": {
+            "state": "selectedTask"
+          }
+        }
       },
       "askObject": {
         "component": "ConversationEntry",
@@ -915,6 +989,7 @@
         "empty.apps": "Pin applications or agents from the Application Gallery to show them here.",
         "empty.dashboards": "No followed dashboards yet.",
         "empty.dashboardCards": "No pinned dashboard cards yet.",
+        "dashboardCards.missing": "{missingCount} followed cards are unavailable. Update your selection.",
         "empty.tasks": "No scheduled tasks yet.",
         "empty.conversations": "Start a conversation above to see recent threads here.",
         "empty.objects": "Pin objects from detail pages to keep them handy here.",
@@ -999,6 +1074,7 @@
         "empty.apps": "在应用广场收藏常用应用或智能体后，将显示在这里。",
         "empty.dashboards": "暂无关注的仪表盘。",
         "empty.dashboardCards": "暂无固定的仪表盘卡片。",
+        "dashboardCards.missing": "{missingCount} 项关注内容已删除或不可访问，请重新选择。",
         "empty.tasks": "暂无定时任务。",
         "empty.conversations": "在上方发起对话后，最近的会话会显示在这里。",
         "empty.objects": "在对象详情页收藏对象后，可在这里快速查看。",
@@ -1083,6 +1159,7 @@
         "empty.apps": "在應用廣場收藏應用或智慧體後，將顯示於此。",
         "empty.dashboards": "尚無關注的儀表板。",
         "empty.dashboardCards": "尚無固定的儀表板卡片。",
+        "dashboardCards.missing": "{missingCount} 項關注內容已刪除或無法存取，請重新選擇。",
         "empty.tasks": "尚無排程任務。",
         "empty.conversations": "在上方開始對話後，最近的會話將顯示於此。",
         "empty.objects": "在物件詳情頁收藏物件後，可於此快速檢視。",
@@ -1167,6 +1244,7 @@
         "empty.apps": "アプリギャラリーから固定するとここに表示されます。",
         "empty.dashboards": "フォロー中のダッシュボードはありません。",
         "empty.dashboardCards": "固定されたカードはありません。",
+        "dashboardCards.missing": "{missingCount} 件のフォロー中カードが削除されたかアクセスできません。選択を更新してください。",
         "empty.tasks": "スケジュールタスクはありません。",
         "empty.conversations": "上から会話を始めると最近の履歴が表示されます。",
         "empty.objects": "詳細ページからオブジェクトを固定するとここに表示されます。",
@@ -1251,6 +1329,7 @@
         "empty.apps": "Heften Sie Apps oder Agenten aus der Galerie an.",
         "empty.dashboards": "Noch keine gefolgten Dashboards.",
         "empty.dashboardCards": "Noch keine angehefteten Karten.",
+        "dashboardCards.missing": "{missingCount} gefolgte Karten sind nicht verfügbar. Aktualisieren Sie Ihre Auswahl.",
         "empty.tasks": "Noch keine geplanten Aufgaben.",
         "empty.conversations": "Starten Sie oben ein Gespräch, um Verläufe hier zu sehen.",
         "empty.objects": "Heften Sie Objekte auf Detailseiten an.",
@@ -1335,6 +1414,7 @@
         "empty.apps": "Épinglez des applications ou agents depuis la galerie.",
         "empty.dashboards": "Aucun tableau de bord suivi.",
         "empty.dashboardCards": "Aucune carte épinglée.",
+        "dashboardCards.missing": "{missingCount} cartes suivies sont indisponibles. Mettez à jour votre sélection.",
         "empty.tasks": "Aucune tâche planifiée.",
         "empty.conversations": "Démarrez une conversation ci-dessus pour voir l'historique ici.",
         "empty.objects": "Épinglez des objets depuis leurs pages de détail.",
@@ -1419,6 +1499,7 @@
         "empty.apps": "Fissa app o agenti dalla galleria per mostrarli qui.",
         "empty.dashboards": "Nessuna dashboard seguita.",
         "empty.dashboardCards": "Nessuna scheda fissata.",
+        "dashboardCards.missing": "{missingCount} schede seguite non sono disponibili. Aggiorna la selezione.",
         "empty.tasks": "Nessuna attività pianificata.",
         "empty.conversations": "Avvia una conversazione sopra per vederla qui.",
         "empty.objects": "Fissa oggetti dalle pagine di dettaglio.",
@@ -1503,6 +1584,7 @@
         "empty.apps": "ثبت التطبيقات أو الوكلاء من المعرض لعرضها هنا.",
         "empty.dashboards": "لا توجد لوحات معلومات متابعة بعد.",
         "empty.dashboardCards": "لا توجد بطاقات مثبتة بعد.",
+        "dashboardCards.missing": "{missingCount} بطاقات متابعة غير متاحة. يرجى تحديث اختيارك.",
         "empty.tasks": "لا توجد مهام مجدولة بعد.",
         "empty.conversations": "ابدأ محادثة أعلاه لعرض المحادثات الأخيرة هنا.",
         "empty.objects": "ثبت العناصر من صفحات التفاصيل لعرضها هنا.",

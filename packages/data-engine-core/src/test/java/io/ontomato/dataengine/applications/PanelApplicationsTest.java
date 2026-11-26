@@ -135,7 +135,7 @@ class PanelApplicationsTest {
 
         var trial = app("app-panel-a", "panels", List.of());
         doReturn(List.of(gallery, trial)).when(catalog).all();
-        when(access.canMaintain(trial, user)).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, user, trial);
         var response = catalog.putPanelUses("app-panel-a", body(List.of(use("tasks", null)), false), user);
         assertEquals("/applications/app-panel-a/tasks", response.getList("panelUses", ApplicationPanelUse.class).getFirst().path());
     }
@@ -144,7 +144,7 @@ class PanelApplicationsTest {
         var trialA = app("app-panel-a", "panels", List.of(at("a", "/tasks")));
         var trialB = app("app-panel-b", "panels", List.of(at("b", "/summary")));
         doReturn(List.of(trialA, trialB)).when(catalog).all();
-        when(access.canMaintain(trialA, user)).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, user, trialA);
         var identity = mock(IdentityService.class);
         when(identity.getCurrentUser()).thenReturn(user);
         var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity, mock(WorkbenchServiceAuthentication.class)))
@@ -216,7 +216,7 @@ class PanelApplicationsTest {
             .content("""
                 {"open":true}
                 """)).andExpect(status().isForbidden());
-        when(access.canMaintain(application, user)).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, user, application);
         http.perform(put(base + "other/domain-opening").contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {"open":true}
@@ -252,7 +252,7 @@ class PanelApplicationsTest {
         var existing = app("app-panel-a", "panels", List.of()); doReturn(List.of(existing)).when(catalog).all();
         assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), false), user));
         verify(db, never()).update(anyString(), any(Object[].class));
-        when(access.canMaintain(existing, user)).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, user, existing);
         catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), false), user);
         verify(db).update(startsWith("UPDATE sys_application SET entry="), any(Object[].class));
         verify(access, never()).declare(any(), any(), anyBoolean());
@@ -487,7 +487,7 @@ class PanelApplicationsTest {
         mvc.perform(delete("/platform/applications/app-panel-a")).andExpect(status().isForbidden());
         verify(db, never()).update(startsWith("DELETE FROM sys_application"), anyString(), anyString());
         verify(access, never()).retire(any());
-        when(access.canMaintain(local, user)).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, user, local);
 
         mvc.perform(delete("/platform/applications/app-panel-a")).andExpect(status().isNoContent());
         var retirement = inOrder(access, db);

@@ -6,7 +6,7 @@ import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import publicEn from "@ontomato/workbench-ui/locales/en";
-import ScheduledTaskAppFilterBar from "../../../../../packages/apps-sdk/src/base/ScheduledTaskAppFilterBar.vue";
+import SegmentedControl from "../../../../../packages/apps-sdk/src/base/SegmentedControl.vue";
 import ScheduledTaskSummaryList from "../../../../../packages/apps-sdk/src/base/ScheduledTaskSummaryList.vue";
 import type { MemberDataState } from "../../../../../packages/apps-sdk/src/panel/direct";
 import type { MemberOperationsState } from "../../../../../packages/apps-sdk/src/panel/member-operations";
@@ -78,8 +78,8 @@ function panelFixture(options: {
     members: {
       [memberKey]: {
         target: { projectionId: memberKey },
-        inputs: { selected: { state: "selected" } },
-        outputs: options.filter ? { selected: { state: "selected" } } : {
+        inputs: options.filter ? { value: { state: "selected" } } : { selected: { state: "selected" } },
+        outputs: options.filter ? { value: { state: "selected" } } : {
           selected: { state: "selected" }, resolveTarget: { state: "resolved" },
         },
       },
@@ -96,9 +96,9 @@ function panelFixture(options: {
     editable: false,
     visibility: "domain",
     description: "",
-    componentId: options.filter ? "@ontomato/sdk:ScheduledTaskAppFilterBar" : "@ontomato/sdk:ScheduledTaskSummaryList",
-    inputs: { selected: stateType },
-    outputs: { selected: stateType },
+    componentId: options.filter ? "@ontomato/sdk:SegmentedControl" : "@ontomato/sdk:ScheduledTaskSummaryList",
+    inputs: options.filter ? { value: stateType } : { selected: stateType },
+    outputs: options.filter ? { value: stateType } : { selected: stateType },
     data: {
       [options.filter ? "counts" : "rows"]: {
         source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
@@ -143,21 +143,26 @@ const counts = Array.from({ length: 7 }, (_, index) => ({
   key: `app-${index + 1}`, label: `Application ${index + 1}`, count: index + 2,
 }));
 
-it("shows the bound owner total and five counts, and puts the rest in the application menu", async () => {
+it("collapses options beyond maxVisible into a More menu and shows the selected overflow item on the trigger", async () => {
   const { instance, provide } = panelFixture({
     filter: true,
     data: { status: "ready", value: [{ key: "", label: "Owner total", count: 60 }, ...counts] },
   });
   instance.state.set("selected", "app-7");
-  const select = vi.fn();
+  const change = vi.fn();
   const update = vi.fn();
-  const view = draw(ScheduledTaskAppFilterBar, () => ({ onSelect: select, "onUpdate:selected": update }), provide);
-  const chips = view.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
-  expect(chips).toHaveLength(6);
-  expect(chips[0]!.textContent).toContain("60");
-  expect(chips[5]!.textContent).toContain("Application 5");
-  const trigger = child<HTMLButtonElement>(view, "button[aria-haspopup]");
-  expect(trigger.classList.contains("is-active")).toBe(true);
+  const view = draw(SegmentedControl, () => ({
+    maxVisible: 6,
+    defaultValue: "",
+    onChange: change,
+    "onUpdate:modelValue": update,
+  }), provide);
+  const inlineOptions = view.querySelectorAll<HTMLButtonElement>('button[role="radio"]');
+  expect(inlineOptions).toHaveLength(6);
+  expect(inlineOptions[0]!.textContent).toContain("60");
+  expect(inlineOptions[5]!.textContent).toContain("Application 5");
+  const trigger = child<HTMLButtonElement>(view, '[data-overflow-trigger="true"]');
+  expect(trigger.classList.contains("active")).toBe(true);
   expect(trigger.textContent).toMatch(/Application 7\s*8/);
   await click(trigger);
   const option = await vi.waitFor(() => {
@@ -169,35 +174,33 @@ it("shows the bound owner total and five counts, and puts the rest in the applic
   await click(option);
   expect(instance.state.values.value.selected).toBe("app-6");
   expect(trigger.textContent).toMatch(/Application 6\s*7/);
-  await click(chips[0]!);
+  await click(inlineOptions[0]!);
   expect(instance.state.values.value.selected).toBe("");
-  expect(chips[0]!.getAttribute("aria-pressed")).toBe("true");
-  expect(select.mock.calls).toEqual([["app-6"], [""]]);
+  expect(inlineOptions[0]!.getAttribute("aria-checked")).toBe("true");
+  expect(trigger.classList.contains("active")).toBe(false);
+  expect(trigger.textContent).toContain("More");
+  expect(change.mock.calls).toEqual([["app-6"], [""]]);
   expect(update.mock.calls).toEqual([["app-6"], [""]]);
 });
 
-it("uses standalone counts and supports controlled selection and a different visible limit", async () => {
-  const selected = ref<string | null>(null);
-  const view = draw(ScheduledTaskAppFilterBar, () => ({
-    items: counts.slice(0, 2), maxVisible: 1, selected: selected.value,
-    "onUpdate:selected": (key: string) => { selected.value = key; },
+it("omits the More menu when options do not exceed maxVisible and supports controlled selection", async () => {
+  const selected = ref<string>("a");
+  const view = draw(SegmentedControl, () => ({
+    options: [
+      { value: "a", label: "Alpha" },
+      { value: "b", label: "Beta" },
+    ],
+    maxVisible: 2,
+    modelValue: selected.value,
+    "onUpdate:modelValue": (value: string) => { selected.value = value; },
   }));
-  const chips = view.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
-  expect(chips).toHaveLength(2);
-  expect(chips[0]!.getAttribute("aria-pressed")).toBe("true");
-  expect(chips[0]!.textContent).toContain("5");
-  await click(chips[1]!);
-  expect(selected.value).toBe("app-1");
-  expect(chips[1]!.getAttribute("aria-pressed")).toBe("true");
-});
-
-it("tracks a standalone selection when only application counts are supplied", async () => {
-  const view = draw(ScheduledTaskAppFilterBar, () => ({ items: counts.slice(0, 1) }));
-  const [all, app] = view.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
-  await click(app!);
-  expect(app!.getAttribute("aria-pressed")).toBe("true");
-  await click(all!);
-  expect(all!.getAttribute("aria-pressed")).toBe("true");
+  const buttons = view.querySelectorAll<HTMLButtonElement>('button[role="radio"]');
+  expect(buttons).toHaveLength(2);
+  expect(view.querySelector('[data-overflow-trigger="true"]')).toBeNull();
+  expect(buttons[0]!.getAttribute("aria-checked")).toBe("true");
+  await click(buttons[1]!);
+  expect(selected.value).toBe("b");
+  expect(buttons[1]!.getAttribute("aria-checked")).toBe("true");
 });
 
 const task = {

@@ -63,6 +63,19 @@ const emit = defineEmits<{
   error: [error: Error];
 }>();
 
+defineSlots<{
+  /**
+   * The inline composer's agent picker: a page whose own composer skin differs supplies its picker here, and the entry
+   * draws the standard pill picker when none is given.
+   */
+  "agent-picker"?(props: {
+    agents: readonly AgentHostAgent[];
+    agentId: string | null;
+    label: string;
+    select: (id: string) => void;
+  }): unknown;
+}>();
+
 const { t } = useI18n();
 const panel = usePanelContext();
 const slot = useProjectionSlot();
@@ -230,13 +243,21 @@ async function sendInline(text: string, submit = false) {
       @send="sendInline"
     >
       <template #agent>
-        <AgentPicker
-          variant="pill"
+        <slot
+          name="agent-picker"
           :agents="agents"
           :agent-id="activeAgentId"
           :label="inlineLabels.agent"
-          @select="chosen = $event"
-        />
+          :select="(id: string) => (chosen = id)"
+        >
+          <AgentPicker
+            variant="pill"
+            :agents="agents"
+            :agent-id="activeAgentId"
+            :label="inlineLabels.agent"
+            @select="chosen = $event"
+          />
+        </slot>
       </template>
     </ShellComposer>
     <p v-if="failure" role="alert" class="sdk-conversation-entry-error">{{ failure.message }}</p>

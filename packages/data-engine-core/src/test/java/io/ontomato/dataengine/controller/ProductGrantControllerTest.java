@@ -2,7 +2,10 @@ package io.ontomato.dataengine.controller;
 
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import io.ontomato.dataengine.applications.ApplicationCatalog;
+import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
@@ -20,9 +23,39 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.ontomato.dataengine.config.BaseControllerAdvice;
 
 class ProductGrantControllerTest {
+    private static ProductGrantController controller(ProductGrantService grants, WorkbenchServiceAuthentication authentication) {
+        return new ProductGrantController(grants, authentication, mock(ApplicationCatalog.class), mock(IdentityService.class));
+    }
+
+    @Test void legacyGrantWritesRespectTheRegisteredApplicationOwner() throws Exception {
+        var grants = mock(ProductGrantService.class);
+        var applications = mock(ApplicationCatalog.class);
+        var identity = mock(IdentityService.class);
+        var user = new QueryAccessService.GrantUser("legacy-editor", "domain");
+        when(identity.getCurrentUser()).thenReturn(user);
+        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN)).when(applications)
+            .requireLegacyGrantChange("app-example", user);
+        var mvc = MockMvcBuilders.standaloneSetup(
+            new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class), applications, identity)).build();
+        for (var request : Map.of(
+                "share", """
+                    {"id":"app-example","shared":true}
+                    """,
+                "grant", """
+                    {"id":"app-example","principalKind":"role","principalId":"role","verb":"use","remove":false}
+                    """,
+                "grant-set", """
+                    {"id":"app-example","principalKind":"role","principalId":"role","verbs":["use"]}
+                    """).entrySet()) {
+            mvc.perform(post("/product-governance/" + request.getKey()).contentType(MediaType.APPLICATION_JSON)
+                .content(request.getValue())).andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(grants);
+    }
+
     @Test void legacyChecksCannotAuthorizeAnObjectFromSubmittedOwnerFacts() throws Exception {
         var grants = mock(ProductGrantService.class);
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, new WorkbenchServiceAuthentication("fixture")))
+        var mvc = MockMvcBuilders.standaloneSetup(controller(grants, new WorkbenchServiceAuthentication("fixture")))
             .setControllerAdvice(new BaseControllerAdvice())
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         var body = """
@@ -40,7 +73,7 @@ class ProductGrantControllerTest {
         var grants = mock(ProductGrantService.class);
         when(grants.allowedBatch(List.of("builtin-product-frame", "projection"), "use"))
             .thenReturn(Map.of("builtin-product-frame", true, "projection", false));
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class)))
+        var mvc = MockMvcBuilders.standaloneSetup(controller(grants, mock(WorkbenchServiceAuthentication.class)))
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post("/product-governance/check-batch").contentType(MediaType.APPLICATION_JSON)
             .content("""
@@ -53,7 +86,7 @@ class ProductGrantControllerTest {
 
     @Test void invalidBatchBodiesNeverReachAuthorization() throws Exception {
         var grants = mock(ProductGrantService.class);
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class)))
+        var mvc = MockMvcBuilders.standaloneSetup(controller(grants, mock(WorkbenchServiceAuthentication.class)))
             .setControllerAdvice(new BaseControllerAdvice())
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         for (String body : List.of(
@@ -74,7 +107,7 @@ class ProductGrantControllerTest {
     @Test void registrationBindsTheRealJacksonBodyAndKeepsServiceAuthentication() throws Exception {
         var grants=mock(ProductGrantService.class);
         var authentication=mock(WorkbenchServiceAuthentication.class);
-        var mvc=MockMvcBuilders.standaloneSetup(new ProductGrantController(grants,authentication)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        var mvc=MockMvcBuilders.standaloneSetup(controller(grants,authentication)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post(ProductGrantController.REGISTER_PATH).contentType(MediaType.APPLICATION_JSON).content("{\"domainId\":\"domain\",\"ownerId\":\"author\",\"id\":\"profile\",\"shared\":true}")).andExpect(status().isOk());
         verify(authentication).authenticate(any());
         verify(grants).register("domain", "profile", "author", true, List.of());
@@ -82,7 +115,7 @@ class ProductGrantControllerTest {
     @Test void expandedRegistrationAndGrantSetUseJacksonLists() throws Exception {
         var grants = mock(ProductGrantService.class);
         var authentication = mock(WorkbenchServiceAuthentication.class);
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, authentication))
+        var mvc = MockMvcBuilders.standaloneSetup(controller(grants, authentication))
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post(ProductGrantController.REGISTER_PATH).contentType(MediaType.APPLICATION_JSON).content("""
             {"domainId":"domain","id":"profile","shared":true,"verbs":["use","view","edit"]}
@@ -99,7 +132,7 @@ class ProductGrantControllerTest {
         var grants = mock(ProductGrantService.class);
         when(grants.domainGrants(null, null)).thenReturn(List.of(
             new ProductGrantService.DomainGrantView("retriever", "domain", "*", null, "use")));
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class)))
+        var mvc = MockMvcBuilders.standaloneSetup(controller(grants, mock(WorkbenchServiceAuthentication.class)))
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post("/product-governance/domain-grants")).andExpect(status().isOk())
             .andExpect(jsonPath("$.grants[0].resourceId").value("retriever"))
@@ -112,7 +145,7 @@ class ProductGrantControllerTest {
     @Test void refusedGrantReadKeepsTheJavaStatusAndReason() throws Exception {
         var grants=mock(ProductGrantService.class);
         when(grants.grantViews("profile")).thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required"));
-        var mvc=MockMvcBuilders.standaloneSetup(new ProductGrantController(grants,mock(WorkbenchServiceAuthentication.class)))
+        var mvc=MockMvcBuilders.standaloneSetup(controller(grants,mock(WorkbenchServiceAuthentication.class)))
             .setControllerAdvice(new BaseControllerAdvice())
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post("/product-governance/grants").contentType(MediaType.APPLICATION_JSON).content("{\"id\":\"profile\"}"))
@@ -125,7 +158,7 @@ class ProductGrantControllerTest {
         var grants = mock(ProductGrantService.class);
         when(grants.searchPrincipals("role", "admin", 25))
             .thenReturn(java.util.List.of(new io.ontomato.dataengine.service.ProductPrincipalLookup.PrincipalOption("r-1", "Administrator")));
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class)))
+        var mvc = MockMvcBuilders.standaloneSetup(controller(grants, mock(WorkbenchServiceAuthentication.class)))
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post("/product-governance/principals").contentType(MediaType.APPLICATION_JSON)
             .content("{\"kind\":\"role\",\"keyword\":\"admin\",\"limit\":25}"))
@@ -138,14 +171,14 @@ class ProductGrantControllerTest {
         var authentication=mock(WorkbenchServiceAuthentication.class);
         var request=mock(HttpServletRequest.class);
         when(authentication.authenticate(request)).thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN));
-        var controller=new ProductGrantController(grants,authentication);
+        var controller=controller(grants,authentication);
         assertThrows(ResponseStatusException.class,()->controller.register(request,Map.of("domainId","domain","ownerId","victim","id","profile","shared",true)));
         verifyNoInteractions(grants);
     }
 
     @Test void unregisterRequiresServiceAuthenticationAndBindsTheDomainAndResource() throws Exception {
         var grants = mock(ProductGrantService.class);
-        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, new WorkbenchServiceAuthentication("fixture")))
+        var mvc = MockMvcBuilders.standaloneSetup(controller(grants, new WorkbenchServiceAuthentication("fixture")))
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         var body = """
             {"domainId":"domain","id":"projection"}

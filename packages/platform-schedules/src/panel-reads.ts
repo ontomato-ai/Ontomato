@@ -75,6 +75,24 @@ function previewMarkdownText(value: string): string {
     .replace(/\s+/g, " ").trim();
 }
 
+function cleanMarkdownParagraphs(value: string): string {
+  return value
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/^```[^\n]*\n?|\n?```$/g, ""))
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__|`+)(.*?)\1/g, "$2")
+    .split(/\n{2,}/)
+    .map((paragraph) =>
+      paragraph
+        .split(/\n/)
+        .map((line) => line.replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+)/, "").trim())
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function taskRecord(
   task: PlatformTask,
   locale: string,
@@ -503,45 +521,82 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     async runRecord(primaryKey: string, runId: string): Promise<PanelRecord> {
       return runRecord(await api.run(primaryKey, runId), translate);
     },
-    async latestRunRecord(primaryKey: string): Promise<PanelRecord> {
+    async latestRunRecord(primaryKey: string, requestedRunId?: string): Promise<PanelRecord> {
       const task = await api.task(primaryKey);
-      const latestRunId = task.activeRunId ?? task.lastRun?.id ?? null;
+      const explicitRunId = requestedRunId?.trim() || null;
+      const resolvedRunId = explicitRunId ?? task.activeRunId ?? task.lastRun?.id ?? null;
       let run: PlatformTaskRun | null = null;
-      if (latestRunId) {
-        try {
-          run = await api.run(primaryKey, latestRunId);
-        } catch {
-          run = null;
+      if (resolvedRunId) {
+        if (explicitRunId) {
+          run = await api.run(primaryKey, explicitRunId);
+        } else {
+          try {
+            run = await api.run(primaryKey, resolvedRunId);
+          } catch {
+            run = null;
+          }
         }
       }
-      const fallback = task.lastRun;
-      const status = run?.status ?? fallback?.status ?? (task.activeRunId ? "running" : undefined);
-      const trigger = run?.trigger ?? fallback?.trigger;
+      const fallback = explicitRunId ? null : task.lastRun;
+      const rawStatus = run?.status ?? fallback?.status ?? (!explicitRunId && task.activeRunId ? "running" : undefined);
+      const rawTrigger = run?.trigger ?? fallback?.trigger;
+      const statusLabel = rawStatus ? translate(`platformSchedules.runStatus.${rawStatus}`) : undefined;
+      const triggerLabel = rawTrigger ? translate(`platformSchedules.trigger.${rawTrigger}`) : undefined;
       const startedAt = run?.startedAt ?? fallback?.startedAt;
       const finishedAt = run?.finishedAt ?? fallback?.finishedAt ?? undefined;
+      const scheduledAt = run?.scheduledAt && run.trigger === "schedule" ? run.scheduledAt : undefined;
+      const duration = run && run.spendTime !== null ? formatDuration(run.spendTime, translate) : undefined;
       const timeZone = run?.snapshot.timeZone ?? task.timeZone;
       const error = run?.error ?? fallback?.error ?? null;
-      const errorMessage = error ? formatRunError(error, translate) : undefined;
-      const result = run?.result ?? undefined;
+      const errorText = error ? formatRunError(error, translate) : undefined;
+      const snapshotSummary = run && run.snapshot.summary.length > 0
+        ? run.snapshot.summary.map(item => `${item.label}: ${item.value}`).join("; ")
+        : undefined;
+      const rawOutput = run?.result ?? run?.resultSummary ?? fallback?.resultSummary ?? undefined;
+      const cleanedResult = rawOutput ? cleanMarkdownParagraphs(rawOutput) : undefined;
       const resultSummary = run?.resultSummary ?? fallback?.resultSummary ?? undefined;
+      const resultPath = run?.resultLink?.path ?? (explicitRunId ? "" : task.latestResult?.link.path ?? "");
       return {
-        primaryKey: latestRunId ?? task.id,
+        primaryKey: resolvedRunId ?? task.id,
         label: task.title,
+        fieldLabels: {
+          status: translate("platformSchedules.runFields.status"),
+          trigger: translate("platformSchedules.runFields.trigger"),
+          startedAt: translate("platformSchedules.runFields.startedAt"),
+          scheduledAt: translate("platformSchedules.runFields.scheduledAt"),
+          duration: translate("platformSchedules.runFields.duration"),
+          timeZone: translate("platformSchedules.panelFields.timeZone"),
+          error: translate("platformSchedules.runFields.error"),
+          resultSummary: translate("platformSchedules.runFields.resultSummary"),
+          snapshotSummary: translate("platformSchedules.runFields.snapshotSummary"),
+          result: translate("platformSchedules.runFields.result"),
+          executionDetails: translate("platformSchedules.runFields.executionDetails"),
+          resultPath: translate("platformSchedules.runFields.resultPath"),
+        },
         fields: {
           ...(task.pause ? { pauseMessage: task.pause.message } : {}),
-          ...(status ? { status } : {}),
-          ...(trigger ? { trigger } : {}),
+          ...(statusLabel ? { status: statusLabel } : {}),
+          ...(triggerLabel ? { trigger: triggerLabel } : {}),
           ...(startedAt ? { startedAt } : {}),
           ...(finishedAt ? { finishedAt } : {}),
+          ...(scheduledAt ? { scheduledAt } : {}),
+          ...(duration ? { duration } : {}),
           ...(timeZone ? { timeZone } : {}),
-          ...(errorMessage ? { errorMessage } : {}),
-          ...(result !== undefined && result !== null ? { result } : {}),
+          ...(errorText ? { error: errorText } : {}),
+          ...(snapshotSummary ? { snapshotSummary } : {}),
+          ...(cleanedResult ? { result: cleanedResult } : {}),
           ...(resultSummary ? { resultSummary } : {}),
+          ...(run && run.executionDetails !== null ? { executionDetails: { kind: "json" as const, value: run.executionDetails } } : {}),
+          ...(resultPath ? { resultPath } : {}),
         },
-        ...(status ? { tones: { status: runStatusTone(status) } } : {}),
+        tones: {
+          ...(rawStatus ? { status: runStatusTone(rawStatus) } : {}),
+          ...(errorText ? { error: rawStatus === "skipped" ? "warning" as const : "danger" as const } : {}),
+        },
         outputs: {
-          resultPath: run?.resultLink?.path ?? task.latestResult?.link.path ?? "",
-          isRunning: status === "running",
+          status: rawStatus ?? "",
+          resultPath,
+          isRunning: rawStatus === "running",
         },
       };
     },

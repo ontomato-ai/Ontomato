@@ -33,16 +33,3 @@ export interface ScheduledTaskSummaryItem {
   readonly ref?: ObjectListRef;
   readonly row?: PlatformObjectRecord;
 }
-
-/** One scheduled task recent-run detail payload rendered by `ScheduledTaskRunDetail`. */
-export interface ScheduledTaskRunView {
-  readonly status: "running" | "completed" | "failed" | "skipped" | string;
-  readonly trigger?: "manual" | "schedule" | string | null;
-  readonly startedAt?: string | null;
-  readonly finishedAt?: string | null;
-  readonly timeZone?: string | null;
-  readonly pauseMessage?: string | null;
-  readonly errorMessage?: string | null;
-  readonly result?: string | null;
-  readonly resultSummary?: string | null;
-}

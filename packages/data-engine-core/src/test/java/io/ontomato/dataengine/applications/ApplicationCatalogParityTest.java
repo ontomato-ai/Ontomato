@@ -35,9 +35,7 @@ class ApplicationCatalogParityTest {
         var sharedApp = domainApp("app-shared", "domain-a", "bob", "Beta Shared");
         var builtinApp = builtinApp("builtin-ops", "Gamma Builtin");
 
-        when(access.canMaintain(mineApp, user)).thenReturn(true);
-        when(access.canMaintain(sharedApp, user)).thenReturn(false);
-        when(access.canMaintain(builtinApp, user)).thenReturn(false);
+        EntryAuthorizationFixture.allowEdit(authorization, user, mineApp);
         when(grants.principalNames(any(), any())).thenReturn(Map.of("alice", "Alice", "bob", "Bob"));
 
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class), access,
@@ -89,7 +87,6 @@ class ApplicationCatalogParityTest {
             "framePanelId", "builtin-product-frame",
             "theme", JSONObject.of("light", JSONObject.of("accent", "#123456"))));
 
-        when(access.canMaintain(source, user)).thenReturn(false);
         when(grants.allowedBatchFor("domain-a", "reader", List.of("panel-visible"), "use"))
             .thenReturn(Map.of("panel-visible", true));
         when(grants.principalNames(any(), any())).thenReturn(Map.of("owner", "Owner"));

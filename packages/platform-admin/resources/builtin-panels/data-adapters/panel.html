@@ -102,6 +102,23 @@
   .da-cell-empty {
     display: inline-block;
   }
+  .da-test-report {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-xs);
+    min-width: 0;
+  }
+  .da-test-error-message {
+    margin: var(--spacing-xs) 0 0;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--text-mono);
+    user-select: text;
+  }
 </style>
 
 <div id="app" v-cloak>
@@ -131,11 +148,22 @@
                     @error="(error) => onCardTestError(item, key, error)"
                   ></projection>
                 </div>
-                <data-adapter-test-report
-                  v-if="cardTestOutcome(key)"
-                  :result="cardTestOutcome(key).result"
-                  :error="cardTestOutcome(key).error"
-                ></data-adapter-test-report>
+                <div v-if="cardTestOutcome(key)" class="da-test-report" role="status">
+                  <sdk-alert
+                    v-if="cardTestOutcome(key).error"
+                    type="error"
+                    :title="t('test.failed')"
+                    :closable="false"
+                    show-icon
+                  >
+                    <pre class="da-test-error-message">{{ testErrorMessage(cardTestOutcome(key).error) }}</pre>
+                  </sdk-alert>
+                  <operation-result
+                    v-else-if="cardTestOutcome(key).result"
+                    :result="cardTestOutcome(key).result"
+                    layout="stack"
+                  ></operation-result>
+                </div>
               </div>
             </template>
           </projection>
@@ -157,11 +185,22 @@
             @read="onSingleTestRead"
             @error="onSingleTestError"
           ></projection>
-          <data-adapter-test-report
-            v-if="singleTestOutcome"
-            :result="singleTestOutcome.result"
-            :error="singleTestOutcome.error"
-          ></data-adapter-test-report>
+          <div v-if="singleTestOutcome" class="da-test-report" role="status">
+            <sdk-alert
+              v-if="singleTestOutcome.error"
+              type="error"
+              :title="t('test.failed')"
+              :closable="false"
+              show-icon
+            >
+              <pre class="da-test-error-message">{{ testErrorMessage(singleTestOutcome.error) }}</pre>
+            </sdk-alert>
+            <operation-result
+              v-else-if="singleTestOutcome.result"
+              :result="singleTestOutcome.result"
+              layout="stack"
+            ></operation-result>
+          </div>
         </div>
       </section>
 

@@ -23,7 +23,7 @@ configureI18n({
 });
 const owner={domainId:'one',userId:'alice'},credentials={token:'test-caller'};
 const input=()=>productAssetInputSchema.parse({name:'Text',document:{kind:'widget',widget:{id:'text',kind:'text',title:'Note',span:12,text:'Hello'}}});
-beforeEach(()=>{mocks.query.mockReset();mocks.validate.mockReset();mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'native'}}})});access.use=new Set(['shared','home','hidden','chart']);access.edit=new Set(['home','chart']);});
+beforeEach(()=>{mocks.query.mockReset();mocks.validate.mockReset();mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{legacyWritable:true}})});access.use=new Set(['shared','home','hidden','chart']);access.edit=new Set(['home','chart']);});
 describe('product mutation boundary',()=>{
   it('requires the platform synchronization operation and application entry access before synchronizing', async () => {
     const express = (await import('express')).default;
@@ -74,7 +74,7 @@ describe('product mutation boundary',()=>{
 
   it('rejects direct old HTTP writes and publication for a panels application before legacy side effects',async()=>{
     mocks.query.mockImplementation(async(sql:string)=>({rows:sql==='SELECT id,document FROM product_assets WHERE domain_id=$1'?[{id:'old-root',document:{kind:'application',applicationId:'app-panel-a',children:[]}}]:[]}));
-    mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'panels'}}})});
+    mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{legacyWritable:false}})});
     const express=(await import('express')).default;
     const {createServer}=await import('node:http');
     const router=(await import('../../../api/routes/product-assets')).default;
@@ -98,7 +98,7 @@ describe('product mutation boundary',()=>{
   it('rejects edits and imports through an old child shared with a taken-over application',async()=>{
     mocks.query.mockImplementation(async(sql:string)=>({rows:sql==='SELECT id,document FROM product_assets WHERE domain_id=$1'?
       [{id:'old-root',document:{kind:'application',applicationId:'app-panel-a',children:[{assetId:'child'}]}}]:[]}));
-    mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'panels'}}})});
+    mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{legacyWritable:false}})});
     await expect(saveProduct(owner,'child',input(),0,credentials)).rejects.toMatchObject({code:'APPLICATION_MANAGED_BY_PANELS'});
     const {migrateDashboardPage}=await import('../dashboard-migration');
     await expect(migrateDashboardPage(owner,credentials,'child',1)).rejects.toMatchObject({code:'APPLICATION_MANAGED_BY_PANELS'});

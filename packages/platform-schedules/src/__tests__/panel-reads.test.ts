@@ -230,13 +230,17 @@ it("loads latestRunRecord with full run output, pause notice without run, and su
   const completed = await reads.latestRunRecord(taskWithCompletedRun.id);
   expect(completed.primaryKey).toBe(fullRun.id);
   expect(completed.fields).toMatchObject({
-    status: "completed",
-    trigger: fullRun.trigger,
+    status: "Completed",
+    trigger: fullRun.trigger === "schedule" ? "Scheduled" : "Manual",
     startedAt: fullRun.startedAt,
     finishedAt: fullRun.finishedAt,
     timeZone: fullRun.snapshot.timeZone,
     result: "First paragraph\n\nSecond paragraph",
     resultSummary: "Short summary",
+  });
+  expect(completed.outputs).toMatchObject({
+    status: "completed",
+    isRunning: false,
   });
 
   const pausedEmpty = await reads.latestRunRecord(pausedNoRunTask.id);
@@ -249,12 +253,13 @@ it("loads latestRunRecord with full run output, pause notice without run, and su
 
   const fallback = await reads.latestRunRecord(fallbackTask.id);
   expect(fallback.fields).toMatchObject({
-    status: "failed",
-    trigger: "manual",
+    status: "Failed",
+    trigger: "Manual",
     startedAt: "2026-11-25T08:00:00Z",
     finishedAt: "2026-11-25T08:00:10Z",
   });
-  expect(String(fallback.fields.errorMessage)).toContain("Timeout");
+  expect(String(fallback.fields.error)).toContain("Timeout");
+  expect(fallback.tones).toMatchObject({ status: "danger", error: "danger" });
 });
 
 it("exposes earlier-result state, duration fallback, localized run error, status notice, and read-only timeZone with app icons", async () => {

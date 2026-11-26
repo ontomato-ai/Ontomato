@@ -3,7 +3,7 @@ import { objectPublicationAccessSchema } from "@ontomato/contracts/object-public
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
-  applicationCatalogueCreateSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
+  applicationCatalogueCreateSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema, applicationUseGrantChangeSchema,
 } from "@ontomato/contracts/application-catalogue";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -13,7 +13,7 @@ import {
   type PanelFormDescription, type PanelFormField,
 } from "@ontomato/contracts/panel-projection";
 import {
-  changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema,
+  changeProductDomainGrantRequestSchema,
   productGrantChangeResponseSchema,
 } from "@ontomato/contracts/product-governance";
 import {
@@ -30,7 +30,6 @@ import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { createLogger } from "../../logging/logger";
 import { tForLocale } from "../../i18n";
-import { changeProductDomainGrant, changeProductGrant } from "../product-governance/grants";
 import { defaultAgentSchema } from "@ontomato/contracts/default-agent";
 import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
 import {
@@ -655,9 +654,10 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
       },
     },
   ),
-  applicationAction("grant", changeProductGrantRequestSchema, async ({ credentials }, id, input) => changeProductGrant(id, input, credentials)),
+  applicationAction("grant", applicationUseGrantChangeSchema,
+    async ({ credentials }, id, input) => applicationCatalogueClient(credentials).changeUseGrant(id, input)),
   applicationAction("share", changeProductDomainGrantRequestSchema, async ({ credentials }, id, { shared }) => {
-    await changeProductDomainGrant(id, shared, credentials);
+    await applicationCatalogueClient(credentials).shareUse(id, shared);
   }),
   applicationAction("addEntry", z.object({ entry: applicationPanelUseSchema }).strict(),
     async ({ credentials }, id, { entry }) => editEntries(credentials, id, entries => { entries.push(entry); })),

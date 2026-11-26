@@ -124,7 +124,7 @@ class ApplicationStandaloneToggleTest {
             "panelSettings", new JSONObject(),
             "allowStandalone", true);
         doReturn(List.of(app)).when(catalog).all();
-        when(access.canMaintain(app, user)).thenReturn(true);
+        EntryAuthorizationFixture.allowEdit(authorization, user, app);
 
         var updated = catalog.updateIdentity("app-one",
             new ApplicationController.IdentityUpdate(Map.of("en", "One"), Map.of(), "pages", false), user);

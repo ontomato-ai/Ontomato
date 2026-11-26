@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.applications.ApplicationCatalog;
+import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.ProductGrants;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
@@ -18,7 +20,16 @@ public class ProductGrantController {
     public static final String SERVICE_RESOURCES_PATH="/product-governance/service-resources";
     private final ProductGrantService grants;
     private final WorkbenchServiceAuthentication authentication;
-    public ProductGrantController(ProductGrantService grants,WorkbenchServiceAuthentication authentication){this.grants=grants;this.authentication=authentication;}
+    private final ApplicationCatalog applications;
+    private final IdentityService identity;
+
+    public ProductGrantController(ProductGrantService grants, WorkbenchServiceAuthentication authentication,
+            ApplicationCatalog applications, IdentityService identity) {
+        this.grants = grants;
+        this.authentication = authentication;
+        this.applications = applications;
+        this.identity = identity;
+    }
     @PostMapping("/product-governance/check")
     public Object check(@RequestBody Map<String, Object> body) {
         if (body.containsKey("target") || body.containsKey("ownerFacts"))
@@ -46,7 +57,14 @@ public class ProductGrantController {
         return Map.of("options", grants.searchPrincipals(kind, keyword, limit));
     }
     @PostMapping(SERVICE_RESOURCES_PATH) public Object serviceResources(HttpServletRequest request,@RequestBody Map<String,Object> body){authentication.authenticate(request);return Map.of("ids",grants.resourcesFor(text(body,"domainId"),text(body,"userId"),text(body,"verb")));}
-    @PostMapping("/product-governance/share") public Object share(@RequestBody Map<String,Object> body){if(!(body.get("shared") instanceof Boolean shared))throw new IllegalArgumentException("Expected sharing intent");grants.share(text(body,"id"),shared);return Map.of("success",true);}
+    @PostMapping("/product-governance/share")
+    public Object share(@RequestBody Map<String, Object> body) {
+        if (!(body.get("shared") instanceof Boolean shared)) throw new IllegalArgumentException("Expected sharing intent");
+        String id = text(body, "id");
+        requireLegacyGrantChange(id);
+        grants.share(id, shared);
+        return Map.of("success", true);
+    }
     @PostMapping(REGISTER_PATH) public Object register(HttpServletRequest request,@RequestBody Map<String,Object> body){
         authentication.authenticate(request);
         if(!(body.get("shared") instanceof Boolean shared))throw new IllegalArgumentException("Expected sharing intent");
@@ -67,11 +85,20 @@ public class ProductGrantController {
 
     @PostMapping("/product-governance/grant") public Object grant(@RequestBody Map<String,Object> body){
         if(!(body.get("remove") instanceof Boolean remove))throw new IllegalArgumentException("Expected removal intent");
-        grants.grant(text(body,"id"),new ProductGrants.Grant(text(body,"principalKind"),text(body,"principalId"),text(body,"verb")),remove);return Map.of("success",true);
+        String id = text(body, "id");
+        var grant = new ProductGrants.Grant(text(body, "principalKind"), text(body, "principalId"), text(body, "verb"));
+        requireLegacyGrantChange(id);
+        grants.grant(id, grant, remove);
+        return Map.of("success", true);
     }
     @PostMapping("/product-governance/grant-set")
     public Object setGrants(@RequestBody Map<String, Object> body) {
-        grants.setGrants(text(body, "id"), text(body, "principalKind"), text(body, "principalId"), verbs(body));
+        String id = text(body, "id");
+        var kind = text(body, "principalKind");
+        var principal = text(body, "principalId");
+        var requested = verbs(body);
+        requireLegacyGrantChange(id);
+        grants.setGrants(id, kind, principal, requested);
         return Map.of("success", true);
     }
 
@@ -79,6 +106,11 @@ public class ProductGrantController {
     public Object domainGrants(@RequestBody(required = false) Map<String, Object> body) {
         var filter = body == null ? Map.<String, Object>of() : body;
         return Map.of("grants", grants.domainGrants(optionalText(filter, "principalKind"), optionalText(filter, "principalId")));
+    }
+
+    private void requireLegacyGrantChange(String id) {
+        var user = identity.getCurrentUser();
+        if (user != null && user.getDomainId() != null) applications.requireLegacyGrantChange(id, user);
     }
 
     private static List<String> verbs(Map<String, Object> body) {

@@ -616,8 +616,10 @@ it("registers the packaged schedules panel at startup with the owner form and cr
   const bundle = await mkdtemp(path.join(os.tmpdir(), "schedules-panel-bundle-"));
   try {
     const material = fileURLToPath(new URL("../../../../platform-schedules/resources/builtin-panels/schedules", import.meta.url));
+    const runDetail = fileURLToPath(new URL("../../../../platform-schedules/resources/builtin-panels/scheduled-task-run-detail", import.meta.url));
     await symlink(material, path.join(bundle, "schedules"));
-    await writeFile(path.join(bundle, "index.json"), JSON.stringify(["schedules"]));
+    await symlink(runDetail, path.join(bundle, "scheduled-task-run-detail"));
+    await writeFile(path.join(bundle, "index.json"), JSON.stringify(["schedules", "scheduled-task-run-detail"]));
     await registerBuiltinProducts(bundle);
     const registered = await request("GET", "product-panels/builtin-product-scheduled-tasks");
     const receipt = await registered.json();

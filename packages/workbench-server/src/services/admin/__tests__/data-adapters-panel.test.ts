@@ -857,8 +857,12 @@ describe("sandbox permission writes", () => {
 });
 
 describe("dataAdapters.testConnection read operation", () => {
-  it("tests single-source draft with restored secret and returns structured JSON catalog report", async () => {
+  it("declares pre-execution resultSections and returns structured sections for SQL catalog report", async () => {
     const op = testOp();
+    expect(op.describeResultSections?.(makeHost(), "en")).toEqual([
+      { id: "summary", label: "Summary", kind: "fields" },
+      { id: "objects", label: "Name", kind: "records" },
+    ]);
     const res = await op.execute(makeHost(), {
       target: domainTarget,
       input: {
@@ -877,26 +881,43 @@ describe("dataAdapters.testConnection read operation", () => {
       password: "******",
     });
     expect(res).toEqual({
-      kind: "json",
-      value: {
-        kind: "catalog",
-        sandboxCapability: failedCapability,
-        elapsedMs: 14,
-        databaseProduct: "PostgreSQL",
-        databaseVersion: "16.2",
-        driverName: "PostgreSQL JDBC Driver",
-        driverVersion: "42.7.3",
-        catalog: "app",
-        schema: "public",
-        tables: [
-          { name: "orders", type: "TABLE" },
-          { name: "active_orders", type: "VIEW" },
-        ],
+      kind: "sections",
+      banner: {
+        tone: "success",
+        title: "Connection test succeeded",
       },
+      sections: [
+        {
+          id: "summary",
+          label: "Summary",
+          kind: "fields",
+          items: [
+            { label: "Duration", value: "14 ms" },
+            { label: "Database", value: "PostgreSQL 16.2" },
+            { label: "Driver", value: "PostgreSQL JDBC Driver 42.7.3" },
+            { label: "Catalog", value: "app" },
+            { label: "Schema", value: "public" },
+          ],
+        },
+        {
+          id: "objects",
+          label: "Tables and views (2)",
+          kind: "records",
+          columns: [
+            { key: "name", label: "Name" },
+            { key: "type", label: "Type" },
+          ],
+          rows: [
+            { name: "orders", type: "TABLE" },
+            { name: "active_orders", type: "VIEW" },
+          ],
+          emptyText: "No tables or views visible to this connection.",
+        },
+      ],
     });
   });
 
-  it("tests a specific multi-source data source by sourceId and returns structured JSON search report", async () => {
+  it("tests a specific multi-source data source by sourceId and returns structured sections for search report", async () => {
     nextTestResponse = {
       success: true,
       data: {
@@ -943,16 +964,34 @@ describe("dataAdapters.testConnection read operation", () => {
       password: "pw",
     });
     expect(res).toEqual({
-      kind: "json",
-      value: {
-        kind: "search",
-        sandboxCapability: { ...failedCapability, status: "unsupported", supported: false, details: {} },
-        elapsedMs: 7,
-        databaseProduct: "OpenSearch",
-        databaseVersion: "2.13.0",
-        clusterName: "prod-es",
-        indices: ["orders-2026", "customers"],
+      kind: "sections",
+      banner: {
+        tone: "success",
+        title: "Connection test succeeded",
       },
+      sections: [
+        {
+          id: "summary",
+          label: "Summary",
+          kind: "fields",
+          items: [
+            { label: "Duration", value: "7 ms" },
+            { label: "Search engine", value: "OpenSearch 2.13.0" },
+            { label: "Cluster", value: "prod-es" },
+          ],
+        },
+        {
+          id: "objects",
+          label: "Indices (2)",
+          kind: "records",
+          columns: [{ key: "name", label: "Name" }],
+          rows: [
+            { name: "orders-2026" },
+            { name: "customers" },
+          ],
+          emptyText: "No indices visible to this connection.",
+        },
+      ],
     });
 
     // Failure response keeps raising DATA_ADAPTER_TEST_FAILED so the inline report displays the error alert.

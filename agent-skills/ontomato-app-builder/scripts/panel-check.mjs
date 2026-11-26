@@ -361,6 +361,19 @@ function checkProjectionData(id, projection, component, checks) {
   }
 }
 
+/**
+ * A registered panel may only set the config keys its component publishes: the catalogue entry generated from
+ * `catalogue.ts` is the author-facing documentation, so a key missing from it is not part of the public contract.
+ * Platform panels are checked by `checkBuiltinPanelSource` and are not limited to the published keys.
+ */
+function checkProjectionConfig(id, projection, component) {
+  const published = (component.config ?? []).map(prop => prop.name).sort();
+  const undeclared = Object.keys(projection.config ?? {}).filter(key => !published.includes(key)).sort();
+  if (!undeclared.length) return;
+  const keys = undeclared.map(key => `config.${key}`).join(", ");
+  throw new Error(`projection ${id}: ${keys} ${undeclared.length > 1 ? "are" : "is"} not in the author-facing documentation of ${projection.componentId} (documented config keys: ${published.length ? published.join(", ") : "none"})`);
+}
+
 async function readPanelWorkspace(
   directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent,
 ) {
@@ -633,6 +646,8 @@ async function checkWorkspacePanel(workspace, applications, records, {
         throw new Error(`${descriptorFile}: projection ${id} uses unavailable component ${record.componentId}`);
       }
       checkProjectionData(id, record, component, checks);
+      // A domain component is the author's own; only a component the SDK publishes has a documentation list to hold to.
+      if (!domainComponentId(record.componentId)) checkProjectionConfig(id, record, component);
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
       // A conversation entry's opening sentence named by key is the placing panel's own words, in each language it
       // declares: a reused projection's key counts as much as a new one's.

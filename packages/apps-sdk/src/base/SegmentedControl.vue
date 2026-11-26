@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
 import type { PanelGroupCounts } from "@ontomato/contracts/panel-projection";
+import { dropdownBoundaryOptions } from "@ontomato/foundation-ui/overlay";
+import { appIcon } from "@ontomato/platform-shell/icons";
 import { panelContextKey } from "../panel/context";
 import { panelMemberKey, useMemberData, useMemberParam } from "../panel/member";
 import type { SegmentedControlOption } from "./segmented-control-types";
@@ -38,6 +41,8 @@ const props = withDefaults(
     ariaLabel?: string;
     /** Panel message key (or platform i18n key) for the accessible label. */
     ariaLabelKey?: string;
+    /** Maximum number of inline options shown before collapsing remaining options into a "More" dropdown menu. */
+    maxVisible?: number;
     /** Disables all options. */
     disabled?: boolean;
   }>(),
@@ -48,6 +53,7 @@ const props = withDefaults(
     defaultValue: undefined,
     ariaLabel: undefined,
     ariaLabelKey: undefined,
+    maxVisible: undefined,
     disabled: false,
   },
 );
@@ -64,6 +70,7 @@ const member = memberGetter ? memberGetter() : null;
 const countsData = member && "counts" in member.projection.data ? useMemberData("counts") : null;
 const valueParam = member && !props.state ? useMemberParam("value") : null;
 const buttonRefs = ref<HTMLButtonElement[]>([]);
+const chevron = appIcon("chevron-down");
 
 function resolveKey(key: string): string {
   if (panel) {
@@ -78,6 +85,11 @@ const resolvedAriaLabel = computed<string | undefined>(() =>
   props.ariaLabelKey ? resolveKey(props.ariaLabelKey) : props.ariaLabel,
 );
 
+const resolvedMoreLabel = computed<string>(() => {
+  const translated = resolveKey("common.more");
+  return translated !== "common.more" ? translated : "More";
+});
+
 const resolvedOptions = computed<readonly ResolvedOption[]>(() => {
   if (countsData?.value.status === "ready") {
     const counts = countsData.value.value as unknown as PanelGroupCounts;
@@ -88,6 +100,25 @@ const resolvedOptions = computed<readonly ResolvedOption[]>(() => {
     label: option.label ?? (option.labelKey ? resolveKey(option.labelKey) : String(option.value)),
     disabled: option.disabled,
   }));
+});
+
+const effectiveMaxVisible = computed<number | null>(() => {
+  const raw = props.maxVisible;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  const floored = Math.floor(raw);
+  return floored > 0 ? floored : null;
+});
+
+const visibleOptions = computed<readonly ResolvedOption[]>(() => {
+  const limit = effectiveMaxVisible.value;
+  if (limit === null || resolvedOptions.value.length <= limit) return resolvedOptions.value;
+  return resolvedOptions.value.slice(0, limit);
+});
+
+const overflowOptions = computed<readonly ResolvedOption[]>(() => {
+  const limit = effectiveMaxVisible.value;
+  if (limit === null || resolvedOptions.value.length <= limit) return [];
+  return resolvedOptions.value.slice(limit);
 });
 
 const currentValue = computed<ScalarValue | null>(() => {
@@ -104,6 +135,14 @@ const currentValue = computed<ScalarValue | null>(() => {
   }
   return props.modelValue ?? props.defaultValue ?? null;
 });
+
+const selectedOverflowOption = computed<ResolvedOption | null>(
+  () => overflowOptions.value.find((option) => option.value === currentValue.value) ?? null,
+);
+
+const overflowDisabled = computed<boolean>(
+  () => props.disabled || overflowOptions.value.every((option) => option.disabled),
+);
 
 function select(option: ResolvedOption) {
   if (props.disabled || option.disabled || option.value === currentValue.value) return;
@@ -127,17 +166,29 @@ function select(option: ResolvedOption) {
   else finish();
 }
 
+function onOverflowCommand(index: number) {
+  const option = overflowOptions.value[index];
+  if (option) select(option);
+}
+
 function isOptionTabbable(option: ResolvedOption, index: number): boolean {
   if (props.disabled || option.disabled) return false;
   if (option.value === currentValue.value) return true;
-  const list = resolvedOptions.value;
+  if (selectedOverflowOption.value) return false;
+  const list = visibleOptions.value;
   if (list.some((item) => !item.disabled && item.value === currentValue.value)) return false;
   return list.findIndex((item) => !item.disabled) === index;
 }
 
+const isMoreTabbable = computed<boolean>(() => {
+  if (overflowDisabled.value) return false;
+  if (selectedOverflowOption.value) return true;
+  return visibleOptions.value.every((option) => option.disabled);
+});
+
 function onKeydown(event: KeyboardEvent, currentIndex: number) {
   if (props.disabled) return;
-  const list = resolvedOptions.value;
+  const list = visibleOptions.value;
   const enabledIndices = list
     .map((option, index) => (option.disabled ? -1 : index))
     .filter((index) => index >= 0);
@@ -169,7 +220,7 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
     :aria-disabled="disabled || undefined"
   >
     <button
-      v-for="(option, index) in resolvedOptions"
+      v-for="(option, index) in visibleOptions"
       :key="String(option.value)"
       ref="buttonRefs"
       type="button"
@@ -186,6 +237,47 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
       <span>{{ option.label }}</span>
       <span v-if="option.count !== undefined" class="sdk-segmented-count">{{ option.count }}</span>
     </button>
+    <ElDropdown
+      v-if="overflowOptions.length > 0"
+      trigger="click"
+      :disabled="overflowDisabled"
+      :popper-options="dropdownBoundaryOptions"
+      @command="onOverflowCommand"
+    >
+      <button
+        type="button"
+        class="sdk-segmented-option sdk-segmented-more"
+        :class="{ active: Boolean(selectedOverflowOption) }"
+        :disabled="overflowDisabled"
+        :tabindex="isMoreTabbable ? 0 : -1"
+        :aria-checked="selectedOverflowOption ? 'true' : undefined"
+        :data-value="selectedOverflowOption ? String(selectedOverflowOption.value) : undefined"
+        data-overflow-trigger="true"
+      >
+        <span>{{ selectedOverflowOption?.label ?? resolvedMoreLabel }}</span>
+        <span
+          v-if="selectedOverflowOption && selectedOverflowOption.count !== undefined"
+          class="sdk-segmented-count"
+        >{{ selectedOverflowOption.count }}</span>
+        <component :is="chevron" :size="14" aria-hidden="true" />
+      </button>
+      <template #dropdown>
+        <ElDropdownMenu>
+          <ElDropdownItem
+            v-for="(option, overflowIndex) in overflowOptions"
+            :key="String(option.value)"
+            :command="overflowIndex"
+            :disabled="disabled || option.disabled"
+            :class="{ 'sdk-segmented-overflow-selected': option.value === currentValue }"
+            :aria-current="option.value === currentValue ? 'true' : undefined"
+            :data-value="String(option.value)"
+          >
+            <span>{{ option.label }}</span>
+            <span v-if="option.count !== undefined" class="sdk-segmented-count">{{ option.count }}</span>
+          </ElDropdownItem>
+        </ElDropdownMenu>
+      </template>
+    </ElDropdown>
   </div>
 </template>
 
@@ -234,5 +326,9 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
 .sdk-segmented-option:disabled {
   color: var(--el-disabled-text-color);
   cursor: not-allowed;
+}
+.sdk-segmented-overflow-selected {
+  color: var(--el-color-primary);
+  font-weight: var(--font-medium);
 }
 </style>

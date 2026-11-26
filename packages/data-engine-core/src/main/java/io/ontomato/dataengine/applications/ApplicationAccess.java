@@ -5,11 +5,9 @@ import io.ontomato.dataengine.core.bean.User;
 import java.util.List;
 import java.util.Set;
 
-/** Edition-owned identity, maintenance and entry policy writes. */
+/** Edition-owned identity and application lifecycle integration. */
 public interface ApplicationAccess {
     User entryUser(String credential);
-    boolean administrator(User user);
-    boolean canMaintain(JSONObject application, User user);
     default void requireLegacyProductAuthor(User publisher, String authorId) {}
     default List<ApplicationPanelUse> builtinEntries(String applicationId) { return List.of(); }
     default void declare(JSONObject app, ApplicationCatalog.Declaration declaration, boolean created) {}

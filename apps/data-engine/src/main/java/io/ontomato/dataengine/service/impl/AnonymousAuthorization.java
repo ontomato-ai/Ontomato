@@ -58,7 +58,9 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
             case PANEL, PROJECTION -> verb == Verb.USE &&
                     (BuiltinProductIds.isValid(target.id()) || hasDomainUse(target));
             case COMPONENT -> verb == Verb.USE && hasDomainUse(target);
-            case APPLICATION -> products.allowedFor(target.domainId(), userId, target.id(), verb.name().toLowerCase(Locale.ROOT));
+            case APPLICATION -> verb == Verb.EDIT
+                    ? !objectGrants(target, verb, Set.of(DOMAIN_POLICY)).isEmpty()
+                    : products.allowedFor(target.domainId(), userId, target.id(), verb.name().toLowerCase(Locale.ROOT));
             // The anonymous workbench could use and configure each registered agent.
             case AGENT -> verb == Verb.USE || verb == Verb.VIEW || verb == Verb.EDIT;
             case METRIC, READ_FUNCTION, WRITE_FUNCTION, TRIGGER, ACTION, WORKFLOW, SKILL -> true;
@@ -136,8 +138,9 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     }
 
     private static void requireDomainPolicy(ObjectGrant grant) {
-        if (!DOMAIN_POLICY.equals(grant.policyId()) || grant.verb() != Verb.USE || grant.scope() != null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Anonymous object access supports only the domain use policy.");
+        boolean applicationEdit = grant.target().kind() == Kind.APPLICATION && grant.verb() == Verb.EDIT;
+        if (!DOMAIN_POLICY.equals(grant.policyId()) || grant.scope() != null || (grant.verb() != Verb.USE && !applicationEdit))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported permission for the anonymous domain policy.");
     }
     @Override public void grantManagement(String domainId, String policyId, String operationId) { throw noRolePolicies(); }
     @Override public void revokeManagement(String domainId, String policyId, String operationId) { throw noRolePolicies(); }
