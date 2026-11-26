@@ -7,7 +7,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { createPanelOverlayRoot } from "@ontomato/platform-shell";
 import { randomId } from "@ontomato/contracts/random-id";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { panelModuleFor, type DirectPanelMount, type DirectPanelModuleExports } from "../../../../../packages/apps-sdk/src/direct";
 import type { DirectPanelComponentPort } from "../../../../../packages/apps-sdk/src/panel/direct-run";
 import { noOperations, directRun } from "./panel-frame";
@@ -26,14 +26,14 @@ import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/sr
 const base = { domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "", revision: 1 };
 const runNow: DirectProjection = {
   ...base, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
-  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: { operation: "runNow" },
-  data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+  inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {}, config: { operation: "runNow" },
+  data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
 };
-const describedRunNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const describedRunNow = { kind: "action", handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 const manifest: DirectPanelManifest = {
   state: {
     mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false },
-    selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false },
+    selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false },
   },
   members: { run: { target: { projectionId: runNow.id }, inputs: { task: { state: "selectedTask" } } } },
 };
@@ -158,7 +158,7 @@ it("draws each member in its own container, with no input left on the component'
   const { context } = await evaluate(module, "");
   await drawn(element);
   // An input the component reads through its slot is not one of its props: it reaches no element as an attribute.
-  context.instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-1" });
+  context.instance.state.set("selectedTask", { className: TRIGGER, primaryKey: "t-1" });
   await nextTick();
   const container = element.querySelector('[data-member="run"]');
   expect(container?.querySelector(".sdk-operation-button button")).toBeTruthy();
@@ -197,7 +197,7 @@ it("scopes a custom operation's one-time delivery to the panel overlay and prese
   });
   const mounted = await mount;
   try {
-    context.instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-1" });
+    context.instance.state.set("selectedTask", { className: TRIGGER, primaryKey: "t-1" });
     const button = await vi.waitFor(() => {
       const button = document.querySelector<HTMLButtonElement>("button");
       expect(button?.disabled).toBe(false);

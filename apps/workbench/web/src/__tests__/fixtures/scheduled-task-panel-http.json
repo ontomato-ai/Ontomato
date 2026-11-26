@@ -60,7 +60,7 @@
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
         "batch": false,
-        "handlerRef": "schedules.runNow",
+        "handlerRef": "triggers.runNow",
         "label": "立即运行",
         "resultSchema": {
           "type": "object",
@@ -390,12 +390,12 @@
       "affected": {
         "objects": [
           {
-            "objectType": "platform:ScheduledTask",
+            "objectType": "platform:Trigger",
             "primaryKey": "10000000-0000-4000-8000-000000000004"
           }
         ],
         "objectTypes": [
-          "platform:ScheduledTask"
+          "platform:Trigger"
         ]
       }
     }

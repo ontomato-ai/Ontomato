@@ -15,7 +15,7 @@ import {
   OBJECT_TYPE,
   ONTOLOGY_TYPE,
   RELATIONSHIP,
-  SCHEDULED_TASK,
+  TRIGGER,
   USER,
 } from "@ontomato/contracts/platform-object-types";
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
@@ -287,13 +287,13 @@ it("wraps frame <Projection> in .sdk-panel-member and forwards class and style",
     id: "task-summary",
     name: "Task",
     componentId: "@ontomato/sdk:ObjectSummary",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    inputs: { task: { kind: "object", objectType: TRIGGER } },
     outputs: {},
     config: {},
     data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
   };
   const panel = definePanel({
-    state: { selected: { type: { kind: "object", objectType: SCHEDULED_TASK } } },
+    state: { selected: { type: { kind: "object", objectType: TRIGGER } } },
     members: { summary: { target: { projectionId: summaryProj.id }, inputs: { task: { state: "selected" } } } },
   });
   const instance = createPanelInstance(panel, {
@@ -301,7 +301,7 @@ it("wraps frame <Projection> in .sdk-panel-member and forwards class and style",
     pageKey: "frame-height",
     url: () => "/frame-height",
     label: () => "Frame Height",
-    initial: { selected: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+    initial: { selected: { className: TRIGGER, primaryKey: "t-1" } },
     operations: noOperations.operations,
     confirmOperation: noOperations.confirmOperation,
     readProjection: async () => summaryProj as never,
@@ -485,21 +485,21 @@ it("renders ObjectForm with a scrollable body and sibling pinned actions bar", a
     id: "form-proj",
     name: "Task form",
     componentId: "@ontomato/sdk:ObjectForm",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    inputs: { task: { kind: "object", objectType: TRIGGER } },
     outputs: {},
     config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
-    operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } } },
   };
   const manifest = definePanel({
-    state: { selected: { type: { kind: "object", objectType: SCHEDULED_TASK } } },
+    state: { selected: { type: { kind: "object", objectType: TRIGGER } } },
     members: { form: { target: { projectionId: formProj.id }, inputs: { task: { state: "selected" } } } },
   });
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "form-height",
     url: () => "/form-height",
     label: () => "Form Height",
-    initial: { selected: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+    initial: { selected: { className: TRIGGER, primaryKey: "t-1" } },
     text: createPanelText({}, ref("en"), "en"),
     operations: noOperations.operations,
     confirmOperation: noOperations.confirmOperation,
@@ -517,7 +517,7 @@ it("renders ObjectForm with a scrollable body and sibling pinned actions bar", a
           value: {
             save: {
               kind: "form.save",
-              handlerRef: `${SCHEDULED_TASK}.save`,
+              handlerRef: `${TRIGGER}.save`,
               label: "Save",
               effect: "write",
               target: { source: "input", input: "task" },

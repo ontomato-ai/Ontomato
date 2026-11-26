@@ -7,7 +7,9 @@ import { createApp, defineComponent, h, ref, resolveComponent, type App } from "
 import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
-import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
+import { formFieldPointer } from "@ontomato/contracts/form-fields";
+import type { PanelFormDescription, PanelFormSaveInput, PanelRecord } from "@ontomato/contracts/panel-projection";
+import { TRIGGER } from "@ontomato/contracts/platform-object-types";
 import { panelUsePath, type PanelHostMessage } from "@ontomato/contracts/panel-host";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { appsSdkCurrentSchema, type AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
@@ -15,6 +17,7 @@ import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscripti
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import {
   platformScheduleFormSchema,
+  platformSchedulesPath,
   platformTaskRunSchema,
   platformTaskSchema,
   type PlatformScheduleForm,
@@ -49,7 +52,7 @@ messageConfig.duration = 0;
  */
 
 export const READER = "reader-token";
-export const SCHEDULED_TASK = "platform:ScheduledTask";
+export { TRIGGER };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const examples = JSON.parse(
@@ -87,7 +90,7 @@ const current = {
   editable: false,
   visibility: "domain" as const,
 };
-const taskInput = { kind: "object" as const, objectType: SCHEDULED_TASK };
+const taskInput = { kind: "object" as const, objectType: TRIGGER };
 
 type ProjectionFields = Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "id" | "name" | "componentId" | "inputs" | "outputs" | "config" | "data" | "operations">;
 const projection = (fields: ProjectionFields): ProductProjection => ({ ...current, description: fields.name, ...fields });
@@ -109,7 +112,7 @@ const trialProjections: ProjectionFields[] = [
     inputs: { value: taskInput },
     outputs: { selected: taskInput },
     config: {},
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
   },
   {
     id: "projection-schedules-form",
@@ -119,7 +122,7 @@ const trialProjections: ProjectionFields[] = [
     outputs: {},
     config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
-    operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } } },
   },
   {
     id: "projection-schedules-run",
@@ -129,7 +132,7 @@ const trialProjections: ProjectionFields[] = [
     outputs: {},
     config: { operation: "runNow" },
     data: {},
-    operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+    operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
   },
 ];
 
@@ -138,7 +141,7 @@ export const projections: Record<string, ProductProjection> = Object.fromEntries
   trialProjections.map((fields) => [fields.id, projection(fields)]),
 );
 
-const selectedTask = { selectedTask: { type: { kind: "object" as const, objectType: SCHEDULED_TASK }, deepLink: true } };
+const selectedTask = { selectedTask: { type: { kind: "object" as const, objectType: TRIGGER }, deepLink: true } };
 const slot = (projectionId: string, input: string) => ({ target: { projectionId }, inputs: { [input]: { state: "selectedTask" } } });
 
 /**
@@ -338,11 +341,38 @@ export interface Sent {
  * network answering through `answer`. Returns what was sent, in order.
  */
 /** `router` is the platform's, as its app host is installed with it: where a panel's own navigation goes at full page. */
-const panelReadPath = "/api/product-panels/read";
+export const panelReadPath = "/api/product-panels/read";
 const panelReadBatchPath = "/api/product-panels/read-batch";
 
 export function isPanelDataRead({ method, path }: Sent) {
   return method === "POST" && (path === panelReadPath || path === panelReadBatchPath);
+}
+
+/** The trigger's record as the registered read returns it in the frame's language. */
+export const triggerRecord: PanelRecord = {
+  primaryKey: task.id, label: task.title,
+  fields: { application: task.appId, settings: "", state: "on", nextRun: task.nextRunAt },
+  fieldLabels: { application: "Application", settings: "Settings", state: "Status", nextRun: "Next run" },
+};
+
+export function isPanelDatum(request: Sent, dataName: string) {
+  return request.method === "POST" && request.path === panelReadPath
+    && (request.body as { dataName?: string }).dataName === dataName;
+}
+
+/** The mock registered form read returns panel fields and the revision that Save must echo. */
+export function triggerForm(form: PlatformScheduleForm = taskForm): PanelFormDescription {
+  return {
+    fields: form.fields.map(field => ({
+      path: formFieldPointer("/", field.key), label: field.label, required: field.required,
+      defaultValue: field.defaultValue, help: field.help, readOnly: false, valueSchema: { type: "string" },
+      ...(field.type === "select"
+        ? { control: { kind: "select" as const, options: field.options }, refreshOnChange: field.refreshOnChange }
+        : { control: { kind: "text" as const, multiline: field.multiline, placeholder: field.placeholder, maxLength: field.maxLength } }),
+    })),
+    values: form.values, errors: [], revision: task.revision,
+    save: { method: "PUT", path: `${platformSchedulesPath}/${task.id}`, bodySchema: {} },
+  };
 }
 
 function panelReadItems(request: Sent): Sent[] {
@@ -667,7 +697,7 @@ export function liveFormScenario(fixedScope = false) {
         tab: { type: { kind: "scalar", type: "string" }, deepLink: true },
         search: { type: { kind: "scalar", type: "string" } },
         status: { type: { kind: "scalar", type: "string" } },
-        checked: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+        checked: { type: { kind: "list", items: { kind: "object", objectType: TRIGGER } } },
         grantDialog: { type: { kind: "scalar", type: "boolean" } },
         ...(fixedScope ? { scope: { type: { kind: "scalar" as const, type: "string" as const }, default: "global" } } : {}),
       },
@@ -695,14 +725,6 @@ await mountPanel({
   },
 });`;
   const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/applications/app-panels-trial-a/form");
-  const form = platformScheduleFormSchema.parse({
-    ...taskForm,
-    fields: taskForm.fields.map((field) =>
-      field.key === "caseSetId" && field.type === "select"
-        ? { ...field, options: [...field.options, { value: "set-smoke", label: "Smoke (8)", description: null, disabled: false, disabledReason: null }] }
-        : field,
-    ),
-  });
   const address = `/applications/app-panels-trial-a/form?${new URLSearchParams({ selectedTask: task.id })}`;
   let formReads = 0;
   const answer = (request: Sent) => {
@@ -716,9 +738,6 @@ await mountPanel({
     if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, projections, request);
     if (request.path === `/api/product-projections/${formProjection.id}`)
       return Response.json({ projection: formProjection });
-    if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);
-    if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`)
-      return Response.json({ ...form, values: (request.body as { values: typeof form.values }).values });
     if (request.path === "/api/product-panels/read") {
       const { operations, inputs, runtimeParams } = request.body as {
         operations?: true;
@@ -728,7 +747,7 @@ await mountPanel({
       if (operations) {
         return Response.json({ status: "ready", value: {
           save: {
-            kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write",
+            kind: "form.save", handlerRef: `${TRIGGER}.save`, label: "Save", effect: "write",
             target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false,
           },
         } });
@@ -747,7 +766,7 @@ await mountPanel({
           valueSchema: { type: "object" }, control: { kind: "code", language: "json" },
         }],
         values, errors: [], revision: task.revision,
-        save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {} },
+        save: { method: "PUT", path: `${platformSchedulesPath}/${task.id}`, bodySchema: {} },
       } });
     }
     return nothingAt(request);

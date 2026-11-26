@@ -6,7 +6,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { BUSINESS_KNOWLEDGE, TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { noOperations, directRun } from "./panel-frame";
@@ -21,26 +21,26 @@ import { noOperations, directRun } from "./panel-frame";
 const base = { domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "", revision: 1 };
 const taskSummary: DirectProjection = {
   ...base, id: "task-summary", name: "Task", componentId: "@ontomato/sdk:ObjectSummary",
-  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
+  inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {}, config: {},
   data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
-  operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+  operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
 };
 const taskOperationOnly: DirectProjection = {
   ...base, id: "task-ops", name: "Task ops", componentId: "@ontomato/sdk:PanelData",
-  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
+  inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {}, config: {},
   data: {},
-  operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+  operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
 };
-const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { kind: "action", handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 const manifest: DirectPanelManifest = {
-  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
+  state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false } },
   members: {
     task: { target: { projectionId: taskSummary.id }, inputs: { task: { state: "selectedTask" } } },
     actions: { target: { projectionId: taskOperationOnly.id }, inputs: { task: { state: "selectedTask" } } },
   },
 };
 const record = (primaryKey: string) => ({ primaryKey, label: `Task ${primaryKey}`, fields: {} });
-const chosen = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+const chosen = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -322,7 +322,7 @@ it("runs a PanelData member's non-UI operation via usePanelOperation once its ow
   await vi.waitFor(() => expect(element.querySelector(".run")?.textContent).toBe("Run now"));
   await handle.run();
   expect(intents).toEqual([{ applicationId: "app-tasks", useId: "tasks", operationId: "actions.runNow", call: {
-    target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" }, input: {},
+    target: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" }, input: {},
   } }]);
   expect(confirmed).toEqual(["5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05"]);
   (await mount).dispose();

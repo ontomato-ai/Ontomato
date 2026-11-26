@@ -15,7 +15,7 @@ import {
   OBJECT_TYPE,
   ONTOLOGY_TYPE,
   ROLE,
-  SCHEDULED_TASK,
+  TRIGGER,
   USER,
   WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
@@ -378,7 +378,7 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
       name: "Tasks",
       componentId: "@ontomato/sdk:ObjectList",
       inputs: {},
-      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      outputs: { selected: { kind: "object", objectType: TRIGGER } },
       config: {
         columns: [
           { key: "source" },
@@ -387,7 +387,7 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
         ],
       },
       data: {
-        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
       },
     },
     "labeled-summary": {
@@ -395,7 +395,7 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
       id: "labeled-summary",
       name: "Summary",
       componentId: "@ontomato/sdk:ObjectSummary",
-      inputs: { item: { kind: "object", objectType: SCHEDULED_TASK } },
+      inputs: { item: { kind: "object", objectType: TRIGGER } },
       outputs: {},
       config: { fields: ["source", "rawCode"] },
       data: {
@@ -405,7 +405,7 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
   };
   const manifest = definePanel({
     state: {
-      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true },
+      selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true },
     },
     members: {
       list: { target: { projectionId: "labeled-list" }, outputs: { selected: { state: "selectedTask" } } },
@@ -714,7 +714,7 @@ it("infers checkboxes from outputs.checked, freezes visible rows on select-all, 
   expect(element.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.indeterminate).toBe(true);
 
   // Wrong objectType inside list state is rejected by checkPanelValue.
-  expect(() => instance.state.set("checkedKnowledge", [{ className: SCHEDULED_TASK, primaryKey: "t-1" }])).toThrow(TypeError);
+  expect(() => instance.state.set("checkedKnowledge", [{ className: TRIGGER, primaryKey: "t-1" }])).toThrow(TypeError);
 });
 
 it("selects a row without touching the checked list, and supports explicit toggleable: true", async () => {
@@ -789,13 +789,13 @@ it("keeps short columns on one line, ends long text in an ellipsis, and wraps on
       name: "Feedback",
       componentId: "@ontomato/sdk:ObjectList",
       inputs: {},
-      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      outputs: { selected: { kind: "object", objectType: TRIGGER } },
       config: { columns: [{ key: "source" }, { key: "question" }, { key: "answer", wrap: true }] },
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
     },
   };
   const manifest = definePanel({
-    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
     members: { list: { target: { projectionId: "feedback-list" }, outputs: { selected: { state: "selectedTask" } } } },
   });
   const question = "How many contract staff joined the faculty of engineering after the 2024 reorganisation?";
@@ -819,7 +819,7 @@ it("applies shrink sizing and full title when a column's subtitleKey runs long e
       name: "Panels",
       componentId: "@ontomato/sdk:ObjectList",
       inputs: {},
-      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      outputs: { selected: { kind: "object", objectType: TRIGGER } },
       config: {
         columns: [
           { key: "label", subtitleKey: "subtitle" },
@@ -827,11 +827,11 @@ it("applies shrink sizing and full title when a column's subtitleKey runs long e
           { key: "scope" },
         ],
       },
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
     },
   };
   const manifest = definePanel({
-    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
     members: { list: { target: { projectionId: "panel-catalog" }, outputs: { selected: { state: "selectedTask" } } } },
   });
   const subtitle = "A detailed description that far exceeds twenty-four characters and should shrink cleanly with an ellipsis.";
@@ -872,13 +872,13 @@ it("shows a time column so neighbouring times keep their order, the whole time i
         name: "Feedback",
         componentId: "@ontomato/sdk:ObjectList",
         inputs: {},
-        outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+        outputs: { selected: { kind: "object", objectType: TRIGGER } },
         config: { columns: [{ key: "createdAt", kind: "time" }] },
-        data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+        data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
       },
     };
     const manifest = definePanel({
-      state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+      state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
       members: { list: { target: { projectionId: "feedback-list" }, outputs: { selected: { state: "selectedTask" } } } },
     });
     const today = new Date(2026, 10, 22, 6, 14, 46);
@@ -1150,7 +1150,7 @@ it("outputs all matching references when the list read does not page", async () 
       inputs: {},
       outputs: {},
       config: {},
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
     },
   };
   const manifest = definePanel({
@@ -1168,8 +1168,8 @@ it("outputs all matching references when the list read does not page", async () 
   ];
   const { instance, reads } = mountDirect(manifest, projections, () => ready(rows));
   await vi.waitFor(() => expect(instance.outputs.list?.listed).toEqual([
-    { className: SCHEDULED_TASK, primaryKey: "t-1" },
-    { className: SCHEDULED_TASK, primaryKey: "t-2" },
+    { className: TRIGGER, primaryKey: "t-1" },
+    { className: TRIGGER, primaryKey: "t-2" },
   ]));
   expect(reads).toHaveLength(1);
 });
@@ -2841,7 +2841,7 @@ it("renders primary rows immediately while async supplement loads, merges fields
       outputs: { selected: { kind: "object", objectType: "ClassRoom" } },
       data: {
         rows: { source: { type: { kind: "ObjectType", id: "ClassRoom" } }, read: "query", params: {} },
-        supplement: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        supplement: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
       },
       config: {
         layout: "table",
@@ -2994,7 +2994,7 @@ it("keeps primary rows usable when supplement errors or is forbidden and exposes
         outputs: { selected: { kind: "object", objectType: "ClassRoom" } },
         data: {
           rows: { source: { type: { kind: "ObjectType", id: "ClassRoom" } }, read: "query", params: {} },
-          supplement: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+          supplement: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
         },
         config: {
           layout: "table",
@@ -3070,7 +3070,7 @@ it("renders pending ellipsis in #cell slot fallback while supplement is loading"
       outputs: {},
       data: {
         rows: { source: { type: { kind: "ObjectType", id: "ClassRoom" } }, read: "query", params: {} },
-        supplement: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        supplement: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
       },
       config: {
         layout: "table",

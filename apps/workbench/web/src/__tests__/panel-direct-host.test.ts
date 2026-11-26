@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanel, DirectProjection } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { sentPanelReadItems, panelAnswer, panelSnapshot, installPlatform, mountPlatformPage, nothingAt, panelUse, READER, type Sent } from "./panel-frame";
@@ -44,7 +44,7 @@ await mountPanel({
 });`,
   },
   manifest: {
-    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: true, default: null } },
+    state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: true, default: null } },
     members: {
       form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } },
@@ -54,15 +54,15 @@ await mountPanel({
 const projections: Record<string, DirectProjection> = {
   "task-form": {
     ...base, id: "task-form", name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+    inputs: { task: { kind: "object", objectType: TRIGGER }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
     outputs: {}, config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
-    operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } } },
   },
   "task-run": {
     ...base, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: { operation: "runNow" },
-    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+    inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {}, config: { operation: "runNow" },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
   },
 };
 const field = (path: string, label: string) => ({ path, label, control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false });
@@ -70,10 +70,10 @@ const form = (name: string) => ({
   fields: [field("/name", "Name")], values: { name }, errors: [], revision: 3,
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
 });
-const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
-const save = { kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { kind: "action", handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const save = { kind: "form.save", handlerRef: `${TRIGGER}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 const INTENT = "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05";
-const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+const task = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
 
 function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
@@ -97,7 +97,7 @@ function answer(request: Sent) {
   if (request.path === `/api/panel-operation-intents/${INTENT}`)
     return Response.json({ intentId: INTENT, operationId: "run.runNow", label: "Run now", confirmation: { kind: "none" } });
   if (request.path === `/api/panel-operations/intents/${INTENT}/dispatch`)
-    return Response.json({ kind: "dispatched", intentId: INTENT, outcome: { kind: "success", data: {}, affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }], objectTypes: [SCHEDULED_TASK] } } });
+    return Response.json({ kind: "dispatched", intentId: INTENT, outcome: { kind: "success", data: {}, affected: { objects: [{ objectType: TRIGGER, primaryKey: "t-1" }], objectTypes: [TRIGGER] } } });
   return nothingAt(request);
 }
 

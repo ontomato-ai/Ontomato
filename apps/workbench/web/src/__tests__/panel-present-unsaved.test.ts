@@ -4,7 +4,7 @@ import { createApp, defineComponent, h } from "vue";
 import { createPinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
-import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { TRIGGER } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
@@ -137,13 +137,13 @@ describe("an agent's presentation over a panel's unsaved form", () => {
     const otherTask = "another-task";
     const cases = [
       { address: `${pathname}?selectedTask=${otherTask}`, status: "not_opened" },
-      { address: pathname, state: { selectedTask: { className: SCHEDULED_TASK, primaryKey: otherTask } }, status: "not_opened" },
+      { address: pathname, state: { selectedTask: { className: TRIGGER, primaryKey: otherTask } }, status: "not_opened" },
       { address: pathname, status: "not_opened" },
       { address: pathname, state: {}, status: "not_opened" },
       { address: scenario.address, status: "opened" },
       { address: scenario.address, state: { mode: "edit" }, status: "opened" },
-      { address: pathname, state: { selectedTask: { className: SCHEDULED_TASK, primaryKey: selectedTask } }, status: "opened" },
-      { address: `${pathname}?selectedTask=${otherTask}`, state: { selectedTask: { className: SCHEDULED_TASK, primaryKey: selectedTask } }, status: "opened" },
+      { address: pathname, state: { selectedTask: { className: TRIGGER, primaryKey: selectedTask } }, status: "opened" },
+      { address: `${pathname}?selectedTask=${otherTask}`, state: { selectedTask: { className: TRIGGER, primaryKey: selectedTask } }, status: "opened" },
       { address: "/applications/other-app/overview", status: "not_opened" },
     ] as const;
     for (const { status, ...target } of cases) {
@@ -167,7 +167,7 @@ describe("an agent's presentation over a panel's unsaved form", () => {
     const list = {
       search: "smoke",
       status: "pending",
-      checked: [{ className: SCHEDULED_TASK, primaryKey: "another-task" }],
+      checked: [{ className: TRIGGER, primaryKey: "another-task" }],
     };
     expect(await present({ address, state: list })).toMatchObject({ status: "opened" });
     expect(JSON.parse(root.querySelector("[data-list]")!.textContent!)).toEqual(list);

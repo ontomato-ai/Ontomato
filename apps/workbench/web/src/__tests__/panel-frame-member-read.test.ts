@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK, SKILL } from "@ontomato/contracts/platform-object-types";
+import { BUSINESS_KNOWLEDGE, TRIGGER, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { frameMemberData } from "../../../../../packages/apps-sdk/src/panel/frame-member";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
@@ -28,7 +28,7 @@ const knowledge: ProductProjection = {
 };
 const tasks: ProductProjection = {
   ...record, id: "tasks", name: "Tasks", componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
-  data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+  data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
 };
 const skills: ProductProjection = {
   ...record, id: "skills", name: "Skills", componentId: "@ontomato/sdk:ReferencePicker",
@@ -81,7 +81,7 @@ it("reads a type with no resource module through the platform's read entry, over
 });
 
 it("keeps reading a type through its resource module while the module is there, and reads nothing through the platform", async () => {
-  registerPlatformObjectAdapter({ objectType: SCHEDULED_TASK, list: async () => [{ primaryKey: "t-1", label: "Nightly", fields: {} }] });
+  registerPlatformObjectAdapter({ objectType: TRIGGER, list: async () => [{ primaryKey: "t-1", label: "Nightly", fields: {} }] });
   const read = vi.fn(async () => { throw new Error("A type with a module reads through it"); });
   const data = frameMemberData(tasks, "tasks", instance(), () => ({}), read);
   expect(await data.read("rows", {})).toEqual({ status: "ready", value: [{ primaryKey: "t-1", label: "Nightly", fields: {} }] });

@@ -7,7 +7,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -48,7 +48,7 @@ const taskFormProjection = (id: string, inputName = "task"): DirectProjection =>
   name: id,
   componentId: "@ontomato/sdk:ObjectForm",
   inputs: {
-    [inputName]: { kind: "object", objectType: SCHEDULED_TASK },
+    [inputName]: { kind: "object", objectType: TRIGGER },
     values: { kind: "json" },
     changedField: { kind: "scalar", type: "string" },
   },
@@ -62,13 +62,13 @@ const taskFormProjection = (id: string, inputName = "task"): DirectProjection =>
     },
   },
   operations: {
-    save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: inputName } },
+    save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: inputName } },
   },
 });
 
 const saveDescriptor = {
   kind: "form.save" as const,
-  handlerRef: `${SCHEDULED_TASK}.save`,
+  handlerRef: `${TRIGGER}.save`,
   label: "Save task",
   effect: "write" as const,
   target: { source: "input" as const, input: "task" },
@@ -77,7 +77,7 @@ const saveDescriptor = {
   batch: false,
 };
 
-const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+const task = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
 
 function mountLiveForm(options: {
   autoMode: boolean;
@@ -89,7 +89,7 @@ function mountLiveForm(options: {
   };
   const manifest: DirectPanelManifest = {
     state: {
-      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false },
+      selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false },
     },
     members: {
       form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
@@ -142,7 +142,7 @@ function mountLiveForm(options: {
         outcome: {
           kind: "success" as const,
           data: {},
-          affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }], objectTypes: [SCHEDULED_TASK] },
+          affected: { objects: [{ objectType: TRIGGER, primaryKey: "t-1" }], objectTypes: [TRIGGER] },
         },
       },
     };
@@ -262,7 +262,7 @@ describe("live form fillForm and executeAction confirmation lifecycle", () => {
         agentRun: AGENT_RUN,
         invocation: {
           call: {
-            target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+            target: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" },
             input: {
               revision: 4,
               values: { name: "Task t-1", note: "confirmed note" },
@@ -322,7 +322,7 @@ describe("live form fillForm and executeAction confirmation lifecycle", () => {
         outcome: { kind: "success" },
       });
       expect(harness.dispatched).toEqual([{ intentId: pendingFinal.intentId, skipDialog: true }]);
-      expect(harness.savedEvents).toEqual([{ className: SCHEDULED_TASK, primaryKey: "t-1" }]);
+      expect(harness.savedEvents).toEqual([{ className: TRIGGER, primaryKey: "t-1" }]);
       expect(harness.instance.dirty()).toBe(false);
       expect(harness.element.querySelector(".sdk-owner-form-changed")).toBeNull();
     } finally {

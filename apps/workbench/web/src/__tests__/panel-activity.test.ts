@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { ignoreChanges,
-  SCHEDULED_TASK, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, projections,
+import { ignoreChanges, isPanelDatum, triggerRecord,
+  TRIGGER, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, projections,
   registered, task, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -16,27 +16,26 @@ import { ignoreChanges,
 
 const summary = projections["projection-schedules-summary"]!;
 const panel = panelRecord("panel-schedules-summary", "Task summary", definePanel({
-  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
   members: { summary: { target: { projectionId: summary.id }, inputs: { task: { state: "selectedTask" } } } },
 }));
 const use = panelUse("use-trial-b-summary", "panels-trial-b-summary", panel.id, "/applications/app-panels-trial-b/summary");
-const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;
 
 async function opened() {
   const sent = installPlatform((request: Sent) => {
     if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
-    if (request.path === taskPath) return Response.json(task);
+    if (isPanelDatum(request, "record")) return Response.json({ status: "ready", value: triggerRecord });
     return nothingAt(request);
   });
   const frame = panelFrame();
   platformPanelHost("app-panels-trial-b", use, ignoreChanges).frame(frame, registered("app-panels-trial-b", use, panel), true);
-  writePanelDocument(registered("app-panels-trial-b", use, panel), "/applications/app-panels-trial-b/summary", { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } });
+  writePanelDocument(registered("app-panels-trial-b", use, panel), "/applications/app-panels-trial-b/summary", { selectedTask: { className: TRIGGER, primaryKey: task.id } });
   inside(frame);
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   await mountPanel(panelOf("summary"));
   await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title), { timeout: 5000 });
   const post = (message: object) => frame.postMessage({ channel: PANEL_HOST_CHANNEL, ...message }, "*");
-  const reads = (path: string) => sent.filter((request) => request.path === path).length;
+  const reads = (matches: (request: Sent) => boolean) => sent.filter(matches).length;
   /** Lets every message posted so far reach the frame and everything it starts settle. */
   const settled = () => new Promise((resolve) => setTimeout(resolve, 30));
   return { post, reads, settled };
@@ -49,38 +48,39 @@ afterEach(() => {
 
 it("reads nothing while inactive, and reads each changed object once when active again", { timeout: 15000 }, async () => {
   const { post, reads, settled } = await opened();
-  const target = { objectType: SCHEDULED_TASK, primaryKey: task.id };
-  const before = reads(taskPath);
+  const target = { objectType: TRIGGER, primaryKey: task.id };
+  const recordRead = (request: Sent) => isPanelDatum(request, "record");
+  const before = reads(recordRead);
 
   post({ kind: "activity", active: false });
   post({ kind: "object-changed", target });
   post({ kind: "object-changed", target });
   post({ kind: "object-changed", target: null });
   await settled();
-  expect(reads(taskPath)).toBe(before);
+  expect(reads(recordRead)).toBe(before);
 
   post({ kind: "activity", active: true });
   await settled();
-  expect(reads(taskPath)).toBe(before + 1);
+  expect(reads(recordRead)).toBe(before + 1);
 
   // Active again, each refresh reads as it did before.
   post({ kind: "object-changed", target });
   await settled();
-  expect(reads(taskPath)).toBe(before + 2);
+  expect(reads(recordRead)).toBe(before + 2);
 });
 
 it("reads a projection that changed while inactive once, at its latest revision, when active again", { timeout: 15000 }, async () => {
   const { post, reads, settled } = await opened();
-  const projectionPath = `/api/product-projections/${summary.id}`;
-  const before = reads(projectionPath);
+  const projectionRead = (request: Sent) => request.path === `/api/product-projections/${summary.id}`;
+  const before = reads(projectionRead);
 
   post({ kind: "activity", active: false });
   post({ kind: "projections-changed", projections: [{ id: summary.id, revision: summary.revision + 1 }] });
   post({ kind: "projections-changed", projections: [{ id: summary.id, revision: summary.revision + 2 }] });
   await settled();
-  expect(reads(projectionPath)).toBe(before);
+  expect(reads(projectionRead)).toBe(before);
 
   post({ kind: "activity", active: true });
   await settled();
-  expect(reads(projectionPath)).toBe(before + 1);
+  expect(reads(projectionRead)).toBe(before + 1);
 });

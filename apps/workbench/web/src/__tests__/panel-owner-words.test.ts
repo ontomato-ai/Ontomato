@@ -3,7 +3,7 @@ import { createApp, h, reactive, toRaw } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import { productProjectionResponseSchema, type DirectProjection } from "@ontomato/contracts/product-panels";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
@@ -14,16 +14,16 @@ import { platformPanelHost } from "../../../../../packages/platform-web/src/pane
 import projectionsAnswered from "./fixtures/direct-panel-host-http.json";
 import ownerAnswered from "./fixtures/scheduled-task-panel-http.json";
 import {
-  ignoreChanges, inside, installPlatform, leaveFrame, noOperations, nothingAt, panelFrame, panelOf, panelRecord,
+  ignoreChanges, isPanelDatum, triggerRecord, inside, installPlatform, leaveFrame, noOperations, nothingAt, panelFrame, panelOf, panelRecord,
   panelUse, registered, task, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
  * What the scheduled task owner names in the reader's language reaches the reader as the owner said it, wherever the
  * trial's projections are drawn: the names of a task's fields in the summary, the run-now button's name, and what the
- * owner said of a run it started. The owner's answers are what Node answered over HTTP for a reader in Chinese
- * (`fixtures/scheduled-task-panel-http.json`, recorded by B2 against PostgreSQL) and the projections what Node answered
- * for the trial's material (`fixtures/direct-panel-host-http.json`).
+ * owner said of a run it started. The JSON fixtures are based on the Node HTTP recordings for the owner and the trial,
+ * with the object and operation identifiers migrated to the trigger contract. The original recorders are
+ * `panel-pilot-current.integration.test.ts` and `direct-panel-host.integration.test.ts`.
  *
  * What this rules out (128, 2026-11-20): field keys shown where the owner gave names; a button named by the projection's
  * own English name rather than the owner's; the run record a write returns laid out as JSON instead of the owner's words;
@@ -36,7 +36,7 @@ const projection = (id: keyof typeof projectionsAnswered.projections) =>
 const summary = projection("projection-schedules-summary");
 const run = projection("projection-schedules-run");
 const named = ownerAnswered.record.value.fieldLabels;
-const selected = { className: SCHEDULED_TASK, primaryKey: ownerAnswered.record.value.primaryKey };
+const selected = { className: TRIGGER, primaryKey: ownerAnswered.record.value.primaryKey };
 /** The field names a summary shows, in the order it shows them. */
 const shownNames = (root: Document | HTMLElement) => [...root.querySelectorAll(".sdk-object-summary dt")].map((term) => term.textContent?.trim());
 const expectedNames = (summary.config as { fields: (keyof typeof named)[] }).fields.map((field) => named[field]);
@@ -45,7 +45,7 @@ afterEach(leaveFrame);
 
 it("draws the owner's field names, button name and run message in a directly rendered panel", async () => {
   const manifest: DirectPanelManifest = {
-    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
+    state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false } },
     members: {
       summary: { target: { projectionId: summary.id }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: run.id }, inputs: { task: { state: "selectedTask" } } },
@@ -89,18 +89,18 @@ it("draws the owner's field names, button name and run message in a directly ren
 it("names a task's fields in a code panel's frame by the owner's words, in the reader's language", async () => {
   const application = "app-panels-trial-b";
   const q = panelRecord("panel-schedules-summary", "Task summary (trial)", definePanel({
-    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
     members: { summary: { target: { projectionId: summary.id }, inputs: { task: { state: "selectedTask" } } } },
   }));
   const use = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/applications/${application}/summary`);
   installPlatform((request: Sent) => {
     if (request.path === `/api/product-projections/${summary.id}`) return Response.json(projectionsAnswered.projections["projection-schedules-summary"]);
-    if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);
+    if (isPanelDatum(request, "record")) return Response.json({ status: "ready", value: triggerRecord });
     return nothingAt(request);
   });
   const frame = panelFrame();
   platformPanelHost(application, use, ignoreChanges).frame(frame, registered(application, use, q), true);
-  writePanelDocument(registered(application, use, q), use.path, { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } });
+  writePanelDocument(registered(application, use, q), use.path, { selectedTask: { className: TRIGGER, primaryKey: task.id } });
   inside(frame);
   await mountPanel(panelOf("summary"));
   await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));

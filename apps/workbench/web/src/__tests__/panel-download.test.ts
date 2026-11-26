@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { savePanelFile } from "../../../../../packages/apps-sdk/src/panel/save-file";
 import { panelHumanOperations } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
@@ -97,7 +97,7 @@ it("runs a read operation the panel offers as a read, never as a write intent", 
   const read = vi.fn(async () => ({ kind: "file" as const, name: "tasks.csv", mime: "text/csv" as const }));
   const prepare = vi.fn();
   const manifest = definePanel({
-    state: { picked: { type: { kind: "object", objectType: SCHEDULED_TASK } } },
+    state: { picked: { type: { kind: "object", objectType: TRIGGER } } },
     members: { list: { target: { projectionId: "tasks" }, inputs: { task: { state: "picked" } } } },
   });
   const instance = createDirectPanelInstance(manifest, {

@@ -3,9 +3,9 @@ import { platformPanelHost } from "../../../../../packages/platform-web/src/pane
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { connectAppContext } from "../../../../../packages/apps-sdk/src/hosted-context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import { ignoreChanges,
+import { ignoreChanges, isPanelDatum, triggerRecord,
   READER,
-  SCHEDULED_TASK,
+  TRIGGER,
   inside,
   installPlatform,
   leaveFrame,
@@ -39,7 +39,7 @@ const useOfP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", "panel-sche
 
 function answer(request: Sent) {
   if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
-  if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);
+  if (isPanelDatum(request, "record")) return Response.json({ status: "ready", value: triggerRecord });
   return nothingAt(request);
 }
 
@@ -63,7 +63,7 @@ describe("a panel frame and the platform's message bridge", () => {
     // B's page shows Q: B's panel host registers the frame it draws, and writes Q opened at one task into it.
     platformPanelHost("app-panels-trial-b", useOfQ, ignoreChanges).frame(frame, registered("app-panels-trial-b", useOfQ, panelQ), true);
     writePanelDocument(registered("app-panels-trial-b", useOfQ, panelQ), "/applications/app-panels-trial-b/summary", {
-      selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
+      selectedTask: { className: TRIGGER, primaryKey: task.id },
     });
 
     inside(frame);
@@ -79,8 +79,14 @@ describe("a panel frame and the platform's message bridge", () => {
     );
     expect(sent.map(({ method, path, credential }) => ({ method, path, credential }))).toEqual([
       { method: "GET", path: `/api/product-projections/${summary.id}`, credential: READER },
-      { method: "GET", path: `/api/data-query/platform/scheduled-tasks/${task.id}`, credential: READER },
+      { method: "POST", path: "/api/product-panels/read", credential: READER },
     ]);
+
+    expect(sent[1]!.body).toEqual({
+      source: { kind: "registered", applicationId: "app-panels-trial-b", useId: useOfQ.id },
+      memberPath: [{ member: "summary" }], dataName: "record",
+      inputs: { task: { className: TRIGGER, primaryKey: task.id } },
+    });
 
     // What Q may ask for is what Q declares: P's run-now projection and the run it would start are not Q's, even though
     // the reader may run the task in P.

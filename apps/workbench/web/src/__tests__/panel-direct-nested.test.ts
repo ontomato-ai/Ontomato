@@ -6,7 +6,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { PRODUCT_PANEL, PRODUCT_PROJECTION, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { PRODUCT_PANEL, PRODUCT_PROJECTION, TRIGGER } from "@ontomato/contracts/platform-object-types";
 import {
   createDirectPanelInstance, PanelMemberUnavailable, type DirectPanelInstanceOptions, type PanelMemberReadRequest,
 } from "../../../../../packages/apps-sdk/src/panel/direct";
@@ -27,15 +27,15 @@ import { noOperations } from "./panel-frame";
  */
 
 const meta = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
-const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
-const taskType = { kind: "object", objectType: SCHEDULED_TASK } as const;
+const task = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
+const taskType = { kind: "object", objectType: TRIGGER } as const;
 const list = (id: string): DirectProjection => ({
   ...meta, id, name: id, componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
-  data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
-  operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } } },
+  data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
+  operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" } } },
 });
 const runNow = {
-  kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "none" },
+  kind: "action", handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "none" },
   inputSchema: {}, resultSchema: {}, batch: false,
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });

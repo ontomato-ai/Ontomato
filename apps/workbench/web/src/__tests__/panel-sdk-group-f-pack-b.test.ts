@@ -8,7 +8,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import { panelObjectListColumnSchema } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { BUSINESS_KNOWLEDGE, FUNCTION, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { BUSINESS_KNOWLEDGE, FUNCTION, TRIGGER } from "@ontomato/contracts/platform-object-types";
 
 vi.mock("@ontomato/contracts/panel-projection", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@ontomato/contracts/panel-projection")>();
@@ -160,13 +160,13 @@ function mountPanel(
 describe("Task 1 (G1): ObjectList rowActivation='expand', controlled expandedKeys, and dirty-form leave guard", () => {
   const sampleRows = [
     {
-      className: SCHEDULED_TASK,
+      className: TRIGGER,
       primaryKey: "prop-1",
       label: "Order ID",
       fields: { name: "Order ID", dataType: "string" },
     },
     {
-      className: SCHEDULED_TASK,
+      className: TRIGGER,
       primaryKey: "prop-2",
       label: "Total Amount",
       fields: { name: "Total Amount", dataType: "number" },
@@ -195,7 +195,7 @@ describe("Task 1 (G1): ObjectList rowActivation='expand', controlled expandedKey
     },
     data: {
       rows: {
-        source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+        source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
         read: "list",
         params: {},
       },
@@ -597,7 +597,7 @@ describe("Task 2 (G2): ObjectList column minContainerWidth responsive hiding", (
       },
       data: {
         rows: {
-          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
           read: "list",
           params: {},
         },
@@ -616,7 +616,7 @@ describe("Task 2 (G2): ObjectList column minContainerWidth responsive hiding", (
       () =>
         ready([
           {
-            className: SCHEDULED_TASK,
+            className: TRIGGER,
             primaryKey: "t-1",
             label: "Daily sync",
             fields: { name: "Daily sync", status: "Active", owner: "Alice" },
