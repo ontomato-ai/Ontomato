@@ -2,10 +2,7 @@ import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import {
-  buildExecutionContext,
-  buildTestContextSchema,
   buildTestSdkUpgradeDetailsSchema,
-  type AppExecutionContext,
 } from "@ontomato/contracts/build-tests";
 import type { PageContext, PageSelection } from "@ontomato/contracts/page-context";
 import { appCandidatePanelSourceSchema, panelAddressState, type AppCandidatePanelSource } from "@ontomato/contracts/panel-host";
@@ -17,9 +14,8 @@ import type {
   PanelPreviewRequest,
 } from "@ontomato/apps-sdk/direct";
 import { PanelHost, type PanelHostLabels, type PanelHostPort } from "@ontomato/platform-shell";
-import { ApiRequestError, apiUrl, nodeApiGet } from "@ontomato/workbench-ui";
+import { ApiRequestError, nodeApiGet } from "@ontomato/workbench-ui";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
-import { registerBuildPreview } from "./app-host";
 import { appCandidatePanelHost } from "./panel-host";
 
 const LEGACY_SDK_ERROR_CODES = new Set([
@@ -39,7 +35,7 @@ export interface PreviewResolutionRequest {
 
 /**
  * Platform-internal target produced by a preview resolver before mounting into the preview container.
- * Sensitive details (`src` with preview token, `executionContext`, and `PanelHostPort`) remain strictly inside
+ * The `PanelHostPort` remains strictly inside
  * `@ontomato/platform-web` and are never exposed to panel scripts.
  */
 export type ResolvedPreviewTarget =
@@ -49,12 +45,6 @@ export type ResolvedPreviewTarget =
       readonly address: string;
       readonly label?: string;
       readonly initial?: Record<string, unknown>;
-    }
-  | {
-      readonly kind: "hosted";
-      readonly src: string;
-      readonly executionContext: Extract<AppExecutionContext, { kind: "build-test" }>;
-      readonly page?: string | null;
     }
   | {
       readonly kind: "empty";
@@ -78,15 +68,13 @@ export type PreviewTargetResolver = (
 ) => Promise<ResolvedPreviewTarget>;
 
 export interface CreatePanelPreviewHostOptions {
-  /** Custom preview target resolver; defaults to workspace candidate panel -> legacy hosted preview resolution. */
+  /** Custom preview target resolver; defaults to workspace candidate panel resolution. */
   resolvePreview?: PreviewTargetResolver;
   /** Optional custom panel target mounter (primarily for tests). */
   mountPanel?: (
     target: Extract<ResolvedPreviewTarget, { kind: "panel" }>,
     request: PanelPreviewRequest,
   ) => PanelPreviewMountHandle;
-  /** Optional custom build-test iframe registrar (primarily for tests). */
-  registerHostedPreview?: typeof registerBuildPreview;
 }
 
 export interface LegacySdkDetection {
@@ -162,27 +150,16 @@ function isInvalidCandidateError(failure: unknown): boolean {
 }
 
 interface ApplicationPreviewDescriptor {
-  kind: "empty" | "hosted" | "panel";
+  kind: "empty" | "panel";
   appId: string;
-  workspaceId?: string | null;
   activeEntryId?: string | null;
-  hostedPreviewUrl?: string;
-  previewContext?: { kind: "build-test"; test: unknown };
   candidate?: unknown;
-}
-
-function hostedPreviewSrc(hostedPreviewUrl: string): string {
-  if (hostedPreviewUrl.startsWith("/api/")) {
-    return apiUrl(hostedPreviewUrl.slice("/api".length));
-  }
-  return hostedPreviewUrl;
 }
 
 /**
  * Default resolver for application-backed previews:
  * queries the authoritative application preview descriptor (`GET /product-panels/preview/app/:appId`) and mounts
- * either a candidate/live panel (`appCandidatePanelHost`) or a legacy hosted preview iframe without leaking preview
- * tokens, build-test headers, or raw iframe URLs to panel scripts.
+ * a candidate or live panel through `appCandidatePanelHost`.
  */
 export async function defaultResolvePreview(
   request: PreviewResolutionRequest,
@@ -229,17 +206,6 @@ export async function defaultResolvePreview(
       kind: "panel",
       port: appCandidatePanelHost(candidate, pageKey),
       address,
-    };
-  }
-
-  if (descriptor.kind === "hosted" && descriptor.hostedPreviewUrl) {
-    const parsedTest = buildTestContextSchema.nullable().parse(descriptor.previewContext?.test ?? null);
-    const executionContext = buildExecutionContext(descriptor.workspaceId ?? request.appId, parsedTest);
-    return {
-      kind: "hosted",
-      src: hostedPreviewSrc(descriptor.hostedPreviewUrl),
-      executionContext,
-      page: request.entryId ?? "/",
     };
   }
 
@@ -364,58 +330,13 @@ function mountPanelTarget(
   };
 }
 
-function mountHostedTarget(
-  target: Extract<ResolvedPreviewTarget, { kind: "hosted" }>,
-  request: PanelPreviewRequest,
-  registerHostedPreview: typeof registerBuildPreview,
-): PanelPreviewMountHandle {
-  const { global } = workbenchI18n();
-  const iframe = document.createElement("iframe");
-  iframe.className = "platform-app-preview-hosted-frame";
-  iframe.title = global.t("platform.appPreview.iframeTitle");
-  iframe.referrerPolicy = "no-referrer";
-  iframe.style.flex = "1 1 auto";
-  iframe.style.width = "100%";
-  iframe.style.height = "100%";
-  iframe.style.border = "0";
-  iframe.style.minHeight = "0";
-
-  // Append before registering so `contentWindow` exists, and register build-test binding strictly BEFORE setting `src`.
-  request.container.replaceChildren(iframe);
-  if (!iframe.contentWindow) {
-    iframe.remove();
-    throw new Error("Hosted preview frame is not attached to a browsing context");
-  }
-
-  const binding = registerHostedPreview(iframe.contentWindow, target.executionContext);
-  let disposed = false;
-  try {
-    iframe.src = target.src;
-  } catch (failure) {
-    binding.dispose();
-    iframe.remove();
-    throw failure;
-  }
-
-  return {
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      binding.dispose();
-      iframe.remove();
-    },
-  };
-}
-
 /**
  * Creates the platform `PanelPreviewHost` injected into mounted panels under `panelPreviewHostKey`.
- * Resolves and mounts panel or legacy hosted previews through platform-owned host boundaries without exposing
- * preview tokens, build-test headers, credentials, or raw iframe URLs to panel scripts.
+ * Resolves and mounts panel previews through platform-owned host boundaries.
  */
 export function createPanelPreviewHost(options: CreatePanelPreviewHostOptions = {}): PanelPreviewHost {
   const resolvePreview = options.resolvePreview ?? defaultResolvePreview;
   const mountPanel = options.mountPanel ?? mountPanelTarget;
-  const registerHostedPreview = options.registerHostedPreview ?? registerBuildPreview;
 
   return {
     async mount(request: PanelPreviewRequest, signal?: AbortSignal): Promise<PanelPreviewOutcome> {
@@ -449,14 +370,6 @@ export function createPanelPreviewHost(options: CreatePanelPreviewHostOptions = 
             kind: "panel",
             handle,
             page: target.address,
-          };
-        }
-        case "hosted": {
-          const handle = mountHostedTarget(target, request, registerHostedPreview);
-          return {
-            kind: "hosted",
-            handle,
-            page: target.page ?? request.entryId ?? "/",
           };
         }
         case "empty":
