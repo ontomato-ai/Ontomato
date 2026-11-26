@@ -7,7 +7,7 @@ current owner declarations and SDK catalogue. Extend the owner or SDK where a re
 
 ## Add a named owner read or operation
 
-Scheduled tasks are a platform resource with an owner-declared form. The owner supplies the `list`, `record` and
+Task triggers are a platform resource with an owner-declared form. The owner supplies the `list`, `record` and
 `form` reads and the `schedules.runNow` operation. The corresponding projections bind the list, selected task,
 owner form and operation button.
 

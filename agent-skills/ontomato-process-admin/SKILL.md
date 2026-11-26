@@ -1,6 +1,6 @@
 ---
 name: ontomato-process-admin
-description: 以域管理员身份在 Ontomato 上把公司业务流程固化下来：组织架构、成员、岗位、角色与角色的 API/菜单/数据权限、组织授权、Action、Workflow 与 runContract、Trigger、激活授权和可用性验收。用于「建组织/角色/权限」「把这条公司流程固化」「发布流程并授权」「新建触发器」这类任务。
+description: 以域管理员身份在 Ontomato 上把公司业务流程固化下来：组织架构、成员、岗位、角色与角色的 API/菜单/数据权限、组织授权、Action、Workflow 与 runContract、任务触发、激活授权和可用性验收。用于「建组织/角色/权限」「把这条公司流程固化」「发布流程并授权」「新建任务触发」这类任务。
 ---
 
 # Ontomato 固定业务流程管理
@@ -506,42 +506,33 @@ node client.mjs wf-delete <workflowId>       # 只对草稿/已失效流程
 
 ---
 
-## 6. 阶段 4：Trigger（何时自动开始）
+## 6. 阶段 4：配置任务触发
 
-触发器是能力层对象，表 `trigger_def`。当前只有两种组合能保存：
+本体管理器能力层和侧栏的「任务触发」打开同一张面板。可以按间隔、每日、每周、每月或 Cron 运行一个动作、启动一个流程，或运行应用提供的智能体、运维巡检和知识治理。选择应用目标时，在面板里填写应用提供的表单。
 
-- 条件：`time`
-- 效果：`action` 或 `workflow`
-
-其他条件（Definition 成员变化、MetricView 阈值、Action 完成）和其他效果（Skill、通知）**保存时直接拒绝**，不会存下一个永远不会触发的定义。
+下面创建每天九点启动流程的定义。先用 `trigger-targets` 取得当前域可用的流程 ID：
 
 ```bash
-node client.mjs trigger-save '{
-  "name":"每天九点发起巡检",
-  "conditionKind":"time",
-  "condition":{
-    "frequency":{"kind":"daily","time":"09:00"},
-    "timeZone":"Asia/Shanghai"
-  },
-  "effectKind":"workflow",
-  "effect":{"workflowId":"<workflowId>","requester":"<loginCode>"},
-  "executor":"<subjectId>",
-  "enabled":true
+node client.mjs trigger-targets
+node client.mjs trigger-create '{
+  "title":"每天九点发起巡检",
+  "targetKind":"workflow",
+  "targetId":"<workflowId>",
+  "content":{"inputs":{}},
+  "frequency":{"kind":"daily","time":"09:00"},
+  "timeZone":"Asia/Shanghai",
+  "notifyEmail":null
 }'
-
-# workflow 效果还可带 effect.inputs 和 effect.goalText
-node client.mjs trigger-list
-node client.mjs trigger-status <triggerId> PUBLISHED true
-node client.mjs trigger-run <triggerId>       # 手动点火一次
+node client.mjs trigger-get <triggerId>
+node client.mjs trigger-status <triggerId> PUBLISHED <revision>
+node client.mjs trigger-run <triggerId>
+node client.mjs trigger-history <triggerId>
 ```
 
-- 频率支持 `interval / daily / weekly / monthly / cron`。
-- `trigger/save` 默认 `PENDING_REVIEW`；`trigger/status PUBLISHED` 才布防（enabled 自动为 true）。
-- `effect=workflow` 只把启动请求交给 Praxis `POST /runs`，Ontomato 不复制步骤状态机；`/runs` 默认立即执行 engine tick，所以固定步骤可能在同一请求内完成，人工步骤则进入 routing/waiting。
-- Trigger 的主体是 `executor`，省略或 `requester` 都表示创建人。workflow 效果要求该主体具备可用的后台凭据；只有 executor 本人在交互登录后保存或发布触发器时才会准备这份凭据，否则点火会明确报凭据缺失/失效。
-- 幂等键是 `<triggerId>:<epochSecond>`；同一槽重复点火在账本侧 409，不会产生第二条 Run。
-- 调度器每秒取一次 due，先占槽再点火；崩溃最多丢一次，不会重复写业务。
-- 触发器只支持单副本；多副本需要数据库层抢占（当前没有）。
+- `trigger-create` 默认保存待审。加 `--publish` 可保存并启用。定义作者以自己身份执行自己有权使用的目标时可直接发布，指定他人身份发布需要管理更改权限。
+- 到点执行人由 `executorId` 指定，缺省为创建人。手动运行按点击者的身份和目标权限执行。后台凭据由持有人本人续期。
+- 流程的运行记录显示「已启动流程」并给出流程运行编号。审批和最终结果到 Praxis 的流程运行里查看。
+- 修改时用 `trigger-update <triggerId> <json>` 提交完整定义和最近读取的 `revision`。用 `trigger-history <triggerId> <runId>` 打开有权查看的单条运行记录。
 
 ---
 
@@ -577,13 +568,13 @@ node client.mjs verify <workflowId>
 
 如果流程走 Praxis（有账本/待办），运行侧用 `ontomato-process-operator`：`inbox` → `decide`。
 
-### 7.3 触发器验收
+### 7.3 任务触发验收
 
 ```bash
 node client.mjs trigger-run <triggerId>
 ```
 
-看返回的 `status/runId`；再查 Praxis `/runs/<runId>`（operator skill）或业务对象是否产生。
+用 `trigger-history <triggerId> <runId>` 查看该次运行的结果。启动流程时，按记录中的流程运行编号到 Praxis 查看审批进度。
 
 ---
 
@@ -608,7 +599,7 @@ node client.mjs trigger-run <triggerId>
 | `actions / action-get / action-save / action-reexplain / action-publish / action-retire` | Action |
 | `wf-save / wf-query / wf-activate / wf-deactivate / wf-delete` | Workflow |
 | `wf-grants / wf-access` | 生效授权/平台操作 |
-| `trigger-*` | 触发器 |
+| `trigger-*` | 任务触发 |
 | `verify` | 静态验收 |
 
 写命令都支持 `--dry-run`，只在本地打印请求体，不登录、不访问服务端、不落库。
@@ -636,8 +627,8 @@ node client.mjs trigger-run <triggerId>
 15. `activationNotes` 非空说明待办/详情查询没生成；不要忽略。
 16. 重复激活未改步骤会 `version+1` 并重发授权；不要用它重试。
 17. 生效中的流程不能删；先 `wf-deactivate`。
-18. Trigger 只有 `time` 条件 + `action/workflow` 效果可保存；其他在 `validate()` 拒绝。
-19. Trigger 发布才布防；`triggerKey` 按秒幂等。
+18. 任务触发支持时间条件。
+19. 已发布、启用且未被系统暂停的定义才会到点执行。
 20. `workflow/query` 不返回步骤级 input/executor/assignee；运行输入在创建 Run 时给。
 21. 域管理员的初始密码由 `DomainSvcImpl.create` 固定为 `admin`（本地/测试用；生产要改）。
 22. 组织授权的 `self_*` 按 recipient 的基组织解析，不填 targetId/userId。
