@@ -304,6 +304,7 @@ export const panelReadParameterSchemas = {
   panelFormValues: panelFormValuesSchema,
   changedField: fieldPath.nullable(),
   keyword: z.string(),
+  objectGrantField: z.string().min(1),
   agentKind: z.string().trim().min(1),
   agentId: z.string().uuid(),
   agentSkillTarget: agentSkillTargetSchema,
@@ -356,6 +357,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
   switch (parameter) {
     case "changedField":
     case "keyword":
+    case "objectGrantField":
     case "agentKind":
     case "agentId":
     case "agentSkillTarget":

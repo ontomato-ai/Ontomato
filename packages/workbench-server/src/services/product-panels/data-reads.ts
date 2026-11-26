@@ -461,6 +461,8 @@ function readAdapters(
       record: selection => governance.policies.record(selection.primaryKey!),
       form: (selection, params) => governance.policies.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => governance.policies.createForm(formParams(params)),
+      objectGrantCandidates: (selection, params) => governance.policies.objectGrantCandidates(selection.primaryKey!, params),
+      dataClassCandidates: (selection, params) => governance.policies.dataClassCandidates(selection.primaryKey!, params),
     },
     [ORG_UNIT]: {
       count: () => governance.orgUnits.count(),

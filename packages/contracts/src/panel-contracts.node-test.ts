@@ -63,7 +63,7 @@ import {
 } from "./platform-ontology";
 import {
   APPLICATION_PANEL_USE, DEFINITION, DELETE_PERMISSION_POLICY, GRANT_POLICY_ENTRIES, INSPECT_POLICY_ACCESS,
-  POLICY_OBJECT_GRANT_CANDIDATES, PREVIEW_POLICY_ENTRY_REVOKE, REVOKE_POLICY_ENTRIES,
+  PREVIEW_POLICY_ENTRY_REVOKE, REVOKE_POLICY_ENTRIES,
   LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
   PERMISSION_POLICY, PREVIEW_POLICY_ENTRY_GRANT, PRODUCT_PROJECTION,
   RESOLVE_PENDING_POLICY_GRANT, ROLE, USER as ONTOLOGY_USER,
@@ -790,12 +790,12 @@ test("feedback, governance records and the skill library read through their owne
 test("permission policy describes and saves all grants through its owner form", () => {
   const policy = platformObjectTypes[PERMISSION_POLICY];
   assert.deepEqual(Object.keys(policy.reads ?? {}).sort(), [
-    "count", "createForm", "form", "options", "query", "record", "resolve",
+    "count", "createForm", "dataClassCandidates", "form", "objectGrantCandidates", "options", "query", "record", "resolve",
   ]);
   assert.deepEqual(policy.operations, [
     `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
     PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES, REVOKE_POLICY_ENTRIES, PREVIEW_POLICY_ENTRY_REVOKE,
-    POLICY_OBJECT_GRANT_CANDIDATES, LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY,
+    LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY,
     RESOLVE_PENDING_POLICY_GRANT, INSPECT_POLICY_ACCESS,
   ]);
 });

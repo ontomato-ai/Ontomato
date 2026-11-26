@@ -29,7 +29,6 @@ import {
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
   PREVIEW_POLICY_ENTRY_REVOKE,
-  POLICY_OBJECT_GRANT_CANDIDATES,
   READ_MEMBER_ACCESS_CONTEXT,
   READ_MEMBER_EFFECTIVE_ACCESS,
   REGENERATE_USER_API_KEY,
@@ -107,10 +106,6 @@ const policyUsageSchema = z.object({
   roleCount: z.number().int().nonnegative(),
   userCount: z.number().int().nonnegative(),
   roles: z.array(z.object({ id: z.string().min(1), name: z.string() })),
-}).strict();
-const objectGrantCandidatesInputSchema = z.object({
-  field: z.string().min(1),
-  values: z.record(z.unknown()).optional(),
 }).strict();
 const jsonReadResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonObjectSchema });
 
@@ -1065,34 +1060,6 @@ export const governanceServerOperations = [
         kind: "json" as const,
         value: await previewEntryGrantPayload(host.executor.credentials, host.executor.owner.domainId, policyId, entryIds),
       };
-    },
-  },
-  {
-    handlerRef: POLICY_OBJECT_GRANT_CANDIDATES,
-    labelKey: "panels.governance.policy.operations.objectGrantCandidates",
-    kind: "action",
-    binding: { kind: "PlatformOperation", id: POLICY_OBJECT_GRANT_CANDIDATES },
-    effect: "read",
-    batch: false,
-    target: { source: "input", input: "policy" },
-    targetType: PERMISSION_POLICY,
-    targetSchema: objectTarget(PERMISSION_POLICY),
-    inputSchema: objectGrantCandidatesInputSchema,
-    resultSchema: jsonReadResultSchema,
-    async execute(host: PanelOperationHost, call) {
-      const policyId = policyReadTargetId(call.target);
-      const { field, values } = objectGrantCandidatesInputSchema.parse(call.input);
-      const envelope = await ownerPost(host, "/panel/governance/policies/object-candidates", {
-        id: policyId,
-        field,
-        ...(values ? { values } : {}),
-        workbenchCatalog: await loadPolicyWorkbenchCatalog(host.executor.owner.domainId, host.locale),
-      }, ownerEnvelopeSchema);
-      if (!envelope.success) {
-        throw new HttpError(422, envelope.message ?? "The owner could not list object grant candidates",
-          "PERMISSION_POLICY_CANDIDATES_UNAVAILABLE");
-      }
-      return { kind: "json" as const, value: runtimeJsonObjectSchema.parse(envelope.data) };
     },
   },
   {
