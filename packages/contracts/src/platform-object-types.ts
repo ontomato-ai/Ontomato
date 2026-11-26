@@ -329,8 +329,9 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
       latestRunRecord: {
-        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" }, result: "panelRecord",
         outputs: {
+          status: { kind: "scalar", type: "string" },
           resultPath: { kind: "scalar", type: "string" },
           isRunning: { kind: "scalar", type: "boolean" },
         },
@@ -1270,6 +1271,17 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           className: { kind: "scalar", type: "string" },
           primaryKey: { kind: "scalar", type: "string" },
           title: { kind: "scalar", type: "string" },
+        },
+      },
+      dashboardCardsStatus: {
+        source: "type",
+        parameterMode: "fixed",
+        params: {},
+        result: "panelRecord",
+        outputs: {
+          missingCount: { kind: "scalar", type: "number" },
+          metricCount: { kind: "scalar", type: "number" },
+          chartCount: { kind: "scalar", type: "number" },
         },
       },
     },

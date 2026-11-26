@@ -117,8 +117,8 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
         ? withReadDirective(row, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
         : row;
     },
-    async latestRunRecord(primaryKey: string) {
-      const row = await reads.latestRunRecord(primaryKey);
+    async latestRunRecord(primaryKey: string, runId?: string) {
+      const row = await reads.latestRunRecord(primaryKey, runId);
       return row.outputs?.isRunning === true
         ? withReadDirective(row, { rereadAfterMs: SCHEDULE_RUN_REREAD_MS })
         : row;

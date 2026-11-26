@@ -14,7 +14,9 @@ import type { FormFieldError, PanelFormOption } from "@ontomato/contracts/form-f
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import {
   panelReadOperationInputSchema,
-  panelReadOperationJsonResultSchema,
+  panelReadOperationSectionsResultSchema,
+  type PanelReadOperationFieldItem,
+  type PanelReadOperationSectionsResult,
   type panelReadOperationCallSchema,
 } from "@ontomato/contracts/panel-operations";
 import {
@@ -209,7 +211,6 @@ function savedConfig(adapterMode: string, data: unknown): SinglePanelOperationOu
     affected: affected(DATA_ADAPTER_CONFIG, DOMAIN_KEY, SANDBOX_AFFECTED_TYPES),
   };
 }
-const jsonResultSchema = panelReadOperationJsonResultSchema.options[1];
 const testParamsSchema = z.object({
   sourceId: z.string().nullish(),
 }).passthrough();
@@ -1517,11 +1518,18 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
     target: { source: "draft" },
     targetSchema: dataAdapterTargetSchema.optional(),
     inputSchema: panelReadOperationInputSchema,
-    resultSchema: jsonResultSchema,
+    resultSchema: panelReadOperationSectionsResultSchema,
+    describeResultSections(_host, locale) {
+      const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
+      return [
+        { id: "summary", label: t("panels.dataAdapters.record.summary"), kind: "fields" as const },
+        { id: "objects", label: t("panels.dataAdapters.test.colName"), kind: "records" as const },
+      ];
+    },
     async execute(
       host: PanelOperationHost,
       call: z.infer<typeof panelReadOperationCallSchema>,
-    ) {
+    ): Promise<PanelReadOperationSectionsResult> {
       const locale = host.locale;
       const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
       const { draft, parameters } = panelReadOperationInputSchema.parse(call.input);
@@ -1609,9 +1617,78 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
         throw new HttpError(502, t("panels.dataAdapters.test.invalidReport"), "INVALID_TEST_REPORT");
       }
 
+      const data = report.data;
+      const summaryItems: PanelReadOperationFieldItem[] = [
+        { label: t("panels.dataAdapters.test.duration"), value: `${data.elapsedMs} ms` },
+      ];
+      if (data.kind === "catalog") {
+        summaryItems.push(
+          { label: t("panels.dataAdapters.test.database"), value: `${data.databaseProduct} ${data.databaseVersion}`.trim() },
+          { label: t("panels.dataAdapters.test.driver"), value: `${data.driverName} ${data.driverVersion}`.trim() },
+        );
+        if (data.catalog !== null) {
+          summaryItems.push({ label: t("panels.dataAdapters.test.catalog"), value: data.catalog });
+        }
+        if (data.schema !== null) {
+          summaryItems.push({ label: t("panels.dataAdapters.test.schema"), value: data.schema });
+        }
+        return {
+          kind: "sections" as const,
+          banner: {
+            tone: "success" as const,
+            title: t("panels.dataAdapters.test.succeeded"),
+          },
+          sections: [
+            {
+              id: "summary",
+              label: t("panels.dataAdapters.record.summary"),
+              kind: "fields" as const,
+              items: summaryItems,
+            },
+            {
+              id: "objects",
+              label: t("panels.dataAdapters.test.tablesHeading", { count: data.tables.length }),
+              kind: "records" as const,
+              columns: [
+                { key: "name", label: t("panels.dataAdapters.test.colName") },
+                { key: "type", label: t("panels.dataAdapters.test.colType") },
+              ],
+              rows: data.tables.map((table) => ({ name: table.name, type: table.type })),
+              emptyText: t("panels.dataAdapters.test.noTables"),
+            },
+          ],
+        };
+      }
+
+      summaryItems.push({
+        label: t("panels.dataAdapters.test.searchEngine"),
+        value: `${data.databaseProduct} ${data.databaseVersion ?? ""}`.trim(),
+      });
+      if (data.clusterName !== null) {
+        summaryItems.push({ label: t("panels.dataAdapters.test.cluster"), value: data.clusterName });
+      }
       return {
-        kind: "json" as const,
-        value: report.data,
+        kind: "sections" as const,
+        banner: {
+          tone: "success" as const,
+          title: t("panels.dataAdapters.test.succeeded"),
+        },
+        sections: [
+          {
+            id: "summary",
+            label: t("panels.dataAdapters.record.summary"),
+            kind: "fields" as const,
+            items: summaryItems,
+          },
+          {
+            id: "objects",
+            label: t("panels.dataAdapters.test.indicesHeading", { count: data.indices.length }),
+            kind: "records" as const,
+            columns: [{ key: "name", label: t("panels.dataAdapters.test.colName") }],
+            rows: data.indices.map((index) => ({ name: index })),
+            emptyText: t("panels.dataAdapters.test.noIndices"),
+          },
+        ],
       };
     },
   } satisfies PanelReadServerOperation,

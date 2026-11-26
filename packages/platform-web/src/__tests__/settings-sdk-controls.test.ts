@@ -7,7 +7,7 @@ import type { PanelFormDescription } from "@ontomato/contracts/panel-projection"
 import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import DataAdapterTestReport from "../../../apps-sdk/src/base/DataAdapterTestReport.vue";
+import OperationResult from "../../../apps-sdk/src/base/OperationResult.vue";
 import ObjectForm from "../../../apps-sdk/src/base/ObjectForm.vue";
 import PageHeader from "../../../apps-sdk/src/base/PageHeader.vue";
 import { SdkButton } from "../../../apps-sdk/src/ui/SdkButton";
@@ -583,25 +583,41 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
     expect(instance.refreshing.value).toBe(false);
   });
 
-  it("renders structured DataAdapterTestReport for catalog, search engine, and error outcomes (DA-06)", () => {
-    const sqlWrapper = mount(DataAdapterTestReport, {
+  it("renders stacked OperationResult with banner, bordered fields, and compact record list (DA-06)", () => {
+    const sqlWrapper = mount(OperationResult, {
       props: {
-        outcome: {
-          ok: true,
-          result: {
-            kind: "catalog",
-            elapsedMs: 42,
-            databaseProduct: "PostgreSQL",
-            databaseVersion: "16.2",
-            driverName: "pg-jdbc",
-            driverVersion: "42.7",
-            catalog: "analytics_db",
-            schema: "public",
-            tables: [
-              { name: "public.orders", type: "TABLE" },
-              { name: "order_items", type: "VIEW" },
-            ],
-          },
+        layout: "stack",
+        result: {
+          kind: "sections",
+          banner: { tone: "success", title: "Connection test succeeded" },
+          sections: [
+            {
+              id: "summary",
+              label: "Summary",
+              kind: "fields",
+              items: [
+                { label: "Duration", value: "42 ms" },
+                { label: "Database", value: "PostgreSQL 16.2" },
+                { label: "Driver", value: "pg-jdbc 42.7" },
+                { label: "Catalog", value: "analytics_db" },
+                { label: "Schema", value: "public" },
+              ],
+            },
+            {
+              id: "objects",
+              label: "Tables and views (2)",
+              kind: "records",
+              columns: [
+                { key: "name", label: "Name" },
+                { key: "type", label: "Type" },
+              ],
+              rows: [
+                { name: "public.orders", type: "TABLE" },
+                { name: "order_items", type: "VIEW" },
+              ],
+              emptyText: "No tables or views visible to this connection.",
+            },
+          ],
         },
       },
       global: { plugins: [makeI18n()] },
@@ -612,19 +628,34 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
     expect(sqlWrapper.text()).toContain("analytics_db");
     expect(sqlWrapper.text()).toContain("public.orders");
     expect(sqlWrapper.text()).toContain("TABLE");
+    expect(sqlWrapper.findAll(".sdk-operation-record-list li")).toHaveLength(2);
 
-    const searchWrapper = mount(DataAdapterTestReport, {
+    const searchWrapper = mount(OperationResult, {
       props: {
-        outcome: {
-          ok: true,
-          result: {
-            kind: "search",
-            elapsedMs: 18,
-            databaseProduct: "Elasticsearch",
-            databaseVersion: "8.14",
-            clusterName: "ontomato-search",
-            indices: ["orders-2026", "customers-v2"],
-          },
+        layout: "stack",
+        result: {
+          kind: "sections",
+          banner: { tone: "success", title: "Connection test succeeded" },
+          sections: [
+            {
+              id: "summary",
+              label: "Summary",
+              kind: "fields",
+              items: [
+                { label: "Duration", value: "18 ms" },
+                { label: "Search engine", value: "Elasticsearch 8.14" },
+                { label: "Cluster", value: "ontomato-search" },
+              ],
+            },
+            {
+              id: "objects",
+              label: "Indices (2)",
+              kind: "records",
+              columns: [{ key: "name", label: "Name" }],
+              rows: [{ name: "orders-2026" }, { name: "customers-v2" }],
+              emptyText: "No indices visible to this connection.",
+            },
+          ],
         },
       },
       global: { plugins: [makeI18n()] },
@@ -633,11 +664,21 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
     expect(searchWrapper.text()).toContain("ontomato-search");
     expect(searchWrapper.text()).toContain("orders-2026");
 
-    const errWrapper = mount(DataAdapterTestReport, {
-      props: { outcome: { ok: false, message: "ECONNREFUSED 127.0.0.1:5432" } },
+    const errWrapper = mount(OperationResult, {
+      props: {
+        layout: "stack",
+        result: {
+          kind: "sections",
+          banner: { tone: "error", title: "Connection failed", detail: "ECONNREFUSED 127.0.0.1:5432" },
+          sections: [
+            { id: "objects", label: "Tables and views (0)", kind: "records", columns: [{ key: "name", label: "Name" }], rows: [], emptyText: "No tables" },
+          ],
+        },
+      },
       global: { plugins: [makeI18n()] },
     });
     expect(errWrapper.findComponent({ name: "ElAlert" }).props("type")).toBe("error");
     expect(errWrapper.text()).toContain("ECONNREFUSED 127.0.0.1:5432");
+    expect(errWrapper.text()).toContain("No tables");
   });
 });

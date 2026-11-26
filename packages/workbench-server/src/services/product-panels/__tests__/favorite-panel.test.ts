@@ -307,8 +307,27 @@ it("executes live dashboard card previews with formatted KPI values, chart paylo
   // Chart c1 carries wrapped chartFile, output, and partial truncation flag
   expect(rows[3]?.fields).toMatchObject({
     cardKind: "chart",
+    groupId: "preview",
+    colSpan: 6,
+    rowSpan: 2,
     partial: true,
     chartFile: { kind: "json" },
     output: { kind: "json" },
+  });
+
+  // Explicit followed cards that are deleted or inaccessible are omitted from preview rows and reported via missingCount
+  state.dashboardCards = { "dash-live": ["m1", "deleted-card-1", "c1", "deleted-card-2"] };
+  const filteredRows = await adapter.list({ targetGroup: "dashboardCards" });
+  expect(filteredRows.map(r => r.fields.cardId)).toEqual(["m1", "c1"]);
+  const statusRecord = await adapter.dashboardCardsStatus();
+  expect(statusRecord.outputs).toEqual({
+    missingCount: 2,
+    metricCount: 1,
+    chartCount: 1,
+  });
+  expect(statusRecord.fields).toMatchObject({
+    missingCount: 2,
+    metricCount: 1,
+    chartCount: 1,
   });
 });

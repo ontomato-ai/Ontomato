@@ -44,9 +44,10 @@ describe("Wave 2B Cat-2 B-block wiring contracts", () => {
     expect(byKey.get("updatedAt")).toBe(901);
   });
 
-  it("SC-02 skipped per work_item-62190574: schedules appFilter remains SegmentedControl", () => {
+  it("SC-02: schedules appFilter uses SegmentedControl with maxVisible=6 overflow menu", () => {
     const members = readMembers(resolve(schedulePanels, "schedules/panel.json"));
     expect(members.appFilter?.component).toBe("SegmentedControl");
+    expect((members.appFilter?.config as Record<string, unknown>)?.maxVisible).toBe(6);
   });
 
   it("SC-04, SC-12, SC-13: schedules panel wires ScheduledTaskSummaryList cards, multi-row runDetail, and declarative reread", () => {

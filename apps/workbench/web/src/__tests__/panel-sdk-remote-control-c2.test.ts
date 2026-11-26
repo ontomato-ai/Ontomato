@@ -519,7 +519,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
     }));
     const projections = new Map<string, ProductProjection>();
     const members = Object.fromEntries(Object.entries(authoring).map(([name, definition]) => {
-      if (!("component" in definition)) throw new Error(`Expected authored projection for ${name}`);
+      if (!("component" in definition)) return [name, definition];
       const { projection, placement } = expandPanelAuthoringMember(name, definition, {
         state: manifest.state,
         typeTable: { objectTypes },

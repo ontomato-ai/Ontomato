@@ -145,9 +145,11 @@ describe("personal workspace home panel lifecycle", () => {
     try {
       const pwDir = path.join(packagesRoot, "platform-shell/resources/builtin-panels/personal-workspace");
       const odbDir = path.join(packagesRoot, "ontology-manager/resources/builtin-panels/object-detail-body");
+      const runDetailDir = path.join(packagesRoot, "platform-schedules/resources/builtin-panels/scheduled-task-run-detail");
       await symlink(pwDir, path.join(bundle, "personal-workspace"));
       await symlink(odbDir, path.join(bundle, "object-detail-body"));
-      await writeFile(path.join(bundle, "index.json"), JSON.stringify(["personal-workspace", "object-detail-body"]));
+      await symlink(runDetailDir, path.join(bundle, "scheduled-task-run-detail"));
+      await writeFile(path.join(bundle, "index.json"), JSON.stringify(["personal-workspace", "object-detail-body", "scheduled-task-run-detail"]));
       const { panels } = await readBuiltinProducts(bundle);
       const rawBuiltin = panels.get("builtin-product-personal-workspace")!;
       expect(rawBuiltin).toBeDefined();

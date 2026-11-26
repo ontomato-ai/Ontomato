@@ -332,17 +332,22 @@ describe("readBuiltinProducts", () => {
           ]),
         },
       });
-      expect(pwMemberProjection("favoriteDashboardCards")?.componentId).toBe("@ontomato/sdk:DashboardMetricPreview");
+      expect(pwMemberProjection("favoriteDashboardCards")?.componentId).toBe("@ontomato/sdk:GroupedGrid");
+      expect(pwMemberProjection("favoriteDashboardCardsNotice")?.componentId).toBe("@ontomato/sdk:InfoBanner");
+      expect(pwMemberProjection("previewMetricCard")?.componentId).toBe("@ontomato/sdk:MetricCard");
+      expect(pwMemberProjection("previewChartCard")?.componentId).toBe("@ontomato/sdk:MetricChart");
       expect(pwMemberProjection("cardChartPreview")?.componentId).toBe("@ontomato/sdk:MetricChart");
       expect(pwMemberProjection("cardChartPreview")?.data).toEqual({
         template: expect.objectContaining({ read: "chartTemplate" }),
         result: expect.objectContaining({ read: "result" }),
       });
       expect(pwMemberProjection("scheduledTasks")?.componentId).toBe("@ontomato/sdk:ScheduledTaskSummaryList");
-      expect(pwMemberProjection("taskSummary")?.componentId).toBe("@ontomato/sdk:ScheduledTaskRunDetail");
-      expect(pwMemberProjection("taskSummary")?.data).toEqual({
-        record: expect.objectContaining({ read: "latestRunRecord" }),
+      expect(personalWorkspace!.manifest.members.taskSummary?.target).toEqual({
+        panelId: "builtin-product-scheduled-task-run-detail",
       });
+      const runDetailPanel = panels.get("builtin-product-scheduled-task-run-detail");
+      expect(runDetailPanel).toBeDefined();
+      expect(runDetailPanel!.content.html).not.toMatch(/<el-|--el-|:deep\(/);
       expect(personalWorkspace!.content.html).toContain("<object-title");
       expect(personalWorkspace!.content.html).toContain('slot="cardChartPreview"');
       expect(personalWorkspace!.content.module).toContain("currentUser");
@@ -373,6 +378,10 @@ describe("readBuiltinProducts", () => {
       );
       await checkBuiltinPanelSource(
         path.join(packagesRoot, "platform-shell/resources/builtin-panels/personal-workspace"),
+        { ...panelCheck, draftReadOperationIds: [] },
+      );
+      await checkBuiltinPanelSource(
+        path.join(packagesRoot, "platform-schedules/resources/builtin-panels/scheduled-task-run-detail"),
         { ...panelCheck, draftReadOperationIds: [] },
       );
       await checkBuiltinPanelSource(
