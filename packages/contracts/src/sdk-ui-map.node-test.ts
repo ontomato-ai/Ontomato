@@ -329,6 +329,12 @@ test("checkProjectionConfigSources rejects one member value written in two place
   assert.match(violations[1]!.message, /writes 'type' in its config/u);
 });
 
+test("checkProjectionConfigSources accepts an input a member declares as coming from the slot", () => {
+  const members = { rowDetail: { inputs: { target: { fromSlot: true } }, config: { actions: "footer" } } };
+  const html = '<projection slot="rowDetail" :inputs="{ target: ref }"></projection>';
+  assert.deepEqual(checkProjectionConfigSources(members, html, "panel.html"), []);
+});
+
 test("checkProjectionConfigSources rejects config and inputs of one member naming the same value", () => {
   const violations = checkProjectionConfigSources(
     { header: { config: { fallbackTitle: "x", subtitle: "" }, inputs: { fallbackTitle: { state: "selected" } } } },

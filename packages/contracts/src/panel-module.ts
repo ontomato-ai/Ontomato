@@ -625,7 +625,9 @@ export function checkProjectionConfigSources(
             template, file, tag.tagStart + attr.nameOffset, "projection-config-duplicate", name, null,
             `Member '${member}' writes '${name}' in its config and again in the placement's :${bound[1]}; keep the value where it belongs: fixed presentation in config, a value that follows the page in :values.`,
           ));
-        } else if (Object.hasOwn(declaration.inputs ?? {}, name)) {
+        } else if (Object.hasOwn(declaration.inputs ?? {}, name)
+          // `{ fromSlot: true }` declares that the slot supplies this input: the placement is its only source.
+          && !(bound[1] === "inputs" && "fromSlot" in (declaration.inputs![name] as object))) {
           violations.push(makeViolation(
             template, file, tag.tagStart + attr.nameOffset, "projection-config-duplicate", name, null,
             `Member '${member}' binds input '${name}' in its declaration and again in the placement's :${bound[1]}; one input has one source.`,
