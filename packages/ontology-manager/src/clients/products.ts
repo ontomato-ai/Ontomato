@@ -43,12 +43,6 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
     save: async (id:string, input:ProductAssetInput, revision:number) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}`,"PUT",{name:input.name,description:input.description,document:input.document,revision})).asset),
     copy: async (id:string,name:string) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/copy`,"POST",{name})).asset),
     createPage:async(id:string,name:string)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/create-page`,'POST',{name})).asset),
-    createDashboard:async(name:string)=>{
-      const response=await request.request('/dashboards/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})},'');
-      const result=await response.json();
-      if(result.success===false||!result.data?.productAssetId)throw new Error(result.message??'Dashboard creation failed');
-      return productAssetSchema.parse((await send(`/${encodeURIComponent(result.data.productAssetId)}`)).asset);
-    },
     delete: async (id:string,revision:number) => { await send(`/${encodeURIComponent(id)}`,"DELETE",{revision}); },
   };
 }

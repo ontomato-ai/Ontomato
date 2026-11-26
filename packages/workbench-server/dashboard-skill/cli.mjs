@@ -4,7 +4,7 @@ import {readFile} from "node:fs/promises";
 import {dashboardAuthoring,dashboardOperationSchema,dashboardCardRequestSchema} from "../../contracts/src/dashboard.ts";
 
 const {values,positionals}=parseArgs({allowPositionals:true,options:{
-  "dashboard-id":{type:"string"},"card-id":{type:"string"},operation:{type:"string"},form:{type:"string"},
+  "dashboard-id":{type:"string"},"card-id":{type:"string"},name:{type:"string"},operation:{type:"string"},form:{type:"string"},
 }});
 const [command]=positionals,env=process.env;
 async function call(endpoint,body){
@@ -49,7 +49,8 @@ async function run(){
     const body=dashboardCardRequestSchema.parse({dashboardId:values["dashboard-id"],cardId:values["card-id"]});
     return call(command==="card"?"/query-card":"/card-parameter-form",body);
   }
-  if(command!=="save")throw new Error("Use list, read, link, card, parameters or save; see SKILL.md");
+  if(command==="create")return call("/create",{name:values.name});
+  if(command!=="save")throw new Error("Use list, read, link, card, parameters, create or save; see SKILL.md");
   const operation=dashboardOperationSchema.parse(values.operation);
   const input=JSON.parse(await readFile(values.form.replace(/^@/,""),"utf8"));
   const action=dashboardAuthoring[operation],form=action.schema.parse(input);

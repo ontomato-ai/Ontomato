@@ -43,7 +43,6 @@ export function contextProducts(transport: ManagerRequest): ContextProducts {
     save: method(products => products.save),
     copy: method(products => products.copy),
     createPage: method(products => products.createPage),
-    createDashboard: method(products => products.createDashboard),
     delete: method(products => products.delete),
   };
 }

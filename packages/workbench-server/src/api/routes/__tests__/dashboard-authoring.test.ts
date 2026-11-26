@@ -7,7 +7,6 @@ vi.mock("../../../services/dashboard/store",()=>({getDashboard:vi.fn(),listDashb
 vi.mock("../../../services/dashboard/create-from-analysis",()=>({createDashboardFromAnalysis:vi.fn()}));
 vi.mock("../../../services/dashboard/metric-client",()=>({DashboardMetricClient:class{}}));
 vi.mock("../../../services/dashboard/metric-data",()=>({queryMetricCard:vi.fn(),metricCardParameterForm:vi.fn(),saveMetricCardParameters:mocks.parameters}));
-vi.mock("../../../services/product-assets/register-dashboard",()=>({registerDashboardProduct:vi.fn()}));
 vi.mock("../../../identity/installed",()=>({workbenchIdentity:()=>({requireDomainId:(identity:{domainId:string})=>identity.domainId})}));
 import router from "../dashboards";
 let server:ReturnType<typeof createServer>,base:string;
