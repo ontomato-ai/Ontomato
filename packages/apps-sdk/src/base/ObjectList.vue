@@ -547,6 +547,10 @@ type RowRefSlotScope = {
   readonly index: number;
 };
 
+type ItemLeadingSlotScope = RowRefSlotScope & {
+  readonly icon: string | null;
+};
+
 type RowActionsSlotScope = RowRefSlotScope & {
   readonly operations: Readonly<Record<string, ListRowSlotOperation>>;
   readonly operationResults: Readonly<Record<string, ObjectListRowOperationState>>;
@@ -587,7 +591,7 @@ defineSlots<{
     },
   ): unknown;
   /** Decorative leading badge, avatar, or icon rendered before each card or compact list item's title and subtitle. */
-  "item-leading"?(props: RowRefSlotScope & { readonly icon: string | null }): unknown;
+  "item-leading"?(props: ItemLeadingSlotScope): unknown;
   /** Trailing inline controls placed at the end of the horizontal tab bar in `"tabs"` layout (for example a create button). */
   "tabs-extra"?(): unknown;
   /** Status / scope summary strip rendered directly above the list or table. */
@@ -4636,6 +4640,13 @@ function rowRefSlotProps(row: PlatformObjectRecord, index: number): RowRefSlotSc
   };
 }
 
+function itemLeadingSlotProps(row: PlatformObjectRecord, index: number): ItemLeadingSlotScope {
+  return {
+    ...rowRefSlotProps(row, index),
+    icon: rowLeadingIcon(row),
+  };
+}
+
 function rowActionsSlotProps(row: PlatformObjectRecord, index: number): RowActionsSlotScope {
   const rowIdKey = rowIdentityKey(row);
   return {
@@ -5802,12 +5813,17 @@ defineExpose({
                     class="sdk-object-list-card-leading"
                     aria-hidden="true"
                   >
-                    <slot
-                      name="item-leading"
-                      :ref="rowSelectionValue(entry.row)"
+                    <list-row-slot-host
+                      :list-slot="member.key"
+                      :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
-                      :icon="rowLeadingIcon(entry.row)"
-                    ></slot>
+                      :operations="rowOperationsFor(entry.row)"
+                      :operation-results="rowResultsFor(entry.row)"
+                      :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                      :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
+                      :render-slot="slots['item-leading']!"
+                      :slot-props="itemLeadingSlotProps(entry.row, entry.rowIndex)"
+                    />
                   </span>
                   <span
                     v-else-if="showLeadingIcon"
@@ -6214,12 +6230,17 @@ defineExpose({
                 @keydown="(rowSelectable || isRowExpandActivation) ? onListItemKeydown(entry.row, $event) : undefined"
               >
                 <span v-if="$slots['item-leading']" class="sdk-object-list-item-leading" aria-hidden="true">
-                  <slot
-                    name="item-leading"
-                    :ref="rowSelectionValue(entry.row)"
+                  <list-row-slot-host
+                    :list-slot="member.key"
+                    :row-ref="rowObjectRef(entry.row)"
                     :index="entry.rowIndex"
-                    :icon="rowLeadingIcon(entry.row)"
-                  ></slot>
+                    :operations="rowOperationsFor(entry.row)"
+                    :operation-results="rowResultsFor(entry.row)"
+                    :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                    :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
+                    :render-slot="slots['item-leading']!"
+                    :slot-props="itemLeadingSlotProps(entry.row, entry.rowIndex)"
+                  />
                 </span>
                 <span
                   v-else-if="showLeadingIcon"
