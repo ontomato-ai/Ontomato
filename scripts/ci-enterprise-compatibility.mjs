@@ -196,7 +196,7 @@ async function getEnterpriseResult(pipeline) {
 
 const report = {};
 
-function reportResult(description) {
+function reportResult(description, note) {
   const lines = [
     "## Enterprise compatibility",
     "",
@@ -206,6 +206,7 @@ function reportResult(description) {
     `- Enterprise SHA: \`${report.enterpriseSha ?? "unavailable"}\``,
   ];
   if (report.url) lines.push(`- [Private GitLab pipeline](${report.url})`);
+  if (note) lines.push("", note);
   appendFileSync(env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
 }
 
@@ -245,14 +246,24 @@ async function run() {
     result = { state: "error", description: error.message };
   }
 
-  // PR concurrency cancels superseded runs. Refresh the candidate before any final write.
-  if (!await isCurrent()) {
+  // A head-only error needs the live event check. A verified merge SHA keeps its own result.
+  if (!report.publicSha && !await isCurrent()) {
     reportResult("Skipped: pull request changed before status publication.");
     return;
   }
-  // With no verified merge SHA, use the head only to make the source error visible.
   await postStatus(report.publicSha ?? pull.head.sha, result.state, result.description, report.url);
-  reportResult(result.description);
+  let note;
+  if (report.publicSha) {
+    try {
+      if (!await isCurrent()) {
+        note = "The tested merge SHA has been superseded. Rerun the check for a result on the current base.";
+      }
+    } catch (error) {
+      if (!(error instanceof BridgeError)) throw error;
+      note = "Unable to confirm whether the tested merge SHA is still current.";
+    }
+  }
+  reportResult(result.description, note);
   if (result.state !== "success") process.exitCode = 1;
 }
 
