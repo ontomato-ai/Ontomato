@@ -360,10 +360,6 @@
     "value": "Tone"
   },
   {
-    "key": "Admin.form.toneNone",
-    "value": "Unspecified"
-  },
-  {
     "key": "Admin.tone.default",
     "value": "Default"
   },

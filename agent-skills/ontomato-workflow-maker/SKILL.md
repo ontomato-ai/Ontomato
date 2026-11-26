@@ -309,7 +309,7 @@ node wf-client.mjs wf-save ./workflow.json
 
 ## 第 6 步：审批 → 激活
 
-激活就是这条流程的**审批时刻**：冻结当前步骤为编号版本、把每个"角色×动作"的授权写进 `sys_role_capability`、追加一条 `Activated` 事件（记录审批主体）。
+激活就是这条流程的**审批时刻**：冻结当前步骤为编号版本，按步骤记录该角色的动作授权和范围，追加一条 `Activated` 事件（记录审批主体）。
 
 谁能批：域里持有管理角色（`roleType=1`，拦截器放行全部已启用 API）或持有 `action-management` 对应 API 权限的角色。先用现状确认，不要猜：
 

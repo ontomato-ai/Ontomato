@@ -420,7 +420,9 @@ class OntologyModelServiceImplTest {
 		assertEquals(List.of("/value", "/label", "/tone"),
 				properties(control.path("itemFields"), "path"));
 		var tone = control.path("itemFields").get(2).path("control");
-		assertEquals(List.of("", "default", "info", "success", "warning", "danger"),
+		// No choice means no tone, so the select is cleared rather than offering an empty option the contract rejects.
+		assertTrue(tone.path("clearable").asBoolean());
+		assertEquals(List.of("default", "info", "success", "warning", "danger"),
 				properties(tone.path("options"), "value"));
 		assertEquals(List.of("value", "label"),
 				texts(edit.save().bodySchema().at("/properties/options/items/required")));

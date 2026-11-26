@@ -1351,19 +1351,22 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String label = langService.get(lang, "Admin.form.optionLabel");
 		String tone = langService.get(lang, "Admin.form.optionTone");
 		JSONArray tones = new JSONArray();
-		tones.add(PanelFormFields.option("", langService.get(lang, "Admin.form.toneNone")));
 		for (String name : OPTION_TONES) {
 			tones.add(PanelFormFields.option(name, langService.get(lang, "Admin.tone." + name)));
 		}
+		// No choice means no tone: the select is cleared rather than offering an empty option, which the contract rejects.
+		JSONObject toneControl = PanelFormFields.select(tones);
+		toneControl.put("clearable", true);
+		JSONObject toneSchema = JSONObject.of("type", List.of("string", "null"), "title", tone);
 		JSONArray itemFields = JSONArray.of(
 				PanelFormFields.field("/value", value, PanelFormFields.text(false),
 						JSONObject.of("type", "string", "title", value), true, false, null, null, false),
 				PanelFormFields.field("/label", label, PanelFormFields.text(false),
 						JSONObject.of("type", "string", "title", label), true, false, null, null, false),
-				PanelFormFields.field("/tone", tone, PanelFormFields.select(tones),
-						JSONObject.of("type", List.of("string", "null"), "title", tone), false, false, null, null, false));
-		var control = PanelFormFields.objectArray(itemFields,
-				JSONObject.of("value", "", "label", "", "tone", ""), "/value", "table");
+				PanelFormFields.field("/tone", tone, toneControl, toneSchema, false, false, null, null, false));
+		JSONObject defaultItem = JSONObject.of("value", "", "label", "");
+		defaultItem.put("tone", null);
+		var control = PanelFormFields.objectArray(itemFields, defaultItem, "/value", "table");
 		return panelField("/" + OPTION_KEY, title, false, ScheduleJson.JSON.valueToTree(control),
 				attributeOptionsSchema(lang), false, null, false);
 	}
