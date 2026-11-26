@@ -3420,7 +3420,7 @@ it("shows the owner's declared display name for a status value and keeps the val
     members: { list: { target: { projectionId: "declared-name-list" }, outputs: { selected: { state: "selected" } } } },
   });
   const rows = [
-    { primaryKey: "k-1", label: "Order", fields: { status: "APPROVED" }, tags: { status: ["Approved"] }, tones: { status: "success" as const } },
+    { primaryKey: "k-1", label: "Order", fields: { status: "APPROVED" }, valueLabels: { status: { APPROVED: "Approved" } }, tones: { status: "success" as const } },
     { primaryKey: "k-2", label: "Invoice", fields: { status: "SHIPPED" } },
   ];
   const { element } = mountDirect(manifest, projections, () => ready({ rows, total: 2 }));

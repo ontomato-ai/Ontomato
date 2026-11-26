@@ -155,15 +155,15 @@ function panelRecord(className: string, attributes: readonly ClassAttribute[], r
   const fields: Record<string, string> = {};
   const fieldLabels: Record<string, string> = {};
   const tones: Record<string, PanelFieldTone> = {};
-  const tags: Record<string, string[]> = {};
+  const valueLabels: Record<string, Record<string, string>> = {};
   for (const [name, value] of Object.entries(row)) {
     const attribute = attributes.find(item => item.name === name);
     fields[name] = displayText(value);
     fieldLabels[name] = attribute?.showName ?? name;
     const option = attributeOption(attribute, value);
     if (option?.tone) tones[name] = option.tone;
-    // The value stays as stored; its declared display name is carried beside it.
-    if (option) tags[name] = [option.label];
+    // The value stays as stored; a declared name for it is carried beside it, keyed by that value as text.
+    if (option) valueLabels[name] = { [displayText(value)]: option.label };
   }
   return {
     className,
@@ -172,7 +172,7 @@ function panelRecord(className: string, attributes: readonly ClassAttribute[], r
     fields,
     fieldLabels,
     ...(Object.keys(tones).length > 0 ? { tones } : {}),
-    ...(Object.keys(tags).length > 0 ? { tags } : {}),
+    ...(Object.keys(valueLabels).length > 0 ? { valueLabels } : {}),
   };
 }
 

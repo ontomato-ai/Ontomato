@@ -599,11 +599,11 @@ it("shows a declared option's display name and keeps the raw value in the record
   const page = await createCustomerOntologyReadAdapter(owner, viewer).query("order", {});
   expect(page.rows[0]).toMatchObject({
     fields: { id: "o-1", status: "APPROVED" },
-    tags: { status: ["Approved"] },
+    valueLabels: { status: { APPROVED: "Approved" } },
     tones: { status: "success" },
   });
-  // A value outside the options stays as it is, with no tags and no tone.
+  // A value outside the options stays as it is, with no display text and no tone.
   expect(page.rows[1]).toMatchObject({ fields: { id: "o-2", status: "SHIPPED" } });
-  expect(page.rows[1]!.tags).toBeUndefined();
+  expect(page.rows[1]!.valueLabels).toBeUndefined();
   expect(page.rows[1]!.tones).toBeUndefined();
 });

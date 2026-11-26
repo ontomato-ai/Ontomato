@@ -70,19 +70,16 @@ export function rawRecordField(record: PlatformObjectRecord, key: string): Panel
 }
 
 /**
- * The field value a page shows: when the owner declares one display name beside a scalar value (its `tags` entry for
- * that field), that name replaces the value on screen; the record's own value is untouched for sorting, forms and the
- * operations that read it.
+ * The field value a page shows: when the owner declares display text for the value in `valueLabels`, that text replaces
+ * the value on screen; the record's own value is untouched for sorting, forms and the operations that read it.
  */
 export function recordFieldDisplayValue(
   record: PlatformObjectRecord,
   key: string,
 ): PanelRecordFieldValue | undefined {
   const raw = rawRecordField(record, key);
-  const names = record.tags?.[key];
-  if (names?.length === 1 && (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean"))
-    return names[0];
-  return raw;
+  if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "boolean") return raw;
+  return record.valueLabels?.[key]?.[String(raw)] ?? raw;
 }
 
 /** Format a scalar field value for UI display, localizing booleans in the reader's language. */
