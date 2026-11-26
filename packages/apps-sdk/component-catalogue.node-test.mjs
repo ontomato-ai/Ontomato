@@ -41,9 +41,9 @@ const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 
 /** Every directly rendered component's data names, and the read results each may hold. */
 const DECLARED_DATA = {
-  ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"], supplement: ["panelRecordList"] },
+  ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], supplement: ["panelRecordList"] },
   GroupedGrid: { record: ["panelRecord"], rows: ["panelRecordList", "panelRecordQuery"] },
-  ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
+  ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"] },
   ObjectSummary: { record: ["panelRecord"] },
   ObjectTitle: { record: ["panelRecord"] },
   ObjectHeader: { record: ["panelRecord"] },
@@ -55,7 +55,6 @@ const DECLARED_DATA = {
     result: ["metricOutput"],
     record: ["panelRecord"],
     rows: ["panelRecordList", "panelRecordQuery"],
-    objects: ["panelOntologyObjects"],
   },
   ObjectForm: { form: ["panelFormDescription"], createForm: ["panelFormDescription"] },
   OperationButton: {},
@@ -67,7 +66,6 @@ const DECLARED_DATA = {
   },
   RecordGraph: { nodes: ["panelRecordList", "panelRecordQuery"], edges: ["panelRecordList", "panelRecordQuery"] },
   InstanceGraph: {
-    schema: ["panelGraphSchema"],
     counts: ["panelGraphCounts"],
     start: ["panelGraphStart"],
     overview: ["panelGraphOverview"],
@@ -244,7 +242,6 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       mode: { kind: "scalar", type: "string" },
       start: anyObject,
       selected: anyObject,
-      selectedType: { kind: "scalar", type: "string" },
       selectedGroup: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       visibleLayers: stringList,
@@ -255,7 +252,6 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(declared.get("InstanceGraph").outputs, {
       selectedNode: anyObject,
       selected: anyObject,
-      selectedType: { kind: "scalar", type: "string" },
       selectedGroup: { kind: "scalar", type: "string" },
       visibleRelationKinds: platformRelationKindList,
       visibleLayers: stringList,
@@ -440,7 +436,6 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       "startDetail",
       "startLabel",
       "versionChanged",
-      "visibleRelationKindLabels",
     ]);
     assert.deepEqual(Object.keys(declared.get("ObjectRelations").readOnlyOutputs ?? {}).sort(), [
       "edgeCount", "label", "status",
@@ -492,7 +487,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
       }
     }
-for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "ScheduledTaskSummaryList", "EffectivePermissionsView", "TestcaseWorkbench", "ProductAssetGraph", "OntologyTypeGraph", "ModelingGraphEditor"]) {
+for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "Projection", "ScheduledTaskSummaryList", "EffectivePermissionsView", "TestcaseWorkbench", "ProductAssetGraph", "OntologyTypeGraph", "ModelingGraphEditor"]) {
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
       assert.equal(entry?.config, undefined, `non-panel ${excluded} must not emit author-facing config`);

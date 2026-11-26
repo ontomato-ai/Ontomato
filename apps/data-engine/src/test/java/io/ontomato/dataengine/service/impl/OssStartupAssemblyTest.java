@@ -23,7 +23,6 @@ import io.ontomato.dataengine.service.IdentityRuntimeSettings;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OrganizationDirectory;
 import io.ontomato.dataengine.service.PermissionPolicyDirectory;
-import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.ProductGrants;
 import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import io.ontomato.dataengine.service.SchemaImportAuthorization;
@@ -40,8 +39,7 @@ class OssStartupAssemblyTest {
     @Test
     void presetInstallationPreservesAnonymousAgentAccessWithoutRolePolicies() {
         var jdbc = mock(JdbcTemplate.class);
-        var legacy = mock(ProductGrantService.class);
-        var authorization = new AnonymousAuthorization(legacy, jdbc);
+        var authorization = new AnonymousAuthorization(jdbc);
         var presets = new PresetAgentPolicies(authorization, authorization);
         var target = new ObjectTarget("1", Kind.AGENT, "preset");
 
@@ -52,27 +50,23 @@ class OssStartupAssemblyTest {
         }
         verify(jdbc).update(contains("INSERT INTO object_policy_grant"), eq("1"), eq("AGENT"), eq("preset"), eq("USE"));
         verifyNoMoreInteractions(jdbc);
-        verifyNoInteractions(legacy);
     }
 
     @Test
-    void applicationEditUsesObjectPolicyAndKeepsLegacyUse() {
-        var products = mock(ProductGrantService.class);
+    void applicationAuthorizationOnlyExposesEditAsAnObjectPermission() {
         var jdbc = mock(JdbcTemplate.class);
-        var anonymous = new AnonymousAuthorization(products, jdbc);
+        var anonymous = new AnonymousAuthorization(jdbc);
         var target = new ObjectTarget("1", Kind.APPLICATION, "app-example");
-        when(products.allowedFor("1", "admin", "app-example", "edit")).thenReturn(true);
-        when(products.allowedFor("1", "admin", "app-example", "use")).thenReturn(true);
 
         assertFalse(anonymous.objectEntitlement("admin", target, Verb.EDIT));
-        assertTrue(anonymous.objectEntitlement("admin", target, Verb.USE));
+        assertFalse(anonymous.objectEntitlement("admin", target, Verb.USE));
+        assertFalse(anonymous.objectEntitlement("admin", target, Verb.VIEW));
         var edit = new ObjectGrant(anonymous.domainPolicy("1").policyId(), target, Verb.EDIT, null);
         anonymous.grantObject(edit);
         verify(jdbc).update(contains("INSERT INTO object_policy_grant"), eq("1"), eq("APPLICATION"), eq("app-example"), eq("EDIT"));
         when(jdbc.query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<ObjectGrant>>any(),
                 eq("1"), eq("APPLICATION"), eq("app-example"), eq("EDIT"))).thenReturn(List.of(edit));
         assertTrue(anonymous.objectEntitlement("admin", target, Verb.EDIT));
-        verify(products, never()).allowedFor("1", "admin", "app-example", "edit");
     }
 
     @Test

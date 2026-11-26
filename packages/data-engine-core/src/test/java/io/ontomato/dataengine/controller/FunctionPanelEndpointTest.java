@@ -53,7 +53,7 @@ class FunctionPanelEndpointTest {
 
   @Test
   void theListCarriesTheOperationLabelAndKeepsTheFunctionFields() throws Exception {
-    when(functionService.queryList(isNull(), isNull(), eq("domain"))).thenReturn(List.of(
+    when(functionService.listVisible(isNull(), isNull(), any(User.class))).thenReturn(List.of(
         function("f1", "Revenue query", Function.OPERATION_READ),
         function("f2", "Write order", Function.OPERATION_WRITE),
         function("f3", "Product source", Function.OPERATION_PRODUCT)));

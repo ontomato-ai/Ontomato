@@ -194,6 +194,15 @@ export const applicationBuilderServerOperations = [
       if (detail.published) return { reason: text(locale, "draftOnly") };
       if (detail.busy) return { reason: text(locale, "busy") };
     },
+    async unavailableBatch(host, targets) {
+      const locale = host.locale ?? host.initiator.credentials.locale;
+      const reasons = new Map<string, { reason: string }>();
+      for (const { rowKey, row } of targets) {
+        if (row!.fields.published === true) reasons.set(rowKey, { reason: text(locale, "draftOnly") });
+        else if (row!.fields.busy === true) reasons.set(rowKey, { reason: text(locale, "busy") });
+      }
+      return reasons;
+    },
     inspectImpact: {
       handlerRef: `${APPLICATION_DELETE_DRAFT}.inspect-impact`,
       async inspect({ initiator, locale }, [call]) {
@@ -249,6 +258,21 @@ export const applicationBuilderServerOperations = [
       if (!detail.materialized) return { reason: text(locale, "notMaterialized") };
       if (detail.busy) return { reason: text(locale, "busy") };
       if (input.commit === detail.headCommit) return { reason: text(locale, "currentCommit") };
+    },
+    async unavailableBatch(host, targets) {
+      const locale = host.locale ?? host.initiator.credentials.locale;
+      const details = new Map(await Promise.all([...new Set(targets.map(({ target }) => target.primaryKey))].map(async primaryKey => [
+        primaryKey,
+        await getBuilderProjectStatus(host.initiator.owner, host.initiator.credentials, primaryKey),
+      ] as const)));
+      const reasons = new Map<string, { reason: string }>();
+      for (const { rowKey, target, input } of targets) {
+        const detail = details.get(target.primaryKey)!;
+        if (!detail.materialized) reasons.set(rowKey, { reason: text(locale, "notMaterialized") });
+        else if (detail.busy) reasons.set(rowKey, { reason: text(locale, "busy") });
+        else if (input!.commit === detail.headCommit) reasons.set(rowKey, { reason: text(locale, "currentCommit") });
+      }
+      return reasons;
     },
     inspectImpact: {
       handlerRef: `${APPLICATION_RESTORE_SOURCE_COMMIT}.inspect-impact`,
@@ -346,6 +370,23 @@ export const applicationBuilderServerOperations = [
       if (detail.currentReleaseId && input.releaseId === detail.currentReleaseId) {
         return { reason: text(locale, "currentRelease") };
       }
+    },
+    async unavailableBatch(host, targets) {
+      const locale = host.locale ?? host.initiator.credentials.locale;
+      const details = new Map(await Promise.all([...new Set(targets.map(({ target }) => target.primaryKey))].map(async primaryKey => [
+        primaryKey,
+        await getBuilderProject(host.initiator.owner, host.initiator.credentials, primaryKey),
+      ] as const)));
+      const reasons = new Map<string, { reason: string }>();
+      for (const { rowKey, target, input } of targets) {
+        const detail = details.get(target.primaryKey)!;
+        if (detail.busy) reasons.set(rowKey, { reason: text(locale, "busy") });
+        else if (detail.drift.hasDrift) reasons.set(rowKey, { reason: text(locale, "driftBlocking") });
+        else if (detail.currentReleaseId && input!.releaseId === detail.currentReleaseId) {
+          reasons.set(rowKey, { reason: text(locale, "currentRelease") });
+        }
+      }
+      return reasons;
     },
     inspectImpact: {
       handlerRef: `${APPLICATION_ROLLBACK_BUILDER_RELEASE}.inspect-impact`,

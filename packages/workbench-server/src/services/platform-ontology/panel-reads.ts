@@ -6,8 +6,6 @@ import {
   type PlatformOntologyCountsResponse,
   type PlatformOntologyNeighborsRequest,
   type PlatformOntologyNeighborsResponse,
-  type PlatformOntologyObjectsResponse,
-  type PlatformOntologySchemaResponse,
   type PlatformOntologyStartResponse,
 } from "@ontomato/contracts/platform-ontology";
 import { tForLocale } from "../../i18n";
@@ -20,8 +18,6 @@ import {
   readPlatformOntologyInstance,
   readPlatformOntologyInstancePage,
   readPlatformOntologyNeighbors,
-  readPlatformOntologyObjects,
-  readPlatformOntologySchema,
   readPlatformOntologyStart,
   platformOntologyOwnerReadError,
 } from "./query";
@@ -29,12 +25,6 @@ import {
   ACTION, AGENT_DEFINITION, APPLICATION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE,
   PLATFORM_ONTOLOGY_TYPE_MAP, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, SKILL,
 } from "./schema";
-
-const platformOntologyObjectsReadParamsSchema = z.object({
-  type: panelReadParameterSchemas.ontologyType,
-  search: panelReadParameterSchemas.keyword.optional(),
-  page: panelReadParameterSchemas.page.optional(),
-}).strict();
 
 const instanceSearchParams = z.object({
   className: panelReadParameterSchemas.className.optional(),
@@ -60,18 +50,10 @@ const instanceDetailRoutes: Readonly<Partial<Record<string, string>>> = {
   [AGENT_DEFINITION]: "/ontology/agents/detail",
 };
 
-export interface PlatformOntologyObjectsReadParams {
-  type: string;
-  search?: string;
-  page?: { number: number; size: number };
-}
-
 export interface PlatformOntologyReadAdapter extends ReturnType<typeof createPlatformOntologyCatalogueReads> {
-  schema(): Promise<PlatformOntologySchemaResponse>;
   counts(): Promise<PlatformOntologyCountsResponse>;
   start(): Promise<PlatformOntologyStartResponse>;
   neighbors(params: PlatformOntologyNeighborsRequest | Record<string, unknown>): Promise<PlatformOntologyNeighborsResponse>;
-  objects(params: PlatformOntologyObjectsReadParams | Record<string, unknown>): Promise<PlatformOntologyObjectsResponse>;
   instanceSearch(params: Record<string, unknown>): Promise<PanelRecordQuery>;
   instances(params: Record<string, unknown>): Promise<PanelRecordQuery>;
   instanceRecord(params: Record<string, unknown>): Promise<PanelRecord>;
@@ -154,17 +136,6 @@ export function createPlatformOntologyReadAdapter(
   return {
     ...createPlatformOntologyCatalogueReads(owner, viewer),
 
-    async schema(): Promise<PlatformOntologySchemaResponse> {
-      const base = await readPlatformOntologySchema();
-      return {
-        ...base,
-        relationKinds: base.relationKinds.map((relation) => {
-          const display = relationDisplay.get(relation.id);
-          return display ? { ...relation, label: display.label } : relation;
-        }),
-      };
-    },
-
     counts(): Promise<PlatformOntologyCountsResponse> {
       return readPlatformOntologyCounts(owner, viewer);
     },
@@ -191,17 +162,6 @@ export function createPlatformOntologyReadAdapter(
           return display ? { ...relation, label: display.label } : relation;
         }),
       };
-    },
-
-    objects(
-      params: PlatformOntologyObjectsReadParams | Record<string, unknown>,
-    ): Promise<PlatformOntologyObjectsResponse> {
-      const { type, search, page } = platformOntologyObjectsReadParamsSchema.parse(params);
-      return readPlatformOntologyObjects(owner, viewer, {
-        type,
-        ...(search !== undefined ? { keyword: search } : {}),
-        ...(page !== undefined ? { page: page.number, pageSize: page.size } : {}),
-      });
     },
 
     instanceSearch(params): Promise<PanelRecordQuery> {

@@ -15,7 +15,6 @@ import { config } from "../../config/application";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { buildTestAccess } from "../build-test-access";
 
@@ -51,7 +50,6 @@ beforeAll(async () => {
   state.schema = `candidate_read_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   root = await mkdtemp(join(tmpdir(), "candidate-panel-read-"));
   await writeBundledAppSdkFixture(root);

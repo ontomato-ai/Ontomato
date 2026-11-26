@@ -236,7 +236,13 @@ const ontologyTypeDetailList = {
   source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
   requiredParams: ["type"], result: "panelRecordList",
 } as const satisfies PlatformReadDeclaration;
+/** Every expanded edge that starts at or ends on the type, one row per edge rather than per relation kind. */
+const ontologyTypeRelationList = {
+  ...ontologyTypeDetailList, rowType: ONTOLOGY_RELATION_KIND,
+} as const satisfies PlatformReadDeclaration;
 const ontologyInstanceDetailPath = { kind: "scalar", type: "string" } as const;
+/** Where the owner's own modeling editor opens the selected class or relation. */
+const modelingPathOutput = { kind: "scalar", type: "string" } as const;
 /** A catalogue searched and paged like the business knowledge list, for definitions with no further filter. */
 const definitionQuery = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
@@ -297,6 +303,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           applicationsProblem: { kind: "scalar", type: "string" },
           applicationsFailed: { kind: "scalar", type: "boolean" },
           hasCredentialPaused: { kind: "scalar", type: "boolean" },
+          credentialStatus: { kind: "scalar", type: "string" },
         },
       },
       record: {
@@ -369,10 +376,14 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("objectType", "fact"),
     reads: {
       ...modelReads, ...metadataList, ...referenceReads, count: countRead,
-      instances: { ...customerQuery, params: { className: "className", ...customerQueryParams }, requiredParams: ["className"] },
+      instances: {
+        ...customerQuery, params: { className: "className", ...customerQueryParams }, requiredParams: ["className"],
+        outputs: { detailPath: ontologyInstanceDetailPath },
+      },
       instanceRecord: {
         source: "type", parameterMode: "fixed", params: { object: "graphNode" },
         requiredParams: ["object"], result: "panelRecord",
+        outputs: { typeLabel: { kind: "scalar", type: "string" }, detailPath: ontologyInstanceDetailPath },
       },
       instanceNeighbors: {
         source: "type", parameterMode: "fixed",
@@ -406,6 +417,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       record: {
         ...modelReads.record,
         outputs: {
+          modelingPath: modelingPathOutput,
           className: { kind: "scalar", type: "string" },
           primaryKeyStatus: { kind: "scalar", type: "string" },
           primaryKeyName: { kind: "scalar", type: "string" },
@@ -436,7 +448,10 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [RELATIONSHIP]: {
     ...describeType("relationship", "fact"),
-    reads: { ...modelReads, list: modelListByClass, count: countRead },
+    reads: {
+      ...modelReads, list: modelListByClass, count: countRead,
+      record: { ...modelReads.record, outputs: { modelingPath: modelingPathOutput } },
+    },
     operations: [`${RELATIONSHIP}.save`, DELETE_RELATIONSHIP],
   },
   [METRIC_VIEW]: {
@@ -537,6 +552,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [FUNCTION]: {
     ...describeType("function", "capability"),
     reads: {
+      count: countRead,
       list: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", operation: "functionOperation" },
@@ -603,6 +619,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("skill", "capability"),
     childCollections: ["files"],
     reads: {
+      count: countRead,
       // `options` and `resolve` pick skills for an agent; `query` is the library catalogue, read-only provider packages included.
       options: {
         ...referenceReads.options, params: { agentTarget: "agentSkillTarget" }, requiredParams: ["agentTarget"],
@@ -623,6 +640,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [BUSINESS_KNOWLEDGE]: {
     ...describeType("businessKnowledge", "capability"),
     reads: {
+      count: countRead,
       query: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", status: "knowledgeStatus", cursor: "cursor", size: "size" },
@@ -642,6 +660,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [USER]: {
     ...describeType("user", "governance"),
     reads: {
+      count: countRead,
       ...referenceReads,
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
@@ -665,6 +684,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [ROLE]: {
     ...describeType("role", "governance"),
     reads: {
+      count: countRead,
       ...referenceReads,
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
@@ -678,6 +698,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [PERMISSION_POLICY]: {
     ...describeType("permissionPolicy", "governance"),
     reads: {
+      count: countRead,
       ...referenceReads,
       ...governancePageQuery,
       ...modelReads,
@@ -691,6 +712,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [ORG_UNIT]: {
     ...describeType("orgUnit", "fact"),
     reads: {
+      count: countRead,
       ...metadataList,
       ...referenceReads,
       record: modelReads.record,
@@ -855,8 +877,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         outputs: {
           canMaintain: { kind: "scalar", type: "boolean" },
           canEditEntries: { kind: "scalar", type: "boolean" },
-          canGrant: { kind: "scalar", type: "boolean" },
-          domainShared: { kind: "scalar", type: "boolean" },
           openPath: { kind: "scalar", type: "string" },
         },
       },
@@ -864,8 +884,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       entryRows: { ...catalogueRecord, result: "panelRecordList" },
       usedPanels: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
       referenceGraph: { ...catalogueRecord, result: "panelRecord" },
-      grants: { ...catalogueRecord, result: "productCatalogueGrants" },
-      grantRows: { ...catalogueRecord, result: "panelRecordList" },
       form: {
         ...modelReads.form,
         params: { ...definitionFormParams, section: "applicationFormSection", entryId: "applicationEntryId" },
@@ -905,7 +923,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           buildTestExpiresAt: { kind: "scalar", type: "string" },
           buildTestCanRestart: { kind: "scalar", type: "boolean" },
           canEditEntries: { kind: "scalar", type: "boolean" },
-          canGrant: { kind: "scalar", type: "boolean" },
           currentReleaseId: { kind: "scalar", type: "string" },
           activeRunId: { kind: "scalar", type: "string" },
           driftItemsJson: { kind: "scalar", type: "string" },
@@ -972,7 +989,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
-      "applications.deleteEntry", "applications.grant", "applications.share",
+      "applications.deleteEntry",
       APPLICATION_CREATE_DRAFT, APPLICATION_UPDATE_BUILDER_META, APPLICATION_DELETE_DRAFT,
       APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_SYNC_BUILDER_SOURCE,
       APPLICATION_PUBLISH_BUILDER_SOURCE, APPLICATION_ROLLBACK_BUILDER_RELEASE,
@@ -1016,7 +1033,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("ontologyType"),
     reads: {
       count: countRead,
-      schema: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphSchema" },
       counts: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
       countRows: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       start: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphStart" },
@@ -1026,10 +1042,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           direction: "neighborDirection", limit: "neighborsLimit", offset: "nonNegativeInt",
         },
         requiredParams: ["node"], result: "panelGraphNeighbors",
-      },
-      objects: {
-        source: "type", parameterMode: "fixed", params: { type: "ontologyType", search: "keyword", page: "page" },
-        requiredParams: ["type"], result: "panelOntologyObjects",
       },
       ...metadataList,
       graphNodes: metadataList.list,
@@ -1057,7 +1069,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
       properties: ontologyTypeDetailList,
-      typeRelations: ontologyTypeDetailList,
+      typeRelations: ontologyTypeRelationList,
       reads: ontologyTypeDetailList,
       operations: ontologyTypeDetailList,
     },

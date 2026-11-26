@@ -7,7 +7,6 @@ import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.ProductGrantService.OwnerFacts;
-import io.ontomato.dataengine.service.ProductGrants;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;
@@ -53,21 +52,15 @@ public class ApplicationController {
     public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                     ApplicationCatalog.Declaration declaration, List<String> initialOpenEntryIds,
                                     String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery,
-                                    Boolean shared, Boolean allowStandalone) {
+                                    Boolean allowStandalone) {
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                  ApplicationCatalog.Declaration declaration, List<String> initialOpenEntryIds) {
-            this(entry, panelUses, declaration, initialOpenEntryIds, null, null, null, null, null);
+            this(entry, panelUses, declaration, initialOpenEntryIds, null, null, null, null);
         }
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                  ApplicationCatalog.Declaration declaration, List<String> initialOpenEntryIds,
                                  String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery) {
-            this(entry, panelUses, declaration, initialOpenEntryIds, framePanelId, theme, delivery, null, null);
-        }
-        public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
-                                 ApplicationCatalog.Declaration declaration, List<String> initialOpenEntryIds,
-                                 String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery,
-                                 Boolean shared) {
-            this(entry, panelUses, declaration, initialOpenEntryIds, framePanelId, theme, delivery, shared, null);
+            this(entry, panelUses, declaration, initialOpenEntryIds, framePanelId, theme, delivery, null);
         }
     }
     public record CatalogueFormTarget(String kind, String id, String objectType, String primaryKey) {}
@@ -106,32 +99,6 @@ public class ApplicationController {
     @GetMapping("/platform/applications/{id}/legacy-maintenance")
     public R<?> legacyMaintenance(@PathVariable String id) {
         return R.of(Map.of("legacyWritable", catalog.legacyMaintenance(id, current())));
-    }
-
-    public record UseGrantChange(String principalKind, String principalId, String verb, Boolean remove) {}
-    public record UseSharingChange(Boolean shared) {}
-
-    @GetMapping("/platform/applications/{id}/use-grants")
-    public R<?> applicationUseGrants(@PathVariable String id) {
-        return R.of(Map.of("grants", catalog.applicationUseGrants(id, current())));
-    }
-
-    @PutMapping("/platform/applications/{id}/use-grants")
-    public R<?> changeApplicationUseGrant(@PathVariable String id, @RequestBody UseGrantChange change) {
-        if (!"use".equals(change.verb()) || change.remove() == null
-                || (!"principal".equals(change.principalKind()) && !"role".equals(change.principalKind()))
-                || change.principalId() == null || change.principalId().isBlank())
-            throw ApplicationCatalog.bad("Expected an application use grant for a principal or role");
-        catalog.changeApplicationUseGrant(id,
-            new ProductGrants.Grant(change.principalKind(), change.principalId(), change.verb()), change.remove(), current());
-        return R.of(null);
-    }
-
-    @PutMapping("/platform/applications/{id}/use-sharing")
-    public R<?> shareApplicationUse(@PathVariable String id, @RequestBody UseSharingChange change) {
-        if (change.shared() == null) throw ApplicationCatalog.bad("Expected sharing intent");
-        catalog.shareApplicationUse(id, change.shared(), current());
-        return R.of(null);
     }
 
     @PutMapping("/platform/applications/{id}/identity")
@@ -230,13 +197,14 @@ public class ApplicationController {
     }
     @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping(value = "/platform/applications", params = "purpose=navigation")
-    public R<?> navigation() {
-        return R.of(catalog.visible(current()));
+    public R<?> navigation(@RequestParam(defaultValue = "false") boolean countOnly) {
+        var user = current();
+        return R.of(countOnly ? catalog.navigationCount(user) : catalog.visible(user));
     }
 
     @GetMapping("/platform/applications")
     public R<?> list(@RequestParam(defaultValue="navigation") String purpose) {
-        if (!purpose.equals("schedules")) return navigation();
+        if (!purpose.equals("schedules")) return navigation(false);
         var user = current();
         return R.of(catalog.all().stream().filter(a -> catalog.inDomain(a,user) && a.getString("scheduleAdapter") != null).toList());
     }

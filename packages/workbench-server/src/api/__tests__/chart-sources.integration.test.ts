@@ -23,7 +23,6 @@ import { appTextEn } from "../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import pg from "pg";
 import { ensureCoreSchemaBaseline } from "../../infrastructure/postgres-migrations/20260827-core-schema-baseline/schema";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { getOwnedDashboard } from "../../services/dashboard/access";
 import { dashboardChartSources } from "../../services/dashboard/chart-sources";
@@ -89,7 +88,6 @@ beforeAll(async () => {
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureCoreSchemaBaseline(state.pool);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
 
   root = await mkdtemp(join(tmpdir(), "chart-sources-"));

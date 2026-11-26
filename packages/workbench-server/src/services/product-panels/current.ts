@@ -18,7 +18,7 @@ import { tForLocale } from "../../i18n";
 import type { ProductOwner } from "../product-governance/grants";
 import type { ObjectPublicationAccess } from "@ontomato/contracts/object-publication";
 import { requireAllowed, requireObject, writeFirstPublication } from "../product-governance/authorization";
-import { currentDefinition, currentDefinitionAccess, definitionKinds } from "./access";
+import { currentDefinition, currentDefinitionAccess, definitionKinds, requireCurrentUseAllowed } from "./access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
@@ -64,7 +64,7 @@ async function readCurrentRecord(
   }
   const { decisions, editable } = await currentDefinitionAccess(kind, [row], owner.domainId, credentials);
   const canEdit = editable.has(id);
-  if (!management || !canEdit) requireAllowed(decisions[0]);
+  if (!management || !canEdit) requireCurrentUseAllowed(kind, decisions[0], credentials.locale);
   return { row, editable: canEdit };
 }
 
@@ -169,9 +169,7 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
   await requireObject({ create: definitionKinds[kind] }, credentials);
   const other = t(currentProductTables[kind === "panel" ? "projection" : "panel"]);
   const collision = await client.query(
-    `SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2
-     UNION ALL SELECT id FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2
-     UNION ALL SELECT asset_id FROM ${t("product_asset_revisions")} WHERE domain_id=$1 AND asset_id=$2 LIMIT 1`,
+    `SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2 LIMIT 1`,
     [owner.domainId, id],
   );
   if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
@@ -234,8 +232,11 @@ export async function saveCurrentPanel(owner: ProductOwner, credentials: Assista
   return productPanelSchema.parse(await save(owner, credentials, "panel", id, input, revision, undefined, publicationAccess));
 }
 
-/** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
-export async function validateApplicationPanelReferences(request: Omit<ApplicationPanelReferencesRequest, "domainId"> & { domainId: string | null }, locale?: string) {
+type ApplicationReferences = (ApplicationPanelReferencesRequest & { registrant: AssistantCredentials })
+  | (Omit<ApplicationPanelReferencesRequest, "domainId"> & { domainId: null });
+
+/** Validate a domain declaration for its registrant, or a built-in declaration at startup. */
+export async function validateApplicationPanelReferences(request: ApplicationReferences, locale?: string) {
   const { domainId, framePanelId, uses, delivery, theme, frameConversationEntryIds } = request;
   if (theme) {
     const [issue] = themeOverrideProblems(theme);
@@ -252,15 +253,30 @@ export async function validateApplicationPanelReferences(request: Omit<Applicati
 }
 
 async function validateApplicationReferences(client: PoolClient,
-  request: Omit<ApplicationPanelReferencesRequest, "domainId"> & { domainId: string | null }, locale?: string) {
+  request: ApplicationReferences, locale?: string) {
   const { domainId, framePanelId, uses, delivery } = request;
   const panels = new Map<string, Pick<ProductPanel, "manifest">>();
   const projections = new Set<string>();
   const pending = new Set(uses.map(use => use.panelId));
   if (framePanelId !== undefined) pending.add(framePanelId);
+  const roots = await findCurrentProducts(domainId, "panel", [...pending], client);
+  const rootRows = [...pending].map(panelId => {
+    const row = roots.get(panelId);
+    if (!row) throw missingApplicationPanel(panelId);
+    return row;
+  });
+  if (request.domainId !== null && rootRows.length) {
+    const { decisions } = await currentDefinitionAccess("panel", rootRows, request.domainId, request.registrant, false);
+    for (const [index, decision] of decisions.entries()) {
+      if (!decision.allowed) {
+        const panelId = rootRows[index].id;
+        throw new HttpError(403, `Panel '${panelId}': ${decision.reason}`, decision.code, { panelId });
+      }
+    }
+  }
   for (const panelId of pending) {
-    const row = await findCurrentProduct(domainId, "panel", panelId, client);
-    if (!row) throw new HttpError(400, `Panel '${panelId}' is not a current definition`, "INVALID_PANEL_REFERENCE");
+    const row = roots.get(panelId) ?? await findCurrentProduct(domainId, "panel", panelId, client);
+    if (!row) throw missingApplicationPanel(panelId);
     const definition = storedPanelAuthoringDefinition(row.definition);
     const panel = (row.domainId === null ? builtinProductPanelInputSchema : productPanelInputSchema).parse(definition);
     panels.set(panelId, panel);
@@ -351,4 +367,8 @@ async function validateApplicationReferences(client: PoolClient,
   for (const id of delivery.projections)
     if (!projections.has(id)) throw new HttpError(400, `Projection '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
   await compileRegisteredPanelRoots(client, domainId, pending);
+}
+
+function missingApplicationPanel(panelId: string) {
+  return new HttpError(400, `Panel '${panelId}' is not a current definition`, "INVALID_PANEL_REFERENCE", { panelId });
 }

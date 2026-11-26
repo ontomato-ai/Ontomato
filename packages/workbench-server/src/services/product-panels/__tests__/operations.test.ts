@@ -1306,7 +1306,6 @@ it("names the specific application entry in deleteEntry confirmation prompts", a
             allowStandalone: false,
             canMaintain: true,
             canEditEntries: true,
-            canGrant: true,
             entryCount: 2,
             updatedAt: "",
             entry: { path: "/orders", home: "/orders/list" },

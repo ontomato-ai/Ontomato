@@ -33,7 +33,7 @@ const ontology = (data: DirectProjection["data"], inputs: DirectProjection["inpu
   ...record, id: "ontology", name: "Ontology", componentId: "@ontomato/sdk:ObjectList", inputs, outputs: {}, config: {}, data,
 });
 const typeObjects = ontology(
-  { objects: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "objects", params: { type: { input: "type" } } } },
+  { rows: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "instances", params: { className: { input: "type" } } } },
   { type: { kind: "scalar", type: "string" } },
 );
 const graph = ontology(
@@ -44,9 +44,7 @@ const graph = ontology(
   },
   { node: { kind: "json" } },
 );
-const objectsAnswer = (type: string, page: number, pageSize: number) => ({
-  type, layer: "capability", status: "ok", items: [{ node: { className: type, primaryKey: "a-2" }, label: "Refund" }], total: 12, page, pageSize,
-});
+const rowsAnswer = () => ({ rows: [], total: 0 });
 const user = { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" };
 
 afterEach(() => {
@@ -65,13 +63,13 @@ it("reads nothing for a datum whose required parameter has no value, in the plat
     readProjection: async () => typeObjects,
     read: async (request) => {
       reads.push(request);
-      return { status: "ready", value: objectsAnswer(ACTION, 1, 20) as never };
+      return { status: "ready", value: rowsAnswer() as never };
     },
   });
   const scope = effectScope();
   let objects!: ComputedRef<MemberDataState>;
   scope.run(() => {
-    objects = instance.memberData("objects", typeObjects, () => ({ type: instance.state.values.value.selectedType ?? null }) as MemberInputs).use("objects");
+    objects = instance.memberData("objects", typeObjects, () => ({ type: instance.state.values.value.selectedType ?? null }) as MemberInputs).use("rows");
   });
   await nextTick();
   expect(objects.value).toEqual({ status: "awaiting" });
@@ -79,7 +77,7 @@ it("reads nothing for a datum whose required parameter has no value, in the plat
 
   instance.state.set("selectedType", ACTION);
   await vi.waitFor(() => expect(objects.value.status).toBe("ready"));
-  expect(reads).toEqual([{ memberPath: [{ member: "objects" }], dataName: "objects", inputs: { type: ACTION } }]);
+  expect(reads).toEqual([{ memberPath: [{ member: "objects" }], dataName: "rows", inputs: { type: ACTION } }]);
   scope.stop();
 });
 
@@ -123,10 +121,6 @@ it("answers the ontology's reads in a code panel's frame as the platform's reads
       if (path === "/platform-ontology/start") return Response.json({ node: user });
       if (path === "/platform-ontology/neighbors")
         return Response.json({ node: user, neighbors: [], edges: [], relations: [] });
-      if (path === "/platform-ontology/objects") {
-        const body = JSON.parse(String(init.body));
-        return Response.json(objectsAnswer(body.type, body.page, body.pageSize));
-      }
       throw new Error(`Nothing at ${path}`);
     },
   };
@@ -143,15 +137,10 @@ it("answers the ontology's reads in a code panel's frame as the platform's reads
   expect(await graphData.read("neighbors", { node: { className: USER, primaryKey: "u-1" } }))
     .toEqual({ status: "ready", value: { node: user, neighbors: [], edges: [], relations: [] } });
 
-  const objectData = frameMemberData(typeObjects, "objects", instance, () => ({ type: null }), noPlatformRead);
-  expect(await objectData.read("objects", {})).toEqual({ status: "awaiting" });
-  expect(await objectData.read("objects", { type: ACTION, search: "ref", page: { number: 2, size: 10 } }))
-    .toEqual({ status: "ready", value: objectsAnswer(ACTION, 2, 10) });
   expect(sent.map(({ path, body }) => [path, body])).toEqual([
     ["/platform-ontology/counts", undefined],
     ["/platform-ontology/start", undefined],
     ["/platform-ontology/neighbors", { node: { className: USER, primaryKey: "u-1" } }],
-    ["/platform-ontology/objects", { type: ACTION, keyword: "ref", page: 2, pageSize: 10 }],
   ]);
 });
 
@@ -225,10 +214,10 @@ it("clears stale ready data and declared read outputs immediately on target swit
     outputs: {},
     config: {},
     data: {
-      objects: {
+      rows: {
         source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-        read: "objects",
-        params: { type: { input: "type" } },
+        read: "instances",
+        params: { className: { input: "type" } },
       },
     },
   };
@@ -288,7 +277,7 @@ it("clears stale ready data and declared read outputs immediately on target swit
     const headerInputs = () => ({ target: instance.state.values.value.selectedTypeRef ?? null }) as MemberInputs;
     headerRecord = instance.memberData("header", headerProjection, headerInputs).use("record");
     headerOps = instance.memberOperations("header", headerProjection, headerInputs);
-    objectsData = instance.memberData("objects", objectsProjection, () => ({ type: instance.state.values.value.selectedType ?? null }) as MemberInputs).use("objects");
+    objectsData = instance.memberData("objects", objectsProjection, () => ({ type: instance.state.values.value.selectedType ?? null }) as MemberInputs).use("rows");
   });
 
   // Resolve target A (`ACTION`) for record, operations, and objects.
@@ -323,7 +312,7 @@ it("clears stale ready data and declared read outputs immediately on target swit
   });
   pendingObjects.get(`${ACTION}:`)!.shift()!({
     status: "ready",
-    value: objectsAnswer(ACTION, 1, 20) as never,
+    value: rowsAnswer() as never,
   });
 
   await vi.waitFor(() => {
@@ -357,7 +346,7 @@ it("clears stale ready data and declared read outputs immediately on target swit
     } as never,
   });
   pendingOps.get(ACTION)!.shift()!({ status: "ready", value: {} as never });
-  pendingObjects.get(`${ACTION}:ref`)!.shift()!({ status: "ready", value: objectsAnswer(ACTION, 1, 20) as never });
+  pendingObjects.get(`${ACTION}:ref`)!.shift()!({ status: "ready", value: rowsAnswer() as never });
   await nextTick();
 
   // Switch target from A (`ACTION`) to B (`USER`) while panel is active: stale ready state and outputs clear immediately.
@@ -386,7 +375,7 @@ it("clears stale ready data and declared read outputs immediately on target swit
     } as never,
   });
   pendingOps.get(USER)!.shift()!({ status: "ready", value: {} as never });
-  pendingObjects.get(`${USER}:ref`)!.shift()!({ status: "ready", value: objectsAnswer(USER, 1, 20) as never });
+  pendingObjects.get(`${USER}:ref`)!.shift()!({ status: "ready", value: rowsAnswer() as never });
 
   await vi.waitFor(() => {
     expect(headerRecord.value.status).toBe("ready");

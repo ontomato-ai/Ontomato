@@ -1,5 +1,5 @@
 import {
-  matchesDirectPanelValue, panelObjectRefSchema, panelPlacementSchema,
+  candidateProjectionIds, matchesDirectPanelValue, panelObjectRefSchema, panelPlacementSchema,
   type PanelMember, type PanelMemberPath, type PanelMemberTarget, type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
@@ -9,6 +9,7 @@ import {
   type ApplicationEntryResolution, type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
+import type { ScheduledApplicationsStatus } from "@ontomato/platform-schedules/panel-reads";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
 import {
@@ -23,7 +24,8 @@ import { currentDefinitionAccess, requireCurrentDefinitionUse } from "./access";
 import { requireAllowed } from "../product-governance/authorization";
 import { readRegisteredPanelEntry, requirePanelEntry } from "./application-use";
 import { parseStoredDefinition } from "./definition-diagnostics";
-import { panelDefinition } from "./render-definitions";
+import { bundledPanelProjectionIds, panelDefinition } from "./render-definitions";
+import { readBundledPanelProjections } from "./bundled-projections";
 import { readPanelDomainComponents, readProjectionComponent } from "./component-catalogue";
 import { findObjectDetailPanelId } from "./object-detail";
 import { panelStateKey, type PanelStatePathKey } from "./personal-state-key";
@@ -54,6 +56,7 @@ export class PanelReadBatchCache {
   private readonly grants = new Map<string, Promise<void>>();
   private readonly products = new Map<string, Promise<CurrentProductRow | undefined>>();
   private readonly reads = new Map<string, Promise<unknown>>();
+  private readonly scheduledApplications = new Map<string | undefined, Promise<ScheduledApplicationsStatus>>();
   private readonly domainId: string;
 
   constructor(private readonly owner: ProductOwner, private readonly viewer: AssistantCredentials) {
@@ -74,6 +77,10 @@ export class PanelReadBatchCache {
 
   read(key: string, load: () => Promise<unknown>) {
     return memoize(this.reads, key, load);
+  }
+
+  scheduleApplications(previewHeader: string | undefined, load: () => Promise<ScheduledApplicationsStatus>) {
+    return memoize(this.scheduledApplications, previewHeader, load);
   }
 
   async prefetch(targets: readonly Target[]) {
@@ -292,7 +299,9 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
 
 export async function readNestedPanel(
   owner: ProductOwner, credentials: AssistantCredentials, { source, memberPath }: ProductPanelNestedReadRequest,
+  bundleForRender = false,
 ): Promise<ProductPanelNestedReadResponse> {
+  let entryInputs: ApplicationPanelUse["inputs"];
   const placement = await (async () => {
     if (source.kind === "candidate") {
       const { loadWorkspacePanel } = await import("../workspaces/panel-candidate");
@@ -304,14 +313,24 @@ export async function readNestedPanel(
       return resolveApplicationPreviewPath(owner, credentials, source.app.id, source.app, memberPath);
     }
     const { panel, entry } = await requireRegisteredPanelRoot(owner, credentials, source);
+    entryInputs = entry?.inputs;
     return resolveMemberPath(owner, credentials, panel, memberPath, entry);
   })();
   if (placement.kind !== "panel" || !("revision" in placement.panel))
     throw new HttpError(404, "The member path does not select a panel", "PANEL_MEMBER_UNAVAILABLE");
   const { id, revision, content, manifest, theme, domainId } = placement.panel;
-  const domainComponents = await readPanelDomainComponents({ domainId, credentials }, manifest.components);
+  const member = placement.trail.at(-1)!.member;
+  const projectionsForRender = bundleForRender && (source.kind === "registered" || source.kind === "frame")
+    && Object.values(manifest.members).some(({ target }) => candidateProjectionIds(target).length > 0);
+  const [domainComponents, projections] = await Promise.all([
+    readPanelDomainComponents({ domainId, credentials }, manifest.components),
+    projectionsForRender ? readBundledPanelProjections(owner, credentials, bundledPanelProjectionIds(
+      placement.panel, "fromPlatform" in member.target ? entryInputs : member.inputs,
+    )) : undefined,
+  ]);
   return {
     panel: { id, revision, content, manifest, ...(theme !== undefined && { theme }) },
+    ...(projections && { projections }),
     ...(domainComponents && { domainComponents }),
   };
 }

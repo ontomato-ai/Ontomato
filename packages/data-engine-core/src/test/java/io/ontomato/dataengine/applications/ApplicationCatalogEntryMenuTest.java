@@ -10,7 +10,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import io.ontomato.dataengine.service.QueryAccessService;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +22,7 @@ class ApplicationCatalogEntryMenuTest {
     @Test void singleEntryCountsRegisteredNamesBeforeFilteringForTheReader() {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.entries((actor, key) -> !key.equals("multi/second"));
-        var grants = mock(ProductGrantService.class);
+        var grants = mock(ProductPrincipalLookup.class);
         var user = new QueryAccessService.GrantUser("reader", "domain-a");
         var first = use("first", Map.of("en", "First"));
         var second = use("second", Map.of("en", "Second"));
@@ -32,10 +32,7 @@ class ApplicationCatalogEntryMenuTest {
         var single = app("single", List.of(only, detail));
         var leaf = app("leaf", List.of());
 
-        when(grants.allowedBatchFor("domain-a", "reader", List.of(first.panelId()), "use"))
-            .thenReturn(Map.of(first.panelId(), true));
-        when(grants.allowedBatchFor("domain-a", "reader", List.of(only.panelId(), detail.panelId()), "use"))
-            .thenReturn(Map.of(only.panelId(), true, detail.panelId(), true));
+
 
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class), access,
             "{}", mock(PanelResources.class), grants, authorization));
@@ -61,7 +58,7 @@ class ApplicationCatalogEntryMenuTest {
     @Test void entryMenuIncludesFrameConversationWithoutAffectingGroupsOrSingleEntry() {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.allowEntries();
-        var grants = mock(ProductGrantService.class);
+        var grants = mock(ProductPrincipalLookup.class);
         var user = new QueryAccessService.GrantUser("reader", "domain-a");
         var conversation = new ApplicationPanelUse("ops-diagnosis", "ops-diagnosis", null, "/ops/diagnosis", null, null, null, null, null, null,
             ApplicationPanelUse.FRAME_CONVERSATION_KIND, null);
@@ -78,9 +75,6 @@ class ApplicationCatalogEntryMenuTest {
             "panelSettings", JSONObject.of("framePanelId", "builtin-product-ops-frame"),
             "panelUses", List.of(conversation, grouped, detail));
 
-        when(grants.allowedBatchFor("domain-a", "reader",
-            List.of("builtin-product-ops-frame", grouped.panelId(), detail.panelId()), "use"))
-            .thenReturn(Map.of("builtin-product-ops-frame", true, grouped.panelId(), true, detail.panelId(), true));
 
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class), access,
             "{}", mock(PanelResources.class), grants, authorization));
@@ -100,7 +94,7 @@ class ApplicationCatalogEntryMenuTest {
     @Test void mixedNativeApplicationKeepsItsDeclaredHomeBesideStructuredEntries() {
         var authorization = EntryAuthorizationFixture.entries((actor, key) ->
             key.equals("agents/agents") == actor.userId().equals("chat-reader"));
-        var grants = mock(ProductGrantService.class);
+        var grants = mock(ProductPrincipalLookup.class);
         var settings = new ApplicationPanelUse("agents-agent-settings", "agents-agent-settings",
             "builtin-product-agent-settings", "/agents/settings", null, Map.of("en", "Settings"));
         var agents = app("agents", List.of(settings));
@@ -111,8 +105,7 @@ class ApplicationCatalogEntryMenuTest {
         doReturn(List.of(agents)).when(catalog).all();
         var chatReader = new QueryAccessService.GrantUser("chat-reader", "domain-a");
         var settingsReader = new QueryAccessService.GrantUser("settings-reader", "domain-a");
-        when(grants.allowedBatchFor("domain-a", "settings-reader", List.of(settings.panelId()), "use"))
-            .thenReturn(Map.of(settings.panelId(), true));
+
 
         var chat = catalog.resolveEntry("/agents/chat", chatReader).getObject("use", ApplicationPanelUse.class);
         assertEquals("agents", chat.id());

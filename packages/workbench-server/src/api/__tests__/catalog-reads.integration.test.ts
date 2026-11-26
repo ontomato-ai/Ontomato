@@ -14,7 +14,6 @@ import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -72,7 +71,7 @@ const hiddenUse = { ...publicUse, id: "hidden", pageKey: "hidden", path: `${entr
 const draftId = "app-14d40829-d7d4-4b14-94bf-11c4c8b12e1b";
 const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pages", groups: [] };
 const initialCreateValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },
-  initialOpenEntryIds: [], panelUses: [], shared: false, allowStandalone: true };
+  initialOpenEntryIds: [], panelUses: [], allowStandalone: true };
 const entryValues = { entry, panelUses: [publicUse, hiddenUse], framePanelId: "catalogue-panel" };
 const identityValues = { names: { en: "Application", fr: "Application française" }, descriptions: { en: "Kept description" }, icon: "pages" };
 const writes: { path: string; actor?: string; body: unknown }[] = [];
@@ -92,7 +91,6 @@ beforeAll(async () => {
   state.schema = `m2_catalogue_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
@@ -164,7 +162,7 @@ beforeAll(async () => {
       menu: { singleEntry: true, names: declaration.names, groups: [], panelUses: [] } } });
   });
   const summary = { id: applicationId, names: declaration.names, descriptions: {}, icon: "pages",
-    source: "domain", canMaintain: false, canGrant: false, canEditEntries: false, entryCount: 1 };
+    source: "domain", canMaintain: false, canEditEntries: false, entryCount: 1 };
   app.get("/java/platform/applications/catalogue", (req, res) => {
     expect(req.header("tk")).toBe(viewer.token);
     expect(req.query).toEqual({ search: "App", scope: "visible", size: "4" });

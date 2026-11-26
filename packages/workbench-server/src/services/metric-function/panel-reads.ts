@@ -93,7 +93,7 @@ const metricSchema = z.object({
   function: z.object({ name: z.string().nullish() }).passthrough().nullish(),
   modifyTimestamp: z.number().nullish(),
 }).passthrough();
-const metricCountSchema = z.object({ total: z.number().int().nonnegative() }).strict();
+const countSchema = z.object({ total: z.number().int().nonnegative() }).strict();
 const functionSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -179,7 +179,7 @@ export function createMetricReadAdapter(_owner: ProductOwner, viewer: AssistantC
   }
   return {
     async count(): Promise<PanelRecordQuery> {
-      const { total } = await owner("metric-count", "/metricView/queryList", { countOnly: true }, metricCountSchema);
+      const { total } = await owner("metric-count", "/metricView/queryList", { countOnly: true }, countSchema);
       return { rows: [], total };
     },
     async list(params: Record<string, unknown>): Promise<PanelRecordQuery> {
@@ -232,6 +232,10 @@ export function createFunctionReadAdapter(_owner: ProductOwner, viewer: Assistan
   const { owner, fieldLabels, form } = ownerReads(viewer, "FUNCTION_READ_FAILED");
   const labels = () => fieldLabels("function", ["operation"]);
   return {
+    async count(): Promise<PanelRecordQuery> {
+      const { total } = await owner("function-count", "/function/queryList", { countOnly: true }, countSchema);
+      return { rows: [], total };
+    },
     async list(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const { operation, search } = functionCatalogueListSchema.parse(params);
       const columns = labels();

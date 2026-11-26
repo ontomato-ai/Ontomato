@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type { PanelDownloadFile } from "@ontomato/contracts/panel-download";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { PanelFormTarget, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import {
   describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOperationDeclaration,
   type PanelOperationTargetTypes, type PanelOwnerOperationDescriptor, type PanelReadOperationResult, type PanelReadOperationSectionDeclaration,
@@ -87,7 +88,7 @@ interface ServerOperation extends OperationInputDescription {
   /** Optional batch availability lookup across a page of list rows to avoid per-row backend requests. */
   unavailableBatch?(
     host: PanelOperationHost,
-    targets: readonly { target: PanelRecordTarget; rowKey: string }[],
+    targets: readonly { target: PanelRecordTarget; rowKey: string; row?: PanelRecord; input?: Readonly<Record<string, unknown>> }[],
   ): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>>;
   inputSchema: z.ZodType<Record<string, unknown>>;
   resultSchema: z.ZodTypeAny;

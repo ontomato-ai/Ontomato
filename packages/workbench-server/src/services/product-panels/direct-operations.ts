@@ -371,9 +371,7 @@ export async function resolveBatchUnavailableReasons(
   targets: readonly { rowKey: string; target: PanelRecordTarget }[],
 ): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>> {
   if (targets.length === 0) return new Map();
-  if (handler.unavailableBatch) {
-    return handler.unavailableBatch(host, targets);
-  }
+  if (handler.unavailableBatch) return handler.unavailableBatch(host, targets);
   if (!handler.unavailable) return new Map();
   const unavailable = handler.unavailable.bind(handler);
   // Deduplicate identical targets (e.g. outer parent target shared across all 50 rows -> 1 check instead of 50).
@@ -392,6 +390,16 @@ export async function resolveBatchUnavailableReasons(
     if (reason !== undefined) reasonsByRowKey.set(rowKey, reason);
   }
   return reasonsByRowKey;
+}
+
+async function resolveRowBatchUnavailableReasons(
+  host: ReturnType<typeof operationHost>,
+  handler: PanelWriteServerOperation,
+  targets: readonly { rowKey: string; target: PanelRecordTarget }[],
+): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>> {
+  if (targets.length === 0) return new Map();
+  if (!handler.unavailableBatch) throw new Error(`Operation '${handler.handlerRef}' does not implement batch row availability`);
+  return handler.unavailableBatch(host, targets);
 }
 
 /**
@@ -444,16 +452,25 @@ export async function describeRowOperationsForRows(
     const validTargets = rowEntries.filter((entry): entry is { rowKey: string; row: PanelRecord; target: PanelRecordTarget; compatible: boolean } =>
       entry.compatible && entry.target !== undefined && entry.target !== null);
 
+    const rowScoped = bound.binding.target !== undefined && ("row" in bound.binding.target || "rowField" in bound.binding.target);
+    const rowBoundParams = Object.values(bound.binding.params ?? {}).some(param => "row" in param || "rowField" in param);
     const inputReasons = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
-    const inspectInput = handler.unavailableForInput;
+    const inspectInput = !rowScoped && !rowBoundParams ? handler.unavailableForInput : undefined;
+    const known = new Map(Object.entries(inputs));
+    const batchTargets = validTargets.map(entry => ({
+      ...entry,
+      input: resolvePinnedBoundParams(bound.binding, known, entry.target, entry.row),
+    }));
     if (inspectInput) {
-      const known = new Map(Object.entries(inputs));
-      await runWithConcurrency(validTargets, ROW_AVAILABILITY_CONCURRENCY, async ({ rowKey, target, row }) => {
-        const params = resolvePinnedBoundParams(bound.binding, known, target, row);
-        inputReasons.set(rowKey, await inspectInput(host, target, params));
+      await runWithConcurrency(batchTargets, ROW_AVAILABILITY_CONCURRENCY, async ({ rowKey, target, input }) => {
+        inputReasons.set(rowKey, await inspectInput(host, target, input));
       });
     }
-    const reasonsByRowKey = inspectInput ? inputReasons : await resolveBatchUnavailableReasons(host, handler, validTargets);
+    const reasonsByRowKey = inspectInput
+      ? inputReasons
+      : rowScoped
+        ? await resolveRowBatchUnavailableReasons(host, handler, batchTargets)
+        : await resolveBatchUnavailableReasons(host, handler, batchTargets);
     for (const { rowKey, target, compatible } of rowEntries) {
       if (target === undefined) continue;
       if (!compatible) {

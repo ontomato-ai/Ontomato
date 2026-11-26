@@ -24,11 +24,13 @@ import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { z } from "zod";
 import {
-  applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, applicationPanelReferencesRequestSchema,
+  APPLICATION_REGISTRANT_HEADER, applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema,
+  applicationIconValidationRequestSchema, applicationPanelReferencesRequestSchema,
   chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
+  isApplicationPanelUse,
   PROJECTION_REUSE_PANEL_HEADER,
   productCurrentIdParamsSchema, productPanelGetQuerySchema, productPanelReadQuerySchema,
-  type BundledPanelProjection, type ProductPanel, type ProductPanelResponse, type ProductProjection, type ProductPanelReadQuery,
+  type ProductPanel, type ProductPanelResponse, type ProductProjection, type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema,
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
@@ -41,12 +43,14 @@ import { context, wrap } from "../utils/agent-host";
 import { getLocaleFromRequest } from "../utils/request";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
+import { workbenchIdentity } from "../../identity/installed";
 import {
-  readCurrentPanelRecord, readCurrentProjectionRecord, readCurrentProjectionRecords, saveCurrentPanel, saveCurrentProjection,
+  readCurrentPanelRecord, readCurrentProjectionRecord, saveCurrentPanel, saveCurrentProjection,
   validateApplicationPanelReferences,
 } from "../../services/product-panels/current";
 import { HttpError } from "../../utils/errors";
-import { fixedPanelProjectionIds, renderDefinitionJson } from "../../services/product-panels/render-definitions";
+import { readBundledPanelProjections } from "../../services/product-panels/bundled-projections";
+import { bundledPanelProjectionIds, renderDefinitionJson } from "../../services/product-panels/render-definitions";
 import { tForLocale } from "../../i18n";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData, readProductPanelDataBatch } from "../../services/product-panels/data-reads";
@@ -55,7 +59,7 @@ import { readNestedPanel, requireRegisteredPanelRoot } from "../../services/prod
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions, snapshotPanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
-import { personalEntry, requirePanelEntry } from "../../services/product-panels/application-use";
+import { personalEntry, readRegisteredPanelEntry, requirePanelEntry } from "../../services/product-panels/application-use";
 import { panelConfirmation } from "../../services/product-panels/confirmation";
 import { runForOwner } from "../../services/assistant/execution";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -68,39 +72,6 @@ function requireFrameForRead({ applicationId, useId }: FrameRead, caller: Return
     { kind: "frame", applicationId, useId }, { expectedPanelId: id });
 }
 
-/**
- * Reads every unique fixed projection member of a panel in parallel using the same `use` grant and render-validation
- * path as `GET /api/product-projections/:id`. Per-member 403/404 denials stay isolated to that member.
- */
-async function readBundledPanelProjections(
-  caller: ReturnType<typeof context>,
-  panel: Pick<ProductPanel, "manifest">,
-): Promise<string> {
-  const ids = fixedPanelProjectionIds(panel);
-  if (!ids.length) return "{}";
-  const loaded = await readCurrentProjectionRecords(caller.owner, caller.credentials, ids);
-  const entries = await Promise.all(ids.map(async (projectionId) => {
-    const item = loaded.get(projectionId)!;
-    try {
-      if (!item.ok) throw item.error;
-      const { projection } = item;
-      const domainComponent = await validateProjectionComponent(
-        projectionId, projection, undefined, { domainId: projection.domainId, credentials: caller.credentials },
-      );
-      return `${JSON.stringify(projectionId)}:{"status":"ready",${renderProjectionFields(projection, domainComponent)}}`;
-    } catch (error) {
-      if (error instanceof HttpError && (error.status === 403 || error.status === 404)) {
-        const unavailable: BundledPanelProjection = { status: "unavailable", httpStatus: error.status, message: error.message };
-        return `${JSON.stringify(projectionId)}:${JSON.stringify(unavailable)}`;
-      }
-      // Omit a member whose component validation fails (400) so the panel still opens and only that member reports its error.
-      if (error instanceof HttpError && error.status === 400) return undefined;
-      throw error;
-    }
-  }));
-  return `{${entries.filter(entry => entry !== undefined).join(",")}}`;
-}
-
 function renderProjectionFields(
   projection: ProductProjection,
   domainComponent: Awaited<ReturnType<typeof validateProjectionComponent>>,
@@ -110,11 +81,19 @@ function renderProjectionFields(
 }
 
 function renderPanelJson(
-  panel: ProductPanel, projections: string | undefined,
+  panel: ProductPanel, projections: ProductPanelResponse["projections"],
   domainComponents: ProductPanelResponse["domainComponents"],
 ) {
   const fields = [`"panel":${renderDefinitionJson(panel)}`];
-  if (projections !== undefined) fields.push(`"projections":${projections}`);
+  if (projections !== undefined) {
+    const entries = Object.entries(projections).map(([id, entry]) => {
+      const value = entry.status === "ready"
+        ? `{"status":"ready",${renderProjectionFields(entry.projection, entry.domainComponent)}}`
+        : JSON.stringify(entry);
+      return `${JSON.stringify(id)}:${value}`;
+    });
+    fields.push(`"projections":{${entries.join(",")}}`);
+  }
   if (domainComponents !== undefined) fields.push(`"domainComponents":${JSON.stringify(domainComponents)}`);
   return `{${fields.join(",")}}`;
 }
@@ -156,7 +135,7 @@ productPanelsRouter.post(PANEL_NESTED_READ_PATH.slice("/product-panels".length),
   res.set("Cache-Control", "no-store");
   const { owner, credentials } = context(req);
   const request = productPanelNestedReadRequestSchema.parse(req.body);
-  res.json(productPanelNestedReadResponseSchema.parse(await readNestedPanel(owner, credentials, request)));
+  res.json(productPanelNestedReadResponseSchema.parse(await readNestedPanel(owner, credentials, request, true)));
 }));
 productPanelsRouter.post("/read", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
@@ -212,21 +191,21 @@ productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  const { includeProjections, ...query } = productPanelGetQuerySchema.parse(req.query);
-  const bundleProjections = includeProjections === "1";
-  if ("source" in query) {
-    const { panel } = await requireFrameForRead(query, c, id);
-    const [projections, domainComponents] = await Promise.all([
-      bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
-      panel.manifest?.components ? readPanelDomainComponents({ domainId: panel.domainId, credentials: c.credentials }, panel.manifest.components) : Promise.resolve(undefined),
-    ]);
-    res.type("json").send(renderPanelJson(panel, projections, domainComponents));
-    return;
-  }
-  const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, query.view !== "1");
+  const query = productPanelGetQuerySchema.parse(req.query);
+  const { owner, credentials } = c;
+  const [panel, placement] = await Promise.all([
+    "source" in query && query.source === "frame"
+      ? requireFrameForRead(query, c, id).then(({ panel }) => panel)
+      : readCurrentPanelRecord(owner, credentials, id, !("view" in query && query.view === "1")),
+    "source" in query && query.source === "registered" ? readRegisteredPanelEntry(credentials, query, owner) : undefined,
+  ]);
+  const use = placement?.use;
+  if (use && (!isApplicationPanelUse(use) || use.panelId !== id))
+    throw new HttpError(404, "This entry does not use the requested panel", "PANEL_ENTRY_UNAVAILABLE");
   const [projections, domainComponents] = await Promise.all([
-    bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
-    panel.manifest?.components ? readPanelDomainComponents({ domainId: panel.domainId, credentials: c.credentials }, panel.manifest.components) : Promise.resolve(undefined),
+    query.includeProjections === "1"
+      ? readBundledPanelProjections(owner, credentials, bundledPanelProjectionIds(panel, use?.inputs)) : undefined,
+    panel.manifest?.components ? readPanelDomainComponents({ domainId: panel.domainId, credentials }, panel.manifest.components) : undefined,
   ]);
   res.type("json").send(renderPanelJson(panel, projections, domainComponents));
 }));
@@ -290,11 +269,21 @@ productProjectionsRouter.put("/:id", wrap(async (req, res) => {
 }));
 export const productPanelsInternalRouter = Router();
 productPanelsInternalRouter.use(platformService);
-productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) => {
-  const request = parseRegistration(applicationPanelReferencesRequestSchema, req.body, "Application registration");
-  await validateApplicationPanelReferences(request, getLocaleFromRequest(req));
-  res.sendStatus(204);
-}));
+productPanelsInternalRouter.post("/validate-references",
+  (req, res, next) => req.body?.kind === "icon" ? next() : workbenchIdentity().authenticate(req, res, next),
+  wrap(async (req, res) => {
+    if (req.body?.kind === "icon") {
+      parseRegistration(applicationIconValidationRequestSchema, req.body, "Application icon");
+    } else {
+      const request = parseRegistration(applicationPanelReferencesRequestSchema, req.body, "Application registration");
+      const { owner, credentials } = context(req);
+      if (!owner.userId || owner.userId !== req.header(APPLICATION_REGISTRANT_HEADER) || owner.domainId !== request.domainId)
+        throw new HttpError(403, "Registration credentials must match the authenticated registrant and domain", "APPLICATION_REGISTRANT_MISMATCH");
+      await validateApplicationPanelReferences({ ...request, registrant: credentials }, getLocaleFromRequest(req));
+    }
+    res.sendStatus(204);
+  }),
+);
 
 export const panelOperationsRouter = Router();
 panelOperationsRouter.get("/panel-operations/descriptor", wrap(async (req, res) => {

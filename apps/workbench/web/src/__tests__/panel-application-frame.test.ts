@@ -363,38 +363,19 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
   // 3 governance paged queries pass page: { number: 1, size: 1 }, and organization units uses list.
   const countProjectionList = Object.values(frameProjections);
   expect(countProjectionList).toHaveLength(19);
-  const countReadMembers = [
-    "builtin-product-om-frame-objects",
-    "builtin-product-om-frame-attributes",
-    "builtin-product-om-frame-relations",
-    "builtin-product-om-frame-actions",
-    "builtin-product-om-frame-metrics",
-    "builtin-product-om-frame-workflows",
-    "builtin-product-om-frame-triggers",
-    "builtin-product-om-frame-applications",
-    "builtin-product-om-frame-components",
-    "builtin-product-om-frame-agents",
-  ];
-  const governanceQueryMembers = [
-    "builtin-product-om-frame-members",
-    "builtin-product-om-frame-roles",
-    "builtin-product-om-frame-policies",
+  const catalogueQueryMembers = [
+    "builtin-product-om-frame-projections",
+    "builtin-product-om-frame-panels",
   ];
   for (const projection of countProjectionList) {
     expect(projection.componentId).toBe("@ontomato/sdk:ObjectCount");
     expect(projection.config).toEqual({ appearance: "badge" });
-    if (countReadMembers.includes(projection.id)) {
+    if (catalogueQueryMembers.includes(projection.id)) {
+      expect(projection.data.rows?.read).toBe("query");
+      expect(projection.data.rows?.params).toEqual({ size: { literal: 1 } });
+    } else {
       expect(projection.data.rows?.read).toBe("count");
       expect(projection.data.rows?.params).toEqual({});
-    } else if (governanceQueryMembers.includes(projection.id)) {
-      expect(projection.data.rows?.read).toBe("query");
-      expect(projection.data.rows?.params).toEqual({ page: { literal: { number: 1, size: 1 } } });
-    } else if (projection.id === "builtin-product-om-frame-organization") {
-      expect(projection.data.rows?.read).toBe("list");
-      expect(projection.data.rows?.params).toEqual({});
-    } else {
-      expect(projection.data.rows?.read).toBe("query");
-      expect(projection.data.rows?.params?.size).toEqual({ literal: 1 });
     }
   }
 

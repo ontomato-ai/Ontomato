@@ -6,7 +6,7 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import {
   AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/panel-client-requests";
-import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import { panelAddress, type ProductPanelReadRequest, type ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
@@ -125,8 +125,12 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
   };
 }
 
-function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation): Record<string, Record<string, ReadAdapter>> {
-  const schedules = createScheduledTaskReadAdapter(viewer);
+function readAdapters(
+  owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation,
+  batchCache?: PanelReadBatchCache,
+): Record<string, Record<string, ReadAdapter>> {
+  const schedules = createScheduledTaskReadAdapter(viewer, undefined,
+    batchCache && (load => batchCache.scheduleApplications(viewer.headers?.[BUILD_TEST_HEADER], load)));
   const governance = createGovernanceReadAdapters(viewer, {
     loadPolicyCatalog: () => loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale),
   });
@@ -354,6 +358,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
     },
     [FUNCTION]: {
+      count: () => functions.count(),
       list: (_selection, params) => functions.list(params),
       query: (_selection, params) => functions.query(params),
       record: selection => functions.record(selection.primaryKey!),
@@ -407,6 +412,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       operationRows: selection => readSdkComponentOperationRows(owner, selection.primaryKey!, viewer),
     },
     [USER]: {
+      count: () => governance.users.count(),
       options: async (_selection, params) => (await options()).users.options({
         keyword: panelReadParameterSchemas.keyword.optional().parse(params.keyword),
         page: panelReadParameterSchemas.page.optional().parse(params.page),
@@ -427,6 +433,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ),
     },
     [ROLE]: {
+      count: () => governance.roles.count(),
       options: async (_selection, params) => {
         const keyword = panelReadParameterSchemas.keyword.optional().parse(params.keyword);
         const page = panelReadParameterSchemas.page.optional().parse(params.page);
@@ -451,6 +458,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       contributionWorkflowSteps: selection => governance.roles.contributionWorkflowSteps(selection.primaryKey!),
     },
     [PERMISSION_POLICY]: {
+      count: () => governance.policies.count(),
       options: () => governance.policies.options(),
       resolve: (_selection, params) => governance.policies.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
       query: (_selection, params) => governance.policies.query(params),
@@ -459,6 +467,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       createForm: (_selection, params) => governance.policies.createForm(formParams(params)),
     },
     [ORG_UNIT]: {
+      count: () => governance.orgUnits.count(),
       list: () => governance.orgUnits.list(),
       options: () => governance.orgUnits.options(),
       resolve: (_selection, params) => governance.orgUnits.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
@@ -490,6 +499,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       form: (selection, params) => governance.orgGrants.form(selection.primaryKey!, formParams(params)),
     },
     [SKILL]: {
+      count: async () => (await skillLibrary()).count(),
       async options(_selection, params) {
         return (await agentSkills(params.agentTarget)).options();
       },
@@ -513,10 +523,31 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [OBJECT_TYPE]: {
       ...modelReads,
-      instances: (_selection, params) => customer.query(readParams.className.parse(params.className), customerQueryParams(params)),
-      instanceRecord: (_selection, params) => {
+      record: async selection => ({
+        ...(await model.record(selection.typeId, selection.primaryKey!)),
+        outputs: { modelingPath: visualModelingPath("object", selection.primaryKey!) },
+      }),
+      instances: async (_selection, params) => {
+        const className = readParams.className.parse(params.className);
+        const page = await customer.query(className, customerQueryParams(params));
+        return {
+          ...page,
+          rows: page.rows.map(row => ({
+            ...row,
+            outputs: { detailPath: objectDetailPath(className, row.primaryKey) },
+          })),
+        };
+      },
+      instanceRecord: async (_selection, params) => {
         const { className, primaryKey } = readParams.graphNode.parse(params.object);
-        return customer.record(className, primaryKey);
+        const [record, objectType] = await Promise.all([
+          customer.record(className, primaryKey),
+          model.record(OBJECT_TYPE, className),
+        ]);
+        return {
+          ...record,
+          outputs: { typeLabel: objectType.label, detailPath: objectDetailPath(className, primaryKey) },
+        };
       },
       instanceNeighbors: (_selection, params) => graph.neighbors(readParams.graphNode.parse(params.node), {
         relationKinds: readParams.relationKinds.optional().parse(params.relationKinds),
@@ -581,7 +612,13 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ...modelReads,
       inlineForm: (selection, params) => model.inlineForm(selection.typeId, selection.primaryKey!, formParams(params)),
     },
-    [RELATIONSHIP]: modelReads,
+    [RELATIONSHIP]: {
+      ...modelReads,
+      record: async selection => ({
+        ...(await model.record(selection.typeId, selection.primaryKey!)),
+        outputs: { modelingPath: visualModelingPath("relation", selection.primaryKey!) },
+      }),
+    },
     [PRODUCT_PROJECTION]: {
       ...catalogueReads(projectionCatalogue),
       componentOptions: () => projectionCatalogue.componentOptions(),
@@ -626,8 +663,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       entryRows: selection => applications.entryRows(selection.primaryKey!),
       usedPanels: selection => applications.usedPanels(selection.primaryKey!),
       referenceGraph: selection => applications.referenceGraph(selection.primaryKey!),
-      grants: selection => applications.grants(selection.primaryKey!),
-      grantRows: selection => applications.grantRows(selection.primaryKey!),
       form: (selection, params) => applications.form(selection.primaryKey!, {
         ...formParams(params),
         section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
@@ -652,12 +687,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [ONTOLOGY_TYPE]: {
       count: async () => (await ontology()).count(),
-      schema: async () => (await ontology()).schema(),
       counts: async () => (await ontology()).counts(),
       countRows: async () => (await ontology()).countRows(),
       start: async () => (await ontology()).start(),
       neighbors: async (_selection, params) => (await ontology()).neighbors(params),
-      objects: async (_selection, params) => (await ontology()).objects(params),
       list: async () => (await ontology()).list(),
       graphNodes: async () => (await ontology()).graphNodes(),
       instanceGraphClasses: async () => (await ontology()).instanceGraphClasses(),
@@ -698,6 +731,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       }),
     },
     [BUSINESS_KNOWLEDGE]: {
+      count: () => knowledge.count(),
       query: (_selection, params) => knowledge.query(params),
       counts: (_selection, params) => knowledge.counts(params),
       record: (selection, params) => knowledge.record(selection.primaryKey!, params),
@@ -752,6 +786,18 @@ async function resolveReadMember(
     return { ...placement, inputs, viewer };
   }
   return { ...placement, inputs: request.inputs, viewer };
+}
+
+/** Where the owner's own modeling editor opens one class or relation. */
+function visualModelingPath(focus: "object" | "relation", id: string) {
+  return panelAddress("/ontology/visual-modeling", focus === "relation"
+    ? { selectedEdge: id, back: "playground" }
+    : { selectedNode: id, back: "playground" });
+}
+
+/** The object browser's full detail view of one object. */
+function objectDetailPath(className: string, primaryKey: string) {
+  return panelAddress("/browser/views", { selected: { className, primaryKey } });
 }
 
 function effectiveInputs(
@@ -883,7 +929,7 @@ export async function executeProjectionDataRead(
   const selection = readSelection(data, inputs);
   const read = selection.kind === "customer"
     ? customerReads(owner, viewer, callerUserName)[selection.method]
-    : readAdapters(owner, viewer, callerUserName, location)[selection.typeId]?.[selection.method];
+    : readAdapters(owner, viewer, callerUserName, location, batchCache)[selection.typeId]?.[selection.method];
   if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
   const invoke = () => Promise.resolve(read(selection, params, projection));
   const result = await (batchCache && readScopeKey !== undefined
@@ -949,8 +995,7 @@ export async function readProductPanelData(
     if (
       projection.operations && Object.keys(projection.operations).length > 0
       && (outcome.declaration.result === "panelRecordList"
-        || outcome.declaration.result === "panelRecordQuery"
-        || outcome.declaration.result === "panelOntologyObjects")
+        || outcome.declaration.result === "panelRecordQuery")
     ) {
       const datum = projection.data[request.dataName];
       const inputs = effectiveInputs(projection, member, submittedInputs);
@@ -968,14 +1013,7 @@ export async function readProductPanelData(
           : undefined);
       const rows = outcome.declaration.result === "panelRecordList"
         ? (outcome.value as import("@ontomato/contracts/panel-projection").PanelRecord[])
-        : outcome.declaration.result === "panelRecordQuery"
-          ? ((outcome.value as import("@ontomato/contracts/panel-projection").PanelRecordQuery).rows)
-          : ((outcome.value as import("@ontomato/contracts/platform-ontology-data").PlatformOntologyObjectsResponse).items.map(item => ({
-              primaryKey: item.node.primaryKey,
-              className: item.node.className,
-              label: item.label,
-              fields: {},
-            })));
+        : (outcome.value as import("@ontomato/contracts/panel-projection").PanelRecordQuery).rows;
       const { describeRowOperationsForRows } = await import("./direct-operations");
       rowOperations = await describeRowOperationsForRows(
         { owner, credentials: readViewer },

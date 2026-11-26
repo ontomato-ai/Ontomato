@@ -85,7 +85,7 @@ const CHECK_EXPORTS = [
   "componentPackageComponentsSchema", "componentPackageManifestSchema",
   "panelManifestSchema", "panelDeclaredComponentsSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
   "panelTemplatePlacedMemberKeys", "panelMemberItemKeySchema",
-  "objectListDatumName", "panelRecordItemKey", "matchPanelRecordItemKey",
+  "panelRecordItemKey", "matchPanelRecordItemKey",
   "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
   "panelReadParameterSchemas", "panelReadResultSchemas", "appsSdkComponentCatalogSchema",
   "appsSdkUiPrimitiveEntrySchema", "appsSdkUiDirectiveEntrySchema", "appsSdkThemeTokenEntrySchema",

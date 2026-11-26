@@ -21,12 +21,14 @@ import { platformService } from "../middleware/platform-service";
 import { errorHandler } from "../middleware";
 import { checkComponentPackageUpgrade } from "../../services/component-packages/upgrade";
 import {
-  APPLICATION_PANEL_REFERENCES_PATH, productPanelResponseSchema, productProjectionResponseSchema,
+  APPLICATION_PANEL_REFERENCES_PATH, APPLICATION_REGISTRANT_HEADER, productPanelResponseSchema, productProjectionResponseSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { panelOperationDescriptorResponseSchema } from "@ontomato/contracts/panel-agent";
 import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
+import { installWorkbenchIdentity } from "../../identity/installed";
+import type { WorkbenchIdentity } from "../../identity/types";
 import { panelManifestSchema, type PanelManifest } from "@ontomato/contracts/panel-manifest";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema, productDefinitionStreamRequestSchema,
@@ -40,7 +42,6 @@ import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-depend
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
@@ -112,7 +113,6 @@ beforeAll(async () => {
   state.schema = `direct_panel_host_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
@@ -153,6 +153,17 @@ beforeAll(async () => {
     ["host-reader", "pilot"], ["host-no-entry", "pilot"], ["domain-component-reader", "pilot"],
     ["another-domain-reader", "another-domain"],
   ]);
+  const authenticate: WorkbenchIdentity["authenticate"] = (req, res, next) => {
+    const token = req.header("tk");
+    const domainId = token && callerDomains.get(token);
+    if (!domainId) {
+      res.sendStatus(401);
+      return;
+    }
+    Object.assign(req, { token, domainId, userId: token === "host-reader" ? "reader" : token, locale: "en" });
+    next();
+  };
+  installWorkbenchIdentity({ authenticate } as WorkbenchIdentity);
   const hasBuiltinEntry = (token?: string) => token === "host-reader" || token === "another-domain-reader";
   const allowed = (id: string, verb: string, token?: string) => isBuiltinProductId(id)
     ? (hasBuiltinEntry(token) || token === "host-no-entry") && verb === "use"
@@ -297,8 +308,8 @@ beforeAll(async () => {
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
   app.use("/api", appBuilderRouter);
-  app.use(errorHandler);
   app.use("/internal/product-panels", productPanelsInternalRouter);
+  app.use(errorHandler);
   server = await new Promise<Server>(resolve => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
@@ -306,7 +317,7 @@ beforeAll(async () => {
 });
 
 it("reports the allowed icons when the domain application registration preflight rejects a choice", async () => {
-  const request = { domainId: "pilot", uses: [], delivery: { panels: [], projections: [] } };
+  const request = { kind: "icon", domainId: "pilot" };
   const validate = (body: object) => fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": "fixture-service" },
@@ -323,7 +334,7 @@ it("reports the allowed icons when the domain application registration preflight
     expect(error.message).toContain(`Choose one of ${domainApplicationIconKeys.join(", ")}`);
   }
   expect((await validate({ ...request, icon: domainApplicationIconKeys[0] })).status).toBe(204);
-  expect((await validate(request)).status).toBe(204);
+  expect((await validate({ ...request, icon: "settings", uses: [] })).status).toBe(400);
 });
 
 it("refuses a platform panel whose entry names an opening sentence one of its languages lacks", async () => {
@@ -609,7 +620,6 @@ it("reads the authoritative operation type table while isolating stale published
   expect(table.resultSchemas.actionDefinition).toMatchObject({ properties: { effects: { type: "array" } } });
   expect(table.resultSchemas.actionExplanation).toMatchObject({ properties: { codeSegments: { type: "array" } } });
   expect(table.resultSchemas.sdkComponentDefinition).toMatchObject({ properties: { componentId: { type: "string" } } });
-  expect(table.resultSchemas.panelOntologyObjects).toMatchObject({ properties: { items: { type: "array" } } });
   const customerReads = {
     query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page", size: "size", filters: "recordFilters", sort: "recordSort" }, result: "panelRecordQuery" },
     record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
@@ -958,12 +968,19 @@ it("preserves a code panel's ID and revision rules and describes its member oper
     uses: [{ id: "mixed", panelId: codePanelId, inputs: { selectedTask: { literal: null } } }],
     delivery: { panels: [codePanelId], projections: [summaryId, runId] },
   };
-  const validate = (body: object, token = "fixture-service") => fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
+  const validate = (body: object, token = "fixture-service", tk = "host-reader", user = "reader") => fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": token },
+    headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": token,
+      tk, [APPLICATION_REGISTRANT_HEADER]: user },
     body: JSON.stringify(body),
   });
   expect((await validate(application, "reader")).status).toBe(403);
+  expect((await validate(application, "fixture-service", "invalid")).status).toBe(401);
+  expect((await validate(application, "fixture-service", "host-no-entry")).status).toBe(403);
+  expect((await validate({ ...application, domainId: "another-domain" })).status).toBe(403);
+  const deniedRoot = await validate(application, "fixture-service", "host-no-entry", "host-no-entry");
+  expect(deniedRoot.status).toBe(403);
+  expect(await deniedRoot.json()).toMatchObject({ error: { code: "OBJECT_FORBIDDEN" }, details: { panelId: codePanelId } });
   const allowed = await validate(application);
   expect(allowed.status, await allowed.text()).toBe(204);
   expect((await validate({ ...application, delivery: { panels: [], projections: [] } })).status).toBe(204);
@@ -1225,6 +1242,7 @@ it("rejects an unavailable default agent before accepting a proposed application
     fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
       method: "POST", headers: {
         "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": "fixture-service",
+        tk: "host-reader", [APPLICATION_REGISTRANT_HEADER]: "reader",
         ...(locale && { "Accept-Language": locale }),
       },
       body: JSON.stringify({

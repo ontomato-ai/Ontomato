@@ -373,6 +373,10 @@ A placement that carries `:inputs` is drawn as an instance of its own: it does n
 form draft or published outputs with the rest of the panel. That is how a row's detail or an array item gets its own
 data, and it is not a way to pass a value — a value that follows the page goes in `:values`.
 
+A value that follows the page therefore stays in `:values`. When the offline check reports a key written in both
+places, delete the fixed copy from the member's `config` and keep the page's `:values`; dropping the placement's
+`:values` to silence the check leaves a fixed value that no longer follows the page.
+
 ### usePanelOperation
 
 Binds a declared member operation (`operations.<name>`) to the calling component's synchronous `setup()`.
@@ -531,7 +535,7 @@ in panel templates / slots) instead of formatting business fields in panel HTML:
   (bindable via `state: { navigate: "..." }`, typed by `config.targetClassName`, the bound record type, or an
   ontology `object-union`) in addition to emitting `@navigate`.
 - `<metric-card>` (`MetricCard`): single or multi-KPI statistic cards (`card`, `compact`, or `inline` variants) bound
-  directly to `data.result` (`metricOutput`), `data.record`, `data.rows`, `data.objects`, or standalone `value`/`items`.
+  directly to `data.result` (`metricOutput`), `data.record`, `data.rows`, or standalone `value`/`items`.
 - `<grouped-grid>` (`GroupedGrid`): responsive CSS grid arranging `data.rows` (`panelRecordList`) into collapsible
   groups (optionally ordered/preserving empty groups from a parent `data.record` via `groupsField`) with stacked
   sections (`sectionField`, ordered `sections` descriptors), drag-and-drop reordering, pointer cell resizing,
@@ -608,11 +612,11 @@ Each `deepLink: true` field has its own flat query parameter. Single-type `objec
 the parameter (`?tag=a&tag=b`). An empty list uses `?tag=`. Frame fields use the `frame.` prefix
 (`?frame.term=2026-fall`). Build in-app links with `panelAddress(path, state)` from `@ontomato/sdk/panel`.
 The shell owns `standalone`, `from`, `navigationContext`.
-The capability-map type view uses `{"mode":"type","selectedType":"platform:SDKComponent"}` as state; the address contract encodes it as `?mode=type&selectedType=platform:SDKComponent`.
+A type graph's view uses `{"mode":"type","selectedType":"platform:SDKComponent"}` as state; the address contract encodes it as `?mode=type&selectedType=platform:SDKComponent`.
 
 ### Graph selection
 
-The capability map uses this declaration for its public `selected` state:
+A type graph declares its public `selected` state like this:
 
 ```json
 {

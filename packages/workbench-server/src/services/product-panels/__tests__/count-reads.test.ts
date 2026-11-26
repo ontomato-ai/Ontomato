@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   resolveRoot: vi.fn(),
   assertPermission: vi.fn(),
   query: vi.fn(),
-  listVisibleDomainComponents: vi.fn(),
 }));
 
 vi.mock("../member-path", () => ({
@@ -52,9 +51,6 @@ vi.mock("../../component-packages/store", () => ({
     name: "@acme/widgets",
     components: [{ componentId: "@ontomato/sdk:ObjectCount" }, { componentId: "@acme/widgets:Indicator" }],
   }],
-}));
-vi.mock("../../domain-components/store", () => ({
-  listVisibleDomainComponents: mocks.listVisibleDomainComponents,
 }));
 
 const owner = { domainId: "tenant", userId: "reader" };
@@ -117,26 +113,21 @@ describe("platform count reads", () => {
     className: "Device", name: "id", showName: "", type: "varchar",
     attrDesc: "", enable: true, businessKey: false, primaryKey: true,
   };
-  const relationship = {
-    relationship: "owns", fromclass: "Device", toclass: "Site", desc: "", fromField: "site", toField: "id",
-  };
-
   it.each([
-    { type: OBJECT_TYPE, path: "/ontology/model/object-types", rows: [objectType, { ...objectType, className: "Site" }] },
-    { type: ATTRIBUTE, path: "/ontology/model/attributes", rows: [attribute] },
-    { type: RELATIONSHIP, path: "/ontology/model/relationships", rows: [relationship] },
-    { type: WORKFLOW, path: "/workflow/query", rows: [{ id: "w", name: "Restock" }], post: true },
-  ])("$type counts only the records returned to the current viewer", async ({ type, path, rows, post }) => {
+    { type: OBJECT_TYPE, path: "/ontology/model/object-types", total: 2 },
+    { type: ATTRIBUTE, path: "/ontology/model/attributes", total: 1 },
+    { type: RELATIONSHIP, path: "/ontology/model/relationships", total: 1 },
+  ])("$type asks its owner to count as the current viewer", async ({ type, path, total }) => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
       expect(new URL(url).pathname).toBe(path);
-      expect(init.method).toBe(post ? "POST" : "GET");
-      if (post) expect(init.body).toBe("{}");
+      expect(new URL(url).searchParams.get("countOnly")).toBe("true");
+      expect(init.method).toBe("GET");
       const headers = new Headers(init.headers);
       expect(headers.get("tk")).toBe(viewer.token);
       expect(headers.get("x-scope")).toBe(viewer.headers["x-scope"]);
-      return Response.json(post ? { success: true, data: rows } : rows);
+      return Response.json({ total });
     }));
-    await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total: rows.length } });
+    await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total } });
   });
 
   it("counts actions through the same list URL without reading the list", async () => {
@@ -192,7 +183,7 @@ describe("platform count reads", () => {
         data: {
           rows: [{
             id: "app-1", names: { en: "App" }, descriptions: { en: "" }, icon: "app-window",
-            source: "builtin", canMaintain: false, canEditEntries: false, canGrant: false, entryCount: 0,
+            source: "builtin", canMaintain: false, canEditEntries: false, entryCount: 0,
           }],
           total: 1,
         },
@@ -238,12 +229,33 @@ describe("platform count reads", () => {
     expect(classNames).toEqual(["Device"]);
   });
 
-  it("counts distinct SDK entries including visible domain registrations", async () => {
-    mocks.listVisibleDomainComponents.mockResolvedValue([
-      { declaration: { componentId: "domain:registered" }, name: "Registered" },
-    ]);
+  it("counts distinct releases and counts only authorised domain component IDs", async () => {
+    const visible = "domain-component:registered";
+    const hidden = "domain-component:private";
+    mocks.query.mockImplementation(async (sql: string, params: unknown[]) => {
+      expect(sql).toContain("domain_components");
+      if (sql.includes("COUNT(*)")) {
+        expect(params).toEqual([owner.domainId, [visible]]);
+        return { rows: [{ total: 1 }] };
+      }
+      expect(sql).not.toContain("definition,");
+      expect(params).toEqual([owner.domainId]);
+      return { rows: [visible, hidden].map(id => ({ id, domainId: owner.domainId, ownerId: "author" })) };
+    });
+    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
+    const decide = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/authorization/objects/decide-batch");
+      expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
+      expect(JSON.parse(String(init.body)).requests.map((request: { target: { id: string } }) => request.target.id))
+        .toEqual([visible, hidden]);
+      return Response.json({ decisions: [
+        { allowed: true, code: null, reason: null },
+        { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Use permission required" },
+      ] });
+    });
+    vi.stubGlobal("fetch", decide);
     await expect(readCount(SDK_COMPONENT)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
-    expect(mocks.listVisibleDomainComponents).toHaveBeenCalledWith(owner.domainId, viewer, false);
+    expect(decide).toHaveBeenCalledTimes(1);
   });
 
   it("counts only definitions with view, including visible system agents", async () => {
@@ -301,6 +313,43 @@ describe("platform count reads", () => {
   it("returns forbidden when Java denies the viewer", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "FORBIDDEN" } }, { status: 403 })));
     await expect(readCount(OBJECT_TYPE)).resolves.toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
+  });
+
+  it("counts graph agent definitions in the database after deciding VIEW from access facts", async () => {
+    const { countVisibleAgentDefinitions } = await import("../../assistant/definitions");
+    const visible = "10000000-0000-4000-a000-000000000001";
+    const hidden = "10000000-0000-4000-a000-000000000002";
+    mocks.query.mockResolvedValueOnce({ rows: [
+      { id: visible, domain_id: owner.domainId, owner_id: "author" },
+      { id: hidden, domain_id: owner.domainId, owner_id: "another-author" },
+    ] }).mockResolvedValueOnce({ rows: [{ total: 1 }] });
+    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
+    const decide = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/authorization/objects/decide-batch");
+      expect(JSON.parse(String(init.body)).requests).toMatchObject([
+        { target: { id: visible }, verb: "VIEW" }, { target: { id: hidden }, verb: "VIEW" },
+      ]);
+      return Response.json({ decisions: [
+        { allowed: true }, { allowed: false, code: "FORBIDDEN", reason: "View permission required" },
+      ] });
+    });
+    vi.stubGlobal("fetch", decide);
+    await expect(countVisibleAgentDefinitions(owner, viewer)).resolves.toBe(1);
+    expect(mocks.query).toHaveBeenNthCalledWith(1, expect.stringMatching(/^SELECT id, domain_id, owner_id FROM/), [owner.domainId]);
+    expect(mocks.query).toHaveBeenNthCalledWith(2, expect.stringMatching(/^SELECT COUNT\(\*\)/), [owner.domainId, [visible]]);
+    expect(decide).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts workflows through the owner without loading the list", async () => {
+    const ownerRead = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/workflow/query");
+      expect(JSON.parse(String(init.body))).toEqual({ countOnly: true });
+      expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
+      return Response.json({ success: true, data: { total: 3 } });
+    });
+    vi.stubGlobal("fetch", ownerRead);
+    await expect(readCount(WORKFLOW)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
+    expect(ownerRead).toHaveBeenCalledTimes(1);
   });
 
   it("returns an error when the workflow owner cannot read the count", async () => {

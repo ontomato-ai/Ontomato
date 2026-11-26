@@ -331,11 +331,9 @@ test("projection registration accepts package-qualified components and leaves da
   }
 });
 
-test("ontology object lists and reference pickers declare the named reads they use", async () => {
+test("reference pickers declare the named reads they use", async () => {
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
-  const { authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters } = await import("./panel-projection");
   const { panelReadResultSchemas } = await import("./panel-operations");
-  const { platformOntologyObjectsResponseSchema } = await import("./platform-ontology");
   const base = { name: "Choices", description: "", visibility: "domain", revision: 0, outputs: {}, config: {} };
   const users = {
     ...base, componentId: "@ontomato/sdk:ReferencePicker",
@@ -349,26 +347,6 @@ test("ontology object lists and reference pickers declare the named reads they u
   assert.equal(registerDirectProjectionRequestSchema.safeParse({
     ...users, data: { options: { ...users.data.options, source: { type: platformType(SKILL) } } },
   }).success, false);
-  const objects = {
-    ...base, componentId: "@ontomato/sdk:ObjectList", inputs: {},
-    data: { objects: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "objects", params: { type: { literal: USER } } } },
-  };
-  assert.deepEqual(registerDirectProjectionRequestSchema.parse(objects), objects);
-  const runtimeObjects = registerDirectProjectionRequestSchema.parse({
-    ...objects, data: { objects: { ...objects.data.objects, params: {} } },
-  });
-  assert.ok("data" in runtimeObjects);
-  const declaration = directReadDeclaration(runtimeObjects, runtimeObjects.data.objects);
-  assert.ok(declaration);
-  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params), ["type"]);
-  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, ["keyword"]), ["type"]);
-  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, ["type"]), []);
-  assert.deepEqual(missingRequiredReadParameters(declaration, objects.data.objects.params), []);
-  const placement = { outputs: { type: { state: "selectedType" } } };
-  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, [], placement), []);
-  assert.deepEqual(authoredReadParameterSource({}, "type", placement), { state: "selectedType" });
-  assert.deepEqual(authoredReadParameterSource(objects.data.objects.params, "type", placement), { literal: USER });
-  assert.equal(panelReadResultSchemas.panelOntologyObjects, platformOntologyObjectsResponseSchema);
   const option = { primaryKey: "m1", value: { providerId: "models", id: "m1" }, label: "Model 1", unavailable: { reason: "Unavailable" } };
   assert.deepEqual(panelReadResultSchemas.panelOptionList.parse({ options: [option] }), { options: [option] });
 });
@@ -755,12 +733,12 @@ test("ontology object lists use search while reference options keep keyword", ()
     name: "Find an ontology object", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
     inputs: {}, outputs: {}, config: {},
   };
-  const objects = { source: { type: platformType(ONTOLOGY_TYPE) }, read: "objects" };
+  const instances = { source: { type: platformType(ONTOLOGY_TYPE) }, read: "instances" };
   assert.equal(productProjectionInputSchema.safeParse({
-    ...projection, data: { objects: { ...objects, params: { type: { literal: USER }, search: { literal: "Lee" } } } },
+    ...projection, data: { rows: { ...instances, params: { className: { literal: USER }, search: { literal: "Lee" } } } },
   }).success, true);
   assert.equal(productProjectionInputSchema.safeParse({
-    ...projection, data: { objects: { ...objects, params: { type: { literal: USER }, keyword: { literal: "Lee" } } } },
+    ...projection, data: { rows: { ...instances, params: { className: { literal: USER }, keyword: { literal: "Lee" } } } },
   }).success, false);
   const options = { source: { type: platformType(USER) }, read: "options" };
   assert.equal(productProjectionInputSchema.safeParse({
@@ -811,7 +789,7 @@ test("feedback, governance records and the skill library read through their owne
 test("permission policy describes and saves all grants through its owner form", () => {
   const policy = platformObjectTypes[PERMISSION_POLICY];
   assert.deepEqual(Object.keys(policy.reads ?? {}).sort(), [
-    "createForm", "form", "options", "query", "record", "resolve",
+    "count", "createForm", "form", "options", "query", "record", "resolve",
   ]);
   assert.deepEqual(policy.operations, [
     `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY, REFRESH_POLICY_API_CATALOG,
@@ -2611,12 +2589,17 @@ test("platform ontology catalogues publish standard list, record and required de
       directoryName: { kind: "scalar", type: "string" },
     },
   });
-  for (const name of ["properties", "typeRelations", "reads", "operations"]) {
+  for (const name of ["properties", "reads", "operations"]) {
     assert.deepEqual(typeReads[name], {
       source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
       requiredParams: ["type"], result: "panelRecordList",
     });
   }
+  // A type's relations are the expanded edges, one row per target rather than per relation kind.
+  assert.deepEqual(typeReads.typeRelations, {
+    source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
+    requiredParams: ["type"], result: "panelRecordList", rowType: ONTOLOGY_RELATION_KIND,
+  });
 });
 
 test("platform ontology reads preserve declared topology, owner status and scoped object identities", () => {
@@ -2641,7 +2624,6 @@ test("platform ontology reads preserve declared topology, owner status and scope
 });
 
 test("the ontology schema read preserves public type details and registered signatures", async () => {
-  const { panelReadResultSchemas } = await import("./panel-operations");
   const { platformTypeDetailDeclarationSchema, platformTypeDetails } = await import("./platform-type-details");
   for (const [id, detail] of Object.entries(platformTypeDetails)) {
     assert.equal(platformTypeDetailDeclarationSchema.parse(detail).id, id);
@@ -2656,7 +2638,7 @@ test("the ontology schema read preserves public type details and registered sign
     }],
   };
   const response = { layers: ["product"], objectTypes: [agent], relationKinds: [] };
-  assert.deepEqual(panelReadResultSchemas.panelGraphSchema.parse(response), response);
+  assert.deepEqual(platformOntologySchemaResponseSchema.parse(response), response);
   assert.equal(platformOntologySchemaResponseSchema.safeParse({
     ...response, objectTypes: [{
       ...agent, reads: { list: { ...agent.reads.list, result: "unregistered" } },
@@ -3231,15 +3213,8 @@ test("row operations reject legacy rowContext and omitted targets while list rea
   assert.equal(productPanelReadRequestSchema.safeParse({ ...baseRead, memberPath: [{ member: "list", itemKey: "task-1" }] }).success, false);
 });
 
-test("objectListDatumName, panelRecordItemKey and matchPanelRecordItemKey provide one shared contract", async () => {
-  const { matchPanelRecordItemKey, objectListDatumName, panelRecordItemKey } = await import("./panel-projection");
-  const stub = { source: { type: { kind: "PlatformObjectType" as const, id: SCHEDULED_TASK } }, read: "list", params: {} };
-  assert.equal(objectListDatumName({ data: { objects: stub, rows: stub } }), "objects");
-  assert.equal(objectListDatumName({ data: { objects: stub } }), "objects");
-  assert.equal(objectListDatumName({ data: { rows: stub } }), "rows");
-  assert.equal(objectListDatumName({ data: { record: stub } }), null);
-  assert.equal(objectListDatumName({ data: {} }), null);
-
+test("panelRecordItemKey and matchPanelRecordItemKey provide one shared contract", async () => {
+  const { matchPanelRecordItemKey, panelRecordItemKey } = await import("./panel-projection");
   const homogeneousRow = { primaryKey: "task-1" };
   const typedRow = { primaryKey: "act-1", className: "platform:Action" };
   assert.equal(panelRecordItemKey(homogeneousRow), "task-1");

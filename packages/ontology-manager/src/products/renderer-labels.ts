@@ -1,3 +1,0 @@
-import type {OntologyMessages} from '../i18n';
-const rendererKeys:Record<string,keyof OntologyMessages>={full:'productRendererFull',summary:'productRendererSummary',card:'productRendererCard',text:'productRendererText','3d':'productRenderer3d',table:'productWidgetTable',list:'productRendererList',chart:'productWidgetChart','3d-scene':'productRenderer3dScene',number:'productRendererNumber',form:'productRendererForm',button:'productWidgetButton',dialog:'productRendererDialog',inline:'productRendererInline'};
-export function rendererLabel(ot:(key:keyof OntologyMessages)=>string,value:string){const key=rendererKeys[value];return key?ot(key):value;}

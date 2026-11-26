@@ -96,7 +96,6 @@
           "showHeader": false,
           "showFooter": false,
           "fallbackToFirst": false,
-          "subtitleField": "",
           "statusField": "runningStatus",
           "statusStyle": "dot",
           "emptyText": "recent.empty",

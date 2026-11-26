@@ -324,6 +324,7 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
   const builtin = { ...use, panelId: BUILTIN_PRODUCT_ID_PREFIX + base.panelId };
   assert.deepEqual(builtinApplicationPanelUseSchema.parse(builtin), builtin);
   assert.deepEqual(registerApplicationPanelUsesRequestSchema.parse({ entry, panelUses: [use] }).panelUses, [use]);
+  assert.equal(registerApplicationPanelUsesRequestSchema.safeParse({ entry, panelUses: [use], shared: true }).success, false);
   const entries = {
     applicationId, entry: { ...entry, home: use.path, entryKey: use.id }, panelUses: [use], groups: [{ key: "reports", names: { en: "Reports" }, sort: 0 }],
     framePanelId: "review-frame", theme: { light: { "--brand-primary": "#336699" } },
@@ -385,7 +386,7 @@ test("accepts a legacy hosted application entry without widening the panel regis
   const entry = { path: "/applications/hosted-example" };
   const record = {
     id: "hosted-example", names: { en: "Existing hosted application" }, descriptions: {}, icon: "pages",
-    source: "domain", canMaintain: true, canEditEntries: false, canGrant: true, entryCount: 0,
+    source: "domain", canMaintain: true, canEditEntries: false, entryCount: 0,
     entry, panelUses: [], groups: [],
   };
   assert.deepEqual(applicationCatalogueRecordSchema.parse(record).entry, entry);
@@ -564,7 +565,7 @@ test("application contracts accept optional allowStandalone toggle and route it 
 
   const record = applicationCatalogueRecordSchema.parse({
     id: "app-one", names: { en: "One" }, descriptions: {}, icon: "pages", source: "domain",
-    canMaintain: true, canEditEntries: true, canGrant: true, entryCount: 0, allowStandalone: false,
+    canMaintain: true, canEditEntries: true, entryCount: 0, allowStandalone: false,
     entry: { path: "/applications/app-one", renderer: "panels" }, panelUses: [], groups: [],
   });
   assert.equal(record.allowStandalone, false);

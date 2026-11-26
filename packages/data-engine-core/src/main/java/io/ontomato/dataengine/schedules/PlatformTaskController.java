@@ -66,10 +66,12 @@ public class PlatformTaskController {
   @GetMapping
   public JsonNode list(
       @RequestParam(required = false) String appId,
+      @RequestParam(defaultValue = "false") boolean includeCredentialStatus,
       jakarta.servlet.http.HttpServletRequest request) {
-    if (request.getParameterMap().keySet().stream().anyMatch(key -> !key.equals("appId")))
+    if (request.getParameterMap().keySet().stream()
+        .anyMatch(key -> !key.equals("appId") && !key.equals("includeCredentialStatus")))
       throw ScheduleJson.bad("Unknown list filter");
-    return service.list(appId);
+    return service.list(appId, includeCredentialStatus);
   }
 
   @GetMapping("/applications")

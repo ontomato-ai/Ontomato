@@ -120,7 +120,8 @@
           "record": "record"
         },
         "config": {
-          "subtitleField": "className"
+          "subtitleField": "className",
+          "subtitleStyle": "identifier"
         },
         "id": "builtin-product-2183f783-ff4a-4800-88c2-8bc2004abf82"
       },

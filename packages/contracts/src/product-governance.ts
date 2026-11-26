@@ -27,7 +27,6 @@ export const productGrantsResponseSchema = z.object({
   grants: z.array(productGrantRecordSchema),
 });
 
-export const productCatalogueGrantsSchema = productGrantsResponseSchema.extend({ shared: z.boolean() }).strict();
 
 /** Set or revoke an individual principal or role grant. */
 export const changeProductGrantRequestSchema = productGrantRecordSchema.omit({ principalName: true }).extend({

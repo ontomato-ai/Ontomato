@@ -265,40 +265,6 @@ test("ObjectRelations specializes education state and resolves the customer rela
   assert.throws(() => expand("covers", "search"), /state.visibleRelationKinds.*list of strings or object references/);
 });
 
-test("ontology object lists expose the four layers as the selected output", () => {
-  const ontologyType = "platform:OntologyType";
-  const typeTable = { objectTypes: {
-    [ontologyType]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[ontologyType].reads }),
-  } };
-  const component = buildComponent("ObjectList", {
-    data: { objects: { results: ["panelOntologyObjects"], required: false } },
-    outputs: {
-      selected: { kind: "object", objectType: "@binding" },
-      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
-    },
-  });
-  const node = { kind: "object-union", layers: ["fact", "capability", "governance", "product"] };
-  const checked = { kind: "list", items: { kind: "object", objectType: ontologyType } };
-  const state = panelManifestSchema.parse({
-    state: { selected: { type: node }, checked: { type: checked } },
-    members: {},
-  }).state;
-  const member = panelAuthoringMemberSchema.parse({
-    component: "ObjectList", type: ontologyType, state: { selected: "selected" },
-    data: { objects: { read: "objects", params: { type: { literal: "platform:User" } } } },
-  });
-  assert("component" in member);
-  const expanded = expandPanelAuthoringMember("nodes", member, { state, typeTable, components: [component] });
-  assert.deepEqual(expanded.projection.outputs, { selected: node });
-  assert.throws(() => expandPanelAuthoringMember("nodes", { ...member, state: { checked: "checked" } }, {
-    state, typeTable, components: [component],
-  }), /Member 'nodes', field 'state.checked'.*list state requires one object type/);
-  assert.throws(() => expandPanelAuthoringMember("nodes", member, {
-    state: { ...state, selected: { ...state.selected, type: { kind: "object", objectType: ontologyType } } },
-    typeTable, components: [component],
-  }), /Member 'nodes', field 'state.selected'.*cannot receive component output/);
-});
-
 test("a short conversation entry stores its target and prefill on an ordinary projection", () => {
   const component = buildComponent("ConversationEntry", { data: {} });
   const prefill = "Review this domain's business knowledge entries.";
@@ -746,8 +712,6 @@ test("cross-type collection reads declare rowType so ObjectList state.selected b
   assert.deepEqual(appTable.objectTypes[applicationType].reads?.record?.outputs, {
     canMaintain: { kind: "scalar", type: "boolean" },
     canEditEntries: { kind: "scalar", type: "boolean" },
-    canGrant: { kind: "scalar", type: "boolean" },
-    domainShared: { kind: "scalar", type: "boolean" },
     openPath: { kind: "scalar", type: "string" },
   });
 

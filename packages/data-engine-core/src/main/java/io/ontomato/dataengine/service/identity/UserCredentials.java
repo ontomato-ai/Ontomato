@@ -9,6 +9,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -109,9 +110,7 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
   @Transactional(noRollbackFor = Invalid.class)
   public void prepareForExecutionSetting(User user) {
     lockOwner(user.getDomainId(), user.getId());
-    var rows = db.queryForList(
-        "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=? AND valid",
-        String.class, user.getDomainId(), user.getId());
+    var rows = validSealedKeys(user.getDomainId(), user.getId());
     if (!rows.isEmpty()) {
       String key = storedKey(user.getDomainId(), user.getId(), rows.getFirst());
       if (identity.accepts(key, user.getDomainId(), user.getId())) return;
@@ -161,28 +160,54 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
             sealed);
   }
 
+  private List<String> validSealedKeys(String domain, String owner) {
+    return db.queryForList(
+        "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=? AND valid",
+        String.class, domain, owner);
+  }
+
+  public boolean hasValidKey(String domain, String owner) {
+    var rows = validSealedKeys(domain, owner);
+    if (rows.isEmpty()) return false;
+    try {
+      acceptedKey(domain, owner, rows.getFirst());
+      return true;
+    } catch (Invalid invalid) {
+      return false;
+    }
+  }
+
   public String forOwner(String domain, String owner) {
-    var rows =
-        db
-            .queryForList(
-                "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=?"
-                    + " AND valid",
-                String.class,
-                domain,
-                owner);
+    var rows = validSealedKeys(domain, owner);
     if (rows.isEmpty()) throw new Invalid();
     String sealed = rows.getFirst();
-    String key = storedKey(domain, owner, sealed);
+    try {
+      return acceptedKey(domain, owner, sealed);
+    } catch (Invalid invalid) {
+      markInvalid(domain, owner, sealed);
+      throw invalid;
+    }
+  }
+
+  private String acceptedKey(String domain, String owner, String sealed) {
+    String key = openStoredKey(sealed);
     if (identity.accepts(key, domain, owner)) return key;
-    markInvalid(domain, owner, sealed);
     throw new Invalid();
   }
 
   private String storedKey(String domain, String owner, String sealed) {
     try {
+      return openStoredKey(sealed);
+    } catch (Invalid invalid) {
+      markInvalid(domain, owner, sealed);
+      throw invalid;
+    }
+  }
+
+  private String openStoredKey(String sealed) {
+    try {
       return open(sealed);
     } catch (GeneralSecurityException | IllegalArgumentException unreadable) {
-      markInvalid(domain, owner, sealed);
       throw new Invalid();
     }
   }

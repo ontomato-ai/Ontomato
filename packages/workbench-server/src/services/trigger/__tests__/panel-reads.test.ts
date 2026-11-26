@@ -103,7 +103,10 @@ function ownerAnswering(answers: Record<string, (body: Record<string, unknown>) 
 const ok = (data: unknown) => () => Response.json({ success: true, data });
 
 describe("trigger catalog reads", () => {
-  it("lists and queries triggers with owner display fields, tones, and pagination", async () => {
+  it.each([2, 80])("lists and queries %i triggers with at most one owner RPC per read", async size => {
+    const extra = Array.from({ length: size - 2 }, (_, i) => ({
+      ...nightly, id: `trigger-${i}`, name: `Nightly check ${i}`, enabled: false,
+    }));
     const listed = ok([
       nightly,
       {
@@ -118,15 +121,18 @@ describe("trigger catalog reads", () => {
         cadenceSummary: null,
         effectLabel: "Workflow · Restock",
       },
+      ...extra,
     ]);
-    ownerAnswering({
+    const sent = ownerAnswering({
       "/trigger/queryList": body => body.countOnly === true
-        ? Response.json({ success: true, data: { total: 2 } })
+        ? Response.json({ success: true, data: { total: size } })
         : listed(),
     });
 
     const adapter = createTriggerReadAdapter(owner, viewer);
     const records = await adapter.list();
+    expect(records).toHaveLength(size);
+    expect(sent.length).toBeLessThanOrEqual(1);
     expect(panelRecordListSchema.parse(records)).toEqual(records);
     expect(records[0]).toMatchObject({
       primaryKey: "tr-1",
@@ -165,16 +171,20 @@ describe("trigger catalog reads", () => {
       tones: { status: "info", enabled: "info" },
     });
 
+    const beforeSearch = sent.length;
     const searched = await adapter.query({ search: "restock", size: 1 });
     expect(panelRecordQuerySchema.parse(searched)).toEqual(searched);
     expect(searched.total).toBe(1);
     expect(searched.rows.map(row => row.primaryKey)).toEqual(["tr-2"]);
+    expect(sent.length - beforeSearch).toBeLessThanOrEqual(1);
 
+    const beforePage = sent.length;
     const paged = await adapter.query({ size: 1 });
-    expect(paged.total).toBe(2);
+    expect(paged.total).toBe(size);
     expect(paged.nextCursor).toBe("1");
+    expect(sent.length - beforePage).toBeLessThanOrEqual(1);
 
-    expect(await adapter.count()).toEqual({ rows: [], total: 2 });
+    expect(await adapter.count()).toEqual({ rows: [], total: size });
     expect(await adapter.armedCount()).toEqual({ rows: [], total: 1 });
   });
 

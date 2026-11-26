@@ -3,7 +3,6 @@ import {
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
 } from "@ontomato/contracts/platform-object-types";
-import { productTypes } from "@ontomato/contracts/product-assets";
 import type { ProductGraph } from "@ontomato/contracts/product-graph";
 import { unwrapJsonField } from "./display-value";
 import type { ObjectListRef } from "./object-list-types";
@@ -55,7 +54,6 @@ export const PRODUCT_ASSET_COLUMN_ORDER: readonly ProductAssetGraphCategory[] = 
   "composition",
   "element",
   "ontology",
-  "legacy",
 ];
 
 export const PRODUCT_ASSET_CARD_WIDTH = 220;
@@ -112,11 +110,6 @@ export function extractProductAssetGraph(raw: unknown): ProductAssetGraphData | 
   return null;
 }
 
-function kindRank(kind: string): number {
-  const index = productTypes.findIndex((type) => type.kind === kind);
-  return index < 0 ? productTypes.length : index;
-}
-
 /** Computes column card coordinates, SVG dimensions, and drawable edges for a product asset graph. */
 export function computeProductAssetGraphLayout(graph: ProductAssetGraphData): ProductAssetGraphLayout {
   const visibleColumns: ProductAssetGraphColumn[] = [];
@@ -126,7 +119,7 @@ export function computeProductAssetGraphLayout(graph: ProductAssetGraphData): Pr
     const nodes = graph.nodes
       .filter((node) => node.category === category)
       .slice()
-      .sort((a, b) => kindRank(a.kind) - kindRank(b.kind) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
     if (!nodes.length) continue;
     const columnIndex = visibleColumns.length;
     visibleColumns.push({ id: category, nodes });
@@ -171,33 +164,19 @@ export function productAssetEdgePath(
   return `M ${startX} ${startY} C ${startX + 60 * direction} ${startY + offset}, ${endX - 60 * direction} ${endY + offset}, ${endX} ${endY}`;
 }
 
+const ASSET_TYPES = new Map([
+  ["application", APPLICATION],
+  ["page", PRODUCT_PANEL],
+  ["object-projection", PRODUCT_PROJECTION],
+]);
+
 /** Resolves the real platform object identity for a clickable product asset node (`null` for non-asset nodes). */
 export function resolveProductAssetTarget(
   node: ProductAssetGraphNode,
-  fallbackClassName?: string,
 ): ProductAssetGraphTarget | null {
   if (!node.assetId) return null;
-  let className: string;
-  if (
-    node.kind === "object-projection"
-    || node.kind === "collection-view"
-    || node.kind === "metric-widget"
-    || node.kind === "action-view"
-  ) {
-    className = PRODUCT_PROJECTION;
-  } else if (node.kind === "page" || node.kind === "navigation") {
-    className = PRODUCT_PANEL;
-  } else if (node.kind === "application") {
-    className = APPLICATION;
-  } else if (fallbackClassName) {
-    className = fallbackClassName;
-  } else if (node.category === "element") {
-    className = PRODUCT_PROJECTION;
-  } else if (node.category === "bundle") {
-    className = APPLICATION;
-  } else {
-    className = PRODUCT_PANEL;
-  }
+  const className = ASSET_TYPES.get(node.kind);
+  if (!className) return null;
   const ref: ObjectListRef = { className, primaryKey: node.assetId };
   return {
     assetId: node.assetId,

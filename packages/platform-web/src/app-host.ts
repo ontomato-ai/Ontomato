@@ -382,7 +382,7 @@ export function installAppHost(options: {
       else{
         const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];
         if(service==='/data-query'&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
-        const declared=['/product-assets','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?'));
+        const declared=['/business-definitions','/business-definition-triggers','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?'));
         if(service===''&&!declared)throw new Error('Use a declared SDK product operation');
       }
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');

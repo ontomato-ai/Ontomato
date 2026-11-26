@@ -1,4 +1,3 @@
-import type { RegisterProductAssetGrant } from "./postgres-migrations/20261125-product-asset-grants/migration";
 import pg from "pg";
 import { environment } from "../config/environment";
 import { createLogger } from "../logging/logger";
@@ -35,7 +34,7 @@ export function getPostgresPool(): pg.Pool {
   return pool;
 }
 
-export async function initializePostgres(registerProductAssetGrant: RegisterProductAssetGrant): Promise<void> {
+export async function initializePostgres(): Promise<void> {
   const p = getPostgresPool();
   const client = await p.connect();
   try {
@@ -45,7 +44,7 @@ export async function initializePostgres(registerProductAssetGrant: RegisterProd
 
     const legacy = await client.query("SELECT to_regclass($1) IS NOT NULL AS present", [qualifiedTable("scheduled_tasks")]);
     if (legacy.rows[0].present) throw new Error("Import and retire the old scheduled tasks before starting the workbench (see platform-schedules-upgrade.md)");
-    await runPostgresBusinessMigrations(client, registerProductAssetGrant);
+    await runPostgresBusinessMigrations(client);
 
     logger.info(tApp("foundation.log.pg.schemaReady"));
   } finally {

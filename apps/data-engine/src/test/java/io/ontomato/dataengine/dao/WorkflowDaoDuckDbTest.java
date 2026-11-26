@@ -10,6 +10,13 @@ import io.ontomato.dataengine.service.impl.DslServiceImpl;
 import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
+import io.ontomato.dataengine.service.DataPermissionLookup;
+import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.impl.AnonymousAuthorization;
+import io.ontomato.dataengine.service.impl.AnonymousIdentityService;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.config.BusinessConfig;
@@ -22,6 +29,7 @@ import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -76,7 +84,7 @@ class WorkflowDaoDuckDbTest {
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"), step(2, "FINANCE", "pay"));
         workflow.setStatus(Workflow.STATUS_DRAFT);
 
-        dao.saveDraft(workflow);
+        dao.insertDraft(workflow);
 
         Workflow read = dao.queryById("w1");
         assertNotNull(read);
@@ -89,13 +97,42 @@ class WorkflowDaoDuckDbTest {
     }
 
     @Test
+    void countsOnlyTheDomainAndRequestedRevisionScope() {
+        dao.initIndex();
+        Workflow active = workflow("active");
+        dao.insertDraft(active);
+        active.setVersion(dao.publishVersion(active));
+        active.setStatus(Workflow.STATUS_ACTIVE);
+        dao.updateLifecycle(active);
+        Workflow missingRevision = workflow("missing-revision");
+        dao.insertDraft(missingRevision);
+        missingRevision.setVersion(1);
+        missingRevision.setStatus(Workflow.STATUS_ACTIVE);
+        dao.updateLifecycle(missingRevision);
+        dao.insertDraft(workflow("draft"));
+        Workflow foreign = workflow("foreign");
+        foreign.setDomainId("d2");
+        dao.insertDraft(foreign);
+
+        assertEquals(3, dao.count(null, null, "d1"));
+        assertEquals(1, dao.count(null, Workflow.STATUS_DRAFT, "d1"));
+        assertEquals(1, dao.count(null, Workflow.STATUS_ACTIVE, "d1"));
+        assertEquals(0, dao.count("missing-revision", Workflow.STATUS_ACTIVE, "d1"));
+        assertEquals(1, dao.count("active", Workflow.STATUS_ACTIVE, "d1"));
+        assertEquals(0, dao.count("foreign", null, "d1"));
+    }
+
+    @Test
     void savingTheSameWorkflowUpdatesInPlaceInsteadOfDuplicating() {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
-        dao.saveDraft(workflow);
+        dao.insertDraft(workflow);
 
         workflow.setName("采购审批（修订）");
-        dao.saveDraft(workflow);
+        assertThrows(IllegalArgumentException.class, () -> dao.insertDraft(workflow));
+        assertEquals("采购审批", dao.queryById("w1").getName());
+
+        dao.updateDraft(workflow);
 
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM workflow WHERE id = 'w1'", Integer.class));
         assertEquals("采购审批（修订）", dao.queryById("w1").getName());
@@ -128,7 +165,7 @@ class WorkflowDaoDuckDbTest {
         // and the new steps were dropped while the grants named the older revision.
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
-        dao.saveDraft(workflow);
+        dao.insertDraft(workflow);
         int published = dao.publishVersion(workflow);
         workflow.setStatus(Workflow.STATUS_ACTIVE);
         workflow.setVersion(published);
@@ -137,7 +174,7 @@ class WorkflowDaoDuckDbTest {
         // Someone edits the draft through the save path, which carries no version at all.
         Workflow draft = workflow("w1", step(1, "LEADER", "approve"), step(2, "FINANCE", "pay"));
         draft.setStatus(Workflow.STATUS_DRAFT);
-        dao.saveDraft(draft);
+        dao.updateDraft(draft);
 
         Workflow edited = dao.queryById("w1");
         assertEquals(published, edited.getVersion());
@@ -158,14 +195,14 @@ class WorkflowDaoDuckDbTest {
     void aStaleCallerCannotDragTheVersionBackwards() {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
-        dao.saveDraft(workflow);
+        dao.insertDraft(workflow);
         workflow.setVersion(3);
         workflow.setStatus(Workflow.STATUS_INACTIVE);
         dao.updateLifecycle(workflow);
 
         workflow.setVersion(1);
         workflow.setStatus(Workflow.STATUS_DRAFT);
-        dao.saveDraft(workflow);
+        dao.updateDraft(workflow);
 
         var saved = dao.queryById("w1");
         assertEquals(3, saved.getVersion());
@@ -207,7 +244,7 @@ class WorkflowDaoDuckDbTest {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
         workflow.setVersion(1);
-        dao.saveDraft(workflow);
+        dao.insertDraft(workflow);
         dao.publishVersion(workflow);
         dao.appendEvent(workflow, Workflow.EVENT_ACTIVATED, "U1");
 
@@ -224,16 +261,17 @@ class WorkflowDaoDuckDbTest {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
         workflow.setCreatedBy("U1");
-        dao.saveDraft(workflow);
+        workflow.setCoauthorIds(List.of("U3"));
+        dao.insertDraft(workflow);
 
-        // Someone else edits the draft afterwards. Authorship is who wrote it first, not who touched it
-        // last, so the stored value must not move — this is the whole reason created_by is left out of
-        // the upsert's SET list.
+        // Editing the definition preserves the stored authorship.
         workflow.setCreatedBy("U2");
+        workflow.setCoauthorIds(List.of("U4"));
         workflow.setName("采购审批（修订）");
-        dao.saveDraft(workflow);
+        dao.updateDraft(workflow);
 
         assertEquals("U1", dao.queryById("w1").getCreatedBy());
+        assertEquals(List.of("U3"), dao.queryById("w1").getCoauthorIds());
 
         // There is no reviewed_by column: the reviewer is the principal on the newest Activated row, so
         // each activation names its own approver and the last one wins by reading the events back.
@@ -247,7 +285,7 @@ class WorkflowDaoDuckDbTest {
     void aWorkflowWithNoRecordedCreatorReadsBackAsAbsent() {
         dao.initIndex();
         // Rows written before provenance existed must stay readable; absence is not an error.
-        dao.saveDraft(workflow("w1", step(1, "LEADER", "approve")));
+        dao.insertDraft(workflow("w1", step(1, "LEADER", "approve")));
 
         assertNull(dao.queryById("w1").getCreatedBy());
         assertNull(dao.queryLastEventPrincipal("w1", Workflow.EVENT_ACTIVATED));
@@ -284,7 +322,7 @@ class WorkflowDaoDuckDbTest {
         jdbc.execute("CREATE TABLE action (id TEXT, domain_id TEXT, submission_criteria TEXT)");
         jdbc.execute("CREATE TABLE action_drafts (id TEXT, domain_id TEXT, action JSON, consumed_at TIMESTAMP, expires_at TIMESTAMP)");
         var workflow = workflow("w1", step(1, "L", "approve"));
-        dao.saveDraft(workflow);
+        dao.insertDraft(workflow);
         dao.publishVersion(workflow);
         String old = "[{\"stepNo\":1,\"roleCode\":\"L\",\"actionId\":\"approve\",\"assignRule\":\"dept_role\"}]";
         jdbc.update("UPDATE workflow SET steps=?", old);
@@ -341,7 +379,7 @@ class WorkflowDaoDuckDbTest {
         var person = step(2, "clerk", "approve"); person.setName("correct");
         var wf = workflow("w1", lead, person); wf.setDomainId("domain"); wf.setRunClassName("docs");
         wf.setRunContract(contract);
-        dao.saveDraft(wf);
+        dao.insertDraft(wf);
         wf.setVersion(dao.publishVersion(wf));
         wf.setStatus(Workflow.STATUS_ACTIVE);
         dao.updateLifecycle(wf);
@@ -371,6 +409,11 @@ class WorkflowDaoDuckDbTest {
         when(lookup.stepAdmissions("user","domain","w1",1)).thenReturn(Map.of(
             1, new CapabilityGrantLookup.Admission(false,List.of(new CapabilityGrantLookup.Match("docs","department",List.of("my-org")))),
             2, new CapabilityGrantLookup.Admission(false,List.of(new CapabilityGrantLookup.Match("docs","holder",List.of("user"))))));
+        var anonymous = new AnonymousAuthorization(jdbc);
+        var authorization = new AuthorizationService(anonymous, anonymous, new ManagementOperations(List.of()),
+                lookup, mock(DataPermissionLookup.class));
+        ReflectionTestUtils.setField(manager, "definitions",
+                new CapabilityDefinitions(authorization, new AnonymousIdentityService()));
         var pending = new io.ontomato.dataengine.service.WorkflowPendingQuery(dao,lookup,ontology);
         var subjects = new io.ontomato.dataengine.service.SubjectValueResolver(mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class));
         ReflectionTestUtils.setField(manager,"pending",pending); ReflectionTestUtils.setField(manager,"subjectValues",subjects);

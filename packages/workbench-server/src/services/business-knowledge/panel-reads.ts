@@ -197,6 +197,13 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
   }
 
   return {
+    async count() {
+      const envelope = await ownerPost("knowledge-count", "/admin/getBussinessKnowledge", { countOnly: true });
+      if (!envelope.success)
+        throw new HttpError(422, envelope.message ?? "The owner refused the knowledge count", "KNOWLEDGE_READ_REFUSED");
+      const { total } = z.object({ total: z.number().int().nonnegative() }).parse(envelope.data);
+      return { rows: [], total };
+    },
     /**
      * The searched and filtered entries as one complete matching list without cursor paging, with the matching total
      * (and when called without search or status, the domain's unfiltered total).

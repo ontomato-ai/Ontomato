@@ -100,7 +100,7 @@
     overflow: visible;
   }
 
-  /* Entries & Grants bars */
+  /* Entries bar */
   .apps-table-bar {
     display: flex;
     flex-wrap: wrap;
@@ -139,36 +139,6 @@
     align-items: start;
   }
 
-  /* Grants sharing bar */
-  .apps-share-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) var(--spacing-lg);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-  .apps-share-left {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-  .apps-share-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-sm);
-  }
-  .apps-dialog-footer {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: var(--spacing-sm);
-  }
   .apps-dialog-form .sdk-owner-form,
   .apps-dialog-form .sdk-owner-form-inner {
     height: auto;
@@ -265,7 +235,6 @@
         <sdk-tab-pane name="identity" :label="t('tab.identity')"></sdk-tab-pane>
         <sdk-tab-pane name="entries" :label="t('tab.entries')"></sdk-tab-pane>
         <sdk-tab-pane name="assets" :label="t('tab.assets')"></sdk-tab-pane>
-        <sdk-tab-pane v-if="canGrant" name="grants" :label="t('tab.grants')"></sdk-tab-pane>
       </sdk-tabs>
 
       <!-- Tab 1: Basics (Identity form + standalone toggle + copyable externalLink summary) -->
@@ -367,23 +336,6 @@
           </section>
         </div>
       </div>
-
-      <!-- Tab 4: Permissions & Sharing -->
-      <div v-if="canGrant && isTabMounted('grants')" v-show="tabModel === 'grants'" class="apps-tab-panel" data-tab="grants">
-        <div class="apps-share-bar">
-          <div class="apps-share-left">
-            <strong class="apps-card-title">{{ t('grants.shareTitle') }}</strong>
-            <span class="apps-muted"><projection slot="shareStatusDesc"></projection></span>
-          </div>
-          <div class="apps-share-actions">
-            <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
-            <projection v-else slot="shareEnable" @done="onShareDone"></projection>
-            <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('grants.add') }}</sdk-button>
-          </div>
-        </div>
-
-        <projection slot="grantsList"></projection>
-      </div>
     </div>
 
     <!-- Copy application dialog -->
@@ -422,32 +374,6 @@
           @cancel="closeEntryDialog"
         ></projection>
       </div>
-    </sdk-dialog>
-
-    <!-- Add Grant dialog using official ReferencePicker & bound OperationButton -->
-    <sdk-dialog
-      v-if="canGrant"
-      v-model="grantDialogOpen"
-      :title="t('grants.dialogTitle')"
-      width="480px"
-      append-to-body
-      destroy-on-close
-    >
-      <sdk-form v-if="canGrant && grantDialogOpen" label-position="top">
-        <sdk-form-item :label="t('grants.kind')">
-          <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
-        </sdk-form-item>
-        <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
-          <projection v-if="grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
-          <projection v-else slot="userPicker"></projection>
-        </sdk-form-item>
-      </sdk-form>
-      <template #footer>
-        <div v-if="canGrant && grantDialogOpen" class="apps-dialog-footer">
-          <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection slot="grantSubmit" :values="{ disabled: !grantPrincipalId }" @done="onGrantAdded"></projection>
-        </div>
-      </template>
     </sdk-dialog>
   </section>
 </div>

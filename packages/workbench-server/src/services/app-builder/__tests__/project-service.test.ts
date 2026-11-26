@@ -218,7 +218,7 @@ beforeEach(() => {
     const id = pathname.split("/").at(-1)!;
     const summary = (appId: string, app: ApplicationSourceManifest) => ({
       id: appId, source: "domain", canMaintain: options?.headers?.tk !== "visitor",
-      canEditEntries: app.entry.renderer === "panels" && appId !== "app-connected", canGrant: true,
+      canEditEntries: app.entry.renderer === "panels" && appId !== "app-connected",
       entryCount: app.panelUses.length, names: app.declaration.names, descriptions: app.declaration.descriptions, icon: app.declaration.icon,
     });
     if (id === "catalogue") return answer({ success: true, data: { rows: [...apps].map(([id, app]) => summary(id, app)) } });

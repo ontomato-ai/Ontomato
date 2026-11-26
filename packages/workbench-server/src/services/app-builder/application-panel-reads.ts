@@ -94,8 +94,8 @@ export class ApplicationBuilderReadAdapter {
         busy: item.busy,
         activeRunId: item.activeRunId ?? "",
         updatedAt: item.updatedAt,
+        canMaintain: true,
         canEditEntries: item.canEditEntries,
-        canGrant: item.canGrant,
         statusTag: item.busy ? this.text("statusBusy") : (!item.published ? this.text("unpublishedBadge") : ""),
       },
       tones: {
@@ -140,7 +140,6 @@ export class ApplicationBuilderReadAdapter {
       buildTestExpiresAt,
       buildTestCanRestart,
       canEditEntries: detail.canEditEntries,
-      canGrant: detail.canGrant,
       currentReleaseId: detail.currentReleaseId ?? "",
       activeRunId: detail.activeRunId ?? "",
       driftItemsJson: JSON.stringify(detail.drift.items),

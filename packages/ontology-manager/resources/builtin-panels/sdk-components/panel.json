@@ -79,6 +79,7 @@
         },
         "config": {
           "subtitleField": "package",
+          "subtitleStyle": "identifier",
           "statusField": "role"
         },
         "name": "组件标题",

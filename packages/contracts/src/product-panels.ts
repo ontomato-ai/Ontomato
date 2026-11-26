@@ -426,7 +426,15 @@ const applicationEntrySettings = {
 };
 
 export const APPLICATION_PANEL_REFERENCES_PATH = "/internal/product-panels/validate-references";
-/** The platform service authenticates this request. Node validates the public inputs and the fixed closure. */
+/** The platform service authenticates the Java caller. The independently authenticated registrant must match this header. */
+export const APPLICATION_REGISTRANT_HEADER = "X-Ontomato-Application-Registrant";
+export const applicationIconValidationRequestSchema = z.object({
+  kind: z.literal("icon"),
+  domainId: id,
+  icon: domainApplicationIconSchema,
+}).strict();
+
+/** Registration requires the registrant's USE of the declared roots and frame, and validates the fixed closure. */
 export const applicationPanelReferencesRequestSchema = z.object({
   domainId: id,
   /** Submit on creation or when the icon changes. Unchanged stored values are not checked here. */
@@ -473,10 +481,11 @@ export const productPanelSnapshotQuerySchema = productPanelReadQuerySchema;
 export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
 const includeProjectionsQuery = { includeProjections: z.literal("1").optional() };
-/** Panel record GET accepts the standard read query plus optional `includeProjections=1` bundling of fixed members. */
+/** A registered placement can supply the entry's declared inputs for bundling. */
 export const productPanelGetQuerySchema = z.union([
   z.object({ ...includeProjectionsQuery, view: z.literal("1").optional() }).strict(),
   applicationFrameReadQuerySchema.extend(includeProjectionsQuery).strict(),
+  panelUseRefSchema.extend({ source: z.literal("registered"), includeProjections: z.literal("1"), view: z.literal("1").optional() }),
 ]);
 export type ProductPanelGetQuery = z.infer<typeof productPanelGetQuerySchema>;
 
@@ -533,20 +542,22 @@ export const registerProductPanelRequestSchema = productPanelInputSchema.extend(
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;
 
 /**
- * One fixed projection member bundled into a panel record read (`?includeProjections=1`): either the authorized render
+ * One projection bundled into a panel record read (`?includeProjections=1`): either the authorized render
  * payload, or a per-member 403/404 isolation state so one unavailable member does not fail the whole panel read.
  */
+export const unavailablePanelProjectionSchema = z.object({
+  status: z.literal("unavailable"),
+  httpStatus: z.union([z.literal(403), z.literal(404)]),
+  message: z.string(),
+}).strict();
+
 export const bundledPanelProjectionSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("ready"),
     projection: currentProjectionRecordSchema,
     domainComponent: domainComponentRuntimeSchema.optional(),
   }).strict(),
-  z.object({
-    status: z.literal("unavailable"),
-    httpStatus: z.union([z.literal(403), z.literal(404)]),
-    message: z.string(),
-  }).strict(),
+  unavailablePanelProjectionSchema,
 ]);
 export type BundledPanelProjection = z.infer<typeof bundledPanelProjectionSchema>;
 
@@ -790,8 +801,6 @@ export const registerApplicationPanelUsesRequestSchema = z.object({
   declaration: applicationMetadataSchema.optional(),
   /** Entries to grant to the domain's default policy on first registration. */
   initialOpenEntryIds: z.array(applicationPanelUseSchema.shape.id).optional(),
-  /** Optional initial domain sharing intent when creating an application. */
-  shared: z.boolean().optional(),
   /** Whether the application allows standalone open (`standalone=1`) and exposes an external link; defaults to true. */
   allowStandalone: z.boolean().optional(),
   ...applicationEntrySettings,

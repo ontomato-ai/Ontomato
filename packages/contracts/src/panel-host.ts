@@ -15,7 +15,7 @@ import { platformObjectTypes } from "./platform-object-types";
 import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { panelCompletedOperationSchema, panelOperationAffectedSchema, panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
-import { applicationFrameSourceSchema, applicationPanelUsePathSchema, panelApplicationEntryUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
+import { applicationFrameSourceSchema, applicationPanelUsePathSchema, panelApplicationEntryUseSchema, panelDefinitionContentSchema, productPanelResponseSchema, productPanelSchema } from "./product-panels";
 import { productCurrentIdParamsSchema } from "./product-record-id";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
@@ -129,6 +129,7 @@ export const productPanelNestedReadResponseSchema = z.object({
     id: productCurrentIdParamsSchema.shape.id,
     revision: definitionRevisionSchema.shape.revision,
   }),
+  projections: productPanelResponseSchema.shape.projections,
   /** Author-registered components declared in the nested panel's `manifest.components`. */
   domainComponents: z.record(domainComponentIdSchema, domainComponentRuntimeSchema).optional(),
 }).strict();

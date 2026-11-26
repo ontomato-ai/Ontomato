@@ -224,7 +224,7 @@ it.each([
     data: {},
     operations: {
       delete: { operation: { kind: "PlatformOperation", id: "applications.delete" }, target: { input: "app" } },
-      share: { operation: { kind: "PlatformOperation", id: "applications.share" }, target: { input: "app" } },
+      addEntry: { operation: { kind: "PlatformOperation", id: "applications.addEntry" }, target: { input: "app" } },
     },
   });
   const member = { target: { projectionId: projection.id }, inputs: { app: { state: "selected" } } };
@@ -253,8 +253,8 @@ it.each([
     { app: { className: APPLICATION, primaryKey: "app-1" } },
   );
   expect(admitted.delete?.unavailable).toEqual({ reason: en["panels.productCatalog.application.availabilityUnavailable"] });
-  expect(admitted.share).toBeDefined();
-  expect(admitted.share?.unavailable).toBeUndefined();
+  expect(admitted.addEntry).toBeDefined();
+  expect(admitted.addEntry?.unavailable).toBeUndefined();
 });
 
 it("marks applications.delete unavailable for read-only applications and available when maintainable", async () => {

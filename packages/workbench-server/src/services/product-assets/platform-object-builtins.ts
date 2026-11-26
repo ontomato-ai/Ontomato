@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {registerPlatformObject,platformProjectionPreferences} from './platform-objects';
+import {registerPlatformObject} from './platform-objects';
 import {assistantStore} from '../assistant/store';
 import {personalWorkspaceStore} from '../personal-workspace/store';
 import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
@@ -11,7 +11,6 @@ import {defaultPersonalWorkspace,personalWorkspaceSchema} from '@ontomato/contra
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import type {ProductOwner} from '../product-governance/grants';
 async function preferences(owner:ProductOwner){
-  const selected=platformProjectionPreferences();if(selected)return selected;
   const result=await getPostgresPool().query(`SELECT overlay.preferences FROM ${t('product_home')} home JOIN ${t('product_user_overlays')} overlay ON overlay.domain_id=home.domain_id AND overlay.principal_id=home.user_id AND overlay.page_id=home.asset_id WHERE home.domain_id=$1 AND home.user_id=$2`,[owner.domainId,owner.userId]);
   return result.rows[0]?personalWorkspaceSchema.parse(result.rows[0].preferences):defaultPersonalWorkspace();
 }

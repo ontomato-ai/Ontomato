@@ -3,6 +3,7 @@ package io.ontomato.dataengine.controller;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -21,6 +22,9 @@ import io.ontomato.dataengine.service.CapabilityGrantQuery;
 import io.ontomato.dataengine.service.PlatformAccessQuery;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.WorkflowService;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.authorization.ManagementOperations.Operation;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.util.SystemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +39,21 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class WorkflowController {
+
+    private static final String CHANGE = "workflow.lifecycle.change";
+    private static final String READ = "workflow.grants.read";
+
+    @Component
+    public static final class Operations implements ManagementOperations.Contributor {
+        @Override
+        public List<Operation> managementOperations() {
+            return List.of(new Operation(CHANGE, "Activate or deactivate workflows", ManagementOperations.Access.CHANGE),
+                    new Operation(READ, "Read workflow grants", ManagementOperations.Access.READ));
+        }
+    }
+
+    @Autowired
+    private ManagementRequestAccess management;
 
     @Autowired
     private WorkflowService workflowService;
@@ -118,7 +137,7 @@ public class WorkflowController {
             Workflow saved = workflowService.save(workflow);
             ret.put("success", true);
             ret.put("data", render(saved));
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             log.error(e.getMessage(), e);
             ret.put("success", false);
             ret.put("message", e.getMessage());
@@ -129,9 +148,9 @@ public class WorkflowController {
     @PostMapping("/workflow/activate")
     @ResponseBody
     public JSONObject activate(@RequestBody JSONObject param) {
+        User user = management.require(CHANGE);
         JSONObject ret = new JSONObject();
         try {
-            User user = SystemUtils.getCurUser();
             Workflow workflow =
                     workflowService.activate(param.getString("id"), user.getDomainId(), user.getId());
             ret.put("success", true);
@@ -147,9 +166,9 @@ public class WorkflowController {
     @PostMapping("/workflow/deactivate")
     @ResponseBody
     public JSONObject deactivate(@RequestBody JSONObject param) {
+        User user = management.require(CHANGE);
         JSONObject ret = new JSONObject();
         try {
-            User user = SystemUtils.getCurUser();
             Workflow workflow =
                     workflowService.deactivate(param.getString("id"), user.getDomainId(), user.getId());
             ret.put("success", true);
@@ -169,7 +188,7 @@ public class WorkflowController {
         try {
             workflowService.delete(param.getString("id"), SystemUtils.getCurUser().getDomainId());
             ret.put("success", true);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             log.error(e.getMessage(), e);
             ret.put("success", false);
             ret.put("message", e.getMessage());
@@ -186,7 +205,10 @@ public class WorkflowController {
      */
     @PostMapping("/workflow/subjects")
     @ResponseBody
-    public JSONObject subjects() {
+    public JSONObject subjects(@RequestBody(required = false) JSONObject param) {
+        if (countOnly(param)) {
+            return countResult(JSONObject.of("total", subjects.countInDomain(SystemUtils.getCurUser().getDomainId())));
+        }
         JSONObject ret = new JSONObject();
         try {
             User user = SystemUtils.getCurUser();
@@ -218,7 +240,10 @@ public class WorkflowController {
      */
     @PostMapping("/workflow/platform-access")
     @ResponseBody
-    public JSONObject platformAccess() {
+    public JSONObject platformAccess(@RequestBody(required = false) JSONObject param) {
+        if (countOnly(param)) {
+            return countResult(JSONObject.of("total", platformAccess.countRolesInDomain(SystemUtils.getCurUser().getDomainId())));
+        }
         JSONObject ret = new JSONObject();
         try {
             User user = SystemUtils.getCurUser();
@@ -252,10 +277,14 @@ public class WorkflowController {
      */
     @PostMapping("/workflow/grants")
     @ResponseBody
-    public JSONObject grants() {
+    public JSONObject grants(@RequestBody(required = false) JSONObject param) {
+        User user = management.require(READ);
+        if (countOnly(param)) {
+            var counts = grants.countRolesInDomain(user.getDomainId());
+            return countResult(JSONObject.of("total", counts.total(), "outsideDirectory", counts.outsideDirectory()));
+        }
         JSONObject ret = new JSONObject();
         try {
-            User user = SystemUtils.getCurUser();
             JSONArray data = new JSONArray();
             for (CapabilityGrantQuery.Grant grant : grants.grantsInDomain(user.getDomainId())) {
                 JSONObject item = new JSONObject();
@@ -284,12 +313,16 @@ public class WorkflowController {
     @PostMapping("/workflow/query")
     @ResponseBody
     public JSONObject query(@RequestBody JSONObject param) {
+        if (countOnly(param)) {
+            User user = SystemUtils.getCurUser();
+            return countResult(JSONObject.of("total", workflowService.count(param.getString("id"),
+                    queryStatus(param), user.getDomainId())));
+        }
         JSONObject ret = new JSONObject();
         try {
             User user = SystemUtils.getCurUser();
             String id = param.getString("id");
-            String status = param.getString("status");
-            if (status != null) status = status.trim();
+            String status = queryStatus(param);
             if (id != null) {
                 Workflow workflow = Workflow.STATUS_ACTIVE.equals(status)
                         ? workflowService.queryActiveById(id, user.getDomainId())
@@ -322,6 +355,19 @@ public class WorkflowController {
             ret.put("message", e.getMessage());
         }
         return ret;
+    }
+
+    private static boolean countOnly(JSONObject param) {
+        return param != null && Boolean.TRUE.equals(param.get("countOnly"));
+    }
+
+    private static JSONObject countResult(JSONObject counts) {
+        return JSONObject.of("success", true, "data", counts);
+    }
+
+    private static String queryStatus(JSONObject param) {
+        String status = param.getString("status");
+        return status == null ? null : status.trim();
     }
 
     private Workflow parse(JSONObject param) {

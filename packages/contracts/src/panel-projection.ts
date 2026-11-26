@@ -556,20 +556,6 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
   }
 }
 
-/**
- * Pick the data read name used by an `ObjectList` projection: `"objects"` when present (including when both
- * `"objects"` and `"rows"` exist), else `"rows"` when present, else `null`.
- * Shared by `ObjectList.vue`, server-side row resolution, and the panel skill generator.
- */
-export function objectListDatumName(
-  projection: Pick<DirectProjectionPorts, "data">,
-): "objects" | "rows" | null {
-  const data = projection.data ?? {};
-  if (Object.hasOwn(data, "objects")) return "objects";
-  if (Object.hasOwn(data, "rows")) return "rows";
-  return null;
-}
-
 /** A half-open UTF-16 range in the displayed text supplied by the owner. */
 export const panelTextHighlightRangeSchema = z.object({
   start: z.number().int().nonnegative(),

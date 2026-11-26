@@ -134,8 +134,8 @@ describe("what a panel's frame may ask the platform for", () => {
 
     // What the reader's credential would also be accepted for, but P does not declare: refused, and never sent.
     const outside: [string, { method?: string; body?: string }, string][] = [
-      ["/product-assets/definitions/customers", { method: "PUT", body: "{}" }, ""],
-      ["/product-assets/subscriptions", { method: "POST", body: "{}" }, ""],
+      ["/business-definitions/customers", { method: "PUT", body: "{}" }, ""],
+      ["/business-definition-triggers/change", { method: "PUT", body: "{}" }, ""],
       ["/assistant/agents", {}, ""],
       ["/assistant/sessions", { method: "POST", body: "{}" }, ""],
       ["/metricView/execute", { method: "POST", body: JSON.stringify({ id: "revenue" }) }, "/data-query"],

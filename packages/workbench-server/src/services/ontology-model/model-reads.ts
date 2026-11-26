@@ -184,6 +184,7 @@ function relationshipRecord(view: RelationshipView): Omit<PanelRecord, "fieldLab
 /** One model type's owner reads: its list, its single record, and the record mapping. */
 interface ModelTypeReader<V> {
   readonly formPath: string;
+  readonly countPath: string;
   /** This type's entry in the owner's field labels. */
   readonly labels: keyof FieldLabels;
   views(className?: string): Promise<readonly V[]>;
@@ -283,12 +284,17 @@ export function createOntologyModelReadAdapter(
     }
   }
 
+  async function modelCount(path: string): Promise<PanelRecordQuery> {
+    const { total } = await ownerGet("ontology-model-count", z.object({
+      total: z.number().int().nonnegative(),
+    }), `${path}?countOnly=true`);
+    return { rows: [], total };
+  }
+
   function typedReads<V>(typeId: string, reader: ModelTypeReader<V>): ModelReads {
     return {
       ...modelForms(typeId, reader.formPath),
-      async count() {
-        return { rows: [], total: (await reader.views()).length };
-      },
+      count: () => modelCount(reader.countPath),
       async list(params) {
         const [views, labels] = await Promise.all([reader.views(params?.className), labelsOf(reader.labels)]);
         return views.map(view => labelled(reader.record(view), labels));
@@ -313,6 +319,7 @@ export function createOntologyModelReadAdapter(
 
   const objectTypeReader: ModelTypeReader<ObjectTypeView> = {
     formPath: "/ontology/model/object-type/form",
+    countPath: "/ontology/model/object-types",
     labels: "objectType",
     views: () => ownerGet("ontology-model-object-types", z.array(objectTypeViewSchema), "/ontology/model/object-types"),
     one: primaryKey => ownerGet(
@@ -338,9 +345,7 @@ export function createOntologyModelReadAdapter(
 
   const attributeReader: ModelReads = {
     ...modelForms(ATTRIBUTE, "/ontology/model/attribute/form"),
-    async count() {
-      return { rows: [], total: (await attributeViews()).length };
-    },
+    count: () => modelCount("/ontology/model/attributes"),
     async list(params) {
       const [views, labels, classLabels] = await Promise.all([
         attributeViews(params?.className), labelsOf("attribute"), objectTypeLabels(),
@@ -361,6 +366,7 @@ export function createOntologyModelReadAdapter(
 
   const relationshipReader: ModelTypeReader<RelationshipView> = {
     formPath: "/ontology/model/relationship/form",
+    countPath: "/ontology/model/relationships",
     labels: "relationship",
     views: className => ownerGet(
       "ontology-model-relationships",

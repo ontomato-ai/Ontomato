@@ -86,6 +86,26 @@ it("describes the lifecycle impact and provides the availability reason for the 
   await expect(write(DELETE_WORKFLOW).unavailable?.(host("ACTIVE"), target)).resolves.toMatchObject({ reason: expect.stringContaining("before deleting") });
 });
 
+
+it("checks lifecycle availability for a whole list page with one owner read", async () => {
+  const { host, request } = fakeHost(() => ({
+    success: true,
+    data: [
+      { id: "wf-1", name: "Restock", status: "ACTIVE" },
+      { id: "wf-2", name: "Draft", status: "DRAFT" },
+    ],
+  }));
+  const operation = write(ACTIVATE_WORKFLOW);
+  const reasons = await operation.unavailableBatch?.(host, [
+    { target, rowKey: "row-1" },
+    { target: { ...target, primaryKey: "wf-2" }, rowKey: "row-2" },
+  ]);
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(String(request.mock.calls[0][1].body))).toEqual({});
+  expect(reasons?.get("row-1")?.reason).toContain("already active");
+  expect(reasons?.has("row-2")).toBe(false);
+});
+
 it("reports activation notes and submits each lifecycle action to its owner", async () => {
   const { host, request } = fakeHost(() => ({ success: true, data: { id: "wf-1", activationNotes: ["Generated one query.", "Review query names."] } }));
   const result = await write(ACTIVATE_WORKFLOW).execute(host, target, {}, "intent");

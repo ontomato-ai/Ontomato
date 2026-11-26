@@ -17,7 +17,6 @@ import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-depend
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
-import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
@@ -302,7 +301,6 @@ beforeAll(async () => {
   state.schema = `panel_knowledge_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-knowledge-"));
   await writeBundledAppSdkFixture(contentRoot);
@@ -695,7 +693,7 @@ it("rejects a forged member path, an undeclared operation and an unauthorized ta
   const refusedReader = await intent("approve.approve", k2Target, { tk: "outsider" });
   expect(refusedReader.status).toBe(403);
   expect(await refusedReader.json()).toMatchObject({
-    error: { code: "OBJECT_FORBIDDEN", message: "Object access denied" },
+    error: { code: "OBJECT_FORBIDDEN", message: "You cannot use this panel." },
   });
   const preparedForbiddenApprove = await intent("approve.approve", forbiddenTarget);
   expect(preparedForbiddenApprove.status).toBe(200);

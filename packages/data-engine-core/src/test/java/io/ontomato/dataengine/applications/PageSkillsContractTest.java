@@ -10,7 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.IdentityService;
-import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import java.util.List;
@@ -32,7 +32,7 @@ class PageSkillsContractTest {
 
     @Test void globalCatalogueKeepsTheSkillAndDefaultAtTheRegisteredEntry() throws Exception {
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class),
-            mock(ApplicationAccess.class), "{}", mock(PanelResources.class), mock(ProductGrantService.class),
+            mock(ApplicationAccess.class), "{}", mock(PanelResources.class), mock(ProductPrincipalLookup.class),
             EntryAuthorizationFixture.allowEntries()));
         var unrelated = new ApplicationPanelUse("other-use", "other", "panel-other",
             "/ontology/other", null, null);
@@ -68,7 +68,7 @@ class PageSkillsContractTest {
     @Test void scopedHttpLookupCannotBorrowAnotherEntrysAdmissionForTheSamePanel() throws Exception {
         var authorization = EntryAuthorizationFixture.entries((actor, target) -> target.equals("app-example/allowed"));
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class),
-            mock(ApplicationAccess.class), "{}", mock(PanelResources.class), mock(ProductGrantService.class), authorization));
+            mock(ApplicationAccess.class), "{}", mock(PanelResources.class), mock(ProductPrincipalLookup.class), authorization));
         var allowed = new ApplicationPanelUse("allowed", "page-a", "panel-shared",
             "/applications/app-example/allowed", null, null);
         var denied = new ApplicationPanelUse("denied", "page-b", "panel-shared",

@@ -52,12 +52,11 @@
           }
         },
         "config": {
-          "subtitleField": "trigger",
           "statusField": "status",
           "statusStyle": "dot"
         },
         "name": "Run status header",
-        "description": "Displays the task title, trigger kind, and the run status dot with its status text.",
+        "description": "Displays the run status dot with its status text.",
         "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000001"
       },
       "pauseNotice": {
@@ -100,6 +99,7 @@
         "config": {
           "tone": "danger",
           "toneField": "error",
+          "titleKey": "errorTitle",
           "field": "error",
           "hideWhenEmpty": true,
           "compact": true
@@ -180,6 +180,27 @@
         "name": "Run output",
         "description": "Draws the cleaned execution output as reading prose, with a placeholder when the run produced no text, and lists the duration, time zone, run settings, and execution details below it.",
         "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000006"
+      },
+      "trigger": {
+        "component": "TypedValue",
+        "target": "task",
+        "data": {
+          "record": {
+            "read": "runRecord",
+            "params": {
+              "runId": {
+                "state": "runId"
+              }
+            }
+          }
+        },
+        "config": {
+          "field": "trigger",
+          "kind": "text"
+        },
+        "name": "Run trigger",
+        "description": "Displays how the run was started, at the trailing edge of the status row.",
+        "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000007"
       }
     }
   },
