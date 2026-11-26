@@ -29,14 +29,15 @@ const workflow = {
   ],
 };
 const draft = { id: "wf-2", name: "Draft flow", status: "DRAFT", steps: [] };
-const grant = { roleCode: "buyer", capabilityId: "act-1", stepNo: 2, scope: { kind: "all" }, inForce: true, activatedByWorkflowVersion: 2 };
+const grant = { roleCode: "buyer", capabilityId: "act-1", stepNo: 2, scope: { kind: "all" }, inForce: true, activatedByWorkflowVersion: "2" };
 
 function readOwner(refused: string[] = []) {
   const responses: Record<string, unknown> = {
     "/workflow/grants": [
       { ...grant, workflowId: "wf-1" },
       { ...grant, workflowId: "wf-1", capabilityId: "act-2", inForce: false },
-      { ...grant, roleCode: "direct" },
+      { ...grant, roleCode: "direct", workflowId: null, stepNo: null, activatedByWorkflowVersion: null },
+      { ...grant, roleCode: "unrelated", capabilityId: "act-3", workflowId: null, stepNo: null, activatedByWorkflowVersion: null },
       { ...grant, workflowId: "other" },
     ],
     "/workflow/subjects": [{ id: "alice", loginCode: "a", displayName: "Alice" }, { id: "bob", loginCode: "bob-login" }],
@@ -107,7 +108,8 @@ it("reads the four authorization groups as records with scope and action names",
   expect(await adapter.grantCaseScopedSteps("wf-1")).toMatchObject([{ fields: { roleCode: "buyer", stepName: "Review", actionName: "Buy" } }]);
   expect(await adapter.grantInForce("wf-1")).toMatchObject([{ fields: { roleCode: "buyer", capabilities: ["Buy · 2 · All readable objects"] } }]);
   expect(await adapter.grantSuperseded("wf-1")).toMatchObject([{ fields: { roleCode: "buyer", capabilities: ["Ship · 2 · All readable objects"] } }]);
-  expect(await adapter.grantDirect("wf-1")).toMatchObject([{ fields: { roleCode: "direct", capabilities: ["Buy · 2 · All readable objects"] } }]);
+  expect(await adapter.grantDirect("wf-1")).toMatchObject([{ fields: { roleCode: "direct", capabilities: ["Buy · All readable objects"] } }]);
+  expect(await adapter.grantDirect("wf-2")).toEqual([]);
 });
 
 function walkFields(fields: PanelFormField[]): PanelFormField[] {
