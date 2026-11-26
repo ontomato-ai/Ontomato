@@ -759,14 +759,14 @@ ${logs}`);
           {
             path: "program.py",
             content:
-              "import json\nprint(json.dumps({'value':0,'flag':False,'empty':None}))",
+              "import json, os\nprint(json.dumps({'value':0,'flag':False,'empty':None,'secret':os.environ['FIXTURE_SECRET']}))",
           },
         ],
         entry: "program.py",
         arguments: [],
         outputPaths: [],
         libraries: [],
-        environment: { values: {}, secrets: {} },
+        environment: { values: {}, secrets: { FIXTURE_SECRET: "caller-token" } },
         limits: codeLimitsSchema.parse({}),
       };
     expect(
@@ -785,7 +785,7 @@ ${logs}`);
           headers,
         })
       ).json(),
-    ).toEqual({ value: 0, flag: false, empty: null });
+    ).toEqual({ value: 0, flag: false, empty: null, secret: "[REDACTED]" });
     expect(
       (await api("/v1/code-executions", body, { "idempotency-key": id })).body
         .replayed,

@@ -195,6 +195,11 @@ A definition without an ID creates an asset; with an ID it updates that asset. U
 
 `metric-view execute <id> [<parameter JSON>] [--binding <id>]` reads data. `action execute <id> [<parameter JSON>] [--file <path> ...]` performs the business write; execute only within the authorized scope. Supply parameter values by the names in `function.parameters`. A binding supplies its saved values. Action files use multipart uploads. A vector parameter uses `{className, attrName, text, fileId, uploadFile}` as applicable; `uploadFile` is the zero-based file position. Vector writes use the platform's vector operations, not ordinary object insert/update.
 
+Actions that orchestrate Praxis use the `praxis_*` helpers from `query_runtime`. The Action runtime supplies
+`ONTOMATO_PRAXIS_URL` and a server-only `ONTOMATO_CALLER_TK` for the current human caller. Do not add the token to
+`function.parameters`, print it, write it to an ontology object, or return it from an Action. The helpers cover Runs,
+assignments, decisions, inbox/candidates, and Case reads/writes through the product `/api/praxis` boundary.
+
 ## Agent delegation
 
 In a platform conversation, use the native `agent` tool or `node "$SKILL/scripts/ontomato.mjs" agent <command>`.

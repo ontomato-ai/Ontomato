@@ -308,6 +308,7 @@ node client.mjs grant-save '{
 - `approvalMode`：`auto | human | twoKeys`。`twoKeys` 目前**没有双人实现**，只被编译成普通 human 步。
 - 创建型 Action 必须 `print(json.dumps({...}, ensure_ascii=False))`，返回 `targetClass` 和 `run_id`（或 `id`）。Praxis 用这两个字段自动绑定新业务对象；只返回 `{"completed":true}` 会导致后续 `$business.*` 派单和审批跑 ID 全部断链。
 - `function.parameters` 中声明的每个参数都是必填，脚本里的 `or 默认值` 不会让参数契约变成可选。人工 `decide` 无法临时补参数，因此页面流程需要由步骤输入预先绑定，或不要声明该参数、让脚本自行生成。
+- Action 需要启动或推进 Praxis 时，用 `query_runtime` 的 `praxis_start_run`、`praxis_get_run`、`praxis_assign_step`、`praxis_decide_step`、`praxis_inbox` 等脚手架，不要手写 `18600` 或自己拼 `/api/praxis`。被指定承办主体是正常业务参数，每个 human step 单独声明字符串参数，并传 `praxis_step_candidates()` 返回的 `principal`（通常是 `loginCode`），不要传任意成员 ID 或 `assignedBy`。平台把当前登录人的 `ONTOMATO_CALLER_TK` 作为独立运行时 secret 注入，并提供 `ONTOMATO_PRAXIS_URL`；不要把 token 声明成 Action 参数、写进业务对象、确认消息、日志或 `print`。沙箱试跑携带的是试跑发起人的真实 token，因此调用 Praxis 可能产生真实外部副作用，重试前先按业务 id 查询已有 Run。
 
 ### 4.1 申请单与任职历史必须分开
 

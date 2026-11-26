@@ -97,6 +97,9 @@ ONTOMATO_API_KEY       # 使用 API Key 登录时注入（二选一）
 ONTOMATO_ONTOLOGY_URL  # 数据引擎地址，作为默认 API 端点
 ```
 
+`ONTOMATO_CALLER_TK` 只由数据引擎在 Action 运行时内部注入，供 `query_runtime` 的
+`praxis_*` 脚手架使用；它不是流程使用方需要配置或传给参数的值。
+
 先确认它们存在，再直接调用：
 
 ```bash

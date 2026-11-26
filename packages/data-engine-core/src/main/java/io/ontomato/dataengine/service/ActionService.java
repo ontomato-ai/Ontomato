@@ -17,13 +17,25 @@ public interface ActionService {
     PythonExecuteResult executeScheduled(Action action, JSONObject parameters, String lang, User creator,
             UserDataPermission permission, int timeoutMinutes, java.util.UUID runId) throws Exception;
 
-    PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target,
-            io.ontomato.dataengine.service.authorization.AuthorizationService.ActionPath path) throws Exception;
+    default PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission,
+            int timeoutMinutes, ExecutionTarget target,
+            io.ontomato.dataengine.service.authorization.AuthorizationService.ActionPath path) throws Exception {
+        return execute(id, param, lang, user, permission, timeoutMinutes, target, path, null);
+    }
+
+    /**
+     * Execute with the signed-in caller's platform token exposed to the Action runtime as a
+     * separate secret. The token never becomes a business parameter.
+     */
+    PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission,
+            int timeoutMinutes, ExecutionTarget target,
+            io.ontomato.dataengine.service.authorization.AuthorizationService.ActionPath path,
+            String callerToken) throws Exception;
 
     default PythonExecuteResult execute(String id, JSONObject param, String lang, User user,
             UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception {
         return execute(id, param, lang, user, permission, timeoutMinutes, target,
-                new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone());
+                new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone(), null);
     }
 
 	

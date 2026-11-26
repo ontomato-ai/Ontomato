@@ -179,6 +179,60 @@ Use `ontomato-analyst execute-dsl @dsl.json` for a saved single DSL object. Add 
    - `generation.mjs query dsl.json`: executes the DSL file in the current workspace in the **sandbox**, used to view the data in the sandbox (only accepts a file relative path).
 Test with `generation.mjs test outputs/program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
 
+## Praxis orchestration scaffold
+
+When the Action must start or advance an Ontomato workflow, use the helpers in `query_runtime`; do not
+hard-code a Praxis host, port, domain header, or caller token. The platform injects
+`ONTOMATO_PRAXIS_URL` and the current signed-in user's `ONTOMATO_CALLER_TK`; both are runtime
+credentials and must never be declared as Action parameters or printed.
+
+```python
+# ontomato-python:2
+import json
+from query_runtime import parameters as params, praxis_start_run
+
+run = praxis_start_run(
+    workflow_id="campus_midterm_check_v1",
+    inputs={"s1": {"task_id": params["task_id"]}},
+    # These are candidate.principal values from praxis_step_candidates(), normally loginCode.
+    assignments={"s1": params["teacher"], "s2": params["director"]},
+)
+
+print(json.dumps({
+    "targetClass": "school_task",
+    "run_id": run["id"],
+    "runStatus": run.get("status"),
+}, ensure_ascii=False))
+```
+
+Supported helpers:
+
+| Helper | Product Praxis route |
+|---|---|
+| `praxis_list_runs(status=None, limit=None)` | `GET /runs` |
+| `praxis_get_run(run_id)` | `GET /runs/:id` |
+| `praxis_start_run(...)` | `POST /runs` |
+| `praxis_tick_run(run_id)` | `POST /runs/:id/tick` |
+| `praxis_bind_run(run_id, target_class, target_id)` | `POST /runs/:id/acts-on` |
+| `praxis_inbox(assignee=None)` | `GET /inbox` |
+| `praxis_subjects()` | `GET /subjects` |
+| `praxis_assign_step(step_id, principal)` | `POST /steps/:id/assign` |
+| `praxis_decide_step(step_id, verdict, comment=None)` | `POST /steps/:id/decide` |
+| `praxis_step_candidates(step_id)` | `GET /steps/:id/candidates` |
+| `praxis_case(run_id)` | `GET /runs/:id/case` |
+| `praxis_case_submit/fill/close(...)` | `POST /runs/:id/case/*` |
+
+The helpers use the signed-in caller identity for `requester`, `assignedBy` and `decider`. An Action
+must not accept another subject's token, impersonate another caller, or call `/internal/*`. Prefer one
+short retry after a timeout only when the business object carries an idempotency key and the Action can
+first query the existing Run; otherwise report the ambiguity instead of blindly creating a duplicate.
+Explicit assignees are legitimate Action parameters: declare one string parameter per human step and
+pass the `principal` returned by `praxis_step_candidates()` for that step. That value is currently the
+subject's `loginCode` when one exists; do not substitute an unrelated member id or `assignedBy`.
+The authoring generation sandbox may not carry a human session. In that case, never synthesize or hard-code
+one: validate the business-write portion there, and leave the external Praxis integration for the saved
+Action's `/action/trial`, which runs with the signed-in caller's token.
+
 ---
 
 # Working Method

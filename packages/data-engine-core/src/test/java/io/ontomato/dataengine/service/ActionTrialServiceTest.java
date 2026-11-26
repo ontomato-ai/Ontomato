@@ -170,6 +170,25 @@ class ActionTrialServiceTest {
   }
 
   @Test
+  void trialCarriesTheCallerTokenInTheRuntimeExecutionContext() throws Exception {
+    when(actions.queryById(ACTION)).thenReturn(action(Action.STATUS_PUBLISHED));
+    var executed = new PythonExecuteResult();
+    executed.setResult("{\"completed\":true}");
+    when(programs.execute(anyString(), any(Function.class), eq(USER), eq(permission), eq(SANDBOX),
+        eq("en"), eq(1), eq(DOMAIN), any())).thenAnswer(call -> {
+          var context = call.<ABCProgramService.ExecutionContext>getArgument(8);
+          assertEquals("trial-caller-token", context.callerToken());
+          return new Object[]{null, executed};
+        });
+
+    var receipt = trials.trialSavedAction(ACTION, null, null, "en", CALLER, permission, 1,
+        "trial-caller-token");
+
+    assertEquals("PASSED", receipt.getString("status"));
+    verify(sandboxes).close(SANDBOX, DOMAIN);
+  }
+
+  @Test
   void emptySampleRunsInAnActionTrialGrantThatRefusesEveryDataCall() throws Exception {
     when(actions.queryById(ACTION)).thenReturn(action(Action.STATUS_PUBLISHED));
     var runtimeJdbc = mock(JdbcTemplate.class);

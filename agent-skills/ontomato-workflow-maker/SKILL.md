@@ -194,6 +194,15 @@ result = run()
 
 `query_runtime` 可用的写原语：`insert / update / delete / createEdge / deleteEdge / appendVector / updateVector / deleteVector`，读用 `query(dsl)` 或 `execute_dsl(dsl)`。参数从 `parameters as params` 取。
 
+如果 Action 要在同一事务式业务流程里启动或推进 Praxis，用 `query_runtime` 的
+`praxis_start_run`、`praxis_get_run`、`praxis_assign_step`、`praxis_decide_step`、
+`praxis_inbox`、`praxis_step_candidates` 等脚手架。平台提供 `ONTOMATO_PRAXIS_URL`，并用
+`ONTOMATO_CALLER_TK` 注入当前登录人的会话；它们都不是 Action 参数，不得打印、写入本体、
+确认消息或日志。被指定承办主体则是正常业务参数：每个 human step 一个字符串参数，值取
+`praxis_step_candidates()` 的 `principal`（当前通常是 `loginCode`），不要传任意成员 ID 或
+`assignedBy`。先写业务对象再启动 Run 时，要保存并返回同一个业务 id，重试前先查询已有 Run，
+避免重复派单。沙箱试跑也会携带真实调用人的 token，Praxis 外部副作用必须按业务 id 核对。
+
 ### 4.3 办理动作：声明目标与单据状态
 
 对已有对象执行的 Action 在顶层声明 `"target":{"className":"expense_request","keyParameter":"run_id"}`；`run_id` 必须是 Function 的字符串参数。创建单据时不声明尚未存在的目标，只能授予 all。以下条件只检查单据状态，人员和组织归属写在步骤 scope 上。

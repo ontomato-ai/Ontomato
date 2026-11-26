@@ -13,6 +13,8 @@ import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.service.PythonAuthority;
 import io.ontomato.dataengine.service.PythonExecuteService;
+import io.ontomato.dataengine.service.ABCProgramService;
+import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -54,6 +56,27 @@ class WriteClassScopeTest {
 
     assertEquals(
         List.of("monthly_expense_stat", "expense_result"), authority.get().classNames());
+  }
+
+  @Test
+  void theExecutionContextCarriesTheCallerTokenToTheRuntimeAuthority() throws Exception {
+    var authority = new AtomicReference<PythonAuthority>();
+    var python = mock(PythonExecuteService.class);
+    when(python.execute(anyString(), anyString(), anyInt(), anyString(), any(), any(), any()))
+        .thenAnswer(call -> {
+          authority.set(call.getArgument(4));
+          var result = new PythonExecuteResult();
+          result.setResult("{\"answer\":{}}");
+          return result;
+        });
+    var service = new ABCProgramServiceImpl();
+    ReflectionTestUtils.setField(service, "pythonExecuteService", python);
+
+    service.execute(
+        "run", writeFunction(), "user", new UserDataPermission(), null, "en", 1, "domain",
+        new ABCProgramService.ExecutionContext(null, null, ExecutionTarget.LIVE, null, "caller-token"));
+
+    assertEquals("caller-token", authority.get().callerToken());
   }
 
   private static Function writeFunction() {
