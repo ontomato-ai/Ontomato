@@ -1,4 +1,3 @@
-import { BUILTIN_PRODUCT_ID_PREFIX } from "@ontomato/contracts/product-record-id";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { currentProductRows } from "../../infrastructure/product-current";
 import { isPresetAgentKind, presetAgentDefinitions } from "../assistant/preset-definitions";
@@ -67,15 +66,11 @@ type ProductCatalogRow = { id: string; definition: Record<string, unknown>; owne
 
 export async function readPolicyWorkbenchObjects(domainId: string, locale?: string, includeDistribution = false) {
   const pool = getPostgresPool();
-  const productRows = (kind: "panel" | "projection") => includeDistribution
-    ? pool.query<ProductCatalogRow>(
-      `SELECT id, definition, owner_id FROM ${currentProductRows(kind)} AS products
-       WHERE domain_id = $1 OR domain_id IS NULL ORDER BY id ASC`, [domainId],
-    )
-    : pool.query<ProductCatalogRow>(
-      `SELECT id, definition, owner_id FROM ${t(kind === "panel" ? "product_panels" : "product_projections")}
-       WHERE domain_id = $1 AND NOT starts_with(id, $2) ORDER BY id ASC`, [domainId, BUILTIN_PRODUCT_ID_PREFIX],
-    );
+  const productRows = (kind: "panel" | "projection") => pool.query<ProductCatalogRow & { fixed: boolean }>(
+    `SELECT id, definition, owner_id, domain_id IS NULL AS fixed
+     FROM ${currentProductRows(kind, { domainWhere: "p.domain_id = $1", includeBuiltins: includeDistribution })} AS products
+     ORDER BY id ASC`, [domainId],
+  );
   const [panelRows, projectionRows, componentRows, agents] = await Promise.all([
     productRows("panel"),
     productRows("projection"),
@@ -126,5 +121,9 @@ export async function readPolicyWorkbenchObjects(domainId: string, locale?: stri
   for (const agent of agents) {
     if (isPresetAgentKind(agent.kind)) presetAgentIds.add(agent.id);
   }
-  return { catalog, ownerIds, presetAgentIds };
+  const fixedProductIds = {
+    PANEL: new Set(panelRows.rows.filter(row => row.fixed).map(row => row.id)),
+    PROJECTION: new Set(projectionRows.rows.filter(row => row.fixed).map(row => row.id)),
+  };
+  return { catalog, ownerIds, presetAgentIds, fixedProductIds };
 }

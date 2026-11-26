@@ -182,9 +182,14 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
     }
 
     public static void requireObjectDecision(Kind kind, String id, Verb verb) {
-        if (verb != Verb.USE && verb != Verb.VIEW && verb != Verb.EDIT)
+        requireObjectReadVerb(kind, verb);
+        if (id == null || id.isBlank())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object permission");
+    }
+
+    public static void requireObjectReadVerb(Kind kind, Verb verb) {
+        if ((verb != Verb.USE && verb != Verb.VIEW && verb != Verb.EDIT) || !validVerb(kind, verb))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object access verb.");
-        requireGrant(kind, id, verb, null, false);
     }
 
     public static void requireCreateDecision(Kind kind) {
@@ -357,17 +362,19 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
         scope.requireTarget(target, rule);
     }
 
-    static void requireGrant(Kind kind, String id, Verb verb, GrantScope scope, boolean candidate) {
-        if (kind == null || verb == null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object permission");
-        boolean validVerb = switch (kind) {
+    private static boolean validVerb(Kind kind, Verb verb) {
+        return switch (kind) {
             case ENTRY -> verb == Verb.ENTER;
             case PANEL, PROJECTION, COMPONENT, APPLICATION -> Set.of(Verb.USE, Verb.EDIT, Verb.CREATE).contains(verb);
             case AGENT, METRIC, READ_FUNCTION, WORKFLOW, WRITE_FUNCTION, TRIGGER -> Set.of(Verb.USE, Verb.VIEW, Verb.EDIT, Verb.CREATE).contains(verb);
             case SKILL -> false;
             case ACTION -> Set.of(Verb.VIEW, Verb.EDIT, Verb.CREATE, Verb.EXECUTE).contains(verb);
         };
-        if (!validVerb || id == null || (verb == Verb.CREATE ? !id.isEmpty() : id.isBlank())
+    }
+
+    static void requireGrant(Kind kind, String id, Verb verb, GrantScope scope, boolean candidate) {
+        if (kind == null || verb == null || !validVerb(kind, verb)
+                || id == null || (verb == Verb.CREATE ? !id.isEmpty() : id.isBlank())
                 || (verb == Verb.EXECUTE ? scope == null && !candidate : scope != null))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object permission");
     }

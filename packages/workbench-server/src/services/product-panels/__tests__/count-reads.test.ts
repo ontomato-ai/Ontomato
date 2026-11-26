@@ -259,12 +259,7 @@ describe("platform count reads", () => {
   });
 
   it("counts only definitions with view, including visible system agents", async () => {
-    const rows = [
-      { id: "visible", kind: "regular", domain_id: owner.domainId, owner_id: "author" },
-      { id: "hidden", kind: "analysis", domain_id: owner.domainId, owner_id: "another-author" },
-      { id: "builder", kind: "app-builder", domain_id: owner.domainId, owner_id: null },
-    ];
-    mocks.query.mockResolvedValue({ rows });
+    mocks.query.mockResolvedValue({ rows: [{ total: 2 }] });
     vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
     vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
       const path = new URL(url).pathname;
@@ -277,18 +272,13 @@ describe("platform count reads", () => {
           id: RETRIEVAL_AGENT_ID, kind: "retrieval", name: "Data retrieval", modelSelection: { modelId: null }, editable: false,
         } });
       }
-      expect(path).toBe("/authorization/objects/decide-batch");
+      expect(path).toBe("/authorization/objects/read-ranges");
       expect(init.method).toBe("POST");
       expect(headers.get("X-Ontomato-Query-Service-Token")).toBe("count-test-token");
-      expect(JSON.parse(String(init.body))).toEqual({ requests: rows.map(row => ({
-        target: { domainId: owner.domainId, kind: "AGENT", id: row.id },
-        ownerFacts: { ownerId: row.owner_id, state: "PUBLISHED" }, verb: "VIEW",
-      })) });
-      return Response.json({ decisions: [
-        { allowed: true, code: null, reason: null },
-        { allowed: false, code: "OBJECT_FORBIDDEN", reason: "View permission required" },
-        { allowed: true, code: null, reason: null },
-      ] });
+      expect(JSON.parse(String(init.body))).toEqual({ kind: "AGENT", verbs: ["VIEW"] });
+      return Response.json({ ranges: {
+        VIEW: { fixed: false, authorId: "author", all: false, objectIds: ["builder"] },
+      } });
     });
     await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
     expect(mocks.assertPermission).not.toHaveBeenCalled();
@@ -301,12 +291,10 @@ describe("platform count reads", () => {
       if (path === `/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`) {
         return Response.json({ success: false, code: 403 }, { status: 403 });
       }
-      expect(path).toBe("/authorization/objects/decide-batch");
-      return Response.json({ decisions: [{ allowed: false, code: "OBJECT_FORBIDDEN", reason: "View permission required" }] });
+      expect(path).toBe("/authorization/objects/read-ranges");
+      return Response.json({ ranges: { VIEW: { fixed: false, authorId: null, all: false, objectIds: [] } } });
     });
-    mocks.query.mockResolvedValue({ rows: [
-      { id: "private-agent", kind: "custom", domain_id: owner.domainId, owner_id: "author" },
-    ] });
+    mocks.query.mockResolvedValue({ rows: [{ total: 0 }] });
     await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 0 } });
   });
 
@@ -315,28 +303,20 @@ describe("platform count reads", () => {
     await expect(readCount(OBJECT_TYPE)).resolves.toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
   });
 
-  it("counts graph agent definitions in the database after deciding VIEW from access facts", async () => {
+  it("counts graph agent definitions in the database from a VIEW range without loading rows", async () => {
     const { countVisibleAgentDefinitions } = await import("../../assistant/definitions");
     const visible = "10000000-0000-4000-a000-000000000001";
-    const hidden = "10000000-0000-4000-a000-000000000002";
-    mocks.query.mockResolvedValueOnce({ rows: [
-      { id: visible, domain_id: owner.domainId, owner_id: "author" },
-      { id: hidden, domain_id: owner.domainId, owner_id: "another-author" },
-    ] }).mockResolvedValueOnce({ rows: [{ total: 1 }] });
+    mocks.query.mockResolvedValueOnce({ rows: [{ total: 1 }] });
     vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
     const decide = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe("/authorization/objects/decide-batch");
-      expect(JSON.parse(String(init.body)).requests).toMatchObject([
-        { target: { id: visible }, verb: "VIEW" }, { target: { id: hidden }, verb: "VIEW" },
-      ]);
-      return Response.json({ decisions: [
-        { allowed: true }, { allowed: false, code: "FORBIDDEN", reason: "View permission required" },
-      ] });
+      expect(new URL(url).pathname).toBe("/authorization/objects/read-ranges");
+      expect(JSON.parse(String(init.body))).toEqual({ kind: "AGENT", verbs: ["VIEW"] });
+      return Response.json({ ranges: { VIEW: { fixed: false, authorId: null, all: false, objectIds: [visible] } } });
     });
     vi.stubGlobal("fetch", decide);
     await expect(countVisibleAgentDefinitions(owner, viewer)).resolves.toBe(1);
-    expect(mocks.query).toHaveBeenNthCalledWith(1, expect.stringMatching(/^SELECT id, domain_id, owner_id FROM/), [owner.domainId]);
-    expect(mocks.query).toHaveBeenNthCalledWith(2, expect.stringMatching(/^SELECT COUNT\(\*\)/), [owner.domainId, [visible]]);
+    expect(mocks.query).toHaveBeenCalledTimes(1);
+    expect(mocks.query).toHaveBeenCalledWith(expect.stringMatching(/^SELECT COUNT\(\*\)/), [owner.domainId, [visible]]);
     expect(decide).toHaveBeenCalledTimes(1);
   });
 

@@ -25,9 +25,19 @@ export const assistantAgentDefinitionSchema = agentHostAgentSchema.omit({ worksp
   sortOrder: z.number().int().default(0),
   systemPrompt: z.string(),
 });
-export const assistantAgentDefinitionListSchema = z
-  .object({ agents: z.array(assistantAgentDefinitionSchema) })
-  .strict();
+export const assistantAgentDefinitionSummarySchema = agentHostAgentSchema.pick({
+  id: true, name: true, description: true, icon: true, enabled: true,
+});
+export type AssistantAgentDefinitionSummary = z.infer<typeof assistantAgentDefinitionSummarySchema>;
+export const assistantAgentDefinitionPageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().min(1).optional(),
+}).strict();
+export type AssistantAgentDefinitionPageQuery = z.infer<typeof assistantAgentDefinitionPageQuerySchema>;
+export const assistantAgentDefinitionListSchema = z.object({
+  agents: z.array(assistantAgentDefinitionSummarySchema),
+  nextCursor: z.string().nullable(),
+}).strict();
 export type AssistantAgentDefinitionList = z.infer<
   typeof assistantAgentDefinitionListSchema
 >;

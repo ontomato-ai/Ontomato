@@ -343,16 +343,27 @@ it.each([[2, 2, 1], [80, 220, 1], [220, 220, 2]])("lists %i ordinary agents with
   expect(mocks.listOfferings).not.toHaveBeenCalled();
 });
 
-it.each([[2, 4], [220, 7]])("lists %i agent settings within %i owner RPCs", async (size, rpcBudget) => {
+it.each([25, 220, 450])("lists a fixed settings page in a single range read across %i agents and skills", async size => {
   sizeDirectory(size, size);
+  const limit = 20;
+  mocks.query.mockImplementationOnce(async (sql: string, params: unknown[]) => {
+    expect(sql).not.toMatch(/system_prompt|execution_user_id|\bskills\b|SELECT \*/);
+    return { rows: (await mocks.agents()).slice(0, Number(params.at(-1))) };
+  });
+  vi.mocked(fetch).mockImplementationOnce(async (url, request) => {
+    expect(String(url)).toMatch(/\/authorization\/objects\/read-ranges$/);
+    expect(JSON.parse(String(request?.body))).toEqual({ kind: "AGENT", verbs: ["VIEW"] });
+    return Response.json({ ranges: { VIEW: { fixed: false, all: true, authorId: null, objectIds: [] } } });
+  });
 
-  const result = await listAgentDefinitions(owner, credentials);
+  const result = await listAgentDefinitions(owner, credentials, { limit });
 
-  expect(result.agents).toHaveLength(size);
-  // Round 2 #2: one page-skill read, then separate agent, panel, and projection decision batches.
-  // These ceilings leave room to eliminate skill catalogue reads and move filtering to the owner.
-  expect(vi.mocked(fetch).mock.calls.length).toBeLessThanOrEqual(rpcBudget);
-  expect(mocks.query.mock.calls.length).toBeLessThanOrEqual(3);
+  expect(result.agents).toHaveLength(limit);
+  expect(result.agents[0]).not.toHaveProperty("skills");
+  expect(result.nextCursor).not.toBeNull();
+  expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  expect(mocks.query).toHaveBeenCalledTimes(1);
+  expect(mocks.listOfferings).not.toHaveBeenCalled();
 });
 
 it("returns only agents that carry the requested public skill", async () => {

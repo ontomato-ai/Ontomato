@@ -135,9 +135,16 @@ const agents = "/assistant/agent-definitions";
 const agent = `${agents}/${uuidPattern}`;
 const agentForm = `${agents}/form`;
 const validateAgent = `${agents}/validate`;
+const agentPageLimit = "limit=[0-9]+";
+const agentPageCursor = "cursor=[^&#]+";
 
 const agentDefinitionReads = [
-  { method: "GET", service: "", path: new RegExp(`^${agents}$`), template: agents },
+  {
+    method: "GET", service: "",
+    path: new RegExp(`^${agents}(?:\\?(?:${agentPageLimit}(?:&${agentPageCursor})?|${agentPageCursor}(?:&${agentPageLimit})?))?$`),
+    template: agents,
+    instructions: "Follow nextCursor as cursor until it is null. The list returns summaries; read an agent by ID for its full settings.",
+  },
   { method: "GET", service: "", path: new RegExp(`^${agent}$`), template: `${agents}/:id` },
   {
     method: "POST", service: "", path: new RegExp(`^${agentForm}$`), template: agentForm,

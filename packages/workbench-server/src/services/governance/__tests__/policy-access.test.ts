@@ -85,6 +85,7 @@ beforeEach(() => {
       { panel_id: "orders-panel", dependencies: [
         { objectType: "PANEL", objectKey: "orders-panel", verb: "USE" },
         { objectType: "PANEL", objectKey: "builtin-product-orders", verb: "USE" },
+        { objectType: "PANEL", objectKey: "builtin-product-unavailable", verb: "USE" },
         { objectType: "PROJECTION", objectKey: "order-list", verb: "USE" },
         { objectType: "COMPONENT", objectKey: "@ontomato/sdk:ObjectList", verb: "USE" },
         { objectType: "AGENT", objectKey: "preset:regular", verb: "USE" },
@@ -98,7 +99,8 @@ beforeEach(() => {
       ] },
     ] };
     if (sql.includes("product_panels")) return { rows: [
-      { id: "orders-panel", definition: { name: "Orders panel" }, owner_id: "panel-owner" },
+      { id: "orders-panel", definition: { name: "Orders panel" }, owner_id: "panel-owner", fixed: false },
+      ...(sql.includes("builtin_product_panels") ? [{ id: "builtin-product-orders", definition: { name: "Builtin orders" }, owner_id: null, fixed: true }] : []),
     ] };
     if (sql.includes("product_projections")) return { rows: [
       { id: "order-list", definition: { name: "Order list" }, owner_id: "projection-owner" },
@@ -217,6 +219,8 @@ describe("policy access", () => {
       items: expect.arrayContaining([
         { kind: "AGENT", id: "custom-agent", verb: "USE", ownerFacts: { ownerId: "agent-owner", state: "PUBLISHED" } },
         { kind: "PANEL", id: "orders-panel", verb: "USE", ownerFacts: { ownerId: "panel-owner", state: "PUBLISHED" } },
+        { kind: "PANEL", id: "builtin-product-orders", verb: "USE", fixedProduct: true },
+        { kind: "PANEL", id: "builtin-product-unavailable", verb: "USE" },
         { kind: "ACTION", id: "step-only", verb: "EXECUTE" },
       ]),
     }, expect.anything());

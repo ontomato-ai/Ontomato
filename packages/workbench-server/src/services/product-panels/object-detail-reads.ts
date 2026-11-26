@@ -8,8 +8,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { ProductOwner } from "../product-governance/grants";
-import { currentDefinition, usableCurrentIds } from "./access";
-import { decideObject } from "../product-governance/authorization";
+import { currentDefinitionAccess, usableCurrentIds } from "./access";
 import { findDetailPanel, findObjectDetailPanelId } from "./object-detail";
 
 export const objectDetailText = (locale: string | undefined, key: string) =>
@@ -43,7 +42,7 @@ export function createObjectDetailReadAdapter(owner: ProductOwner, viewer: Assis
           panelStatus = "unavailable";
           unavailableReason = text(detail.status);
           if (canConfigure) panelId = id;
-        } else if (!(await decideObject({ ...currentDefinition("panel", detail.panel, owner.domainId), verb: "USE" }, viewer)).allowed) {
+        } else if (!(await currentDefinitionAccess("panel", [detail.panel], owner.domainId, viewer, false)).decisions[0].allowed) {
           panelStatus = "forbidden";
           unavailableReason = text("forbidden");
           if (canConfigure) panelId = id;

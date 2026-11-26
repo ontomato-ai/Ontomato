@@ -1,7 +1,10 @@
+import { z } from "zod";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { validateModelSelection } from "../../platform/agent-runtime/model-selection";
 import {
   assistantAgentDefinitionSchema,
+  type AssistantAgentDefinitionList,
+  type AssistantAgentDefinitionPageQuery,
   type AssistantAgentInput,
   type AssistantAgentUpdateInput,
   type AssistantAgentValidation,
@@ -14,7 +17,7 @@ import {
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
 import { agentObject, allowedAgents, requireAgent, requireAgentCreation } from "./authorization";
-import { retireObject, writeFirstPublication } from "../product-governance/authorization";
+import { readObjectRanges, retireObject, writeFirstPublication } from "../product-governance/authorization";
 import { resolveAssistantSkillReferences } from "./skill-references";
 import { AgentDefinitionFieldError, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
 import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
@@ -292,19 +295,41 @@ export async function createAgentDefinitionSnapshot(
   });
 }
 
-export async function countVisibleAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials): Promise<number> {
-  const facts = await assistantStore.agentDefinitionAccessFacts(owner.domainId);
-  const visible = await allowedAgents(facts, "VIEW", credentials);
-  return assistantStore.countAgentDefinitions(owner.domainId, visible.map(agent => agent.id));
+const agentDefinitionCursor = z.object({
+  sortOrder: z.number().int().min(-2147483648).max(2147483647), name: z.string(), id: z.string().uuid(),
+}).strict();
+
+function decodeAgentDefinitionCursor(cursor: string) {
+  try {
+    return agentDefinitionCursor.parse(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")));
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof z.ZodError)
+      throw new HttpError(400, "Invalid agent definition cursor", "INVALID_REQUEST");
+    throw error;
+  }
 }
 
-export async function listAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
-  const skillView = await readAssistantSkillView(owner.domainId, credentials);
-  const agents = await visibleAgentDefinitions(owner, credentials);
-  return { agents: agents.map(agent => projectAgentDefinitionSkills(view(agent, credentials.locale), skillView)) };
+export async function listAgentDefinitions(
+  owner: AssistantOwner, credentials: AssistantCredentials, { limit, cursor }: AssistantAgentDefinitionPageQuery,
+): Promise<AssistantAgentDefinitionList> {
+  const after = cursor === undefined ? undefined : decodeAgentDefinitionCursor(cursor);
+  const { VIEW } = await readObjectRanges("AGENT", ["VIEW"], credentials);
+  const rows = await assistantStore.agentDefinitionSummaries(owner.domainId, VIEW, { includeSystem: false, limit: limit + 1, after });
+  const last = rows[limit - 1];
+  return {
+    agents: rows.slice(0, limit).map(agent => ({
+      id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
+      icon: agent.icon, enabled: agent.enabled,
+    })),
+    nextCursor: rows.length <= limit ? null : Buffer.from(JSON.stringify({
+      sortOrder: last.sort_order, name: last.name, id: last.id,
+    })).toString("base64url"),
+  };
 }
-export async function visibleAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
-  return allowedAgents(await assistantStore.agents(owner.domainId), "VIEW", credentials);
+
+export async function countVisibleAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
+  const { VIEW } = await readObjectRanges("AGENT", ["VIEW"], credentials);
+  return assistantStore.countVisibleAgentDefinitions(owner.domainId, VIEW, { includeSystem: false });
 }
 
 function presetDeletionRestriction(kind: string, locale?: string) {

@@ -74,10 +74,10 @@ class AuthorizationAccessInspectorTest {
         when(store.policyRoleIds("domain", "selected")).thenReturn(Set.of("reviewer", "other"));
 
         var result = inspector.inspectAccess(caller(true), request(List.of(
-                new InspectItem(Kind.PANEL, "dashboard", Verb.USE, new OwnerFacts("subject", DefinitionState.PUBLISHED)),
-                new InspectItem(Kind.AGENT, "draft", Verb.VIEW, new OwnerFacts("other", DefinitionState.DRAFT)),
-                new InspectItem(Kind.METRIC, null, Verb.CREATE, null),
-                new InspectItem(Kind.PROJECTION, "missing-grant", Verb.USE, null)), null));
+                new InspectItem(Kind.PANEL, "dashboard", Verb.USE, new OwnerFacts("subject", DefinitionState.PUBLISHED), false),
+                new InspectItem(Kind.AGENT, "draft", Verb.VIEW, new OwnerFacts("other", DefinitionState.DRAFT), false),
+                new InspectItem(Kind.METRIC, null, Verb.CREATE, null, false),
+                new InspectItem(Kind.PROJECTION, "missing-grant", Verb.USE, null, false)), null));
 
         var policy = Source.policy("shared", List.of("approver", "reviewer"), null);
         assertTrue(result.entry().allowed());
@@ -92,6 +92,22 @@ class AuthorizationAccessInspectorTest {
         assertFalse(result.items().get(3).allowed());
         assertEquals(Set.of("reviewer", "other"), result.targetPolicyRoleIds());
         assertEquals(Set.of("approver", "reviewer", "viewer"), result.subjectRoleIds());
+    }
+
+    @Test
+    void onlyOwnerConfirmedFixedProductsUseTheReleaseRule() {
+        var id = "builtin-product-dashboard";
+        var result = inspector.inspectAccess(caller(true), request(List.of(
+                new InspectItem(Kind.PANEL, id, Verb.USE, null, true),
+                new InspectItem(Kind.PANEL, id, Verb.USE, null, false),
+                new InspectItem(Kind.PANEL, id, Verb.EDIT, null, true)), null));
+
+        assertTrue(result.items().get(0).allowed());
+        assertEquals(List.of(Source.distribution("object_entitlement")), result.items().get(0).sources());
+        assertFalse(result.items().get(1).allowed());
+        assertFalse(result.items().get(2).allowed());
+        verify(store).objectGrants(new ObjectTarget("domain", Kind.PANEL, id), Verb.USE, Set.of("shared"));
+        verify(store, never()).objectGrants(new ObjectTarget("domain", Kind.PANEL, id), Verb.EDIT, Set.of("shared"));
     }
 
     @Test
@@ -172,7 +188,7 @@ class AuthorizationAccessInspectorTest {
     private ItemResult inspectAction(List<ActionTargetInput> targets) {
         return inspector.inspectAccess(caller(true), request(
                 List.of(new InspectItem(Kind.ACTION, "approve", Verb.EXECUTE,
-                        new OwnerFacts("subject", DefinitionState.PUBLISHED))), targets)).items().getFirst();
+                        new OwnerFacts("subject", DefinitionState.PUBLISHED), false)), targets)).items().getFirst();
     }
 
     private static InspectRequest request(List<InspectItem> items, List<ActionTargetInput> targets) {

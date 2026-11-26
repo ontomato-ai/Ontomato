@@ -23,6 +23,7 @@ const FIRST = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
 const SECOND = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a02";
 const CREATED = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a03";
 const listPath = "/api/assistant/agent-definitions";
+const listCursor = "opaque+cursor/&2";
 const formPath = `${listPath}/form`;
 const revision = 7;
 const fields = [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false }];
@@ -50,15 +51,12 @@ const manifest = definePanel({
 const panel = panelRecord("panel-create-mode", "Agents", manifest);
 const use = panelUse("use-create-mode", "create-mode", panel.id, "/ontology/agents");
 
-const definition = (id: string, name: string) => ({
-  id, name, description: "", icon: null, enabled: true, executionUserId: null, modelSelection: { modelId: null },
-  skills: [], classNames: [], enabledMcpServiceIds: [], systemPrompt: "", sortOrder: 0,
-});
+const summary = (id: string, name: string) => ({ id, name, description: "", icon: null, enabled: true });
 
 async function open(state: Record<string, unknown>, held?: Promise<void>) {
-  const agents = [definition(FIRST, "Revenue"), definition(SECOND, "Churn")];
+  const agents = [summary(FIRST, "Revenue"), summary(SECOND, "Churn")];
   const intents = humanIntents((_, { input }) => {
-    agents.push(definition(CREATED, String((input as PanelFormSaveInput).values.name)));
+    agents.push(summary(CREATED, String((input as PanelFormSaveInput).values.name)));
     return {
       kind: "success", data: {},
       created: { objectType: AGENT_DEFINITION, primaryKey: CREATED },
@@ -68,7 +66,12 @@ async function open(state: Record<string, unknown>, held?: Promise<void>) {
   const sent = installPlatform((request: Sent) => {
     const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (projected) return Response.json({ projection: projections[projected[1]!] });
-    if (request.path === listPath) return Response.json({ agents });
+    if (request.method === "GET" && request.path === listPath) {
+      const cursor = new URLSearchParams(request.search).get("cursor");
+      if (cursor === null) return Response.json({ agents: agents.slice(0, 1), nextCursor: listCursor });
+      expect(cursor).toBe(listCursor);
+      return Response.json({ agents: agents.slice(1), nextCursor: null });
+    }
     if (request.path === formPath) {
       const { target } = request.body as { target: { kind: string; primaryKey?: string } };
       const name = target.kind === "draft" ? "" : agents.find((agent) => agent.id === target.primaryKey)!.name;
@@ -98,6 +101,17 @@ const formReads = (sent: Sent[]) => sent.filter((request) => request.path === fo
 afterEach(() => {
   leaveFrame();
   vi.resetModules();
+});
+
+it("lists summaries beyond the first page through the frame bridge", async () => {
+  const { appContext, sent } = await open({});
+  const { contextTransport } = await import("../../../../../packages/apps-sdk/src/context");
+  const { agentDefinitionAdapters } = await import("../../../../../packages/apps-sdk/src/panel/agent-definition");
+  const [adapter] = agentDefinitionAdapters(contextTransport(appContext));
+  const records = await adapter.list!();
+  expect(records.map(record => record.primaryKey)).toEqual([FIRST, SECOND]);
+  expect(sent.filter(request => request.method === "GET" && request.path === listPath)
+    .map(request => new URLSearchParams(request.search).get("cursor"))).toEqual([null, listCursor]);
 });
 
 it("creates with nothing selected, and holds the object the owner created once it is saved", async () => {

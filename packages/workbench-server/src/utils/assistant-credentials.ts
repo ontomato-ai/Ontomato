@@ -5,3 +5,7 @@ export interface AssistantCredentials {
   headers?: Record<string, string>;
   executionUserId?: string | null;
 }
+
+export function isQueryRuntimeGrant(token: string | undefined): boolean {
+  return token?.startsWith("oq.") === true;
+}

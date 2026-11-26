@@ -18,7 +18,7 @@ import { tForLocale } from "../../i18n";
 import type { ProductOwner } from "../product-governance/grants";
 import type { ObjectPublicationAccess } from "@ontomato/contracts/object-publication";
 import { requireAllowed, requireObject, writeFirstPublication } from "../product-governance/authorization";
-import { currentDefinition, currentDefinitionAccess, definitionKinds, requireCurrentUseAllowed } from "./access";
+import { currentDefinition, currentDefinitionAccess, definitionKinds, requireCurrentDefinitionUse, requireCurrentUseAllowed } from "./access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
@@ -42,11 +42,11 @@ export async function loadCurrentProduct(domainId: string, kind: CurrentProductK
 export async function requireCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials,
   kind: CurrentProductKind, id: string, verb: "use" | "edit", client?: Pick<PoolClient, "query">) {
   const row = await loadCurrentProduct(owner.domainId, kind, id, client);
-  if (verb === "edit" && row.domainId === null)
-    throw new HttpError(403, "Platform definitions are read-only", "OBJECT_FORBIDDEN");
-  await requireObject({
-    ...currentDefinition(kind, row, owner.domainId), verb: verb === "use" ? "USE" : "EDIT",
-  }, credentials);
+  if (verb === "use") await requireCurrentDefinitionUse(kind, row, owner.domainId, credentials);
+  else {
+    if (row.domainId === null) throw new HttpError(403, "Platform definitions are read-only", "OBJECT_FORBIDDEN");
+    await requireObject({ ...currentDefinition(kind, row, owner.domainId), verb: "EDIT" }, credentials);
+  }
   return row;
 }
 

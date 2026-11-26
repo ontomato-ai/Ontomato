@@ -31,7 +31,8 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
-import { countVisibleAgentDefinitions, listAgentDefinitions } from "../../assistant/definitions";
+import { countVisibleAgentDefinitions } from "../../assistant/definitions";
+import { listAgentDefinitionNodes } from "../../assistant/definition-relations";
 import { assistantSkillCatalog, countAssistantSkills } from "../../assistant/skills";
 import { countPublishedDefinitions, listPublishedDefinitions } from "../../business-definitions/definitions";
 import { countUsableCurrentDefinitions } from "../../product-panels/access";
@@ -46,9 +47,9 @@ vi.mock("../../../config/application", () => ({
 vi.mock("../../../config/environment", () => ({
   environment: { agentRuntime: () => ({ queryServiceToken: "service-token-1" }) },
 }));
-vi.mock("../../assistant/definitions", () => ({
-  countVisibleAgentDefinitions: vi.fn(),
-  listAgentDefinitions: vi.fn(),
+vi.mock("../../assistant/definitions", () => ({ countVisibleAgentDefinitions: vi.fn() }));
+vi.mock("../../assistant/definition-relations", () => ({
+  listAgentDefinitionNodes: vi.fn(), listAgentExecutionUserRelations: async () => [], listAgentSkillRelations: async () => [],
 }));
 vi.mock("../../assistant/skills", () => ({
   assistantSkillCatalog: vi.fn(),
@@ -220,7 +221,7 @@ beforeEach(() => {
 
   vi.mocked(listPublishedDefinitions).mockResolvedValue([]);
   vi.mocked(assistantSkillCatalog).mockResolvedValue({ skills: [] });
-  vi.mocked(listAgentDefinitions).mockResolvedValue({ agents: [] });
+  vi.mocked(listAgentDefinitionNodes).mockResolvedValue([]);
   vi.mocked(countPublishedDefinitions).mockResolvedValue(0);
   vi.mocked(countAssistantSkills).mockResolvedValue(0);
   vi.mocked(countVisibleAgentDefinitions).mockResolvedValue(0);
