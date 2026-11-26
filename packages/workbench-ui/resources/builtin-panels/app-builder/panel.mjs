@@ -62,7 +62,7 @@ await mountPanel({
     const currentAppId = computed(() => currentAppRef.value?.primaryKey ?? null);
 
     const activeTab = computed(() => (typeof values.value.tab === "string" && values.value.tab ? values.value.tab : "preview"));
-    const paneMode = computed(() => (typeof values.value.pane === "string" && values.value.pane ? values.value.pane : "side"));
+    const paneMode = computed(() => (typeof values.value.pane === "string" && values.value.pane ? values.value.pane : "closed"));
     const selectedCommit = computed(() => (typeof values.value.commit === "string" && values.value.commit ? values.value.commit : null));
     const diffMode = computed(() => (typeof values.value.diffMode === "string" && values.value.diffMode ? values.value.diffMode : "latest"));
 
@@ -123,6 +123,45 @@ await mountPanel({
         } else if ((!sessionId || typeof sessionId !== "string") && currentKey !== null) {
           instance.state.set("selectedSession", null);
         }
+      },
+      { immediate: true },
+    );
+
+    // Track expanded applications so the active app opens automatically and expanding another selects it.
+    let knownExpandedApps = new Set(
+      Array.isArray(values.value.expandedApps) ? values.value.expandedApps : [],
+    );
+
+    function ensureAppExpanded(appId) {
+      if (!appId) return;
+      const current = Array.isArray(values.value.expandedApps) ? values.value.expandedApps : [];
+      if (current.includes(appId)) {
+        knownExpandedApps = new Set(current);
+        return;
+      }
+      const next = [...current, appId];
+      knownExpandedApps = new Set(next);
+      instance.state.set("expandedApps", next);
+    }
+
+    function onProjectsExpandedChange(nextKeys) {
+      if (!Array.isArray(nextKeys)) return;
+      const prev = knownExpandedApps;
+      knownExpandedApps = new Set(nextKeys);
+      const added = nextKeys.find((key) => typeof key === "string" && !prev.has(key));
+      if (added && added !== currentAppId.value) {
+        instance.state.setState({
+          app: { className: APPLICATION_TYPE, primaryKey: added },
+          session: null,
+          selectedSession: null,
+        });
+      }
+    }
+
+    watch(
+      currentAppId,
+      (nextAppId) => {
+        if (nextAppId) ensureAppExpanded(nextAppId);
       },
       { immediate: true },
     );
@@ -330,6 +369,7 @@ await mountPanel({
     }
 
     function startNewConversation(appRef) {
+      const targetAppId = appRef?.primaryKey || currentAppId.value;
       const patch = { session: null, selectedSession: null };
       if (appRef && appRef.primaryKey) {
         patch.app = { className: APPLICATION_TYPE, primaryKey: appRef.primaryKey };
@@ -338,6 +378,7 @@ await mountPanel({
         patch.pane = "side";
       }
       instance.state.setState(patch);
+      if (targetAppId) ensureAppExpanded(targetAppId);
     }
 
     function onChooseSession(appRef, sessionRef) {
@@ -353,6 +394,7 @@ await mountPanel({
         patch.pane = "side";
       }
       instance.state.setState(patch);
+      if (appRef && appRef.primaryKey) ensureAppExpanded(appRef.primaryKey);
     }
 
     function openCreateDialog() {
@@ -366,9 +408,9 @@ await mountPanel({
         patch.session = null;
         patch.selectedSession = null;
         patch.tab = "preview";
-        if (paneMode.value === "closed") patch.pane = "side";
       }
       instance.state.setState(patch);
+      if (saved && saved.primaryKey) ensureAppExpanded(saved.primaryKey);
       projectsRef.value?.refresh?.();
     }
 
@@ -566,6 +608,7 @@ await mountPanel({
       onChooseSession,
       openCreateDialog,
       onDraftCreated,
+      onProjectsExpandedChange,
       onProjectRowAction,
       onMetaSaved,
       openPublishDrawer,

@@ -8,12 +8,13 @@ import { panelRecordObjectRef, type PanelRowActionTone } from "@ontomato/contrac
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelContextKey, projectionKey } from "../panel/context";
 import { classifyDispatchResponseForAction } from "../panel/instance";
-import { panelMemberKey, readerDataState, useMemberOutput } from "../panel/member";
+import { panelMemberKey, useMemberOutput } from "../panel/member";
 import { missingOperationDescriptorResult } from "../panel/member-operations";
 import { matchesExpectedCheckedKeys, matchesExpectedTarget } from "../panel/operation-binding";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { useDataStateLabels } from "./data-state-labels";
+import { useMemberDatumWhenNotGiven } from "./display-value";
 import StatusDot from "./StatusDot.vue";
 import {
   filterAllowedOperationInput,
@@ -59,6 +60,10 @@ export type ObjectHeaderOperationSpec =
  * configurable without upper cap) operations inline via `OperationButton` in declared order (danger operations render
  * as plain danger buttons inline when within the visible limit) and moves remaining operations into the SDK dropdown
  * "More" menu using the shared operation execution path.
+ *
+ * One display reads once: a `record` handed by a parent is drawn alone and the header reads no `record` datum of its
+ * own, so a title, a badge tone and a failure never come from two snapshots; a parent that reads the record itself
+ * passes `null` while it has nothing yet and `undefined` only to leave the read to this header.
  */
 const props = withDefaults(
   defineProps<{
@@ -126,19 +131,21 @@ const hasBoundRecord = computed(() => {
   return Boolean(current && current.projection.data && Object.hasOwn(current.projection.data, "record"));
 });
 
-const recordData = member.value && hasBoundRecord.value
-  ? readerDataState(member.value.data.use("record"))
-  : computed(() => null);
+// A record handed by a parent is drawn alone: the parent read the datum, so the title, the status and any failure this
+// header shows come from that one snapshot, and "loading" is the parent's to say. `null` therefore means "the parent
+// has nothing yet", while only `undefined` leaves the datum for this header to read itself.
+const boundRecord = useMemberDatumWhenNotGiven(member.value, ["record"] as const, props.record !== undefined);
+const recordData = boundRecord?.state ?? null;
 
 const record = computed<PlatformObjectRecord | null>(() => {
   if (props.record !== undefined) return props.record;
-  const current = recordData.value;
+  const current = recordData?.value;
   return current?.status === "ready" ? (current.value as unknown as PlatformObjectRecord) : null;
 });
 
 const pendingRecord = computed<DataStateResult | null>(() => {
-  if (props.record !== undefined || props.title !== undefined || props.fallbackTitle !== undefined || !hasBoundRecord.value) return null;
-  const current = recordData.value;
+  if (props.record !== undefined || props.title !== undefined || props.fallbackTitle !== undefined) return null;
+  const current = recordData?.value;
   if (!current || current.status === "ready") return null;
   return current as DataStateResult;
 });
@@ -286,8 +293,11 @@ watch(
 
 if (member.value) {
   useMemberOutput("label", () => resolvedTitle.value || null);
-  useMemberOutput("status", () => recordData.value?.status ?? (record.value ? "ready" : null));
-  useMemberOutput("errorMessage", () => (recordData.value?.status === "error" ? recordData.value.message : null));
+  useMemberOutput("status", () => recordData?.value.status ?? (record.value ? "ready" : null));
+  useMemberOutput("errorMessage", () => {
+    const current = recordData?.value;
+    return current?.status === "error" ? current.message : null;
+  });
 }
 
 function handleMoreCommand(command: string | number | Record<string, unknown>) {

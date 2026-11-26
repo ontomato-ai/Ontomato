@@ -445,6 +445,21 @@ export function useOptionalMemberDatum<Name extends string>(
   return null;
 }
 
+/**
+ * The datum a component draws when its parent handed it no data, so one display reads a member once: `given` is whether
+ * the parent supplied the value itself (`undefined` means it supplied nothing). A parent that hands `null` or a value
+ * has read the datum already; the component draws that snapshot alone and starts no read of its own, and says loading,
+ * empty or failed only for the read it made itself. A parent that owns the read hands `null` while it has nothing yet,
+ * never `undefined`, since `undefined` is how it says it hands nothing at all.
+ */
+export function useMemberDatumWhenNotGiven<Name extends string>(
+  member: PanelMemberContext | null,
+  candidates: readonly Name[],
+  given: boolean,
+): { readonly name: Name; readonly state: ComputedRef<MemberDataState> } | null {
+  return given ? null : useOptionalMemberDatum(member, candidates);
+}
+
 /** Reads an optional projection's `config` object safely. */
 export function useProjectionConfig(member: PanelMemberContext | null): ComputedRef<Readonly<Record<string, unknown>> | undefined> {
   return computed(() => {

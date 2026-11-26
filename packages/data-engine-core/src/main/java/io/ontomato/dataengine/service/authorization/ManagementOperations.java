@@ -15,6 +15,10 @@ public final class ManagementOperations {
                 throw new IllegalArgumentException("Management operation name is required: " + id);
             }
         }
+
+        public String group() {
+            return id.split("\\.", 2)[0];
+        }
     }
 
     public interface Contributor {

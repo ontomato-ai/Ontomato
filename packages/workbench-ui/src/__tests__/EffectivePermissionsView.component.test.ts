@@ -6,16 +6,16 @@ import { workbenchI18n } from "../i18n";
 enableAutoUnmount(afterEach);
 
 describe("EffectivePermissionsView", () => {
-  it("renders bordered descriptions with paired role grants, indented shares, app-grouped menus, searchable APIs, and data tabs", async () => {
+  it("renders bordered descriptions with role grants, indented shares, entry and object permissions, searchable operations, and data tabs", async () => {
     const wrapper = mount(EffectivePermissionsView, {
       props: {
         record: {
           fields: {
             directRoles: [{ label: "Analyst" }],
             organizationRoleGrants: ["Dept Manager — Engineering / Platform"],
-            groupedMenuPermissions: ["Platform — Governance / Members · Governance / Roles"],
-            outsideTreeMenuPermissions: ["LEGACY_MENU_CODE"],
-            apiPermissionCount: 2,
+            entryPermissions: ["Governance / Members"],
+            objectPermissions: ["Workflow / Weekly review"],
+            managementOperationCount: 2,
           },
         },
         orgShares: [
@@ -33,9 +33,9 @@ describe("EffectivePermissionsView", () => {
             },
           },
         ],
-        apiPermissions: [
-          { id: "api-1", fields: { method: "GET", urlPattern: "/api/users", permission: "USER_READ" } },
-          { id: "api-2", fields: { method: "POST", urlPattern: "/api/roles", permission: "ROLE_WRITE" } },
+        managementOperations: [
+          { id: "workflow.grants.read", fields: { id: "workflow.grants.read", name: "Read workflow grants", access: "read" } },
+          { id: "workflow.lifecycle.change", fields: { id: "workflow.lifecycle.change", name: "Activate or deactivate workflows", access: "change" } },
         ],
         subjectData: [
           { id: "no-rules", fields: { fullData: false, coverage: "No rules" } },
@@ -72,19 +72,19 @@ describe("EffectivePermissionsView", () => {
     expect(wrapper.text()).toContain("Reporter");
     expect(wrapper.text()).toContain("Order · Rule 1");
 
-    // App-grouped menus and outside-tree legacy menu code.
-    expect(wrapper.get(".sdk-epv-menu-group-name").text()).toBe("Platform");
-    expect(wrapper.text()).toContain("Governance / Members");
-    expect(wrapper.text()).toContain("LEGACY_MENU_CODE");
+    // Entry and object grants appear in the permissions summary.
+    const targets = wrapper.get(".sdk-epv-menu-group");
+    expect(targets.text()).toContain("Governance / Members");
+    expect(targets.text()).toContain("Workflow / Weekly review");
 
-    // Collapsible searchable API list.
+    // Collapsible searchable management operations.
     expect(wrapper.find(".sdk-epv-api-list").exists()).toBe(false);
     const expandBtn = wrapper.findAll("button").find(btn => btn.text().trim() === "Expand")!;
     await expandBtn.trigger("click");
     expect(wrapper.findAll(".sdk-epv-api-row")).toHaveLength(2);
-    await wrapper.get(".sdk-epv-api-search input").setValue("roles");
+    await wrapper.get(".sdk-epv-api-search input").setValue("lifecycle");
     expect(wrapper.findAll(".sdk-epv-api-row")).toHaveLength(1);
-    expect(wrapper.get(".sdk-epv-api-row").text()).toContain("/api/roles");
+    expect(wrapper.get(".sdk-epv-api-row").text()).toContain("workflow.lifecycle.change");
 
     // Data permission tabs: effective tab shows visible + group-only tags and skips no-access column.
     expect(wrapper.text()).toContain("Sales Order");

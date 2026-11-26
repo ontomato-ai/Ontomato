@@ -194,8 +194,35 @@ describe("builtin-product-app-builder three-column panel", () => {
                 label: "Orders Portal",
                 fields: { icon: "package", statusTag: "Draft", published: false },
               },
+              {
+                className: APPLICATION,
+                primaryKey: "app-billing",
+                label: "Billing Console",
+                fields: { icon: "wallet", statusTag: "", published: true },
+              },
             ],
           });
+        }
+        if (member === "sessions") {
+          const targetKey = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
+          if (targetKey === "app-orders") {
+            return Response.json({
+              status: "ready",
+              value: {
+                rows: [
+                  {
+                    className: AGENT_SESSION,
+                    primaryKey: "session-orders-1",
+                    label: "Build orders list",
+                    fields: { runningDot: "" },
+                  },
+                ],
+                hasMore: true,
+                nextCursor: "cursor-page-2",
+              },
+            });
+          }
+          return Response.json({ status: "ready", value: { rows: [], hasMore: false } });
         }
         if (member === "project") {
           return Response.json({
@@ -332,24 +359,65 @@ describe("builtin-product-app-builder three-column panel", () => {
     const mounted = mountPlatformPage(() => h(Host), router);
     await waitFor(() => mounted.element.querySelector(".ab-rail") !== null, "app-builder rail rendered");
     await waitFor(
-      () => previewRequests.some((url) => url.includes("/api/product-panels/preview/app/app-orders")),
-      "AppPreview queried preview descriptor for app-orders",
-    );
-
-    // Verify all three columns render, chat agent resolved, and carried context chip reflects active app.
-    expect(mounted.element.querySelector(".ab-chat-col")).not.toBeNull();
-    expect(mounted.element.querySelector(".ab-pane")).not.toBeNull();
-    await waitFor(
       () => {
         const chatCol = mounted.element.querySelector(".ab-chat-col");
         return chatCol !== null && chatCol.querySelector("textarea") !== null;
       },
       "embedded AgentChat resolved app-builder preset and rendered composer",
     );
+
+    // Default entry keeps the right workspace pane closed and places the reopen button at top-right of chat.
+    expect(mounted.element.querySelector(".ab-pane")).toBeNull();
+    expect(previewRequests).toEqual([]);
+    const initialReopenBtn = mounted.element.querySelector<HTMLButtonElement>(".ab-chat-col > .ab-reopen-pane");
+    expect(initialReopenBtn).not.toBeNull();
+    expect(mounted.element.querySelector(".ab-composer-context")).toBeNull();
     expect(mounted.element.querySelector(".ab-chat-col")?.textContent ?? "").not.toContain("This agent is not available");
+
+    // Left rail renders a Codex-style project tree: no search bar, no leading expand column, active app auto-expanded.
+    expect(mounted.element.querySelector(".ab-rail .sdk-object-list-search")).toBeNull();
+    expect(mounted.element.querySelector(".ab-rail-projects .sdk-object-list-row-expand")).toBeNull();
     await waitFor(
-      () => (mounted.element.textContent ?? "").includes("Orders Portal"),
-      "carried page chip shows Orders Portal",
+      () => {
+        const sessions = mounted.element.querySelector(".ab-rail-sessions");
+        return sessions !== null && (sessions.textContent ?? "").includes("Build orders list");
+      },
+      "active app auto-expanded and rendered nested session",
+    );
+    expect(mounted.element.querySelector(".ab-rail-sessions .sdk-object-list-load-more")).not.toBeNull();
+
+    // Expanding a second app keeps the first expanded (multiple expand) and selects the newly expanded app.
+    const projectButtons = Array.from(
+      mounted.element.querySelectorAll<HTMLButtonElement>(
+        ".ab-rail-projects > .sdk-object-list > .sdk-object-list-items > .sdk-object-list-row > .sdk-object-list-row-main > .sdk-object-list-item-btn",
+      ),
+    );
+    expect(projectButtons.length).toBe(2);
+    projectButtons[1]!.click();
+    await waitFor(
+      () =>
+        mounted.element.querySelectorAll(
+          '.ab-rail-projects > .sdk-object-list > .sdk-object-list-items > .sdk-object-list-row[data-expanded="true"]',
+        ).length === 2,
+      "multiple applications stay expanded simultaneously",
+    );
+    // Clicking a session under Orders Portal switches back to Orders Portal.
+    const orderSessionBtn = Array.from(
+      mounted.element.querySelectorAll<HTMLButtonElement>(".ab-rail-sessions .sdk-object-list-item-btn"),
+    ).find((btn) => (btn.textContent ?? "").includes("Build orders list"));
+    expect(orderSessionBtn).toBeDefined();
+    orderSessionBtn!.click();
+
+    // Open the right workspace pane from the top-right reopen button.
+    initialReopenBtn!.click();
+    await waitFor(() => mounted.element.querySelector(".ab-pane") !== null, "pane opened from top-right button");
+    await waitFor(
+      () => previewRequests.some((url) => url.includes("/api/product-panels/preview/app/app-orders")),
+      "AppPreview queried preview descriptor for app-orders",
+    );
+    await waitFor(
+      () => (mounted.element.querySelector(".ab-composer-context")?.textContent ?? "").includes("Orders Portal"),
+      "carried page chip shows Orders Portal once pane is open",
     );
 
     // Switch right pane tabs to Files, Changes, and History, waiting for each tab's data read to settle.
@@ -380,15 +448,15 @@ describe("builtin-product-app-builder three-column panel", () => {
       "History tab rendered sourceCommits row",
     );
 
-    // Toggle full pane and closed pane, then restore via composer context chip.
+    // Close pane and restore via the top-right reopen button.
     const fullBtn = mounted.element.querySelector<HTMLButtonElement>(".ab-tool-btn[aria-label]");
     expect(fullBtn).not.toBeNull();
     const closeBtn = Array.from(mounted.element.querySelectorAll<HTMLButtonElement>(".ab-tool-btn")).at(-1)!;
     closeBtn.click();
     await waitFor(() => mounted.element.querySelector(".ab-pane") === null, "pane closed");
-    await waitFor(() => mounted.element.querySelector(".ab-chip-btn") !== null, "expand chip rendered");
-    const expandChip = mounted.element.querySelector<HTMLButtonElement>(".ab-chip-btn")!;
-    expandChip.click();
+    await waitFor(() => mounted.element.querySelector(".ab-chat-col > .ab-reopen-pane") !== null, "top-right reopen button rendered");
+    const reopenBtn = mounted.element.querySelector<HTMLButtonElement>(".ab-chat-col > .ab-reopen-pane")!;
+    reopenBtn.click();
     await waitFor(() => mounted.element.querySelector(".ab-pane") !== null, "pane re-expanded");
 
     // Open Publish Drawer and verify live-definition drift banner appears.
@@ -499,7 +567,10 @@ describe("builtin-product-app-builder three-column panel", () => {
             },
           });
         }
-        if (member === "sessions" || member === "releases" || member === "sourceFiles") {
+        if (member === "sessions") {
+          return Response.json({ status: "ready", value: { rows: [], hasMore: false } });
+        }
+        if (member === "releases" || member === "sourceFiles") {
           return Response.json({ status: "ready", value: [] });
         }
         return Response.json({ status: "ready", value: { primaryKey: "app-orders", label: "Orders Portal", fields: {} } });
@@ -526,7 +597,11 @@ describe("builtin-product-app-builder three-column panel", () => {
     ];
 
     await router.push(
-      panelAddress(use.path, { app: { className: APPLICATION, primaryKey: "app-deleted-stale" } }, appBuilderPanel.manifest),
+      panelAddress(
+        use.path,
+        { app: { className: APPLICATION, primaryKey: "app-deleted-stale" }, pane: "side" },
+        appBuilderPanel.manifest,
+      ),
     );
     const Host = defineComponent({
       setup() {
