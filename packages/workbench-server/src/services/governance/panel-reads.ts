@@ -307,16 +307,23 @@ export async function readMemberAccessContext(
   // is placed.
   const { PlatformOntologyOwnerReaders } = await import("../platform-ontology/owners");
   const readers = new PlatformOntologyOwnerReaders(owner, viewer);
-  const [entries, subjects, rolePolicies, policies, roleAccess] = await Promise.all([
+  const [entries, subjects, rolePolicies, policies, roleAccess, roleOptions] = await Promise.all([
     listPolicyEntries(viewer),
     readers.subjects().then(ownerData),
     readers.rolePolicies().then(ownerData),
     readers.permissionPolicies().then(ownerData),
     readers.platformAccess().then(ownerData),
+    createGovernanceReadAdapters(viewer).roles.options(),
   ]);
   const ownRoleIds = new Set(subjects.find(subject => subject.id === subjectId)?.roleIds ?? []);
   const ownPolicyIds = new Set(rolePolicies.filter(link => ownRoleIds.has(link.roleId)).map(link => link.policyId));
   const roleNameById = new Map(roleAccess.map(access => [access.roleId ?? "", access.roleCode ?? ""]));
+  // What the access check reports names its sources by id alone; the detail page shows the same words as the rows above
+  // it, so the answer carries the domain's role and policy names.
+  const roleLabels: RuntimeJsonObject = Object.fromEntries(
+    roleOptions.options.map(option => [String(option.value), option.label]),
+  );
+  const policyLabels: RuntimeJsonObject = Object.fromEntries(policies.map(policy => [policy.id, policy.name]));
   const candidates = policies.filter(policy => policy.type === ENTRY_AND_OBJECT_POLICY_TYPE && ownPolicyIds.has(policy.id));
   const fillPolicies: RuntimeJsonObject[] = candidates.map(policy => {
     const roleIds = [...new Set(rolePolicies.filter(link => link.policyId === policy.id).map(link => link.roleId))];
@@ -336,6 +343,8 @@ export async function readMemberAccessContext(
     subjectId,
     entries,
     fillPolicies,
+    roleLabels,
+    policyLabels,
     canManage: candidates.length > 0 && await readPolicyChangePermission(viewer, candidates[0]!.id),
     preselectedPolicyId: preselected ? inspectingPolicyId ?? null : null,
   };

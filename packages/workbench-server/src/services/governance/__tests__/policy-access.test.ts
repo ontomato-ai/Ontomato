@@ -369,6 +369,13 @@ describe("member access inspection", () => {
           { roleId: "role-3", roleCode: "Finance", apiPermissions: [], managementRole: false },
         ]);
       }
+      if (url.endsWith("/panel/governance/roles/options")) {
+        return json({ success: true, data: { options: [
+          { primaryKey: "role-1", value: "role-1", label: "Sales rep" },
+          { primaryKey: "role-2", value: "role-2", label: "Sales lead" },
+          { primaryKey: "role-3", value: "role-3", label: "Finance" },
+        ] } });
+      }
       if (url.endsWith("/pending:list")) {
         expect(body).toEqual({ policyId: ownPolicyId });
         return json({ policyId: ownPolicyId, canManage, targetPolicyRoleIds: ["role-1", "role-2"], items: [] });
@@ -398,6 +405,14 @@ describe("member access inspection", () => {
     }]);
     expect(value.canManage).toBe(true);
     expect(value.preselectedPolicyId).toBe(ownPolicyId);
+    // The check reports its sources by id, so the answer carries the names the page shows above it.
+    expect(value.roleLabels).toEqual({ "role-1": "Sales rep", "role-2": "Sales lead", "role-3": "Finance" });
+    expect(value.policyLabels).toEqual({
+      [ownPolicyId]: "Sales data",
+      [apiPolicyId]: "Sales console",
+      [foreignPolicyId]: "Finance data",
+      [businessDataPolicyId]: "Sales rows",
+    });
   });
 
   it("keeps a policy the member does not carry out of the candidates and out of the preselection", async () => {
