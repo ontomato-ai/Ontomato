@@ -590,7 +590,15 @@
           <div class="proj-share-actions">
             <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
             <projection v-else slot="shareEnable" @done="onShareDone"></projection>
-            <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('grants.add') }}</sdk-button>
+          </div>
+        </div>
+        <div class="proj-share-bar">
+          <div class="proj-share-left">
+            <strong class="proj-card-title">{{ t('grants.title') }}</strong>
+            <span class="proj-muted">{{ t('grants.intro') }}</span>
+          </div>
+          <div class="proj-share-actions">
+            <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('grants.submit') }}</sdk-button>
           </div>
         </div>
 
@@ -623,11 +631,11 @@
       </template>
     </sdk-dialog>
 
-    <!-- Add grant dialog using official ReferencePicker & bound OperationButton -->
+    <!-- Add-to-policy dialog using official ReferencePicker & bound OperationButton -->
     <sdk-dialog
       v-if="canOpenGrant"
       v-model="grantDialogOpen"
-      :title="t('grants.dialogTitle')"
+      :title="t('grants.title')"
       width="480px"
       append-to-body
       destroy-on-close
@@ -637,10 +645,7 @@
           <projection slot="policyPicker"></projection>
         </sdk-form-item>
         <sdk-form-item :label="t('grants.verb')">
-          <sdk-select v-model="grantVerbModel" style="width: 100%">
-            <sdk-option value="USE" :label="t('grants.use')"></sdk-option>
-            <sdk-option value="EDIT" :label="t('grants.edit')"></sdk-option>
-          </sdk-select>
+          <sdk-segmented v-model="grantVerbModel" :options="grantVerbOptions" size="default"></sdk-segmented>
         </sdk-form-item>
       </sdk-form>
       <template #footer>

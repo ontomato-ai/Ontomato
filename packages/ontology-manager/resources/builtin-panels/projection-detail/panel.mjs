@@ -237,6 +237,10 @@ const ProjectionDetailPanel = {
       get: () => (values.value.grantVerb === "EDIT" ? "EDIT" : "USE"),
       set: (next) => instance.state.set("grantVerb", next === "EDIT" ? "EDIT" : "USE"),
     });
+    const grantVerbOptions = computed(() => [
+      { value: "USE", label: t("grants.use") },
+      { value: "EDIT", label: t("grants.edit") },
+    ]);
     const grantPolicyId = computed(() => values.value.grantPolicyId ?? "");
     watch(
       () => values.value.grantPolicy?.primaryKey ?? null,
@@ -704,6 +708,7 @@ const ProjectionDetailPanel = {
       deleteRunning,
       grantDialogOpen,
       grantVerbModel,
+      grantVerbOptions,
       grantPolicyId,
       goBack,
       startEdit,

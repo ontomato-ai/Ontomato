@@ -1185,6 +1185,9 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(page.element.querySelector('[data-tab="grants"]')).toBeTruthy();
         expect(page.element.textContent).toContain("Only the members and roles explicitly granted below");
         expect(page.element.textContent).toContain("Sales Owners");
+        expect(page.element.textContent).toContain("Add to a policy");
+        expect(page.element.textContent).toContain("This adds the object to an object policy.");
+        expect(page.element.textContent).toContain("Remove from policy");
       }, { timeout: 5000 });
 
       // Enable domain-wide sharing -> invokes agents.share({ shared: true }) and updates description + button.
@@ -1199,9 +1202,9 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(page.element.textContent).toContain("Disable domain-wide use");
       }, { timeout: 5000 });
 
-      // Open Add grant dialog, pick the Analyst policy, choose View level, and submit.
+      // Open the add-to-policy dialog, pick the Analyst policy, choose View level, and submit.
       const addGrantBtn = [...page.element.querySelectorAll<HTMLButtonElement>('[data-tab="grants"] button')]
-        .find((btn) => btn.textContent?.includes("Add grant"))!;
+        .find((btn) => btn.textContent?.includes("Add to policy"))!;
       expect(addGrantBtn).toBeTruthy();
       addGrantBtn.click();
 
@@ -1222,7 +1225,9 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         analystOption.click();
       }, { timeout: 5000 });
 
-      // Choose single-select level "View" and verify its description updates.
+      // Choose single-select level "View" from the inline switcher and verify its description updates.
+      expect([...document.querySelectorAll<HTMLElement>(".el-dialog .el-segmented__item")]
+        .map((option) => option.textContent?.trim())).toEqual(["Use", "View", "Edit"]);
       const viewLevelBtn = [...document.querySelectorAll<HTMLElement>(".el-dialog .el-segmented__item, .el-dialog .sdk-segmented-option, .el-dialog button, .el-dialog label")]
         .find((el) => el.textContent?.trim() === "View")!;
       expect(viewLevelBtn).toBeTruthy();
@@ -1231,9 +1236,9 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(document.querySelector(".el-dialog")?.textContent).toContain("read-only mode");
       }, { timeout: 5000 });
 
-      // Submit Grant -> dispatches agents.grant with { policyId: "analyst-policy", verb: "view" }.
+      // Submit the level -> dispatches agents.grant with { policyId: "analyst-policy", verb: "view" }.
       const submitBtn = [...document.querySelectorAll<HTMLButtonElement>(".el-dialog__footer button")]
-        .find((btn) => btn.textContent?.trim() === "Grant")!;
+        .find((btn) => btn.textContent?.trim() === "Add to policy")!;
       expect(submitBtn).toBeTruthy();
       await vi.waitFor(() => {
         expect(submitBtn.disabled).toBe(false);
@@ -1248,12 +1253,12 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(page.element.querySelector('[data-tab="grants"]')?.textContent).toContain("Analyst");
       }, { timeout: 5000 });
 
-      // Revoke the newly granted Analyst policy row -> dispatches agents.revoke with { policyId: "analyst-policy" }.
+      // Remove the newly granted Analyst policy row from that policy -> dispatches agents.revoke with { policyId: "analyst-policy" }.
       const analystRow = [...page.element.querySelectorAll<HTMLElement>('[data-tab="grants"] .sdk-object-list-table tbody tr')]
         .find((row) => row.textContent?.includes("Analyst"))!;
       expect(analystRow).toBeTruthy();
       const revokeBtn = [...analystRow.querySelectorAll<HTMLButtonElement>("button")]
-        .find((btn) => btn.textContent?.trim() === "Revoke")!;
+        .find((btn) => btn.textContent?.trim() === "Remove from policy")!;
       expect(revokeBtn).toBeTruthy();
       revokeBtn.click();
 

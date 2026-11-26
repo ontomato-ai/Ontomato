@@ -1363,8 +1363,20 @@ describe("panels two-entry architecture (catalog + detail)", () => {
         );
       }, "usage tab rendered");
 
-      // Grants tab: domain sharing toggle dispatches productPanels.share.
+      // Grants tab: the policy shortcut states what it does, and lists what the object is already in.
       await display.present(presentFrame({ tab: "grants" }, display.page.value!.address));
+      await waitFor(
+        () => Boolean(mounted.element.querySelector('[data-tab="grants"]')?.textContent?.includes("Add to a policy")),
+        "add-to-policy section rendered",
+      );
+      const grantsSection = mounted.element.querySelector<HTMLElement>('[data-tab="grants"]')!;
+      expect(grantsSection.textContent).toContain("This adds the object to an object policy.");
+      await waitFor(
+        () => Boolean(grantsSection.textContent?.includes("Not in any policy yet")),
+        "empty policy list text rendered",
+      );
+
+      // Grants tab: domain sharing toggle dispatches productPanels.share.
       await waitFor(
         () => Boolean(mounted.element.querySelector<HTMLButtonElement>('[data-tab="grants"] .pd-share-actions .sdk-operation-button button')),
         "domain share button rendered",

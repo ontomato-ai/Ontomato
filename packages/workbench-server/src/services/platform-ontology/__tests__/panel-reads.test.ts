@@ -42,6 +42,9 @@ vi.mock("../../../config/application", () => ({
     dataQuery: { baseUrl: "http://owner.test" },
   },
 }));
+vi.mock("../../../config/environment", () => ({
+  environment: { agentRuntime: () => ({ queryServiceToken: "service-token-1" }) },
+}));
 vi.mock("../../assistant/definitions", () => ({
   listAgentDefinitions: vi.fn(),
 }));
@@ -142,6 +145,16 @@ function stubOwnerHttp(overrides: Partial<Record<string, () => Response>> = {}) 
     if (path === "/workflow/grants") {
       return jsonResponse([{ roleId: "role-1", roleCode: "ops", capabilityKind: "ACTION", capabilityId: "act-1", inForce: true }]);
     }
+    if (path === "/authorization/policies/graph-facts") {
+      return new Response(JSON.stringify({
+        policyGrants: [
+          { policyId: "pol-1", targetKind: "ACTION", targetKey: "act-1", verb: "EXECUTE", scope: { kind: "all" } },
+          { policyId: "pol-2", targetKind: "ACTION", targetKey: "act-1", verb: "EXECUTE", scope: { kind: "all" } },
+        ],
+        roleActionGrants: [],
+        roleWorkflowAuthoring: [],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     if (path === "/workflow/platform-access") {
       return jsonResponse([{ roleId: "role-1", roleCode: "ops", apiPermissions: ["workflow-design"], managementRole: false }]);
     }
@@ -231,7 +244,7 @@ describe("createPlatformOntologyReadAdapter", () => {
     });
 
     const nodeParam = panelReadParameterSchemas.graphNode.parse({ className: USER, primaryKey: "user-1" });
-    const relationKindsParam = panelReadParameterSchemas.relationKinds.parse(["user.holds-role", "user.created-action"]);
+    const relationKindsParam = panelReadParameterSchemas.relationKinds.parse(["user.holds-role"]);
     const layersParam = panelReadParameterSchemas.layers.parse(["governance", "capability"]);
 
     const neighbors = panelReadResultSchemas.panelGraphNeighbors.parse(
@@ -242,7 +255,7 @@ describe("createPlatformOntologyReadAdapter", () => {
       }),
     );
     expect(neighbors.node).toMatchObject({ className: USER, primaryKey: "user-1", label: "Alice" });
-    expect(neighbors.relations.map((r) => r.relationKind).sort()).toEqual(["user.created-action", "user.holds-role"]);
+    expect(neighbors.relations.map((r) => r.relationKind).sort()).toEqual(["user.holds-role"]);
     expect(neighbors.edges.some((e) => e.relationKind === "user.holds-role" && e.to.primaryKey === "role-1")).toBe(true);
     expect(neighbors.neighbors).toContainEqual({
       className: ROLE,
@@ -250,7 +263,6 @@ describe("createPlatformOntologyReadAdapter", () => {
       label: "ops",
       layer: "governance",
     });
-    expect(neighbors.edges.some((e) => e.relationKind === "user.created-action" && e.to.primaryKey === "act-1")).toBe(true);
     expect(seenRequests.length).toBeGreaterThan(0);
     expect(seenRequests.every((req) => req.token === viewer.token)).toBe(true);
   });
@@ -543,14 +555,16 @@ describe("platform ontology catalogue reads", () => {
     const relations = panelReadResultSchemas.panelRecordList.parse(reads.typeRelations(ACTION));
     expect(relations.map(row => row.fields)).toEqual(expect.arrayContaining([
       expect.objectContaining({ direction: "outgoing", relationKind: "action.uses-function", peer: FUNCTION, derived: false }),
-      expect.objectContaining({ direction: "incoming", relationKind: "user.created-action", peer: USER, derived: false }),
-      expect.objectContaining({ direction: "incoming", relationKind: "projection.binds-target", peer: PRODUCT_PROJECTION }),
+      expect.objectContaining({
+        direction: "incoming", relationKind: "permission-policy.can-execute-action", peer: PERMISSION_POLICY, derived: false,
+      }),
+      expect.objectContaining({ direction: "incoming", relationKind: "trigger.targets-action", peer: TRIGGER, derived: false }),
     ]));
     expect(relations.find(row => row.fields.relationKind === "action.uses-function")?.tones).toEqual({
       direction: "info",
       derived: "success",
     });
-    expect(relations.find(row => row.fields.relationKind === "user.created-action")?.tones).toEqual({
+    expect(relations.find(row => row.fields.relationKind === "permission-policy.can-execute-action")?.tones).toEqual({
       direction: "default",
       derived: "success",
     });
@@ -669,24 +683,29 @@ describe("platform ontology catalogue reads", () => {
 
   it("uses the same edge identities in the canvas, incident relations and record reads", () => {
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
-    const multi = "projection.binds-target";
+    const multi = "permission-policy.can-use-object";
     const single = "action.uses-function";
     const edges = panelReadResultSchemas.panelRecordList.parse(reads.graphEdges());
     expect(edges.find(row => row.primaryKey === single)?.fields).toMatchObject({
       fromclass: ACTION, toclass: FUNCTION, relationKind: single,
     });
     const boundEdges = edges.filter(row => row.fields.relationKind === multi);
-    expect(boundEdges.map(row => row.fields.toclass).sort()).toEqual(reads.list().map(row => row.primaryKey).sort());
+    expect(boundEdges.map(row => row.fields.toclass).sort()).toEqual(
+      [PRODUCT_PANEL, PRODUCT_PROJECTION, SDK_COMPONENT, AGENT_DEFINITION, "platform:MetricView", FUNCTION, "platform:Workflow"]
+        .sort(),
+    );
+    // A kind declared to collapse on the type graph draws no type edges at all
+    expect(edges.some(row => row.fields.relationKind === "projection.binds-target")).toBe(false);
     const kind = panelReadResultSchemas.panelRecord.parse(reads.relationRecord(multi));
     expect(kind.fields.targetObjects).toEqual(boundEdges.map(row => expect.objectContaining({ primaryKey: row.fields.toclass })));
     expect(kind.fields).not.toHaveProperty("toObject");
-    const key = `${multi}::${ACTION}`;
-    expect(boundEdges.find(row => row.primaryKey === key)?.fields.toclass).toBe(ACTION);
-    expect(reads.typeRelations(ACTION).find(row => row.primaryKey === key)?.fields).toMatchObject({
-      direction: "incoming", fromclass: PRODUCT_PROJECTION, toclass: ACTION,
+    const key = `${multi}::${FUNCTION}`;
+    expect(boundEdges.find(row => row.primaryKey === key)?.fields.toclass).toBe(FUNCTION);
+    expect(reads.typeRelations(FUNCTION).find(row => row.primaryKey === key)?.fields).toMatchObject({
+      direction: "incoming", fromclass: PERMISSION_POLICY, toclass: FUNCTION,
     });
     expect(reads.relationRecord(key).fields).toMatchObject({
-      fromObject: { primaryKey: PRODUCT_PROJECTION }, toObject: { primaryKey: ACTION },
+      fromObject: { primaryKey: PERMISSION_POLICY }, toObject: { primaryKey: FUNCTION },
     });
     expect(reads.relationRecord(single).fields.toObject).toMatchObject({ primaryKey: FUNCTION });
     expect(() => reads.relationRecord(`${multi}::unknown`)).toThrow(expect.objectContaining({ status: 404 }));
@@ -748,17 +767,17 @@ describe("platform ontology catalogue reads", () => {
     stubOwnerHttp();
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
     const params = {
-      node: { className: USER, primaryKey: owner.userId },
-      relationKinds: ["user.created-action"],
-      direction: "outgoing" as const, targetClass: ACTION, limit: 1,
+      node: { className: ACTION, primaryKey: "act-1" },
+      relationKinds: ["permission-policy.can-execute-action"],
+      direction: "incoming" as const, targetClass: PERMISSION_POLICY, limit: 1,
     };
     const first = panelReadResultSchemas.panelGraphNeighbors.parse(await reads.neighbors(params));
     const second = panelReadResultSchemas.panelGraphNeighbors.parse(await reads.neighbors({ ...params, offset: first.nextOffset! }));
     expect(first.nextOffset).toBe(1);
     expect(second.nextOffset).toBeNull();
     expect(second.total).toBe(2);
-    expect([...first.neighbors, ...second.neighbors].map(node => node.primaryKey).sort()).toEqual(["act-1", "act-2"]);
-    await expect(reads.neighbors({ ...params, direction: "incoming" })).resolves.toMatchObject({ edges: [], total: 0 });
+    expect([...first.neighbors, ...second.neighbors].map(node => node.primaryKey).sort()).toEqual(["pol-1", "pol-2"]);
+    await expect(reads.neighbors({ ...params, direction: "outgoing" })).resolves.toMatchObject({ edges: [], total: 0 });
     await expect(reads.neighbors({ ...params, targetClass: FUNCTION })).resolves.toMatchObject({ edges: [], total: 0 });
   });
 });

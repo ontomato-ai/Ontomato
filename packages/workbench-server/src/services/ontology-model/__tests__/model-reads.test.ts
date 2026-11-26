@@ -685,3 +685,68 @@ describe("ontology model read adapter", () => {
     ] });
   });
 });
+
+it("carries the attribute form's optional-values column through the contract as the owner declares it", async () => {
+  // The shape the Java owner emits for a text or numeric attribute: three columns, and a tone choice that is cleared
+  // instead of offered as an empty option.
+  const optionsField = {
+    path: "/options",
+    label: "Optional values",
+    required: false,
+    readOnly: false,
+    valueSchema: {
+      type: "array",
+      title: "Optional values",
+      items: {
+        type: "object",
+        properties: {
+          value: { type: ["string", "number"] },
+          label: { type: "string" },
+          tone: { type: ["string", "null"] },
+        },
+        required: ["value", "label"],
+        additionalProperties: false,
+      },
+    },
+    control: {
+      kind: "object-array",
+      itemKeyPath: "/value",
+      presentation: "table",
+      itemFields: [
+        { path: "/value", label: "Value", required: true, readOnly: false, valueSchema: { type: "string", title: "Value" }, control: { kind: "text" } },
+        { path: "/label", label: "Display name", required: true, readOnly: false, valueSchema: { type: "string", title: "Display name" }, control: { kind: "text" } },
+        {
+          path: "/tone",
+          label: "Tone",
+          required: false,
+          readOnly: false,
+          valueSchema: { type: ["string", "null"], title: "Tone" },
+          control: {
+            kind: "select",
+            clearable: true,
+            options: ["default", "info", "success", "warning", "danger"].map(tone => ({
+              value: tone, label: tone, description: null, disabled: false, disabledReason: null,
+            })),
+          },
+        },
+      ],
+      defaultItem: { value: "", label: "", tone: null },
+    },
+  };
+  stubOwner(request => {
+    if (request.url.pathname === "/ontology/model/attribute/form") {
+      return Response.json({
+        ...attributeForm,
+        fields: [...attributeForm.fields, optionsField],
+        values: { ...attributeForm.values, options: [{ value: "DRAFT", label: "Draft", tone: "warning" }] },
+      });
+    }
+    return undefined;
+  });
+
+  const form = await createOntologyModelReadAdapter(owner, viewer).createForm(ATTRIBUTE);
+  expect(panelFormDescriptionSchema.parse(form)).toEqual(form);
+  const options = form.fields.find(field => field.path === "/options");
+  expect(options?.control).toMatchObject({ kind: "object-array", presentation: "table", itemKeyPath: "/value" });
+  expect(form.values.options).toEqual([{ value: "DRAFT", label: "Draft", tone: "warning" }]);
+});

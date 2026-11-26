@@ -678,6 +678,7 @@ it("drives direct InstanceGraph in type and instance modes through member reads 
             derived: false,
             owner: "java-action",
             labelKey: "platformOntology.relations.actionHasOwner",
+            group: "dependency",
           },
         ],
       });
@@ -1301,8 +1302,8 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
         { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
       ],
       relationKinds: [
-        { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java-action", labelKey: "platformOntology.relations.actionHasOwner" },
-        { id: "workflow.invokesAction", from: WORKFLOW, to: ACTION, derived: true, owner: "java-workflow", labelKey: "platformOntology.relations.workflowInvokesAction" },
+        { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java-action", labelKey: "platformOntology.relations.actionHasOwner", group: "dependency" },
+        { id: "workflow.invokesAction", from: WORKFLOW, to: ACTION, derived: true, owner: "java-workflow", labelKey: "platformOntology.relations.workflowInvokesAction", group: "dependency" },
       ],
     });
     if (request.dataName === "counts") return ready({ counts: [] });
@@ -1393,8 +1394,8 @@ it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations an
           { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
         ],
         relationKinds: [
-          { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java-action", labelKey: "platformOntology.relations.actionHasOwner" },
-          { id: "workflow.invokesAction", from: WORKFLOW, to: ACTION, derived: true, owner: "java-workflow", labelKey: "platformOntology.relations.workflowInvokesAction" },
+          { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java-action", labelKey: "platformOntology.relations.actionHasOwner", group: "dependency" },
+          { id: "workflow.invokesAction", from: WORKFLOW, to: ACTION, derived: true, owner: "java-workflow", labelKey: "platformOntology.relations.workflowInvokesAction", group: "dependency" },
         ],
       });
       if (request.dataName === "counts") return ready({ counts: [] });
@@ -1535,8 +1536,8 @@ it("syncs visibleLayers and expandedNodes bidirectionally and publishes startLab
             { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
           ],
           relationKinds: [
-            { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java", labelKey: "Owned by user" },
-            { id: "action.targetsObject", from: ACTION, to: OBJECT_TYPE, derived: false, owner: "java", labelKey: "platformOntology.relations.action.targets-object-type" },
+            { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java", labelKey: "Owned by user", group: "dependency" },
+            { id: "action.targetsObject", from: ACTION, to: OBJECT_TYPE, derived: false, owner: "java", labelKey: "platformOntology.relations.action.targets-object-type", group: "dependency" },
           ],
         });
       }

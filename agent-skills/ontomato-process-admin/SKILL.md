@@ -450,7 +450,7 @@ node client.mjs wf-activate <workflowId>
 ```
 
 - 保存后是 `DRAFT`，**不授予任何权限**。
-- 激活是审批时刻：分配新版本号、冻结步骤、把每个“角色×动作”写进 `sys_role_capability`、追加 `Activated` 事件、生成两个查询。
+- 激活是审批时刻：分配新版本号，冻结步骤，按步骤记录角色的动作授权和范围，追加 `Activated` 事件并生成两个查询。
 - `runContract.stepField` 与 `statusField` 必须是不同属性；`statusOpen` 至少有一个值，开放/完成/驳回三组状态值不能重复，所有声明的字段都必须存在于运行类。
 - 激活响应里的 `activationNotes` 是生成告警：为空表示两个查询都生成了；有内容说明某个没生成。**不要当普通成功忽略。**
 - 重复激活同一份未改步骤会 `version+1` 并重发授权行；不要用它“再试一次”。
