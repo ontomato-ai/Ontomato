@@ -29,6 +29,7 @@ import { hasAgentOperationSecretInput } from "./operation-input-schema";
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
+import UnavailableTooltip from "./UnavailableTooltip.vue";
 
 /**
  * The button of one operation a projection names, run as the reader the way an agent's call runs: the platform's
@@ -45,7 +46,8 @@ import OperationResult from "./OperationResult.vue";
  *
  * The operation is one its projection names (`operation`, the projection's local name for it); the button is named by
  * its owner's description, in the reader's language, and shows that a choice is needed while the owner admits it for
- * nothing chosen.
+ * nothing chosen. When the owner marks the operation unavailable and `hideWhenUnavailable` is false, the button stays
+ * disabled and shows the owner's reason in a hover/focus tooltip.
  */
 const props = withDefaults(
   defineProps<{
@@ -233,6 +235,8 @@ const ready = computed(() =>
   !props.disabled && isOperationReady(descriptor.value, targetInfo.value, running.value, panel.instance.forms),
 );
 
+const unavailableReason = computed(() => descriptor.value?.unavailable?.reason || undefined);
+
 const resolvedPlatformIcon = computed(() => {
   if (!props.icon || props.icon === "trash" || props.icon === "check") return null;
   const trimmed = props.icon.trim();
@@ -361,59 +365,60 @@ onBeforeUnmount(unregisterAction);
   <template v-if="!hiddenByAvailability"><div class="sdk-operation-button">
       <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
       <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
-      <el-button
-        v-else
-        :type="type"
-        :size="size"
-        :plain="plain"
-        :text="text || (type === 'danger' && !plain)"
-        :loading="dispatching"
-        :disabled="!ready"
-        @click="onTriggerClick"
-      >
-        <svg
-          v-if="icon === 'trash' && !dispatching"
-          class="sdk-operation-icon"
-          viewBox="0 0 24 24"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+      <UnavailableTooltip v-else :reason="unavailableReason" :label="label">
+        <el-button
+          :type="type"
+          :size="size"
+          :plain="plain"
+          :text="text || (type === 'danger' && !plain)"
+          :loading="dispatching"
+          :disabled="!ready"
+          @click="onTriggerClick"
         >
-          <path d="M3 6h18" />
-          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-          <line x1="10" x2="10" y1="11" y2="17" />
-          <line x1="14" x2="14" y1="11" y2="17" />
-        </svg>
-        <svg
-          v-else-if="icon === 'check' && !dispatching"
-          class="sdk-operation-icon"
-          viewBox="0 0 24 24"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
-        <component
-          :is="resolvedPlatformIcon"
-          v-else-if="resolvedPlatformIcon && !dispatching"
-          class="sdk-operation-icon"
-          :size="14"
-          aria-hidden="true"
-        />
-        <span>{{ label }}</span>
-      </el-button>
+          <svg
+            v-if="icon === 'trash' && !dispatching"
+            class="sdk-operation-icon"
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 6h18" />
+            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            <line x1="10" x2="10" y1="11" y2="17" />
+            <line x1="14" x2="14" y1="11" y2="17" />
+          </svg>
+          <svg
+            v-else-if="icon === 'check' && !dispatching"
+            class="sdk-operation-icon"
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+          <component
+            :is="resolvedPlatformIcon"
+            v-else-if="resolvedPlatformIcon && !dispatching"
+            class="sdk-operation-icon"
+            :size="14"
+            aria-hidden="true"
+          />
+          <span>{{ label }}</span>
+        </el-button>
+      </UnavailableTooltip>
       <operation-input-dialog
         v-if="inputFields.length > 0"
         v-model="inputDialogOpen"
@@ -422,7 +427,6 @@ onBeforeUnmount(unregisterAction);
         :busy="running"
         @confirm="confirmInput"
       ></operation-input-dialog>
-      <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
       <template v-if="showResult && $slots.result">
         <slot v-if="read || failure" name="result" :result="read" :error="failure" :loading="dispatching" />
       </template>
@@ -445,10 +449,5 @@ onBeforeUnmount(unregisterAction);
 .sdk-operation-icon {
   margin-inline-end: 6px;
   flex-shrink: 0;
-}
-.sdk-operation-unavailable {
-  margin: var(--spacing-xs) 0 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
 }
 </style>

@@ -353,7 +353,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     expect(row0Buttons.at(-1)?.getAttribute("aria-label")).toContain("More");
 
     // Row 1 (`status: paused`) hides `Run now` (`when` condition) -> 2 inline (`Edit`, `Delete`), no More button.
-    // `Delete` is disabled by batch `rowOperations` with its reason in title.
+    // `Delete` is disabled by batch `rowOperations` and exposes its reason in a hover/focus tooltip.
     const row1Buttons = [...tableRows[1]!.querySelectorAll<HTMLButtonElement>(".sdk-object-list-row-actions button")];
     if (hideWhenUnavailable) {
       expect(row1Buttons.map((b) => b.textContent?.trim())).toEqual(["Edit", "Run now"]);
@@ -361,7 +361,18 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     }
     expect(row1Buttons.map((b) => b.textContent?.trim())).toEqual(["Edit", "Delete"]);
     expect(row1Buttons[1]!.disabled).toBe(true);
-    expect(row1Buttons[1]!.title).toBe("System task cannot be removed");
+    expect(row1Buttons[1]!.title).toBe("");
+    const row1DeleteTrigger = row1Buttons[1]!.closest<HTMLElement>(".sdk-unavailable-trigger");
+    expect(row1DeleteTrigger?.getAttribute("tabindex")).toBe("0");
+    expect(row1DeleteTrigger?.getAttribute("aria-label")).toBe("Delete: System task cannot be removed");
+    row1DeleteTrigger!.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+    await vi.waitFor(() => {
+      const popper = [...document.body.querySelectorAll<HTMLElement>(".el-popper")].find(
+        (node) => node.textContent?.includes("System task cannot be removed") && node.style.display !== "none",
+      );
+      expect(popper).toBeDefined();
+    });
+    row1DeleteTrigger!.dispatchEvent(new FocusEvent("blur", { bubbles: false }));
 
     // Clicking local button emits `row-action`.
     row0Buttons[0]!.click();
@@ -997,7 +1008,10 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
 
     expect(row0Delete.disabled).toBe(false);
     expect(row1Delete.disabled).toBe(true);
-    expect(row1Delete.title).toBe("Built-in panel cannot be deleted");
+    expect(row1Delete.title).toBe("");
+    const row1Trigger = row1Delete.closest<HTMLElement>(".sdk-unavailable-trigger");
+    expect(row1Trigger?.getAttribute("tabindex")).toBe("0");
+    expect(row1Trigger?.getAttribute("aria-label")).toBe("Delete: Built-in panel cannot be deleted");
 
     row0Delete.click();
     await vi.waitFor(() => expect(preparedCalls).toHaveLength(1));
