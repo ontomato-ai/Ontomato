@@ -22,6 +22,7 @@ import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host"
 import { z } from "zod";
 import { agentSkillTargetSchema } from "@ontomato/contracts/skills";
 import {
+  assistantAgentDefinitionPageQuerySchema,
   assistantAgentInputSchema,
   assistantAgentUpdateInputSchema,
   assistantAgentValidationSchema,
@@ -138,7 +139,8 @@ router.post("/sessions/:sessionId/tasks/:taskId/process/events", wrap(async (req
 router.get(
   "/agent-definitions",
   wrap(async (req, res) => {
-    res.json(await listAgentDefinitions(context(req).owner, context(req).credentials));
+    const { owner, credentials } = context(req);
+    res.json(await listAgentDefinitions(owner, credentials, assistantAgentDefinitionPageQuerySchema.parse(req.query)));
   }),
 );
 router.delete(

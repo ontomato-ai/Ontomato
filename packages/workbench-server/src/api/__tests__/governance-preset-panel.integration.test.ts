@@ -121,9 +121,10 @@ async function expectReadOnlyAgentLists(domainId: string) {
 
   expect((await assistantStore.agents(domainId)).map(agent => agent.id).sort()).toEqual(definitionIds);
   expect((await assistantStore.channelAgents(domainId)).map(agent => agent.id).sort()).toEqual(rows.map(row => row.id));
-  expect(await assistantStore.countAgentDefinitions(domainId)).toBe(definitionIds.length);
-  const { listAgentDefinitions } = await import("../../services/assistant/definitions");
-  const definitions = await listAgentDefinitions(owner, { token: domainId, locale: "en" });
+  const { listAgentDefinitions, countVisibleAgentDefinitions } = await import("../../services/assistant/definitions");
+  const credentials = { token: domainId, locale: "en" };
+  expect(await countVisibleAgentDefinitions(owner, credentials)).toBe(definitionIds.length);
+  const definitions = await listAgentDefinitions(owner, credentials, { limit: 20 });
   expect(definitions.agents.map(agent => agent.id).sort()).toEqual(definitionIds);
   for (const [route, expectedIds] of [
     ["assistant/agents", chatAgentIds],
@@ -193,6 +194,16 @@ beforeAll(async () => {
       )
         ? { allowed: true }
         : { allowed: false, code: "FORBIDDEN", reason: "Agent is not published in this domain" }) });
+  });
+  app.post("/authorization/objects/read-ranges", (req, res) => {
+    const domainId = req.header("tk");
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    expect(req.body).toEqual({ kind: "AGENT", verbs: ["VIEW"] });
+    const objectIds = [
+      ...[...priorAgentPolicies].filter(([, domain]) => domain === domainId).map(([id]) => id),
+      ...publications.filter(row => row.domainId === domainId).flatMap(row => row.ids),
+    ];
+    res.json({ ranges: { VIEW: { fixed: false, authorId: null, objectIds, all: false } } });
   });
   app.post("/authorization/objects/published-agent-presets", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
