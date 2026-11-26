@@ -316,8 +316,8 @@ it("exposes earlier-result state, duration fallback, localized run error, status
     async task(id) {
       return id === completedNoSummary.id ? completedNoSummary : failedNoResult;
     },
-    async form() {
-      return formExample;
+    async form(_appId, draft) {
+      return { ...formExample, values: { ...formExample.values, ...draft.values } };
     },
     async runs() {
       return { runs: [], nextCursor: null };
@@ -359,7 +359,9 @@ it("exposes earlier-result state, duration fallback, localized run error, status
   });
   expect(String(status.outputs?.applicationsProblem)).toContain("missing-app");
 
-  const createForm = await reads.createForm({ defaultAppId: "agents" });
+  const agentId = "11111111-1111-4111-8111-111111111111";
+  const createForm = await reads.createForm({ defaultAppId: "agents", defaultAgentId: agentId });
+  expect(createForm.values).toMatchObject({ agentId, task: { appId: "agents" } });
   const appField = createForm.fields.find(f => f.path === "/task/appId")!;
   const tzField = createForm.fields.find(f => f.path === "/task/timeZone")!;
   expect(tzField.readOnly).toBe(true);

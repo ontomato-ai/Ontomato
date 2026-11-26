@@ -302,6 +302,7 @@ onBeforeUnmount(() => {
           <span class="nav-label">{{ labels.newConversation }}</span>
         </button>
       </header>
+      <slot name="before-history" />
       <div class="section-title"><span v-if="splitNavigation" class="history-list-marker" aria-hidden="true" />{{ labels.sessions }}</div>
       <div v-if="sessionsState === 'loading' && sessions.length === 0" class="session-skeleton" aria-busy="true">
         <span /><span /><span />

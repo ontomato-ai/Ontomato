@@ -12,6 +12,10 @@ import {
 import { useLeaveConfirmation, usePageAccess, usePageAdmission, usePilotPage, useUnsavedChanges } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { panelAddress } from "@ontomato/contracts/panel-host";
+import { createSchedulesApi } from "@ontomato/platform-schedules";
+import { scheduledTaskFrequencyText } from "@ontomato/platform-schedules/panel-text";
+import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
+import { schedulesHost } from "../../../utils/schedules-host";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback, createPanelOperationSettings } from "../assistant-host";
@@ -20,7 +24,7 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import { useDashboardStore } from "../../dashboard";
 import { formatRelativeTime } from "../../../utils/relative-time";
-import { CalendarClock, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, X } from "lucide-vue-next";
+import { CalendarClock, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, X } from "lucide-vue-next";
 import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
 import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
@@ -110,7 +114,12 @@ function internalPageAddress(address: string) {
 function platformPanelAddress(address: string) {
   const path = address.split("?")[0];
   if (path === props.internalPages?.dashboard) return routes.dashboards.path + address.slice(path.length);
-  if (path === props.internalPages?.schedules) return routes.schedules.path + address.slice(path.length);
+  if (props.internalPages?.schedules && (path === props.internalPages.schedules || path === routes.schedules.path)) {
+    const query = new URLSearchParams(address.slice(path.length));
+    query.set("workspace", "agent");
+    query.set("app", "agents");
+    return routes.schedules.path + "?" + query;
+  }
   return address;
 }
 function pilot(address: string) {
@@ -177,11 +186,7 @@ watch(
     const address = queryText(route.query.page);
     return address && pilot(address) ? address : null;
   },
-  (address) => {
-    const opensSchedules = address && props.internalPages?.schedules
-      && platformPanelAddress(address).split("?")[0] === routes.schedules.path;
-    display.follow(address, opensSchedules && !display.page.value ? "side" : undefined);
-  },
+  (address) => display.follow(address),
   { immediate: true },
 );
 /** The page the display shows, mounted from its address by the assembly's registry. */
@@ -191,6 +196,26 @@ const inStandaloneDashboard = computed(() => Boolean(props.internalPages && page
   && platformPanelAddress(pageAddress.value).split("?")[0] === routes.dashboards.path));
 const inStandaloneSchedules = computed(() => Boolean(props.internalPages?.schedules && pageAddress.value
   && platformPanelAddress(pageAddress.value).split("?")[0] === routes.schedules.path));
+const scheduleQuery = computed(() => new URLSearchParams(pageAddress.value?.split("?")[1]));
+const selectedSchedule = computed(() => inStandaloneSchedules.value ? scheduleQuery.value.get("selectedTask") : null);
+const creatingSchedule = computed(() => inStandaloneSchedules.value && scheduleQuery.value.get("workspaceCompose") === "new");
+const scheduleTasks = ref<PlatformTask[]>([]);
+const scheduleLoadFailed = ref(false);
+const schedulesApi = createSchedulesApi(schedulesHost({ applications: () => [], openResult: () => {} }));
+const agentSchedules = computed(() => scheduleTasks.value.filter(task => task.content.agentId === agentId.value));
+let scheduleRead = 0;
+async function loadSchedules() {
+  if (!props.internalPages?.schedules) return;
+  const read = ++scheduleRead;
+  try {
+    const { tasks } = await schedulesApi.list("agents");
+    if (read !== scheduleRead) return;
+    scheduleTasks.value = tasks;
+    scheduleLoadFailed.value = false;
+  } catch {
+    if (read === scheduleRead) scheduleLoadFailed.value = true;
+  }
+}
 const selectedDashboardId = computed(() => inStandaloneDashboard.value
   ? new URLSearchParams(pageAddress.value?.split("?")[1]).get("dashboardId")
   : null);
@@ -318,7 +343,7 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   features: workbenchFeatures(
     props.features,
     inPanelApplication.value
-      ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!, !inStandaloneDashboard.value)
+      ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!, !inStandaloneDashboard.value && !inStandaloneSchedules.value)
       : null,
   ),
 }));
@@ -340,6 +365,16 @@ const nav = useAgentNav({
     if (placingFrom === null || display.page.value?.address.split("?")[0] !== placingFrom) void display.close();
   },
 });
+// Align the conversation list with a schedule reached from a saved link.
+watch(
+  () => [selectedSchedule.value, creatingSchedule.value, scheduleTasks.value, nav.agents.value] as const,
+  ([taskId, creating]) => {
+    const target = creating ? scheduleQuery.value.get("workspaceAgent") : scheduleTasks.value.find(task => task.id === taskId)?.content.agentId;
+    if (typeof target === "string" && nav.agents.value.some(agent => agent.id === target) && target !== agentId.value) {
+      nav.adoptAgent(target);
+    }
+  },
+);
 // The one list notice stream of this page: every conversation it lists follows its run, whichever one is open.
 useSessionRunFeed({
   port: client.sessionRuns,
@@ -672,13 +707,15 @@ function openDashboardPage(dashboardId: string) {
   void router.push({ path: routes.dashboards.path, query: { dashboardId } });
 }
 
-function openSchedules() {
-  if (!props.internalPages?.schedules) return;
+function openSchedule(task?: PlatformTask) {
+  if (!props.internalPages?.schedules || !agentId.value) return;
   closeDashboards();
-  void display.navigate(props.internalPages.schedules, { view: "side", history: "push" });
+  const state = { workspaceAgent: agentId.value, ...(task ? { selectedTask: task.id } : { workspaceCompose: "new" }) };
+  void display.navigate(panelAddress(props.internalPages.schedules, state), { history: "push" });
 }
 
 onMounted(async () => {
+  void loadSchedules();
   try {
     appearance.value = await getWorkbenchAppearance();
   } catch {
@@ -709,6 +746,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :title="workbench.label"
     agent-picker
     :split-navigation="splitNavigation"
+    :history-page-selected="inStandaloneSchedules"
     :editor-title="editorTitle"
     :format-session-date="splitNavigation ? formatRelativeTime : undefined"
     :agent-actions="agentActions"
@@ -730,10 +768,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <button class="legacy-footer-item" type="button" :title="allTasksLabel" :aria-pressed="showingTasks" @click="openAllTasks">
         <ListTodo :size="16" aria-hidden="true" /><span>{{ allTasksLabel }}</span>
         <small v-if="taskSessions.length" class="legacy-task-badge">{{ taskSessions.length }}{{ taskCursor ? '+' : '' }}</small>
-      </button>
-      <button v-if="internalPages.schedules" class="legacy-footer-item legacy-schedules-entry" type="button"
-        :title="t('platform.schedules')" :aria-pressed="inStandaloneSchedules" @click="openSchedules">
-        <CalendarClock :size="16" aria-hidden="true" /><span>{{ t('platform.schedules') }}</span>
       </button>
       <section v-if="dashboardsOpen && dashboards" id="data-agent-dashboard-list" class="legacy-dashboard-list" :aria-label="t('analysis.myDashboards')" @keydown.esc.stop="closeDashboards">
         <header>
@@ -763,6 +797,36 @@ function appearanceSaved(value: WorkbenchAppearance) {
         <LayoutDashboard :size="16" aria-hidden="true" /><span>{{ t('assistant.featureDashboards') }}</span>
         <ChevronDown class="legacy-dashboard-arrow" :size="12" aria-hidden="true" />
       </button>
+    </template>
+    <template v-if="internalPages?.schedules && agentId" #before-history>
+      <section class="agent-schedules" :aria-label="t('platform.schedules')">
+        <div class="section-title agent-schedules-heading">
+          <span class="history-list-marker" aria-hidden="true" />
+          <span>{{ t('platform.schedules') }}</span>
+          <button v-if="nav.agents.value.find(agent => agent.id === agentId)?.enabled"
+            type="button" :title="t('platformSchedules.newTask')" :aria-label="t('platformSchedules.newTask')"
+            :aria-pressed="creatingSchedule" @click="openSchedule()">
+            <Plus :size="15" aria-hidden="true" />
+          </button>
+        </div>
+        <p v-if="scheduleLoadFailed" class="session-note" role="alert">
+          {{ labels.loadFailed }} <button type="button" @click="loadSchedules">{{ labels.retry }}</button>
+        </p>
+        <ul v-if="agentSchedules.length" class="session-list agent-schedule-list">
+          <li v-for="task in agentSchedules" :key="task.id">
+            <div class="session-item" :class="{ active: selectedSchedule === task.id }">
+              <button type="button" class="session-open" :title="task.title"
+                :aria-current="selectedSchedule === task.id ? 'page' : undefined" @click="openSchedule(task)">
+                <CalendarClock :size="14" aria-hidden="true" />
+                <span class="agent-schedule-label">
+                  <strong class="session-title">{{ task.title }}</strong>
+                  <small>{{ scheduledTaskFrequencyText(task.frequency, locale, t) }}</small>
+                </span>
+              </button>
+            </div>
+          </li>
+        </ul>
+      </section>
     </template>
     <template v-if="showingTasks" #session-list>
       <header class="session-heading legacy-task-heading">
@@ -816,6 +880,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @display-loaded="display.loaded"
         @display-dirty="display.dirty"
         @display-skill="display.skill"
+        @objects-changed="inStandaloneSchedules && loadSchedules()"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

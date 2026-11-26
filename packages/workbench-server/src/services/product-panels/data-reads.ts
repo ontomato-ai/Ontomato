@@ -711,10 +711,18 @@ function readAdapters(
     },
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
-      catalogue: (_selection, params) => schedules.list({
-        application: panelReadParameterSchemas.keyword.optional().parse(params.scope),
-        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
-      }),
+      catalogue: (_selection, params) => {
+        const workspace = params.workspace === "agent";
+        const taskId = workspace
+          ? panelReadParameterSchemas.scheduledTaskRef.nullish().parse(params.selectedTask)?.primaryKey
+          : undefined;
+        return schedules.list({
+          application: panelReadParameterSchemas.keyword.optional().parse(params.scope),
+          search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+          taskId,
+          agentId: workspace && !taskId ? panelReadParameterSchemas.keyword.optional().parse(params.workspaceAgent) : undefined,
+        });
+      },
       counts: (_selection, params) => schedules.counts(panelReadParameterSchemas.keyword.optional().parse(params.by)),
       status: () => schedules.status(),
       record: selection => schedules.record(selection.primaryKey!),
@@ -727,7 +735,9 @@ function readAdapters(
       ),
       form: (selection, params) => schedules.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => schedules.createForm({
-        ...formParams(params), defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),
+        ...formParams(params),
+        defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),
+        defaultAgentId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAgentId),
       }),
     },
     [BUSINESS_KNOWLEDGE]: {

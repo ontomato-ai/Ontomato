@@ -100,7 +100,7 @@ export function createScheduledTaskReadAdapter(
 
   return {
     ...reads,
-    async list(params?: { application?: string; search?: string }) {
+    async list(params?: Parameters<typeof reads.list>[0]) {
       const rows = await reads.list(params);
       return rows.some(row => row.outputs?.isRunning === true)
         ? withReadDirective(rows, { rereadAfterMs: SCHEDULE_LIST_REREAD_MS })

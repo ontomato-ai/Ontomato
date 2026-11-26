@@ -28,6 +28,18 @@
           "type": "string"
         }
       },
+      "workspaceCompose": {
+        "type": { "kind": "scalar", "type": "string" },
+        "deepLink": true
+      },
+      "workspace": {
+        "type": { "kind": "scalar", "type": "string" },
+        "deepLink": true
+      },
+      "workspaceAgent": {
+        "type": { "kind": "scalar", "type": "string" },
+        "deepLink": true
+      },
       "newTask": {
         "type": {
           "kind": "object",
@@ -120,7 +132,10 @@
               },
               "search": {
                 "state": "search"
-              }
+              },
+              "workspace": { "state": "workspace" },
+              "workspaceAgent": { "state": "workspaceAgent" },
+              "selectedTask": { "state": "selectedTask" }
             }
           }
         },
@@ -395,7 +410,8 @@
             "params": {
               "defaultAppId": {
                 "state": "app"
-              }
+              },
+              "defaultAgentId": { "state": "workspaceAgent" }
             }
           }
         },

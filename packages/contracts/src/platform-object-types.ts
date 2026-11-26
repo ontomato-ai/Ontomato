@@ -292,8 +292,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         outputs: scheduledTaskRowOutputs,
       },
       catalogue: {
-        source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword" }, result: "panelRecordList",
-        outputs: scheduledTaskRowOutputs,
+        source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword", workspace: "keyword", workspaceAgent: "keyword", selectedTask: "scheduledTaskRef" },
+        result: "panelRecordList", outputs: scheduledTaskRowOutputs,
       },
       counts: { source: "type", parameterMode: "fixed", params: { by: "keyword" }, result: "panelGroupCounts" },
       status: {
@@ -325,7 +325,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
-      createForm: { source: "type", parameterMode: "fixed", params: { ...definitionFormParams, defaultAppId: "keyword" }, result: "panelFormDescription" },
+      createForm: { source: "type", parameterMode: "fixed", params: { ...definitionFormParams, defaultAppId: "keyword", defaultAgentId: "keyword" }, result: "panelFormDescription" },
       runs: { source: "object", parameterMode: "fixed", params: { cursor: "cursor" }, result: "scheduledTaskRunPage" },
       run: {
         source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" },

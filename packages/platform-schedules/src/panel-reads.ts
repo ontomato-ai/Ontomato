@@ -41,6 +41,7 @@ interface TaskFormParams {
 
 interface TaskCreateFormParams extends TaskFormParams {
   defaultAppId?: string;
+  defaultAgentId?: string;
 }
 
 function runStatusTone(status: PlatformTaskRun["status"]): PanelFieldTone {
@@ -384,11 +385,14 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     });
     const readApplicationForm = () => {
       if (!selectedApplication) return undefined;
-      if (!draft.success) return readForm(stored, null);
+      const initialValues = !task && settings.appId === "agents" && params.defaultAgentId
+        ? { agentId: params.defaultAgentId }
+        : stored;
+      if (!draft.success) return readForm(initialValues, null);
       const { parameters } = draft.data;
       if (params.values !== undefined && field == null) return checkDraft(readForm, stored, parameters);
       const changedKey = field == null || field.startsWith("/task/") ? null : formFieldKey(field, "/");
-      return readForm(changedApplication ? {} : params.values === undefined ? stored : parameters, changedKey);
+      return readForm(changedApplication ? {} : params.values === undefined ? initialValues : parameters, changedKey);
     };
     const form = await readApplicationForm();
     const frequencyHelp = translate(task ? "platformSchedules.form.taskZone" : "platformSchedules.form.serviceZone", {
@@ -430,12 +434,14 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
   }
 
   return {
-    async list(params?: { application?: string; search?: string }) {
+    async list(params?: { application?: string; search?: string; agentId?: string; taskId?: string }) {
       const [{ tasks }, appMeta] = await Promise.all([api.list(), resolveAppMeta()]);
       const application = params?.application?.trim() ?? "";
       const query = params?.search?.trim().toLowerCase() ?? "";
       const filtered = tasks.filter(task => {
         if (application && task.appId !== application) return false;
+        if (params?.taskId && task.id !== params.taskId) return false;
+        if (params?.agentId && task.content.agentId !== params.agentId) return false;
         if (query && !task.title.toLowerCase().includes(query)) return false;
         return true;
       });

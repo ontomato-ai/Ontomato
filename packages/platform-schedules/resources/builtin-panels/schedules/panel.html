@@ -68,6 +68,14 @@
   .schedules-empty-actions {
     margin-top: var(--spacing-xs);
   }
+  .schedules-inline-section {
+    min-width: 0;
+    padding: var(--spacing-md) var(--page-gutter) var(--page-content-gap);
+  }
+  .schedules-inline-section > h2 {
+    margin: 0 0 var(--spacing-md);
+    font-size: var(--text-base);
+  }
   .schedules-dialog-body {
     display: flex;
     flex-direction: column;
@@ -181,9 +189,10 @@
 </style>
 
 <div id="app" v-cloak class="schedules-shell">
-  <page-header :title="t('panel.name')" :description="t('intro')">
+  <page-header v-if="!inline || !formDialogOpen" :title="t('panel.name')" :description="inline ? undefined : t('intro')">
     <template #actions>
       <sdk-button
+        v-if="!inline"
         ref="createButton"
         type="primary"
         :disabled="!canCreate || mode === 'create'"
@@ -200,7 +209,7 @@
     </template>
   </page-header>
 
-  <section ref="schedulePage" class="schedules">
+  <section v-if="!inline || !formDialogOpen" ref="schedulePage" class="schedules">
     <projection slot="pageNotice"></projection>
 
     <sdk-alert
@@ -212,7 +221,7 @@
     ></sdk-alert>
 
     <div class="schedules-list-col">
-      <div class="schedules-toolbar">
+      <div v-if="!inline" class="schedules-toolbar">
         <projection slot="appFilter"></projection>
         <sdk-input
           v-model="searchModel"
@@ -231,7 +240,7 @@
         @operation-done="onTaskOperationDone"
       ></projection>
 
-      <div v-if="tasksStatus === 'empty'" class="schedules-empty-actions-bar">
+      <div v-if="!inline && tasksStatus === 'empty'" class="schedules-empty-actions-bar">
         <sdk-button v-if="hasActiveFilters" size="small" @click="clearFilters">{{ t("empty.clearFilters") }}</sdk-button>
         <sdk-button
           v-else
@@ -245,17 +254,17 @@
     </div>
   </section>
 
-  <!-- Centered dialog for creating or editing a scheduled task (SC-08, SC-09, SC-10). -->
-  <sdk-dialog
-    :model-value="formDialogOpen"
-    :title="mode === 'create' ? t('form.newTitle') : t('form.editTitle')"
-    width="640px"
-    align-center
-    destroy-on-close
-    :close-on-click-modal="false"
+  <component
+    v-if="!inline || formDialogOpen"
+    :is="inline ? 'section' : 'sdk-dialog'"
+    v-bind="inline ? { class: 'schedules-inline-section' } : {
+      modelValue: formDialogOpen, title: mode === 'create' ? t('form.newTitle') : t('form.editTitle'),
+      width: '640px', alignCenter: true, destroyOnClose: true, closeOnClickModal: false
+    }"
     @update:model-value="onFormDialogToggle"
     @closed="restoreFocusAfterForm"
   >
+    <h2 v-if="inline">{{ mode === 'create' ? t('form.newTitle') : t('form.editTitle') }}</h2>
     <div class="schedules-dialog-body">
       <p v-if="mode === 'create'" class="schedules-dialog-sub">{{ t("form.subtitle") }}</p>
       <p class="schedules-note">{{ t("form.identity") }}</p>
@@ -417,22 +426,23 @@
         </projection>
       </div>
     </div>
-  </sdk-dialog>
+  </component>
 
   <!-- Keeps selectedTask record outputs live for drawer title, deep links, and card result navigation. -->
   <div v-if="selected" class="schedules-hidden-projection" aria-hidden="true">
     <projection slot="detailHeader"></projection>
   </div>
 
-  <!-- Independent right-side run records drawer (SC-11). -->
-  <sdk-drawer
-    :model-value="runsDrawerOpen"
-    :title="runsDrawerTitle"
-    direction="rtl"
-    size="min(560px, 92vw)"
-    destroy-on-close
+  <component
+    v-if="!inline || recordsOpen"
+    :is="inline ? 'section' : 'sdk-drawer'"
+    v-bind="inline ? { class: 'schedules-inline-section' } : {
+      modelValue: recordsOpen, title: runsDrawerTitle, direction: 'rtl',
+      size: 'min(560px, 92vw)', destroyOnClose: true
+    }"
     @update:model-value="onRunsDrawerToggle"
   >
+    <h2 v-if="inline">{{ runsDrawerTitle }}</h2>
     <div v-if="selected" class="schedules-drawer-body">
       <projection slot="detailPause">
         <template #actions>
@@ -493,5 +503,5 @@
         </projection>
       </div>
     </div>
-  </sdk-drawer>
+  </component>
 </div>
