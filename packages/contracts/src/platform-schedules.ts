@@ -178,7 +178,10 @@ const definition = z.object({
 export const platformTaskInputSchema = definition.extend({ timeZone: platformScheduleTimeZoneSchema.optional() }).strict();
 export const platformTaskUpdateSchema = platformTaskInputSchema.extend({ revision }).strict();
 export const platformTaskEnabledSchema = z.object({ enabled: z.boolean(), revision }).strict();
-export const platformTaskListQuerySchema = z.object({ appId: platformTaskAppSchema.optional() }).strict();
+export const platformTaskListQuerySchema = z.object({
+  appId: platformTaskAppSchema.optional(),
+  includeCredentialStatus: z.enum(["true", "false"]).optional(),
+}).strict();
 export const platformTaskCreateQuerySchema = z.object({ enabled: z.boolean().default(true) }).strict();
 export const platformTaskRunPageQuerySchema = z.object({
   cursor: nonempty.optional(),
@@ -258,7 +261,11 @@ export const platformTaskSchema = definition.extend({
   if (task.lastRun?.status === "running" && task.activeRunId !== task.lastRun.id)
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A running latest execution must be the active one" });
 });
-export const platformTaskListSchema = z.object({ tasks: z.array(platformTaskSchema), timeZone: platformScheduleTimeZoneSchema }).strict();
+export const platformTaskListSchema = z.object({
+  tasks: z.array(platformTaskSchema),
+  timeZone: platformScheduleTimeZoneSchema,
+  credentialStatus: z.enum(["no-remote-tasks", "valid", "renewal-required"]).optional(),
+}).strict();
 export const platformTaskRunPageSchema = z.object({ runs: z.array(platformTaskRunSchema), nextCursor: nonempty.nullable() }).strict();
 
 export const platformScheduleHttpErrorCodeSchema = z.enum([

@@ -103,9 +103,7 @@ export function createSchedulesApi(host: PlatformSchedulesHost) {
 
   return {
     /**
-     * Renews the caller's background credential, which the tasks of remote applications run with. The page calls it
-     * before its first read so that tasks paused on an expired credential return once their creator visits with a
-     * valid sign-in; the service does nothing when no task needs one.
+     * Renews the caller's background credential so tasks paused on an expired key can resume when their creator visits.
      */
     async renewCredential(): Promise<void> {
       await send(`${base}/credential/renew`, { method: "POST" });

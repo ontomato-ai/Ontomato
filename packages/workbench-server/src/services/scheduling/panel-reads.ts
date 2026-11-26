@@ -63,8 +63,9 @@ export function createScheduledTaskReadAdapter(
     ? () => reuseApplicationsStatus(loadApplicationsStatus)
     : loadApplicationsStatus;
   const reads = createScheduledTaskReads({
-    async list() {
-      const response = await backendGet("scheduled-task-list", base, options);
+    async list(includeCredentialStatus = false) {
+      const path = includeCredentialStatus ? `${base}?includeCredentialStatus=true` : base;
+      const response = await backendGet("scheduled-task-list", path, options);
       return platformTaskListSchema.parse(JSON.parse(response.text));
     },
     async task(id) {

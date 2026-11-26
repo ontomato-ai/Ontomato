@@ -13,7 +13,7 @@ import type {
 } from "@ontomato/contracts/panel-projection";
 import {
   PLATFORM_SCHEDULE_TITLE_MAX, platformScheduleTimeZoneSchema, platformTaskFrequencySchema,
-  type PlatformScheduleApplication, type PlatformScheduleForm, type PlatformTask, type PlatformTaskRun,
+  type PlatformScheduleApplication, type PlatformScheduleForm, type PlatformTask, type PlatformTaskList, type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
 import type { SchedulesApi } from "./api";
 import { scheduledTaskCreateDescription, scheduledTaskSaveDescription } from "./panel-operations";
@@ -26,7 +26,8 @@ export interface ScheduledApplicationsStatus {
   applications: NamedApplication[];
   missingIds: string[];
 }
-type TaskReadApi = Pick<SchedulesApi, "list" | "task" | "form" | "runs" | "run"> & {
+type TaskReadApi = Pick<SchedulesApi, "task" | "form" | "runs" | "run"> & {
+  list(includeCredentialStatus?: boolean): Promise<PlatformTaskList>;
   applications(): Promise<NamedApplication[]>;
   applicationsStatus?(): Promise<ScheduledApplicationsStatus>;
 };
@@ -441,7 +442,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       return filtered.map(task => taskRecord(task, locale, translate, appMeta));
     },
     async status(): Promise<PanelRecord> {
-      const [listResult, appsResult] = await Promise.allSettled([api.list(), readApplicationsStatus()]);
+      const [listResult, appsResult] = await Promise.allSettled([api.list(true), readApplicationsStatus()]);
       const applicationsFailed = appsResult.status === "rejected";
       const missingIds = appsResult.status === "fulfilled" ? appsResult.value.missingIds : [];
       const applications = appsResult.status === "fulfilled" ? appsResult.value.applications : [];
@@ -454,6 +455,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
             : "";
       const hasCredentialPaused = listResult.status === "fulfilled"
         && listResult.value.tasks.some(task => task.pause?.code === "credential_invalid");
+      const credentialStatus = listResult.status === "fulfilled" ? listResult.value.credentialStatus : undefined;
       const createBlockedReason = applicationsProblem
         || (listResult.status === "rejected" ? translate("platformSchedules.loadFailed") : "");
       return {
@@ -469,6 +471,7 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
           applicationsProblem,
           applicationsFailed,
           hasCredentialPaused,
+          ...(credentialStatus && { credentialStatus }),
         },
       };
     },

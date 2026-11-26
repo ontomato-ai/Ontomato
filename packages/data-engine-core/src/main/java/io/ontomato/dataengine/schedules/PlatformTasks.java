@@ -11,6 +11,7 @@ import io.ontomato.dataengine.service.IdentityService;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -145,13 +146,19 @@ public class PlatformTasks {
   }
 
   public JsonNode list(String app) {
+    return list(app, false);
+  }
+
+  public JsonNode list(String app, boolean includeCredentialStatus) {
     var user = current();
     if (app != null && !app.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
-    return object(
-        "tasks",
-        store.visible(user.getDomainId(), user.getId(), app).stream().map(this::view).toList(),
-        "timeZone",
-        zone());
+    var tasks = store.visible(user.getDomainId(), user.getId(), app);
+    var result = object("tasks", tasks.stream().map(this::view).toList(), "timeZone", zone());
+    if (includeCredentialStatus) {
+      var ownerTasks = app == null ? tasks : store.visible(user.getDomainId(), user.getId(), null);
+      result.put("credentialStatus", credentialStatus(user, ownerTasks));
+    }
+    return result;
   }
 
   public JsonNode applications(String locale) {
@@ -429,9 +436,7 @@ public class PlatformTasks {
         rows.size() > limit ? selected.getLast().id().toString() : null);
   }
 
-  public void renewOnVisit(String locale) {
-    var user = current();
-    var tasks = store.visible(user.getDomainId(), user.getId(), null);
+  private boolean hasRemoteTask(List<TaskStore.Task> tasks) {
     boolean needs = false;
     for (var task : tasks) {
       try {
@@ -440,12 +445,26 @@ public class PlatformTasks {
         if (!"APPLICATION_NOT_FOUND".equals(missing.code)) throw missing;
       }
     }
-    if (!needs) return;
+    return needs;
+  }
+
+  private static boolean pausedForCredential(TaskStore.Task task) {
+    return task.enabled() && task.pause() != null && "credential_invalid".equals(task.pause().code());
+  }
+
+  private String credentialStatus(User user, List<TaskStore.Task> tasks) {
+    if (!hasRemoteTask(tasks)) return "no-remote-tasks";
+    return tasks.stream().anyMatch(PlatformTasks::pausedForCredential)
+        || !credentials.hasValidKey(user.getDomainId(), user.getId()) ? "renewal-required" : "valid";
+  }
+
+  public void renewOnVisit(String locale) {
+    var user = current();
+    var tasks = store.visible(user.getDomainId(), user.getId(), null);
+    if (!hasRemoteTask(tasks)) return;
     credentials.prepareForSetup(user);
     for (var task : tasks)
-      if (task.enabled()
-          && task.pause() != null
-          && "credential_invalid".equals(task.pause().code())) {
+      if (pausedForCredential(task)) {
         try {
           var provider = applications.require(task.definition().appId());
           var actor = actor(user, locale);
