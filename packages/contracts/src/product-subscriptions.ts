@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {productDefinitionChangedEventSchema} from './product-panels';
+import {productDefinitionChangedEventSchema,unavailablePanelProjectionSchema} from './product-panels';
 import {panelMemberPathSchema} from './panel-manifest';
 
 const id=z.string().min(1).max(200);
@@ -19,6 +19,7 @@ export const panelDefinitionSnapshotSchema = z.object({
   panel:definitionRevisionSchema,
   projections:z.array(definitionRevisionSchema),
   members:z.array(panelMemberSnapshotSchema).optional(),
+  unavailableProjections:z.record(id,unavailablePanelProjectionSchema).optional(),
 }).strict();
 export type PanelDefinitionSnapshot = z.infer<typeof panelDefinitionSnapshotSchema>;
 

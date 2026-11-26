@@ -7,6 +7,8 @@ import {
   type ProductPanel,
   type ProductProjection,
 } from "@ontomato/contracts/product-panels";
+import { PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subscriptions";
 import { HttpError } from "../../../utils/errors";
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   projections: vi.fn(),
   validateComponent: vi.fn(),
   framePanel: vi.fn(),
+  registeredEntry: vi.fn(),
   pageSkill: vi.fn(),
 }));
 
@@ -27,6 +30,10 @@ vi.mock("../../../services/product-panels/component-catalogue", () => ({
 }));
 vi.mock("../../../services/product-panels/member-path", () => ({
   requireRegisteredPanelRoot: mocks.framePanel,
+}));
+vi.mock("../../../services/product-panels/application-use", async original => ({
+  ...await original<typeof import("../../../services/product-panels/application-use")>(),
+  readRegisteredPanelEntry: mocks.registeredEntry,
 }));
 vi.mock("../../../services/skills/view", () => ({ readRegisteredPanelPageSkillContext: mocks.pageSkill }));
 vi.mock("../../../utils/request-identity", async original => ({
@@ -84,7 +91,7 @@ function makePanel(id = "panel-1"): ProductPanel {
         secretMember: { target: { projectionId: "proj-forbidden" } },
         missingMember: { target: { projectionId: "proj-missing" } },
         nestedFixed: { target: { panelId: "panel-child" } },
-        dynamicMember: { target: { fromState: "tab", candidates: { projectionIds: ["proj-dynamic"] } } },
+        dynamicMember: { target: { fromState: "tab", candidates: { projectionIds: ["proj-dynamic", "proj-restricted", "proj-deleted"] } } },
       },
     },
   } as ProductPanel;
@@ -114,7 +121,7 @@ beforeEach(() => {
 });
 
 describe("GET /api/product-panels/:id?includeProjections=1", () => {
-  it("bundles deduplicated fixed projections, includes domainComponent, and isolates 403/404 members", async () => {
+  it("bundles fixed projections and all declared candidates when no current source is pinned", async () => {
     const panel = makePanel();
     const readyProjection = makeProjection("proj-ready", 2);
     const domainCompProjection = makeProjection("proj-domain-comp", 4, "domain-component:custom-widget");
@@ -133,8 +140,9 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
       ids.map((id): [string, { ok: true; projection: ProductProjection } | { ok: false; error: unknown }] => {
         if (id === "proj-ready") return [id, { ok: true, projection: readyProjection }];
         if (id === "proj-domain-comp") return [id, { ok: true, projection: domainCompProjection }];
-        if (id === "proj-forbidden") return [id, { ok: false, error: new HttpError(403, "No use grant", "FORBIDDEN") }];
-        if (id === "proj-missing") return [id, { ok: false, error: new HttpError(404, "Projection gone", "NOT_FOUND") }];
+        if (id === "proj-dynamic") return [id, { ok: true, projection: makeProjection(id) }];
+        if (id === "proj-forbidden" || id === "proj-restricted") return [id, { ok: false, error: new HttpError(403, "No use grant", "FORBIDDEN") }];
+        if (id === "proj-missing" || id === "proj-deleted") return [id, { ok: false, error: new HttpError(404, "Projection gone", "NOT_FOUND") }];
         throw new Error(`Unexpected projection read: ${id}`);
       }),
     ));
@@ -152,12 +160,38 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
       "proj-domain-comp": { status: "ready", projection: domainCompProjection, domainComponent },
       "proj-forbidden": { status: "unavailable", httpStatus: 403, message: "No use grant" },
       "proj-missing": { status: "unavailable", httpStatus: 404, message: "Projection gone" },
+      "proj-dynamic": { status: "ready", projection: makeProjection("proj-dynamic") },
+      "proj-restricted": { status: "unavailable", httpStatus: 403, message: "No use grant" },
+      "proj-deleted": { status: "unavailable", httpStatus: 404, message: "Projection gone" },
     });
 
-    // Deduplicated and batched in one call: proj-ready appears twice in manifest, panelId and fromState members skipped.
-    expect(mocks.projections).toHaveBeenCalledTimes(1);
-    const readIds = [...mocks.projections.mock.calls[0]![2]].sort();
-    expect(readIds).toEqual(["proj-domain-comp", "proj-forbidden", "proj-missing", "proj-ready"]);
+    expect(mocks.projections).toHaveBeenCalledWith(owner, expect.objectContaining({ token: "caller-token" }),
+      expect.arrayContaining(["proj-dynamic", "proj-restricted", "proj-deleted"]));
+  });
+
+  it("uses a declared default and lets a registered literal placement override it", async () => {
+    const panel = makePanel();
+    panel.manifest.state.tab.default = { className: PRODUCT_PROJECTION, primaryKey: "proj-dynamic" };
+    panel.manifest.members = { dynamicMember: panel.manifest.members.dynamicMember };
+    mocks.panel.mockResolvedValue(panel);
+    mocks.registeredEntry.mockResolvedValue({
+      use: { panelId: panel.id, inputs: { tab: { literal: { className: PRODUCT_PROJECTION, primaryKey: "proj-restricted" } } } },
+    });
+    mocks.projections.mockImplementation(async (_owner, _creds, ids: readonly string[]) => new Map(
+      ids.map(id => [id, id === "proj-restricted"
+        ? { ok: false, error: new HttpError(403, "No use grant", "FORBIDDEN") }
+        : { ok: true, projection: makeProjection(id) }]),
+    ));
+
+    const defaults = await fetch(`${base}/${panel.id}?includeProjections=1`);
+    const defaultBundle = productPanelResponseSchema.parse(await defaults.json()).projections;
+    expect(defaultBundle?.["proj-dynamic"]?.status).toBe("ready");
+    expect(defaultBundle?.["proj-restricted"]).toBeUndefined();
+
+    const placed = await fetch(`${base}/${panel.id}?includeProjections=1&source=registered&applicationId=app-1&useId=use-1`);
+    const placedBundle = productPanelResponseSchema.parse(await placed.json()).projections;
+    expect(placedBundle?.["proj-dynamic"]).toBeUndefined();
+    expect(placedBundle?.["proj-restricted"]).toMatchObject({ status: "unavailable", httpStatus: 403 });
   });
 
   it("omits a member whose component validation fails (400) without failing the whole panel", async () => {
@@ -222,6 +256,26 @@ describe("GET /api/product-panels/:id?includeProjections=1", () => {
       "proj-nav": { status: "ready", projection: navProj },
     });
     expect(mocks.panel).not.toHaveBeenCalled();
+  });
+
+  it("rechecks candidate grants in a frame snapshot even when the panel revision is unchanged", async () => {
+    const panel = makePanel("frame-1");
+    panel.manifest.members = { dynamicMember: panel.manifest.members.dynamicMember };
+    mocks.framePanel.mockResolvedValue({ panel });
+    const projection = makeProjection("proj-dynamic");
+    mocks.projections.mockResolvedValueOnce(new Map([[projection.id, { ok: true, projection }]]))
+      .mockResolvedValueOnce(new Map([[projection.id, {
+        ok: false, error: new HttpError(403, "No use grant", "FORBIDDEN"),
+      }]]));
+
+    const url = `${base}/${panel.id}/snapshot?applicationId=app-1&useId=use-1&source=frame`;
+    const before = panelDefinitionSnapshotSchema.parse(await (await fetch(url)).json());
+    expect(before.projections).toContainEqual({ id: projection.id, revision: projection.revision });
+
+    const after = panelDefinitionSnapshotSchema.parse(await (await fetch(url)).json());
+    expect(after.panel.revision).toBe(before.panel.revision);
+    expect(after.projections.some(entry => entry.id === projection.id)).toBe(false);
+    expect(after.unavailableProjections?.[projection.id]).toMatchObject({ status: "unavailable", httpStatus: 403 });
   });
 
   it("rejects invalid includeProjections values with 400 before reading", async () => {
