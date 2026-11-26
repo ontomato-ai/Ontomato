@@ -829,4 +829,103 @@ describe("governance panel server operations", () => {
     });
     expect(sent.some((req) => req.path.endsWith("/panel/governance/roles/add-policies"))).toBe(true);
   });
+
+  it("declares and routes identical effectiveAccess and effectiveAccessCounts reads on platform:User and platform:Role", async () => {
+    const userReads = platformObjectTypes[USER].reads ?? {};
+    const roleReads = platformObjectTypes[ROLE].reads ?? {};
+    for (const reads of [userReads, roleReads]) {
+      expect(reads.effectiveAccess).toEqual({
+        source: "object",
+        parameterMode: "fixed",
+        params: { category: "keyword" },
+        result: "panelRecordList",
+      });
+      expect(reads.effectiveAccessCounts).toEqual({
+        source: "object",
+        parameterMode: "fixed",
+        params: {},
+        result: "panelRecord",
+        outputs: {
+          entryCount: { kind: "scalar", type: "number" },
+          systemInterfaceCount: { kind: "scalar", type: "number" },
+          productObjectCount: { kind: "scalar", type: "number" },
+          capabilityObjectCount: { kind: "scalar", type: "number" },
+          businessDataCount: { kind: "scalar", type: "number" },
+          workflowStepCount: { kind: "scalar", type: "number" },
+          totalCount: { kind: "scalar", type: "number" },
+        },
+      });
+    }
+    expect(platformObjectTypes[USER].operations ?? []).not.toContain("users.effectiveAccess");
+    expect(governanceServerOperations.find((op) => op.handlerRef === "users.effectiveAccess")).toBeUndefined();
+
+    const row = {
+      primaryKey: "entry:app-1/home",
+      label: "Home /home",
+      fields: {
+        category: "Entries",
+        object: "Home /home",
+        permission: "Enter",
+        scope: "Permissions",
+        sources: [
+          { kind: "reference", className: ROLE, primaryKey: "r-1", label: "Analyst" },
+          { kind: "reference", className: PERMISSION_POLICY, primaryKey: "p-1", label: "→ Entries Policy" },
+        ],
+      },
+    };
+    const countsRecord = {
+      primaryKey: "r-1",
+      className: ROLE,
+      label: "Analyst",
+      fields: {},
+      outputs: {
+        entryCount: 1,
+        systemInterfaceCount: 0,
+        productObjectCount: 2,
+        capabilityObjectCount: 0,
+        businessDataCount: 0,
+        workflowStepCount: 1,
+        totalCount: 4,
+      },
+    };
+    const { requests } = await startBackend((path) => {
+      if (path.endsWith("/effective-access-counts")) return { success: true, data: countsRecord };
+      if (path.endsWith("/effective-access")) return { success: true, data: [row] };
+      return { success: true, data: [] };
+    });
+
+    let catalogLoads = 0;
+    const workbenchCatalog = {
+      applications: [],
+      panels: [{ id: "panel-1", label: "Orders" }],
+      projections: [],
+      components: [],
+      agents: [],
+    };
+    const reads = createGovernanceReadAdapters(
+      { token: "tok", locale: "en" },
+      {
+        loadPolicyCatalog: async () => {
+          catalogLoads += 1;
+          return workbenchCatalog;
+        },
+      },
+    );
+
+    expect(await reads.users.effectiveAccess("u-1", "entry")).toHaveLength(1);
+    expect(await reads.roles.effectiveAccess("r-1", "productObject")).toHaveLength(1);
+    expect(await reads.users.effectiveAccessCounts("u-1")).toMatchObject({ outputs: { totalCount: 4 } });
+    expect(await reads.roles.effectiveAccessCounts("r-1")).toMatchObject({ outputs: { entryCount: 1 } });
+
+    expect(catalogLoads).toBe(1);
+    expect(requests).toEqual([
+      { path: "/panel/governance/users/effective-access", body: { id: "u-1", category: "entry" } },
+      {
+        path: "/panel/governance/roles/effective-access",
+        body: { id: "r-1", category: "productObject", workbenchCatalog },
+      },
+      { path: "/panel/governance/users/effective-access-counts", body: { id: "u-1" } },
+      { path: "/panel/governance/roles/effective-access-counts", body: { id: "r-1" } },
+    ]);
+  });
 });
