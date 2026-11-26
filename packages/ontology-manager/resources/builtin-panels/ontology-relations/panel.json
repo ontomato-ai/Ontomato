@@ -47,7 +47,8 @@
             {
               "key": "fromclassLabel",
               "labelKey": "col.from",
-              "minWidth": 120
+              "minWidth": 120,
+              "minContainerWidth": 901
             },
             {
               "key": "toclassLabel",
@@ -58,7 +59,8 @@
               "key": "desc",
               "labelKey": "col.desc",
               "emptyKey": "col.emptyDash",
-              "minWidth": 160
+              "minWidth": 160,
+              "minContainerWidth": 901
             }
           ]
         },

@@ -105,7 +105,7 @@
   <section class="skill-detail-page">
     <page-header :back-label="t('panel.back')" @back="goBack">
       <template #title>
-        <projection v-if="selectedKey" slot="headerTitle" :fallback-title="selectedKey"></projection>
+        <projection v-if="selectedKey" slot="headerTitle" :values="{ fallbackTitle: selectedKey }"></projection>
         <h1 v-else>{{ t("panel.detailTitle") }}</h1>
       </template>
       <template v-if="detailReady" #description>
@@ -154,7 +154,7 @@
           <projection slot="tree" class="skill-fill"></projection>
         </div>
         <div class="package-viewer">
-          <projection slot="content" class="skill-fill" :format="contentFormat"></projection>
+          <projection slot="content" class="skill-fill" :values="{ format: contentFormat }"></projection>
         </div>
       </div>
     </div>

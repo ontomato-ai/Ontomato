@@ -520,6 +520,18 @@ test("short list row operations, fromSlot nested projections, object-union targe
   });
   assert.equal(detailExpanded.placement.inputs, undefined);
 
+  // 3. A read parameter takes another member's read-only output as its value, typed by the read's own signature.
+  const searchFromOutput = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type,
+    data: { rows: { read: "query", params: { search: { output: { member: "graph", name: "version" } } } } },
+  });
+  assert("component" in searchFromOutput);
+  const searchExpanded = expand("searchResults", searchFromOutput);
+  assert.deepEqual(searchExpanded.projection.data.rows.params, { search: { input: "search" } });
+  assert.deepEqual(searchExpanded.projection.inputs, { search });
+  assert.deepEqual(searchExpanded.placement.inputs, { search: { output: { member: "graph", name: "version" } } });
+
   // 3. Removed listColumn / listRowDetail / formField / item / itemField syntax is rejected.
   assert.equal(panelAuthoringMemberSchema.safeParse({
     component: "ObjectSummary",

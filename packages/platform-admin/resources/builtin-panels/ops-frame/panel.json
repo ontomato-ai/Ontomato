@@ -50,7 +50,10 @@
           "sessionId": "sessionId"
         },
         "config": {
-          "showHeader": false
+          "showHeader": false,
+          "greetingKey": "chat.greeting",
+          "descriptionKey": "chat.description",
+          "placeholderKey": "chat.placeholder"
         },
         "name": "Operations diagnosis conversation",
         "description": "Persistent operations diagnosis AgentChat shared across pure-chat, side-by-side, and floating-composer states."

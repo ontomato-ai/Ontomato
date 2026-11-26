@@ -364,7 +364,7 @@ describe("Task 1 (G1): ObjectList rowActivation='expand', controlled expandedKey
             {
               instance: inst,
               member: "list",
-              expandedKeys: controlled.value,
+              values: { expandedKeys: controlled.value },
               "onUpdate:expandedKeys": (next: string[]) => {
                 updates.push(next);
                 controlled.value = next;
@@ -723,7 +723,7 @@ describe("Task 3 (G5): AnnotatedCode automatic token-based syntax highlighting",
       () => ready(pythonPayload),
       {
         initial: { target: { className: FUNCTION, primaryKey: "fn-py" } },
-        render: (inst) => h(PanelMember, { instance: inst, member: "code", language: "python" }),
+        render: (inst) => h(PanelMember, { instance: inst, member: "code", values: { language: "python" } }),
       },
     );
 
@@ -782,7 +782,7 @@ describe("Task 3 (G5): AnnotatedCode automatic token-based syntax highlighting",
       () => ready(currentPayload.value),
       {
         initial: { target: { className: FUNCTION, primaryKey: "fn-1" }, lang: "" },
-        render: (inst) => h(PanelMember, { instance: inst, member: "code", language: langProp.value ?? undefined }),
+        render: (inst) => h(PanelMember, { instance: inst, member: "code", values: { language: langProp.value ?? undefined } }),
       },
     );
 

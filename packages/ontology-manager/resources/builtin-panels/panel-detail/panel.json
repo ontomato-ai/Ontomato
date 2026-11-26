@@ -466,8 +466,7 @@
           }
         },
         "config": {
-          "type": "primary",
-          "labelKey": "action.copy"
+          "type": "primary"
         },
         "id": "builtin-product-0c7c9127-2d5d-4d13-985d-e6b4acda111e"
       },
