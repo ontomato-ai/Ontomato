@@ -525,6 +525,40 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
 
     }
 
+    @Test void changingOnlyEntryInputsEmitsItsBoundRoot() throws Exception {
+        var author = new QueryAccessService.GrantUser("author", "domain");
+        when(identity.getCurrentUser()).thenReturn(author);
+        when(access.canMaintain(any(), eq(author))).thenReturn(true);
+        allowOtherPanels = true;
+        var path = "/platform/applications/app-root-inputs/panel-uses";
+        var registration = """
+            {"entry":{"path":"/applications/app-root-inputs","renderer":"panels"},"initialOpenEntryIds":[],
+             "declaration":{"names":{"en":"Root inputs"},"descriptions":{},"icon":"pages","groups":[]},
+             "framePanelId":"panel-shared","panelUses":[
+               {"id":"main","pageKey":"root-inputs","panelId":"panel-shared","path":"/applications/app-root-inputs",
+                "inputs":{"value":{"literal":null}}}]}
+            """;
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration)).andExpect(status().isOk());
+        var events = new ApplicationEntryEvents(jdbc);
+        var first = events.read(0, 10);
+        var updated = registration.replace("\"literal\":null", "\"literal\":1.25");
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(updated)).andExpect(status().isOk());
+
+        var next = events.read(Long.parseLong(first.nextCursor()), 10);
+        assertEquals(1, next.events().size());
+        var changed = assertInstanceOf(ApplicationEntryEvents.Event.class, next.events().getFirst());
+        assertEquals("app-root-inputs/main", changed.entryId());
+        assertEquals(changed.before().panelIds(), changed.after().panelIds());
+        var previousBinding = changed.before().boundPanelRoot().inputs().get("value");
+        assertTrue(previousBinding.containsKey("literal"));
+        assertNull(previousBinding.get("literal"));
+        assertEquals(new java.math.BigDecimal("1.25"), changed.after().boundPanelRoot().inputs().get("value").get("literal"));
+        assertTrue(changed.after().boundPanelRoot().alsoUnbound());
+
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(updated)).andExpect(status().isOk());
+        assertTrue(events.read(Long.parseLong(next.nextCursor()), 10).events().isEmpty());
+    }
+
     private static final String CATALOGUE = "/platform/applications/catalogue";
     private static final String CATALOGUE_APP = "/platform/applications/app-catalogue/panel-uses";
     private static final String CATALOGUE_REGISTRATION = """

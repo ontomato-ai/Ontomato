@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { applicationPanelInputsSchema } from "./product-panels";
 
 const id = z.string().min(1);
 const eventSequence = z.string().regex(/^(0|[1-9][0-9]*)$/);
@@ -20,7 +21,18 @@ export const entryDependencySchema = z.object({
 });
 export type EntryDependency = z.infer<typeof entryDependencySchema>;
 
-export const entryRootsSchema = z.object({ panelIds: z.array(id), agentIds: z.array(id) });
+const boundPanelRootSchema = z.object({
+  panelId: id,
+  inputs: applicationPanelInputsSchema,
+  alsoUnbound: z.boolean(),
+}).strict();
+export type BoundPanelRoot = z.infer<typeof boundPanelRootSchema>;
+
+export const entryRootsSchema = z.object({
+  panelIds: z.array(id),
+  agentIds: z.array(id),
+  boundPanelRoot: boundPanelRootSchema.nullish(),
+});
 export type EntryRoots = z.infer<typeof entryRootsSchema>;
 
 export interface ReadAffectedEntryRootsRequest {

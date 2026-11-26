@@ -1288,16 +1288,19 @@ public class ApplicationCatalog {
             panels.requireCurrent(user.getDomainId(), settings.framePanelId(), withChangedIcons(old, uses), settings.delivery(), settings.theme(),
                 supplied == null ? null : changedIcon(old, supplied.icon()), locale);
             boolean allowStandalone = body.allowStandalone() != null ? body.allowStandalone() : (old == null || allowsStandalone(old));
+            JSONObject stored;
             if (old != null && supplied == null) {
                 db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,panel_uses=?::jsonb,panel_settings=?::jsonb,allow_standalone=?,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
                     entry.toJSONString(), entryPath, JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue),
                     settings.json().toJSONString(), allowStandalone, id);
+                stored = require(id);
             } else {
                 var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), List.of(), uses);
                 save(id, user.getDomainId(), "workbench", old == null ? user.getId() : old.getString("ownerUserId"),
                     "product", old == null ? "apps" : old.getString("rail"), old == null ? "business" : old.getString("category"),
                     old == null ? 100 : old.getIntValue("sort"), entry, null, null, declaration, settings.json(), allowStandalone);
-                access.declare(require(id), declaration, old == null);
+                stored = require(id);
+                access.declare(stored, declaration, old == null);
                 if (old == null && body.shared() != null) {
                     grants.share(id, Boolean.TRUE.equals(body.shared()));
                 }
@@ -1311,7 +1314,7 @@ public class ApplicationCatalog {
             }
             ApplicationEntryEvents.append(db, user.getDomainId(), user.getId(),
                 old == null ? Map.of() : ApplicationEntryEvents.roots(old),
-                ApplicationEntryEvents.roots(id, uses, entryFramePanelId(true, settings.framePanelId())));
+                ApplicationEntryEvents.roots(stored));
             return JSONObject.of("applicationId", id, "entry", entry, "panelUses", uses);
         });
     }

@@ -1,9 +1,10 @@
 import type { EntryDependency } from "@ontomato/contracts/entry-dependencies";
 import { pageComposerAgentTargetSchema } from "@ontomato/contracts/panel-conversation-entry";
-import { panelObjectRefSchema, panelStateIdentityField, type PanelMemberInput } from "@ontomato/contracts/panel-manifest";
+import { panelObjectRefSchema, panelPlacementSchema, panelStateIdentityField, type PanelMemberInput } from "@ontomato/contracts/panel-manifest";
 import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, WORKFLOW } from "@ontomato/contracts/platform-object-types";
 import {
   builtinProductPanelInputSchema, builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
+  type ApplicationPanelInputs,
 } from "@ontomato/contracts/product-panels";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
@@ -119,6 +120,16 @@ export function entryDependencyCompiler(client: PoolClient, domainId: string | n
     for (const componentId of Object.values(panel.manifest.components ?? {})) {
       dependencies.push({ objectType: "COMPONENT", objectKey: componentId, verb: "USE" });
     }
+    async function include(kind: CurrentProductKind, id: string, inputs: Inputs, field: string) {
+      if (kind === "panel") {
+        dependencies.push(...await compile(id, inputs, active, field));
+        return;
+      }
+      const projection = await find("projection", id);
+      if (!projection) throw new HttpError(404, `${field} references unavailable projection '${id}'`, "PRODUCT_UNAVAILABLE");
+      const schema = isBuiltinProductId(id) ? builtinProductProjectionInputSchema : productProjectionInputSchema;
+      dependencies.push(...projectionDependencies(id, schema.parse(projection.definition), inputs));
+    }
     active.add(panelId);
     // Object detail rules select a separate entry by class. Open-ended usable rules
     // and the application content slot require no statically declared member here.
@@ -126,19 +137,25 @@ export function entryDependencyCompiler(client: PoolClient, domainId: string | n
       const statePlacement = key.startsWith("$state.");
       if (statePlacement && input.has(key.slice("$state.".length))) continue;
       const field = `Panel '${panelId}' manifest ${statePlacement ? key.slice(1) : `members.${key}.target`}`;
-      const inputs = inputValues(wiring.inputs ?? {}, state);
-      if (target.kind === "panel") {
-        dependencies.push(...await compile(target.id, inputs, active, field));
-      } else {
-        const projection = await find("projection", target.id);
-        if (!projection) throw new HttpError(404, `${field} references unavailable projection '${target.id}'`, "PRODUCT_UNAVAILABLE");
-        const schema = isBuiltinProductId(target.id) ? builtinProductProjectionInputSchema : productProjectionInputSchema;
-        dependencies.push(...projectionDependencies(target.id, schema.parse(projection.definition), inputs));
-      }
+      await include(target.kind, target.id, inputValues(wiring.inputs ?? {}, state), field);
+    }
+    for (const [name, value] of input) {
+      if (value == null || panel.manifest.state[name]?.type.kind !== "placement") continue;
+      const placement = panelPlacementSchema.parse(value);
+      const field = `Panel '${panelId}' bound state.${name}`;
+      const inputs = inputValues(placement.inputs ?? {}, state);
+      if ("panelId" in placement.target) await include("panel", placement.target.panelId, inputs, field);
+      else await include("projection", placement.target.projectionId, inputs, field);
     }
     active.delete(panelId);
     return dependencies;
   }
 
-  return async (panelId: string) => mergeDependencies(await compile(panelId, new Map(), new Set(), `Panel '${panelId}'`));
+  return async (panelId: string, bindings: ApplicationPanelInputs = {}) => {
+    const inputs = new Map(Object.entries(bindings).map(([name, binding]) => [
+      name,
+      "literal" in binding ? binding.literal : undefined,
+    ]));
+    return mergeDependencies(await compile(panelId, inputs, new Set(), `Panel '${panelId}'`));
+  };
 }
