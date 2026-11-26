@@ -72,6 +72,7 @@ public class AuthorizationPolicyGovernanceController {
     public record ExistingGrant(String policyId, Kind kind, String id, Verb verb, GrantScope scope) {}
     public record GrantEntriesRequest(String policyId, List<String> entryIds, List<GrantItem> acceptedObjects) {}
     public record GrantEntriesResult(String policyId, int grantedEntryCount, int grantedObjectCount) {}
+    public record RevokeEntriesResult(String policyId, int revokedEntryCount, int revokedObjectCount) {}
     public record PolicyRequest(String policyId) {}
     public record PendingItem(long id, String source, String changeKey, String actorId, String entryId,
                               Kind kind, String targetId, Verb verb, GrantScope scope) {}
@@ -154,6 +155,28 @@ public class AuthorizationPolicyGovernanceController {
         }).distinct().toList();
         policies.grantEntries(ctx, policyId, entries, grants);
         return new GrantEntriesResult(policyId, entries.size(), grants.size());
+    }
+
+    @Transactional
+    @PostMapping("/entries:revoke")
+    public RevokeEntriesResult revokeEntries(HttpServletRequest request, @RequestBody GrantEntriesRequest input) {
+        var ctx = authorization.resolveSubject(actor(request));
+        var policyId = requirePolicyId(input.policyId());
+        if (input.entryIds() == null || input.acceptedObjects() == null)
+            throw badRequest("Entry IDs and removed objects are required.");
+
+        var domainId = ctx.identity().domainId();
+        var entries = input.entryIds().stream().map(id -> {
+            if (blank(id)) throw badRequest("Each entry requires an ID.");
+            return new ObjectTarget(domainId, Kind.ENTRY, id);
+        }).distinct().toList();
+        var grants = input.acceptedObjects().stream().map(item -> {
+            if (item == null || item.kind() == null || item.kind() == Kind.ENTRY || item.verb() == null || item.id() == null)
+                throw badRequest("Each removed object requires a kind, ID and verb.");
+            return new ObjectGrant(policyId, new ObjectTarget(domainId, item.kind(), item.id()), item.verb(), item.scope());
+        }).distinct().toList();
+        policies.revokeEntries(ctx, policyId, entries, grants);
+        return new RevokeEntriesResult(policyId, entries.size(), grants.size());
     }
 
     @PostMapping("/pending:list")

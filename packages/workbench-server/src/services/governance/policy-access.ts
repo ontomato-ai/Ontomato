@@ -37,6 +37,12 @@ export const grantPolicyEntriesResultSchema = z.object({
   grantedEntryCount: z.number().int().nonnegative(),
   grantedObjectCount: z.number().int().nonnegative(),
 });
+export const revokePolicyEntriesInputSchema = grantPolicyEntriesInputSchema;
+export const revokePolicyEntriesResultSchema = z.object({
+  policyId: id,
+  revokedEntryCount: z.number().int().nonnegative(),
+  revokedObjectCount: z.number().int().nonnegative(),
+});
 export const resolvePendingPolicyGrantsInputSchema = z.object({
   resolutions: z.array(z.object({ id: z.number().int().positive(), confirm: z.boolean(), scope: scope.nullish() }).strict()),
 }).strict();
@@ -164,6 +170,7 @@ async function entryContext(viewer: AssistantCredentials, domainId: string, poli
     const panelId = detailPanels.get(entry.entryId);
     return panelId ? { ...entry, panelIds: [...new Set([...entry.panelIds, panelId])] } : entry;
   });
+  const entryPanels = new Map(entries.map(entry => [entry.entryId, new Set(entry.panelIds)] as const));
   const seenEntries = new Set(entries.map(entry => entry.entryId));
   for (const [entryId, panelId] of detailPanels) {
     if (seenEntries.has(entryId)) continue;
@@ -177,12 +184,20 @@ async function entryContext(viewer: AssistantCredentials, domainId: string, poli
   const panelIds = [...new Set([...entries.flatMap(entry => entry.panelIds), ...detailPanels.values()])];
   const dependencies = await readPanelDependencies(client, domainId, panelIds);
   const direct = new Map<string, ItemKey>();
-  const add = (item: ItemKey) => direct.set(itemKey(item), item);
-  for (const entry of entries) for (const id of entry.agentIds) add({ kind: "AGENT", id, verb: "USE" });
+  const entryObjects = new Map<string, Map<string, ItemKey>>();
+  const add = (item: ItemKey, owners: string[] = []) => {
+    direct.set(itemKey(item), item);
+    for (const entryId of owners) entryObjects.get(entryId)?.set(itemKey(item), item);
+  };
+  for (const entry of entries) {
+    entryObjects.set(entry.entryId, new Map());
+    for (const id of entry.agentIds) add({ kind: "AGENT", id, verb: "USE" }, [entry.entryId]);
+  }
   for (const panelId of panelIds) {
-    add({ kind: "PANEL", id: panelId, verb: "USE" });
+    const owners = entries.filter(entry => entryPanels.get(entry.entryId)?.has(panelId)).map(entry => entry.entryId);
+    add({ kind: "PANEL", id: panelId, verb: "USE" }, owners);
     for (const { objectType, objectKey, verb } of dependencies.get(panelId) ?? []) {
-      add({ kind: objectType, id: objectKey, verb });
+      add({ kind: objectType, id: objectKey, verb }, owners);
     }
   }
 
@@ -197,7 +212,7 @@ async function entryContext(viewer: AssistantCredentials, domainId: string, poli
   }
   const items = new Map(direct);
   for (const [key, [step]] of steps) items.set(key, { kind: "ACTION", id: step.actionId, verb: "EXECUTE" });
-  return { ...roots, entries, items, direct, steps };
+  return { ...roots, entries, items, direct, steps, entryObjects };
 }
 
 function labelFor(catalog: PolicyWorkbenchCatalog, actions: EntryRootsResult["publishedActions"] = []) {
@@ -262,6 +277,7 @@ export async function previewEntryGrantPayload(
   });
   return {
     policyId, entries: context.entries, candidates, existingGrants: context.existingGrants,
+    entryObjects: Object.fromEntries([...context.entryObjects].map(([entryId, objects]) => [entryId, [...objects.values()]])),
     targetPolicyRoleIds: context.targetPolicyRoleIds, publishedActions: context.publishedActions,
     summary: {
       entryCount: context.entries.length,
@@ -280,6 +296,12 @@ export function grantPolicyEntries(viewer: AssistantCredentials, policyId: strin
   return policyPost(viewer, "entries:grant", {
     policyId: id.parse(policyId), ...grantPolicyEntriesInputSchema.parse(input),
   }, grantPolicyEntriesResultSchema);
+}
+
+export function revokePolicyEntries(viewer: AssistantCredentials, policyId: string, input: unknown) {
+  return policyPost(viewer, "entries:revoke", {
+    policyId: id.parse(policyId), ...revokePolicyEntriesInputSchema.parse(input),
+  }, revokePolicyEntriesResultSchema);
 }
 
 export async function listPendingPolicyGrantsPayload(

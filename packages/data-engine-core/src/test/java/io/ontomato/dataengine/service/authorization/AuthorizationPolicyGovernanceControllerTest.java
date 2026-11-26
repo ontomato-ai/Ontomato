@@ -284,6 +284,23 @@ class AuthorizationPolicyGovernanceControllerTest {
     }
 
     @Test
+    void revokesEntriesAndAcceptedObjectsAtomically() throws Exception {
+        var body = """
+                {"policyId":"selected","entryIds":["app/main"],"acceptedObjects":[
+                  {"kind":"PANEL","id":"panel-1","verb":"USE","scope":null}]}
+                """;
+        http.perform(rpc("entries:revoke", body)).andExpect(status().isForbidden());
+        verify(store, never()).revokeObject(any());
+
+        permissions(true, true);
+        http.perform(rpc("entries:revoke", body)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.revokedEntryCount").value(1))
+                .andExpect(jsonPath("$.revokedObjectCount").value(1));
+        verify(store).revokeObject(grant(ENTRY, Verb.ENTER, null));
+        verify(store).revokeObject(grant(new ObjectTarget("domain", Kind.PANEL, "panel-1"), Verb.USE, null));
+    }
+
+    @Test
     void listsPendingForReadersAndRequiresChangeToConfirmOrIgnore() throws Exception {
         permissions(true, false);
         var pending = new PendingGrant(7, "publication", "change", "author", ENTRY, grant(ACTION, Verb.EXECUTE, null));
