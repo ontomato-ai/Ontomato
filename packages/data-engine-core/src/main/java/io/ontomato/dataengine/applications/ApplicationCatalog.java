@@ -16,8 +16,7 @@ import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
-import io.ontomato.dataengine.service.ProductGrantService;
-import io.ontomato.dataengine.service.ProductPrincipalLookup;
+import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.DefinitionState;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.OwnerFacts;
@@ -132,10 +131,10 @@ public class ApplicationCatalog {
     private final AuthorizationService authorization;
     private final JSONObject upstreams;
     private final PanelResources panels;
-    private final ProductPrincipalLookup principals;
+    private final IdentityPrincipalDirectory principals;
     public ApplicationCatalog(JdbcTemplate db, TransactionTemplate transactions, ApplicationAccess access,
             @Value("${ONTOMATO_APP_UPSTREAMS:{}}") String upstreams, PanelResources panels,
-            ProductPrincipalLookup principals, AuthorizationService authorization) {
+            IdentityPrincipalDirectory principals, AuthorizationService authorization) {
         this.db = db; this.transactions = transactions; this.access = access;
         this.upstreams = JSON.parseObject(upstreams);
         this.panels = panels; this.principals = principals; this.authorization = authorization;
@@ -1151,16 +1150,6 @@ public class ApplicationCatalog {
 
     private void requireDomainMaintainer(JSONObject app, User user) {
         new ApplicationSubject(user).requireEdit(app);
-    }
-
-    public void requireLegacyGrantChange(String id, User user) {
-        applicationsInDomain(user.getDomainId()).stream()
-            .filter(app -> id.equals(app.getString("id")) && app.getString("domainId") != null)
-            .findFirst().ifPresent(app -> {
-                requireDomainMaintainer(app, user);
-                if (panelManaged(app)) throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Manage panel application access through its entry policies.");
-            });
     }
 
     public boolean legacyMaintenance(String id, User user) {
