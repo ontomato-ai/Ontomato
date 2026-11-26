@@ -32,7 +32,7 @@ import { removePanelDependencies } from "./entry-dependency-store";
 import { deliverEntryDependencyPublications } from "./entry-dependency-publication";
 
 const cursorSchema = z.discriminatedUnion("sort", [
-  z.object({ sort: z.literal("name"), key: z.string(), id: productCurrentIdParamsSchema.shape.id }).strict(),
+  z.object({ sort: z.literal("name"), key: z.string().nullable(), id: productCurrentIdParamsSchema.shape.id }).strict(),
   z.object({ sort: z.literal("updated"), key: z.string().datetime({ offset: true }), id: productCurrentIdParamsSchema.shape.id }).strict(),
 ]);
 
@@ -55,7 +55,7 @@ interface SummaryRow {
   visibility: ProductVisibility;
   revision: number;
   updatedAt: Date;
-  sortKey: string;
+  sortKey: string | null;
   editable: boolean;
   componentId?: string;
   template?: boolean | null;
@@ -182,8 +182,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const { source, values: filterValues, editPredicate } = await catalogueRange(owner, credentials, kind, !picker);
   const updated = input.sort === "updated";
   const order = updated ? "updated_at" : "lower(definition->>'name')";
-  const direction = updated ? "DESC" : "ASC";
-  const keyType = updated ? "timestamptz" : "text";
+  const orderBy = updated ? `${order} DESC,p.id DESC` : `${order} ASC NULLS LAST,p.id ASC`;
   // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
   const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
   const kindColumn = projectionCatalog ? `,definition->>'componentId' AS "componentId",definition`
@@ -199,6 +198,10 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const editable = editPredicate(pageValues);
   const [key, id, limit, offset] = [cursor?.key ?? null, cursor?.id ?? null, input.limit + 1, picker?.offset ?? 0]
     .map(value => `$${pageValues.push(value)}`);
+  // A missing stored name sorts after every named row, with ID breaking ties within the null group.
+  const afterCursor = updated
+    ? `(${order},p.id) < (${key}::timestamptz,${id}::text)`
+    : `(${order} IS NULL,COALESCE(${order},''),p.id) > (${key}::text IS NULL,COALESCE(${key}::text,''),${id}::text)`;
   const pool = getPostgresPool();
   const [{ rows }, { rows: [count] }] = await Promise.all([
     pool.query<SummaryRow>(
@@ -207,8 +210,8 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
          ${editable} AS editable${kindColumn}
        FROM ${source} AS p
        ${whereFilter}
-         AND (${key}::${keyType} IS NULL OR (${order},p.id) ${updated ? "<" : ">"} (${key}::${keyType},${id}::text))
-       ORDER BY ${order} ${direction},p.id ${direction} LIMIT ${limit} OFFSET ${offset}`,
+         AND (${id}::text IS NULL OR ${afterCursor})
+       ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
       pageValues,
     ),
     pool.query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM ${source} AS p ${whereFilter}`, filterValues),

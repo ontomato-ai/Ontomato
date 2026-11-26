@@ -163,6 +163,25 @@ it("continues an updated catalogue page from the raw unreadable row's exact data
   expect(boundValues.filter(values => values.includes(rawKey))).toHaveLength(1);
 });
 
+it("accepts the raw NULL name key in a continuation without counting only the remaining rows", async () => {
+  const { name: _name, ...definition } = healthyDefinition;
+  const unnamed = (id: string) => ({ ...storedPanel(id, owner.userId), definition: { ...definition, description: "Orders" },
+    name: null, description: "Orders", visibility: "private", sortKey: null, editable: true });
+  const first = unnamed("unnamed-orders-a");
+  const second = unnamed("unnamed-orders-b");
+  mocks.query.mockResolvedValueOnce({ rows: [first, second] }).mockResolvedValueOnce({ rows: [{ total: 2 }] });
+  const input = { q: "Orders", scope: "all", sort: "name", limit: 1 } as const;
+  const page = await listCurrentProducts(owner, credentials, "panel", input);
+  expect(page).toMatchObject({ unavailableItems: [{ id: first.id }], total: 2, nextCursor: expect.any(String) });
+
+  mocks.query.mockClear().mockResolvedValueOnce({ rows: [second] }).mockResolvedValueOnce({ rows: [{ total: 2 }] });
+  const next = await listCurrentProducts(owner, credentials, "panel", { ...input, cursor: page.nextCursor! });
+  expect(next).toMatchObject({ unavailableItems: [{ id: second.id }], total: 2, nextCursor: null });
+  const [[, pageValues], [, countValues]] = mocks.query.mock.calls;
+  expect(pageValues).toContain(first.id);
+  expect(countValues).not.toContain(first.id);
+});
+
 it("binds projection EDIT grants for page annotations, not for the total", async () => {
   const componentId = "@ontomato/sdk:ObjectList";
   const stored = { id: "visible-projection", ownerId: "another-user", editable: true, revision: 1,

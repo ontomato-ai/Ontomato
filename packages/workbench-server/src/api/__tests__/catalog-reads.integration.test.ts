@@ -370,6 +370,35 @@ it("reports an unreadable panel beside healthy results without losing its stored
   }
 });
 
+it("traverses named and then unnamed raw rows by ID without changing the catalogue total", async () => {
+  const description = "Null name cursor fixture";
+  const baseDefinition = { description, visibility: "private", content, manifest };
+  const records = [
+    { id: "null-name-z", definition: { ...baseDefinition, name: "Named row" } },
+    { id: "null-name-b", definition: baseDefinition },
+    { id: "null-name-a", definition: baseDefinition },
+  ];
+  for (const { id, definition } of records) {
+    await state.pool!.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)
+      VALUES ($1,$2,$3,$4)`, [owner.domainId, id, owner.userId, definition]);
+    state.use.push(id);
+  }
+  try {
+    const { listCurrentProducts } = await import("../../services/product-panels/catalog");
+    const input = { q: description, scope: "all", sort: "name", limit: 1 } as const;
+    const first = await listCurrentProducts(owner, viewer, "panel", input);
+    expect(first).toMatchObject({ items: [{ id: "null-name-z" }], total: 3, nextCursor: expect.any(String) });
+    const second = await listCurrentProducts(owner, viewer, "panel", { ...input, cursor: first.nextCursor! });
+    expect(second).toMatchObject({ items: [], unavailableItems: [{ id: "null-name-a" }], total: 3, nextCursor: expect.any(String) });
+    const third = await listCurrentProducts(owner, viewer, "panel", { ...input, cursor: second.nextCursor! });
+    expect(third).toMatchObject({ items: [], unavailableItems: [{ id: "null-name-b" }], total: 3, nextCursor: null });
+  } finally {
+    const ids = records.map(record => record.id);
+    state.use = state.use.filter(id => !ids.includes(id));
+    await state.pool!.query(`DELETE FROM "${state.schema}".product_panels WHERE domain_id=$1 AND id=ANY($2::text[])`, [owner.domainId, ids]);
+  }
+});
+
 it("dispatches application reads from current PostgreSQL records and preserves the complete table when an executor changes it", async () => {
   expect(await readCatalogue("apps")).toMatchObject({
     rows: [{ primaryKey: applicationId, className: APPLICATION, fields: { canMaintain: false, entryCount: 1 } }],
