@@ -1,27 +1,18 @@
-import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { WorkspaceBuildTests } from "../../services/app-builder/build-tests";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
 import path from "node:path";
-import {readFile} from 'node:fs/promises';
-import express, { Router, type Request, type Response, type NextFunction } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
-import { workspaceIdSchema, workspacePathSchema, workspaceNameSchema, workspaceImportSchema, workspaceRestoreSchema, workspaceReadSchema, workspaceContentSchema, workspacePageSchema, workspaceDiffSchema, hostedPublishSchema, hostedRollbackSchema, hostedAppIdSchema } from "@ontomato/contracts/workspaces";
+import { workspaceIdSchema, workspacePathSchema, workspaceNameSchema, workspaceImportSchema, workspaceRestoreSchema, workspaceReadSchema, workspaceContentSchema, workspacePageSchema, workspaceDiffSchema, hostedAppIdSchema } from "@ontomato/contracts/workspaces";
 import { context, id } from "../utils/agent-host";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { panelCandidateQuerySchema, readPanelCandidate } from "../../services/workspaces/panel-candidate";
 import { workspaceSessions } from "../../services/workspaces/sessions";
-import { runtimeDataDir } from "../../content/layout";
 import { HttpError } from "../../utils/errors";
 import { assistantService } from "../../services/assistant/service";
-import { publishWorkspace, rollbackWorkspace, workspaceReleases } from "../../services/workspaces/hosted-apps";
-import {getApplicationProduct} from '../../services/product-assets/store';
 import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
-import {SOURCE_APPLICATION_CSP} from '../../services/workspaces/product-admission';
-import { HOSTED_SDK_MARKER, injectHostedSdkHtml } from "../../services/workspaces/hosted-sdk";
-import { issueHostedPreviewToken, lookupHostedPreviewToken } from "../../services/workspaces/preview-tokens";
-import { mountAppsSdkStatic } from "./apps-sdk";
 import type { AssistantOwner } from "../../services/assistant/store";
 
 const wrap = (fn: (req: Request, res: Response) => Promise<void>) =>
@@ -31,34 +22,14 @@ const wrap = (fn: (req: Request, res: Response) => Promise<void>) =>
 const runtime = (owner: AssistantOwner, workspaceOwnerId?: string) =>
   new RuntimeClient(owner.domainId, undefined, owner.userId, workspaceOwnerId ?? owner.userId);
 
-export const workspacePreviewRouter = Router();
-workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
-  const preview = lookupHostedPreviewToken(req.params.token);
-  if (!preview || preview.workspaceId !== workspaceIdSchema.parse(req.params.id) || preview.expiresAt <= Date.now())
-    throw new HttpError(404, "Preview expired", "NOT_FOUND");
-  const file = workspacePathSchema.parse(req.params[0] || "index.html");
-  const slot = preview.workspaceOwnerId ?? preview.owner.userId;
-  const sdk = /\.html$/i.test(file) ? await new WorkspaceBuildTests(preview.owner, {}, preview.workspaceId, slot).requirePreviewSdk() : undefined;
-  const bytes = await runtime(preview.owner, slot).bytes(`/v1/workspaces/${preview.workspaceId}/files/content?${new URLSearchParams({ path: file })}`);
-  const source = sdk ? bytes.toString("utf8") : undefined;
-  res.type(path.extname(file)).set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" })
-    .send(sdk && source?.includes(HOSTED_SDK_MARKER) ? injectHostedSdkHtml(source, sdk, file) : bytes);
-}));
 export const workspaceRouter = Router();
 workspaceRouter.get('/applications/:appId/policy',wrap(async(req,res)=>{
-  const {owner,credentials}=context(req),appId=hostedAppIdSchema.parse(req.params.appId);
+  const {credentials}=context(req),appId=hostedAppIdSchema.parse(req.params.appId);
   const headers=buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey);
   const catalog=JSON.parse((await backendGet('application-policy-admission',config.dataQuery.baseUrl+'/platform/applications?purpose=navigation',{headers,retries:1})).text);
   const listed=catalog.success&&Array.isArray(catalog.data)?catalog.data.find((entry:{id:string;kind?:string})=>entry.id===appId):undefined;
-  if(!listed)throw new HttpError(403,'Application use permission required','PRODUCT_FORBIDDEN');
-  if(listed.kind==='connected'){res.json({messageBridge:0});return;}
-  await getApplicationProduct(owner,appId);
-  const response=await backendGet('application-network-policy',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(appId),{headers,retries:1});
-  const application=JSON.parse(response.text);
-  if(!application.success||!application.data?.releaseId)throw new HttpError(404,'Application release unavailable','NOT_FOUND');
-  let policy;try{policy=JSON.parse(await readFile(runtimeDataDir('hosted-apps',appId,workspaceIdSchema.parse(application.data.releaseId),'.ontomato-network-policy.json'),'utf8'));}catch(error){if((error as {code?:string}).code!=='ENOENT')throw error;}
-  if(![undefined,2].includes(policy?.messageBridge))throw new HttpError(409,'Unsupported application message bridge','PRODUCT_SDK_UPGRADE_REQUIRED');
-  res.json({messageBridge:policy?.messageBridge??0});
+  if(listed?.kind!=='connected')throw new HttpError(403,'Application use permission required','PRODUCT_FORBIDDEN');
+  res.json({messageBridge:0});
 }));
 for (const method of ["get", "post", "delete"] as const) {
   workspaceRouter[method]("/:id/build-tests", wrap(async (req,res) => {
@@ -75,27 +46,8 @@ workspaceRouter.get("/:id/panel-candidate", wrap(async (req, res) => {
   const source = await readPanelCandidate(owner, credentials, { id: id(req, "id"), ref });
   res.set("Cache-Control", "no-store").json(source);
 }));
-workspaceRouter.post("/:id/preview-token", wrap(async (req, res) => {
-  if (req.header(AGENT_EXECUTION_HEADER) !== undefined) {
-    throw new HttpError(403, "Preview credentials can only be delivered to the person opening the preview", "FORBIDDEN");
-  }
-  const { owner, credentials } = context(req), workspaceId = id(req, "id");
-  await assertAppBuilderAccess(credentials);
-  res.json(await issueHostedPreviewToken(owner, credentials, workspaceId));
-}));
 workspaceRouter.get("/:id/sessions", wrap(async (req, res) => {
   res.json(await workspaceSessions(context(req).owner, id(req, "id"), agentHostSessionPageQuerySchema.parse(req.query)));
-}));
-workspaceRouter.post("/:id/publish", wrap(async (req, res) => {
-  const c = context(req), input = hostedPublishSchema.parse(req.body);
-  res.json(await publishWorkspace(c.owner, id(req, "id"), input.commit, input.declaration, c.credentials));
-}));
-workspaceRouter.get("/:id/releases", wrap(async (req, res) => {
-  res.json({ items: await workspaceReleases(context(req).owner, id(req, "id")) });
-}));
-workspaceRouter.post("/:id/rollback", wrap(async (req, res) => {
-  const c = context(req), input = hostedRollbackSchema.parse(req.body);
-  res.json(await rollbackWorkspace(c.owner, id(req, "id"), input.releaseId, input.declaration, c.credentials));
 }));
 workspaceRouter.delete("/:id", wrap(async (req, res) => {
   const c=context(req), owner = c.owner;
@@ -123,18 +75,4 @@ for (const [method, suffix, schema] of [["post", "", workspaceNameSchema], ["pat
     const route = suffix.replace(":id", req.params.id ? id(req, "id") : "");
     res.status(suffix ? 200 : 201).json(await runtime(context(req).owner).request(`/v1/workspaces${route}`, method.toUpperCase(), body));
   }));
-}
-export function mountHostedStatic(app: express.Express) {
-  app.get("/internal/hosted-apps/:appId/:releaseId/*", wrap(async(req, res) => {
-    const appId = hostedAppIdSchema.parse(req.params.appId), releaseId = workspaceIdSchema.parse(req.params.releaseId);
-    const file = workspacePathSchema.parse(req.params[0] || "index.html");
-    if(['.ontomato-network-policy.json','.ontomato-source-function.json'].includes(file))throw new HttpError(404,'File unavailable','NOT_FOUND');
-    res.set({ "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",'Access-Control-Allow-Origin':'*' });
-    let policy;
-    try{policy=JSON.parse(await readFile(runtimeDataDir('hosted-apps',appId,releaseId,'.ontomato-network-policy.json'),'utf8'));}catch(error){if((error as {code?:string}).code!=='ENOENT')throw error;}
-    if(policy?.messageBridge===2)res.set('Content-Security-Policy',SOURCE_APPLICATION_CSP);
-    else if(policy?.hostTransport===1)res.set('Content-Security-Policy',"connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'");
-    await new Promise<void>((resolve,reject)=>{res.sendFile(file, { root: runtimeDataDir("hosted-apps", appId, releaseId), dotfiles: "allow", cacheControl: false, lastModified: false, etag: false },error=>error?reject(error):resolve());});
-  }));
-  mountAppsSdkStatic(app);
 }

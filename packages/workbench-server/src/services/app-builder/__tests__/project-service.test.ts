@@ -189,7 +189,7 @@ beforeEach(() => {
     }
   });
   vi.spyOn(appBuilderProjectStore, "recordRelease").mockImplementation(async input => {
-    const release = { id: randomUUID(), createdAt: date.toISOString(), hostedReleaseId: null, ...input };
+    const release = { id: randomUUID(), createdAt: date.toISOString(), ...input };
     releases.push(release);
     return release;
   });
