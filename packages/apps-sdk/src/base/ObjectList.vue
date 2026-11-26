@@ -7163,7 +7163,7 @@ defineExpose({
   border-bottom: 0;
 }
 .sdk-object-list-row-main {
-  align-items: flex-start;
+  align-items: center;
   box-sizing: border-box;
   display: flex;
   flex: 0 0 auto;
@@ -7177,7 +7177,7 @@ defineExpose({
   flex: 0 0 auto;
 }
 .sdk-object-list-row-check {
-  margin: calc(var(--spacing-sm) + 3px) 0 0;
+  margin: 0;
 }
 .sdk-object-list-item-btn {
   align-items: center;
