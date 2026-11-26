@@ -17,7 +17,7 @@ vi.mock("../../../config/application", () => ({
 vi.mock("../../../config/environment", () => ({
   environment: { agentRuntime: () => ({ queryServiceToken: "service-token-1" }) },
 }));
-vi.mock("../../assistant/definitions", () => ({ listAgentDefinitions: vi.fn() }));
+vi.mock("../../assistant/definition-relations", () => ({ listAgentDefinitionNodes: vi.fn() }));
 vi.mock("../../assistant/skills", () => ({ assistantSkillCatalog: vi.fn() }));
 vi.mock("../../business-definitions/definitions", () => ({ listPublishedDefinitions: vi.fn() }));
 vi.mock("../../product-panels/component-catalogue", () => ({ readPanelComponentCatalogue: vi.fn() }));

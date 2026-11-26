@@ -315,6 +315,21 @@ const threeRelations = [
 ];
 const legend = { showCategoryLegend: true, categoryLabels: { fact: "Fact layer" } };
 
+// Each chip names its category with that category's colour, so the reader can tell them apart before clicking anything: the
+// swatch is there on the first frame, not only after the canvas has been measured.
+it("gives every legend chip its category colour as the legend is first drawn", async () => {
+  classes = twoCategories;
+  relations = threeRelations;
+  try {
+    const { element } = mount(false, {}, legend);
+    await vi.waitFor(() => expect(canvas.nodes).toHaveLength(3));
+    const swatches = [...element.querySelectorAll("[data-graph-category] i")].map((item) => (item as HTMLElement).style.background);
+    expect(swatches).toEqual(["var(--chart-1)", "var(--chart-2)"]);
+  } finally {
+    classes = twoClasses;
+  }
+});
+
 it("folds a category away from its legend and brings it back, leaving the other categories drawn", async () => {
   classes = twoCategories;
   relations = threeRelations;

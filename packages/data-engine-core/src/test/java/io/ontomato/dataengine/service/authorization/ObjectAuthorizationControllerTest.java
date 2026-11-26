@@ -74,6 +74,33 @@ class ObjectAuthorizationControllerTest {
     }
 
     @Test
+    void collectionRangesUseTheSameWorkbenchAndUserBoundary() throws Exception {
+        var input = """
+                {"kind":"PANEL","verbs":["USE","EDIT"]}
+                """;
+        http.perform(post(READ_RANGES).contentType(MediaType.APPLICATION_JSON).content(input))
+                .andExpect(status().isForbidden());
+        http.perform(rpc(READ_RANGES, input).requestAttr(QueryGrantService.ATTRIBUTE, Map.of("userId", "user")))
+                .andExpect(status().isUnauthorized());
+        http.perform(rpc(READ_RANGES, input.replace("EDIT", "VIEW"))).andExpect(status().isBadRequest());
+        http.perform(rpc(READ_RANGES, input.replace("PANEL", "METRIC"))).andExpect(status().isBadRequest());
+        verifyNoInteractions(subjects, store);
+
+        when(store.objectKeysByVerb("domain", Kind.PANEL, Set.of(Verb.USE, Verb.EDIT), Set.of()))
+                .thenReturn(Map.of(Verb.EDIT, Set.of("editable")));
+        http.perform(rpc(READ_RANGES, input)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.ranges.USE.fixed").value(true))
+                .andExpect(jsonPath("$.ranges.USE.authorId").value("user"))
+                .andExpect(jsonPath("$.ranges.USE.objectIds").isEmpty())
+                .andExpect(jsonPath("$.ranges.USE.all").value(false))
+                .andExpect(jsonPath("$.ranges.EDIT.fixed").value(false))
+                .andExpect(jsonPath("$.ranges.EDIT.objectIds[0]").value("editable"));
+        verify(subjects).resolveRoles("domain", "user");
+        verify(store).objectKeysByVerb("domain", Kind.PANEL, Set.of(Verb.USE, Verb.EDIT), Set.of());
+        verify(store, never()).objectGrants(any(), any(), any());
+    }
+
+    @Test
     void resolvesOnceAndIgnoresClaimedUserId() throws Exception {
         when(subjects.objectEntitlement("user", new ObjectTarget("domain", Kind.AGENT, ""), Verb.CREATE)).thenReturn(true);
         http.perform(rpc(DECIDE_BATCH, """

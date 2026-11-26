@@ -237,6 +237,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
   protectedPanelOfferings = [{
     kind: "protected", sourceKey: "panel-a", entrances,
     resourceIds: ["panel-a", "projection-a"], readManifest, provide,
+    readDisplayTitle: async () => "Panel A",
   }];
   let admittedEntrance = { ...entrance, entryKey: "sibling" };
   let ids = ["panel-a", "projection-a"];
@@ -278,6 +279,8 @@ it("admits protected packages only through the initiator's exact entrance and ev
   view = await readAssistantSkillView(domain, credentials);
   expect(visibleAssistantSkillRefs([old, protectedRef], view)).toEqual([protectedRef]);
   expect(hasHiddenAssistantSkillRefs([old], view)).toBe(false);
+  expect(view.options.find(option => option.skill.name === protectedRef.name)?.title).toBe("Panel A");
+  await expect(skillManager.getSkillInfo(domain, protectedRef.name, credentials)).resolves.toMatchObject({ title: "Panel A" });
   const member = { source, memberPath: [], ref: protectedRef };
   const context = { mode: "member" as const, locator: entrance, member };
   const actualPage = { entrance, member, path: "/applications/app-test/panel" };

@@ -170,6 +170,10 @@ export async function panelSkillSources(
         const { description, fingerprint } = await read();
         return panelSkillManifest(skill, description, fingerprint);
       },
+      async readDisplayTitle() {
+        const { description } = await read();
+        return description.name;
+      },
       async provide(skill, context) {
         const { description, locale, fingerprint: sourceFingerprint } = await read();
         const fixedKeys = (context?.entryInputKeys ?? []).filter(key => Object.hasOwn(description.state, key));

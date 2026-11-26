@@ -15,8 +15,8 @@ the complete selectable skill catalogue and per-run package preparation.
 | Method/path | Input | Output (200 unless listed) |
 | --- | --- | --- |
 | GET `/agent-skills` | `agentTarget` as an agent ID or `draft` | `AssistantSkillCatalog` for the agent the caller can edit or create |
-| GET `/agent-definitions` | — | `AssistantAgentDefinitionList` |
-| GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
+| GET `/agent-definitions` | Optional `limit` (1–100, default 20) and opaque `cursor` from the previous page | `AssistantAgentDefinitionList`: `{ agents: AssistantAgentDefinitionSummary[], nextCursor: string \| null }` |
+| GET `/agent-definitions/:agentId` | — | Full `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
 | POST `/agent-definitions/form` | `PanelFormRequest` | `PanelFormDescription`, reads or checks a settings draft without writing |
 | POST `/agent-definitions/validate` | `{target,form}`; require `target.objectType: "platform:AgentDefinition"`; supply `target.id: UUID` with `AssistantAgentUpdateInput` when editing or omit it with `AssistantAgentInput` when creating | 204; no writes or Key preparation |
@@ -27,6 +27,11 @@ the complete selectable skill catalogue and per-run package preparation.
 | GET `S/feedback` | optional runId | `AssistantFeedbackList` |
 | PUT `S/feedback` | `AssistantFeedbackWrite` | `AssistantFeedback` |
 | DELETE `S/feedback/:feedbackId` | — | 204 |
+
+The definition list returns one page of the current caller's visible definitions.
+Each summary contains only `id`, `name`, `description`, `icon` and `enabled`.
+Use `nextCursor` as `cursor` on the next request until it is `null`. Read a single
+definition by ID for its full settings.
 
 Definitions contain one systemPrompt, one skills list, modelSelection, name, description,
 icon, enabled, classNames, enabledMcpServiceIds, sortOrder and executionUserId.

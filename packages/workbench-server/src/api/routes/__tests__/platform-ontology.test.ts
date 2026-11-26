@@ -7,7 +7,7 @@ import { APPLICATION, platformObjectTypes, platformRelationKinds } from "@ontoma
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
 import { AuthFailedError, BackendResponseError, backendGet, backendPost } from "../../../utils/backend-client";
-import { listAgentDefinitions } from "../../../services/assistant/definitions";
+import { listAgentDefinitionNodes } from "../../../services/assistant/definition-relations";
 import { assistantSkillCatalog } from "../../../services/assistant/skills";
 import { listPublishedDefinitions } from "../../../services/business-definitions/definitions";
 import { grantedProductIds } from "../../../services/product-governance/grants";
@@ -19,13 +19,16 @@ vi.mock("../../../utils/backend-client", async (original) => ({
   backendGet: vi.fn(),
   backendPost: vi.fn(),
 }));
-vi.mock("../../../services/assistant/definitions", () => ({ listAgentDefinitions: vi.fn(), countVisibleAgentDefinitions: vi.fn(async () => 0) }));
+vi.mock("../../../services/assistant/definitions", () => ({ countVisibleAgentDefinitions: vi.fn(async () => 0) }));
 vi.mock("../../../services/assistant/skills", () => ({ assistantSkillCatalog: vi.fn(), countAssistantSkills: vi.fn(async () => 0) }));
 vi.mock("../../../services/business-definitions/definitions", () => ({ listPublishedDefinitions: vi.fn(), countPublishedDefinitions: vi.fn(async () => 0) }));
 vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn(async () => {}) }));
 vi.mock("../../../services/product-panels/access", async original => ({
   ...await original<typeof import("../../../services/product-panels/access")>(),
   countUsableCurrentDefinitions: vi.fn(async () => 0),
+}));
+vi.mock("../../../services/assistant/definition-relations", () => ({
+  listAgentDefinitionNodes: vi.fn(), listAgentExecutionUserRelations: async () => [], listAgentSkillRelations: async () => [],
 }));
 vi.mock("../../../services/product-governance/grants", () => ({ grantedProductIds: vi.fn() }));
 vi.mock("../../../services/product-panels/component-catalogue", () => ({ readPanelComponentCatalogue: vi.fn() }));
@@ -42,7 +45,7 @@ beforeEach(async () => {
 
   vi.mocked(listPublishedDefinitions).mockResolvedValue([]);
   vi.mocked(assistantSkillCatalog).mockResolvedValue({ skills: [] });
-  vi.mocked(listAgentDefinitions).mockResolvedValue({ agents: [] });
+  vi.mocked(listAgentDefinitionNodes).mockResolvedValue([]);
   vi.mocked(grantedProductIds).mockResolvedValue([]);
   vi.mocked(readPanelComponentCatalogue).mockResolvedValue({
     version: "1.0.0",

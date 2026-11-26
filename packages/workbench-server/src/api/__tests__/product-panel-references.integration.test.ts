@@ -117,6 +117,18 @@ beforeAll(async () => {
     allow: ({ target, ownerFacts, verb }, caller) =>
       verb !== "VIEW" && granted(caller, target.id, verb === "EDIT" ? "edit" : "use", ownerFacts.ownerId),
   });
+  app.post("/authorization/objects/read-ranges", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    expect(["PANEL", "PROJECTION"]).toContain(req.body.kind);
+    const caller = req.get("tk");
+    const { verbs } = req.body as { verbs: ("USE" | "EDIT")[] };
+    res.json({ ranges: Object.fromEntries(verbs.map(verb => [verb, {
+      fixed: verb === "USE" && caller === "author",
+      authorId: verb === "EDIT" ? caller ?? null : null,
+      objectIds: [...grants.keys()].filter(id => granted(caller, id, verb === "USE" ? "use" : "edit")),
+      all: verb === "USE" && caller === "author",
+    }])) });
+  });
   app.post("/authorization/objects/retire", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     expect(req.body.target.domainId).toBe("test-domain");

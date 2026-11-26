@@ -30,6 +30,7 @@ import io.ontomato.dataengine.service.SchemaPermissionService;
 import io.ontomato.dataengine.service.authorization.PresetAgentPolicies;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -53,6 +54,26 @@ class OssStartupAssemblyTest {
     }
 
     @Test
+    void anonymousProductRangesReadOnlyTheSameDomainUseGrantsAsPointChecks() {
+        var jdbc = mock(JdbcTemplate.class);
+        var anonymous = new AnonymousAuthorization(jdbc);
+        var target = new ObjectTarget("1", Kind.PANEL, "shared");
+        var grant = new ObjectGrant("domain", target, Verb.USE, null);
+        when(jdbc.query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<ObjectGrant>>any(),
+                eq("1"), eq("PANEL"), eq("USE"), eq("shared"))).thenReturn(List.of(grant));
+        when(jdbc.queryForList(anyString(), eq(String.class), eq("1"), eq("PANEL"), eq("USE")))
+                .thenReturn(List.of("shared"));
+
+        assertEquals(Map.of(Verb.USE, Set.of("shared")),
+                anonymous.objectKeysByVerb("1", Kind.PANEL, Set.of(Verb.USE, Verb.EDIT), Set.of()));
+        assertTrue(anonymous.objectEntitlement("system", target, Verb.USE));
+        assertFalse(anonymous.objectEntitlement("system", target, Verb.EDIT));
+        assertFalse(anonymous.objectEntitlement("system", new ObjectTarget("1", Kind.PANEL,
+                "builtin-product-prefix-alone"), Verb.USE));
+        assertTrue(anonymous.domainWideObjectEntitlement(Kind.AGENT, Verb.VIEW));
+    }
+
+    @Test
     void applicationAuthorizationOnlyExposesEditAsAnObjectPermission() {
         var jdbc = mock(JdbcTemplate.class);
         var anonymous = new AnonymousAuthorization(jdbc);
@@ -65,7 +86,7 @@ class OssStartupAssemblyTest {
         anonymous.grantObject(edit);
         verify(jdbc).update(contains("INSERT INTO object_policy_grant"), eq("1"), eq("APPLICATION"), eq("app-example"), eq("EDIT"));
         when(jdbc.query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<ObjectGrant>>any(),
-                eq("1"), eq("APPLICATION"), eq("app-example"), eq("EDIT"))).thenReturn(List.of(edit));
+                eq("1"), eq("APPLICATION"), eq("EDIT"), eq("app-example"))).thenReturn(List.of(edit));
         assertTrue(anonymous.objectEntitlement("admin", target, Verb.EDIT));
     }
 

@@ -192,11 +192,22 @@ beforeAll(async () => {
     resourceIds.add(req.body.id);
     res.json({ success: true });
   });
+  const allowsAgentVerb = (verb: string) => verb !== "EDIT" || state.allowAgentEdits;
   app.post("/authorization/objects/decide-batch", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json(agentObjectDecisions(req.body, request =>
       "create" in request ? state.allowAgentCreation : request.target.domainId === "pilot" &&
-        request.target.id === agentId && (request.verb !== "EDIT" || state.allowAgentEdits)));
+        request.target.id === agentId && allowsAgentVerb(request.verb)));
+  });
+  app.post("/authorization/objects/read-ranges", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    expect(req.header("tk")).toBe("pilot-reader");
+    const { kind, verbs } = req.body as { kind: string; verbs: string[] };
+    expect(kind).toBe("AGENT");
+    res.json({ ranges: Object.fromEntries(verbs.map(verb => {
+      expect(["VIEW", "EDIT"]).toContain(verb);
+      return [verb, { fixed: false, authorId: null, objectIds: allowsAgentVerb(verb) ? [agentId] : [], all: false }];
+    })) });
   });
   app.post("/authorization/objects/agent-access", (_req, res) => res.json({ shared: false, grants: [] }));
   app.post("/product-governance/grants", (_req, res) => res.json({ grants: [] }));

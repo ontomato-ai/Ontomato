@@ -1,7 +1,5 @@
 package io.ontomato.dataengine.controller;
 
-import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
-
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -10,10 +8,13 @@ import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -27,6 +28,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Owned
 public final class ObjectAuthorizationController {
     public static final String DECIDE_BATCH = "/authorization/objects/decide-batch";
+    public static final String READ_RANGES = "/authorization/objects/read-ranges";
+    private static final Set<Kind> CATALOGUE_KINDS = Set.of(Kind.PANEL, Kind.PROJECTION, Kind.AGENT);
     public static final String FIRST_PUBLICATION = "/authorization/objects/first-publication";
     public static final String AGENT_ACCESS = "/authorization/objects/agent-access";
     public static final String AGENT_LEVEL = "/authorization/objects/agent-level";
@@ -39,6 +42,8 @@ public final class ObjectAuthorizationController {
     public record DecisionInput(ObjectTarget target, Verb verb, OwnerFacts ownerFacts, Kind create) {}
     public record BatchInput(List<DecisionInput> requests) {}
     public record BatchResult(List<Decision> decisions) {}
+    public record RangesInput(Kind kind, Set<Verb> verbs) {}
+    public record RangesResult(Map<Verb, ObjectVisibilityRange> ranges) {}
     public record PublicationInput(ObjectTarget target, OwnerFacts ownerFacts, Selection access) {}
     public record PublicationResult(AuthorizationPolicies.PublicationStatus status) {}
     public record AgentInput(ObjectTarget target, OwnerFacts ownerFacts) {}
@@ -66,6 +71,16 @@ public final class ObjectAuthorizationController {
         if (input.requests() == null) throw badRequest("A requests array is required.");
         var operations = input.requests().stream().map(item -> operation(actor, item)).toList();
         return new BatchResult(authorization.decideBatch(authorization.resolveSubject(actor), operations));
+    }
+
+    @Owned
+    @PostMapping(READ_RANGES)
+    public RangesResult readRanges(HttpServletRequest request, @RequestBody RangesInput input) {
+        var actor = actor(request);
+        if (input.kind() == null || !CATALOGUE_KINDS.contains(input.kind()) || input.verbs() == null || input.verbs().isEmpty())
+            throw badRequest("A catalogue object kind and its access verbs are required.");
+        input.verbs().forEach(verb -> AuthorizationPolicies.requireObjectReadVerb(input.kind(), verb));
+        return new RangesResult(authorization.readObjectRanges(authorization.resolveSubject(actor), input.kind(), input.verbs()));
     }
 
     @PostMapping(FIRST_PUBLICATION)

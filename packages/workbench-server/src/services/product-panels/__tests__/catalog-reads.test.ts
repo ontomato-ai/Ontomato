@@ -12,6 +12,7 @@ import type { PanelOperationHost } from "../server-operations";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
+  ranges: vi.fn(),
   decide: vi.fn(),
   retire: vi.fn(),
   panelUsers: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("../../../infrastructure/postgres-transaction", () => ({
 }));
 vi.mock("../../product-governance/authorization", async original => ({
   ...await original<typeof import("../../product-governance/authorization")>(),
+  readObjectRanges: mocks.ranges,
   decideObjects: mocks.decide,
   requireObject: async (request: ObjectDecisionRequest, caller: unknown) => {
     const [decision] = await mocks.decide([request], caller);
@@ -45,6 +47,7 @@ vi.mock("../../platform-home/service", () => ({
   saveHomePanel: mocks.saveHomePanel,
 }));
 
+import { listCurrentProducts, listProjectionFilterFacets } from "../catalog";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../catalog-reads";
 
 const owner = { domainId: "domain", userId: "author" };
@@ -85,16 +88,17 @@ beforeAll(() => {
 beforeEach(() => {
   const rows = new Map(stored.map(panel => [panel.id, panel]));
   mocks.query.mockReset().mockImplementation(async (sql: string, args: unknown[]) => {
-    if (sql.includes("UNION ALL")) {
-      const [domainId, visible] = args as [string, string[] | undefined];
-      return { rows: [...rows.values()].filter(row => row.domainId === domainId && (!visible || visible.includes(row.id))) };
-    }
     if (sql.startsWith("SELECT id,domain_id")) {
       const row = rows.get(args[1] as string);
       return { rows: row ? [row] : [] };
     }
     if (sql.startsWith("DELETE FROM product_panels")) rows.delete(args[1] as string);
+    if (sql.startsWith("SELECT COUNT(")) return { rows: [{ total: 0 }] };
     return { rows: [] };
+  });
+  mocks.ranges.mockReset().mockResolvedValue({
+    USE: { fixed: true, authorId: null, objectIds: grantedIds.use, all: false },
+    EDIT: { fixed: false, authorId: owner.userId, objectIds: grantedIds.edit, all: false },
   });
   mocks.decide.mockReset().mockImplementation(async (requests: ObjectDecisionRequest[], caller) => {
     expect(caller).toEqual(credentials);
@@ -117,7 +121,12 @@ beforeEach(() => {
 });
 
 it("lists visible broken panels without search or pagination and exposes a revision only when removable", async () => {
+  mocks.query.mockResolvedValueOnce({ rows: stored.filter(row => row.id !== "hidden-panel").map(row => ({
+    ...row, editable: row.ownerId === owner.userId || row.id === "editor-panel",
+  })) });
   const rows = panelRecordListSchema.parse(await adapter.unavailable());
+  expect(mocks.ranges).toHaveBeenCalledWith("PANEL", ["USE", "EDIT"], credentials);
+  expect(mocks.decide).not.toHaveBeenCalled();
   expect(rows.map(row => row.primaryKey).sort()).toEqual(["author-panel", "editor-panel", "nameless-panel", "reader-panel"]);
   expect(rows.find(row => row.primaryKey === "author-panel")).toMatchObject({
     className: PRODUCT_PANEL,
@@ -128,6 +137,81 @@ it("lists visible broken panels without search or pagination and exposes a revis
   const readOnly = rows.find(row => row.primaryKey === "reader-panel");
   expect(readOnly?.fields.canDelete).toBe(false);
   expect(readOnly?.fields).not.toHaveProperty("revision");
+});
+
+it("continues an updated catalogue page from the raw unreadable row's exact database key", async () => {
+  const rawKey = "2026-11-24T00:00:00.123456+00:00";
+  const summary = { name: "Orders", description: "", visibility: "private" };
+  const unavailable = { ...stored[1], ...summary, sortKey: rawKey, editable: true };
+  const healthy = { ...stored[4], ...summary, sortKey: "2026-11-23T00:00:00+00:00", editable: false };
+  mocks.query.mockResolvedValueOnce({ rows: [unavailable, healthy] }).mockResolvedValueOnce({ rows: [{ total: 2 }] });
+  const input = { q: "Orders", scope: "all", sort: "updated", limit: 1 } as const;
+  const page = await listCurrentProducts(owner, credentials, "panel", input);
+  expect(page).toMatchObject({ items: [], total: 2, unavailableItems: [{ id: unavailable.id, revision: 4 }] });
+  expect(page.nextCursor).not.toBeNull();
+  expect(mocks.ranges).toHaveBeenCalledTimes(1);
+  expect(mocks.ranges).toHaveBeenCalledWith("PANEL", ["USE", "EDIT"], credentials);
+  expect(mocks.decide).not.toHaveBeenCalled();
+  // A list requires only the page and its exact total, not a candidate read before either one.
+  expect(mocks.query).toHaveBeenCalledTimes(2);
+
+  mocks.query.mockClear().mockResolvedValueOnce({ rows: [healthy] }).mockResolvedValueOnce({ rows: [{ total: 2 }] });
+  const next = await listCurrentProducts(owner, credentials, "panel", { ...input, cursor: page.nextCursor! });
+  expect(next).toMatchObject({ items: [{ id: healthy.id }], total: 2, nextCursor: null });
+  const boundValues = mocks.query.mock.calls.map(([, values]) => values);
+  expect(boundValues).toEqual(expect.arrayContaining([expect.arrayContaining([rawKey, unavailable.id, input.limit + 1])]));
+  expect(boundValues.filter(values => values.includes(rawKey))).toHaveLength(1);
+});
+
+it("accepts the raw NULL name key in a continuation without counting only the remaining rows", async () => {
+  const { name: _name, ...definition } = healthyDefinition;
+  const unnamed = (id: string) => ({ ...storedPanel(id, owner.userId), definition: { ...definition, description: "Orders" },
+    name: null, description: "Orders", visibility: "private", sortKey: null, editable: true });
+  const first = unnamed("unnamed-orders-a");
+  const second = unnamed("unnamed-orders-b");
+  mocks.query.mockResolvedValueOnce({ rows: [first, second] }).mockResolvedValueOnce({ rows: [{ total: 2 }] });
+  const input = { q: "Orders", scope: "all", sort: "name", limit: 1 } as const;
+  const page = await listCurrentProducts(owner, credentials, "panel", input);
+  expect(page).toMatchObject({ unavailableItems: [{ id: first.id }], total: 2, nextCursor: expect.any(String) });
+
+  mocks.query.mockClear().mockResolvedValueOnce({ rows: [second] }).mockResolvedValueOnce({ rows: [{ total: 2 }] });
+  const next = await listCurrentProducts(owner, credentials, "panel", { ...input, cursor: page.nextCursor! });
+  expect(next).toMatchObject({ unavailableItems: [{ id: second.id }], total: 2, nextCursor: null });
+  const [[, pageValues], [, countValues]] = mocks.query.mock.calls;
+  expect(pageValues).toContain(first.id);
+  expect(countValues).not.toContain(first.id);
+});
+
+it("binds projection EDIT grants for page annotations, not for the total", async () => {
+  const componentId = "@ontomato/sdk:ObjectList";
+  const stored = { id: "visible-projection", ownerId: "another-user", editable: true, revision: 1,
+    name: "Orders", description: "", visibility: "private", componentId, definition: {},
+    updatedAt: new Date("2026-11-24"), sortKey: "orders" };
+  const edit = [stored.id, "edit-only-projection"];
+  mocks.ranges.mockResolvedValueOnce({
+    USE: { fixed: true, authorId: null, objectIds: [stored.id], all: false },
+    EDIT: { fixed: false, authorId: null, objectIds: edit, all: false },
+  });
+  mocks.query.mockResolvedValueOnce({ rows: [stored] }).mockResolvedValueOnce({ rows: [{ total: 1 }] });
+  await expect(listCurrentProducts(owner, credentials, "projection", { q: "", scope: "all", sort: "name", limit: 20, componentId }))
+    .resolves.toMatchObject({ items: [{ id: stored.id, componentId, editable: true }], total: 1 });
+  expect(mocks.ranges).toHaveBeenCalledTimes(1);
+  expect(mocks.ranges).toHaveBeenCalledWith("PROJECTION", ["USE", "EDIT"], credentials);
+  expect(mocks.decide).not.toHaveBeenCalled();
+  expect(mocks.query).toHaveBeenCalledTimes(2);
+  const [, [, countValues]] = mocks.query.mock.calls;
+  expect(countValues).not.toContainEqual(edit);
+});
+
+it("requests only USE for panel picker options and projection facets", async () => {
+  mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: 0 }] });
+  await expect(adapter.options()).resolves.toEqual({ options: [], total: 0 });
+  expect(mocks.ranges).toHaveBeenCalledWith("PANEL", ["USE"], credentials);
+
+  mocks.query.mockResolvedValueOnce({ rows: [{ componentId: "@ontomato/sdk:ObjectList", definition: {} }] });
+  await expect(listProjectionFilterFacets(owner, credentials)).resolves.toMatchObject({ componentIds: ["@ontomato/sdk:ObjectList"] });
+  expect(mocks.ranges).toHaveBeenCalledWith("PROJECTION", ["USE"], credentials);
+  expect(mocks.decide).not.toHaveBeenCalled();
 });
 
 it.each([["author-panel", true], ["editor-panel", true], ["reader-panel", false]] as const)(
@@ -287,6 +371,7 @@ it("builds local referenceGraph payloads for panels and projections (PN-03, PJ-0
   };
   mocks.query.mockImplementation(async (sql: string, args: unknown[]) => {
     if (sql.startsWith("SELECT id,domain_id") && args[1] === "proj-orders") return { rows: [projRow] };
+    if (sql.startsWith("SELECT COUNT(")) return { rows: [{ total: 0 }] };
     return { rows: [] };
   });
   mocks.panelsUsingProjection.mockResolvedValueOnce({

@@ -191,6 +191,19 @@ beforeAll(async () => {
       return admitted ? { allowed: true } : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Access denied" };
     }
   });
+  app.post("/authorization/objects/read-ranges", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    expect(["PANEL", "PROJECTION"]).toContain(req.body.kind);
+    const caller = req.get("tk");
+    const { verbs } = req.body as { verbs: ("USE" | "EDIT")[] };
+    res.json({ ranges: Object.fromEntries(verbs.map(verb => [verb, {
+      fixed: verb === "USE" && callerDomains.has(caller ?? ""),
+      authorId: caller === "host-reader" ? "reader" : null,
+      objectIds: caller === "host-reader" ? [...new Set([...grants, ...(verb === "USE" ? readerUseGrants : [])])]
+        : caller === "domain-component-reader" && verb === "USE" ? ["domain-component-projection"] : [],
+      all: false,
+    }])) });
+  });
   app.post("/authorization/objects/first-publication", (req, res) => {
     if (req.body.target.kind !== "COMPONENT") grants.add(req.body.target.id);
     res.json({ status: "granted" });

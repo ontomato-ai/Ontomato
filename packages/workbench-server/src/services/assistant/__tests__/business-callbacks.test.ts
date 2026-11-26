@@ -255,6 +255,10 @@ it("keeps platform-mode URLs from page.mjs, dashboard-skill and app-builder insi
     if (suffix === "api/assistant/agent-skills") expect(search).toBe("?agentTarget=draft");
     const unwrapped = await callWithCredential(targetPath + search, declaration.credential, "X-Ontomato-Callback-Credential", req.method);
     expect(unwrapped.status).toBe(200);
+    if (kind === "workbench" && req.method === "GET" && suffix === "api/assistant/agent-definitions") {
+      res.json({ agents: [], nextCursor: null });
+      return;
+    }
     if (kind === "ontology" && suffix.startsWith("model-options")) {
       res.json({ data: [] });
       return;

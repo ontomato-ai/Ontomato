@@ -14,6 +14,7 @@ public interface AuthorizationStore {
     List<PolicyRef> policies(String domainId, Set<String> roleIds);
 
     List<ObjectGrant> objectGrants(ObjectTarget target, Verb verb, Set<String> policyIds);
+    Map<Verb, Set<String>> objectKeysByVerb(String domainId, Kind kind, Set<Verb> verbs, Set<String> policyIds);
     List<ObjectGrant> policyObjectGrants(String domainId, String policyId);
     List<ObjectGrant> domainObjectGrants(String domainId);
     List<PolicyRef> domainRolePolicies(String domainId);

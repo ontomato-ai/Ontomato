@@ -4,7 +4,7 @@ import express from "express";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
+import { assistantAgentDefinitionListSchema, assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
 import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 
@@ -45,6 +45,7 @@ import type { WorkbenchIdentity } from "../../identity/types";
 import assistantRouter from "../routes/assistant";
 import { HttpError } from "../../utils/errors";
 import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinition, saveAgentDefinitionSnapshot, validateAgentDefinition, type AgentDefinitionSkillSelection } from "../../services/assistant/definitions";
+import { listAgentExecutionUserRelations, listAgentSkillRelations } from "../../services/assistant/definition-relations";
 import { readAssistantSkillView } from "../../services/assistant/skills";
 import type { PanelOperationHost } from "../../services/product-panels/server-operations";
 import { tForLocale } from "../../i18n";
@@ -61,6 +62,7 @@ describe("agent definitions on PostgreSQL", () => {
   let base: string;
   const owner = { userId: "owner", domainId: "skill-selection" };
   const savedSkill = { namespace: { kind: "domain" as const, domainId: owner.domainId }, name: "stored-page-skill" };
+  let viewedKeys: string[] = [];
   const form = { name: "Agent", description: "", icon: null, enabled: true, systemPrompt: "Before" };
   const write = (method: string, id: string, input: object) => fetch(base + (method === "POST" ? "" : "/" + id), {
     method, headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: JSON.stringify(input),
@@ -90,6 +92,8 @@ describe("agent definitions on PostgreSQL", () => {
     authorization.post.mockImplementation((endpoint, _url, body) => {
       if (endpoint === "object-authorization-decide-batch")
         return { text: JSON.stringify({ decisions: body.requests.map(() => ({ allowed: true })) }) };
+      if (endpoint === "object-authorization-read-ranges")
+        return { text: JSON.stringify({ ranges: { VIEW: { authorId: owner.userId, fixed: false, all: false, objectIds: viewedKeys } } }) };
       if (endpoint === "object-authorization-retire") return { text: "" };
       if (endpoint === "object-authorization-first-publication")
         return { text: JSON.stringify({ status: "granted" }) };
@@ -127,6 +131,55 @@ describe("agent definitions on PostgreSQL", () => {
       await state.pool.end();
     }
   });
+  it("paginates only visible definition summaries, including a disabled author or VIEW grant", async () => {
+    const ids = Array.from({ length: 7 }, (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`);
+    const [author, granted, hidden, foreign, builder, diagnosis, after] = ids;
+    viewedKeys = [granted, foreign, builder, diagnosis];
+    const samples = [
+      [author, owner.domainId, "author", owner.userId, 0],
+      [granted, owner.domainId, "granted", null, 0],
+      [hidden, owner.domainId, "hidden", "another", 0],
+      [foreign, "foreign-domain", "foreign", owner.userId, 0],
+      [builder, owner.domainId, "app-builder", owner.userId, 0],
+      [diagnosis, owner.domainId, "ops-diagnosis", owner.userId, 0],
+      [after, owner.domainId, "later", owner.userId, 1],
+    ];
+    for (const sample of samples)
+      await state.pool!.query(`INSERT INTO "${state.schema}".assistant_agents
+        (id,domain_id,kind,owner_id,sort_order,name,description,enabled,system_prompt,skills,execution_user_id)
+        VALUES ($1,$2,$3,$4,$5,'Same name','Summary',false,'Hidden prompt',$6,'hidden-user')`, [...sample, JSON.stringify([savedSkill])]);
+    state.skillView.mockClear();
+    authorization.post.mockClear();
+    const first = await fetch(`${base}?limit=1`);
+    expect(first.status).toBe(200);
+    const page = assistantAgentDefinitionListSchema.parse(await first.json());
+    expect(page.agents).toEqual([{ id: author, name: "Same name", description: "Summary", enabled: false, icon: null }]);
+    expect(page.nextCursor).not.toBeNull();
+    const next = await fetch(`${base}?limit=2&cursor=${encodeURIComponent(page.nextCursor!)}`);
+    expect(next.status).toBe(200);
+    const last = assistantAgentDefinitionListSchema.parse(await next.json());
+    expect(last.agents.map(agent => agent.id)).toEqual([granted, after]);
+    expect(last.nextCursor).toBeNull();
+    expect((await fetch(`${base}?cursor=invalid`)).status).toBe(400);
+    expect(authorization.post.mock.calls.map(([endpoint, , body]) => [endpoint, body])).toEqual([
+      ["object-authorization-read-ranges", { kind: "AGENT", verbs: ["VIEW"] }],
+      ["object-authorization-read-ranges", { kind: "AGENT", verbs: ["VIEW"] }],
+    ]);
+    expect(state.skillView).not.toHaveBeenCalled();
+
+    const viewer = { token: "editor" };
+    await expect(listAgentExecutionUserRelations(owner, viewer, granted)).resolves.toEqual([
+      { id: granted, name: "Same name", executionUserId: "hidden-user" },
+    ]);
+    expect(state.skillView).not.toHaveBeenCalled();
+    state.skillView.mockResolvedValueOnce({ hidden: true });
+    await expect(listAgentSkillRelations(owner, viewer, granted)).resolves.toEqual([{ id: granted, name: "Same name", skills: [] }]);
+    await expect(listAgentSkillRelations(owner, viewer, granted)).resolves.toEqual([{ id: granted, name: "Same name", skills: [savedSkill] }]);
+    await expect(listAgentSkillRelations(owner, viewer, hidden)).resolves.toEqual([]);
+    await state.pool!.query(`DELETE FROM "${state.schema}".assistant_agents WHERE id=ANY($1::uuid[])`, [ids]);
+    viewedKeys = [];
+  });
+
   it("uses the same localized refusal for the delete button, agent operation and REST request", async () => {
     const [, remove] = agentDefinitionOperations;
     expect(remove.handlerRef).toBe(DELETE_AGENT);

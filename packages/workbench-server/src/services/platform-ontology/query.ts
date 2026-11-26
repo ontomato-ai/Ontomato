@@ -1381,7 +1381,7 @@ async function evaluateRelationKind(
     }
 
     case "agent.uses-skill": {
-      const res = await readers.agentDefinitions();
+      const res = await readers.agentSkillRelations(node.className === AGENT_DEFINITION ? node.primaryKey : undefined);
       if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
       const edges: RawEdgeCandidate[] = [];
       for (const agent of res.data) {
@@ -1404,7 +1404,7 @@ async function evaluateRelationKind(
     }
 
     case "agent.executes-as-user": {
-      const res = await readers.agentDefinitions();
+      const res = await readers.agentExecutionUserRelations(node.className === AGENT_DEFINITION ? node.primaryKey : undefined);
       if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
       const edges: RawEdgeCandidate[] = [];
       for (const agent of res.data) {

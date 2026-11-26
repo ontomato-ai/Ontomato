@@ -163,6 +163,8 @@ afterEach(() => {
   for (const app of mounted.splice(0)) app.unmount();
   document.body.innerHTML = "";
   savedFiles.length = 0;
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   Object.assign(canvasState, {
     nodes: [],
     edges: [],
@@ -455,6 +457,57 @@ describe("ProductAssetGraph (D1, panelUsable: false)", () => {
     await nextTick();
     expect(host.querySelector("[data-product-graph-scale]")?.textContent?.trim()).toBe("100%");
     expect(host.querySelector("[data-product-graph-action='expand']")).not.toBeNull();
+  });
+
+  it("opens a large expanded graph readably with overflowing content and keeps manual fit to canvas", async () => {
+    class TestResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
+
+    const pageCount = 80;
+    const largeGraph: ProductAssetGraphData = {
+      nodes: [
+        { id: "asset:app-large", assetId: "app-large", name: "Ops Suite", kind: "application", category: "bundle" },
+        ...Array.from({ length: pageCount }, (_, index): ProductAssetGraphData["nodes"][number] => ({
+          id: `asset:page-${index}`,
+          assetId: `page-${index}`,
+          name: `Page ${index}`,
+          kind: "page",
+          category: "composition",
+        })),
+      ],
+      edges: Array.from({ length: pageCount }, (_, index): ProductAssetGraphData["edges"][number] => ({
+        source: "asset:app-large",
+        target: `asset:page-${index}`,
+        relation: "contains",
+      })),
+    };
+    const largeLayout = computeProductAssetGraphLayout(largeGraph);
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const app = createApp(ProductAssetGraph, { graph: largeGraph, expanded: true });
+    app.use(ElementPlus);
+    app.use(createTestI18n());
+    app.mount(host);
+    mounted.push(app);
+    await flushUi();
+
+    const canvas = host.querySelector<HTMLElement>("[data-product-graph-canvas]")!;
+    const svg = canvas.querySelector<SVGElement>("svg")!;
+    expect(host.querySelector("[data-product-graph-scale]")?.textContent?.trim()).toBe("50%");
+    expect(Number.parseFloat(svg.style.height)).toBeCloseTo(largeLayout.height * 0.5);
+    expect(Number.parseFloat(svg.style.height)).toBeGreaterThan(600);
+
+    host.querySelector<HTMLButtonElement>("[data-product-graph-action='fit']")!.click();
+    await nextTick();
+    expect(host.querySelector("[data-product-graph-scale]")?.textContent?.trim()).toBe("8%");
+    expect(Number.parseFloat(svg.style.height)).toBeCloseTo(largeLayout.height * 0.08);
   });
 
   it("hides the expand button in expanded mode and binds via a panel graph datum", async () => {

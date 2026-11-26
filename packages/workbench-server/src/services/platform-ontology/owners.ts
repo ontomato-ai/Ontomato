@@ -1,4 +1,4 @@
-import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
 import { z } from "zod";
 import {
@@ -22,7 +22,8 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { AuthFailedError, BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { readAuthorizationGraphFacts, type AuthorizationGraphFacts } from "../governance/policy-access";
 import { HttpError } from "../../utils/errors";
-import { countVisibleAgentDefinitions, listAgentDefinitions } from "../assistant/definitions";
+import { countVisibleAgentDefinitions } from "../assistant/definitions";
+import { listAgentDefinitionNodes, listAgentExecutionUserRelations, listAgentSkillRelations } from "../assistant/definition-relations";
 import { assistantSkillCatalog, countAssistantSkills } from "../assistant/skills";
 import { countPublishedDefinitions, listPublishedDefinitions } from "../business-definitions/definitions";
 import type { ProductOwner } from "../product-governance/grants";
@@ -216,14 +217,6 @@ export interface RawSkill {
   primaryKey: string;
   title: string;
   description?: string;
-}
-
-export interface RawAgentDefinition {
-  id: string;
-  name: string;
-  enabled: boolean;
-  skills: RuntimeSkillRef[];
-  executionUserId: string | null;
 }
 
 export interface RawSdkComponent {
@@ -788,17 +781,16 @@ export class PlatformOntologyOwnerReaders {
     });
   }
 
-  async agentDefinitions(): Promise<OwnerReadResult<RawAgentDefinition[]>> {
-    return this.memo("node:agent-definitions", async () => {
-      const { agents } = await listAgentDefinitions(this.owner, this.credentials);
-      return agents.map((agent) => ({
-        id: agent.id,
-        name: agent.name || agent.id,
-        enabled: agent.enabled,
-        skills: agent.skills,
-        executionUserId: agent.executionUserId,
-      }));
-    });
+  agentDefinitions() {
+    return this.memo("node:agent-definitions", () => listAgentDefinitionNodes(this.owner, this.credentials));
+  }
+
+  agentSkillRelations(agentId?: string) {
+    return this.memo(`node:agent-skill-relations:${agentId ?? ""}`, () => listAgentSkillRelations(this.owner, this.credentials, agentId));
+  }
+
+  agentExecutionUserRelations(agentId?: string) {
+    return this.memo(`node:agent-execution-user-relations:${agentId ?? ""}`, () => listAgentExecutionUserRelations(this.owner, this.credentials, agentId));
   }
 
   /**

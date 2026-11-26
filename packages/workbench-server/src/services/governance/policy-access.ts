@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runtimeJsonValueSchema, type RuntimeJsonObject, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { entryDependencySchema, entryRootsSchema } from "@ontomato/contracts/entry-dependencies";
 import { panelRecordSchema, type PanelRecord, type PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
-import { isBuiltinProductId, isDomainComponentId } from "@ontomato/contracts/product-record-id";
+import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { config } from "../../config/application";
 import { getPostgresPool } from "../../infrastructure/postgres";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -209,8 +209,12 @@ function labelFor(catalog: PolicyWorkbenchCatalog, actions: EntryRootsResult["pu
   return (kind: string, id: string) => labels[kind]?.get(id) ?? id;
 }
 
+function fixedProduct({ kind, id }: ItemKey, { fixedProductIds }: WorkbenchObjects) {
+  return (kind === "PANEL" || kind === "PROJECTION") && fixedProductIds[kind].has(id);
+}
+
 function fixedByDistribution(item: ItemKey, objects: WorkbenchObjects) {
-  return isBuiltinProductId(item.id)
+  return fixedProduct(item, objects)
     || (item.kind === "COMPONENT" && !isDomainComponentId(item.id))
     || (item.kind === "AGENT" && (item.id.startsWith("preset:") || objects.presetAgentIds.has(item.id)));
 }
@@ -314,6 +318,7 @@ export async function inspectPolicyAccessPayload(
   const result = await policyPost(viewer, "access:inspect", {
     subjectId, entryId, targetPolicyId, optionalActionTargets: actionTargets,
     items: [...context.items.values()].map(item => {
+      if (fixedProduct(item, objects)) return { ...item, fixedProduct: true };
       const ownerId = ownerIdFor(item, objects);
       return ownerId ? { ...item, ownerFacts: { ownerId, state: "PUBLISHED" } } : item;
     }),

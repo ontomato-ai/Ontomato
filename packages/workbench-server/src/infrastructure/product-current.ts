@@ -11,10 +11,11 @@ const storageVersionColumn = 'xmin::text AS "storageVersion"';
 const definitionColumns = "id,definition,revision,created_at,updated_at";
 
 /** Both classes of current record have the same columns for catalogues and reverse lookups. */
-export function currentProductRows(kind: CurrentProductKind) {
-  return `(SELECT domain_id,owner_id,${definitionColumns} FROM ${t(currentProductTables[kind])}
-    WHERE NOT starts_with(id,'${BUILTIN_PRODUCT_ID_PREFIX}')
-    UNION ALL SELECT NULL::text,NULL::text,${definitionColumns} FROM ${t(builtinProductTables[kind])})`;
+export function currentProductRows(kind: CurrentProductKind, selection?: { domainWhere: string; includeBuiltins: boolean }) {
+  const domain = `SELECT domain_id,owner_id,${definitionColumns} FROM ${t(currentProductTables[kind])} AS p
+    WHERE NOT starts_with(id,'${BUILTIN_PRODUCT_ID_PREFIX}')${selection ? ` AND (${selection.domainWhere})` : ""}`;
+  const fixed = `SELECT NULL::text AS domain_id,NULL::text AS owner_id,${definitionColumns} FROM ${t(builtinProductTables[kind])}`;
+  return `(${domain}${!selection || selection.includeBuiltins ? ` UNION ALL ${fixed}` : ""})`;
 }
 export interface CurrentProductRow {
   id: string; domainId: string | null; ownerId: string | null; definition: Record<string, unknown>;

@@ -7,11 +7,11 @@ import { AGENT_DEFINITION, platformObjectTypes } from "@ontomato/contracts/platf
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import type { ObjectDecisionRequest } from "../../product-governance/authorization";
+import type { ObjectDecisionRequest, ObjectVisibilityRange } from "../../product-governance/authorization";
 import { operationHost } from "../operation-host";
 
 const mocks = vi.hoisted(() => ({
-  agents: vi.fn(), findAgent: vi.fn(),
+  summaries: vi.fn(), countVisible: vi.fn(), findAgent: vi.fn(),
   appBuilder: vi.fn(), opsDiagnosis: vi.fn(), saveDiagnosis: vi.fn(), saveBuilder: vi.fn(),
 }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
@@ -21,7 +21,8 @@ vi.mock("../../ops-diagnosis/model-settings", () => ({
 }));
 vi.mock("../../assistant/store", () => ({
   assistantStore: {
-    channelAgents: mocks.agents, findAgent: mocks.findAgent, appBuilder: mocks.appBuilder,
+    agentDefinitionSummaries: mocks.summaries, countVisibleAgentDefinitions: mocks.countVisible,
+    findAgent: mocks.findAgent, appBuilder: mocks.appBuilder,
     opsDiagnosis: mocks.opsDiagnosis, agent: mocks.findAgent,
   },
 }));
@@ -78,7 +79,10 @@ beforeEach(() => {
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "workbench-test-token");
   canManage = true;
   decision.mockReturnValue(true);
-  mocks.agents.mockResolvedValue(local);
+  mocks.summaries.mockImplementation(async (_domainId, view: ObjectVisibilityRange, { editRange }: { editRange: ObjectVisibilityRange }) =>
+    local.filter(agent => view.objectIds.includes(agent.id)).map(agent => ({ ...agent, editable: editRange.objectIds.includes(agent.id) })));
+  mocks.countVisible.mockImplementation(async (_domainId, view: ObjectVisibilityRange) =>
+    local.filter(agent => view.objectIds.includes(agent.id)).length);
   mocks.appBuilder.mockResolvedValue(builder);
   mocks.opsDiagnosis.mockResolvedValue(diagnosis);
   mocks.findAgent.mockImplementation(async (id: string) => local.find(agent => agent.id === id));
@@ -95,6 +99,16 @@ beforeEach(() => {
       return Response.json({ decisions: requests.map(request => decision(request)
         ? { allowed: true, code: null, reason: null }
         : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Object permission required" }) });
+    }
+    if (path === "/authorization/objects/read-ranges") {
+      const { verbs } = JSON.parse(String(init?.body)) as { verbs: ("VIEW" | "EDIT")[] };
+      return Response.json({ ranges: Object.fromEntries(verbs.map(verb => [verb, {
+        fixed: false, all: false, authorId: null,
+        objectIds: local.filter(agent => decision({
+          target: { domainId: owner.domainId, kind: "AGENT", id: agent.id },
+          ownerFacts: { ownerId: agent.owner_id, state: "PUBLISHED" }, verb,
+        })).map(agent => agent.id),
+      }])) });
     }
     if (["agent-access", "agent-level", "domain-use"].some(name => path === `/authorization/objects/${name}`)) {
       if (!canManage) return Response.json({ success: false, code: 403, message: "Policy permission required" }, { status: 403 });
@@ -119,12 +133,10 @@ it("combines four sources with localized category fields and stable outputs", as
     [presetId, "preset", "Preset"], [customId, "custom", "Custom"],
     [builderId, "system", "System"], [DIAGNOSIS_AGENT_ID, "system", "System"], [retrievalId, "system", "System"],
   ]);
-  expect(rpcBodies("decide-batch")).toEqual([
-    { requests: local.map(agent => ({ ...definition(agent.id, agent.owner_id), verb: "VIEW" })) },
-    { requests: local.map(agent => ({ ...definition(agent.id, agent.owner_id), verb: "EDIT" })) },
-  ]);
-  expect(new Headers(rpcCalls("decide-batch")[0][1]?.headers).get("tk")).toBe(credentials.token);
-  expect(new Headers(rpcCalls("decide-batch")[0][1]?.headers).get("X-Ontomato-Query-Service-Token")).toBe("workbench-test-token");
+  expect(rpcBodies("decide-batch")).toEqual([]);
+  expect(rpcBodies("read-ranges")).toEqual([{ kind: "AGENT", verbs: ["VIEW", "EDIT"] }]);
+  expect(new Headers(rpcCalls("read-ranges")[0][1]?.headers).get("tk")).toBe(credentials.token);
+  expect(new Headers(rpcCalls("read-ranges")[0][1]?.headers).get("X-Ontomato-Query-Service-Token")).toBe("workbench-test-token");
   expect(rows.slice(2).every(row => row.tones?.enabled === "success")).toBe(true);
   expect(rows.map(row => [row.primaryKey, row.fields?.icon, row.fields?.agentTitle])).toEqual([
     [presetId, '{"key":"Sparkles","color":"#EEF7FF"}', ["Preset", '{"key":"Sparkles","color":"#EEF7FF"}']],

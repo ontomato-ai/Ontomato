@@ -3,7 +3,6 @@ package io.ontomato.dataengine.service.impl;
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import io.ontomato.dataengine.bean.workflow.GrantScope;
-import io.ontomato.dataengine.service.BuiltinProductIds;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import io.ontomato.dataengine.service.authorization.PresetAgentPolicies;
@@ -21,6 +20,10 @@ import org.springframework.http.HttpStatus;
 @DependsOn("jdbcInitDb")
 public final class AnonymousAuthorization implements AuthorizationSubjects, AuthorizationStore, PresetAgentPolicies.RolePolicies, InitializingBean {
     private static final String DOMAIN_POLICY = "domain";
+    private static final String DOMAIN_OBJECT_KEYS = """
+            SELECT target_key FROM object_policy_grant
+            WHERE domain_id=? AND target_kind=? AND verb=?
+            """;
     private final JdbcTemplate jdbc;
 
     public AnonymousAuthorization(JdbcTemplate jdbc) {
@@ -50,19 +53,22 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     public boolean objectEntitlement(String userId, ObjectTarget target, Verb verb) {
         if (verb == Verb.CREATE) return target.kind() != Kind.ENTRY;
         return switch (target.kind()) {
-            case PANEL, PROJECTION -> verb == Verb.USE &&
-                    (BuiltinProductIds.isValid(target.id()) || hasDomainUse(target));
-            case COMPONENT -> verb == Verb.USE && hasDomainUse(target);
+            case PANEL, PROJECTION, COMPONENT -> usesDomainObjectPolicy(target.kind(), verb)
+                    && !objectGrants(target, verb, Set.of(DOMAIN_POLICY)).isEmpty();
             case APPLICATION -> verb == Verb.EDIT && !objectGrants(target, verb, Set.of(DOMAIN_POLICY)).isEmpty();
-            // The anonymous workbench could use and configure each registered agent.
-            case AGENT -> verb == Verb.USE || verb == Verb.VIEW || verb == Verb.EDIT;
+            case AGENT -> domainWideObjectEntitlement(target.kind(), verb);
             case METRIC, READ_FUNCTION, WRITE_FUNCTION, TRIGGER, ACTION, WORKFLOW, SKILL -> true;
             case ENTRY -> false;
         };
     }
 
-    private boolean hasDomainUse(ObjectTarget target) {
-        return !objectGrants(target, Verb.USE, Set.of(DOMAIN_POLICY)).isEmpty();
+    @Override
+    public boolean domainWideObjectEntitlement(Kind kind, Verb verb) {
+        return kind == Kind.AGENT && (verb == Verb.USE || verb == Verb.VIEW || verb == Verb.EDIT);
+    }
+
+    private static boolean usesDomainObjectPolicy(Kind kind, Verb verb) {
+        return verb == Verb.USE && (kind == Kind.PANEL || kind == Kind.PROJECTION || kind == Kind.COMPONENT);
     }
 
     @Override
@@ -87,11 +93,16 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     @Override
     public List<ObjectGrant> objectGrants(ObjectTarget target, Verb verb, Set<String> policyIds) {
         if (!policyIds.contains(DOMAIN_POLICY)) return List.of();
-        return jdbc.query("""
-                SELECT target_key FROM object_policy_grant
-                WHERE domain_id=? AND target_kind=? AND target_key=? AND verb=?
-                """, (row, index) -> new ObjectGrant(DOMAIN_POLICY, target, verb, null),
-                target.domainId(), target.kind().name(), target.id(), verb.name());
+        return jdbc.query(DOMAIN_OBJECT_KEYS + " AND target_key=?",
+                (row, index) -> new ObjectGrant(DOMAIN_POLICY, target, verb, null),
+                target.domainId(), target.kind().name(), verb.name(), target.id());
+    }
+
+    @Override
+    public Map<Verb, Set<String>> objectKeysByVerb(String domainId, Kind kind, Set<Verb> verbs, Set<String> policyIds) {
+        if (!verbs.contains(Verb.USE) || !usesDomainObjectPolicy(kind, Verb.USE)) return Map.of();
+        var keys = jdbc.queryForList(DOMAIN_OBJECT_KEYS, String.class, domainId, kind.name(), Verb.USE.name());
+        return Map.of(Verb.USE, Set.copyOf(keys));
     }
 
     @Override public List<AgentPolicyGrant> agentPolicyGrants(ObjectTarget target) { return List.of(); }

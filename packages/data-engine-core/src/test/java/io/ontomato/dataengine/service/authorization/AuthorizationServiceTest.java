@@ -113,6 +113,47 @@ class AuthorizationServiceTest {
     }
 
     @Test
+    void publishedRangesKeepEditionFactsAndTheSameVerbSpecificAuthorAndPolicyAdmission() {
+        var ctx = authorization.resolveSubject(new VerifiedIdentity("domain", "user", CredentialLimit.UNRESTRICTED));
+        var use = new ObjectTarget("domain", Kind.PROJECTION, "use");
+        var edit = new ObjectTarget("domain", Kind.PROJECTION, "edit");
+        var author = new OwnerFacts("user", DefinitionState.PUBLISHED);
+        var verbs = Set.of(Verb.USE, Verb.EDIT);
+        when(store.objectKeysByVerb("domain", Kind.PROJECTION, verbs, Set.of("policy")))
+                .thenReturn(Map.of(Verb.USE, Set.of(use.id()), Verb.EDIT, Set.of(edit.id())));
+        when(store.objectGrants(use, Verb.USE, Set.of("policy")))
+                .thenReturn(List.of(new ObjectGrant("policy", use, Verb.USE, null)));
+        when(store.objectGrants(edit, Verb.EDIT, Set.of("policy")))
+                .thenReturn(List.of(new ObjectGrant("policy", edit, Verb.EDIT, null)));
+
+        var ranges = authorization.readObjectRanges(ctx, Kind.PROJECTION, verbs);
+        assertEquals(new ObjectVisibilityRange(true, "user", Set.of("use"), false), ranges.get(Verb.USE));
+        assertEquals(new ObjectVisibilityRange(false, "user", Set.of("edit"), false), ranges.get(Verb.EDIT));
+        verify(store).objectKeysByVerb("domain", Kind.PROJECTION, verbs, Set.of("policy"));
+        verify(store, never()).objectGrants(any(), any(), any());
+        assertTrue(authorization.decide(ctx, new ObjectAccess(use, Verb.USE, published)).allowed());
+        assertFalse(authorization.decide(ctx, new ObjectAccess(edit, Verb.USE, published)).allowed());
+        assertTrue(authorization.decide(ctx, new ObjectAccess(edit, Verb.EDIT, published)).allowed());
+        assertTrue(authorization.decide(ctx, new ObjectAccess(edit, Verb.USE, author)).allowed());
+        assertFalse(authorization.decide(ctx, new ObjectAccess(new ObjectTarget("domain", Kind.PROJECTION,
+                "builtin-product-id-is-not-owner-proof"), Verb.USE, published)).allowed());
+        assertFalse(authorization.decide(ctx, new ObjectAccess(new ObjectTarget("another", Kind.PROJECTION,
+                use.id()), Verb.USE, author)).allowed());
+    }
+
+    @Test
+    void aSingleObjectCredentialDoesNotAuthorizeAnyPublishedRange() {
+        var target = new ObjectTarget("domain", Kind.PANEL, "panel");
+        var point = new ObjectAccess(target, Verb.USE, new OwnerFacts("user", DefinitionState.PUBLISHED));
+        var ctx = authorization.resolveSubject(new VerifiedIdentity("domain", "user", point::equals));
+
+        assertTrue(authorization.decide(ctx, point).allowed());
+        assertEquals(Map.of(Verb.USE, new ObjectVisibilityRange(false, null, Set.of(), false)),
+                authorization.readObjectRanges(ctx, Kind.PANEL, Set.of(Verb.USE)));
+        verify(store, never()).objectKeysByVerb(any(), any(), any(), any());
+    }
+
+    @Test
     void agentsResolveEachVerbFromObjectGrantsAndEditionEntitlements() {
         var ctx = authorization.resolveSubject(new VerifiedIdentity("domain", "user", CredentialLimit.UNRESTRICTED));
         var agent = new ObjectTarget("domain", Kind.AGENT, "agent");
@@ -123,7 +164,10 @@ class AuthorizationServiceTest {
         assertTrue(authorization.decide(ctx, access).allowed());
         var view = new ObjectAccess(agent, Verb.VIEW, published);
         assertFalse(authorization.decide(ctx, view).allowed());
-        when(subjects.objectEntitlement("user", agent, Verb.VIEW)).thenReturn(true);
+        when(subjects.domainWideObjectEntitlement(Kind.AGENT, Verb.VIEW)).thenReturn(true);
         assertTrue(authorization.decide(ctx, view).allowed());
+        assertEquals(Map.of(Verb.VIEW, new ObjectVisibilityRange(false, "user", Set.of(), true)),
+                authorization.readObjectRanges(ctx, Kind.AGENT, Set.of(Verb.VIEW)));
+        verify(store, never()).objectKeysByVerb(any(), any(), any(), any());
     }
 }

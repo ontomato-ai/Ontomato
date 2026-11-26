@@ -76,9 +76,22 @@ async function directWrite(command, args) {
   console.log("ok");
 }
 
+async function listDefinitions() {
+  const agents = [];
+  let cursor = null;
+  do {
+    const url = cursor === null ? definitions : `${definitions}?${new URLSearchParams({ cursor })}`;
+    const page = await request("GET", url);
+    agents.push(...page.agents);
+    cursor = page.nextCursor;
+    if (cursor !== null && typeof cursor !== "string") throw new Error("Invalid agent definition list cursor");
+  } while (cursor !== null);
+  return { agents };
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
-  if (command === "list") return print(await request("GET", definitions));
+  if (command === "list") return print(await listDefinitions());
   if (command === "get") return print(await request("GET", `${definitions}/${encodeURIComponent(required(args[0], "An agent id"))}`));
   if (command === "skills") {
     const query = new URLSearchParams({ agentTarget: required(args[0], "An agent id or draft") });
