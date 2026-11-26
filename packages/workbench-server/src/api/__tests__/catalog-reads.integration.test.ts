@@ -31,6 +31,8 @@ const state = vi.hoisted(() => ({
   schema: "",
   use: ["one", "two", "catalogue-panel", "catalogue-data"],
   edit: ["one", "catalogue-data"],
+  fixed: false,
+  editAuthorId: null as string | null,
 }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
@@ -177,6 +179,18 @@ beforeAll(async () => {
     prefix: "/java", token: "governance", domain: owner.domainId,
     allow: ({ target, verb }, caller) => [viewer.token, "executor"].includes(caller ?? "") &&
       (verb === "USE" ? state.use : state.edit).includes(target.id),
+  });
+  app.post("/java/authorization/objects/read-ranges", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("governance");
+    expect([viewer.token, "executor"]).toContain(req.header("tk"));
+    expect(["PANEL", "PROJECTION"]).toContain(req.body.kind);
+    const { verbs } = req.body as { verbs: ("USE" | "EDIT")[] };
+    res.json({ ranges: Object.fromEntries(verbs.map(verb => [verb, {
+      fixed: verb === "USE" && state.fixed,
+      authorId: verb === "EDIT" ? state.editAuthorId : null,
+      objectIds: verb === "USE" ? state.use : state.edit,
+      all: false,
+    }])) });
   });
   app.post("/java/authorization/objects/product-access", (req, res) => {
     expect(req.header("tk")).toBe(viewer.token);
@@ -341,10 +355,10 @@ it("reports an unreadable panel beside healthy results without losing its stored
     const response = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1`);
     expect(response.status).toBe(200);
     const first = await response.json();
-    expect(first).toMatchObject({ items: [], unavailableItems: [{ id, reason: expect.stringContaining("events") }] });
+    expect(first).toMatchObject({ items: [], total: 3, unavailableItems: [{ id, reason: expect.stringContaining("events") }] });
     expect(first.nextCursor).toBeTruthy();
     const next = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1&cursor=${first.nextCursor}`);
-    expect(await next.json()).toMatchObject({ items: [{ id: "one" }] });
+    expect(await next.json()).toMatchObject({ items: [{ id: "one" }], total: first.total });
     expect(await readCatalogue("listing")).toMatchObject({
       rows: [], diagnostics: [expect.stringContaining(`${id}:`)],
     });
@@ -549,16 +563,62 @@ it("filters panel templates in PostgreSQL before scanning cursor pages", async (
   expect(second.nextCursor).toBeUndefined();
 });
 
+it("merges fixed and current-domain management rows while the picker uses only USE", async () => {
+  const { listCurrentProducts } = await import("../../services/product-panels/catalog");
+  const fixed = "builtin-product-range-panel";
+  const authored = "range-author-panel";
+  const used = "range-reader-panel";
+  const editGrant = "range-editor-panel";
+  const definition = (name: string) => ({ name, description: "", visibility: "private", content, manifest });
+  await state.pool!.query(`INSERT INTO "${state.schema}".builtin_product_panels (id,definition) VALUES ($1,$2)`, [
+    fixed, { ...definition("Range check A"), visibility: "platform" },
+  ]);
+  for (const [domain, id, author, name] of [
+    [owner.domainId, authored, owner.userId, "Range check A"],
+    [owner.domainId, used, "another-author", "Range check C"],
+    [owner.domainId, editGrant, "another-author", "Range check D"],
+    ["other-domain", used, owner.userId, "Range check other domain"],
+  ]) {
+    await state.pool!.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)
+      VALUES ($1,$2,$3,$4)`, [domain, id, author, definition(name)]);
+  }
+  state.use.push(used);
+  state.edit.push(editGrant);
+  state.editAuthorId = owner.userId;
+  const input = { q: "Range check", scope: "all", sort: "name", limit: 1 } as const;
+  try {
+    expect(await listCurrentProducts(owner, viewer, "panel", { ...input, limit: 10 })).toMatchObject({
+      items: [{ id: authored }, { id: used }, { id: editGrant }], total: 3,
+    });
+    state.fixed = true;
+    const first = await listCurrentProducts(owner, viewer, "panel", input);
+    expect(first).toMatchObject({ items: [{ id: fixed, editable: false }], total: 4, nextCursor: expect.any(String) });
+    expect(await listCurrentProducts(owner, viewer, "panel", { ...input, limit: 10, cursor: first.nextCursor! })).toMatchObject({
+      items: [{ id: authored, editable: true }, { id: used, editable: false }, { id: editGrant, editable: true }], total: 4,
+    });
+    const picker = await createProductPanelReadAdapter(owner, viewer).options(input.q);
+    expect(picker.total).toBe(2);
+    expect(picker.options.map(option => option.primaryKey).sort()).toEqual([fixed, used]);
+  } finally {
+    state.fixed = false;
+    state.editAuthorId = null;
+    state.use.pop();
+    state.edit.pop();
+    await state.pool!.query(`DELETE FROM "${state.schema}".builtin_product_panels WHERE id=$1`, [fixed]);
+    await state.pool!.query(`DELETE FROM "${state.schema}".product_panels WHERE id=ANY($1::text[])`, [[authored, used, editGrant]]);
+  }
+});
+
 it("filters projections in PostgreSQL by componentId and bound objectType before paging and returns distinct facets", async () => {
   const { listCurrentProducts, listProjectionFilterFacets } = await import("../../services/product-panels/catalog");
   const { SCHEDULED_TASK } = await import("@ontomato/contracts/platform-object-types");
 
-  const seedProjection = async (id: string, definition: Record<string, unknown>) => {
+  const seedProjection = async (id: string, definition: Record<string, unknown>, hasUse = true) => {
     await state.pool!.query(
       `INSERT INTO "${state.schema}".product_projections (domain_id,id,owner_id,definition) VALUES ($1,$2,$3,$4)`,
       [owner.domainId, id, owner.userId, { visibility: "domain", inputs: {}, outputs: {}, config: {}, data: {}, ...definition }],
     );
-    state.use.push(id);
+    if (hasUse) state.use.push(id);
   };
   await seedProjection("filter-sched-list", {
     name: "Filter A Schedule List", description: "Lists schedules",
@@ -587,6 +647,17 @@ it("filters projections in PostgreSQL by componentId and bound objectType before
     operations: { run: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } } },
   });
 
+  await seedProjection("filter-edit-only", {
+    name: "Filter Edit Only", description: "Not usable",
+    componentId: "@ontomato/sdk:HiddenFixture",
+    data: { rows: { source: { type: { kind: "ObjectType", id: "HiddenFixture" } }, read: "query", params: {} } },
+  }, false);
+  state.edit.push("filter-stu-list-1", "filter-edit-only");
+  const editOnly = await listCurrentProducts(owner, viewer, "projection", {
+    q: "Filter Edit Only", scope: "all", sort: "name", limit: 10,
+  });
+  expect(editOnly).toMatchObject({ total: 0, items: [] });
+
   const byComponent = await listCurrentProducts(owner, viewer, "projection", {
     q: "Filter ", scope: "all", sort: "name", limit: 10, componentId: "@ontomato/sdk:ObjectList",
   });
@@ -604,7 +675,7 @@ it("filters projections in PostgreSQL by componentId and bound objectType before
     componentId: "@ontomato/sdk:ObjectList", objectType: "Student",
   });
   expect(combinedPage1.total).toBe(2);
-  expect(combinedPage1.items.map(item => item.id)).toEqual(["filter-stu-list-1"]);
+  expect(combinedPage1.items).toMatchObject([{ id: "filter-stu-list-1", editable: true }]);
   expect(combinedPage1.nextCursor).toEqual(expect.any(String));
 
   const combinedPage2 = await listCurrentProducts(owner, viewer, "projection", {
@@ -612,7 +683,7 @@ it("filters projections in PostgreSQL by componentId and bound objectType before
     componentId: "@ontomato/sdk:ObjectList", objectType: "Student", cursor: combinedPage1.nextCursor!,
   });
   expect(combinedPage2.total).toBe(2);
-  expect(combinedPage2.items.map(item => item.id)).toEqual(["filter-stu-list-2"]);
+  expect(combinedPage2.items).toMatchObject([{ id: "filter-stu-list-2", editable: false }]);
   expect(combinedPage2.nextCursor).toBeNull();
 
   const facets = await listProjectionFilterFacets(owner, viewer);
@@ -620,4 +691,6 @@ it("filters projections in PostgreSQL by componentId and bound objectType before
     "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
   ]));
   expect(facets.objectTypes).toEqual(expect.arrayContaining([SCHEDULED_TASK, "Student"]));
+  expect(facets.componentIds).not.toContain("@ontomato/sdk:HiddenFixture");
+  expect(facets.objectTypes).not.toContain("HiddenFixture");
 });

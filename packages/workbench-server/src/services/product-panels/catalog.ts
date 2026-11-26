@@ -19,8 +19,10 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import type { ChangeProductObjectGrant } from "@ontomato/contracts/object-policy-access";
-import { changeProductObjectAccess, readProductObjectAccess, retireObject, setProductDomainUse } from "../product-governance/authorization";
-import { currentDefinition, currentDefinitionAccess } from "./access";
+import {
+  changeProductObjectAccess, objectVisibilitySql, readObjectRanges, readProductObjectAccess, retireObject, setProductDomainUse,
+} from "../product-governance/authorization";
+import { currentDefinition, currentDefinitionAccess, definitionKinds } from "./access";
 import { insertCurrentProduct, loadCurrentProduct, readPanelManagementAccess, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { panelDefinitionProblem } from "./definition-diagnostics";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
@@ -54,6 +56,7 @@ interface SummaryRow {
   revision: number;
   updatedAt: Date;
   sortKey: string;
+  editable: boolean;
   componentId?: string;
   template?: boolean | null;
   definition: CurrentProductRow["definition"];
@@ -61,17 +64,27 @@ interface SummaryRow {
   createdAt: Date;
 }
 
-const catalogueVisibility = "((domain_id IS NULL OR domain_id=$1) AND id=ANY($2::text[]))";
+const AUTH_COLUMNS = { ownerId: "p.owner_id", id: "p.id" };
 
-async function catalogueGrants(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, readEdits = true) {
-  const { rows } = await getPostgresPool().query<Pick<CurrentProductRow, "id" | "ownerId" | "domainId">>(
-    `SELECT id, owner_id AS "ownerId", domain_id AS "domainId"
-     FROM ${currentProductRows(kind)} AS definitions WHERE domain_id IS NULL OR domain_id=$1`, [owner.domainId],
-  );
-  const { decisions, editable } = await currentDefinitionAccess(kind, rows, owner.domainId, credentials, readEdits);
-  const visible = rows.filter((row, index) => decisions[index].allowed || (kind === "panel" && editable.has(row.id)))
-    .map(row => row.id);
-  return { visible, edited: editable };
+async function catalogueRange(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, readEdits: boolean) {
+  const { USE, EDIT } = readEdits
+    ? await readObjectRanges(definitionKinds[kind], ["USE", "EDIT"], credentials)
+    : { ...await readObjectRanges(definitionKinds[kind], ["USE"], credentials), EDIT: undefined };
+  const values: unknown[] = [owner.domainId];
+  const use = objectVisibilitySql(USE, AUTH_COLUMNS, values);
+  // Only panel management includes EDIT in visibility; projection EDIT annotates the page.
+  const managed = kind === "panel" && EDIT ? objectVisibilitySql(EDIT, AUTH_COLUMNS, values) : null;
+  const source = currentProductRows(kind, {
+    domainWhere: `p.domain_id=$1 AND (${managed === null ? use : `(${use}) OR (${managed})`})`,
+    includeBuiltins: USE.fixed,
+  });
+  return {
+    source,
+    values,
+    editPredicate: (pageValues: unknown[]) => EDIT
+      ? `p.domain_id IS NOT NULL AND (${managed ?? objectVisibilitySql(EDIT, AUTH_COLUMNS, pageValues)})`
+      : "FALSE",
+  };
 }
 
 function cataloguePanel(row: CurrentProductRow, editable: boolean) {
@@ -99,14 +112,13 @@ export async function readCataloguePanel(owner: ProductOwner, credentials: Assis
 }
 
 export async function listUnavailablePanels(owner: ProductOwner, credentials: AssistantCredentials) {
-  const { visible, edited } = await catalogueGrants(owner, credentials, "panel");
-  const { rows } = await getPostgresPool().query<CurrentProductRow>(
-    `SELECT ${currentProductColumns} FROM ${currentProductRows("panel")} AS definitions
-     WHERE ${catalogueVisibility} ORDER BY id`,
-    [owner.domainId, visible],
+  const { source, values, editPredicate } = await catalogueRange(owner, credentials, "panel", true);
+  const { rows } = await getPostgresPool().query<CurrentProductRow & { editable: boolean }>(
+    `SELECT ${currentProductColumns},${editPredicate(values)} AS editable FROM ${source} AS p ORDER BY id`,
+    values,
   );
-  return rows.flatMap(row => {
-    const { unavailable } = cataloguePanel(row, edited.has(row.id));
+  return rows.flatMap(({ editable, ...row }) => {
+    const { unavailable } = cataloguePanel(row, editable);
     return unavailable ? [unavailable] : [];
   });
 }
@@ -126,12 +138,10 @@ function inputPortMatchesObjectTypeSql(inputExpr: string, typeParam: string, lay
 }
 
 export async function listProjectionFilterFacets(owner: ProductOwner, credentials: AssistantCredentials) {
-  const { visible } = await catalogueGrants(owner, credentials, "projection", false);
+  const { source, values } = await catalogueRange(owner, credentials, "projection", false);
   const { rows } = await getPostgresPool().query<{ componentId: string | null; definition: CurrentProductRow["definition"] }>(
-    `SELECT definition->>'componentId' AS "componentId", definition
-     FROM ${currentProductRows("projection")} AS definitions
-     WHERE ${catalogueVisibility}`,
-    [owner.domainId, visible],
+    `SELECT definition->>'componentId' AS "componentId", definition FROM ${source} AS p`,
+    values,
   );
   const componentIds = new Set<string>();
   const objectTypes = new Set<string>();
@@ -169,7 +179,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const cursor = readCursor(input);
   const panelCatalog = kind === "panel";
   const projectionCatalog = kind === "projection";
-  const { visible, edited } = await catalogueGrants(owner, credentials, kind, !picker);
+  const { source, values: filterValues, editPredicate } = await catalogueRange(owner, credentials, kind, !picker);
   const updated = input.sort === "updated";
   const order = updated ? "updated_at" : "lower(definition->>'name')";
   const direction = updated ? "DESC" : "ASC";
@@ -178,76 +188,31 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
   const kindColumn = projectionCatalog ? `,definition->>'componentId' AS "componentId",definition`
     : `,definition,definition->'template' AS template,domain_id AS "domainId",created_at AS "createdAt"`;
-  const componentId = projectionCatalog ? input.componentId ?? null : null;
-  const objectType = projectionCatalog ? input.objectType ?? null : null;
-  const objectTypeLayer = objectType ? platformLayerOfObjectType(objectType) : null;
-  const objectTypePlatformOps = objectType ? platformOperationsOwnedByType(objectType) : [];
-  const projectionFilter = projectionCatalog
-    ? `AND ($7::text IS NULL OR definition->>'componentId' = $7::text)
-       AND (
-         $8::text IS NULL
-         OR EXISTS (
-           SELECT 1
-           FROM jsonb_each(CASE WHEN jsonb_typeof(definition->'data') = 'object' THEN definition->'data' ELSE '{}'::jsonb END) AS d(k, v)
-           WHERE jsonb_typeof(v) = 'object' AND jsonb_typeof(v->'source') = 'object' AND (
-             v->'source'->'type'->>'id' = $8::text
-             OR v->'source'->'object'->'literal'->>'className' = $8::text
-             OR (
-               jsonb_typeof(definition->'inputs') = 'object'
-               AND jsonb_typeof(v->'source'->'object') = 'object'
-               AND v->'source'->'object'->>'input' IS NOT NULL
-               AND ${inputPortMatchesObjectTypeSql("definition->'inputs'->(v->'source'->'object'->>'input')", "$8::text", "$9::text")}
-             )
-           )
-         )
-         OR EXISTS (
-           SELECT 1
-           FROM jsonb_each(CASE WHEN jsonb_typeof(definition->'operations') = 'object' THEN definition->'operations' ELSE '{}'::jsonb END) AS o(k, v)
-           WHERE jsonb_typeof(v) = 'object' AND (
-             v->'target'->'literal'->>'className' = $8::text
-             OR (
-               jsonb_typeof(definition->'inputs') = 'object'
-               AND jsonb_typeof(v->'target') = 'object'
-               AND v->'target'->>'input' IS NOT NULL
-               AND ${inputPortMatchesObjectTypeSql("definition->'inputs'->(v->'target'->>'input')", "$8::text", "$9::text")}
-             )
-             OR (
-               jsonb_typeof(v->'operation') = 'object'
-               AND v->'operation'->>'kind' = 'PlatformOperation'
-               AND v->'operation'->>'id' = ANY($10::text[])
-             )
-           )
-         )
-         OR ($8::text = '${METRIC_VIEW}' AND COALESCE(definition->>'metricId', '') <> '')
-       )`
-    : "";
-  const whereFilter = `WHERE ${catalogueVisibility}
-       AND ($6::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb($6::boolean))
-       AND ($3='all' OR COALESCE(owner_id=$4,false)=($3='mine'))
-       AND (strpos(lower(definition->>'name'),lower($5))>0 OR strpos(lower(definition->>'description'),lower($5))>0)
+  const [scope, userId, search, template] = [input.scope, owner.userId, input.q, panelCatalog ? input.template ?? null : null]
+    .map(value => `$${filterValues.push(value)}`);
+  const projectionFilter = projectionCatalog ? projectionFilterSql(input, filterValues) : "";
+  const whereFilter = `WHERE (${template}::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb(${template}::boolean))
+       AND (${scope}='all' OR COALESCE(owner_id=${userId},false)=(${scope}='mine'))
+       AND (strpos(lower(definition->>'name'),lower(${search}))>0 OR strpos(lower(definition->>'description'),lower(${search}))>0)
        ${projectionFilter}`;
-  const filterValues = [
-    owner.domainId, visible, input.scope, owner.userId, input.q,
-    panelCatalog ? input.template ?? null : null,
-    ...(projectionCatalog ? [componentId, objectType, objectTypeLayer, objectTypePlatformOps] : []),
-  ];
-  const cursorParamOffset = filterValues.length;
-  const [{ rows }, { rows: countRows }] = await Promise.all([
-    getPostgresPool().query<SummaryRow>(
+  const pageValues = [...filterValues];
+  const editable = editPredicate(pageValues);
+  const [key, id, limit, offset] = [cursor?.key ?? null, cursor?.id ?? null, input.limit + 1, picker?.offset ?? 0]
+    .map(value => `$${pageValues.push(value)}`);
+  const pool = getPostgresPool();
+  const [{ rows }, { rows: [count] }] = await Promise.all([
+    pool.query<SummaryRow>(
       `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
-         definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${kindColumn}
-       FROM ${currentProductRows(kind)} AS definitions
+         definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey",
+         ${editable} AS editable${kindColumn}
+       FROM ${source} AS p
        ${whereFilter}
-         AND ($${cursorParamOffset + 1}::${keyType} IS NULL OR (${order},id) ${updated ? "<" : ">"} ($${cursorParamOffset + 1}::${keyType},$${cursorParamOffset + 2}::text))
-       ORDER BY ${order} ${direction},id ${direction} LIMIT $${cursorParamOffset + 3} OFFSET $${cursorParamOffset + 4}`,
-      [...filterValues, cursor?.key ?? null, cursor?.id ?? null, input.limit + 1, picker?.offset ?? 0],
+         AND (${key}::${keyType} IS NULL OR (${order},p.id) ${updated ? "<" : ">"} (${key}::${keyType},${id}::text))
+       ORDER BY ${order} ${direction},p.id ${direction} LIMIT ${limit} OFFSET ${offset}`,
+      pageValues,
     ),
-    getPostgresPool().query<{ total: number }>(
-      `SELECT COUNT(*)::int AS total FROM ${currentProductRows(kind)} AS definitions ${whereFilter}`,
-      filterValues,
-    ),
+    pool.query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM ${source} AS p ${whereFilter}`, filterValues),
   ]);
-  const total = countRows[0]?.total ?? 0;
   const unavailableItems: { id: string; reason: string; revision?: number }[] = [];
   type ListedProductItem = {
     id: string;
@@ -263,15 +228,12 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
     objectTypes?: string[];
     memberCount?: number;
   };
-  const items: ListedProductItem[] = rows.slice(0, input.limit).flatMap<ListedProductItem>(({ sortKey: _sortKey, definition, domainId, createdAt, updatedAt, template, ...row }) => {
-    const summary: ListedProductItem = {
-      ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
-      editable: edited.has(row.id),
-    };
+  const items = rows.slice(0, input.limit).flatMap<ListedProductItem>(({ sortKey: _sortKey, definition, domainId, createdAt, updatedAt, template, editable, ...row }) => {
+    const summary = { ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(), editable };
     if (!panelCatalog) {
       return [{ ...summary, objectTypes: projectionBoundObjectTypes(definition) }];
     }
-    const { panel, unavailable } = cataloguePanel({ ...row, definition, domainId, createdAt, updatedAt }, summary.editable);
+    const { panel, unavailable } = cataloguePanel({ ...row, definition, domainId, createdAt, updatedAt }, editable);
     if (!unavailable && panel) return [{ ...summary, memberCount: Object.keys(panel.manifest.members).length }];
     if (unavailable) unavailableItems.push(unavailable);
     return [];
@@ -279,7 +241,52 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const last = rows[input.limit - 1];
   const nextCursor = rows.length > input.limit
     ? Buffer.from(JSON.stringify({ sort: input.sort, key: last.sortKey, id: last.id })).toString("base64url") : null;
-  return { items, nextCursor, total, ...(unavailableItems.length > 0 && { unavailableItems }) };
+  return { items, nextCursor, total: count.total, ...(unavailableItems.length > 0 && { unavailableItems }) };
+}
+
+function projectionFilterSql(input: Pick<ProductProjectionCatalogQuery, "componentId" | "objectType">, values: unknown[]) {
+  const { objectType } = input;
+  const [component, type, layer, platformOps] = [
+    input.componentId ?? null, objectType ?? null, objectType ? platformLayerOfObjectType(objectType) : null,
+    objectType ? platformOperationsOwnedByType(objectType) : [],
+  ].map(value => `$${values.push(value)}`);
+  return `AND (${component}::text IS NULL OR definition->>'componentId' = ${component}::text)
+       AND (
+         ${type}::text IS NULL
+         OR EXISTS (
+           SELECT 1
+           FROM jsonb_each(CASE WHEN jsonb_typeof(definition->'data') = 'object' THEN definition->'data' ELSE '{}'::jsonb END) AS d(k, v)
+           WHERE jsonb_typeof(v) = 'object' AND jsonb_typeof(v->'source') = 'object' AND (
+             v->'source'->'type'->>'id' = ${type}::text
+             OR v->'source'->'object'->'literal'->>'className' = ${type}::text
+             OR (
+               jsonb_typeof(definition->'inputs') = 'object'
+               AND jsonb_typeof(v->'source'->'object') = 'object'
+               AND v->'source'->'object'->>'input' IS NOT NULL
+               AND ${inputPortMatchesObjectTypeSql("definition->'inputs'->(v->'source'->'object'->>'input')", `${type}::text`, `${layer}::text`)}
+             )
+           )
+         )
+         OR EXISTS (
+           SELECT 1
+           FROM jsonb_each(CASE WHEN jsonb_typeof(definition->'operations') = 'object' THEN definition->'operations' ELSE '{}'::jsonb END) AS o(k, v)
+           WHERE jsonb_typeof(v) = 'object' AND (
+             v->'target'->'literal'->>'className' = ${type}::text
+             OR (
+               jsonb_typeof(definition->'inputs') = 'object'
+               AND jsonb_typeof(v->'target') = 'object'
+               AND v->'target'->>'input' IS NOT NULL
+               AND ${inputPortMatchesObjectTypeSql("definition->'inputs'->(v->'target'->>'input')", `${type}::text`, `${layer}::text`)}
+             )
+             OR (
+               jsonb_typeof(v->'operation') = 'object'
+               AND v->'operation'->>'kind' = 'PlatformOperation'
+               AND v->'operation'->>'id' = ANY(${platformOps}::text[])
+             )
+           )
+         )
+         OR (${type}::text = '${METRIC_VIEW}' AND COALESCE(definition->>'metricId', '') <> '')
+       )`;
 }
 
 export async function currentProductUsedBy(owner: ProductOwner, credentials: AssistantCredentials,
