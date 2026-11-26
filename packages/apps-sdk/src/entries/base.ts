@@ -89,6 +89,7 @@ export { default as TwoPaneLayout } from "../base/TwoPaneLayout.vue";
 export { default as WorkbenchLayout } from "../base/WorkbenchLayout.vue";
 export { default as SectionGroup } from "../base/SectionGroup.vue";
 export { default as ReferencePicker } from "../base/ReferencePicker.vue";
+export { default as PickerDialog } from "../base/PickerDialog.vue";
 export { default as RecordGraph } from "../base/RecordGraph.vue";
 export { default as ProductAssetGraph } from "../base/ProductAssetGraph.vue";
 export type {

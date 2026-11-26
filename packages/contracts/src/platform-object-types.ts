@@ -194,6 +194,7 @@ export const REGENERATE_USER_API_KEY = "users.regenerateApiKey";
 export const REVOKE_USER_API_KEY = "users.revokeApiKey";
 export const ISSUE_USER_API_KEY_BATCH = "users.issueApiKeyBatch";
 export const READ_MEMBER_ACCESS_CONTEXT = "users.accessContext";
+export const READ_MEMBER_EFFECTIVE_ACCESS = "users.effectiveAccess";
 export const INSPECT_MEMBER_ACCESS = "users.inspectAccess";
 export const GRANT_MEMBER_ACCESS = "users.grantAccess";
 export const DELETE_ROLE = "roles.delete";
@@ -663,7 +664,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [
       `${USER}.save`, REMOVE_USER, RESET_USER_PASSWORD, ADD_USER_MEMBER,
       GENERATE_USER_API_KEY, REGENERATE_USER_API_KEY, REVOKE_USER_API_KEY, ISSUE_USER_API_KEY_BATCH,
-      READ_MEMBER_ACCESS_CONTEXT, INSPECT_MEMBER_ACCESS, GRANT_MEMBER_ACCESS,
+      READ_MEMBER_ACCESS_CONTEXT, INSPECT_MEMBER_ACCESS, GRANT_MEMBER_ACCESS, READ_MEMBER_EFFECTIVE_ACCESS,
     ],
   },
   [ROLE]: {

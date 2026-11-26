@@ -28,6 +28,16 @@ public final class AuthorizationTypes {
     public record PolicyRef(String roleId, String policyId, PolicyKind kind) {}
 
     public record ObjectGrant(String policyId, ObjectTarget target, Verb verb, GrantScope scope) {}
+
+    /** What one policy brings to a subject, with the roles that carry the policy. */
+    public record PolicyAttribution(String policyId, List<String> roleIds, Set<String> managementOperations,
+                                    List<ObjectGrant> objectGrants) {}
+
+    /**
+     * Every policy that reaches a subject, kept apart so a page can say where each right comes from. An administrator
+     * holds every management operation through the role rather than through a policy, which {@code administrator} reports.
+     */
+    public record SubjectAttribution(boolean administrator, List<PolicyAttribution> policies) {}
     public record AgentPolicyGrant(String policyId, String name, Verb level) {}
 
     public record ObjectGrantView(String policyId, String name, Verb verb) {}
