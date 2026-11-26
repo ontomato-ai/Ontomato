@@ -9,7 +9,7 @@ import {
   type ProductCatalogQuery, type ProductPanelUsedBy, type ProductProjectionUsedBy, type ProductVisibility,
 } from "@ontomato/contracts/product-panels";
 import {
-  currentProductColumns, currentProductRecord, currentProductRows, currentProductTables, findCurrentProduct,
+  currentProductColumns, currentProductRecord, currentProductTables, findCurrentProduct,
   type CurrentProductKind, type CurrentProductRow,
 } from "../../infrastructure/product-current";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
@@ -20,9 +20,9 @@ import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import type { ChangeProductObjectGrant } from "@ontomato/contracts/object-policy-access";
 import {
-  changeProductObjectAccess, objectVisibilitySql, readObjectRanges, readProductObjectAccess, retireObject, setProductDomainUse,
+  changeProductObjectAccess, readProductObjectAccess, retireObject, setProductDomainUse,
 } from "../product-governance/authorization";
-import { currentDefinition, currentDefinitionAccess, definitionKinds } from "./access";
+import { currentDefinition, currentDefinitionAccess, readCurrentProductVisibility } from "./access";
 import { insertCurrentProduct, loadCurrentProduct, readPanelManagementAccess, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { panelDefinitionProblem } from "./definition-diagnostics";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
@@ -64,29 +64,6 @@ interface SummaryRow {
   createdAt: Date;
 }
 
-const AUTH_COLUMNS = { ownerId: "p.owner_id", id: "p.id" };
-
-async function catalogueRange(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, readEdits: boolean) {
-  const { USE, EDIT } = readEdits
-    ? await readObjectRanges(definitionKinds[kind], ["USE", "EDIT"], credentials)
-    : { ...await readObjectRanges(definitionKinds[kind], ["USE"], credentials), EDIT: undefined };
-  const values: unknown[] = [owner.domainId];
-  const use = objectVisibilitySql(USE, AUTH_COLUMNS, values);
-  // Only panel management includes EDIT in visibility; projection EDIT annotates the page.
-  const managed = kind === "panel" && EDIT ? objectVisibilitySql(EDIT, AUTH_COLUMNS, values) : null;
-  const source = currentProductRows(kind, {
-    domainWhere: `p.domain_id=$1 AND (${managed === null ? use : `(${use}) OR (${managed})`})`,
-    includeBuiltins: USE.fixed,
-  });
-  return {
-    source,
-    values,
-    editPredicate: (pageValues: unknown[]) => EDIT
-      ? `p.domain_id IS NOT NULL AND (${managed ?? objectVisibilitySql(EDIT, AUTH_COLUMNS, pageValues)})`
-      : "FALSE",
-  };
-}
-
 function cataloguePanel(row: CurrentProductRow, editable: boolean) {
   const result = productPanelSchema.safeParse(currentProductRecord(row, editable));
   if (result.success) return { panel: result.data };
@@ -112,7 +89,7 @@ export async function readCataloguePanel(owner: ProductOwner, credentials: Assis
 }
 
 export async function listUnavailablePanels(owner: ProductOwner, credentials: AssistantCredentials) {
-  const { source, values, editPredicate } = await catalogueRange(owner, credentials, "panel", true);
+  const { source, values, editPredicate } = await readCurrentProductVisibility("panel", owner.domainId, credentials, true);
   const { rows } = await getPostgresPool().query<CurrentProductRow & { editable: boolean }>(
     `SELECT ${currentProductColumns},${editPredicate(values)} AS editable FROM ${source} AS p ORDER BY id`,
     values,
@@ -138,7 +115,7 @@ function inputPortMatchesObjectTypeSql(inputExpr: string, typeParam: string, lay
 }
 
 export async function listProjectionFilterFacets(owner: ProductOwner, credentials: AssistantCredentials) {
-  const { source, values } = await catalogueRange(owner, credentials, "projection", false);
+  const { source, values } = await readCurrentProductVisibility("projection", owner.domainId, credentials, false);
   const { rows } = await getPostgresPool().query<{ componentId: string | null; definition: CurrentProductRow["definition"] }>(
     `SELECT definition->>'componentId' AS "componentId", definition FROM ${source} AS p`,
     values,
@@ -179,7 +156,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const cursor = readCursor(input);
   const panelCatalog = kind === "panel";
   const projectionCatalog = kind === "projection";
-  const { source, values: filterValues, editPredicate } = await catalogueRange(owner, credentials, kind, !picker);
+  const { source, values: filterValues, editPredicate } = await readCurrentProductVisibility(kind, owner.domainId, credentials, !picker);
   const updated = input.sort === "updated";
   const order = updated ? "updated_at" : "lower(definition->>'name')";
   const orderBy = updated ? `${order} DESC,p.id DESC` : `${order} ASC NULLS LAST,p.id ASC`;
