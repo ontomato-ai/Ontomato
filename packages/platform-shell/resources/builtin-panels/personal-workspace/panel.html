@@ -458,7 +458,11 @@
         </div>
 
         <div class="pw-composer-wrap">
-          <projection slot="askInline"></projection>
+          <projection slot="askInline">
+            <template #agent-picker="{ agents, agentId, label, select }">
+              <agent-picker variant="home" :agents="agents" :agent-id="agentId" :label="label" @select="select"></agent-picker>
+            </template>
+          </projection>
         </div>
 
         <nav class="pw-quick-links" :aria-label="t('hero.quickLinksLabel')">

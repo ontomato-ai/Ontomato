@@ -214,7 +214,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentPicker",
     role: "control",
     group: "conversation",
-    meaning: "Chooses one of the agents the host serves; it grants nothing: the server decides what the reader may use.",
+    meaning: "Chooses one of the agents the host serves; it grants nothing: the server decides what the reader may use. A page writes it as a tag when its own composer skin differs from the standard one: `<agent-picker variant=\"home\" :agents=\"…\" :agent-id=\"…\" :label=\"…\" @select=\"…\">`.",
+    configProps: ["label"],
   }),
   defineComponentMeta({
     componentId: "AgentAvatar",
@@ -222,7 +223,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentAvatar",
     role: "presentation",
     group: "conversation",
-    meaning: "An agent's avatar, from its stored image or colour and its initial.",
+    meaning: "An agent's avatar, from its stored image or colour and its initial; a page writes it as a tag wherever it draws its own prefix or header.",
+    configProps: ["icon", "size"],
   }),
   defineComponentMeta({
     componentId: "ToolStep",
@@ -997,7 +999,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "conversation",
     meaning:
-      "Places a conversation entry targeting an agent — button (`button`) or embedded prompt box (`inline`, with `pageComposer: 'none'`); use to start agent chats. In its default button presentation, clicking asks the platform host to expand the page's composer with the projection's declared conversationEntry. Declare `submit: true` to send non-empty prefill on the click, or `newSession: true` to start a fresh conversation. The optional `prefill` prop supplies text at click time; in presentation='inline', renders the platform's inline composer (agent selector and prompt input) directly inside the page and serves sibling ConversationEntry triggers while mounted (typically paired with pageComposer: 'none' on the application entry).",
+      "Places a conversation entry targeting an agent — button (`button`) or embedded prompt box (`inline`, with `pageComposer: 'none'`); use to start agent chats. In its default button presentation, clicking asks the platform host to expand the page's composer with the projection's declared conversationEntry. Declare `submit: true` to send non-empty prefill on the click, or `newSession: true` to start a fresh conversation. The optional `prefill` prop supplies text at click time; in presentation='inline', renders the platform's inline composer (agent selector and prompt input) directly inside the page and serves sibling ConversationEntry triggers while mounted (typically paired with pageComposer: 'none' on the application entry). The composer's agent selector is the standard pill picker; a page whose own composer skin differs supplies its picker through the `#agent-picker` slot, which receives `{ agents, agentId, label, select }`.",
     effects: "Applies the declared conversation behavior on click. In inline mode, sends the reader's typed prompt to the platform agent counter.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
