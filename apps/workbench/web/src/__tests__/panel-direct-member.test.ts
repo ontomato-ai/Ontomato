@@ -7,7 +7,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -25,24 +25,24 @@ import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/sr
  * to the owner's operation; a refusal whose field messages land nowhere; data an operation changed left as it was.
  */
 
-const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+const task = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 const projections: Record<string, DirectProjection> = {
   "task-form": {
     ...record, id: "task-form", name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+    inputs: { task: { kind: "object", objectType: TRIGGER }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
     outputs: {}, config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
-    operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } } },
   },
   "task-run": {
     ...record, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: { operation: "runNow" },
-    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+    inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {}, config: { operation: "runNow" },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
   },
 };
 const manifest: DirectPanelManifest = {
-  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
+  state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false } },
   members: {
     form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
     run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } },
@@ -54,11 +54,11 @@ const form = (name: string, revision = 3) => ({
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
 });
 const runNow = {
-  kind: "action", handlerRef: "schedules.runNow", label: "立即运行", effect: "write", target: { source: "input", input: "task" },
+  kind: "action", handlerRef: "triggers.runNow", label: "立即运行", effect: "write", target: { source: "input", input: "task" },
   inputSchema: {}, resultSchema: {}, batch: false,
 };
 const save = {
-  kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" },
+  kind: "form.save", handlerRef: `${TRIGGER}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" },
   inputSchema: {}, resultSchema: {}, batch: false,
 };
 
@@ -69,7 +69,7 @@ function open(
 ) {
   const reads: Read[] = [];
   const prepared: [string, unknown][] = [];
-  let outcome: unknown = { kind: "success", data: {}, affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } };
+  let outcome: unknown = { kind: "success", data: {}, affected: { objects: [task("t-1")], objectTypes: [TRIGGER] } };
   const prepare = vi.fn(async (operationId: string, invocation: unknown): Promise<PanelHumanOperationPreparation> => {
     prepared.push([operationId, invocation]);
     return { intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05", operationId, label: operationId, confirmation: { kind: "none" } };
@@ -136,18 +136,18 @@ it("saves through the owner's operation, marks the fields the owner refused, and
   await nextTick();
   await expect(instance.invoke("form.save")).rejects.toThrow("Check the marked fields");
   expect(prepared[0]).toEqual(["form.save", { call: {
-    target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+    target: { kind: "object", objectType: TRIGGER, primaryKey: "t-1" },
     input: { values: { name: "t-1", note: "x" }, revision: 3, submittedFields: ["/note"] },
   } }]);
   await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent).toBe("A note is a sentence"));
 
-  setOutcome({ kind: "success", data: {}, affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } });
+  setOutcome({ kind: "success", data: {}, affected: { objects: [task("t-1")], objectTypes: [TRIGGER] } });
   const before = reads.filter((read) => read.dataName === "form").length;
   await instance.invoke("form.save");
   await nextTick();
   // The receipt rereads nothing itself; what it changed reaches the instance through the host's refresh port, once.
   expect(reads.filter((read) => read.dataName === "form").length).toBe(before);
-  instance.refresh({ objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }], objectTypes: [SCHEDULED_TASK] });
+  instance.refresh({ objects: [{ objectType: TRIGGER, primaryKey: "t-1" }], objectTypes: [TRIGGER] });
   await vi.waitFor(() => expect(reads.filter((read) => read.dataName === "form").length).toBe(before + 1));
   await nextTick();
   expect(reads.filter((read) => read.dataName === "form").length).toBe(before + 1);
@@ -162,9 +162,9 @@ it("runs run-now through the owner's operation for the selected task, and says w
   });
   // The owner returns the run it started, and says in the reader's language that it started.
   const started = { id: "run-1", taskId: "t-1", status: "running", startedAt: "2026-11-20T08:00:00Z" };
-  setOutcome({ kind: "success", data: started, message: "已开始运行", affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } });
+  setOutcome({ kind: "success", data: started, message: "已开始运行", affected: { objects: [task("t-1")], objectTypes: [TRIGGER] } });
   button.click();
-  await vi.waitFor(() => expect(prepared).toEqual([["run.runNow", { call: { target: { kind: "object", ...{ objectType: SCHEDULED_TASK, primaryKey: "t-1" } }, input: {} } }]]));
+  await vi.waitFor(() => expect(prepared).toEqual([["run.runNow", { call: { target: { kind: "object", ...{ objectType: TRIGGER, primaryKey: "t-1" } }, input: {} } }]]));
   // Said in the platform's message, where it outlasts the button.
   const said = () => [...document.querySelectorAll(".el-message")].map((message) => message.textContent?.trim());
   await vi.waitFor(() => expect(said()).toContain("已开始运行"));
@@ -173,7 +173,7 @@ it("runs run-now through the owner's operation for the selected task, and says w
   expect(element.textContent).not.toContain("run-1");
 
   // An owner that says nothing of it: the platform's own word that it was done.
-  setOutcome({ kind: "success", data: started, affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } });
+  setOutcome({ kind: "success", data: started, affected: { objects: [task("t-1")], objectTypes: [TRIGGER] } });
   await vi.waitFor(() => expect(button.disabled).toBe(false));
   button.click();
   await vi.waitFor(() => expect(said()).toContain("Done"));
@@ -261,7 +261,7 @@ it("tells the page's code the form was saved, with the object, and that it was d
   await nextTick();
   await instance.invoke("form.save");
   expect(saved).toHaveBeenCalledWith(
-    { className: SCHEDULED_TASK, primaryKey: "t-1" },
+    { className: TRIGGER, primaryKey: "t-1" },
     expect.objectContaining({ primaryKey: "t-1" }),
   );
 

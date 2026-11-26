@@ -206,8 +206,7 @@ public class ApplicationController {
     @GetMapping("/platform/applications")
     public R<?> list(@RequestParam(defaultValue="navigation") String purpose) {
         if (!purpose.equals("schedules")) return navigation(false);
-        var user = current();
-        return R.of(catalog.all().stream().filter(a -> catalog.inDomain(a,user) && a.getString("scheduleAdapter") != null).toList());
+        return R.of(catalog.scheduleTargets(current()));
     }
     @GetMapping("/platform/applications/{id}")
     public R<?> get(@PathVariable String id) {

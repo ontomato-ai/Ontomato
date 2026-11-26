@@ -737,6 +737,8 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
     try {
       return (PythonExecuteResult) executeAction(action, param, lang, creator, permission, timeoutMinutes,
           ExecutionTarget.LIVE, runId, new Standalone(), null)[1];
+    } catch (ActionAuthorization.Denied denied) {
+      throw denied;
     } catch (OwnerRefusal refusal) {
       PythonExecuteResult result = new PythonExecuteResult();
       result.setError(refusal.getMessage());

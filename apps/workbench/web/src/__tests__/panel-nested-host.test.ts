@@ -3,7 +3,7 @@ import { h, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { PRODUCT_PANEL, TRIGGER } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import {
@@ -201,9 +201,9 @@ it("styles each instance's overlays and hides both page and nested overlays when
 });
 
 it("asks Node for an object's detail panel by the object alone, and reads inside it along the panel Node named", async () => {
-  const taskRef = { className: SCHEDULED_TASK, primaryKey: task.id };
+  const taskRef = { className: TRIGGER, primaryKey: task.id };
   const objectOuter = panelRecord("panel-tasks-detail", "Tasks", definePanel({
-    state: { picked: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
+    state: { picked: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false } },
     members: { detail: { target: { fromState: "picked", candidates: { rule: "objectDetail" } } } },
   }));
   objectOuter.content = { html: '<div id="app"><projection slot="detail"></projection></div>', module: PLACE_DETAIL };

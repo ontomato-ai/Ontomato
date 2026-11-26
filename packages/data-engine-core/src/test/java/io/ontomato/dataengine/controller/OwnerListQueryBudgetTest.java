@@ -22,20 +22,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.metricView.MetricView;
-import io.ontomato.dataengine.bean.trigger.Trigger;
-import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.AssetLookupPolicy;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
-import io.ontomato.dataengine.dao.TriggerDao;
-import io.ontomato.dataengine.dao.WorkflowDao;
 import io.ontomato.dataengine.service.ActionTrialStore;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.QueryAccessService.GrantUser;
 import io.ontomato.dataengine.service.SubjectDirectory;
-import io.ontomato.dataengine.service.TriggerService;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
@@ -45,7 +40,6 @@ import io.ontomato.dataengine.service.authorization.AuthorizationTypes.RoleResol
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
 import io.ontomato.dataengine.service.impl.ActionServiceImpl;
 import io.ontomato.dataengine.service.impl.MetricViewServiceImpl;
-import io.ontomato.dataengine.service.impl.WorkflowServiceImpl;
 import io.ontomato.dataengine.util.SystemUtils;
 import java.util.List;
 import java.util.Map;
@@ -144,50 +138,6 @@ class OwnerListQueryBudgetTest {
     var bindingReads = reads.stream().filter(OwnerListQueryBudgetTest::isMetricBindingRead).toList();
     assertJdbcBudget(size, bindingReads);
     assertJdbcBudget(2, reads.stream().filter(call -> !isMetricBindingRead(call)).toList());
-  }
-
-  @ParameterizedTest
-  @ValueSource(ints = {1, 8})
-  void triggersBatchDisplayNamesAndReuseTheTargetCatalogues(int size) throws Exception {
-    var controller = new TriggerController();
-    var definitions = new CapabilityDefinitions(authorization, null);
-    setField(controller, "triggers", withJdbc(new TriggerDao()));
-    setField(controller, "service", new TriggerService());
-    setField(controller, "definitions", definitions);
-    setField(controller, "actionService", actionService(size));
-    setField(controller, "workflowService",
-        new WorkflowServiceImpl(withJdbc(new WorkflowDao()), null, null, null, null, null, definitions));
-    stubList(" FROM trigger_def ", indices(size).mapToObj(i -> {
-      var trigger = new Trigger();
-      trigger.setId("trigger-" + i);
-      trigger.setDomainId(DOMAIN);
-      trigger.setStatus(Trigger.STATUS_PUBLISHED);
-      trigger.setCreatedBy(AUTHOR);
-      trigger.setReviewedBy("reviewer-" + i);
-      trigger.setExecutor("principal:executor-" + i);
-      trigger.setEffectKind(i % 2 == 0 ? Trigger.EFFECT_ACTION : Trigger.EFFECT_WORKFLOW);
-      trigger.setEffect(i % 2 == 0 ? JSONObject.of("actionId", "action-" + i)
-          : JSONObject.of("workflowId", "workflow-" + i));
-      return trigger;
-    }).toList());
-    stubList(" FROM workflow ", indices(size).mapToObj(i -> {
-      var workflow = new Workflow();
-      workflow.setId("workflow-" + i);
-      workflow.setName("Workflow " + i);
-      return workflow;
-    }).toList());
-    stubFunctions(size, Function.OPERATION_WRITE);
-    var names = directoryNames(size, true);
-
-    var rows = queryList(controller, "/trigger/queryList", size);
-
-    assertOwnerNames(rows, names);
-    for (int i = 0; i < size; i++) {
-      assertEquals(names.get("executor-" + i), rows.get(i).path("executorName").asText());
-      assertEquals((i % 2 == 0 ? "Action " : "Workflow ") + i, rows.get(i).path("effectTargetName").asText());
-    }
-    assertBoundaryReads(names);
-    assertJdbcBudget(4, jdbcCalls()); // Trigger rows, Action catalogue and its Functions, Workflow catalogue.
   }
 
   private ActionServiceImpl actionService(int size) {

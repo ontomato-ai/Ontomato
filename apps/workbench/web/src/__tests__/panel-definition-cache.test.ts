@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import type { BundledPanelProjection, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
@@ -85,7 +85,7 @@ function makeProjection(id: string, revision: number, title: string): ProductPro
       emptyText: title,
     },
     data: {
-      rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} },
     },
   };
 }

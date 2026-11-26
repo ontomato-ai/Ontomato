@@ -20,26 +20,21 @@ public class ScheduleApplications {
         throw new IllegalStateException("Duplicate scheduled application: " + application.id());
   }
 
-  public Map<String, ScheduleApplication> all(String domain) {
-    var result = new LinkedHashMap<String, ScheduleApplication>();
-    for (var app : catalog.all())
-      if (app.getString("scheduleAdapter") != null && (app.getString("domainId") == null || domain.equals(app.getString("domainId"))))
-        result.put(app.getString("id"), require(app.getString("id")));
-    return result;
-  }
-
   public boolean canEnter(String id, io.ontomato.dataengine.core.bean.User user) {
     return catalog.canEnter(id,user);
   }
 
-  public void detach(java.util.UUID taskId) {
-    for (var application : local.values()) application.detach(taskId);
-  }
-
-  public ScheduleApplication require(String id) {
-    String adapter = catalog.require(id).getString("scheduleAdapter");
-    if (adapter == null) throw new ScheduleException(404, "APPLICATION_NOT_FOUND", "Application has no schedule adapter");
+  public ScheduleApplication require(String id, String domain) {
+    var app = catalog.all().stream().filter(row -> id.equals(row.getString("id"))
+        && (row.getString("domainId") == null || domain.equals(row.getString("domainId"))))
+        .findFirst().orElseThrow(ScheduleApplications::missing);
+    String adapter = app.getString("scheduleAdapter");
+    if (adapter == null) throw missing();
     String[] binding = adapter.split(":",2);
     return binding[0].equals("java") ? java.util.Objects.requireNonNull(local.get(binding[1])) : workbench.application(binding[1]);
+  }
+
+  private static ScheduleException missing() {
+    return new ScheduleException(404, "APPLICATION_NOT_FOUND", "The scheduled application is not installed in this domain");
   }
 }

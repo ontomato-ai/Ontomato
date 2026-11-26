@@ -3,9 +3,9 @@ import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost, type PanelObjectChange } from "../../../../../packages/platform-web/src/panel-host";
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import { formSaveCalls,
+import { formSaveCalls, isPanelDatum, triggerForm, triggerRecord,
   READER,
-  SCHEDULED_TASK,
+  TRIGGER,
   humanIntents,
   inside,
   installPlatform,
@@ -39,9 +39,8 @@ import { formSaveCalls,
 
 const panelP = panelRecord("panel-schedules-trial", "Scheduled tasks (trial)", manifestP);
 const useOfP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panelP.id, "/applications/app-panels-trial-a/tasks");
-const tasks = "/api/data-query/platform/scheduled-tasks";
 
-const affected = { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] };
+const affected = { objects: [{ objectType: TRIGGER, primaryKey: task.id }], objectTypes: [TRIGGER] };
 const owned = (kind: "form.save" | "action", handlerRef: string) => ({
   kind, handlerRef, label: handlerRef, effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false,
 });
@@ -50,17 +49,17 @@ const intents = humanIntents((operationId) => operationId === "form.save"
   ? { kind: "success", data: {}, affected }
   : { kind: "success", data: { runId: run.id } }, undefined, {
   admitted: (member, inputs) => !inputs.task ? {}
-    : member === "form" ? { save: owned("form.save", `${SCHEDULED_TASK}.save`) }
-      : member === "run" ? { runNow: owned("action", "schedules.runNow") } : {},
+    : member === "form" ? { save: owned("form.save", `${TRIGGER}.save`) }
+      : member === "run" ? { runNow: owned("action", "triggers.runNow") } : {},
 });
 function answer(request: Sent) {
   const prepared = intents(request);
   if (prepared) return prepared;
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projection && projections[projection[1]!]) return Response.json({ projection: projections[projection[1]!] });
-  if (request.path === tasks && request.method === "GET") return Response.json({ tasks: [task], timeZone: task.timeZone });
-  if (request.path === `${tasks}/${task.id}` && request.method === "GET") return Response.json(task);
-  if (request.path === `${tasks}/applications/${task.appId}/form`) return Response.json(taskForm);
+  if (isPanelDatum(request, "rows")) return Response.json({ status: "ready", value: [triggerRecord] });
+  if (isPanelDatum(request, "record")) return Response.json({ status: "ready", value: triggerRecord });
+  if (isPanelDatum(request, "form")) return Response.json({ status: "ready", value: triggerForm(taskForm) });
   return nothingAt(request);
 }
 
@@ -76,7 +75,7 @@ describe("what a panel's frame may ask the platform for", () => {
     });
     platformPanelHost("app-panels-trial-a", useOfP, changed).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
     writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {
-      selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
+      selectedTask: { className: TRIGGER, primaryKey: task.id },
     });
     inside(frame);
     const { context, appContext } = await mountPanel(panelOf("tasks", "summary", "form", "run"));
@@ -91,11 +90,23 @@ describe("what a panel's frame may ask the platform for", () => {
       { timeout: 5000 },
     );
     const operations = context.instance.operations.value;
-    const formReads = () => sent.filter(request => request.path === `${tasks}/applications/${task.appId}/form`);
+    const reads = sent.filter(request => isPanelDatum(request, "rows") || isPanelDatum(request, "record"));
+    expect(reads.map(({ body }) => body)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: { kind: "registered", applicationId: "app-panels-trial-a", useId: useOfP.id },
+        memberPath: [{ member: "tasks" }], dataName: "rows",
+      }),
+      expect.objectContaining({
+        source: { kind: "registered", applicationId: "app-panels-trial-a", useId: useOfP.id },
+        memberPath: [{ member: "summary" }], dataName: "record",
+        inputs: { task: { className: TRIGGER, primaryKey: task.id } },
+      }),
+    ]));
+    const formReads = () => sent.filter(request => isPanelDatum(request, "form"));
     expect(formReads()).toHaveLength(1);
     await context.instance.invoke(operations.find((operation) => operation.kind === "form.save")!.id);
     expect(formSaveCalls(sent)).toEqual([{
-      target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: task.id },
+      target: { kind: "object", objectType: TRIGGER, primaryKey: task.id },
       input: { values: task.content, revision: task.revision, submittedFields: [] },
     }]);
     expect(changed.mock.calls).toEqual([[{ target: null, affected }]]);
@@ -108,9 +119,9 @@ describe("what a panel's frame may ask the platform for", () => {
     expect(sent.indexOf(formReads()[1]!)).toBeGreaterThan(dispatchIndex);
 
     await expect(
-      context.instance.invoke(operations.find((operation) => operation.handlerRef === "schedules.runNow")!.id),
+      context.instance.invoke(operations.find((operation) => operation.handlerRef === "triggers.runNow")!.id),
     ).resolves.toMatchObject({ decision: "confirm", response: { kind: "dispatched", outcome: { kind: "success", data: { runId: run.id } } } });
-    expect(sent.some((request) => request.path === `${tasks}/${task.id}/runs`)).toBe(false);
+    expect(sent.some(({ path }) => /\/platform\/(scheduled-tasks|triggers)(?:\/|$)/.test(path))).toBe(false);
     const transport = contextTransport(appContext);
 
     // An intent's ID is Node's; the requests are the same whichever it is.
@@ -119,9 +130,6 @@ describe("what a panel's frame may ask the platform for", () => {
     expect(new Set(allowed)).toEqual(
       new Set([
         ...Object.keys(projections).map((id) => `GET /api/product-projections/${id}`),
-        `GET ${tasks}`,
-        `GET ${tasks}/${task.id}`,
-        `POST ${tasks}/applications/${task.appId}/form`,
         // What the members can do, as their owners admit it, through the platform's read entry; then running the task
         // now: the frame prepares an intent, the host reads it back and dispatches it.
         "POST /api/product-panels/read",
@@ -143,6 +151,20 @@ describe("what a panel's frame may ask the platform for", () => {
       [`/platform/scheduled-tasks/${task.id}`, { method: "DELETE" }, "/data-query"],
       [`/platform/scheduled-tasks/${task.id}/enabled`, { method: "PUT", body: "{}" }, "/data-query"],
       ["/platform/scheduled-tasks/applications", {}, "/data-query"],
+      ["/platform/scheduled-tasks", {}, "/data-query"],
+      [`/platform/scheduled-tasks/${task.id}`, {}, "/data-query"],
+      [`/platform/scheduled-tasks/${task.id}`, { method: "PUT", body: "{}" }, "/data-query"],
+      [`/platform/scheduled-tasks/applications/${task.appId}/form`, { method: "POST", body: "{}" }, "/data-query"],
+      [`/platform/scheduled-tasks/${task.id}/runs`, { method: "POST" }, "/data-query"],
+      ["/trigger/queryList", { method: "POST", body: "{}" }, "/data-query"],
+      ["/trigger/queryById", { method: "POST", body: "{}" }, "/data-query"],
+      ["/trigger/form", { method: "POST", body: "{}" }, "/data-query"],
+      ["/trigger/save", { method: "POST", body: "{}" }, "/data-query"],
+      ["/platform/triggers", {}, "/data-query"],
+      [`/platform/triggers/${task.id}`, {}, "/data-query"],
+      [`/platform/triggers/${task.id}`, { method: "PUT", body: "{}" }, "/data-query"],
+      [`/platform/triggers/applications/${task.appId}/form`, { method: "POST", body: "{}" }, "/data-query"],
+      [`/platform/triggers/${task.id}/runs`, { method: "POST" }, "/data-query"],
       ["/product-projections/projection-of-another-panel", {}, ""],
       [`/product-panels/${panelP.id}`, {}, ""],
     ];

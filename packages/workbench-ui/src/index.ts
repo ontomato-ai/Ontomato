@@ -16,7 +16,6 @@ export {
 } from "./utils/api";
 export { apiUrl } from "./utils/api-base";
 export { fetchWorkbench } from "./utils/browser-events";
-export { schedulesHost } from "./utils/schedules-host";
 export { installErrorPunctuation, type ErrorPunctuation } from "./utils/error-punctuation";
 export { useLocale } from "./composables/useLocale";
 export {

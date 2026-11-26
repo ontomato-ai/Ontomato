@@ -11,33 +11,20 @@ public record TaskDefinition(
     String formRevision,
     JsonNode frequency,
     String timeZone,
-    String notifyEmail) {
+    String notifyEmail,
+    String description,
+    String targetKind,
+    String targetId) {
+  public boolean application() { return "application".equals(targetKind); }
   static ScheduleException bad(String message) {
     return ScheduleJson.bad(message);
   }
 
   static TaskDefinition input(JsonNode value, String defaultZone, boolean update) {
-    if (update)
-      ScheduleJson.keys(
-          value,
-          "title",
-          "appId",
-          "content",
-          "formRevision",
-          "frequency",
-          "timeZone",
-          "notifyEmail",
-          "revision");
-    else
-      ScheduleJson.keys(
-          value,
-          "title",
-          "appId",
-          "content",
-          "formRevision",
-          "frequency",
-          "timeZone",
-          "notifyEmail");
+    var fields = new java.util.ArrayList<>(java.util.List.of("title", "appId", "content", "formRevision",
+        "frequency", "timeZone", "notifyEmail", "description", "targetKind", "targetId", "executorId", "coauthorIds"));
+    if (update) fields.add("revision");
+    ScheduleJson.keys(value, fields.toArray(String[]::new));
     if (!value.has("notifyEmail")
         || (!value.get("notifyEmail").isNull() && !value.get("notifyEmail").isTextual()))
       throw bad("Notification email must be text or null");
@@ -45,12 +32,15 @@ public record TaskDefinition(
     var result =
         new TaskDefinition(
             ScheduleJson.text(value, "title").trim(),
-            ScheduleJson.text(value, "appId"),
+            ScheduleJson.optionalText(value, "appId"),
             value.get("content"),
-            ScheduleJson.text(value, "formRevision"),
+            ScheduleJson.optionalText(value, "formRevision"),
             value.get("frequency"),
             value.has("timeZone") ? value.get("timeZone").asText() : defaultZone,
-            value.get("notifyEmail").isNull() ? null : value.get("notifyEmail").asText());
+            ScheduleJson.optionalText(value, "notifyEmail"),
+            ScheduleJson.optionalText(value, "description"),
+            ScheduleJson.text(value, "targetKind"),
+            ScheduleJson.optionalText(value, "targetId"));
     result.validate();
     return result;
   }
@@ -63,23 +53,48 @@ public record TaskDefinition(
         validation.formRevision(),
         frequency,
         timeZone,
-        notifyEmail);
+        notifyEmail,
+        description,
+        targetKind,
+        targetId);
   }
 
   void validate() {
-    if (title == null
-        || title.isBlank()
-        || title.length() > 200
-        || appId == null
-        || !appId.matches("[a-z][a-z0-9-]{0,63}")
-        || formRevision == null
-        || formRevision.isBlank()
-        || frequency == null
-        || !frequency.isObject()
-        || timeZone == null
-        || timeZone.isBlank())
-      throw bad("Title, application, form revision, frequency and time zone are required");
-    ScheduleJson.content(content);
+    if (title.isBlank() || title.length() > (application() ? 200 : 255)
+        || frequency == null || !frequency.isObject() || timeZone.isBlank())
+      throw bad("Title, frequency and time zone are required");
+    if (application()) {
+      if (appId == null || !appId.matches("[a-z][a-z0-9-]{0,63}") || formRevision == null
+          || formRevision.isBlank() || targetId != null)
+        throw bad("An application target requires an application ID and form revision");
+      ScheduleJson.content(content);
+    } else {
+      if (appId != null || formRevision != null || targetId == null || targetId.isBlank())
+        throw bad("A capability target requires its ID and no application fields");
+      switch (targetKind) {
+        case "action" -> {
+          ScheduleJson.keys(content, "parameters", "runStartParameters");
+          if (!content.path("parameters").isObject()) throw bad("Action parameters must be an object");
+          if (content.has("runStartParameters")) {
+            var names = content.get("runStartParameters");
+            if (!names.isArray()) throw bad("runStartParameters must be a parameter name array");
+            var used = new java.util.HashSet<String>();
+            for (var name : names) {
+              if (!name.isTextual() || name.textValue().isBlank() || !used.add(name.textValue())
+                  || content.get("parameters").has(name.textValue()))
+                throw bad("Run-start and static action parameters must have distinct names");
+            }
+          }
+        }
+        case "workflow" -> {
+          ScheduleJson.keys(content, "inputs", "requester", "goalText");
+          if (!content.path("inputs").isObject()) throw bad("Workflow inputs must be an object");
+          ScheduleJson.optionalText(content, "requester");
+          ScheduleJson.optionalText(content, "goalText");
+        }
+        default -> throw bad("Invalid target kind");
+      }
+    }
     switch (frequency.path("kind").asText()) {
       case "interval" -> ScheduleJson.keys(frequency, "kind", "every", "unit");
       case "daily" -> ScheduleJson.keys(frequency, "kind", "time");

@@ -8,7 +8,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 
 /*
@@ -20,23 +20,23 @@ import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/dir
  * the reader typed.
  */
 
-const task = { className: SCHEDULED_TASK, primaryKey: "t-1" };
+const task = { className: TRIGGER, primaryKey: "t-1" };
 const base = { domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 let revision = 1;
 const formProjection = (): DirectProjection => ({
   ...base, id: "task-form", revision, name: revision === 1 ? "Task form" : "Task form v2", componentId: "@ontomato/sdk:ObjectForm",
-  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
+  inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {}, config: {},
   data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
-  operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
+  operations: { save: { operation: { kind: "PlatformOperation", id: `${TRIGGER}.save` }, target: { input: "task" } } },
 });
 /** The owner's save of the chosen task, as it admits it. */
 const admitted: ProductPanelReadResponse = { status: "ready", value: { save: {
-  kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" },
+  kind: "form.save", handlerRef: `${TRIGGER}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" },
   inputSchema: {}, resultSchema: {}, batch: false,
 } } };
 
 const manifest: DirectPanelManifest = {
-  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
+  state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } } },
 };
 const description = {

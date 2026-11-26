@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { computed, createApp, h, nextTick, ref, shallowRef, type Component, type Slots } from "vue";
 import { createI18n } from "vue-i18n";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { TRIGGER as SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -50,8 +50,8 @@ async function click(element: HTMLElement) {
   await nextTick();
 }
 
-const setEnabled = "platform:ScheduledTask.setEnabled";
-const runNow = "schedules.runNow";
+const setEnabled = "triggers.setEnabled";
+const runNow = "triggers.runNow";
 const rowOperation = (id: string): PanelOwnerOperationDescriptor => ({
   handlerRef: id,
   kind: "action",

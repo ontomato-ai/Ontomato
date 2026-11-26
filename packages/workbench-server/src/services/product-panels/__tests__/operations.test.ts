@@ -80,7 +80,7 @@ const session={providerId:"workbench",sessionId:uuid(1)},root={providerId:"ontol
 const skill={namespace:{kind:"domain" as const,domainId:"d"},name:"derived-panel"};
 const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P"};
 let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun;
-const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{}}});
+const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:Trigger",primaryKey:uuid(9)},input:{}}});
 function prepareLiveAction({ intentId, ...request }: CreatePanelHumanOperationIntentRequest & { intentId: string }) {
   return prepareHumanPanelOperation(owner, credentials, {
     ...request, agentRun: { runId: current.id, sessionId: current.sessionId, toolCallId: intentId },
@@ -120,14 +120,14 @@ beforeEach(()=>{
    loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
  mocks.panel.mockResolvedValue({
    id: "P", manifest: {
-     state: { task: { type: { kind: "object", objectType: "platform:ScheduledTask" } } },
+     state: { task: { type: { kind: "object", objectType: "platform:Trigger" } } },
      members: {
        run: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } },
        form: { target: { projectionId: "form" }, inputs: { task: { state: "task" } } },
      },
    },
  });
- mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"schedules.runNow"}:{kind:"PlatformObjectType",id:"platform:ScheduledTask"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}};});
+ mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"triggers.runNow"}:{kind:"PlatformObjectType",id:"platform:Trigger"},inputs:{task:{kind:"object",objectType:"platform:Trigger"}}};});
  mocks.restore.mockResolvedValue({owner});
  mocks.session.mockResolvedValue({messages:[]});
  mocks.request.mockResolvedValue({});
@@ -189,7 +189,7 @@ it("reports the identity assigned by the agent definition owner to a new draft",
 });
 
 it.each([false, true])("protects generated secrets at dispatch and in the receipt (agent callback: %s)", async agentCallback => {
-  const objectType = "platform:ScheduledTask";
+  const objectType = "platform:Trigger";
   const handlerRef = `${objectType}.save`;
   const created = { objectType, primaryKey: uuid(91) };
   const previous = { objectType, primaryKey: uuid(92) };
@@ -264,7 +264,7 @@ it("does not let a content page's loaded skill authorize a frame operation", asy
   expect(intents.size).toBe(0);
 });
 
-const task=platformTaskSchema.parse({...rawExamples.creates.find(task=>task.name==="governance-instruction")!.response,id:uuid(9),revision:9});
+const task=platformTaskSchema.parse({...rawExamples.creates.find(task=>task.name==="agents-instruction")!.response,id:uuid(9),revision:9});
 it("session settings compare the authenticated owner even when a session is readable",async()=>{
  mocks.sessionActor.mockResolvedValue({id:uuid(4),domainId:"d"});mocks.restore.mockResolvedValue({owner:{...owner,userId:"someone-else"}});
  await expect(ownPanelSettings(owner,root)).rejects.toMatchObject({code:"FORBIDDEN"});
@@ -285,7 +285,7 @@ it("rejects a declaration whose target type does not match its platform operatio
  const panel=await mocks.panel();panel.manifest.state.task.type.objectType="customer:Account";
  await expect(prepareLiveAction(action())).rejects.toMatchObject({
    status: 422, code: "PANEL_OPERATION_TARGET_MISMATCH",
-   message: expect.stringContaining("connect input 'task' to an object of type 'platform:ScheduledTask'"),
+   message: expect.stringContaining("connect input 'task' to an object of type 'platform:Trigger'"),
  });
  expect(ownerWrites()).toHaveLength(0);
 });
@@ -296,19 +296,19 @@ it("uses the initiator's display name in self mode",async()=>{
  expect(mocks.request.mock.calls[0][2].message).toBe('Run “Run now” on “Inventory summary” as Alice?');
  expect(mocks.backend.mock.calls.some(([,url])=>url.includes("/platform/agent-execution/options"))).toBe(false);
 });
-it.each([403,404])("identifies an unreadable task by ID after one initiator read (%s), without trying the executor",async status=>{
+it.each([403,404])("refuses an unreadable trigger after one initiator read (%s), without trying the executor",async status=>{
  const read=vi.fn(async(_url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
    expect(init.method ?? "GET").toBe("GET");
    expect(new Headers(init.headers).get("tk")).toBe("U-token");
    expect(new Headers(init.headers).get("X-API-Key")).toBeNull();
    return Response.json({error:{code:status===403?"PERMISSION_DENIED":"TASK_NOT_FOUND",message:"Unavailable"},correlationId:"test"},{status});
  });vi.stubGlobal("fetch",read);
- await prepareLiveAction(action());
+ await expect(prepareLiveAction(action())).rejects.toMatchObject({status});
  expect(read).toHaveBeenCalledTimes(1);
- expect(mocks.request.mock.calls[0][2].message).toBe(`Run “Run now” on “${uuid(9)}” as Alice?`);
+ expect(mocks.request).not.toHaveBeenCalled();
 });
 it("rejects an unregistered server handler before any question or dispatch",async()=>{
- mocks.projection.mockResolvedValue({id:"run",name:"Other",componentId:"run",binding:{kind:"PlatformOperation",id:"not.registered"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}});
+ mocks.projection.mockResolvedValue({id:"run",name:"Other",componentId:"run",binding:{kind:"PlatformOperation",id:"not.registered"},inputs:{task:{kind:"object",objectType:"platform:Trigger"}}});
  await expect(prepareLiveAction({...action(),operationId:"run.registered"})).rejects.toMatchObject({status:422,code:"OPERATION_UNAVAILABLE"});
  expect(mocks.request).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
 });
@@ -377,7 +377,7 @@ it.each([
 function installBatchOwner(
   availability: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch" | "secretFields"> = {},
 ) {
-  const objectType = "platform:ScheduledTask";
+  const objectType = "platform:Trigger";
   const binding = { kind: "PlatformOperation" as const, id: "test.batch" };
   const handler = {
     handlerRef: binding.id, labelKey: "test.batch", kind: "action" as const, binding, effect: "write" as const, batch: true as const,
@@ -503,7 +503,7 @@ it("reads the registered owner descriptor for an admitted human panel use", asyn
 });
 
 it("adds owner availability only to a live descriptor for the selected record", async () => {
-  const registration = serverOperations.registeredPanelOperation("schedules.runNow");
+  const registration = serverOperations.registeredPanelOperation("triggers.runNow");
   if (registration?.handler.effect !== "write") throw new Error("Expected the runtime task write handler");
   const reason = { reason: "The task is not available to run." };
   const unavailable = vi.fn(async () => reason);
@@ -577,7 +577,7 @@ it("keeps a definitive atomic batch receipt without inventing per-item receipts"
   automatic = true;
   const objects = impact.objects.map(item => item.target);
   const outcome = { kind: "success", data: { updated: objects.length }, affected: {
-    objects, objectTypes: ["platform:ScheduledTask"],
+    objects, objectTypes: ["platform:Trigger"],
   } };
   handler.executeBatch.mockResolvedValue(outcome);
   expect(await executeLiveAction(request)).toMatchObject({ kind: "dispatched", outcome });
@@ -669,7 +669,7 @@ it("records an all-skipped batch without calling the owner write or invalidating
 it("returns type-only changes from a successful single write", async () => {
   const { handler, request: { calls, ...request } } = installBatchOwner();
   automatic = true;
-  const affected = { objects: [], objectTypes: ["platform:ScheduledTask"] };
+  const affected = { objects: [], objectTypes: ["platform:Trigger"] };
   handler.execute.mockResolvedValue({ kind: "success", data: { done: true }, affected });
   expect(await executeLiveAction({ ...request, call: calls[0] })).toMatchObject({ outcome: { affected } });
 });
@@ -1173,7 +1173,7 @@ it.each([
   { scenario: "two different objects", crossEntry: false, targetKind: "different" },
   { scenario: "two independent new drafts", crossEntry: false, targetKind: "draft" },
 ])("scopes pending form confirmation invalidation for $scenario", async ({ crossEntry, targetKind }) => {
-  const objectType = "platform:ScheduledTask";
+  const objectType = "platform:Trigger";
   const objectTarget = { kind: "object" as const, objectType, primaryKey: uuid(9) };
   const target = targetKind === "draft" ? { kind: "draft" as const } : objectTarget;
   const manualTarget = targetKind === "different" ? { ...objectTarget, primaryKey: uuid(10) } : target;
@@ -1182,7 +1182,7 @@ it.each([
     data: {},
     ...(targetKind === "draft" && { affected: { objects: [{ objectType, primaryKey: uuid(11) }], objectTypes: [objectType] } }),
   }));
-  const saveHandlerRef = "platform:ScheduledTask.save";
+  const saveHandlerRef = "platform:Trigger.save";
   mockRegisteredOperation({
     handlerRef: saveHandlerRef,
     labelKey: "test.perform",

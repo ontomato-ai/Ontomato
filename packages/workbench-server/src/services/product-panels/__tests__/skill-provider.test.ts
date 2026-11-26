@@ -45,7 +45,7 @@ const uses: PanelSkillSource[] = trial.applications.flatMap(application => appli
 })));
 const skill = (name: string) => ({ namespace: { kind: "domain" as const, domainId }, name });
 const taskRef = skill("captured-task-skill");
-const taskInput = { kind: "object", objectType: "platform:ScheduledTask" } as const;
+const taskInput = { kind: "object", objectType: "platform:Trigger" } as const;
 const selectedTask = { type: taskInput, external: true, deepLink: true, default: null };
 const taskInputBinding = { task: { state: "selectedTask" } };
 const trialPanels = new Map(trial.panels.map(panel => [panel.id, {
@@ -264,7 +264,7 @@ it("loads only the requested panel skill and pinpoints an invalid dependent proj
   const brokenId = "projection-schedules-run";
   extraProjections.set(brokenId, {
     ...runProjection,
-    data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
+    data: { operation: { source: { operation: "triggers.runNow" }, read: "describe", params: {} } },
   });
   const summary = await panelSkillProvider.findByUse(domainId, uses[2]!, skillReader);
   assert(summary && "kind" in summary);
@@ -318,7 +318,7 @@ it("uses owner operation names and fingerprints the names and language visible t
   extraProjections.set("named-operations", {
     ...runProjection,
     operations: {
-      runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } },
+      runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } },
       export: { operation: { kind: "PlatformOperation", id: EXPORT_SKILL } },
       customer: { operation: { kind: "Action", id: actionId }, target: { input: "task" } },
     },
@@ -449,17 +449,17 @@ it("keeps the shared panel recipes when the entry list changes", async () => {
     const markdown = pkg.files[0]!.content;
     expect(markdown).toContain(originalName);
     expect(markdown).toContain(recipes);
-    expect(markdown).toContain('"objectType":"platform:ScheduledTask"');
-    expect(markdown).toContain("platform:ScheduledTask.save");
-    expect(markdown).toContain("handlerRef schedules.runNow");
+    expect(markdown).toContain('"objectType":"platform:Trigger"');
+    expect(markdown).toContain("platform:Trigger.save");
+    expect(markdown).toContain("handlerRef triggers.runNow");
     expect(markdown).toContain('"state":"selectedTask"');
     const readSection = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
     expect(readSection).toContain("POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read`");
     expect(readSection).toContain("Member `form`, dataName `form` — form returns `panelFormDescription`");
     expect(readSection).toContain("X-Ontomato-Callback-Credential");
-    expect(readSection).not.toContain("/platform/scheduled-tasks");
+    expect(readSection).not.toContain("/platform/triggers");
     const formSection = markdown.split("### Fill a live form")[1]!.split("\n### ")[0]!;
-    expect(formSection).toContain("Form member `form` (save operation `form.save`, type `platform:ScheduledTask`)");
+    expect(formSection).toContain("Form member `form` (save operation `form.save`, type `platform:Trigger`)");
     expect(formSection).toContain("Form member `catalogue` (save operation `catalogue.save`");
     expect(formSection).toContain("blocked_unsaved");
     expect(formSection).toContain("overwriteUnsaved: true");
@@ -506,7 +506,7 @@ it("advertises a declared operation without promising a draft when there is no f
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   expect((await offering!.readManifest(taskRef)).description).toBe(`Open the panel and review declared operations for ${panel.name}.`);
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
-  expect(markdown).toContain("handlerRef schedules.runNow");
+  expect(markdown).toContain("handlerRef triggers.runNow");
   expect(markdown).not.toContain("### Fill a live form");
   expect(markdown).not.toContain("### Read current data");
 });
@@ -556,7 +556,7 @@ it("describes row-scoped operations declared on a list projection, bound operati
     ...listProj,
     operations: {
       runNow: {
-        operation: { kind: "PlatformOperation", id: "schedules.runNow" },
+        operation: { kind: "PlatformOperation", id: "triggers.runNow" },
         target: { row: true },
         params: { note: { rowField: "schedule" }, source: { literal: "row-action" } },
       },

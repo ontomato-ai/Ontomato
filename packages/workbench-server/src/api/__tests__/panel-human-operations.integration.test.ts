@@ -29,7 +29,7 @@ vi.mock("../../utils/request-identity", async original => ({
   requireDomainId: (req: { domainId: string }) => req.domainId,
 }));
 
-const objectType = "platform:ScheduledTask";
+const objectType = "platform:Trigger";
 const use = { applicationId: "app-tasks", useId: "tasks", operationId: "run.runNow" };
 vi.mock("../../services/product-panels/current", () => ({
   readCurrentPanelRecord: async () => ({
@@ -43,7 +43,7 @@ vi.mock("../../services/product-panels/current", () => ({
     member: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } },
     projection: {
       id: "run", componentId: "@ontomato/sdk:OperationButton", name: "Run now", inputs: { task: { kind: "object", objectType } },
-      data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+      data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
     },
   }),
 }));
@@ -51,7 +51,7 @@ vi.mock("../../services/product-panels/current", () => ({
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 
-const task = platformTaskSchema.parse(scheduleExamples.creates.find(example => example.name === "governance-instruction")!.response);
+const task = platformTaskSchema.parse(scheduleExamples.creates.find(example => example.name === "agents-instruction")!.response);
 const run = platformTaskRunSchema.parse({
   ...scheduleExamples.runs.find(example => example.name === "agents-running")!.response, taskId: task.id,
 });
@@ -85,12 +85,12 @@ beforeAll(async () => {
         panelId: "panel-tasks" },
     } });
   });
-  app.get("/platform/scheduled-tasks/:taskId", (req, res) => {
+  app.get("/platform/triggers/:taskId", (req, res) => {
     if (req.params.taskId !== task.id || req.header("tk") !== "alice") { res.sendStatus(403); return; }
     ownerReads += 1;
     res.json(task);
   });
-  app.post("/platform/scheduled-tasks/:taskId/runs", (req, res) => {
+  app.post("/platform/triggers/:taskId/runs", (req, res) => {
     if (req.params.taskId !== task.id || req.header("tk") !== "alice") { res.sendStatus(403); return; }
     ownerWrites.push({ credential: req.header("tk"), idempotencyKey: req.header("Idempotency-Key") });
     res.json(run);

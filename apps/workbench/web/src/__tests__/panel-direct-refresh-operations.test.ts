@@ -63,7 +63,7 @@ const projections: Record<string, ProductProjection> = {
     inputs: {}, outputs: {},
     config: { operation: "create" },
     data: {},
-    operations: { create: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } } },
+    operations: { create: { operation: { kind: "PlatformOperation", id: "fixture:create" } } },
   },
 };
 
@@ -172,7 +172,7 @@ it("rereads affected member operations on refresh(affected) to update unavailabl
         status: "ready",
         value: {
           create: {
-            kind: "action", handlerRef: "schedules.runNow", label: "Create", effect: "write",
+            kind: "action", handlerRef: "fixture:create", label: "Create", effect: "write",
             target: { source: "none" }, inputSchema: {}, resultSchema: {}, batch: false,
           },
         } as never,

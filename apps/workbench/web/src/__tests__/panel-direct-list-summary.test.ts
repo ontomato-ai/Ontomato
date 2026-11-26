@@ -6,7 +6,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -20,7 +20,7 @@ import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/sr
  * protection intact.
  */
 
-const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+const task = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
 const meta = {
   domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "",
   editable: false, visibility: "domain" as const, description: "",
@@ -29,12 +29,12 @@ const meta = {
 const baseProjections: Record<string, DirectProjection> = {
   "schedules-tasks": {
     ...meta, id: "schedules-tasks", name: "Scheduled tasks", componentId: "@ontomato/sdk:ObjectList",
-    inputs: {}, outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } }, config: {},
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    inputs: {}, outputs: { selected: { kind: "object", objectType: TRIGGER } }, config: {},
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
   },
   "schedules-summary": {
     ...meta, id: "schedules-summary", name: "Task summary", componentId: "@ontomato/sdk:ObjectSummary",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {},
+    inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {},
     config: { fields: ["application", "settings", "state", "nextRun"] },
     data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
   },
@@ -42,7 +42,7 @@ const baseProjections: Record<string, DirectProjection> = {
 
 const baseManifest: DirectPanelManifest = {
   state: {
-    selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: true },
+    selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: true },
   },
   members: {
     tasks: { target: { projectionId: "schedules-tasks" }, outputs: { selected: { state: "selectedTask" } } },
@@ -236,7 +236,7 @@ it("drops a late answer for an earlier selection in ObjectSummary and re-reads b
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-title")?.textContent).toBe("Nightly audit v2"));
   const readsBefore = reads.length;
   version = 3;
-  instance.refresh({ objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }], objectTypes: [SCHEDULED_TASK] });
+  instance.refresh({ objects: [{ objectType: TRIGGER, primaryKey: "t-1" }], objectTypes: [TRIGGER] });
   await vi.waitFor(() => {
     expect(element.querySelector(".sdk-object-list [role='option']")?.textContent).toContain("Nightly audit v3");
     expect(element.querySelector(".sdk-object-summary-title")?.textContent).toBe("Nightly audit v3");
@@ -271,8 +271,8 @@ it("supports table columns, inferred checkboxes from outputs.checked and fallbac
       ...meta, id: "table-tasks", name: "Tasks table", componentId: "@ontomato/sdk:ObjectList",
       inputs: {},
       outputs: {
-        selected: { kind: "object", objectType: SCHEDULED_TASK },
-        checked: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } },
+        selected: { kind: "object", objectType: TRIGGER },
+        checked: { kind: "list", items: { kind: "object", objectType: TRIGGER } },
       },
       config: {
         columns: [
@@ -281,13 +281,13 @@ it("supports table columns, inferred checkboxes from outputs.checked and fallbac
         ],
         fallbackToFirst: true,
       },
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
     },
   };
   const tableManifest: DirectPanelManifest = {
     state: {
-      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false },
-      checkedTasks: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } }, personal: false, deepLink: false, external: false },
+      selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false },
+      checkedTasks: { type: { kind: "list", items: { kind: "object", objectType: TRIGGER } }, personal: false, deepLink: false, external: false },
     },
     members: {
       tasks: {
@@ -427,8 +427,8 @@ it("renders ObjectList dot status style and ObjectSummary article layout with ce
 it("hides the select-all check bar when empty and emits choose only on explicit user click", async () => {
   const checkedManifest: DirectPanelManifest = {
     state: {
-      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: true },
-      checkedTasks: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } }, personal: false, deepLink: false, external: false, default: [] },
+      selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: true },
+      checkedTasks: { type: { kind: "list", items: { kind: "object", objectType: TRIGGER } }, personal: false, deepLink: false, external: false, default: [] },
     },
     members: {
       tasks: {
@@ -442,8 +442,8 @@ it("hides the select-all check bar when empty and emits choose only on explicit 
     ...baseProjections,
     "schedules-tasks": {
       ...baseProjections["schedules-tasks"]!,
-      inputs: { selected: { kind: "object", objectType: SCHEDULED_TASK }, checked: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
-      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK }, checked: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+      inputs: { selected: { kind: "object", objectType: TRIGGER }, checked: { kind: "list", items: { kind: "object", objectType: TRIGGER } } },
+      outputs: { selected: { kind: "object", objectType: TRIGGER }, checked: { kind: "list", items: { kind: "object", objectType: TRIGGER } } },
       config: { fallbackToFirst: true },
     },
   };

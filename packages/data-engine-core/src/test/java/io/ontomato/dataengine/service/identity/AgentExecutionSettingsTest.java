@@ -109,9 +109,9 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
     }
     assertEquals(0,count()); verifyNoInteractions(keys);
   }
-  @Test void twoAgentsReuseTheScheduledAndTriggerKeyInsteadOfRotatingIt() throws Exception {
+  @Test void twoAgentsReuseTheTriggerKeyInsteadOfRotatingIt() throws Exception {
     when(keys.interactiveLogin()).thenReturn(true);
-    // The scheduler's existing preparation prepares the one row that Trigger.forOwner also reads.
+    // Trigger dispatch and agent execution share the key for a domain member.
     credentials.prepareForSetup(target);
     String before = jdbc.queryForObject("SELECT sealed_key FROM platform_task_credential", String.class);
     when(identity.administrator(operator)).thenReturn(true);
@@ -123,22 +123,6 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
       assertEquals("shared-key",result.apiKey());
       assertEquals("target",result.executionUserId());
     }
-    var trigger = new io.ontomato.dataengine.bean.trigger.Trigger();
-    trigger.setId("trigger"); trigger.setDomainId("domain"); trigger.setCreatedBy("target");
-    trigger.setEffectKind(io.ontomato.dataengine.bean.trigger.Trigger.EFFECT_WORKFLOW);
-    trigger.setEffect(com.alibaba.fastjson2.JSONObject.of("workflowId","workflow","requester","target"));
-    var triggers = new io.ontomato.dataengine.service.TriggerService();
-    org.springframework.test.util.ReflectionTestUtils.setField(triggers,"credentials",credentials);
-    var transport = mock(java.net.http.HttpClient.class);
-    @SuppressWarnings("unchecked") var response = (java.net.http.HttpResponse<String>)mock(java.net.http.HttpResponse.class);
-    when(response.statusCode()).thenReturn(200); when(response.body()).thenReturn("{\"id\":\"run\"}");
-    when(transport.send(any(java.net.http.HttpRequest.class),org.mockito.ArgumentMatchers.<java.net.http.HttpResponse.BodyHandler<String>>any())).thenReturn(response);
-    org.springframework.test.util.ReflectionTestUtils.setField(triggers,"http",transport);
-    triggers.prepareCredential(trigger,target);
-    assertEquals("succeeded",triggers.fire(trigger,java.time.Instant.now(),"en").getString("status"));
-    var sent = org.mockito.ArgumentCaptor.forClass(java.net.http.HttpRequest.class);
-    verify(transport).send(sent.capture(),org.mockito.ArgumentMatchers.<java.net.http.HttpResponse.BodyHandler<String>>any());
-    assertEquals("Bearer shared-key",sent.getValue().headers().firstValue("authorization").orElseThrow());
     assertEquals("shared-key",credentials.forOwner("domain","target"));
     assertEquals(before,jdbc.queryForObject("SELECT sealed_key FROM platform_task_credential",String.class));
     assertEquals(1,count()); verify(keys,times(1)).issueKey(target);

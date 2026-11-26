@@ -6,7 +6,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { mountDirectPanel, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 import { noOperations, directRun } from "./panel-frame";
@@ -22,21 +22,21 @@ import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/sr
  * instance does not follow.
  */
 
-const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+const task = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
 const base = { domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 let summaryName = "Run now";
 const projections: Record<string, () => DirectProjection> = {
   "task-run": () => ({
     ...base, id: "task-run", revision: summaryName === "Run now" ? 1 : 2, name: summaryName, componentId: "@ontomato/sdk:OperationButton",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: { operation: "runNow" },
-    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+    inputs: { task: { kind: "object", objectType: TRIGGER } }, outputs: {}, config: { operation: "runNow" },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
   }),
 };
 const manifest: DirectPanelManifest = {
-  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
+  state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: true, external: false } },
   members: { run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } } },
 };
-const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { kind: "action", handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 
 function open() {
   const reads: PanelMemberReadRequest[] = [];
@@ -99,7 +99,7 @@ it("reads again only the data an operation reports changed, and everything on an
   await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button button")).toBeTruthy());
   const before = reads.length;
   // The run's description is the member's operation, not a datum of a task: a changed task leaves it as it is.
-  mount.refresh(null, { objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }], objectTypes: [SCHEDULED_TASK] });
+  mount.refresh(null, { objects: [{ objectType: TRIGGER, primaryKey: "t-1" }], objectTypes: [TRIGGER] });
   await nextTick();
   expect(reads.length).toBe(before);
   mount.refresh(null);

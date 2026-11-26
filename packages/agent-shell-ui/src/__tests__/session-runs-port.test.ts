@@ -117,7 +117,7 @@ describe("a page view's live frames on the notice stream", () => {
     type: "presentation", sessionId: a, runId: a, toolCallId: "call-1",
     target: { kind: "page", address: "/dashboards?dashboardId=board-a" },
   };
-  const changed = { type: "object-changed", session: { providerId: "workbench", sessionId: a }, target: { objectType: "platform:ScheduledTask", primaryKey: "task-1" } };
+  const changed = { type: "object-changed", session: { providerId: "workbench", sessionId: a }, target: { objectType: "platform:Trigger", primaryKey: "task-1" } };
 
   it("opens the stream for the view, and keeps its live frames apart from the lifecycle notices", async () => {
     const opened = stream();

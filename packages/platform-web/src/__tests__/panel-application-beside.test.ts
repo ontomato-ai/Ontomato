@@ -26,7 +26,7 @@ import { displayOf } from "../../../workbench-ui/src/features/workbench/__tests_
  * address; and a selection written to the router's address, which would leave the conversation.
  */
 
-const SCHEDULED_TASK = "platform:ScheduledTask";
+const SCHEDULED_TASK = "platform:Trigger";
 const uses: ApplicationPanelUse[] = [
   {
     id: "use-tasks",

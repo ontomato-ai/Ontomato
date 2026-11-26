@@ -7,7 +7,7 @@ import {
 } from "@ontomato/contracts/panel-agent";
 import {
   AGENT_DEFINITION, APPLICATION, BUSINESS_KNOWLEDGE, GENERATE_USER_API_KEY, PRODUCT_PANEL,
-  REGENERATE_USER_API_KEY, REMOVE_USER, REVOKE_USER_API_KEY, SCHEDULED_TASK, USER,
+  REGENERATE_USER_API_KEY, REMOVE_USER, REVOKE_USER_API_KEY, TRIGGER, USER,
 } from "@ontomato/contracts/platform-object-types";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
@@ -368,9 +368,9 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       handlerRef: "schedules.deleteTask",
       labelKey: "test.deleteRow",
       binding: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-      targetType: SCHEDULED_TASK,
+      targetType: TRIGGER,
       targetInput: "task",
-      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string() }),
+      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(TRIGGER), primaryKey: z.string() }),
       inputSchema: z.object({}).strict(),
       resultSchema: z.object({ deleted: z.boolean() }).strict(),
       batch: false,
@@ -402,9 +402,9 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     });
 
     const rows: PanelRecord[] = [
-      { primaryKey: "task-1", className: SCHEDULED_TASK, label: "Daily Sync", fields: { schedule: "0 0 * * *" } },
-      { primaryKey: "task-2", className: SCHEDULED_TASK, label: "System GC", fields: { schedule: "0 3 * * *" } },
-      { primaryKey: "task-3", className: SCHEDULED_TASK, label: "Weekly Report", fields: { schedule: "0 9 * * 1" } },
+      { primaryKey: "task-1", className: TRIGGER, label: "Daily Sync", fields: { schedule: "0 0 * * *" } },
+      { primaryKey: "task-2", className: TRIGGER, label: "System GC", fields: { schedule: "0 3 * * *" } },
+      { primaryKey: "task-3", className: TRIGGER, label: "Weekly Report", fields: { schedule: "0 9 * * 1" } },
     ];
     mocks.listScheduledTasks.mockResolvedValue(rows);
 
@@ -415,7 +415,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
       data: {
         rows: {
-          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
           read: "list",
           params: {},
         },
@@ -459,9 +459,9 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     // Shared outer target `app-1` deduplicated: called once across all 3 rows, not 3 times.
     expect(unavailableSingle).toHaveBeenCalledTimes(1);
 
-    const k1 = panelRowOperationKey(rows[0]!, SCHEDULED_TASK);
-    const k2 = panelRowOperationKey(rows[1]!, SCHEDULED_TASK);
-    const k3 = panelRowOperationKey(rows[2]!, SCHEDULED_TASK);
+    const k1 = panelRowOperationKey(rows[0]!, TRIGGER);
+    const k2 = panelRowOperationKey(rows[1]!, TRIGGER);
+    const k3 = panelRowOperationKey(rows[2]!, TRIGGER);
     expect(res.rowOperations).toEqual({
       [k1]: {
         remove: { available: true },
@@ -522,9 +522,9 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       handlerRef: "schedules.deleteTask",
       labelKey: "test.deleteRow",
       binding: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-      targetType: SCHEDULED_TASK,
+      targetType: TRIGGER,
       targetInput: "task",
-      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string() }),
+      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(TRIGGER), primaryKey: z.string() }),
       inputSchema: z.object({ note: z.string().optional(), source: z.string() }).strict(),
       resultSchema: z.object({ deleted: z.boolean() }).strict(),
       batch: false,
@@ -541,7 +541,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       inputs: {},
       data: {
         rows: {
-          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
           read: "list",
           params: {},
         },
@@ -571,7 +571,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       useId: "tasks",
       operationId: "tasks.remove",
       call: {
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-2" },
         input: { note: "0 3 * * *" },
       },
     };
@@ -582,7 +582,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     if (dispatched.kind === "dispatched") expect(dispatched.outcome?.kind).toBe("success");
     expect(executed).toEqual([
       {
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-2" },
         input: { note: "0 3 * * *", source: "list-action-column" },
       },
     ]);
@@ -593,7 +593,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       useId: "tasks",
       operationId: "tasks.remove",
       call: {
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-2" },
         input: { note: "0 3 * * *", source: "tampered" },
       },
     })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
@@ -616,7 +616,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       useId: "tasks",
       operationId: "tasks.remove",
       call: {
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-1" },
         input: { note: "0 0 * * *" },
       },
     });
@@ -625,7 +625,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     expect(agentDone.kind).toBe("dispatched");
     if (agentDone.kind === "dispatched") expect(agentDone.outcome?.kind).toBe("success");
     expect(executed[1]).toEqual({
-      target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" },
+      target: { kind: "object", objectType: TRIGGER, primaryKey: "task-1" },
       input: { note: "0 0 * * *", source: "list-action-column" },
     });
   });
@@ -672,7 +672,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
       data: {
         rows: {
-          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
           read: "list",
           params: {},
         },
@@ -778,8 +778,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       labelKey: "test.inspectTask",
       binding: { kind: "PlatformOperation", id: "schedules.inspectTask" },
       target: { source: "input", input: "task" },
-      targetType: SCHEDULED_TASK,
-      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string() }),
+      targetType: TRIGGER,
+      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(TRIGGER), primaryKey: z.string() }),
       inputSchema: z.object({ fixedTag: z.string(), env: z.string(), taskId: z.string(), detail: z.string().optional() }).strict(),
       resultSchema: z.object({ kind: z.literal("json"), value: runtimeJsonObjectSchema }),
       execute: async (_host, call) => ({ kind: "json", value: call.input }),
@@ -793,7 +793,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
       data: {
         rows: {
-          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          source: { type: { kind: "PlatformObjectType", id: TRIGGER } },
           read: "list",
           params: {},
         },
@@ -844,7 +844,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       useId: "tasks",
       operationId: "tasks.inspect",
       call: {
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-7" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-7" },
         input: { fixedTag: "tampered", detail: "full" },
       },
     })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
@@ -855,7 +855,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       useId: "tasks",
       operationId: "tasks.inspect",
       call: {
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-7" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-7" },
         input: { env: "staging", detail: "full" },
       },
     })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
@@ -866,7 +866,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       useId: "tasks",
       operationId: "tasks.inspect",
       call: {
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-7" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-7" },
         input: { taskId: "task-other", detail: "full" },
       },
     })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
@@ -877,7 +877,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       useId: "tasks",
       operationId: "tasks.inspect",
       call: {
-        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-7" },
+        target: { kind: "object", objectType: TRIGGER, primaryKey: "task-7" },
         input: { detail: "full" },
       },
     });

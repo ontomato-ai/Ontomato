@@ -69,6 +69,7 @@ describe("capability graph relation kinds", () => {
         "platform:MetricView",
         "platform:Function",
         "platform:Workflow",
+        "platform:Trigger",
       ],
       derived: false,
       owner: "java-authorization",

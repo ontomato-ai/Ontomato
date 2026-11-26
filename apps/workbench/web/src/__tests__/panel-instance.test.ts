@@ -11,7 +11,7 @@ import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vu
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 
-import { noOperations, projections, SCHEDULED_TASK } from "./panel-frame";
+import { noOperations, projections, TRIGGER } from "./panel-frame";
 /*
  * A panel declares its state and places its projections, and the SDK does the rest: it reads each projection by ID,
  * draws the component the catalogue names, derives the projection's ports from the record and the catalogue, and runs an
@@ -23,7 +23,7 @@ import { noOperations, projections, SCHEDULED_TASK } from "./panel-frame";
 /** The panel of the trial scenario: a task summary, the task's form, and a button that runs the selected task now. */
 const panel = definePanel({
   state: {
-    selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true },
+    selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true },
     application: { type: { kind: "object", objectType: "platform:Application" } },
     search: { type: { kind: "scalar", type: "string" } },
   },
@@ -65,14 +65,14 @@ function instance(initial?: Record<string, unknown>, coordinator: Pick<typeof no
 
 describe("a panel's instance", () => {
   it("reports what the reader looks at, from its own state alone", () => {
-    const panelInstance = instance({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } });
+    const panelInstance = instance({ selectedTask: { className: TRIGGER, primaryKey: "task-1" } });
     expect(panelInstance.pageContext.value).toEqual({
       pageKey: "schedules",
       url: "/a/schedules",
       label: "Scheduled tasks",
-      selection: [{ kind: SCHEDULED_TASK, id: "task-1", label: `${SCHEDULED_TASK} task-1` }],
+      selection: [{ kind: TRIGGER, id: "task-1", label: `${TRIGGER} task-1` }],
       state: {
-        selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+        selectedTask: { className: TRIGGER, primaryKey: "task-1" },
         application: null,
         search: null,
       },
@@ -80,24 +80,24 @@ describe("a panel's instance", () => {
   });
 
   it("keeps three instances' selections apart", () => {
-    const first = instance({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } });
-    const second = instance({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } });
+    const first = instance({ selectedTask: { className: TRIGGER, primaryKey: "task-1" } });
+    const second = instance({ selectedTask: { className: TRIGGER, primaryKey: "task-2" } });
     const third = instance();
     expect(third.pageContext.value.selection).toEqual([]);
-    first.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "task-9" });
+    first.state.set("selectedTask", { className: TRIGGER, primaryKey: "task-9" });
     expect(second.pageContext.value.selection[0]?.id).toBe("task-2");
     expect(third.pageContext.value.selection).toEqual([]);
   });
 
   it("takes a projection's ports and operations from its record alone, with no panel-written port", async () => {
-    const panelInstance = instance({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } });
+    const panelInstance = instance({ selectedTask: { className: TRIGGER, primaryKey: "task-1" } });
     const summary = await panelInstance.projection("projection-x");
-    expect(portsOf(summary).inputs).toEqual({ task: { kind: "object", objectType: SCHEDULED_TASK } });
+    expect(portsOf(summary).inputs).toEqual({ task: { kind: "object", objectType: TRIGGER } });
     expect(summary.operations).toBeUndefined();
 
     // What the form can do is the owner's operation its record names, whatever component draws it.
     const form = await panelInstance.projection("projection-task-form");
-    expect(Object.values(form.operations ?? {}).map(({ operation }) => operation.id)).toEqual([`${SCHEDULED_TASK}.save`]);
+    expect(Object.values(form.operations ?? {}).map(({ operation }) => operation.id)).toEqual([`${TRIGGER}.save`]);
   });
 
   it("draws the component the catalogue names, and refuses one this version has not got", async () => {
@@ -108,27 +108,27 @@ describe("a panel's instance", () => {
   });
 
   it("runs a person's action through the platform's coordinator, as an agent's runs, leaving what it changed to the host", async () => {
-    const task = { kind: "object" as const, objectType: SCHEDULED_TASK, primaryKey: "task-1" };
+    const task = { kind: "object" as const, objectType: TRIGGER, primaryKey: "task-1" };
     const prepare = vi.fn(async (operationId: string) => ({
       intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d03", operationId, label: "Run now", confirmation: { kind: "none" as const },
     }));
     const confirmOperation = vi.fn(async ({ intentId }: { intentId: string }) => ({
       decision: "confirm" as const,
       response: { kind: "dispatched" as const, intentId, outcome: {
-        kind: "success" as const, data: {}, affected: { objects: [task], objectTypes: [SCHEDULED_TASK] },
+        kind: "success" as const, data: {}, affected: { objects: [task], objectTypes: [TRIGGER] },
       } },
     }));
-    const panelInstance = instance({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } }, {
+    const panelInstance = instance({ selectedTask: { className: TRIGGER, primaryKey: "task-1" } }, {
       operations: { ...noOperations.operations, prepare }, confirmOperation,
     });
     const changed: unknown[] = [];
     panelInstance.onObjectChanged((object) => changed.push(object));
     panelInstance.register({
       slot: "runTask", projectionId: "projection-run-task",
-      ports: { binding: "PlatformOperation:schedules.runNow", inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } } },
+      ports: { binding: "PlatformOperation:triggers.runNow", inputs: { task: { kind: "object", objectType: TRIGGER } } },
       // Run-now as its owner admits it for the chosen task.
       operations: { runNow: {
-        kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
+        kind: "action", handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
         inputSchema: {}, resultSchema: {}, batch: false,
       } },
     });
@@ -137,7 +137,7 @@ describe("a panel's instance", () => {
     // One intent for the selected task, which the host dispatches; nothing runs in the frame.
     expect(prepare).toHaveBeenCalledWith("runTask.runNow", { call: { target: task, input: {} } }, undefined);
     expect(confirmOperation).toHaveBeenCalledWith(await prepare.mock.results[0]!.value);
-    expect(registeredHandlers()).not.toContain("schedules.runNow");
+    expect(registeredHandlers()).not.toContain("triggers.runNow");
     // What the owner reported changed comes back through the host's refresh port; the receipt rereads nothing itself.
     expect(changed).toEqual([]);
   });
@@ -147,12 +147,12 @@ describe("a panel's instance", () => {
     applyPanelRequest(panel, panelInstance.state, {
       useId: "use-1",
       state: {
-        selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-4" },
+        selectedTask: { className: TRIGGER, primaryKey: "task-4" },
         search: "overdue",
         application: { className: "platform:Application", primaryKey: "a" },
       },
     });
-    expect(panelInstance.deepLink()).toEqual({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-4" } });
+    expect(panelInstance.deepLink()).toEqual({ selectedTask: { className: TRIGGER, primaryKey: "task-4" } });
   });
 });
 

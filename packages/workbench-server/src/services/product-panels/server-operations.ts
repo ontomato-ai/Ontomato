@@ -22,7 +22,6 @@ import { modelSettingsServerOperations } from "../admin/model-settings-panel";
 import { externalMcpServerOperations } from "../mcp/external-mcp-panel";
 import { feedbackExportOperation } from "../admin/feedback-panel-reads";
 import { m6ServerOperations } from "../action/panel-operations";
-import { triggerServerOperations } from "../trigger/panel-operations";
 import { workflowServerOperations } from "../workflow/panel-operations";
 import { agentDefinitionOperations } from "./agent-definition-operations";
 import { m7ServerOperations } from "../business-knowledge/panel-operations";
@@ -176,7 +175,6 @@ const registrations: readonly PanelServerOperation[] = [
   ...externalMcpServerOperations,
   ...m5ServerOperations,
   ...m6ServerOperations,
-  ...triggerServerOperations,
   ...workflowServerOperations,
   ...m7ServerOperations,
   ...skillServerOperations,

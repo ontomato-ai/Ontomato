@@ -167,6 +167,19 @@ async function post(backendPath, body) {
   return json.data !== undefined ? json.data : json;
 }
 
+async function triggerRequest(method, suffix, body, headers = {}) {
+  const path = '/platform/triggers' + suffix;
+  if (DRY) return { dryRun: true, method, path, headers, body };
+  await login();
+  const response = await fetch(BASE + path, {
+    method,
+    headers: { ...authHeaders(), 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) die(`${method} ${path} (HTTP ${response.status})`, await response.text());
+  return response.status === 204 ? { ok: true } : response.json();
+}
+
 async function get(backendPath) {
   if (DRY) {
     console.log(JSON.stringify({ dryRun: true, method: 'GET', path: backendPath }, null, 2));
@@ -466,24 +479,42 @@ if (cmd === 'login') {
   console.log(JSON.stringify(await post('/workflow/grants', {}), null, 2));
 } else if (cmd === 'wf-access') {
   console.log(JSON.stringify(await post('/workflow/platform-access', {}), null, 2));
-} else if (cmd === 'trigger-save') {
-  const body = readJsonArg(requireArg(args, 0, 'trigger-save <json>{name,conditionKind,condition,effectKind,effect,executor,enabled}'));
-  const data = await post('/trigger/save', body);
-  console.log(JSON.stringify({ trigger: data, note: '只有 time 条件与 action/workflow 效果可保存' }, null, 2));
-} else if (cmd === 'trigger-list') {
-  console.log(JSON.stringify(await post('/trigger/queryList', { status: args[0] || null }), null, 2));
-} else if (cmd === 'trigger-get') {
-  console.log(JSON.stringify(await post('/trigger/queryById', { id: requireArg(args, 0, 'trigger-get <id>') }), null, 2));
-} else if (cmd === 'trigger-status') {
-  const id = requireArg(args, 0, 'trigger-status <id> <PUBLISHED|UNUSED|PENDING_REVIEW> [enabled]');
-  const status = requireArg(args, 1, 'trigger-status <id> <PUBLISHED|UNUSED|PENDING_REVIEW> [enabled]');
-  const body = { id, status, enabled: args[2] === undefined ? status === 'PUBLISHED' : args[2] === 'true' };
-  console.log(JSON.stringify(await post('/trigger/status', body), null, 2));
-} else if (cmd === 'trigger-run') {
-  console.log(JSON.stringify(await post('/trigger/run', { id: requireArg(args, 0, 'trigger-run <id>') }), null, 2));
-} else if (cmd === 'trigger-delete') {
-  await post('/trigger/delete', { id: requireArg(args, 0, 'trigger-delete <id>') });
-  console.log(JSON.stringify({ ok: true }));
+} else if (cmd === 'trigger-create') {
+  const body = readJsonArg(requireArg(args, 0, 'trigger-create <json> [--publish]'));
+  console.log(JSON.stringify(await triggerRequest('POST', '?enabled=' + args.includes('--publish'), body,
+    { 'Idempotency-Key': crypto.randomUUID() }), null, 2));
+} else if (cmd === 'trigger-list' || cmd === 'trigger-targets') {
+  const path = cmd === 'trigger-targets' ? '/targets' : args[0] ? '?status=' + encodeURIComponent(args[0]) : '';
+  console.log(JSON.stringify(await triggerRequest('GET', path), null, 2));
+} else if (['trigger-get', 'trigger-update', 'trigger-status', 'trigger-run', 'trigger-history', 'trigger-delete'].includes(cmd)) {
+  const path = '/' + encodeURIComponent(requireArg(args, 0, cmd + ' <id>'));
+  let result;
+  switch (cmd) {
+    case 'trigger-get':
+      result = await triggerRequest('GET', path);
+      break;
+    case 'trigger-update':
+      result = await triggerRequest('PUT', path, readJsonArg(requireArg(args, 1, 'trigger-update <id> <json with revision>')));
+      break;
+    case 'trigger-status':
+      result = await triggerRequest('PUT', path + '/status', {
+        status: requireArg(args, 1, 'trigger-status <id> <status> <revision>'),
+        revision: Number(requireArg(args, 2, 'trigger-status <id> <status> <revision>')),
+      });
+      break;
+    case 'trigger-run':
+      result = await triggerRequest('POST', path + '/runs', undefined, { 'Idempotency-Key': crypto.randomUUID() });
+      break;
+    case 'trigger-history':
+      result = await triggerRequest('GET', path + '/runs' + (args[1] ? '/' + encodeURIComponent(args[1]) : ''));
+      break;
+    case 'trigger-delete':
+      result = await triggerRequest('DELETE', path, undefined, {
+        'If-Match': '"' + requireArg(args, 1, 'trigger-delete <id> <revision>') + '"',
+      });
+      break;
+  }
+  console.log(JSON.stringify(result, null, 2));
 } else if (cmd === 'verify') {
   const workflowId = requireArg(args, 0, 'verify <workflowId>');
   const [workflow, grants, subjects, roles] = await Promise.all([
@@ -609,10 +640,10 @@ if (cmd === 'login') {
   wf-deactivate <id>               失效：回收该版本授权
   wf-delete <id>                   删除草稿/已失效流程
   wf-grants / wf-access            生效授权 / 角色平台操作
-  trigger-save <json>              建/改触发器（time + action/workflow）
-  trigger-list / trigger-get <id>
-  trigger-status <id> <status> [enabled]
-  trigger-run <id> / trigger-delete <id>
+  trigger-create <json> [--publish] / trigger-update <id> <json with revision>
+  trigger-list [status] / trigger-get <id> / trigger-targets
+  trigger-status <id> <status> <revision> / trigger-delete <id> <revision>
+  trigger-run <id> / trigger-history <id> [runId]
   verify <workflowId>              检查激活状态、授权、每步角色成员、runContract
 `);
 }

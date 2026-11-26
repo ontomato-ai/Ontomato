@@ -23,6 +23,7 @@ import io.ontomato.dataengine.controller.AuthorizationPolicyGovernanceController
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.WorkflowDao;
+import io.ontomato.dataengine.schedules.TaskStore;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.DataPermissionLookup;
@@ -56,6 +57,7 @@ class AuthorizationPolicyGovernanceControllerTest {
     private final AuthorizationStore store = mock(AuthorizationStore.class);
     private final ApplicationCatalog catalog = mock(ApplicationCatalog.class);
     private final WorkflowDao workflows = mock(WorkflowDao.class);
+    private final TaskStore triggers = mock(TaskStore.class);
     private final ActionDao actions = mock(ActionDao.class);
     private final AdminService admin = mock(AdminService.class);
     private final User user = mock(User.class);
@@ -69,7 +71,7 @@ class AuthorizationPolicyGovernanceControllerTest {
         var policies = new AuthorizationPolicies(store, operations, authorization, actions, admin);
         var inspector = new AuthorizationAccessInspector(authorization, store, subjects, policies, workflows, grants, actions);
         var controller = new AuthorizationPolicyGovernanceController(new WorkbenchServiceAuthentication("workbench"),
-                identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
+                identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows, triggers);
         var beans = new DefaultListableBeanFactory();
         beans.registerSingleton("access", new ManagementRequestAccess(identity, authorization, operations));
         var registry = new InterceptorRegistry() {
@@ -97,13 +99,13 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(status().isUnauthorized());
         when(user.getDomainId()).thenReturn("");
         http.perform(rpc("graph-facts", "{}")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(store, subjects, catalog, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
+        verifyNoInteractions(store, subjects, catalog, actions, workflows, triggers);
     }
 
     @Test
     void browsingTheEntryCatalogRequiresManagementReadWithoutAPolicyId() throws Exception {
         http.perform(rpc("entry-roots", "{}")).andExpect(status().isForbidden());
-        verifyNoInteractions(catalog, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
+        verifyNoInteractions(catalog, actions, workflows, triggers);
     }
 
     @Test
@@ -160,6 +162,25 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.entries[1].panelIds", containsInAnyOrder("same")))
                 .andExpect(jsonPath("$.existingGrants").isEmpty())
                 .andExpect(jsonPath("$.targetPolicyRoleIds").isEmpty());
+    }
+
+    @Test
+    void registeredTriggerTargetsUseTheCurrentCredentialDomain() throws Exception {
+        var targets = """
+                {"targets":[{"kind":"TRIGGER","key":"registered"},{"kind":"TRIGGER","key":"foreign"}]}
+                """;
+        var request = post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON)
+                .header("X-Domain-Id", "other-domain").content(targets);
+        http.perform(request).andExpect(status().isForbidden());
+        verifyNoInteractions(triggers);
+
+        permissions(true, false);
+        when(triggers.registeredIds("domain", Set.of("registered", "foreign"))).thenReturn(Set.of("registered"));
+        http.perform(request)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].kind").value("TRIGGER"))
+                .andExpect(jsonPath("$.data[0].key").value("registered"));
     }
 
     @Test

@@ -29,11 +29,19 @@
   },
   {
     "key": "scheduledTasks.mail.completedSubject",
-    "value": "Scheduled task finished: {title}"
+    "value": "Task trigger completed: {title}"
   },
   {
     "key": "scheduledTasks.mail.failedSubject",
-    "value": "Scheduled task failed: {title}"
+    "value": "Task trigger failed: {title}"
+  },
+  {
+    "key": "scheduledTasks.mail.completedStatus",
+    "value": "Task trigger completed"
+  },
+  {
+    "key": "scheduledTasks.mail.failedStatus",
+    "value": "Task trigger failed"
   },
   {
     "key": "scheduledTasks.mail.agent",
@@ -53,7 +61,7 @@
   },
   {
     "key": "scheduledTasks.mail.openHint",
-    "value": "The full conversation is in the Agent Platform, under Scheduled tasks."
+    "value": "The full conversation is in the Agent Platform, under Task triggers."
   },
   {
     "key": "scheduledTasks.mail.footer",
@@ -61,7 +69,7 @@
   },
   {
     "key": "scheduledTasks.error.credential_invalid",
-    "value": "The background credential no longer works. Open Scheduled tasks while signed in to renew it."
+    "value": "The background credential no longer works. Open Task triggers while signed in to renew it."
   },
   {
     "key": "scheduledTasks.error.target_unavailable",

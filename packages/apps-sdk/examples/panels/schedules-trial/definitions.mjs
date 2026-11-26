@@ -16,7 +16,7 @@ import declarationQ from "./q/declaration.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const text = (path) => readFileSync(join(HERE, path), "utf8");
 
-const TASK = "platform:ScheduledTask";
+const TASK = "platform:Trigger";
 const task = { kind: "object", objectType: TASK };
 const read = (source, name, params = {}) => ({ source, read: name, params });
 
@@ -67,7 +67,7 @@ export const projections = [
     {
       inputs: { task },
       data: {},
-      operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+      operations: { runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } } },
       config: { operation: "runNow" },
     },
   ),

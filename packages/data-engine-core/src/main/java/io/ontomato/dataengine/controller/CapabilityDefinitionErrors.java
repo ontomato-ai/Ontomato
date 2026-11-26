@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = {MetricViewController.class, FunctionController.class, TriggerController.class})
+@RestControllerAdvice(assignableTypes = {MetricViewController.class, FunctionController.class})
 public class CapabilityDefinitionErrors {
     @ExceptionHandler(Denied.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { chartProjectionSourcePath, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { chartProjectionSourcePath, TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
 import { DASHBOARD_CARD } from "@ontomato/contracts/platform-object-types";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
@@ -33,7 +33,7 @@ const chart = projectionRecord({
 });
 const summary = projectionRecord({
   id: "projection-schedules-summary", componentId: "@ontomato/sdk:ObjectSummary",
-  data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+  data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
 });
 const panel = codePanelRecord("panel-departments", { chart: chart.id, summary: summary.id });
 const use = panelUse("use-departments", "departments", panel.id, "/applications/app-charts/departments");

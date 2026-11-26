@@ -781,6 +781,17 @@ public class ApplicationCatalog {
         return canEnter(require(apps, id), new ApplicationSubject(user), new BuiltinPageKeys(apps));
     }
 
+    public List<JSONObject> scheduleTargets(User user) {
+        var apps = applicationsInDomain(user.getDomainId());
+        var subject = new ApplicationSubject(user);
+        var pageKeys = new BuiltinPageKeys(apps);
+        return apps.stream().filter(app -> app.getString("scheduleAdapter") != null).map(app -> {
+            var row = new JSONObject(app);
+            row.put("entryAvailable", canEnter(app, subject, pageKeys));
+            return row;
+        }).toList();
+    }
+
     JSONObject proxyApplication(String id, User user) {
         var apps = applicationsInDomain(user.getDomainId());
         var app = apps.stream().filter(a -> id.equals(a.getString("id"))).findFirst().orElseThrow(ApplicationCatalog::denied);

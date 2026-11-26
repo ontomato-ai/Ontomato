@@ -1,26 +1,38 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createScheduledTaskServerOperations } from "@ontomato/platform-schedules/panel-server-operations";
+import type { ScheduledApplicationsStatus } from "@ontomato/platform-schedules/panel-reads";
 import { panelOperationOutcomeSchema } from "@ontomato/contracts/panel-agent";
-import { RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { RUN_NOW, TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import examples from "../../../../../contracts/examples/platform-schedules.json";
 import { configureI18n, tForLocale } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { unwrapReadDirective } from "../../product-panels/read-directive";
 import { createScheduledTaskReadAdapter } from "../panel-reads";
+import { triggerFixture } from "./fixtures";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
+vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn(async () => {}) }));
+const directory = vi.hoisted(() => ({ agents: vi.fn(), caseSets: vi.fn() }));
+vi.mock("../../assistant/store", () => ({ assistantStore: { agents: directory.agents } }));
+vi.mock("../../assistant/service", () => ({ assistantService: {} }));
+vi.mock("../../ops-diagnosis/service", () => ({ diagnosisService: {} }));
+vi.mock("../../assistant/authorization", () => ({ allowedAgents: async (agents: { permitted: boolean }[]) => agents.filter(agent => agent.permitted) }));
+vi.mock("../../../platform/diagnosis/autotest/cases/repository", () => ({ listCaseSets: directory.caseSets }));
+directory.agents.mockResolvedValue([]);
+directory.caseSets.mockReturnValue([{ id: "set-regression", name: "Regression suite", caseCount: 12 }]);
 
 const task = examples.creates.find(create => create.name === "operations-autotest")!.response;
 const opening = examples.forms.find(form => form.name === "operations-empty")!.response;
 const refreshed = examples.forms.find(form => form.name === "operations-switch-to-inspection")!.response;
+const owner = { userId: "test-member", domainId: "test-domain" };
 const viewer = { token: "test-viewer", locale: "en" };
 const catalogue = {
   success: true,
-  data: examples.applicationsEnglish.response.applications.map(({ id }) => ({
+  data: ["agents", "operations"].map(id => ({
     id, kind: "native", names: { en: id === "operations" ? "Operations center" : id },
     descriptions: {}, icon: "apps", rail: "apps", category: "business", sort: 0,
-    entry: { path: `/${id}`, entryKey: id }, scheduleAdapter: `java:${id}`, releaseId: null,
+    entry: { path: `/${id}`, entryKey: id }, scheduleAdapter: `workbench:${id}`, releaseId: null, entryAvailable: true,
   })),
 };
 
@@ -35,9 +47,12 @@ afterEach(() => {
 
 it("carries the owner's pause cause on both the card and the selected record", async () => {
   const paused = { ...task, nextRunAt: null, pause: { code: "definition_changed", message: "The application form changed." } };
-  vi.stubGlobal("fetch", async (url: string) =>
-    Response.json(new URL(url).pathname.endsWith(`/${task.id}`) ? paused : { timeZone: task.timeZone, tasks: [paused] }));
-  const reads = createScheduledTaskReadAdapter(viewer);
+  vi.stubGlobal("fetch", async (url: string) => {
+    const { pathname } = new URL(url);
+    if (pathname === "/platform/applications") return Response.json(catalogue);
+    return Response.json(pathname.endsWith(`/${task.id}`) ? paused : { timeZone: task.timeZone, tasks: [paused] });
+  });
+  const reads = createScheduledTaskReadAdapter(owner, viewer);
   const expected = { fields: { state: "paused: The application form changed.", pauseCode: "definition_changed" } };
   await expect(reads.list()).resolves.toMatchObject([expected]);
   await expect(reads.record(task.id)).resolves.toMatchObject(expected);
@@ -48,11 +63,11 @@ it("keeps an uninstalled application's name and reason in the picker so the task
   vi.stubGlobal("fetch", async (url: string) => {
     const path = new URL(url).pathname;
     if (path === "/platform/applications") return Response.json(catalogue);
-    if (path.endsWith("/platform/scheduled-tasks/applications")) return Response.json(examples.applicationsEnglish.response);
+    if (path === "/platform/triggers/targets") return Response.json({ actions: [], workflows: [] });
     if (path.endsWith(`/${task.id}`)) return Response.json(retired);
     throw new Error(`Unexpected owner request ${path}`);
   });
-  const form = panelReadResultSchemas.panelFormDescription.parse(await createScheduledTaskReadAdapter(viewer).form(task.id, {}));
+  const form = panelReadResultSchemas.panelFormDescription.parse(await createScheduledTaskReadAdapter(owner, viewer).form(task.id, {}));
   expect(form.values.task).toMatchObject({ appId: retired.appId });
   expect(form.fields.find(({ path }) => path === "/task/appId")?.control).toMatchObject({
     kind: "select", options: expect.arrayContaining([
@@ -67,16 +82,15 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
     const { pathname: path, searchParams } = new URL(url);
     if (init.method === "GET" && path === "/platform/applications") return Response.json(catalogue);
-    if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks/applications"))
-      return Response.json(examples.applicationsEnglish.response);
-    if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks"))
+    if (path === "/platform/triggers/targets") return Response.json({ actions: [], workflows: [] });
+    if (init.method === "GET" && path.endsWith("/platform/triggers"))
       return Response.json({
         timeZone: task.timeZone, tasks: [task],
         ...(searchParams.get("includeCredentialStatus") === "true" && { credentialStatus: "renewal-required" }),
       });
-    if (init.method === "GET" && path.endsWith(`/platform/scheduled-tasks/${task.id}`))
+    if (init.method === "GET" && path.endsWith(`/platform/triggers/${task.id}`))
       return Response.json(task);
-    if (init.method === "POST" && path.endsWith("/platform/scheduled-tasks/applications/operations/form")) {
+    if (init.method === "POST" && path.endsWith("/platform/triggers/applications/operations/form")) {
       const input = JSON.parse(String(init.body));
       if (input.taskId === null) {
         expect(input).toMatchObject({ values: {}, changedField: null, timeZone: task.timeZone });
@@ -85,8 +99,8 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
       expect(input).toMatchObject({ taskId: task.id, timeZone: task.timeZone });
       if (input.changedField === null) {
         if (input.values.operation === "inspection") {
-          expect(input.values).toEqual({ operation: "inspection", instruction: input.values.instruction });
-          return Response.json({ ...refreshed, values: input.values, submittable: Boolean(input.values.instruction) });
+          const values = { operation: "inspection", instruction: input.values.instruction ?? "" };
+          return Response.json({ ...refreshed, values, submittable: Boolean(values.instruction) });
         }
         expect(input.values).toEqual(task.content);
         return Response.json({ ...opening, values: task.content, submittable: true });
@@ -98,17 +112,14 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
   });
   vi.stubGlobal("fetch", fetchOwner);
 
-  const reads = createScheduledTaskReadAdapter(viewer);
+  const reads = createScheduledTaskReadAdapter(owner, viewer);
   await expect(reads.status()).resolves.toMatchObject({ outputs: { credentialStatus: "renewal-required" } });
   const rows = panelReadResultSchemas.panelRecordList.parse(await reads.list());
   const record = panelReadResultSchemas.panelRecord.parse(await reads.record(task.id));
   expect(rows).toEqual([record]);
   expect(record).toMatchObject({
     primaryKey: task.id, label: task.title,
-    fields: { application: task.appId, state: "on", nextRun: task.nextRunAt, frequency: expect.any(String), lastRunAt: "", lastRunSummary: "" },
-    fieldLabels: {
-      application: "Application", settings: "Settings", state: "Status", nextRun: "Next run", lastRun: "Last run",
-    },
+    fields: { targetKind: "application", targetName: "Regression suite (12)", targetIcon: "apps", state: "on", nextRun: task.nextRunAt, frequency: expect.any(String), lastRunAt: "", lastRunSummary: "" },
   });
   const form = panelReadResultSchemas.panelFormDescription.parse(await reads.form(task.id, {}));
   expect(form).toMatchObject({
@@ -124,9 +135,10 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
       expect.objectContaining({ path: "/operation", section: "application" }),
     ]),
   });
-  expect(form.fields.map(field => field.path)).toEqual([
-    "/task/title", "/task/appId", "/task/frequency", "/task/timeZone", "/task/notifyEmail", "/operation", "/caseSetId",
-  ]);
+  expect(form.fields.map(field => field.path)).toEqual(expect.arrayContaining([
+    "/task/title", "/task/targetKind", "/task/description", "/task/executorId", "/task/coauthorIds",
+    "/task/appId", "/task/frequency", "/task/timeZone", "/task/notifyEmail", "/operation", "/caseSetId",
+  ]));
   const create = await reads.createForm({});
   expect(create).toMatchObject({
     values: { task: { title: "", appId: "", frequency: { kind: "daily", time: "09:00" }, timeZone: task.timeZone } },
@@ -166,11 +178,10 @@ it("checks a partial draft against the task's stored application values", async 
   vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     const path = new URL(url).pathname;
     if (init.method === "GET" && path === "/platform/applications") return Response.json(catalogue);
-    if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks/applications"))
-      return Response.json(examples.applicationsEnglish.response);
-    if (init.method === "GET" && path.endsWith(`/platform/scheduled-tasks/${agentTask.id}`))
+    if (init.method === "GET" && path.endsWith(`/platform/triggers/${agentTask.id}`))
       return Response.json(agentTask);
-    if (init.method === "POST" && path.endsWith("/platform/scheduled-tasks/applications/agents/form")) {
+    if (path === "/platform/triggers/targets") return Response.json({ actions: [], workflows: [] });
+    if (init.method === "POST" && path.endsWith("/platform/triggers/applications/agents/form")) {
       const { values } = JSON.parse(String(init.body));
       const complete = { agentId: "", instruction: "", ...values };
       return Response.json({ ...agentForm, values: complete, submittable: Boolean(complete.agentId && complete.instruction) });
@@ -178,12 +189,12 @@ it("checks a partial draft against the task's stored application values", async 
     throw new Error(`Unexpected owner request ${init.method} ${path}`);
   });
   const instruction = "Review the new inventory";
-  const draft = await createScheduledTaskReadAdapter(viewer).form(agentTask.id, { values: { instruction }, changedField: null });
+  const draft = await createScheduledTaskReadAdapter(owner, viewer).form(agentTask.id, { values: { instruction }, changedField: null });
   expect(draft).toMatchObject({
     values: { ...agentTask.content, instruction },
     errors: [],
   });
-  const refused = await createScheduledTaskReadAdapter(viewer).form(agentTask.id, {
+  const refused = await createScheduledTaskReadAdapter(owner, viewer).form(agentTask.id, {
     values: { content: { instruction } }, changedField: null,
   });
   expect(panelReadResultSchemas.panelFormDescription.parse(refused)).toMatchObject({
@@ -201,17 +212,16 @@ it("keeps an unavailable choice and its owner error in the form", async () => {
   vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     const path = new URL(url).pathname;
     if (init.method === "GET" && path === "/platform/applications") return Response.json(catalogue);
-    if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks/applications"))
-      return Response.json(examples.applicationsEnglish.response);
-    if (init.method === "GET" && path.endsWith(`/platform/scheduled-tasks/${agentTask.id}`))
+    if (init.method === "GET" && path.endsWith(`/platform/triggers/${agentTask.id}`))
       return Response.json(agentTask);
-    if (init.method === "POST" && path.endsWith("/platform/scheduled-tasks/applications/agents/form"))
+    if (path === "/platform/triggers/targets") return Response.json({ actions: [], workflows: [] });
+    if (init.method === "POST" && path.endsWith("/platform/triggers/applications/agents/form"))
       return Response.json(unavailable);
     throw new Error(`Unexpected owner request ${init.method} ${path}`);
   });
 
   const form = panelReadResultSchemas.panelFormDescription.parse(
-    await createScheduledTaskReadAdapter(viewer).form(agentTask.id, {}),
+    await createScheduledTaskReadAdapter(owner, viewer).form(agentTask.id, {}),
   );
   expect(form).toMatchObject({
     fields: expect.arrayContaining([expect.objectContaining({ path: "/agentId" })]),
@@ -224,44 +234,13 @@ it("describes the registered write without dispatching it and propagates owner d
   const denial = examples.errors.find(error => error.name === "permission-lost")!;
   const fetchOwner = vi.fn(async () => Response.json(denial.response, { status: 403 }));
   vi.stubGlobal("fetch", fetchOwner);
-  const reads = createScheduledTaskReadAdapter(viewer);
-  const operation = panelReadResultSchemas.panelOperationDescriptor.parse(reads[`${RUN_NOW}.describe`]());
-  expect(operation).toMatchObject({
-    handlerRef: RUN_NOW, label: "Run now", effect: "write", target: { source: "input", input: "task" },
-  });
+  const reads = createScheduledTaskReadAdapter(owner, viewer);
+  const operation = createScheduledTaskServerOperations(tForLocale).find(item => item.handlerRef === RUN_NOW);
+  expect(operation).toMatchObject({ handlerRef: RUN_NOW, effect: "write", targetInput: "task", targetType: TRIGGER });
   expect(fetchOwner).not.toHaveBeenCalled();
   await expect(reads.record(task.id)).rejects.toMatchObject({
     status: 403, code: "PERMISSION_DENIED", message: denial.response.error.message,
   });
-});
-
-it("returns a rejected save with the owner's code and field pointer relative to the panel form", async () => {
-  const [save] = createScheduledTaskServerOperations(tForLocale);
-  const ownerTask = examples.creates.find(create => create.name === "ontology-with-line-arrays")!.response;
-  const ownerForm = examples.forms.find(form => form.name === "ontology-selection-clears-old-parameters")!.response;
-  const denial = examples.errors.find(error => error.name === "numeric-array-validation")!;
-  const target = { kind: "object", objectType: SCHEDULED_TASK, primaryKey: ownerTask.id } as const;
-  const values = { ...ownerTask.content, "parameter:thresholds": "10\ninvalid" };
-  const request = async (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    if (path.endsWith(`/platform/scheduled-tasks/${ownerTask.id}`) && !init.method)
-      return Response.json(ownerTask);
-    if (path.endsWith("/platform/scheduled-tasks/applications/ontology/form") && init.method === "POST")
-      return Response.json(ownerForm);
-    if (path.endsWith(`/platform/scheduled-tasks/${ownerTask.id}`) && init.method === "PUT") {
-      expect(JSON.parse(String(init.body))).toMatchObject({ content: values, revision: ownerTask.revision });
-      return Response.json(denial.response, { status: denial.status });
-    }
-    throw new Error(`Unexpected owner request ${init.method} ${path}`);
-  };
-
-  const outcome = panelOperationOutcomeSchema.parse(await save.execute(
-    { request }, target, { values, revision: ownerTask.revision }, "test-intent",
-  ));
-  expect(outcome).toMatchObject({
-    kind: "refusal", code: denial.response.error.code, message: denial.response.error.message,
-    errors: [{ field: "/parameter:thresholds", code: "invalid_number", message: "第2行不是有效数字" }],
-  });
-  expect(outcome).not.toHaveProperty("details.fields");
 });
 
 it("reports a started run without replacing its structured result", async () => {
@@ -270,13 +249,13 @@ it("reports a started run without replacing its structured result", async () => 
   const { taskId } = started.response;
   const intentId = "50000000-0000-4000-8000-000000000001";
   const request = async (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    expect(path).toBe(`/api/data-query/platform/scheduled-tasks/${taskId}/runs`);
+    expect(path).toBe(`/api/data-query/platform/triggers/${taskId}/runs`);
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("Idempotency-Key")).toBe(intentId);
     return Response.json(started.response, { status: started.status });
   };
   const outcome = panelOperationOutcomeSchema.parse(await runNow.execute(
-    { request, locale: viewer.locale }, { kind: "object", objectType: SCHEDULED_TASK, primaryKey: taskId }, {}, intentId,
+    { request, locale: viewer.locale }, { kind: "object", objectType: TRIGGER, primaryKey: taskId }, {}, intentId,
   ));
   expect(outcome).toMatchObject({
     kind: "success", message: "The run has started.", data: { taskId, status: "running" },
@@ -290,9 +269,9 @@ it("preserves an existing value when a save only submits another field", async (
   const instruction = "Send a new summary";
   const content = { ...agentTask.content, instruction };
   const request = async (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    const taskPath = `/platform/scheduled-tasks/${agentTask.id}`;
+    const taskPath = `/platform/triggers/${agentTask.id}`;
     if (path.endsWith(taskPath) && !init.method) return Response.json(agentTask);
-    if (path.endsWith("/platform/scheduled-tasks/applications/agents/form") && init.method === "POST") {
+    if (path.endsWith("/platform/triggers/applications/agents/form") && init.method === "POST") {
       expect(JSON.parse(String(init.body)).values).toEqual(content);
       return Response.json({ ...agentForm, values: content });
     }
@@ -311,7 +290,7 @@ it("preserves an existing value when a save only submits another field", async (
   };
   expect(save.draftInput(input)).toEqual({ instruction, task: { title: "Updated task" } });
   await expect(save.execute(
-    { request }, { kind: "object", objectType: SCHEDULED_TASK, primaryKey: agentTask.id }, input, "test-intent",
+    { request }, { kind: "object", objectType: TRIGGER, primaryKey: agentTask.id }, input, "test-intent",
   )).resolves.toMatchObject({ kind: "success", data: { content } });
 });
 
@@ -319,9 +298,9 @@ it("writes the active owner fields when a submitted choice changes the form", as
   const [save] = createScheduledTaskServerOperations(tForLocale);
   const content = { operation: "inspection", instruction: "Inspect the latest run" };
   const request = async (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    const taskPath = `/platform/scheduled-tasks/${task.id}`;
+    const taskPath = `/platform/triggers/${task.id}`;
     if (path.endsWith(taskPath) && !init.method) return Response.json(task);
-    if (path.endsWith("/platform/scheduled-tasks/applications/operations/form") && init.method === "POST")
+    if (path.endsWith("/platform/triggers/applications/operations/form") && init.method === "POST")
       return Response.json({ ...refreshed, values: content });
     if (path.endsWith(taskPath) && init.method === "PUT") {
       expect(JSON.parse(String(init.body)).content).toEqual(content);
@@ -332,7 +311,7 @@ it("writes the active owner fields when a submitted choice changes the form", as
 
   const input = { values: { ...task.content, ...content }, revision: task.revision, submittedFields: ["/operation", "/instruction"] };
   await expect(save.execute(
-    { request }, { kind: "object", objectType: SCHEDULED_TASK, primaryKey: task.id }, input, "test-intent",
+    { request }, { kind: "object", objectType: TRIGGER, primaryKey: task.id }, input, "test-intent",
   )).resolves.toMatchObject({ kind: "success", data: { content } });
 });
 
@@ -342,7 +321,7 @@ it("reads paged run history and one run as the panel's viewer", async () => {
   vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
     const { pathname, searchParams } = new URL(url);
-    const runsPath = `/platform/scheduled-tasks/${example.taskId}/runs`;
+    const runsPath = `/platform/triggers/${example.taskId}/runs`;
     if (pathname === runsPath) {
       expect(searchParams.get("cursor")).toBe("previous-page");
       return Response.json(page);
@@ -350,27 +329,111 @@ it("reads paged run history and one run as the panel's viewer", async () => {
     if (pathname === `${runsPath}/${example.id}`) return Response.json(example);
     throw new Error(`Unexpected owner request ${pathname}`);
   });
-  const reads = createScheduledTaskReadAdapter(viewer);
+  const reads = createScheduledTaskReadAdapter(owner, viewer);
   await expect(reads.runs(example.taskId, "previous-page")).resolves.toEqual(page);
   await expect(reads.run(example.taskId, example.id)).resolves.toEqual(example);
+});
+
+it("accepts a redacted failed history row without inventing a reason or result", async () => {
+  const example = examples.runs.find(run => run.name === "agents-running")!.response;
+  const legacy = {
+    ...example, status: "failed", finishedAt: "2026-11-26T09:15:00Z",
+    error: null, result: null, resultLink: null, resultSummary: null, spendTime: null,
+    snapshot: { ...example.snapshot, executorId: null, title: "Historical execution", content: {}, summary: [], targetId: null },
+    executionDetails: { legacyIdentity: "unknown" },
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    expect(new URL(url).pathname).toBe(`/platform/triggers/${legacy.taskId}/runs/${legacy.id}`);
+    return Response.json(legacy);
+  }));
+  const reads = createScheduledTaskReadAdapter(owner, viewer);
+  await expect(reads.run(legacy.taskId, legacy.id)).resolves.toEqual(legacy);
+  const record = unwrapReadDirective(await reads.runRecord(legacy.taskId, legacy.id)).value;
+  expect(record).toMatchObject({ outputs: { status: "failed", resultPath: "" } });
+  expect(record).not.toHaveProperty("fields.error");
+  expect(record).not.toHaveProperty("fields.result");
 });
 
 it("returns a field refusal when submitted task settings are invalid", async () => {
   const [save] = createScheduledTaskServerOperations(tForLocale);
   const request = vi.fn(async (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    if (path.endsWith(`/platform/scheduled-tasks/${task.id}`) && !init.method) return Response.json(task);
-    if (path.endsWith("/platform/scheduled-tasks/applications/operations/form") && init.method === "POST")
+    if (path.endsWith(`/platform/triggers/${task.id}`) && !init.method) return Response.json(task);
+    if (path.endsWith("/platform/triggers/applications/operations/form") && init.method === "POST")
       return Response.json({ ...opening, values: task.content, submittable: true });
     throw new Error(`Unexpected owner request ${init.method} ${path}`);
   });
   const input = { values: { task: { notifyEmail: "invalid" } }, revision: task.revision, submittedFields: ["/task/notifyEmail"] };
   await expect(save.execute(
-    { request }, { kind: "object", objectType: SCHEDULED_TASK, primaryKey: task.id }, input, "test-intent",
+    { request }, { kind: "object", objectType: TRIGGER, primaryKey: task.id }, input, "test-intent",
   )).resolves.toMatchObject({
     kind: "refusal", code: "FIELD_VALIDATION_FAILED",
     errors: [{ field: "/task/notifyEmail", message: expect.any(String) }],
   });
-  expect(request).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls.some(([, init]) => init.method === "PUT")).toBe(false);
+});
+
+it("combines Java's native targets and app entries without resolving private names outside the viewer's authorization", async () => {
+  const agentTask = examples.creates.find(create => create.name === "agents-instruction")!.response;
+  const otherAgentId = "20000000-0000-4000-8000-000000000002";
+  const otherTask = { ...agentTask, id: "shared-trigger", content: { ...agentTask.content, agentId: otherAgentId } };
+  directory.agents.mockClear().mockResolvedValueOnce([
+    { id: "20000000-0000-4000-8000-000000000001", name: "Inventory reader", enabled: true, permitted: true },
+    { id: otherAgentId, name: "Private agent", enabled: true, permitted: false },
+  ]);
+  directory.caseSets.mockClear();
+  const http = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
+    const { pathname, searchParams } = new URL(url);
+    if (pathname === "/platform/applications") {
+      expect(searchParams.get("purpose")).toBe("schedules");
+      return Response.json({ ...catalogue, data: catalogue.data.map(app => ({ ...app, entryAvailable: app.id === "agents" })) });
+    }
+    if (pathname === "/platform/triggers/targets") return Response.json({
+      actions: [], workflows: [{ id: triggerFixture.targetId, name: triggerFixture.targetName, description: null }],
+    });
+    if (pathname === "/platform/triggers") return Response.json({ timeZone: "UTC", tasks: [agentTask, otherTask, task] });
+    throw new Error(`Unexpected owner request ${pathname}`);
+  });
+  vi.stubGlobal("fetch", http);
+  let batch: Promise<ScheduledApplicationsStatus> | undefined;
+  const reads = createScheduledTaskReadAdapter(owner, viewer, undefined, load => batch ??= load());
+  const form = await reads.createForm({ values: { task: { targetKind: "workflow" } }, changedField: "/task/targetKind" });
+  expect(form.fields.find(field => field.path === "/task/targetId")?.control).toMatchObject({
+    options: expect.arrayContaining([expect.objectContaining({ value: triggerFixture.targetId, label: triggerFixture.targetName })]),
+  });
+  const appForm = await reads.createForm({});
+  expect(appForm.fields.find(field => field.path === "/task/appId")?.control).toMatchObject({
+    options: expect.arrayContaining([expect.objectContaining({
+      value: "operations", disabled: true, disabledReason: "Application entry permission is required",
+    })]),
+  });
+  const rows = await reads.list();
+  expect(rows).toMatchObject([
+    { fields: { targetName: "Inventory reader" } },
+    { fields: { targetName: "agents" } },
+    { fields: { targetName: "Operations center" } },
+  ]);
+  expect(JSON.stringify(rows)).not.toContain("Private agent");
+  expect(directory.agents).toHaveBeenCalledTimes(1);
+  expect(directory.caseSets).not.toHaveBeenCalled();
+  expect(http.mock.calls.filter(([url]) => new URL(url).pathname === "/platform/applications")).toHaveLength(1);
+});
+
+it("looks up active members through the shared domain directory with the viewer's credentials", async () => {
+  const fetchOwner = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    expect(new URL(url).pathname).toBe("/product-governance/principals");
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
+    expect(JSON.parse(String(init.body))).toMatchObject({ kind: "principal" });
+    return Response.json({ options: [{ id: "member-jordan", name: "Jordan" }] });
+  });
+  vi.stubGlobal("fetch", fetchOwner);
+  const reads = createScheduledTaskReadAdapter(owner, viewer);
+  await expect(reads.memberOptions({ keyword: "Jordan", page: { number: 1, size: 12 } }))
+    .resolves.toMatchObject({ options: [{ value: "member-jordan", label: "Jordan" }] });
+  expect(JSON.parse(String(fetchOwner.mock.calls[0]![1].body))).toMatchObject({ keyword: "Jordan", limit: 12 });
+  await expect(reads.memberResolve(["member-jordan"]))
+    .resolves.toMatchObject({ options: [{ value: "member-jordan", label: "Jordan" }] });
 });
 
 it("filters scheduled task list by application and search and carries application icons (SC-04)", async () => {
@@ -383,15 +446,14 @@ it("filters scheduled task list by application and search and carries applicatio
   vi.stubGlobal("fetch", async (url: string) => {
     const path = new URL(url).pathname;
     if (path === "/platform/applications") return Response.json(catalogue);
-    if (path === "/platform/scheduled-tasks/applications") return Response.json(examples.applicationsEnglish.response);
-    if (path === "/platform/scheduled-tasks") return Response.json({ timeZone: task.timeZone, tasks: [task, secondTask] });
+    if (path === "/platform/triggers") return Response.json({ timeZone: task.timeZone, tasks: [task, secondTask] });
     throw new Error(`Unexpected owner request ${path}`);
   });
-  const reads = createScheduledTaskReadAdapter(viewer);
-  const byApp = unwrapReadDirective(await reads.list({ application: "operations" })).value as Array<{ primaryKey: string; fields: Record<string, unknown> }>;
+  const reads = createScheduledTaskReadAdapter(owner, viewer);
+  const byApp = unwrapReadDirective(await reads.list({ scope: "operations" })).value as Array<{ primaryKey: string; fields: Record<string, unknown> }>;
   expect(byApp).toHaveLength(1);
   expect(byApp[0]?.primaryKey).toBe(task.id);
-  expect(byApp[0]?.fields.applicationIcon).toBe("apps");
+  expect(byApp[0]?.fields.targetIcon).toBe("apps");
   const bySearch = unwrapReadDirective(await reads.list({ search: "weekly" })).value as Array<{ primaryKey: string }>;
   expect(bySearch).toHaveLength(1);
   expect(bySearch[0]?.primaryKey).toBe(secondTask.id);
@@ -406,18 +468,17 @@ it("attaches declarative rereadAfterMs directives only while scheduled tasks or 
   vi.stubGlobal("fetch", async (url: string) => {
     const path = new URL(url).pathname;
     if (path === "/platform/applications") return Response.json(catalogue);
-    if (path === "/platform/scheduled-tasks/applications") return Response.json(examples.applicationsEnglish.response);
-    if (path === "/platform/scheduled-tasks") return Response.json({ timeZone: task.timeZone, tasks: [active ? activeTask : idleTask] });
-    if (path === `/platform/scheduled-tasks/${task.id}`) return Response.json(active ? activeTask : idleTask);
-    if (path === `/platform/scheduled-tasks/${task.id}/runs`) {
+    if (path === "/platform/triggers") return Response.json({ timeZone: task.timeZone, tasks: [active ? activeTask : idleTask] });
+    if (path === `/platform/triggers/${task.id}`) return Response.json(active ? activeTask : idleTask);
+    if (path === `/platform/triggers/${task.id}/runs`) {
       return Response.json({ runs: [active ? runningRun : completedRun], nextCursor: null });
     }
-    if (path === `/platform/scheduled-tasks/${task.id}/runs/${runningRun.id}`) {
+    if (path === `/platform/triggers/${task.id}/runs/${runningRun.id}`) {
       return Response.json(active ? runningRun : completedRun);
     }
     throw new Error(`Unexpected owner request ${path}`);
   });
-  const reads = createScheduledTaskReadAdapter(viewer);
+  const reads = createScheduledTaskReadAdapter(owner, viewer);
 
   expect(unwrapReadDirective(await reads.list()).directive).toEqual({ rereadAfterMs: 30_000 });
   expect(unwrapReadDirective(await reads.record(task.id)).directive).toEqual({ rereadAfterMs: 5_000 });

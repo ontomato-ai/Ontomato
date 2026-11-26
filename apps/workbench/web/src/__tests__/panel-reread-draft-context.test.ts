@@ -19,7 +19,7 @@ import {
 import { usePanelFormDraft } from "../../../../../packages/apps-sdk/src/panel/form-draft";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 
-const RUN_TYPE = "platform:ScheduledTask";
+const RUN_TYPE = "platform:Trigger";
 
 const runProjection: DirectProjection = {
   id: "proj-run-status",

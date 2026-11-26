@@ -2,9 +2,10 @@ import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { platformTaskStatusSchema } from "@ontomato/contracts/platform-schedules";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
-  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
+  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SKILL, USER,
 } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress, type ProductPanelReadRequest, type ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
@@ -130,7 +131,7 @@ function readAdapters(
   owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation,
   batchCache?: PanelReadBatchCache,
 ): Record<string, Record<string, ReadAdapter>> {
-  const schedules = createScheduledTaskReadAdapter(viewer, undefined,
+  const schedules = createScheduledTaskReadAdapter(owner, viewer, undefined,
     batchCache && (load => batchCache.scheduleApplications(viewer.headers?.[BUILD_TEST_HEADER], load)));
   const governance = createGovernanceReadAdapters(viewer, {
     loadPolicyCatalog: () => loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale),
@@ -150,10 +151,6 @@ function readAdapters(
   const actions = async () => {
     const { createActionReadAdapter } = await import("../action/panel-reads");
     return createActionReadAdapter(owner, viewer, callerUserName);
-  };
-  const triggers = async () => {
-    const { createTriggerReadAdapter } = await import("../trigger/panel-reads");
-    return createTriggerReadAdapter(owner, viewer, callerUserName);
   };
   const workflows = async () => {
     const { createWorkflowReadAdapter } = await import("../workflow/panel-reads");
@@ -327,15 +324,6 @@ function readAdapters(
       derivedParameters: async selection => (await actions()).derivedParameters(selection.primaryKey!),
       derivedConditions: async selection => (await actions()).derivedConditions(selection.primaryKey!),
       annotatedExplanation: async selection => (await actions()).annotatedExplanation(selection.primaryKey!),
-    },
-    [TRIGGER]: {
-      count: async () => (await triggers()).count(),
-      armedCount: async () => (await triggers()).armedCount(),
-      list: async () => (await triggers()).list(),
-      query: async (_selection, params) => (await triggers()).query(params),
-      record: async selection => (await triggers()).record(selection.primaryKey!),
-      form: async (selection, params) => (await triggers()).form(selection.primaryKey!, formParams(params)),
-      createForm: async (_selection, params) => (await triggers()).createForm(formParams(params)),
     },
     [WORKFLOW]: {
       count: async () => (await workflows()).count(),
@@ -712,11 +700,13 @@ function readAdapters(
       graphEdges: async () => (await ontology()).graphEdges(),
       record: async selection => (await ontology()).relationRecord(selection.primaryKey!),
     },
-    [SCHEDULED_TASK]: {
+    [TRIGGER]: {
+      count: () => schedules.count(),
       list: () => schedules.list(),
       catalogue: (_selection, params) => schedules.list({
-        application: panelReadParameterSchemas.keyword.optional().parse(params.scope),
+        scope: panelReadParameterSchemas.keyword.optional().parse(params.scope),
         search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+        status: platformTaskStatusSchema.optional().parse(params.status),
       }),
       counts: (_selection, params) => schedules.counts(panelReadParameterSchemas.keyword.optional().parse(params.by)),
       status: () => schedules.status(),
@@ -732,6 +722,11 @@ function readAdapters(
       createForm: (_selection, params) => schedules.createForm({
         ...formParams(params), defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),
       }),
+      memberOptions: (_selection, params) => schedules.memberOptions({
+        keyword: panelReadParameterSchemas.keyword.optional().parse(params.keyword),
+        page: panelReadParameterSchemas.page.optional().parse(params.page),
+      }),
+      memberResolve: (_selection, params) => schedules.memberResolve(panelReadParameterSchemas.optionValues.parse(params.values)),
     },
     [BUSINESS_KNOWLEDGE]: {
       count: () => knowledge.count(),

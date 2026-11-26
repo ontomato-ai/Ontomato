@@ -1,7 +1,7 @@
 import { effectScope, nextTick, ref } from "vue";
 import { expect, it, vi } from "vitest";
 import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
-import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { BUSINESS_KNOWLEDGE, TRIGGER } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { DirectProjection, ProductProjection } from "@ontomato/contracts/product-panels";
 import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
@@ -30,7 +30,7 @@ const meta = {
   description: "",
 };
 
-const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+const task = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -65,7 +65,7 @@ it("preserves previous ready answer on same-target reread error & retry, and cle
     id: "task-form",
     name: "Task form",
     componentId: "@ontomato/sdk:ObjectForm",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    inputs: { task: { kind: "object", objectType: TRIGGER } },
     outputs: {},
     config: {},
     data: {
@@ -78,7 +78,7 @@ it("preserves previous ready answer on same-target reread error & retry, and cle
   };
   const manifest: DirectPanelManifest = {
     state: {
-      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: false, external: false },
+      selectedTask: { type: { kind: "object", objectType: TRIGGER }, personal: false, deepLink: false, external: false },
     },
     members: {
       detail: {

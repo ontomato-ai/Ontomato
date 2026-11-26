@@ -17,7 +17,7 @@ import {
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 
-import { noOperations, projections } from "./panel-frame";
+import { noOperations, projections, TRIGGER } from "./panel-frame";
 /*
  * The trial's panel, as the SDK sees it: a declaration and projections, and nothing written per panel. These are the
  * mistakes the trial exists to rule out — a panel that has to wire its own reads, drafts or buttons; one instance's
@@ -25,12 +25,11 @@ import { noOperations, projections } from "./panel-frame";
  * object it was described to act on.
  */
 
-const SCHEDULED_TASK = "platform:ScheduledTask";
-const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+const task = (primaryKey: string) => ({ className: TRIGGER, primaryKey });
 
 /** Panel P, as its declaration file has it. */
 const panel = definePanel({
-  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
   members: {
     tasks: { target: { projectionId: "projection-schedules-tasks" }, inputs: { value: { state: "selectedTask" } } },
     summary: { target: { projectionId: "projection-schedules-summary" }, inputs: { task: { state: "selectedTask" } } },
@@ -41,7 +40,7 @@ const panel = definePanel({
 
 /** Panel Q, as its declaration file has it: the same summary projection and nothing of P. */
 const summaryPanel = definePanel({
-  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  state: { selectedTask: { type: { kind: "object", objectType: TRIGGER }, deepLink: true } },
   members: { summary: { target: { projectionId: "projection-schedules-summary" }, inputs: { task: { state: "selectedTask" } } } },
 });
 
@@ -66,7 +65,7 @@ function instance(initial?: Record<string, unknown>) {
 describe("a panel's projection", () => {
   it("offers the owner's operation its record names, under the record's own name for it", async () => {
     expect(records.get("projection-schedules-run")!.operations).toEqual({
-      runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } },
+      runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { input: "task" } },
     });
   });
 
@@ -88,16 +87,16 @@ describe("a panel's projection", () => {
       slot: "run", projectionId: "projection-schedules-run", ports: portsOf(records.get("projection-schedules-run")!),
       // Run-now as its owner admits it for the chosen task.
       operations: { runNow: {
-        kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
+        kind: "action", handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
         inputSchema: {}, resultSchema: {}, batch: false,
       } },
     });
     await first.invoke("run.runNow");
-    expect(prepare).toHaveBeenCalledWith("run.runNow", { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} } }, undefined);
+    expect(prepare).toHaveBeenCalledWith("run.runNow", { call: { target: { kind: "object", objectType: TRIGGER, primaryKey: "task-1" }, input: {} } }, undefined);
   });
 
   it("has no target at all when nothing is selected, so a handler cannot act on the wrong object", () => {
-    expect(operationCall({ id: "run.runNow", label: "Run now", kind: "action", inputSchema: {}, target: { source: "state", state: "selectedTask" }, slot: "run", handlerRef: "schedules.runNow" }, {}))
+    expect(operationCall({ id: "run.runNow", label: "Run now", kind: "action", inputSchema: {}, target: { source: "state", state: "selectedTask" }, slot: "run", handlerRef: "triggers.runNow" }, {}))
       .toEqual({ target: null, input: {} });
   });
 });
@@ -134,7 +133,7 @@ describe("a panel instance", () => {
   it("keeps one selection, and gives it to every projection of that instance", async () => {
     const panelInstance = instance({ selectedTask: task("task-1") });
     expect(panelInstance.pageContext.value.selection).toEqual([
-      { kind: SCHEDULED_TASK, id: "task-1", label: `${SCHEDULED_TASK} task-1` },
+      { kind: TRIGGER, id: "task-1", label: `${TRIGGER} task-1` },
     ]);
     expect(panelInstance.pageContext.value.pageKey).toBe("panels-trial-a-tasks");
   });
@@ -161,7 +160,7 @@ describe("a panel's module", () => {
   it("mounts a component that only places its projections, and the SDK reads each one", async () => {
     // The type the trial's projections bind, read by a stand-in client: the component draws it, the record says which.
     registerPlatformObjectAdapter({
-      objectType: SCHEDULED_TASK,
+      objectType: TRIGGER,
       list: async () => [{ primaryKey: "task-1", label: "Nightly", fields: {} }],
       read: async (primaryKey) => ({ primaryKey, label: "Nightly", fields: { application: "operations", state: "on" } }),
       forms: {

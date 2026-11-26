@@ -371,7 +371,7 @@ describe("what an agent presents", () => {
 
 describe("the objects an agent changes", () => {
   const SESSION = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-  const task = { objectType: "platform:ScheduledTask", primaryKey: "task-1" };
+  const task = { objectType: "platform:Trigger", primaryKey: "task-1" };
   const refresh = (wrapper: VueWrapper) => JSON.parse(wrapper.find(".reporting-page .refresh").text()) as DisplayObjectRefresh;
 
   it("are read again by the page shown beside this conversation, and everything is read when the stream is ready", async () => {

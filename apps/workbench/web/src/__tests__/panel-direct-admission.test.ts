@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { DELETE_FUNCTION, FUNCTION } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelUse, registered, task, type Sent } from "./panel-frame";
+import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelUse, registered, type Sent } from "./panel-frame";
 import { codePanelRecord, connectBridge, projectionRecord } from "./host-bridge-records";
 
 /*
@@ -15,31 +15,32 @@ import { codePanelRecord, connectBridge, projectionRecord } from "./host-bridge-
  * from its declared data (a type, an object, an operation), never from a binding it does not have.
  */
 
-const taskInput = { kind: "object" as const, objectType: SCHEDULED_TASK };
+const functionInput = { kind: "object" as const, objectType: FUNCTION };
 const projections = Object.fromEntries([
   projectionRecord({
-    id: "direct-tasks", componentId: "@ontomato/sdk:ObjectList",
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    id: "direct-functions", componentId: "@ontomato/sdk:ObjectList",
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: FUNCTION } }, read: "list", params: {} } },
   }),
   projectionRecord({
-    id: "direct-summary", componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: taskInput },
-    data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
+    id: "direct-summary", componentId: "@ontomato/sdk:ObjectSummary", inputs: { definition: functionInput },
+    data: { record: { source: { object: { input: "definition" } }, read: "record", params: {} } },
   }),
   projectionRecord({
-    id: "direct-run", componentId: "@ontomato/sdk:OperationButton", inputs: { task: taskInput }, config: { operation: "runNow" },
-    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: RUN_NOW }, target: { input: "task" } } },
+    id: "direct-delete", componentId: "@ontomato/sdk:OperationButton", inputs: { definition: functionInput }, config: { operation: "remove" },
+    data: {}, operations: { remove: { operation: { kind: "PlatformOperation", id: DELETE_FUNCTION }, target: { input: "definition" } } },
   }),
 ].map((projection) => [projection.id, projection]));
-const panel = codePanelRecord("panel-q", { tasks: "direct-tasks", summary: "direct-summary", run: "direct-run" });
+const panel = codePanelRecord("panel-q", { functions: "direct-functions", summary: "direct-summary", remove: "direct-delete" });
 const use = panelUse("use-q", "q", panel.id, "/applications/app-q/q");
-const tasks = "/platform/scheduled-tasks";
+const list = "/function/queryList";
+const record = "/function/queryById";
+const remove = "/function/delete";
 
 function answer(request: Sent) {
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projection && projections[projection[1]!]) return Response.json({ projection: projections[projection[1]!] });
-  if (request.path === `/api/data-query${tasks}`) return Response.json({ tasks: [task], timeZone: task.timeZone });
-  if (request.path === `/api/data-query${tasks}/${task.id}`) return Response.json(task);
-  if (request.path === `/api/data-query${tasks}/${task.id}/runs`) return Response.json({});
+  if (request.method === "POST" && [list, record, remove].some(path => request.path === `/api/data-query${path}`))
+    return Response.json({ success: true });
   return nothingAt(request);
 }
 
@@ -56,21 +57,21 @@ describe("a code panel's frame reading direct projections", () => {
       invoke("request", { path, service, method, headers: [], body: method === "GET" ? null : "{}" });
 
     // Before the frame read X, nothing of its type is admitted.
-    await expect(request(tasks)).rejects.toThrow("Outside what this panel's projections declare");
+    await expect(request(list, "POST")).rejects.toThrow("Outside what this panel's projections declare");
 
     // A type source: its list.
-    await expect(request("/product-projections/direct-tasks", "GET", "")).resolves.toMatchObject({ status: 200 });
-    await expect(request(tasks)).resolves.toMatchObject({ status: 200 });
+    await expect(request("/product-projections/direct-functions", "GET", "")).resolves.toMatchObject({ status: 200 });
+    await expect(request(list, "POST")).resolves.toMatchObject({ status: 200 });
     // An operation the frame has not read the projection naming yet: refused.
-    await expect(request(`${tasks}/${task.id}/runs`, "POST")).rejects.toThrow("Outside what this panel's projections declare");
+    await expect(request(remove, "POST")).rejects.toThrow("Outside what this panel's projections declare");
 
     // An object source (by an object input), and an operation the projection names.
     await request("/product-projections/direct-summary", "GET", "");
-    await expect(request(`${tasks}/${task.id}`)).resolves.toMatchObject({ status: 200 });
-    await request("/product-projections/direct-run", "GET", "");
-    await expect(request(`${tasks}/${task.id}/runs`, "POST")).resolves.toMatchObject({ status: 200 });
+    await expect(request(record, "POST")).resolves.toMatchObject({ status: 200 });
+    await request("/product-projections/direct-delete", "GET", "");
+    await expect(request(remove, "POST")).resolves.toMatchObject({ status: 200 });
 
     // What none of the sources reaches stays refused.
-    await expect(request(`${tasks}/${task.id}`, "DELETE")).rejects.toThrow("Outside what this panel's projections declare");
+    await expect(request("/function/execute", "POST")).rejects.toThrow("Outside what this panel's projections declare");
   });
 });

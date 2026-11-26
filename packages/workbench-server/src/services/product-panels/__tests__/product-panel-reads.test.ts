@@ -5,7 +5,7 @@ import {
   ONTOLOGY_TYPE,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
-  SCHEDULED_TASK,
+  TRIGGER,
   SDK_COMPONENT,
 } from "@ontomato/contracts/platform-object-types";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
@@ -466,7 +466,7 @@ describe("createProductPanelReadAdapter", () => {
           updatedAt: "2026-11-25T00:00:00.000Z",
           editable: false,
           componentId: "@ontomato/sdk:ObjectList",
-          objectTypes: [SCHEDULED_TASK, "Student"],
+          objectTypes: [TRIGGER, "Student"],
         },
         {
           id: "proj-chat",
@@ -491,7 +491,7 @@ describe("createProductPanelReadAdapter", () => {
       sort: "name",
       size: 20,
       componentId: "@ontomato/sdk:ObjectList",
-      objectType: SCHEDULED_TASK,
+      objectType: TRIGGER,
     }));
     expect(listCurrentProductsMock).toHaveBeenCalledWith(owner, viewer, "projection", {
       q: "tasks",
@@ -500,7 +500,7 @@ describe("createProductPanelReadAdapter", () => {
       limit: 20,
       cursor: undefined,
       componentId: "@ontomato/sdk:ObjectList",
-      objectType: SCHEDULED_TASK,
+      objectType: TRIGGER,
     });
     expect(result.total).toBe(2);
     expect(result.rows[0]?.fields.objectTypes).toContain("Student");
@@ -508,7 +508,7 @@ describe("createProductPanelReadAdapter", () => {
 
     listProjectionFilterFacetsMock.mockResolvedValue({
       componentIds: ["@ontomato/sdk:ObjectForm", "@ontomato/sdk:ObjectList", "domain-component:custom-card"],
-      objectTypes: [SCHEDULED_TASK, "Student"],
+      objectTypes: [TRIGGER, "Student"],
     });
     const compOptions = panelReadResultSchemas.panelRecordList.parse(await adapter.componentOptions());
     expect(compOptions.map(row => ({ key: row.primaryKey, className: row.className, pkg: row.fields.package }))).toEqual([
@@ -520,7 +520,7 @@ describe("createProductPanelReadAdapter", () => {
     const typeOptions = panelReadResultSchemas.panelRecordList.parse(await adapter.objectTypeOptions());
     expect(typeOptions.map(row => ({ key: row.primaryKey, className: row.className, group: row.fields.group }))).toEqual([
       { key: "Student", className: ONTOLOGY_TYPE, group: en["panels.productCatalog.projection.objectTypeGroupCustom"] },
-      { key: SCHEDULED_TASK, className: ONTOLOGY_TYPE, group: en["platformOntology.layers.capability"] },
+      { key: TRIGGER, className: ONTOLOGY_TYPE, group: en["platformOntology.layers.capability"] },
     ]);
   });
 });

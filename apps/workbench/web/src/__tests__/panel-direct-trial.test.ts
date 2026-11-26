@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { TRIGGER } from "@ontomato/contracts/panel-client-requests";
 import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subscriptions";
 import { productPanelSchema, productProjectionResponseSchema } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
@@ -16,7 +16,7 @@ import { sentPanelReadItems, panelAnswer, pageSkillContextFor, installPlatform, 
  * runs it now, and picks another — all in one instance, each datum read through the platform as the reader.
  *
  * Real route, panel host, SDK instance and the trial's own material. Node's answers for the panel, its snapshot and its
- * projections are the ones Node gave for this material over HTTP (`fixtures/direct-panel-host-http.json`, recorded by
+ * projections come from the trial's HTTP fixture, with the trigger identifiers updated (recording entry:
  * the workbench server's `direct-panel-host.integration.test.ts` with `DIRECT_PANEL_HOST_HTTP_EVIDENCE`), so a host
  * call Node would refuse for the panel is not hidden by a stand-in; the owners' data and operations are stand-ins.
  *
@@ -40,14 +40,14 @@ const form = (name: string) => ({
   fields: [field("/name", "Name")], values: { name }, errors: [], revision: 3,
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
 });
-const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { kind: "action", handlerRef: "triggers.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 const INTENT = "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05";
 
 type Read = {
   dataName?: string; operations?: true; memberPath: [{ member: string }]; inputs: { task?: { primaryKey: string } | null; values?: { name: string } };
 };
 /** The owners' descriptions of what each member can do, as Node admits them for its inputs. */
-const saveTask = { kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", inputSchema: {}, resultSchema: {}, batch: false };
+const saveTask = { kind: "form.save", handlerRef: `${TRIGGER}.save`, label: "Save", effect: "write", inputSchema: {}, resultSchema: {}, batch: false };
 function admitted({ memberPath: [{ member }], inputs }: Read) {
   if (!inputs.task) return {};
   if (member === "run") return { runNow };
@@ -74,7 +74,7 @@ function answer(request: Sent) {
     return Response.json({ intentId: INTENT, operationId: "run.runNow", label: "Run now", confirmation: { kind: "none" } });
   if (request.path === `/api/panel-operations/intents/${INTENT}/dispatch`)
     return Response.json({ kind: "dispatched", intentId: INTENT, outcome: { kind: "success", data: {}, affected: {
-      objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }], objectTypes: [SCHEDULED_TASK],
+      objects: [{ objectType: TRIGGER, primaryKey: "t-1" }], objectTypes: [TRIGGER],
     } } });
   return nothingAt(request);
 }
