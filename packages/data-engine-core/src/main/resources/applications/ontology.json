@@ -23,10 +23,10 @@
     },
     "icon": "ontology",
     "groups": [
-      {"key": "facts", "names": {"en": "Facts", "zh-CN": "事实层"}, "sort": 0},
-      {"key": "capabilities", "names": {"en": "Capabilities", "zh-CN": "能力层"}, "sort": 1},
-      {"key": "governance", "names": {"en": "Governance", "zh-CN": "治理层"}, "sort": 2},
-      {"key": "products", "names": {"en": "Products", "zh-CN": "产品层"}, "sort": 3}
+      {"key": "facts", "names": {"en": "Facts", "zh-CN": "事实层", "zh-TW": "事實層", "ja": "ファクト層", "ar": "طبقة الحقائق", "fr": "Couche faits", "de": "Faktenebene", "it": "Livello fatti"}, "sort": 0},
+      {"key": "capabilities", "names": {"en": "Capabilities", "zh-CN": "能力层", "zh-TW": "能力層", "ja": "ケイパビリティ層", "ar": "طبقة القدرات", "fr": "Couche capacités", "de": "Fähigkeitsebene", "it": "Livello capacità"}, "sort": 1},
+      {"key": "governance", "names": {"en": "Governance", "zh-CN": "治理层", "zh-TW": "治理層", "ja": "ガバナンス層", "ar": "طبقة الحوكمة", "fr": "Couche gouvernance", "de": "Governance-Ebene", "it": "Livello governance"}, "sort": 2},
+      {"key": "products", "names": {"en": "Products", "zh-CN": "产品层", "zh-TW": "產品層", "ja": "プロダクト層", "ar": "طبقة المنتج", "fr": "Couche produit", "de": "Produktebene", "it": "Livello prodotto"}, "sort": 3}
     ],
     "panelUses": [{
       "id": "ontology-playground", "pageKey": "ontology-playground", "panelId": "builtin-product-ontology-graph",

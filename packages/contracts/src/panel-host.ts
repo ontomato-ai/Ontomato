@@ -329,7 +329,6 @@ export const PANEL_FRAME_QUERY_PREFIX = "frame.";
 export const PANEL_ADDRESS_RESERVED_QUERY_KEYS = [
   "standalone",
   "from",
-  "navigationContext",
 ] as const;
 
 const RESERVED_QUERY_KEY_SET: ReadonlySet<string> = new Set(PANEL_ADDRESS_RESERVED_QUERY_KEYS);
@@ -655,7 +654,7 @@ export function panelAddress(
 
 /**
  * Extract the entry panel's flat query parameters from an address. Shell-reserved keys (`standalone`, `from`,
- * `navigationContext`, draft keys) and `frame.*` keys are excluded. When `manifest` is provided, values are decoded
+ * draft keys) and `frame.*` keys are excluded. When `manifest` is provided, values are decoded
  * and validated against `manifest.state` (invalid values are safely ignored).
  */
 export function panelAddressState(
