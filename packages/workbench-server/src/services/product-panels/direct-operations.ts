@@ -456,18 +456,21 @@ export async function describeRowOperationsForRows(
     const rowBoundParams = Object.values(bound.binding.params ?? {}).some(param => "row" in param || "rowField" in param);
     const inputReasons = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
     const inspectInput = !rowScoped && !rowBoundParams ? handler.unavailableForInput : undefined;
+    const known = new Map(Object.entries(inputs));
+    const batchTargets = validTargets.map(entry => ({
+      ...entry,
+      input: resolvePinnedBoundParams(bound.binding, known, entry.target, entry.row),
+    }));
     if (inspectInput) {
-      const known = new Map(Object.entries(inputs));
-      await runWithConcurrency(validTargets, ROW_AVAILABILITY_CONCURRENCY, async ({ rowKey, target, row }) => {
-        const params = resolvePinnedBoundParams(bound.binding, known, target, row);
-        inputReasons.set(rowKey, await inspectInput(host, target, params));
+      await runWithConcurrency(batchTargets, ROW_AVAILABILITY_CONCURRENCY, async ({ rowKey, target, input }) => {
+        inputReasons.set(rowKey, await inspectInput(host, target, input));
       });
     }
     const reasonsByRowKey = inspectInput
       ? inputReasons
       : rowScoped
-        ? await resolveRowBatchUnavailableReasons(host, handler, validTargets)
-        : await resolveBatchUnavailableReasons(host, handler, validTargets);
+        ? await resolveRowBatchUnavailableReasons(host, handler, batchTargets)
+        : await resolveBatchUnavailableReasons(host, handler, batchTargets);
     for (const { rowKey, target, compatible } of rowEntries) {
       if (target === undefined) continue;
       if (!compatible) {

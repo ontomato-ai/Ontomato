@@ -88,7 +88,7 @@ interface ServerOperation extends OperationInputDescription {
   /** Optional batch availability lookup across a page of list rows to avoid per-row backend requests. */
   unavailableBatch?(
     host: PanelOperationHost,
-    targets: readonly { target: PanelRecordTarget; rowKey: string; row?: PanelRecord }[],
+    targets: readonly { target: PanelRecordTarget; rowKey: string; row?: PanelRecord; input?: Readonly<Record<string, unknown>> }[],
   ): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>>;
   inputSchema: z.ZodType<Record<string, unknown>>;
   resultSchema: z.ZodTypeAny;
