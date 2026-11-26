@@ -1,9 +1,8 @@
 <!--
   Agent detail panel: full-width edit-on-open detail entry for a single platform:AgentDefinition.
-  PageHeader owns Back, ObjectHeader (with live draft avatar, live draft title, and category badge),
-  Delete (hidden when unavailable for preset, system, or view-only readers), and the Save/Discard draft bar.
-  Editors (canGrant) also get a Permissions & sharing tab for domain-wide sharing and single-select
-  3-level (use / view / edit) principal & role grants.
+  The page header owns Back, ObjectHeader, Chat with this agent, and the overflow Delete action.
+  Six left-navigation sections drive one grouped owner form; Save/Discard live in the sticky save bar.
+  Permissions & sharing is the sixth screen and also holds the execution identity field.
   Shared by /ontology/agents/detail and /agents/settings/detail via entry-wired `catalogPath`.
 -->
 <style>
@@ -36,15 +35,6 @@
     gap: var(--page-content-gap);
     min-width: 0;
     padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
-  }
-  .agent-detail-tabs {
-    margin-bottom: calc(var(--spacing-sm) * -1);
-  }
-  .agent-detail-tab-panel {
-    display: flex;
-    flex-direction: column;
-    gap: var(--page-content-gap);
-    min-width: 0;
   }
   .agent-detail-card {
     display: flex;
@@ -160,7 +150,8 @@
     min-width: 0;
   }
   .agent-detail-prompt-preview {
-    min-height: 560px;
+    min-height: 168px;
+    max-height: 420px;
     padding: var(--spacing-md);
     box-sizing: border-box;
     border: 1px solid var(--sdk-border-color);
@@ -355,6 +346,278 @@
     color: var(--sdk-color-danger-text);
   }
 
+  /* Six-section workspace: left navigation beside one screen, folding to a horizontal switcher at 720px. */
+  .agent-detail-page {
+    height: 100%;
+    overflow: hidden;
+  }
+  .agent-detail-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .agent-detail-workspace {
+    display: grid;
+    grid-template-columns: 208px minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    overflow: hidden;
+  }
+  .agent-detail-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+    padding: var(--spacing-sm);
+    border-right: 1px solid var(--sdk-border-color-light);
+    overflow-y: auto;
+    background: var(--sdk-fill-color-extra-light);
+  }
+  .agent-detail-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-xs);
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--sdk-text-color-regular);
+    font: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+  .agent-detail-nav-item:hover {
+    background: var(--sdk-fill-color-light);
+  }
+  .agent-detail-nav-item.active {
+    background: var(--sdk-color-primary-light-9);
+    color: var(--sdk-color-primary);
+    font-weight: var(--font-semibold);
+  }
+  .agent-detail-nav-item:focus-visible {
+    outline: 2px solid var(--sdk-color-primary);
+    outline-offset: 1px;
+  }
+  .agent-detail-nav-dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--sdk-color-warning);
+  }
+  .agent-detail-screen {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-lg);
+    overflow-y: auto;
+  }
+  .agent-detail-savebar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    margin: calc(var(--spacing-lg) * -1) calc(var(--spacing-lg) * -1) 0;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-bottom: 1px solid var(--sdk-color-warning-light-5);
+    background: var(--sdk-color-warning-light-9);
+  }
+  .agent-detail-savebar-copy {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--spacing-xs);
+    min-width: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-sm);
+  }
+  .agent-detail-savebar-items {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+  }
+  .agent-detail-savebar-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  .agent-detail-screen-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+  }
+  .agent-detail-screen-titlebox h2 {
+    margin: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    line-height: 1.35;
+  }
+  .agent-detail-screen-titlebox p {
+    margin: 4px 0 0;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+  }
+  .agent-detail-form-card {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .agent-detail-form .sdk-owner-form-tablist,
+  .agent-detail-form [data-field-reset] {
+    display: none !important;
+  }
+  .agent-detail-form .sdk-owner-form-tabpanel {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .agent-detail-avatar-control {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    width: 100%;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--sdk-border-color-light);
+    border-radius: var(--radius-md);
+    background: var(--sdk-fill-color-extra-light);
+  }
+  .agent-detail-avatar-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+  .agent-detail-avatar-sublabel {
+    flex: 0 0 44px;
+    padding-top: 9px;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+  }
+  .agent-detail-prompt-editor .cm-editor {
+    height: auto !important;
+    max-height: 420px;
+  }
+  .agent-detail-scope-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    width: 100%;
+    min-width: 0;
+  }
+  /* The graph mode is the graph alone; by-name selection lives in the segmented ObjectList mode. */
+  .agent-detail-scope-field .sdk-object-graph-list {
+    display: none !important;
+  }
+  .agent-detail-enabled-field,
+  .agent-detail-execution-field {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+    width: 100%;
+    min-width: 0;
+  }
+  .agent-detail-field-error {
+    margin: 0;
+    color: var(--sdk-color-danger-text);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+  }
+  .agent-detail-class-picker {
+    min-height: 240px;
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid var(--sdk-border-color-light);
+    border-radius: var(--radius-md);
+  }
+  .agent-detail-selected-classes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  .agent-detail-class-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 4px 6px 4px 9px;
+    border: 1px solid var(--sdk-border-color-light);
+    border-radius: var(--radius-sm);
+    background: var(--sdk-fill-color-extra-light);
+    color: var(--sdk-text-color-regular);
+    font-size: var(--text-xs);
+  }
+  .agent-detail-class-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    cursor: pointer;
+  }
+  .agent-detail-class-remove:hover:not(:disabled) {
+    background: var(--sdk-fill-color);
+    color: var(--sdk-text-color-primary);
+  }
+  .agent-detail-class-remove:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  .agent-detail-dropdown-danger {
+    color: var(--sdk-color-danger);
+  }
+  .agent-detail-operation-sources {
+    display: none !important;
+  }
+  @container agent-detail-page (max-width: 720px) {
+    .agent-detail-workspace {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .agent-detail-nav {
+      flex-direction: row;
+      border-right: 0;
+      border-bottom: 1px solid var(--sdk-border-color-light);
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+    .agent-detail-nav-item {
+      flex: 0 0 auto;
+      width: auto;
+      white-space: nowrap;
+    }
+    .agent-detail-screen {
+      padding: var(--spacing-md);
+    }
+    .agent-detail-savebar {
+      top: 0;
+      margin: calc(var(--spacing-md) * -1) calc(var(--spacing-md) * -1) 0;
+      padding-inline: var(--spacing-md);
+    }
+  }
+
   @container agent-detail-page (max-width: 640px) {
     .agent-detail-body {
       padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
@@ -367,7 +630,7 @@
 </style>
 <div id="app" v-cloak>
   <section class="agent-detail-page">
-    <page-header :back-label="t('detail.back')" :draft="detailDraft" @back="goBack">
+    <page-header :back-label="t('detail.back')" @back="goBack">
       <template #title>
         <projection
           v-if="selectedKey"
@@ -432,131 +695,210 @@
         <h1 v-else class="agent-detail-title">{{ t("panel.name") }}</h1>
       </template>
       <template #actions>
-        <!-- Keep remove mounted with v-show so PageHeader slots stay active and @done still fires after delete. -->
-        <div v-show="detailReady">
-          <projection slot="remove" @done="onRemoveDone"></projection>
-        </div>
+        <sdk-button v-if="detailReady" type="primary" @click="openChat">{{ t("action.chatWithAgent") }}</sdk-button>
+        <sdk-dropdown v-if="canRunDelete" trigger="click" placement="bottom-end" @command="onMoreCommand">
+          <sdk-button :aria-label="t('action.more')">···</sdk-button>
+          <template #dropdown>
+            <sdk-dropdown-menu>
+              <sdk-dropdown-item command="delete" class="agent-detail-dropdown-danger">
+                {{ t("action.delete") }}
+              </sdk-dropdown-item>
+            </sdk-dropdown-menu>
+          </template>
+        </sdk-dropdown>
       </template>
     </page-header>
 
     <div v-if="detailReady" class="agent-detail-body">
-      <sdk-tabs v-if="canGrant" v-model="tabModel" class="agent-detail-tabs">
-        <sdk-tab-pane name="config" :label="t('tab.config')"></sdk-tab-pane>
-        <sdk-tab-pane name="grants" :label="t('tab.grants')"></sdk-tab-pane>
-      </sdk-tabs>
+      <info-banner
+        v-if="!canEdit"
+        tone="info"
+        :text="t('detail.readonly')"
+      ></info-banner>
+      <info-banner
+        v-else-if="agentCategory === 'system'"
+        tone="info"
+        :text="t('detail.systemNotice')"
+      ></info-banner>
 
-      <div v-if="configTabMounted" v-show="tabModel === 'config' || !canGrant" class="agent-detail-tab-panel" data-tab="config">
-        <info-banner
-          v-if="!canEdit"
-          tone="info"
-          :text="t('detail.readonly')"
-        ></info-banner>
-        <info-banner
-          v-else-if="agentCategory === 'system'"
-          tone="info"
-          :text="t('detail.systemNotice')"
-        ></info-banner>
-        <section class="agent-detail-card">
-          <div class="agent-detail-form">
-            <projection slot="form" @saved="onSaved">
+      <div class="agent-detail-workspace">
+        <nav class="agent-detail-nav" :aria-label="t('nav.sections')">
+          <button
+            v-for="section in sections"
+            :key="section.key"
+            type="button"
+            class="agent-detail-nav-item"
+            :class="{ active: activeSection === section.key }"
+            :aria-current="activeSection === section.key ? 'page' : undefined"
+            @click="activeSection = section.key"
+          >
+            <span>{{ section.label }}</span>
+            <span v-if="dirtySectionKeys.includes(section.key)" class="agent-detail-nav-dot" aria-hidden="true"></span>
+          </button>
+        </nav>
+
+        <section class="agent-detail-screen">
+          <div v-if="detailDraft && detailDraft.dirty" class="agent-detail-savebar" role="status">
+            <div class="agent-detail-savebar-copy">
+              <strong>{{ t("savebar.unsaved", { count: dirtyItemCount }) }}</strong>
+              <span v-if="dirtyItemLabels.length" class="agent-detail-savebar-items">{{ dirtyItemLabels.join(", ") }}</span>
+            </div>
+            <div class="agent-detail-savebar-actions">
+              <sdk-button size="small" :disabled="detailDraft.saving" @click="discardDraft">{{ t("savebar.discard") }}</sdk-button>
+              <sdk-button size="small" type="primary" :loading="detailDraft.saving" :disabled="detailDraft.canSave === false" @click="saveDraft">
+                {{ t("savebar.save") }}
+              </sdk-button>
+            </div>
+          </div>
+
+          <header class="agent-detail-screen-head">
+            <div class="agent-detail-screen-titlebox">
+              <h2>{{ activeSectionLabel }}</h2>
+              <p v-if="activeSectionHint">{{ activeSectionHint }}</p>
+            </div>
+            <sdk-button
+              v-if="agentCategory === 'preset' && canEdit"
+              size="small"
+              :disabled="!activeSectionHasDefaults"
+              @click="resetActiveSectionDefaults"
+            >
+              {{ t("action.resetDefaults") }}
+            </sdk-button>
+          </header>
+
+          <template v-if="activeSection === 'sharing'">
+            <info-banner
+              v-if="agentCategory === 'system'"
+              tone="info"
+              :text="t('grants.systemNote')"
+            ></info-banner>
+            <template v-if="canGrant">
+            <section class="agent-detail-share-bar">
+              <div class="agent-detail-share-left">
+                <strong class="agent-detail-section-title">{{ t("grants.audienceTitle") }}</strong>
+                <span class="agent-detail-muted"><projection slot="shareStatusDesc"></projection></span>
+              </div>
+              <sdk-segmented
+                v-model="domainShareModel"
+                :options="domainShareOptions"
+                :disabled="shareControlDisabled"
+                :aria-label="t('grants.audienceTitle')"
+              ></sdk-segmented>
+            </section>
+            <section class="agent-detail-share-bar">
+              <div class="agent-detail-share-left">
+                <strong class="agent-detail-section-title">{{ t("grants.listTitle") }}</strong>
+                <span class="agent-detail-muted">{{ t("grants.intro") }}</span>
+              </div>
+              <div class="agent-detail-share-actions">
+                <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t("grants.submit") }}</sdk-button>
+              </div>
+            </section>
+            <projection slot="grantsList"></projection>
+            </template>
+          </template>
+
+          <section class="agent-detail-card agent-detail-form-card">
+            <div class="agent-detail-form">
+            <projection slot="form" :values="{ activeGroup: activeSection }" @update:active-group="activeSection = $event" @saved="onSaved">
               <template #field-icon="{ field, value, error, changed, disabled, set }">
-                <div class="agent-detail-avatar-fields" data-field="/icon">
-                  <sdk-form-item
-                    :label="field.label"
-                    :error="error"
-                    :class="{ 'sdk-form-field-changed': changed }"
-                  >
-                    <div class="agent-detail-avatar-choices" role="group" :aria-label="field.label">
-                      <button
-                        v-for="iconKey in avatarIconKeys"
-                        :key="iconKey"
-                        type="button"
-                        class="agent-detail-avatar-icon"
-                        :class="{ active: avatarKeyOf(value) === iconKey }"
-                        :title="iconKey"
-                        :aria-label="iconKey"
-                        :aria-pressed="avatarKeyOf(value) === iconKey"
-                        :disabled="disabled"
-                        @click="selectAvatarKey(value, iconKey, set)"
-                      >
-                        <component :is="avatarAppIconByKey(iconKey)" v-if="avatarAppIconByKey(iconKey)" :size="18" aria-hidden="true" />
-                        <svg
-                          v-else-if="avatarSvgKeyByKey(iconKey) === 'TrendingUp'"
-                          viewBox="0 0 24 24"
-                          width="18"
-                          height="18"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          aria-hidden="true"
+                <sdk-form-item
+                  :label="field.label"
+                  :error="error"
+                  :class="{ 'sdk-form-field-changed': changed }"
+                  data-field="/icon"
+                >
+                  <div class="agent-detail-avatar-control">
+                    <div class="agent-detail-avatar-row">
+                      <span class="agent-detail-avatar-sublabel">{{ t("form.avatarIcon") }}</span>
+                      <div class="agent-detail-avatar-choices" role="group" :aria-label="t('form.avatarIcon')">
+                        <button
+                          v-for="iconKey in avatarIconKeys"
+                          :key="iconKey"
+                          type="button"
+                          class="agent-detail-avatar-icon"
+                          :class="{ active: avatarKeyOf(value) === iconKey }"
+                          :title="iconKey"
+                          :aria-label="iconKey"
+                          :aria-pressed="avatarKeyOf(value) === iconKey"
+                          :disabled="disabled"
+                          @click="selectAvatarKey(value, iconKey, set)"
                         >
-                          <path d="M16 7h6v6" />
-                          <path d="m22 7-8.5 8.5-5-5L2 17" />
-                        </svg>
-                        <svg
-                          v-else-if="avatarSvgKeyByKey(iconKey) === 'Target'"
-                          viewBox="0 0 24 24"
-                          width="18"
-                          height="18"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          aria-hidden="true"
-                        >
-                          <circle cx="12" cy="12" r="10" />
-                          <circle cx="12" cy="12" r="6" />
-                          <circle cx="12" cy="12" r="2" />
-                        </svg>
-                        <svg
-                          v-else
-                          viewBox="0 0 24 24"
-                          width="18"
-                          height="18"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          aria-hidden="true"
-                        >
-                          <path d="M12 18V5" />
-                          <path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" />
-                          <path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" />
-                          <path d="M17.997 5.125a4 4 0 0 1 2.526 5.77" />
-                          <path d="M18 18a4 4 0 0 0 2-7.464" />
-                          <path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" />
-                          <path d="M6 18a4 4 0 0 1-2-7.464" />
-                          <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
-                        </svg>
-                      </button>
+                          <component :is="avatarAppIconByKey(iconKey)" v-if="avatarAppIconByKey(iconKey)" :size="18" aria-hidden="true" />
+                          <svg
+                            v-else
+                            viewBox="0 0 24 24"
+                            width="18"
+                            height="18"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                          >
+                            <g v-if="iconKey === 'TrendingUp'">
+                              <path d="M16 7h6v6" />
+                              <path d="m22 7-8.5 8.5-5-5L2 17" />
+                            </g>
+                            <g v-else-if="iconKey === 'Target'">
+                              <circle cx="12" cy="12" r="10" />
+                              <circle cx="12" cy="12" r="6" />
+                              <circle cx="12" cy="12" r="2" />
+                            </g>
+                            <g v-else>
+                              <path d="M12 18V5" />
+                              <path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" />
+                              <path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" />
+                              <path d="M17.997 5.125a4 4 0 0 1 2.526 5.77" />
+                              <path d="M18 18a4 4 0 0 0 2-7.464" />
+                              <path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" />
+                              <path d="M6 18a4 4 0 0 1-2-7.464" />
+                              <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
+                            </g>
+                          </svg>
+                        </button>
+                      </div>
                     </div>
-                  </sdk-form-item>
-                  <sdk-form-item
-                    :label="t('form.avatarColor')"
-                    :class="{ 'sdk-form-field-changed': changed }"
-                  >
-                    <div class="agent-detail-avatar-choices" role="group" :aria-label="t('form.avatarColor')">
-                      <button
-                        v-for="(swatch, index) in avatarSwatches"
-                        :key="index"
-                        type="button"
-                        class="agent-detail-avatar-color"
-                        :class="{ active: avatarSwatchIndexOf(value) === index }"
-                        :style="{ background: swatch }"
-                        :aria-label="t('form.avatarColorOption', { index: index + 1 })"
-                        :aria-pressed="avatarSwatchIndexOf(value) === index"
-                        :disabled="disabled"
-                        @click="selectAvatarColor(value, index, set)"
-                      ></button>
+                    <div class="agent-detail-avatar-row">
+                      <span class="agent-detail-avatar-sublabel">{{ t("form.avatarColor") }}</span>
+                      <div class="agent-detail-avatar-choices" role="group" :aria-label="t('form.avatarColor')">
+                        <button
+                          v-for="(swatch, index) in avatarSwatches"
+                          :key="index"
+                          type="button"
+                          class="agent-detail-avatar-color"
+                          :class="{ active: avatarSwatchIndexOf(value) === index }"
+                          :style="{ background: swatch }"
+                          :aria-label="t('form.avatarColorOption', { index: index + 1 })"
+                          :aria-pressed="avatarSwatchIndexOf(value) === index"
+                          :disabled="disabled"
+                          @click="selectAvatarColor(value, index, set)"
+                        ></button>
+                      </div>
                     </div>
-                  </sdk-form-item>
-                </div>
+                  </div>
+                </sdk-form-item>
               </template>
-              <template #field-modelSelection.modelId><projection slot="model"></projection></template>
+              <template #field-enabled="{ field, value, error, changed, disabled, set }">
+                <sdk-form-item
+                  :label="field.label"
+                  :error="error"
+                  :class="{ 'sdk-form-field-changed': changed }"
+                  data-field="/enabled"
+                >
+                  <div class="agent-detail-enabled-field">
+                    <sdk-segmented
+                      :model-value="value === true ? 'enabled' : 'disabled'"
+                      :options="enabledStatusOptions"
+                      :disabled="disabled"
+                      @update:model-value="set($event === 'enabled')"
+                    ></sdk-segmented>
+                    <p v-if="field.help" class="agent-detail-muted">{{ field.help }}</p>
+                  </div>
+                </sdk-form-item>
+              </template>
+              <template #field-modelSelection.modelId><projection :key="modelPickerKey" slot="model"></projection></template>
               <template #field-systemPrompt="{ field, value, error, changed, disabled, set }">
                 <sdk-form-item
                   :error="error"
@@ -578,7 +920,7 @@
                       class="agent-detail-prompt-editor"
                       :model-value="typeof value === 'string' ? value : ''"
                       language="markdown"
-                      :min-height="560"
+                      :min-height="168"
                       :readonly="disabled"
                       @update:model-value="set($event)"
                     ></code-editor>
@@ -668,41 +1010,57 @@
                 </sdk-form-item>
               </template>
               <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
-              <template #field-executionUserId><projection slot="executor"></projection></template>
-              <template #field-classNames><projection slot="scope"></projection></template>
+              <template #field-executionUserId>
+                <div class="agent-detail-execution-field">
+                  <projection slot="executor"></projection>
+                  <p class="agent-detail-muted">{{ t("execution.automationHint") }}</p>
+                </div>
+              </template>
+              <template #field-classNames="{ field, value, error, changed, disabled, set }">
+                <div class="agent-detail-scope-field" :class="{ 'agent-detail-scope-field-changed': changed }">
+                  <sdk-segmented
+                    v-model="classScopeMode"
+                    :options="classScopeModeOptions"
+                    :disabled="disabled"
+                    :aria-label="t('scope.modeLabel')"
+                  ></sdk-segmented>
+                  <projection v-if="classScopeMode === 'graph'" slot="scope"></projection>
+                  <template v-else>
+                    <div class="agent-detail-class-picker" :inert="disabled">
+                      <projection slot="classPicker"></projection>
+                    </div>
+                    <p v-if="field.help" class="agent-detail-muted">{{ field.help }}</p>
+                    <p v-if="error" class="agent-detail-field-error" role="alert">{{ error }}</p>
+                  </template>
+                  <div v-if="selectedClassNames(value).length" class="agent-detail-selected-classes">
+                    <span
+                      v-for="name in selectedClassNames(value)"
+                      :key="name"
+                      class="agent-detail-class-chip"
+                    >
+                      <span>{{ name }}</span>
+                      <button
+                        type="button"
+                        class="agent-detail-class-remove"
+                        :aria-label="t('scope.removeClass', { name })"
+                        :disabled="disabled"
+                        @click="removeClassName(value, name, set)"
+                      >×</button>
+                    </span>
+                    <sdk-button size="small" text :disabled="disabled" @click="clearClassNames(set)">
+                      {{ t("scope.clearClasses") }}
+                    </sdk-button>
+                  </div>
+                  <p class="agent-detail-muted">{{ t("scope.permissionHint") }}</p>
+                </div>
+              </template>
             </projection>
-          </div>
+            </div>
+          </section>
         </section>
       </div>
-
-      <div v-if="canGrant && tabModel === 'grants'" class="agent-detail-tab-panel" data-tab="grants">
-        <info-banner
-          v-if="agentCategory === 'system'"
-          tone="info"
-          :text="t('grants.systemNote')"
-        ></info-banner>
-        <div class="agent-detail-share-bar">
-          <div class="agent-detail-share-left">
-            <strong class="agent-detail-section-title">{{ t("grants.shareTitle") }}</strong>
-            <span class="agent-detail-muted"><projection slot="shareStatusDesc"></projection></span>
-          </div>
-          <div class="agent-detail-share-actions">
-            <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
-            <projection v-else slot="shareEnable" @done="onShareDone"></projection>
-          </div>
-        </div>
-        <div class="agent-detail-share-bar">
-          <div class="agent-detail-share-left">
-            <strong class="agent-detail-section-title">{{ t("grants.title") }}</strong>
-            <span class="agent-detail-muted">{{ t("grants.intro") }}</span>
-          </div>
-          <div class="agent-detail-share-actions">
-            <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t("grants.submit") }}</sdk-button>
-          </div>
-        </div>
-        <projection slot="grantsList"></projection>
-      </div>
     </div>
+
     <div v-else-if="!selectedKey" class="agent-detail-state">
       <sdk-empty :description="t('detail.missing')"></sdk-empty>
       <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
@@ -724,6 +1082,13 @@
     <div v-else class="agent-detail-state">
       <sdk-empty :description="t('detail.missing')"></sdk-empty>
       <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+    </div>
+
+    <!-- Keep the owner operation projections registered while the custom menu and segmented control own their presentation. -->
+    <div v-if="detailReady" class="agent-detail-operation-sources" aria-hidden="true">
+      <projection slot="remove" @done="onRemoveDone"></projection>
+      <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
+      <projection v-else slot="shareEnable" @done="onShareDone"></projection>
     </div>
 
     <!-- Single-select 3-level add-to-policy dialog backed by ReferencePicker & bound OperationButton -->

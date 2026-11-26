@@ -4,6 +4,7 @@ import {
   mountPanel,
   usePanelContext,
   usePanelFormDraft,
+  usePanelOperation,
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
@@ -54,6 +55,16 @@ const AVATAR_APP_ICON_KEYS = {
 
 const DEFAULT_AVATAR = { key: "Brain", color: LIGHT_AVATAR_COLORS[0] };
 
+const SECTION_KEYS = ["basics", "model", "prompt", "capabilities", "data", "sharing"];
+const OWNER_SECTION_BY_KEY = {
+  basics: "basics",
+  model: "model",
+  prompt: "prompt",
+  capabilities: "capabilities",
+  data: "data",
+  sharing: "execution",
+};
+
 const GRANT_VERBS = new Set(["use", "view", "edit"]);
 const GRANT_DIALOG_RESET = {
   grantDialog: null,
@@ -90,19 +101,19 @@ function runtimeSkillKey(skill) {
 }
 
 /*
- * Agent detail panel: full-width edit-on-open view for a single platform:AgentDefinition.
+ * Agent detail panel: full-width edit-on-open view for one platform:AgentDefinition.
  * - Opens via ?selected=<id> from either /ontology/agents/detail or /agents/settings/detail.
- * - Keeps the page header avatar and title synced with the live form draft, surfaces per-field
- *   unsaved changes directly beneath the header, provides a 560px Markdown editor with preview
- *   toggle for the system prompt, and displays public skills as a scannable card grid backed
- *   by the owner's options/resolve reads.
- * - Readers with `view` only see a read-only banner and form, with Save/Delete/Grants hidden.
- * - Editors (`canGrant`) can switch to the Permissions & sharing tab to toggle domain-wide use
- *   and grant or revoke single-select 3-level (use / view / edit) policy access.
+ * - Shows the owner's form as six left-navigated screens, keeps the header avatar and title synced
+ *   with the live draft, and owns Save/Discard in the sticky save bar beneath the header.
+ * - The prompt editor grows with its content up to 420px and its preview replaces it in place;
+ *   skills keep the existing card wall in this batch, backed by the owner's options/resolve reads.
+ * - Readers with `view` only see read-only fields. Editors with grant access manage audience,
+ *   policy access, and the unattended execution identity on the sharing screen.
  */
 await mountPanel({
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const panel = usePanelContext();
+    const { instance, navigate, notify, t } = panel;
     const state = instance.state;
     const values = state.values;
 
@@ -114,10 +125,25 @@ await mountPanel({
     const selected = computed(() => values.value.selected ?? null);
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
 
-    const tabModel = computed({
-      get: () => (values.value.tab === "grants" ? "grants" : "config"),
-      set: (next) => state.set("tab", next === "grants" ? "grants" : "config"),
+    const activeSection = computed({
+      get: () => {
+        const raw = values.value.tab;
+        if (SECTION_KEYS.includes(raw)) return raw;
+        if (raw === "grants") return "sharing";
+        return "basics";
+      },
+      set: (next) => state.set("tab", SECTION_KEYS.includes(next) ? next : "basics"),
     });
+    const sections = computed(() => SECTION_KEYS.map((key) => ({
+      key,
+      label: t(`section.${key}`),
+    })));
+    const activeSectionLabel = computed(() => t(`section.${activeSection.value}`));
+    const activeSectionHint = computed(() => t(`sectionHint.${activeSection.value}`));
+    const enabledStatusOptions = computed(() => [
+      { value: "enabled", label: t("form.statusEnabled") },
+      { value: "disabled", label: t("form.statusDisabled") },
+    ]);
 
     const isDark = ref(
       typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
@@ -161,8 +187,50 @@ await mountPanel({
     });
 
     const detailDraft = usePanelFormDraft("form", {
-      when: () => detailReady.value && canEdit.value && tabModel.value === "config",
+      when: () => detailReady.value && canEdit.value,
     });
+
+    const formHandle = computed(() => instance.forms.handle("form") ?? null);
+    const dirtyItems = computed(() => {
+      const handle = formHandle.value;
+      if (!handle) return [];
+      return [...handle.dirtyFields.value].map((path) => {
+        const field = handle.fields.value.find((item) => item.path === path || path.startsWith(`${item.path}/`));
+        const ownerSection = field?.section;
+        const section = Object.entries(OWNER_SECTION_BY_KEY).find(([, owner]) => owner === ownerSection)?.[0] ?? "basics";
+        return { path, section, label: field?.label ?? path.replace(/^\//, "") };
+      });
+    });
+    const dirtyItemCount = computed(() => dirtyItems.value.length || (detailDraft.value?.dirty ? 1 : 0));
+    const dirtyItemLabels = computed(() => dirtyItems.value.map((item) => item.label));
+    const dirtySectionKeys = computed(() => [...new Set(dirtyItems.value.map((item) => item.section))]);
+
+    function saveDraft() {
+      detailDraft.value?.save?.();
+    }
+
+    function discardDraft() {
+      detailDraft.value?.discard?.();
+    }
+
+    const activeSectionFields = computed(() => {
+      const handle = formHandle.value;
+      if (!handle) return [];
+      const ownerSection = OWNER_SECTION_BY_KEY[activeSection.value];
+      return handle.fields.value.filter((field) => field.section === ownerSection);
+    });
+    const activeSectionHasDefaults = computed(() =>
+      activeSectionFields.value.some((field) => field.defaultValue !== undefined && !field.readOnly),
+    );
+
+    function resetActiveSectionDefaults() {
+      const handle = formHandle.value;
+      if (!handle) return;
+      for (const field of activeSectionFields.value) {
+        if (field.defaultValue === undefined || field.readOnly) continue;
+        handle.set(field.path, JSON.parse(JSON.stringify(field.defaultValue)));
+      }
+    }
 
     const hasMemberContext = typeof instance.memberContext === "function";
     const headerRecordRef = shallowRef(null);
@@ -213,10 +281,23 @@ await mountPanel({
       return draftName || undefined;
     });
 
+    const modelPickerKey = computed(() => {
+      const engine = liveDraftValues.value?.engine;
+      return `${selectedKey.value}:${typeof engine === "string" ? engine : ""}`;
+    });
+
+    // Data scope mode and its ObjectList synchronization. The form remains the only owner of `/classNames`.
+    const classScopeMode = ref("graph");
+    const classScopeModeOptions = computed(() => [
+      { value: "graph", label: t("scope.modeGraph") },
+      { value: "list", label: t("scope.modeList") },
+    ]);
+
     // Prompt preview toggle (resets when switching agents).
     const promptPreview = ref(false);
     watch(selectedKey, () => {
       promptPreview.value = false;
+      classScopeMode.value = "graph";
     });
 
     // Avatar & color helpers for both the live header avatar and the split-labeled /icon field.
@@ -254,6 +335,60 @@ await mountPanel({
       const current = parseAgentAvatar(currentIcon);
       set(storedAgentAvatar(current.key, swatchIndex));
     }
+
+    function selectedClassNames(value) {
+      return Array.isArray(value) ? value.filter((name) => typeof name === "string") : [];
+    }
+
+    function removeClassName(value, name, set) {
+      set(selectedClassNames(value).filter((item) => item !== name));
+    }
+
+    function clearClassNames(set) {
+      set([]);
+    }
+
+    function classRefsFromNames(names) {
+      return names.map((name) => ({ className: "platform:ObjectType", primaryKey: name }));
+    }
+
+    function classNamesOfRefs(refs) {
+      return Array.isArray(refs)
+        ? refs.flatMap((ref) => (ref && typeof ref.primaryKey === "string" ? [ref.primaryKey] : []))
+        : [];
+    }
+
+    function sameStringList(left, right) {
+      return left.length === right.length && left.every((item, index) => item === right[index]);
+    }
+
+    watch(
+      () => JSON.stringify(selectedClassNames(liveDraftValues.value?.classNames)),
+      () => {
+        const names = selectedClassNames(liveDraftValues.value?.classNames);
+        if (!sameStringList(names, classNamesOfRefs(values.value.classChecked))) {
+          state.set("classChecked", classRefsFromNames(names));
+        }
+      },
+      { immediate: true },
+    );
+
+    watch(
+      () => values.value.classChecked,
+      (refs) => {
+        const handle = instance.forms.handle("form");
+        if (!handle) return;
+        const names = classNamesOfRefs(refs);
+        const current = selectedClassNames(handle.values.value.classNames);
+        if (sameStringList(names, current)) return;
+        const classField = handle.fields.value.find((field) => field.path === "/classNames");
+        if (!canEdit.value || classField?.readOnly) {
+          state.set("classChecked", classRefsFromNames(current));
+          return;
+        }
+        handle.set("/classNames", names);
+      },
+    );
 
     // Skills card grid backed by the owner's `options` and `resolve` reads (`skills/panel-reads.ts`).
     const heldSkillRefs = computed(() => {
@@ -418,14 +553,11 @@ await mountPanel({
       { flush: "sync" },
     );
 
-    // Fall back to config tab and close any grant dialog if the reader cannot manage grants on this agent.
+    // Close any grant dialog if the reader cannot manage grants on this agent.
     watch(
       [detailReady, canGrant],
       ([ready, allowed]) => {
         if (!ready || allowed) return;
-        if (tabModel.value === "grants") {
-          tabModel.value = "config";
-        }
         if (values.value.grantDialog === true) {
           state.setState(GRANT_DIALOG_RESET);
         }
@@ -433,25 +565,84 @@ await mountPanel({
       { immediate: true },
     );
 
-    // Mount the heavy config form tab lazily on first visit for the current agent so deep links to
-    // `?tab=grants` skip config form/picker reads, while keeping unsaved edits across config <-> grants switches.
-    const configTabMounted = ref(false);
-    watch(
-      selectedKey,
-      (next, prev) => {
-        if (next !== prev) configTabMounted.value = false;
+    function settledOutcome(receipt) {
+      if (!receipt || receipt.decision !== "confirm") return null;
+      return receipt.response?.kind === "dispatched" ? receipt.response.outcome ?? null : null;
+    }
+
+    const removeOp = usePanelOperation("remove", "delete", {
+      entry: false,
+      available: () => detailReady.value,
+      onSettled: async (receipt) => {
+        const outcome = settledOutcome(receipt);
+        if (outcome) await onRemoveDone(outcome);
       },
-      { flush: "sync" },
+    });
+    const deleteDescriptor = computed(() =>
+      removeOp.state.value.status === "ready" ? removeOp.state.value.value?.delete ?? null : null,
     );
-    watch(
-      [detailReady, tabModel, canGrant],
-      ([ready, tab, allowed]) => {
-        if (ready && (tab === "config" || !allowed)) {
-          configTabMounted.value = true;
+    const canRunDelete = computed(() =>
+      detailReady.value && Boolean(deleteDescriptor.value) && !deleteDescriptor.value.unavailable,
+    );
+
+    function onMoreCommand(command) {
+      if (command === "delete") void removeOp.run().catch(() => undefined);
+    }
+
+    async function openChat() {
+      if (!selectedKey.value) return;
+      if (detailDraft.value?.dirty) {
+        let allowed = true;
+        if (panel.confirmLeaveUnsaved) {
+          allowed = await panel.confirmLeaveUnsaved();
+          if (allowed) instance.forms.discard("form");
+        } else {
+          allowed = await instance.forms.reset("form", { confirm: true });
         }
-      },
-      { immediate: true, flush: "sync" },
+        if (!allowed) return;
+      }
+      await navigate(`/agents/chat?agentId=${encodeURIComponent(selectedKey.value)}`).catch(() => undefined);
+    }
+
+    function notifyShareSettled(receipt) {
+      const outcome = settledOutcome(receipt);
+      if (outcome?.kind !== "success") return;
+      notify({ kind: "success", text: t("grants.updated") });
+      instance.refreshObjects();
+    }
+
+    const shareEnableOp = usePanelOperation("shareEnable", "share", {
+      entry: false,
+      available: () => detailReady.value && canGrant.value && !domainShared.value,
+      onSettled: notifyShareSettled,
+    });
+    const shareDisableOp = usePanelOperation("shareDisable", "share", {
+      entry: false,
+      available: () => detailReady.value && canGrant.value && domainShared.value,
+      onSettled: notifyShareSettled,
+    });
+    const activeShareDescriptor = computed(() => {
+      const current = domainShared.value ? shareDisableOp : shareEnableOp;
+      return current.state.value.status === "ready" ? current.state.value.value?.share ?? null : null;
+    });
+    const shareControlDisabled = computed(() =>
+      !canGrant.value
+      || !activeShareDescriptor.value
+      || Boolean(activeShareDescriptor.value.unavailable)
+      || shareEnableOp.running.value
+      || shareDisableOp.running.value,
     );
+    const domainShareOptions = computed(() => [
+      { value: "explicit", label: t("grants.audienceExplicit") },
+      { value: "domain", label: t("grants.audienceDomain") },
+    ]);
+    const domainShareModel = computed({
+      get: () => (domainShared.value ? "domain" : "explicit"),
+      set: (next) => {
+        const target = next === "domain" ? shareEnableOp : shareDisableOp;
+        void target.run().catch(() => undefined);
+      },
+    });
 
     // Route back to the sibling catalog entry so the platform's unified unsaved-changes leave guard runs.
     function goBack() {
@@ -465,6 +656,12 @@ await mountPanel({
     function onSaved() {
       instance.refreshObjects();
       notify({ kind: "success", text: t("detail.saved") });
+    }
+
+    function onShareDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      notify({ kind: "success", text: t("grants.updated") });
+      instance.refreshObjects();
     }
 
     async function onRemoveDone(outcome) {
@@ -490,17 +687,9 @@ await mountPanel({
       instance.refreshObjects();
     }
 
-    function onShareDone(outcome) {
-      if (outcome?.kind !== "success") return;
-      notify({ kind: "success", text: t("grants.updated") });
-      instance.refreshObjects();
-    }
-
     return {
       t,
       selectedKey,
-      tabModel,
-      configTabMounted,
       agentCategory,
       canEdit,
       canGrant,
@@ -509,9 +698,27 @@ await mountPanel({
       detailReady,
       recordErrorText,
       detailDraft,
+      sections,
+      activeSection,
+      activeSectionLabel,
+      activeSectionHint,
+      enabledStatusOptions,
+      dirtyItemCount,
+      dirtyItemLabels,
+      dirtySectionKeys,
+      saveDraft,
+      discardDraft,
+      activeSectionHasDefaults,
+      resetActiveSectionDefaults,
       liveIcon,
       liveTitle,
+      modelPickerKey,
       promptPreview,
+      classScopeMode,
+      classScopeModeOptions,
+      selectedClassNames,
+      removeClassName,
+      clearClassNames,
       avatarIconKeys: AVATAR_ICON_KEYS,
       avatarSwatches,
       avatarStyle,
@@ -535,13 +742,19 @@ await mountPanel({
       grantVerbOptions,
       grantVerbDescription,
       canSubmitGrant,
+      canRunDelete,
+      domainShareModel,
+      domainShareOptions,
+      shareControlDisabled,
       goBack,
+      openChat,
+      onMoreCommand,
       retry,
       onSaved,
+      onShareDone,
       onRemoveDone,
       openGrantDialog,
       onGrantAdded,
-      onShareDone,
     };
   },
 });
