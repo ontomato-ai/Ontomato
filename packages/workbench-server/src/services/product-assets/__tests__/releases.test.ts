@@ -1,7 +1,6 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({query:vi.fn(),get:vi.fn(),describe:vi.fn(),post:vi.fn(),put:vi.fn()}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,backendPut:mocks.put,buildBackendHeaders:()=>({})}));
-vi.mock('../../assistant/execution',()=>({credentialsForDefinition:async()=>({token:'agent-execution',executionUserId:'executor'})}));
 vi.mock('../ontology',()=>({synchronizeProductOntology:async()=>{}}));
 vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(fn:(client:{query:typeof mocks.query})=>unknown)=>fn({query:mocks.query})}));
 vi.mock('../../../infrastructure/postgres',()=>({qualifiedTable:(name:string)=>name,getPostgresPool:()=>({query:mocks.query})}));

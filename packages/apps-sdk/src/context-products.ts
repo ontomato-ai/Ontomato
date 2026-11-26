@@ -17,7 +17,6 @@ export function contextProducts(transport: ManagerRequest): ContextProducts {
     graph: method(products => products.graph),
     defaultProjectionWarnings: method(products => products.defaultProjectionWarnings),
     projections: method(products => products.projections),
-    agentContext: method(products => products.agentContext),
     sourceTypes: method(products => products.sourceTypes),
     object: method(products => products.object),
     grants: method(products => products.grants),

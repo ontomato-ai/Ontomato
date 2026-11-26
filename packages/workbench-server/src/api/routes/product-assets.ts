@@ -79,7 +79,7 @@ router.get('/:id/releases',wrap(async(req,res)=>{res.json(await listProductBundl
 router.get('/:id/upgrade',wrap(async(req,res)=>{
   const c=context(req),id=String(req.params.id),bundle=await getProduct(c.owner,id);
   if(!bundle.editable)throw new HttpError(403,'Bundle edit permission required','PRODUCT_FORBIDDEN');
-   if(!(bundle.document.kind==='application'))throw new HttpError(400,'Choose an application bundle','INVALID_PRODUCT_TYPE');
+   if(bundle.document.kind!=='application')throw new HttpError(400,'Choose an application bundle','INVALID_PRODUCT_TYPE');
    const source=bundle.document.kind==='application'&&bundle.document.workspaceId;
    const {snapshot,releaseId}=source?await publishedApplicationRelease(c.owner,c.credentials,id):await readActiveProductBundle(c.owner,id);
    const next=await captureProductRelease(c.owner,source&&'children' in bundle.document?bundle.document.children.map(child=>child.assetId):[id],c.credentials,snapshot.triggers?.map(trigger=>trigger.id));

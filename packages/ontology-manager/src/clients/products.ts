@@ -17,7 +17,6 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
     graph:async()=>productGraphSchema.parse((await send('/graph')).graph),
     defaultProjectionWarnings:async()=>defaultProjectionWarningsSchema.parse(await send('/validation/default-projections')),
     projections:async(kind:'ObjectType'|'Definition'|'MetricView'|'Action',id:string)=>{const result=await send('/projections?'+new URLSearchParams({kind,id}));return {...result,assets:result.assets.map((asset:unknown)=>productAssetSchema.parse(asset))};},
-    agentContext:async(id:string)=>send(`/${encodeURIComponent(id)}/agent-context`),
     sourceTypes:async(id:string)=>send(`/${encodeURIComponent(id)}/source-types`) as Promise<{objectTypes:string[];complete:boolean}>,
     object:async(id:string,primaryKey:string,revision?:number)=>send(`/${encodeURIComponent(id)}/object`,'POST',{primaryKey,revision}) as Promise<{object:Record<string,unknown>}>,
     grants:async(id:string)=>productGrantsResponseSchema.parse(await send(`/${encodeURIComponent(id)}/grants`)),
