@@ -221,6 +221,16 @@ public class PlatformTasks {
     }).distinct().toList();
   }
 
+  private void requireNewCoauthors(User actor, List<String> coauthors, List<String> previous) {
+    var existing = Set.copyOf(previous);
+    for (String id : coauthors) {
+      if (existing.contains(id) || actor.getId().equals(id)) continue;
+      var member = identity.creator(actor.getDomainId(), id);
+      if (member == null || !member.isEnable() || !id.equals(member.getId()))
+        throw bad("Coauthor must be an active member of this domain: " + id);
+    }
+  }
+
   private static String executorId(JsonNode input, String creator) {
     String id = optionalText(input, "executorId");
     if (id == null) return creator;
@@ -277,14 +287,16 @@ public class PlatformTasks {
     String reviewer = enabled ? review(user, executor, user.getId(), coauthors) : null;
     var previous = store.get(id, false);
     if (previous != null) return replay(previous, user, definition, executor, coauthors, enabled);
+    requireNewCoauthors(user, coauthors, List.of());
     var prepared = prepare(definition, user, executor, locale, enabled);
     return transactions.execute(tx -> {
       credentials.lockOwner(user.getDomainId(), user.getId());
       var old = store.get(id, false);
       if (old != null) return replay(old, user, prepared.definition(), executor, coauthors, enabled);
       requireCapacity(definition, user.getDomainId(), user.getId());
-      if (!store.insert(id, user.getDomainId(), user.getId(), executor, coauthors, prepared.definition(), prepared.summary(),
-          locale, enabled ? Trigger.PUBLISHED : Trigger.PENDING_REVIEW, reviewer, next(prepared, enabled), enabled))
+      String notifyEmailSetBy = definition.notifyEmail() == null ? null : user.getId();
+      if (!store.insert(id, user.getDomainId(), user.getId(), executor, coauthors, prepared.definition(), notifyEmailSetBy,
+          prepared.summary(), locale, enabled ? Trigger.PUBLISHED : Trigger.PENDING_REVIEW, reviewer, next(prepared, enabled), enabled))
         throw new ScheduleException(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused");
       credentialPause(id, prepared, enabled);
       return new Created(view(store.get(id, false), user), true);
@@ -307,6 +319,7 @@ public class PlatformTasks {
     var definition = TaskDefinition.input(input, zone(), true);
     String executor = executorId(input, old.creator());
     var coauthors = coauthors(input, old.coauthors());
+    requireNewCoauthors(user, coauthors, old.coauthors());
     boolean publish = Trigger.PUBLISHED.equals(old.status());
     String reviewer = publish ? review(user, executor, old.creator(), old.coauthors()) : old.reviewer();
     var prepared = prepare(definition, user, executor, locale, publish);
@@ -317,7 +330,13 @@ public class PlatformTasks {
       requireIdle(id);
       if (!Objects.equals(task.definition().appId(), definition.appId()))
         requireCapacity(definition, task.domain(), task.creator());
-      store.update(id, executor, coauthors, prepared.definition(), prepared.summary(), locale, reviewer, publish, next(prepared, task.enabled()));
+      String notifyEmail = definition.notifyEmail();
+      String notifyEmailSetBy = task.notifyEmailSetBy();
+      if (!Objects.equals(notifyEmail, task.definition().notifyEmail())) {
+        notifyEmailSetBy = notifyEmail == null ? null : user.getId();
+      }
+      store.update(id, executor, coauthors, prepared.definition(), notifyEmailSetBy, prepared.summary(),
+          locale, reviewer, publish, next(prepared, task.enabled()));
       credentialPause(id, prepared, task.enabled());
       return view(store.get(id, false), user);
     });

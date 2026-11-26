@@ -18,6 +18,7 @@ public record Trigger(
     String status,
     int version,
     TaskDefinition definition,
+    String notifyEmailSetBy,
     JsonNode summary,
     String locale,
     boolean enabled,

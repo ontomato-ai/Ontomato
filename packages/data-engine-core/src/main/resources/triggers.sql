@@ -9,8 +9,9 @@ CREATE TABLE IF NOT EXISTS trigger_def (
  frequency jsonb NOT NULL, time_zone text NOT NULL,
  enabled boolean NOT NULL DEFAULT false, pause_code text, pause_message text, next_run_at timestamptz,
  last_fired_at timestamptz,
- notify_email text, locale text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+ notify_email text, notify_email_set_by text, locale text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
  updated_at timestamptz NOT NULL DEFAULT now(),
+ CHECK ((notify_email IS NULL) = (notify_email_set_by IS NULL)),
  CHECK (char_length(title) BETWEEN 1 AND 255),
  CHECK ((target_kind='application' AND app_id IS NOT NULL AND form_revision IS NOT NULL AND target_id IS NULL)
      OR (target_kind<>'application' AND app_id IS NULL AND form_revision IS NULL AND target_id IS NOT NULL)),

@@ -52,7 +52,7 @@ public class TaskStore {
 
   public record Snapshot(
       String domainId, String creatorId, TaskDefinition definition, JsonNode summary,
-      String locale, long taskRevision, String executorId, int version) {
+      String locale, long taskRevision, String executorId, int version, String notifyEmailSetBy) {
     JsonNode wire(boolean owner) {
       return object(
           "title", owner ? definition.title() : "Historical execution", "description", owner ? definition.description() : null,
@@ -113,7 +113,7 @@ public class TaskStore {
     List<String> coauthors = JSON.convertValue(json(row, "coauthor_ids"), new com.fasterxml.jackson.core.type.TypeReference<>() {});
     return new Trigger(row.getString("id"), row.getString("domain_id"), row.getString("creator_id"),
         row.getString("executor_id"), coauthors, row.getString("reviewed_by"), row.getString("status"), row.getInt("version"),
-        definition, json(row, "summary"), row.getString("locale"), row.getBoolean("enabled"),
+        definition, row.getString("notify_email_set_by"), json(row, "summary"), row.getString("locale"), row.getBoolean("enabled"),
         row.getString("pause_code") == null ? null : new Failure(row.getString("pause_code"), row.getString("pause_message")),
         instant(row, "next_run_at"), instant(row, "last_fired_at"), row.getLong("revision"),
         instant(row, "created_at"), instant(row, "updated_at"));
@@ -169,26 +169,26 @@ public class TaskStore {
   }
 
   public boolean insert(String id, String domain, String creator, String executor, List<String> coauthors,
-      TaskDefinition definition, JsonNode summary, String locale, String status, String reviewer, Instant next, boolean enabled) {
+      TaskDefinition definition, String notifyEmailSetBy, JsonNode summary, String locale, String status, String reviewer, Instant next, boolean enabled) {
     return db.update("""
         INSERT INTO trigger_def(id,domain_id,creator_id,executor_id,coauthor_ids,app_id,title,description,
-        target_kind,target_id,content,form_revision,summary,frequency,time_zone,notify_email,locale,status,reviewed_by,next_run_at,enabled)
-        VALUES(?,?,?,?,?::jsonb,?,?,?,?,?,?::jsonb,?,?::jsonb,?::jsonb,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING
+        target_kind,target_id,content,form_revision,summary,frequency,time_zone,notify_email,notify_email_set_by,locale,status,reviewed_by,next_run_at,enabled)
+        VALUES(?,?,?,?,?::jsonb,?,?,?,?,?,?::jsonb,?,?::jsonb,?::jsonb,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING
         """, id, domain, creator, executor, JSON.valueToTree(coauthors).toString(), definition.appId(),
         definition.title(), definition.description(), definition.targetKind(), definition.targetId(), definition.content().toString(),
         definition.formRevision(), summary.toString(), definition.frequency().toString(), definition.timeZone(), definition.notifyEmail(),
-        locale, status, reviewer, timestamp(next), enabled) == 1;
+        notifyEmailSetBy, locale, status, reviewer, timestamp(next), enabled) == 1;
   }
 
   public void update(String id, String executor, List<String> coauthors, TaskDefinition definition,
-      JsonNode summary, String locale, String reviewer, boolean publish, Instant next) {
+      String notifyEmailSetBy, JsonNode summary, String locale, String reviewer, boolean publish, Instant next) {
     db.update("""
         UPDATE trigger_def SET executor_id=?,coauthor_ids=?::jsonb,title=?,description=?,app_id=?,target_kind=?,target_id=?,
-        content=?::jsonb,form_revision=?,summary=?::jsonb,frequency=?::jsonb,time_zone=?,notify_email=?,locale=?,
+        content=?::jsonb,form_revision=?,summary=?::jsonb,frequency=?::jsonb,time_zone=?,notify_email=?,notify_email_set_by=?,locale=?,
         reviewed_by=?,version=version+?,next_run_at=?,pause_code=NULL,pause_message=NULL,revision=revision+1,updated_at=now() WHERE id=?
         """, executor, JSON.valueToTree(coauthors).toString(), definition.title(), definition.description(), definition.appId(),
         definition.targetKind(), definition.targetId(), definition.content().toString(), definition.formRevision(), summary.toString(),
-        definition.frequency().toString(), definition.timeZone(), definition.notifyEmail(), locale, reviewer, publish ? 1 : 0, timestamp(next), id);
+        definition.frequency().toString(), definition.timeZone(), definition.notifyEmail(), notifyEmailSetBy, locale, reviewer, publish ? 1 : 0, timestamp(next), id);
   }
 
   public void lifecycle(String id, String status, boolean enabled, String reviewer, boolean publish, Instant next) {
@@ -235,7 +235,7 @@ public class TaskStore {
 
   private static String snapshot(Trigger task, String executor) {
     return JSON.valueToTree(new Snapshot(task.domain(), task.creator(), task.definition(), task.summary(),
-        task.locale(), task.revision(), executor, task.version())).toString();
+        task.locale(), task.revision(), executor, task.version(), task.notifyEmailSetBy())).toString();
   }
 
   public Run admit(Trigger task, String executor, UUID id, String trigger, Instant scheduledAt) {

@@ -146,7 +146,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   void textIdOwnerAndCoauthorsShareOneDefinitionButNotPrivateResults() throws Exception {
     var def = TaskDefinition.input(actionInput(), "Asia/Shanghai", false);
     String id = "trigger-post-balances";
-    store.insert(id, "sales", "alice", "alice", List.of("bob"), def, array(), "en", "PUBLISHED", null, null, false);
+    store.insert(id, "sales", "alice", "alice", List.of("bob"), def, null, array(), "en", "PUBLISHED", null, null, false);
     var runId = UUID.randomUUID();
     var privateResult = "Alice's private result";
     transactions.executeWithoutResult(tx -> store.admit(store.get(id, true), "alice", runId, "manual", null));
@@ -215,6 +215,71 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     assertFalse(tasks.detail(id).path("nextRunAt").isNull());
     when(identity.interactiveLogin()).thenReturn(false);
     assertEquals("INTERACTIVE_LOGIN_REQUIRED", assertThrows(ScheduleException.class, () -> tasks.renewOnVisit("en")).code);
+  }
+
+  @Test
+  void freezesEmailAttributionAtAdmissionAndChangesItOnlyWithTheAddress() {
+    var key = UUID.randomUUID();
+    String id = key.toString();
+    String firstEmail = "alice@example.test";
+    var input = appInput().put("executorId", "bob").put("notifyEmail", firstEmail);
+    input.putArray("coauthorIds").add("bob");
+    var created = tasks.create(key, input, "en", false).task();
+    assertFalse(created.has("notifyEmailSetBy"));
+    assertEquals("alice", store.get(id, false).notifyEmailSetBy());
+
+    var runId = UUID.randomUUID();
+    var admission = tasks.manual(id, runId, "en");
+    assertFalse(admission.path("snapshot").has("notifyEmailSetBy"));
+    when(provider.start(any(), any())).thenReturn(ScheduleForms.execution("completed").put("result", "done"));
+    scheduler.dispatch(runId);
+
+    auth(bob);
+    tasks.update(id, input.put("revision", 1).put("title", "Updated task"), "en");
+    assertEquals("alice", store.get(id, false).notifyEmailSetBy());
+
+    tasks.update(id, input.put("revision", 2).put("notifyEmail", "bob@example.test"), "en");
+    assertEquals("bob", store.get(id, false).notifyEmailSetBy());
+    var snapshot = store.run(runId).snapshot();
+    assertEquals("alice", snapshot.executorId());
+    assertEquals("alice", snapshot.notifyEmailSetBy());
+    assertEquals(firstEmail, snapshot.definition().notifyEmail());
+
+    tasks.update(id, input.put("revision", 3).putNull("notifyEmail"), "en");
+    var task = store.get(id, false);
+    assertNull(task.definition().notifyEmail());
+    assertNull(task.notifyEmailSetBy());
+  }
+
+  @Test
+  void validatesOnlyNewCoauthorsAgainstActiveDomainMembership() {
+    var key = UUID.randomUUID();
+    String id = key.toString();
+    var overseas = user("overseas", "another-domain");
+    when(identity.creator("another-domain", "overseas")).thenReturn(overseas);
+    var disabled = user("disabled", "sales");
+    disabled.setEnable(false);
+    when(identity.creator("sales", "disabled")).thenReturn(disabled);
+
+    var input = actionInput();
+    for (String invalid : List.of("overseas", "disabled", "unknown")) {
+      input.putArray("coauthorIds").add(invalid);
+      assertThrows(ScheduleException.class, () -> tasks.create(key, input, "en", false));
+      assertNull(store.get(id, false));
+    }
+
+    input.putArray("coauthorIds").add("bob");
+    tasks.create(key, input, "en", false);
+    when(identity.creator("sales", "bob")).thenReturn(null);
+    assertFalse(tasks.create(key, input, "en", false).created());
+
+    input.put("revision", 1).putArray("coauthorIds").add("bob").add("overseas");
+    assertThrows(ScheduleException.class, () -> tasks.update(id, input, "en"));
+    assertEquals(1, store.get(id, false).revision());
+
+    input.putArray("coauthorIds").add("bob");
+    tasks.update(id, input, "en");
+    assertEquals(List.of("bob"), store.get(id, false).coauthors());
   }
 
   @Test
