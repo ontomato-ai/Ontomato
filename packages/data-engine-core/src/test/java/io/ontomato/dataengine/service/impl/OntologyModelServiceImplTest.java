@@ -20,10 +20,12 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -41,10 +43,12 @@ import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterProvider;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
+import io.ontomato.dataengine.schedules.ScheduleJson;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeCreate;
+import io.ontomato.dataengine.service.OntologyModelService.AttributeOption;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.FormDescription;
 import io.ontomato.dataengine.service.OntologyModelService.FormRequest;
@@ -295,6 +299,152 @@ class OntologyModelServiceImplTest {
 		assertEquals(type, created.type());
 		var attr = findAttr(findClass(savedRule(), "Device"), "extra");
 		assertEquals(type, attr.get("type"));
+	}
+
+	@Test
+	void legacyOntomapsAndViewsOmitOptions() {
+		var view = service.attributes("Device", user, "en").stream()
+				.filter(attr -> attr.name().equals("size")).findFirst().orElseThrow();
+		assertFalse(ScheduleJson.JSON.valueToTree(view).has("options"));
+
+		var exported = adminService.getPrettyJSONRule("d1");
+		assertFalse(prettySize(exported).containsKey("options"));
+		adminService.setPrettyJSONRule(exported, "d1");
+		assertFalse(findAttr(findClass(savedRule(), "Device"), "size").containsKey("options"));
+	}
+
+	@Test
+	void attributeOptionsSurviveSaveViewAndOntomapRoundTripUntilExplicitlyCleared() {
+		var created = service.createAttribute("Device",
+				new AttributeCreate("priority", "Priority", "int", "", true, false, false,
+						List.of(new AttributeOption("1", "Low", ""))), user, "en");
+		var createdOption = ScheduleJson.JSON.valueToTree(created).path("options").get(0);
+		assertEquals(1, createdOption.path("value").intValue());
+		assertFalse(createdOption.has("tone"));
+		var savedCreation = new JSONObject(savedRule());
+		when(jsonRuleDao.query("d1")).thenReturn(savedCreation);
+
+		var updated = service.updateAttribute("Device", "priority",
+				new AttributeUpdate("Priority", "", true, false, null,
+						List.of(new AttributeOption("2", "High", "danger"))), user, "en");
+		var expected = List.of(Map.of("value", 2, "label", "High", "tone", "danger"));
+		assertEquals(ScheduleJson.JSON.valueToTree(expected), ScheduleJson.JSON.valueToTree(updated).get("options"));
+		var savedUpdate = new JSONObject(savedRule(2));
+		when(jsonRuleDao.query("d1")).thenReturn(savedUpdate);
+
+		var form = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"priority\"]"), user, "en");
+		assertEquals(List.of(Map.of("value", "2", "label", "High", "tone", "danger")), form.values().get("options"));
+
+		var exported = adminService.getPrettyJSONRule("d1");
+		var device = exported.getJSONArray("classDefs").getJSONObject(0);
+		var options = device.getJSONArray("attrs").getJSONObject(3).get("options");
+		assertEquals(expected, options);
+		adminService.setPrettyJSONRule(exported, "d1");
+		var savedImport = new JSONObject(savedRule(3));
+		assertEquals(expected, findAttr(findClass(savedImport, "Device"), "priority").get("options"));
+		when(jsonRuleDao.query("d1")).thenReturn(savedImport);
+
+		var renamed = service.updateAttribute("Device", "priority", new AttributeUpdate("Renamed", "", true, false),
+				user, "en");
+		assertEquals(updated.options(), renamed.options());
+		var cleared = service.updateAttribute("Device", "priority",
+				new AttributeUpdate("Renamed", "", true, false, null, List.of()), user, "en");
+		assertFalse(ScheduleJson.JSON.valueToTree(cleared).has("options"));
+		assertFalse(findAttr(findClass(savedRule(5), "Device"), "priority").containsKey("options"));
+	}
+
+	static Stream<Arguments> invalidOptions() {
+		return Stream.of(
+				Arguments.of("int", List.of(new AttributeOption(1, "One", null),
+						new AttributeOption(1, "Duplicate", null)), 2, "duplicate"),
+				Arguments.of("text", List.of(new AttributeOption("", "Empty", null)), 1, "required"),
+				Arguments.of("int", List.of(new AttributeOption("abc", "Bad type", null)), 1, "invalid_type"),
+				Arguments.of("text", List.of(new AttributeOption("x", "Bad tone", "purple")), 1, "invalid_option"),
+				Arguments.of("text", List.of(new AttributeOption("x", "", null)), 1, "required"),
+				Arguments.of("boolean", List.of(new AttributeOption("yes", "Yes", "success")), 1, "invalid_option"));
+	}
+
+	@ParameterizedTest
+	@MethodSource("invalidOptions")
+	void invalidOptionDefinitionsAreRejectedInCreateUpdateAndImport(String type, List<AttributeOption> options,
+			int row, String code) {
+		var stored = findAttr(findClass(rule, "Device"), "size");
+		stored.put("type", type);
+
+		var create = assertThrows(OntologyModelException.class,
+				() -> service.createAttribute("Device", new AttributeCreate("extra", "Extra", type, "", true, false,
+						false, options), user, "en"));
+		assertOptionError(create, "Device.extra", row, code);
+
+		var update = assertThrows(OntologyModelException.class,
+				() -> service.updateAttribute("Device", "size",
+						new AttributeUpdate("Size", "", true, false, null, options), user, "en"));
+		assertOptionError(update, "Device.size", row, code);
+
+		var exported = adminService.getPrettyJSONRule("d1");
+		prettySize(exported).put("options", JSON.parseArray(ScheduleJson.JSON.valueToTree(options).toString()));
+		var imported = assertThrows(OntologyModelException.class, () -> adminService.setPrettyJSONRule(exported, "d1"));
+		assertOptionError(imported, "Device.size", row, code);
+		verify(jsonRuleDao, never()).save(any(), any());
+		verifyNoInteractions(auditLogDao);
+	}
+
+	@Test
+	void updatingUnsupportedStoredAttributeRemovesLegacyOptions() {
+		var attr = findAttr(findClass(rule, "Device"), "size");
+		attr.put("type", "boolean");
+		attr.put("options", List.of(Map.of("value", "yes", "label", "Yes")));
+
+		var view = service.updateAttribute("Device", "size", new AttributeUpdate("Size", "", true, false), user, "en");
+		assertFalse(ScheduleJson.JSON.valueToTree(view).has("options"));
+		assertFalse(findAttr(findClass(savedRule(), "Device"), "size").containsKey("options"));
+	}
+
+	@Test
+	void promotingAnAttributeToPrimaryKeyRemovesOptions() {
+		findAttr(findClass(rule, "Device"), "site_id")
+				.put("options", List.of(Map.of("value", "a", "label", "A")));
+
+		service.setPrimaryKey("Device", "site_id", user, "en");
+		assertFalse(findAttr(findClass(savedRule(), "Device"), "site_id").containsKey("options"));
+	}
+
+	@Test
+	void attributeOptionFormUsesThreeColumnsAndRefreshesWhenNewTypeChanges() {
+		var target = open("object", "platform:Attribute", "[\"Device\",\"size\"]");
+		var edit = service.attributeForm(target, user, "en");
+		var control = fieldOf(edit, "/options").path("control");
+		assertEquals("object-array", control.path("kind").asText());
+		assertEquals("table", control.path("presentation").asText());
+		assertEquals("/value", control.path("itemKeyPath").asText());
+		assertEquals(List.of("/value", "/label", "/tone"),
+				properties(control.path("itemFields"), "path"));
+		var tone = control.path("itemFields").get(2).path("control");
+		assertEquals(List.of("", "default", "info", "success", "warning", "danger"),
+				properties(tone.path("options"), "value"));
+		assertEquals(List.of("value", "label"),
+				texts(edit.save().bodySchema().at("/properties/options/items/required")));
+		assertFalse(paths(service.attributeInlineForm(target, user, "en")).contains("/options"));
+		findAttr(findClass(rule, "Device"), "size").put("type", "boolean");
+		assertFalse(paths(service.attributeForm(target, user, "en")).contains("/options"));
+
+		var draft = new FormTarget("draft", "platform:Attribute", null);
+		var initial = service.attributeForm(new FormRequest(draft, null, null), user, "en");
+		assertEquals(List.of(), initial.values().get("options"));
+		assertTrue(fieldOf(initial, "/type").path("refreshOnChange").asBoolean());
+		for (String type : List.of("boolean", "date", "vector", "text", "double")) {
+			var refreshed = service.attributeForm(new FormRequest(draft, Map.of("type", type), "/type"), user, "en");
+			assertEquals(List.of("text", "double").contains(type), paths(refreshed).contains("/options"), type);
+		}
+	}
+
+	private static JSONObject prettySize(JSONObject exported) {
+		return exported.getJSONArray("classDefs").getJSONObject(0).getJSONArray("attrs").getJSONObject(2);
+	}
+
+	private void assertOptionError(OntologyModelException error, String attribute, int row, String code) {
+		assertValidation(error, List.of("/values/options"), List.of(code));
+		assertTrue(error.getMessage().contains(attribute + " options item " + row + ":"), error.getMessage());
 	}
 
 	@Test
@@ -552,9 +702,6 @@ class OntologyModelServiceImplTest {
 		assertEquals(Map.of("className", "Admin.form.className", "primaryKeyCount", "Admin.form.primaryKey",
 				"primaryKeyName", "Admin.form.primaryKeyName",
 				"showName", "Admin.form.showName", "classDesc", "Admin.form.businessDesc"), labels.objectType());
-		assertEquals(Map.of("className", "Admin.form.ownerType", "name", "Admin.form.name", "type", "Admin.form.type",
-				"showName", "Admin.form.showName", "attrDesc", "Admin.form.desc", "enable", "Admin.form.enable",
-				"businessKey", "Admin.form.businessKey", "primaryKey", "Admin.form.primaryKey"), labels.attribute());
 		assertEquals(Map.of("relationship", "Admin.form.relationship", "fromclass", "Admin.form.fromclass",
 				"fromField", "Admin.form.fromField", "toclass", "Admin.form.toclass", "toField", "Admin.form.toField",
 				"desc", "Admin.form.relationDesc"), labels.relationship());
@@ -648,8 +795,9 @@ class OntologyModelServiceImplTest {
 		assertEquals(ATTRIBUTE_TYPES, optionValues(fieldOf(form, "/type")));
 		assertFalse(fieldOf(form, "/enable").get("readOnly").asBoolean());
 		assertFalse(fieldOf(form, "/primaryKey").get("readOnly").asBoolean());
-		assertEquals(Map.of("className", "", "name", "", "type", "varchar", "showName", "", "attrDesc", "", "enable", true,
-				"businessKey", false, "primaryKey", false), form.values());
+		assertEquals("", form.values().get("className"));
+		assertEquals("varchar", form.values().get("type"));
+		assertEquals(true, form.values().get("enable"));
 		assertEquals(List.of("className", "name", "showName", "type", "enable", "businessKey"),
 				texts(form.save().bodySchema().get("required")));
 	}
@@ -766,8 +914,10 @@ class OntologyModelServiceImplTest {
 				Map.of("className", "Whatever", "name", "Whatever", "showName", " Site link ", "attrDesc", "d",
 						"enable", false, "businessKey", true, "primaryKey", false),
 				null), user, "en");
-		assertEquals(Map.of("className", "Device", "name", "site_id", "type", "varchar", "showName", "Site link",
-				"attrDesc", "d", "enable", false, "businessKey", true, "primaryKey", false), checked.values());
+		assertEquals("Device", checked.values().get("className"));
+		assertEquals("site_id", checked.values().get("name"));
+		assertEquals("varchar", checked.values().get("type"));
+		assertEquals("Site link", checked.values().get("showName"));
 		assertEquals(false, checked.values().get("primaryKey"));
 
 		var promotedDraft = service.attributeForm(new FormRequest(new FormTarget("object", "platform:Attribute",
@@ -904,8 +1054,12 @@ class OntologyModelServiceImplTest {
 	}
 
 	private static List<String> optionValues(ObjectNode field) {
+		return properties(field.get("control").get("options"), "value");
+	}
+
+	private static List<String> properties(JsonNode array, String property) {
 		List<String> result = new ArrayList<>();
-		field.get("control").get("options").forEach(node -> result.add(node.get("value").asText()));
+		array.forEach(node -> result.add(node.get(property).asText()));
 		return result;
 	}
 

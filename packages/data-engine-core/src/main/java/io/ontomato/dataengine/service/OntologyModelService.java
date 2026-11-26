@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import io.ontomato.dataengine.core.bean.User;
@@ -56,13 +57,25 @@ public interface OntologyModelService {
 	record ObjectTypeUpdate(String showName, String classDesc) {
 	}
 
-	record AttributeCreate(String name, String showName, String type, String attrDesc, Boolean enable,
-			Boolean businessKey, Boolean primaryKey) {
+	record AttributeOption(Object value, String label, @JsonInclude(JsonInclude.Include.NON_NULL) String tone) {
 	}
 
-	record AttributeUpdate(String showName, String attrDesc, Boolean enable, Boolean businessKey, Boolean primaryKey) {
+	record AttributeCreate(String name, String showName, String type, String attrDesc, Boolean enable,
+			Boolean businessKey, Boolean primaryKey, List<AttributeOption> options) {
+		public AttributeCreate(String name, String showName, String type, String attrDesc, Boolean enable,
+				Boolean businessKey, Boolean primaryKey) {
+			this(name, showName, type, attrDesc, enable, businessKey, primaryKey, null);
+		}
+	}
+
+	record AttributeUpdate(String showName, String attrDesc, Boolean enable, Boolean businessKey, Boolean primaryKey,
+			List<AttributeOption> options) {
 		public AttributeUpdate(String showName, String attrDesc, Boolean enable, Boolean businessKey) {
-			this(showName, attrDesc, enable, businessKey, null);
+			this(showName, attrDesc, enable, businessKey, null, null);
+		}
+
+		public AttributeUpdate(String showName, String attrDesc, Boolean enable, Boolean businessKey, Boolean primaryKey) {
+			this(showName, attrDesc, enable, businessKey, primaryKey, null);
 		}
 	}
 
@@ -82,7 +95,12 @@ public interface OntologyModelService {
 	}
 
 	record AttributeView(String className, String name, String showName, String type, String attrDesc,
-			boolean enable, boolean businessKey, boolean primaryKey) {
+			boolean enable, boolean businessKey, boolean primaryKey,
+			@JsonInclude(JsonInclude.Include.NON_EMPTY) List<AttributeOption> options) {
+		public AttributeView(String className, String name, String showName, String type, String attrDesc,
+				boolean enable, boolean businessKey, boolean primaryKey) {
+			this(className, name, showName, type, attrDesc, enable, businessKey, primaryKey, List.of());
+		}
 	}
 
 	record RelationshipView(String relationship, String fromclass, String toclass, String desc, String fromField,
