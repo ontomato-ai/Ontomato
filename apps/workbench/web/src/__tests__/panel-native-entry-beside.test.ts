@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -14,12 +14,12 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
  * A built-in application's panel entry beside a conversation (big main's ruling, 2026-11-21: one panel route serves every
  * declared entry, whatever its prefix): `/ontology/components`, which the conversation carries as its page, is the same
  * page the platform shows full — the ontology manager's entry, as the reader's catalog lists it — so a message written
- * beside it carries its page skill.
+ * beside it carries its current page placement.
  *
  * Real resolver, route, panel host and SDK; the catalog and the network are stand-ins.
  *
  * What this rules out: a built-in application's entry that opens full but shows nothing beside the conversation, so a
- * message about it carries no page skill.
+ * message about it carries no current page placement.
  */
 
 const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {} }));
@@ -41,7 +41,7 @@ afterEach(() => {
   useApplicationCatalog().applications.value = [];
 });
 
-it("shows a built-in application's entry beside the conversation as that application's page, carrying its page skill", async () => {
+it("shows a built-in application's entry beside the conversation as that application's page, carrying its current page placement", async () => {
   const sent = installPlatform(answer);
   const resolve = pilotPageResolver(vi.fn());
   // Before the catalog is read, nothing names the address; once it lists the entry, the address is that page.

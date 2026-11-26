@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
   validateComponent: vi.fn(),
   framePanel: vi.fn(),
   registeredEntry: vi.fn(),
-  pageSkill: vi.fn(),
 }));
 
 vi.mock("../../../services/product-panels/operations", () => ({ ownPanelSettings: vi.fn() }));
@@ -35,7 +34,6 @@ vi.mock("../../../services/product-panels/application-use", async original => ({
   ...await original<typeof import("../../../services/product-panels/application-use")>(),
   readRegisteredPanelEntry: mocks.registeredEntry,
 }));
-vi.mock("../../../services/skills/view", () => ({ readRegisteredPanelPageSkillContext: mocks.pageSkill }));
 vi.mock("../../../utils/request-identity", async original => ({
   ...await original<typeof import("../../../utils/request-identity")>(),
   requireDomainId: () => "domain-1",

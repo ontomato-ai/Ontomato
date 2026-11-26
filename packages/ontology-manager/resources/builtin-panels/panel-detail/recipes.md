@@ -16,7 +16,7 @@
   2. **源码**（`source`）：`sourceTree`（`ObjectTree`，读法 `sourceFiles`）列出 `panel.html`、`panel.mjs`、`panel.css`、`recipes.md`、`messages.json`、`manifest.json`、`theme.json`，联动 `sourceViewer`（`ObjectTextReader`，读法 `sourceFile`）只读查看当前文件（`sourceFile` 状态）。
   3. **成员引用**（`members`）：`membersList`（`ObjectList`，读法 `memberRows`）列出每个成员槽位、类型、引用目标、组件与输入/输出绑定。
      点击投影行可在当前页原位查看该投影概要（`memberProjectionHeader` + `memberProjectionSummary`），点击引用链接或「在投影中打开」可跳往投影页选中该投影；点击嵌套面板引用链接会跳往 `/ontology/panels/detail?selected=<panelId>`。
-  4. **使用**（`usage`）：`usedByList`（`ObjectList`，读法 `usedByRows`）展示在用的应用入口（行操作可直接打开入口地址）、在用的面板与在用的对象类详情；无权查看的使用方数量通过横幅提示，并附页面技能说明与「全部应用」入口。
+  4. **使用**（`usage`）：`usedByList`（`ObjectList`，读法 `usedByRows`）展示在用的应用入口（行操作可直接打开入口地址）、在用的面板与在用的对象类详情；无权查看的使用方数量通过横幅提示，并附页面操作说明与「全部应用」入口。
   5. **授权**（`grants`，仅 `canGrant` 为真时可见）：这里做的是把面板加进某一份对象策略，是站在面板这头的快捷方式。先是域内共享状态（`shareStatusDesc`）与开关（`shareEnable.share` / `shareDisable.share`）；接着是加进某一份策略的区（`grants.title` / `grants.intro`）与 `grantsList`（`ObjectList`，读法 `grantRows`，列为策略 / 权限 / 操作，行内「从策略中移除」按钮 `grantsList.revoke`）；弹窗按先选策略、再选权限档位的顺序排列，档位用分段控件选 `USE` / `EDIT`（`policyPicker`（`platform:PermissionPolicy`） + `grantVerb`），最后由 `grantSubmit.grant` 提交。
   6. **预览**（`preview`）：通过动态成员 `preview`（绑定 `previewTarget`）按需在原位挂载当前面板；仅在查看态、非不可用且处于 `preview` 页签时挂载，切走即卸载。
 - **不可用面板诊断视图**：当属主返回 `unavailable: true` 时，原位展示警告横幅与 `unavailableSummary`（`id`、`unavailableReason`、`revision`、`objectType`），不可进入编辑态，有删除权与修订号时可通过 `deletePanel.delete` 确认删除并返回目录。

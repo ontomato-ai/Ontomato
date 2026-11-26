@@ -62,7 +62,7 @@ The ready result includes `primaryKey`, `label`, `fields` and the owner's locali
 On the same read endpoint, send `operations: true` for the `run` member to get the owner descriptions keyed by
 local operation name. Supply that member's inputs, including the selected task for this example.
 
-For an agent run with the page skill loaded and the page open beside the conversation, invoke the same operation
+For an agent run whose agent carries the page operator skill and whose page is open beside the conversation, invoke the same operation
 through `page_action({ operation: "run.runNow" })`. The page prepares the intent through the same human operation
 endpoint under the logged-in user's permissions, asks for confirmation in the conversation by default (returning
 `awaiting_confirmation` without blocking), and dispatches once when the user confirms while verifying the live page
@@ -92,7 +92,7 @@ For a component test mounted directly with `panelModuleFor`:
 - For a successful create, set `outcome.created: { objectType, primaryKey }` in the mock response.
   `ObjectForm` takes the `@saved` key from `created`.
 
-## Write the page skill's common tasks
+## Write the page description's common tasks
 
 In `recipes.md`, describe how to use the declared reads, forms and operations for common tasks. Use the business
 owner's rules and actual operation descriptions for the page.

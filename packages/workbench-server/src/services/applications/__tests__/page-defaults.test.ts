@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { presetAgents } from "../../assistant/preset-definitions";
 import { workbenchApplications } from "../builtins";
 
-type DeclaredEntry = { pageKey: string; panelId?: string; kind?: string; defaultAgent?: { kind: string; agentKind?: string } };
+type DeclaredEntry = { pageKey: string; panelId?: string; defaultAgent?: { kind: string; agentKind?: string } };
 type DeclaredApplication = { source: string; entries: DeclaredEntry[] };
 
 const javaApplicationsDir = path.resolve("../data-engine-core/src/main/resources/applications");
@@ -21,28 +21,28 @@ function declaredApplications(): DeclaredApplication[] {
   return [...java, ...workbench];
 }
 
-/** Every page skill the platform ships belongs to exactly one assistant, and the entry says which. */
-it("registers one platform assistant per page entry that carries a page skill", () => {
+/** Built-in entries never point at withdrawn presets; entries without a registration naturally fall back to regular. */
+it("registers no default agent for withdrawn presets and keeps the remaining page defaults valid", () => {
   const presetKinds = new Set(presetAgents.map(preset => preset.kind));
-  const registered = new Map<string, string>();
+  const registrations = new Map<string, string>();
   const problems: string[] = [];
   for (const { source, entries } of declaredApplications()) {
     for (const entry of entries) {
-      if (!entry.panelId) continue;
+      if (!entry.panelId || !entry.defaultAgent) continue;
       const { defaultAgent } = entry;
-      if (!defaultAgent) {
-        problems.push(`${source}: ${entry.pageKey} registers no default agent`);
-        continue;
-      }
       if (defaultAgent.kind !== "preset" || !defaultAgent.agentKind || !presetKinds.has(defaultAgent.agentKind)) {
         problems.push(`${source}: ${entry.pageKey} registers ${JSON.stringify(defaultAgent)}, which is not a platform assistant`);
         continue;
       }
-      const previous = registered.get(entry.pageKey);
+      if (["modeling", "product-layer", "admin"].includes(defaultAgent.agentKind))
+        problems.push(`${source}: ${entry.pageKey} still registers withdrawn preset ${defaultAgent.agentKind}`);
+      const previous = registrations.get(entry.pageKey);
       if (previous) problems.push(`${entry.pageKey} is registered twice: ${previous}, ${defaultAgent.agentKind}`);
-      registered.set(entry.pageKey, defaultAgent.agentKind);
+      registrations.set(entry.pageKey, defaultAgent.agentKind);
     }
   }
   expect(problems).toEqual([]);
-  expect([...registered.values()].sort()).toEqual(expect.arrayContaining(["admin", "product-layer", "modeling"]));
+  expect(registrations.get("business-knowledge")).toBe("knowledge-governance");
+  expect([...registrations.values()]).toContain("ops-diagnosis");
+  expect([...registrations.values()]).toContain("app-builder");
 });

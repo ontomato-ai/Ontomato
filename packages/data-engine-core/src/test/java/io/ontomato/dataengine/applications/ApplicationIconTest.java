@@ -66,7 +66,7 @@ class ApplicationIconTest {
             mock(ApplicationAccess.class), "{}", mock(PanelResources.class), grants, authorization));
         var app = JSONObject.of("id", "app-example", "domainId", "domain", "kind", "hosted",
             "ownerUserId", "author", "coauthorIds", List.of("coauthor"), "groups", List.of(),
-            "panelUses", List.of(), "pageSkills", List.of(), "panelSettings", new JSONObject(),
+            "panelUses", List.of(), "panelSettings", new JSONObject(),
             "entry", JSONObject.of("path", "/apps/app-example/", "entryKey", "main"));
         doReturn(List.of(app)).when(catalog).all();
         var target = new ObjectTarget("domain", Kind.APPLICATION, "app-example");

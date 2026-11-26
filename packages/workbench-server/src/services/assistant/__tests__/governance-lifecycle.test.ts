@@ -61,12 +61,12 @@ it("governance-only preparation registers caller bounds without query preparatio
   }));
   expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({continuationIds:[],recentUserMessages:[],executionUserId:null}),{token:"user"});expect(mocks.recordWindow).not.toHaveBeenCalled();
 });
-it("carries the displayed member into human preparation and prompts with the checked canonical placement", async () => {
-  const source = { kind: "application-use" as const, applicationId: "ontology", useId: "knowledge-use" };
-  const locator = { applicationId: source.applicationId, entryKey: source.useId, pageKey: "knowledge" };
-  const member = { source, memberPath: [], ref: { namespace: { kind: "domain" as const, domainId: owner.domainId }, name: "panel-a" } };
-  const pageSkillContext = { mode: "member" as const, locator, member };
-  const currentPage = { entrance: locator, member, path: "/ontology/knowledge" };
+it("carries the displayed page placement into human preparation and prompts with the checked placement", async () => {
+  const pageSkillContext = {
+    applicationId: "ontology", entryKey: "knowledge-use", pageKey: "knowledge", useId: "knowledge-use",
+    panelId: "panel-a", path: "/ontology/knowledge", memberPath: [],
+  };
+  const currentPage = pageSkillContext;
   const credentials = { token: "human" };
   const message = "Use the shown panel";
   const input = agentHostSendRequestSchema.parse({ message, pageSkillContext });
@@ -79,7 +79,7 @@ it("carries the displayed member into human preparation and prompts with the che
   const [, , request] = mocks.request.mock.calls[1];
   expect(request.context).toEqual({ pageSkillContext });
   const prepare = { ...preparation(), ...request.channel, input: request.input, context: request.context };
-  mocks.skills.mockResolvedValueOnce({ skills: [{ skill: member.ref, digest }], pageControl: true, currentPage });
+  mocks.skills.mockResolvedValueOnce({ skills: [{ skill, digest }], pageControl: true, currentPage });
   const result = await assistantService.prepare(prepare, owner, credentials);
   expect(mocks.skills).toHaveBeenCalledWith(owner.domainId, expect.anything(), credentials, pageSkillContext, owner.userId);
   expect(result.definition.systemPrompt).toContain(JSON.stringify(currentPage));

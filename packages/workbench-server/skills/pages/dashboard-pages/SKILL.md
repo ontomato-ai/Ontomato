@@ -8,7 +8,7 @@ metadata:
 
 # Dashboard pages (headless / background CLI)
 
-This skill is for **headless or background runs without a live dashboard page** (for example, scheduled tasks or delegated runs where `present` / `fill_form` / `page_action` are unavailable). When a live `/dashboards` page is open beside a conversation, use the platform-derived panel page skill (`builtin-product-dashboards`) instead.
+This skill is for **headless or background runs without a live dashboard page** (for example, scheduled tasks or delegated runs where `present` / `fill_form` / `page_action` are unavailable). When a live `/dashboards` page is open beside a conversation, use the current page placement and the page operator methods instead.
 
 Run `node <this-skill>/scripts/dashboard-pages.mjs <command> [options]`.
 API commands use `ONTOMATO_WORKBENCH_URL` before `/api`, the supplied `ONTOMATO_TK`, `ONTOMATO_API_KEY`, or `ONTOMATO_EXECUTION_CALLBACK` (sent as `X-Ontomato-Callback-Credential` with `X-Ontomato-Run-Id`), and optional `ONTOMATO_LANGUAGE`.

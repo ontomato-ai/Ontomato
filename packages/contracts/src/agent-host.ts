@@ -3,7 +3,7 @@ import { presentationBindingSchema, presentationFrameSchema, presentationReceipt
 import { panelObjectIdentitySchema } from "./panel-manifest";
 import { panelCompletedOperationSchema, panelOperationAffectedSchema } from "./panel-operations";
 import { z } from "zod";
-import { pageSkillContextSchema } from "./page-skills";
+import { pageSkillContextSchema } from "./page-context";
 import {
   runtimeMessageRecordSchema,
   runtimeRunSnapshotSchema,

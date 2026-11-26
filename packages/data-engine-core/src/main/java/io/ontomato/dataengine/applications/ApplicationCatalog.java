@@ -41,8 +41,10 @@ public class ApplicationCatalog {
     public static final String DEFAULT_FRAME_PANEL_ID = "builtin-product-platform-frame";
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     public record EntryMenu(Map<String, String> names, List<Group> groups, List<ApplicationPanelUse> panelUses, boolean singleEntry) {}
+    public record SkillNamespace(String kind, String provider, String domainId) {}
+    public record SkillRef(SkillNamespace namespace, String name) {}
     public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
-                           List<PageSkills.Skill> skills) {}
+                           List<SkillRef> skills) {}
     private record PanelSettings(String framePanelId, JsonNode theme, Delivery delivery) {
         JSONObject json() {
             var result = new JSONObject();
@@ -54,10 +56,8 @@ public class ApplicationCatalog {
     }
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Declaration(Map<String,String> names, Map<String,String> descriptions, String icon,
-                              List<Group> groups, List<PageSkills.Declaration> pageSkills,
-                              List<ApplicationPanelUse> panelUses) {
+                              List<Group> groups, List<ApplicationPanelUse> panelUses) {
         public Declaration {
-            pageSkills = pageSkills == null ? List.of() : pageSkills;
             panelUses = panelUses == null ? List.of() : panelUses;
         }
     }
@@ -153,7 +153,7 @@ public class ApplicationCatalog {
                     "descriptions", JSON.parseObject(row.getString("descriptions")), "icon", row.getString("icon"),
                     "rail", row.getString("rail"), "category", row.getString("category"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
                     "scheduleAdapter", row.getString("schedule_adapter"),
-                    "releaseId", row.getString("release_id"), "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Declaration.class),
+                    "releaseId", row.getString("release_id"),
                     "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
                     "groups", JSON.parseArray(row.getString("groups"), Group.class),
                     "panelSettings", JSON.parseObject(row.getString("panel_settings")),
@@ -163,63 +163,6 @@ public class ApplicationCatalog {
                 return app;
             });
     }
-    public PageSkills.Projection pageSkills(User user) {
-        return pageSkills(user, null, null);
-    }
-
-    public PageSkills.Projection pageSkills(User user, PageSkills.Entrance entrance, String panelId) {
-        var subject = new ApplicationSubject(user);
-        var apps = applicationsInDomain(user.getDomainId());
-        var pageKeys = new BuiltinPageKeys(apps);
-        var mappings = new ArrayList<PageSkills.Mapping>();
-        var admitted = new ArrayList<PageSkills.Entrance>();
-        var registered = new LinkedHashSet<PageSkills.Skill>();
-        for (var app : apps) {
-            var applicationId = app.getString("id");
-            var declarations = app.getList("pageSkills", PageSkills.Declaration.class);
-            declarations.forEach(mapping -> registered.add(mapping.skill()));
-            if (entrance != null && !applicationId.equals(entrance.applicationId())) continue;
-            var byEntry = new HashMap<String, PageSkills.Declaration>();
-            declarations.forEach(mapping -> byEntry.put(mapping.entryKey(), mapping));
-            for (var entry : actualEntries(app, pageKeys)) {
-                var locator = PanelSkills.entrance(applicationId, entry);
-                if (entrance != null && !entrance.equals(locator)) continue;
-                if (panelId != null && !panelId.equals(entry.panelId())) continue;
-                var declaration = byEntry.get(entry.id());
-                boolean panel = isPanelSkillApplication(app) && entry.panelEntry();
-                if ((!panel && declaration == null) || user.getDomainId() == null
-                        || !subject.decision(applicationId, entry.id()).allowed()) continue;
-                admitted.add(locator);
-                var defaults = new ArrayList<PageSkills.Default>();
-                if (declaration != null && declaration.defaults() != null) defaults.addAll(declaration.defaults());
-                if (entry.defaultAgent() != null)
-                    defaults.add(new PageSkills.Default(entry.pageKey(), entry.defaultAgent()));
-                mappings.add(new PageSkills.Mapping(applicationId, entry.id(), entry.pageKey(),
-                    declaration == null ? null : declaration.skill(), defaults.isEmpty() ? null : List.copyOf(defaults)));
-            }
-        }
-        return new PageSkills.Projection(List.copyOf(mappings), List.copyOf(registered), List.copyOf(admitted));
-    }
-
-    public List<PanelSkills.Use> panelSkillSources(String domainId) {
-        return panelSkillSources(domainId, null, null);
-    }
-
-    public List<PanelSkills.Use> panelSkillSources(String domainId, String applicationId, String useId) {
-        var apps = applicationsInDomain(domainId);
-        var pageKeys = new BuiltinPageKeys(apps);
-        return apps.stream().filter(ApplicationCatalog::isPanelSkillApplication)
-            .filter(app -> applicationId == null || applicationId.equals(app.getString("id")))
-            .flatMap(app -> {
-                var applicationNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
-                return pageKeys.activeUses(app).stream()
-                    .filter(ApplicationPanelUse::panelEntry)
-                    .filter(use -> useId == null || useId.equals(use.id()))
-                    .map(use -> PanelSkills.source(app.getString("id"), use, applicationNames));
-            })
-            .toList();
-    }
-
     private static boolean isPanelSkillApplication(JSONObject app) {
         return hasPanelUseRegistration(app) && hasAssignedPanelPaths(app);
     }
@@ -375,14 +318,13 @@ public class ApplicationCatalog {
 
     private JSONObject countApplications(User user, boolean includeMaintainable) {
         var apps = db.query("""
-            SELECT id, domain_id, owner_user_id, coauthor_ids, entry, page_skills, panel_uses
+            SELECT id, domain_id, owner_user_id, coauthor_ids, entry, panel_uses
             FROM sys_application WHERE kind IS NOT NULL AND (domain_id IS NULL OR domain_id=?)
             """, (row, index) -> JSONObject.of(
                 "id", row.getString("id"), "domainId", row.getString("domain_id"),
                 "ownerUserId", row.getString("owner_user_id"),
                 "coauthorIds", JSON.parseArray(row.getString("coauthor_ids"), String.class),
                 "entry", JSON.parseObject(row.getString("entry")),
-                "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Declaration.class),
                 "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class)), user.getDomainId());
         var pageKeys = new BuiltinPageKeys(apps);
         var subject = new ApplicationSubject(user);
@@ -749,11 +691,7 @@ public class ApplicationCatalog {
         if (!uses.isEmpty() && (home == null || uses.stream().anyMatch(use -> use.id().equals(entryKey)
                 || use.path().equals(home)))) return uses;
         var pageKey = entry.getString("pageKey");
-        if (pageKey == null) {
-            pageKey = app.getList("pageSkills", PageSkills.Declaration.class).stream()
-                .filter(item -> entryKey.equals(item.entryKey())).findFirst()
-                .map(PageSkills.Declaration::pageKey).orElse(entryKey);
-        }
+        if (pageKey == null) pageKey = entryKey;
         var nativeEntry = new ApplicationPanelUse(entryKey, pageKey, null, home == null ? entry.getString("path") : home,
             null, null, null, null, null, null, ApplicationPanelUse.NATIVE_KIND);
         var entries = new ArrayList<>(uses);
@@ -865,7 +803,6 @@ public class ApplicationCatalog {
         var settings = app.getJSONObject("panelSettings");
         result.remove("panelSettings");
         result.remove("panelUses");
-        result.remove("pageSkills");
         String resolvedFrame = null;
         if (settings != null && settings.containsKey("framePanelId")) {
             var framePanelId = settings.getString("framePanelId");
@@ -923,7 +860,7 @@ public class ApplicationCatalog {
                 var mergedUses = new ArrayList<>(raw.panelUses());
                 mergedUses.addAll(access.builtinEntries(d.id()));
                 var declaration = new Declaration(raw.names(), raw.descriptions(), raw.icon(), raw.groups(),
-                    raw.pageSkills(), ApplicationPanelUse.canonical(mergedUses, true));
+                    ApplicationPanelUse.canonical(mergedUses, true));
                 if (!List.of("native","link").contains(d.kind()) || !List.of("top","apps","bottom").contains(d.rail())
                     || d.category() == null || !List.of("business","build","admin").contains(d.category()))
                     throw bad("Invalid built-in application");
@@ -946,7 +883,7 @@ public class ApplicationCatalog {
                         && (!(entryKey instanceof String key) || !validEntryKey(key)))
                     throw bad("A native or link entry requires a valid entry.entryKey");
                 validateUseGroups(declaration.panelUses(), declaration.groups());
-                validateMappings(d.id(), null, d.entry(), declaration.pageSkills(), declaration.panelUses());
+                validateMappings(d.id(), null, d.entry(), declaration.panelUses());
                 var panelSettings = d.framePanelId() != null ? JSONObject.of("framePanelId", d.framePanelId()) : new JSONObject();
                 save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.scheduleAdapter(), null, declaration, panelSettings, d.allowsStandalone());
                 access.declare(require(d.id()), declaration, old.isEmpty());
@@ -970,7 +907,7 @@ public class ApplicationCatalog {
     }
     private JSONObject userApplication(String id, Declaration declaration, User user) {
         validateId(id); validate(declaration);
-        if (!declaration.pageSkills().isEmpty() || !declaration.panelUses().isEmpty()) throw bad("Use the panel application registration for panel relations");
+        if (!declaration.panelUses().isEmpty()) throw bad("Use the panel application registration for panel relations");
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
         return transactions.execute(tx -> {
             lockCatalog();
@@ -1008,13 +945,13 @@ public class ApplicationCatalog {
     private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
                       JSONObject entry, String adapter, String releaseId, Declaration d, JSONObject panelSettings, boolean allowStandalone) {
         db.update("""
-            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,panel_settings,allow_standalone,updated_at)
-            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,?,now()) ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,schedule_adapter,release_id,groups,entry_path,panel_uses,panel_settings,allow_standalone,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?,now()) ON CONFLICT(id) DO UPDATE SET
             names=excluded.names,descriptions=excluded.descriptions,icon=excluded.icon,rail=excluded.rail,category=excluded.category,sort=excluded.sort,
             entry=excluded.entry,schedule_adapter=excluded.schedule_adapter,
-            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,panel_settings=excluded.panel_settings,allow_standalone=excluded.allow_standalone,updated_at=now()
+            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,panel_uses=excluded.panel_uses,panel_settings=excluded.panel_settings,allow_standalone=excluded.allow_standalone,updated_at=now()
             """, id,domain,service,owner,kind,JSON.toJSONString(d.names()),JSON.toJSONString(d.descriptions()),d.icon(),rail,category,sort,
-            entry.toJSONString(),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),panelSettings.toJSONString(),allowStandalone);
+            entry.toJSONString(),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),panelSettings.toJSONString(),allowStandalone);
     }
     public static void validateId(String id) {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
@@ -1026,7 +963,6 @@ public class ApplicationCatalog {
         for (var group : d.groups()) {
             if (group.key() == null || !validLocalizedNames(group.names()) || !groups.add(group.key())) throw bad("Invalid application group");
         }
-        PageSkills.validate(d.pageSkills());
     }
 
     public static boolean panelManaged(JSONObject app) {
@@ -1039,18 +975,11 @@ public class ApplicationCatalog {
                 if (!panelPages.add(use.pageKey())) throw bad("Panel use page keys must be unique in the domain");
     }
 
-    private void validateMappings(String id, String domain, JSONObject entry, List<PageSkills.Declaration> pageSkills, List<ApplicationPanelUse> panelUses) {
+    private void validateMappings(String id, String domain, JSONObject entry, List<ApplicationPanelUse> panelUses) {
         var apps = new ArrayList<>(all().stream().filter(app -> !id.equals(app.getString("id"))).toList());
         apps.add(JSONObject.of("id", id, "domainId", domain, "kind", domain == null ? "native" : "product", "entry", entry,
-            "pageSkills", pageSkills, "panelUses", panelUses));
+            "panelUses", panelUses));
         var pageKeys = new BuiltinPageKeys(apps);
-        var entries = actualEntries(apps.getLast(), pageKeys);
-        for (var mapping : pageSkills) {
-            var use = entries.stream().filter(item -> mapping.entryKey().equals(item.id()) && mapping.pageKey().equals(item.pageKey()))
-                .findFirst().orElseThrow(() -> bad("Page skill must identify an actual application entry"));
-            if (use.defaultAgent() != null && mapping.defaults() != null && !mapping.defaults().isEmpty())
-                throw bad("An entry may declare only one page skill default");
-        }
         if (domain != null) {
             for (var use : panelUses) {
                 var conflict = pageKeys.conflict(use.pageKey(), domain, id);
@@ -1323,7 +1252,7 @@ public class ApplicationCatalog {
             throw bad("Panel entry and uses must be in the assigned application space: " + root);
         var supplied = body.declaration();
         if (existing.isEmpty() && (supplied == null || body.initialOpenEntryIds() == null)) throw bad("New applications require metadata and initialOpenEntryIds");
-        if (supplied != null && (!supplied.pageSkills().isEmpty() || !supplied.panelUses().isEmpty())) throw bad("Supply panelUses only once");
+        if (supplied != null && !supplied.panelUses().isEmpty()) throw bad("Supply panelUses only once");
         if (supplied != null) validate(supplied);
         var settings = new PanelSettings(body.framePanelId(), body.theme(), body.delivery());
         validatePanelSettings(settings);
@@ -1345,18 +1274,18 @@ public class ApplicationCatalog {
             if (uses.stream().anyMatch(use -> use.groupKey() != null))
                 validateUseGroups(uses, supplied == null ? old.getList("groups", Group.class) : supplied.groups());
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
-            validateMappings(id, user.getDomainId(), entry, List.of(), uses);
+            validateMappings(id, user.getDomainId(), entry, uses);
             panels.requireUsableRegistration(user.getDomainId(), settings.framePanelId(), withChangedIcons(old, uses), settings.delivery(), settings.theme(),
                 supplied == null ? null : changedIcon(old, supplied.icon()), locale);
             boolean allowStandalone = body.allowStandalone() != null ? body.allowStandalone() : (old == null || allowsStandalone(old));
             JSONObject stored;
             if (old != null && supplied == null) {
-                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,panel_uses=?::jsonb,panel_settings=?::jsonb,allow_standalone=?,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
+                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,panel_uses=?::jsonb,panel_settings=?::jsonb,allow_standalone=?,updated_at=now() WHERE id=?",
                     entry.toJSONString(), entryPath, JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue),
                     settings.json().toJSONString(), allowStandalone, id);
                 stored = require(id);
             } else {
-                var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), List.of(), uses);
+                var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), uses);
                 save(id, user.getDomainId(), "workbench", old == null ? user.getId() : old.getString("ownerUserId"),
                     "product", old == null ? "apps" : old.getString("rail"), old == null ? "business" : old.getString("category"),
                     old == null ? 100 : old.getIntValue("sort"), entry, null, null, declaration, settings.json(), allowStandalone);

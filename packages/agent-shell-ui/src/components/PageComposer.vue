@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import type { ShellLabels } from "../types";
 import { usePageCounter } from "../page-counter";
 import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand, type PageComposerRequest } from "../page-composer-entry";
@@ -58,7 +58,6 @@ watch(
     waiting = null;
     newSession = false;
     reading.value = false;
-    if (skill?.mode === "member" && skill.member === null) return;
     reading.value = true;
     const candidates = skill
       ? counter.pageAgents(skill)

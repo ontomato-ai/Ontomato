@@ -5,7 +5,7 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { panelServerOperation, type PanelOperationHost, type PanelWriteServerOperation } from "../../product-panels/server-operations";
 
 vi.mock("../../assistant/skills", () => ({
-  readAssistantSkillView: vi.fn(), resolvePageSkillSource: vi.fn(), loadedPageSkillVersion: vi.fn(),
+  readAssistantSkillView: vi.fn(), loadedSkillVersion: vi.fn(),
 }));
 
 configureI18n({

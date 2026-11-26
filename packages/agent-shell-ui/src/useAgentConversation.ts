@@ -1,6 +1,6 @@
 import type { ObservedPageTarget, PresentationBinding } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import { historyCursor } from "@ontomato/contracts/session-history";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import type { AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";

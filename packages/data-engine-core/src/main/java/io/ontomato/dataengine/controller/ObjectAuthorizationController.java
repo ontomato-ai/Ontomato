@@ -32,6 +32,7 @@ public final class ObjectAuthorizationController {
     private static final Set<Kind> CATALOGUE_KINDS = Set.of(Kind.PANEL, Kind.PROJECTION, Kind.AGENT);
     public static final String FIRST_PUBLICATION = "/authorization/objects/first-publication";
     public static final String AGENT_ACCESS = "/authorization/objects/agent-access";
+    public static final String SKILL_EDITOR_ACCESS = "/authorization/objects/skill-editor-access";
     public static final String AGENT_LEVEL = "/authorization/objects/agent-level";
     public static final String DOMAIN_USE = "/authorization/objects/domain-use";
     public static final String RETIRE = "/authorization/objects/retire";
@@ -47,6 +48,7 @@ public final class ObjectAuthorizationController {
     public record PublicationInput(ObjectTarget target, OwnerFacts ownerFacts, Selection access) {}
     public record PublicationResult(AuthorizationPolicies.PublicationStatus status) {}
     public record AgentInput(ObjectTarget target, OwnerFacts ownerFacts) {}
+    public record SkillEditorAccessInput(String agentTarget, ObjectTarget target, OwnerFacts ownerFacts) {}
     public record AgentLevelInput(ObjectTarget target, OwnerFacts ownerFacts, String policyId,
                                   @JsonProperty(value = "level", required = true) Verb level) {}
     public record DomainUseInput(ObjectTarget target, OwnerFacts ownerFacts, Boolean shared) {}
@@ -98,6 +100,29 @@ public final class ObjectAuthorizationController {
         var actor = actor(request);
         requireFacts(actor, input.target(), input.ownerFacts());
         return policies.agentAccess(authorization.resolveSubject(actor), input.target(), input.ownerFacts());
+    }
+
+    /**
+     * Fact behind platform:Skill/editorAccess: a draft requires AGENT CREATE, while an existing agent target requires
+     * EDIT on that agent. The caller supplies the agent object's current owner facts because assistant agent rows are
+     * owned by the workbench store, not by this service.
+     */
+    @PostMapping(SKILL_EDITOR_ACCESS)
+    public Decision skillEditorAccess(HttpServletRequest request, @RequestBody SkillEditorAccessInput input) {
+        var actor = actor(request);
+        if (input == null || blank(input.agentTarget())) throw badRequest("An agentTarget is required.");
+        Request operation;
+        if ("draft".equals(input.agentTarget())) {
+            if (input.target() != null || input.ownerFacts() != null)
+                throw badRequest("A draft skill editor access check cannot include an object target or owner facts.");
+            operation = new Create(Kind.AGENT);
+        } else {
+            if (input.target() == null || input.target().kind() != Kind.AGENT || !input.agentTarget().equals(input.target().id()))
+                throw badRequest("An existing agentTarget must identify the same AGENT object target.");
+            requireFacts(actor, input.target(), input.ownerFacts());
+            operation = new ObjectAccess(input.target(), Verb.EDIT, input.ownerFacts());
+        }
+        return authorization.decide(authorization.resolveSubject(actor), operation);
     }
 
     @PostMapping(AGENT_LEVEL)

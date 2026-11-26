@@ -37,7 +37,12 @@ export async function publishSkill(root: string, skill: RuntimeSkillRef, domainI
   if (skill.namespace.kind === "provider" && skill.namespace.provider === "workbench" && skill.name === "assistant-report")
     pkg.files.push({ path: "resources/chart-theme.json", content: JSON.stringify(exportChartTheme()) });
   const translations = publicSkillTranslationsRoot();
-  const relative = path.relative(publicSkillsRoot(), root);
+  const runtimeSkills = path.join(workbenchServerResourceRoot, "resources/runtime-skills");
+  const runtimeRelative = path.relative(runtimeSkills, root);
+  const publicRelative = path.relative(publicSkillsRoot(), root);
+  const relative = runtimeRelative && runtimeRelative !== ".." && !runtimeRelative.startsWith(`..${path.sep}`) && !path.isAbsolute(runtimeRelative)
+    ? path.join("runtime-skills", runtimeRelative)
+    : publicRelative;
   if (skill.namespace.kind === "provider" && translations && relative &&
       relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
     const translated = path.join(translations, "zh-CN", relative, "SKILL.md");

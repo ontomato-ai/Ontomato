@@ -6,7 +6,6 @@ import AdmZip from "adm-zip";
 import { AGENT_DEFINITION, DELETE_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { installContentLayout } from "../../../content/layout";
-import { registerSkillProvider } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
@@ -46,25 +45,6 @@ configureI18n({
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-ops-"));
 const publicSkillsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-ops-pub-"));
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot });
-
-registerSkillProvider({
-  id: "provider-demo",
-  name: "Demo Studio",
-  async list(context) {
-    return [
-      {
-        skill: { namespace: { kind: "domain", domainId: context.domainId }, name: "studio-skill" },
-        manifest: { name: "studio-skill", description: "Provided skill" },
-        async provide() {
-          return {
-            skill: { namespace: { kind: "domain" as const, domainId: context.domainId }, name: "studio-skill" },
-            files: [{ path: "SKILL.md", content: "---\nname: studio-skill\ndescription: Provided skill\n---\n" }],
-          };
-        },
-      },
-    ];
-  },
-});
 
 const { skillServerOperations } = await import("../panel-operations");
 const deleteOp = skillServerOperations.find((op): op is Extract<typeof op, { targetInput: string }> => op.handlerRef === DELETE_SKILL)!;
@@ -113,9 +93,6 @@ beforeEach(() => {
       return operationId === refused
         ? Response.json({ message: "Skill operation denied" }, { status: 403 })
         : new Response(null, { status: 204 });
-    }
-    if (url.endsWith("/platform/page-skills")) {
-      return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
     }
     throw new Error(`Unexpected upstream: ${url}`);
   }));
@@ -234,8 +211,8 @@ describe("skill panel server operations", () => {
     expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" })).toEqual({
       reason: "内置技能随产品提供，不能删除",
     });
-    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "studio-skill" })).toEqual({
-      reason: "由 Demo Studio 提供，不能在这里删除",
+    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" })).toEqual({
+      reason: "内置技能随产品提供，不能删除",
     });
     expect(await deleteOp.unavailable!(host, { kind: "object", objectType: SKILL, primaryKey: "missing-skill" })).toBeUndefined();
 
@@ -250,11 +227,11 @@ describe("skill panel server operations", () => {
 
     expect(await deleteOp.execute(
       zhHost,
-      { kind: "object", objectType: SKILL, primaryKey: "studio-skill" },
+      { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" },
     )).toEqual({
       kind: "refusal",
-      code: "SKILL_PROVIDER_READ_ONLY",
-      message: "由 Demo Studio 提供，不能在这里删除",
+      code: "PUBLIC_SKILL_READ_ONLY",
+      message: "内置技能随产品提供，不能删除",
     });
 
     expect(await deleteOp.execute(

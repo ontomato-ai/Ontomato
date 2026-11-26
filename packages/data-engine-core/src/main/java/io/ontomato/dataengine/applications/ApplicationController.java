@@ -33,7 +33,6 @@ public class ApplicationController {
 
     public static final String DECLARATIONS = "/platform/applications/self/declarations";
     public static final String PANEL_USES_BY_PANEL = "/platform/applications/panel-uses/by-panel";
-    public static final String PANEL_SKILL_SOURCES = "/platform/applications/panel-skill-sources";
     private final ApplicationCatalog catalog;
     private final IdentityService identity;
     private final WorkbenchServiceAuthentication authentication;
@@ -161,20 +160,6 @@ public class ApplicationController {
         return R.of(catalog.panelUsesByPanel(domainId, panelId));
     }
 
-    @GetMapping("/platform/page-skills")
-    @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
-    public R<PageSkills.Projection> pageSkills(@RequestParam(required = false) String applicationId,
-            @RequestParam(required = false) String entryKey, @RequestParam(required = false) String pageKey,
-            @RequestParam(required = false) String panelId, @RequestParam Map<String, String> parameters) {
-        if (parameters.containsKey("permissionCode") || parameters.containsKey("access"))
-            throw ApplicationCatalog.bad("Use applicationId, entryKey and pageKey for page skill lookup");
-        if (applicationId == null && entryKey == null && pageKey == null && panelId == null)
-            return R.of(catalog.pageSkills(current()));
-        if (applicationId == null || applicationId.isBlank() || !ApplicationCatalog.validEntryKey(entryKey)
-                || pageKey == null || pageKey.isBlank() || panelId != null && panelId.isBlank())
-            throw ApplicationCatalog.bad("A page skill lookup requires applicationId, entryKey and pageKey");
-        return R.of(catalog.pageSkills(current(), new PageSkills.Entrance(applicationId, entryKey, pageKey), panelId));
-    }
     @PostMapping("/platform/applications/connected")
     @Owned
     public R<JSONObject> connected(@RequestBody Connected body) {
@@ -185,15 +170,6 @@ public class ApplicationController {
         String service = authentication.authenticate(request);
         catalog.reconcileBuiltins(service, batch.applications());
         return R.of(Map.of("serviceId", service, "applicationIds", batch.applications().stream().map(ApplicationCatalog.Builtin::id).toList()));
-    }
-    @GetMapping(PANEL_SKILL_SOURCES)
-    public R<List<PanelSkills.Use>> panelSkillSources(HttpServletRequest request, @RequestParam String domainId,
-        @RequestParam(required = false) String applicationId, @RequestParam(required = false) String useId) {
-        authentication.authenticate(request);
-        if (domainId.isBlank()) throw ApplicationCatalog.bad("A domain is required");
-        if ((applicationId == null) != (useId == null) || applicationId != null && (applicationId.isBlank() || useId.isBlank()))
-            throw ApplicationCatalog.bad("Both application and use are required");
-        return R.of(catalog.panelSkillSources(domainId, applicationId, useId));
     }
     @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping(value = "/platform/applications", params = "purpose=navigation")

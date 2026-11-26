@@ -27,7 +27,7 @@ import { tForLocale } from "../../i18n";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { runForOwner } from "../assistant/execution";
-import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource, type AssistantSkillView } from "../assistant/skills";
+import { readAssistantSkillView, type AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { publishObjectChanged } from "../agent-host/presentation";
@@ -50,20 +50,12 @@ import { panelSecretStore } from "./secret-store";
 
 type PanelRun = Awaited<ReturnType<typeof runForOwner>>;
 
-export async function requirePanelSkillForRun(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
+async function requireAgentPanelUse(owner: AssistantOwner, credentials: AssistantCredentials,
   ref: PanelUseRef & Pick<PanelOperationRef, "root">) {
   if (ref.root === "frame")
-    throw new HttpError(403, "This run does not have the application frame's skill", "PANEL_FRAME_SKILL_REQUIRED");
-  const { applicationId, use, framePanelId } = await requirePanelUseEntry(credentials, ref, owner);
-  const view = await readAssistantSkillView(owner.domainId, credentials, owner.userId);
-  const skill = await resolvePageSkillSource(view, { applicationId, entryKey: use.id, pageKey: use.pageKey }, {
-    kind: "application-use", applicationId, useId: use.id,
-  }, [], { id: use.panelId });
-  if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
-    throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
-  return { use, framePanelId, view };
+    throw new HttpError(403, "The application frame is not a page operation target", "PANEL_FRAME_SKILL_REQUIRED");
+  return requirePanelUseEntry(credentials, ref, owner);
 }
-
 async function requireActivePageRun(owner: AssistantOwner, agentRun: PanelAgentRunRef) {
   const run = await runForOwner(owner, agentRun.runId);
   if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
@@ -204,7 +196,7 @@ export async function readPanelOperation(owner: AssistantOwner, credentials: Ass
   let current: Awaited<ReturnType<typeof operationForUse>>;
   if (request.agentRun) {
     const { run } = await requireActivePageRun(owner, request.agentRun);
-    const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, request);
+    const { use, framePanelId } = await requireAgentPanelUse(owner, credentials, request);
     const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
     current = await declaredOperation(owner, credentials, panel, use.panelId, use, request, request.call.target, { mode: "read", framePanelId });
   } else {
@@ -490,7 +482,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     const buildTest = channel.authority.executionKind === "build-test";
     if (buildTest && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
       throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
-    const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, input);
+    const { use, framePanelId } = await requireAgentPanelUse(owner, credentials, input);
     const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
     const current = writeOperation(await declaredOperation(owner, credentials, panel, use.panelId, use, input, invocationTarget(input), {
       mode: "prepare",

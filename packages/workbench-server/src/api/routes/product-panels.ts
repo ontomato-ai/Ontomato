@@ -59,11 +59,10 @@ import { readNestedPanel, requireRegisteredPanelRoot } from "../../services/prod
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions, snapshotPanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
-import { personalEntry, readRegisteredPanelEntry, requirePanelEntry } from "../../services/product-panels/application-use";
+import { readRegisteredPanelEntry, requirePanelEntry } from "../../services/product-panels/application-use";
 import { panelConfirmation } from "../../services/product-panels/confirmation";
 import { runForOwner } from "../../services/assistant/execution";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { openedPanelPageSkillContext } from "../../services/skills/view";
 
 type FrameRead = Extract<ProductPanelReadQuery, { source: "frame" }>;
 
@@ -159,10 +158,19 @@ productPanelsRouter.get("/application-entry", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");
   const { owner, credentials } = context(req);
   const ref = applicationEntryResolutionQuerySchema.parse(req.query);
-  const entry = await requirePanelEntry(credentials, ref);
-  const pageSkillContext = await openedPanelPageSkillContext(
-    { ...owner, initiatorCredentials: credentials }, await personalEntry(entry, owner));
-  res.json(applicationEntryResolutionSchema.parse({ ...entry, pageSkillContext }));
+  const entry = await requirePanelEntry(credentials, ref, owner);
+  const pageSkillContext = isApplicationPanelUse(entry.use)
+    ? {
+        applicationId: entry.applicationId,
+        entryKey: entry.use.id,
+        pageKey: entry.use.pageKey,
+        useId: entry.use.id,
+        panelId: entry.use.panelId,
+        path: entry.use.path,
+        memberPath: [],
+      }
+    : undefined;
+  res.json(applicationEntryResolutionSchema.parse({ ...entry, ...(pageSkillContext && { pageSkillContext }) }));
 }));
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");

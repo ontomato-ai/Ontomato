@@ -1480,7 +1480,6 @@ export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] =
   relation("projection.binds-target", PRODUCT_PROJECTION, layeredTypes, "node-product-panels", "assembly", false, false),
   relation("panel.contains-projection", PRODUCT_PANEL, PRODUCT_PROJECTION, "node-product-panels", "assembly"),
   relation("panel.contains-panel", PRODUCT_PANEL, PRODUCT_PANEL, "node-product-panels", "assembly"),
-  relation("panel.provides-skill", PRODUCT_PANEL, SKILL, "node-product-panels", "assembly", true),
   relation("application.uses-panel", APPLICATION, PRODUCT_PANEL, "java-application-catalog", "assembly"),
   relation("agent.uses-skill", AGENT_DEFINITION, SKILL, "node-assistant", "dependency"),
   relation("agent.executes-as-user", AGENT_DEFINITION, USER, "node-assistant", "dependency"),

@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * catalogue that same version builds. Registration on the platform checks a projection's
  * datums against the component's declaration before it accepts a panel; a declaration that does not cover a datum the
  * material already sends stops the whole registration (one capability-map projection whose `neighbors` read returns the
- * graph result took every panel skill down), so the same three checks run here, where a wrong declaration costs a build
+ * graph result took every panel registration down), so the same three checks run here, where a wrong declaration costs a build
  * instead of a deployment.
  *
  * What a projection names, here, is only its own component and data: which datum may hold which read result is the

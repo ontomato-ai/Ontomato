@@ -17,7 +17,7 @@ import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import { openPresentationView } from "../../agent-host/presentation";
-const mocks = vi.hoisted(() => ({createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
+const mocks = vi.hoisted(() => ({createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
@@ -33,8 +33,6 @@ vi.mock("../../assistant/definitions", () => ({
 
 vi.mock("../../assistant/skills",()=>({
   readAssistantSkillView: mocks.pages,
-  resolvePageSkillSource: mocks.resolveMember,
-  loadedPageSkillVersion: mocks.loadedMember,
 }));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,backendPost:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
@@ -112,12 +110,9 @@ beforeEach(()=>{
      throw new HttpError(404, "Unknown use", "NOT_FOUND");
    return {text:JSON.stringify({success:true,data:{applicationId:"A",use,menu:{singleEntry:true,groups:[],panelUses:[]}}})};
  });
- mocks.pages.mockResolvedValue({ resolveSource: mocks.resolveMember });
+ mocks.pages.mockResolvedValue({});
  mocks.assertPermission.mockResolvedValue(undefined);
  mocks.projectDefinition.mockImplementation(definition => definition);
- mocks.resolveMember.mockResolvedValue(skill);
- mocks.loadedMember.mockImplementation((ref, loaded: RuntimeRun["resolvedSkills"]) =>
-   loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
  mocks.panel.mockResolvedValue({
    id: "P", manifest: {
      state: { task: { type: { kind: "object", objectType: "platform:Trigger" } } },
@@ -853,20 +848,6 @@ it("runs a registered read using the reader and preview context without creating
   expect(intents.size).toBe(0);
 });
 
-it("resolves the actual panel-use member and refuses a run that only loaded a sibling", async () => {
-  mocks.resolveMember.mockResolvedValue({ ...skill, name: "other-panel-skill" });
-  await expect(prepareLiveAction(action())).rejects.toMatchObject({ code: "FORBIDDEN" });
-  expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials, owner.userId);
-  expect(mocks.resolveMember).toHaveBeenCalledWith(
-    expect.objectContaining({ resolveSource: mocks.resolveMember }),
-    { applicationId: "A", entryKey: use.id, pageKey: use.pageKey },
-    { kind: "application-use", applicationId: "A", useId: "tasks" }, [], { id: use.panelId },
-  );
-  expect(mocks.loadedMember).toHaveBeenCalledWith(
-    { ...skill, name: "other-panel-skill" }, current.resolvedSkills,
-  );
-  expect(ownerWrites()).toHaveLength(0);
-});
 
 it.each([false, true])("handles an Action-backed form with another tab saving first = %s", async (humanSavesFirst) => {
  const order = { kind: "object" as const, objectType: "Order", primaryKey: "o1" };

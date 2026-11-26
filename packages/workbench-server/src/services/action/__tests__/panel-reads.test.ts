@@ -10,9 +10,9 @@ import { objectActionDeclaration } from "../object-actions";
 import { createActionReadAdapter, readObjectActions } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
-// The operation registry these describes come from also registers the agent operations, whose page skills these reads never load.
+// The operation registry these describes come from also registers the agent operations, which these reads never load.
 vi.mock("../../assistant/skills", () => ({
-  readAssistantSkillView: vi.fn(), resolvePageSkillSource: vi.fn(), loadedPageSkillVersion: vi.fn(),
+  readAssistantSkillView: vi.fn(), loadedSkillVersion: vi.fn(),
 }));
 
 /*

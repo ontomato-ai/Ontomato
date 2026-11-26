@@ -17,8 +17,8 @@ vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: 
 vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ callbackUrl: "http://workbench.test" }) } }));
 vi.mock("../../assistant/skills", () => ({
   readAssistantSkillView: vi.fn(),
-  resolvePageSkillSource: vi.fn(),
-  loadedPageSkillVersion: vi.fn(),
+
+  loadedSkillVersion: vi.fn(),
 }));
 vi.mock("../../product-panels/application-use", () => ({
   requirePanelUseEntry: async () => ({
