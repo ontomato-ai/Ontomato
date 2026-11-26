@@ -231,6 +231,14 @@ public class ApplicationCatalog {
         return all().stream().filter(app -> app.getString("domainId") == null
             || Objects.equals(app.getString("domainId"), domainId)).toList();
     }
+    public record ApplicationEntries(JSONObject application, List<ApplicationPanelUse> entries) {}
+
+    public List<ApplicationEntries> entriesInDomain(String domainId) {
+        var apps = applicationsInDomain(domainId);
+        var pageKeys = new BuiltinPageKeys(apps);
+        return apps.stream().map(app -> new ApplicationEntries(app, actualEntries(app, pageKeys))).toList();
+    }
+
     public JSONObject require(String id) {
         return require(all(), id);
     }
