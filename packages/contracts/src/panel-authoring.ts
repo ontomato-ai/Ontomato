@@ -68,7 +68,7 @@ function isOfficialComponent(component: string, name: string) {
   return component === name || component === `@ontomato/sdk:${name}`;
 }
 
-const inlineMemberSchema = z.object({
+export const panelAuthoringInlineMemberSchema = z.object({
   id: productCurrentIdParamsSchema.shape.id.optional().describe("Stable projection ID written by registration or by the offline check for a packaged panel. Keep it when renaming or moving the member."),
   component: z.union([
     z.string().regex(/^[^@\s/:]+$/u, "Expected an SDK component name"),
@@ -151,7 +151,7 @@ const inlineMemberSchema = z.object({
 });
 
 /** The authoring tool accepts a short inline member or an existing formal placement. */
-export const panelAuthoringMemberSchema = z.union([inlineMemberSchema, panelMemberSchema]);
+export const panelAuthoringMemberSchema = z.union([panelAuthoringInlineMemberSchema, panelMemberSchema]);
 export type PanelAuthoringMember = z.infer<typeof panelAuthoringMemberSchema>;
 
 /** The tool expands short members before checking the resulting formal manifest and registrations. */

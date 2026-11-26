@@ -765,7 +765,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "layout",
     meaning:
-      "Page header with title, back link, `#actions`, and draft controls. Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text, locale map `names`, or a projection-bound component in `#title`), configurable `density` (`bar` / `compact` / `expanded`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
+      "Page header with title, back link, actions, and draft controls. A top-level panel can show a leading visual, a back link, a title, a description, and actions in `#actions` or the default slot. Supply draft controls through the `draft` prop or the `#draft` slot. Choose a density of `bar`, `compact`, or `expanded`. When another panel embeds it, the header renders only the actions and draft controls in a compact row, and renders nothing if neither is supplied.",
     configProps: ["title", "description", "backLabel", "density", "draft", "labels"],
   }),
   defineComponentMeta({
