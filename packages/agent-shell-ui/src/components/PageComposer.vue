@@ -187,9 +187,10 @@ onBeforeUnmount(() => withdraw?.());
   width: min(760px, 100%);
   margin-inline: auto;
 }
-/* Folded into its round corner button, the floating foot stays transparent and leaves the page its whole height. */
+/* Folded into its round corner button, the floating foot owns no height at all; the absolute button floats over the page. */
 .page-ask:has(.composer-unfold) {
-  padding: 0 0 var(--shell-composer-foot);
+  height: 0;
+  padding: 0;
   background: none;
 }
 </style>
