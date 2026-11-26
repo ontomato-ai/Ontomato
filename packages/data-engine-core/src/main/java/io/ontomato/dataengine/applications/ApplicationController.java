@@ -1,7 +1,5 @@
 package io.ontomato.dataengine.applications;
 
-import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
-
 import io.ontomato.dataengine.controller.BuildTestAccess;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;

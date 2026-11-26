@@ -5,10 +5,20 @@ import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owne
 import static io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.cfg.CoercionAction;
+import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.type.LogicalType;
 import io.ontomato.dataengine.applications.ApplicationCatalog;
 import io.ontomato.dataengine.applications.PolicyEntryCatalog;
 import io.ontomato.dataengine.applications.PolicyEntryCatalog.EntryRoot;
 import io.ontomato.dataengine.bean.action.Action;
+import io.ontomato.dataengine.bean.action.ActionTarget;
 import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.dao.ActionDao;
@@ -180,7 +190,21 @@ public class AuthorizationPolicyGovernanceController {
     }
 
     public record RegistrationTarget(Kind kind, String key) {}
-    public record RegistrationRequest(List<RegistrationTarget> targets) {}
+    public record RegistrationRequest(List<RegistrationTarget> targets, JsonNode snapshot) {}
+
+    private record GrantSnapshot(List<JsonNode> grants, List<JsonNode> actions, String ontologyRule) {}
+    private record SnapshotGrant(String policyId, Kind kind, String key, Verb verb, GrantScope scope) {}
+    private record SnapshotAction(String id, String status, String target) {}
+
+    private static final JsonMapper SNAPSHOT_JSON = JsonMapper.builder()
+            .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS,
+                    DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .withCoercionConfig(LogicalType.Textual, coercions -> coercions
+                    .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
+                    .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
+                    .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail))
+            .build();
 
     @ManagementEndpoint(AuthorizationPolicies.READ)
     @PostMapping("/registered-targets/check")
@@ -188,6 +212,7 @@ public class AuthorizationPolicyGovernanceController {
         if (input.targets() == null || input.targets().stream()
                 .anyMatch(target -> target == null || target.kind() == null || blank(target.key())))
             throw badRequest("Each target requires a kind and a stable key");
+        if (input.snapshot() != null && !input.snapshot().isNull()) validateSnapshot(input.snapshot());
         var keysByKind = input.targets().stream().collect(Collectors.groupingBy(RegistrationTarget::kind,
                 Collectors.mapping(RegistrationTarget::key, Collectors.toSet())));
         var domainId = identity.getCurrentUser().getDomainId();
@@ -207,6 +232,65 @@ public class AuthorizationPolicyGovernanceController {
             registered.forEach(key -> matches.add(new RegistrationTarget(group.getKey(), key)));
         }
         return R.ok(matches);
+    }
+
+    private void validateSnapshot(JsonNode body) {
+        GrantSnapshot snapshot;
+        try {
+            snapshot = SNAPSHOT_JSON.treeToValue(body, GrantSnapshot.class);
+        } catch (JsonProcessingException invalid) {
+            throw badRequest("Invalid policy snapshot");
+        }
+        if (snapshot.grants() == null || snapshot.actions() == null)
+            throw badRequest("Policy snapshot requires grants and actions");
+        var actionsById = snapshot.actions().stream().collect(Collectors.groupingBy(action -> action.path("id").asText()));
+        Map<String, Object> rule = null;
+        for (var input : snapshot.grants()) {
+            String location = "policy " + input.path("policyId").asText() + ", " + input.path("kind").asText()
+                    + ", key " + input.path("key").asText();
+            try {
+                var grant = SNAPSHOT_JSON.treeToValue(input, SnapshotGrant.class);
+                if (grant == null || blank(grant.policyId())) throw badRequest("A policy ID is required");
+                SnapshotAction action = null;
+                ActionTarget target = null;
+                if (grant.kind() == Kind.ACTION && grant.verb() == Verb.EXECUTE) {
+                    var candidates = actionsById.getOrDefault(grant.key(), List.of());
+                    if (candidates.size() != 1) throw badRequest("The snapshot must contain exactly one matching Action");
+                    action = SNAPSHOT_JSON.treeToValue(candidates.getFirst(), SnapshotAction.class);
+                    if (action.target() != null) {
+                        target = SNAPSHOT_JSON.readValue(action.target(), ActionTarget.class);
+                        if (target == null || blank(target.className()) || blank(target.keyParameter()))
+                            throw badRequest("The snapshot Action target requires a class and key parameter");
+                        if (rule == null) rule = snapshotRule(snapshot.ontologyRule());
+                    }
+                }
+                policies.validateSnapshotGrant(grant.kind(), grant.key(), grant.verb(), grant.scope(),
+                        action == null ? null : action.status(), target, rule);
+            } catch (JsonProcessingException invalid) {
+                throw badRequest("Invalid grant, scope or Action in " + location + ": " + invalid.getOriginalMessage());
+            } catch (ResponseStatusException invalid) {
+                throw badRequest(location + ": " + invalid.getReason());
+            } catch (IllegalArgumentException invalid) {
+                throw badRequest(location + ": " + invalid.getMessage());
+            }
+        }
+    }
+
+    private static Map<String, Object> snapshotRule(String content) throws JsonProcessingException {
+        if (content == null) throw badRequest("The snapshot ontology rule is required");
+        var rule = SNAPSHOT_JSON.readTree(content);
+        if (rule == null || !rule.isObject() || !rule.path("classDef").isArray())
+            throw badRequest("The snapshot ontology rule requires a classDef array");
+        for (var definition : rule.path("classDef")) {
+            if (!definition.path("className").isTextual() || !definition.path("attrs").isArray())
+                throw badRequest("Each snapshot class requires a className and attrs");
+            for (var attribute : definition.path("attrs")) {
+                var enable = attribute.get("enable");
+                if (!attribute.path("name").isTextual() || enable != null && !enable.isNull() && !enable.isBoolean())
+                    throw badRequest("Each snapshot attribute requires a name and a boolean enable when specified");
+            }
+        }
+        return SNAPSHOT_JSON.convertValue(rule, new TypeReference<Map<String, Object>>() {});
     }
 
     @PostMapping("/graph-facts")

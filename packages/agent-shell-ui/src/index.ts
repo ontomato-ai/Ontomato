@@ -38,6 +38,7 @@ export {
 } from "./conversation-display";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
 export { useSessionRunFeed, type SessionRunFeedOptions } from "./useSessionRunFeed";
+export { vectorResourceTarget, type ReadVectorResource } from "./vector-resource";
 export {
   createAgentHostClient,
   type AgentHostClient,

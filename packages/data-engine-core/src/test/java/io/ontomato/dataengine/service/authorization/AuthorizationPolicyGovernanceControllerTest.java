@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service.authorization;
 
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,6 +18,7 @@ import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.config.BaseControllerAdvice;
+import io.ontomato.dataengine.config.ManagementEndpointConfig;
 import io.ontomato.dataengine.controller.AuthorizationPolicyGovernanceController;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
@@ -32,10 +34,14 @@ import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.handler.MappedInterceptor;
 
 class AuthorizationPolicyGovernanceControllerTest {
     private static final String PREFIX = "/authorization/policies/";
@@ -62,7 +68,17 @@ class AuthorizationPolicyGovernanceControllerTest {
         var inspector = new AuthorizationAccessInspector(authorization, store, subjects, policies, workflows, grants, actions);
         var controller = new AuthorizationPolicyGovernanceController(new WorkbenchServiceAuthentication("workbench"),
                 identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows, mock(io.ontomato.dataengine.dao.TriggerDao.class));
-        http = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new BaseControllerAdvice()).build();
+        var beans = new DefaultListableBeanFactory();
+        beans.registerSingleton("access", new ManagementRequestAccess(identity, authorization, operations));
+        var registry = new InterceptorRegistry() {
+            HandlerInterceptor[] interceptors() {
+                return getInterceptors().stream().map(value -> ((MappedInterceptor) value).getInterceptor())
+                        .toArray(HandlerInterceptor[]::new);
+            }
+        };
+        new ManagementEndpointConfig(beans.getBeanProvider(ManagementRequestAccess.class)).addInterceptors(registry);
+        http = MockMvcBuilders.standaloneSetup(controller).addInterceptors(registry.interceptors())
+                .setControllerAdvice(new BaseControllerAdvice()).build();
 
         when(identity.getCurrentUser()).thenReturn(user);
         when(user.getId()).thenReturn("login-id");
@@ -142,6 +158,53 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.entries[1].panelIds", containsInAnyOrder("same")))
                 .andExpect(jsonPath("$.existingGrants").isEmpty())
                 .andExpect(jsonPath("$.targetPolicyRoleIds").isEmpty());
+    }
+
+    @Test
+    void checksSnapshotGrantsWithoutTreatingSnapshotDefinitionsAsRegisteredTargets() throws Exception {
+        var grant = JSONObject.of("policyId", "selected", "kind", "ACTION", "key", "snapshot-approve",
+                "verb", "EXECUTE", "scope", JSONObject.of("kind", "assigned_to_self", "className", "Order", "field", "assignee"));
+        var action = JSONObject.of("id", "snapshot-approve", "status", Action.STATUS_PUBLISHED,
+                "target", JSONObject.of("className", "Order", "keyParameter", "orderId").toJSONString());
+        var snapshot = JSONObject.of("grants", List.of(grant), "actions", List.of(action),
+                "ontologyRule", JSONObject.of("classDef", List.of(JSONObject.of("className", "Order",
+                        "attrs", List.of(JSONObject.of("name", "assignee", "enable", true))))).toJSONString());
+        var input = JSONObject.of("targets", List.of(
+                JSONObject.of("kind", "ENTRY", "key", "app/main"),
+                JSONObject.of("kind", "APPLICATION", "key", "foreign")), "snapshot", snapshot);
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isForbidden());
+        permissions(true, false);
+        when(catalog.registeredEntryIds("domain", Set.of("app/main"))).thenReturn(Set.of("app/main"));
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Domain-Id", "other-domain").content(input.toJSONString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].kind").value("ENTRY"))
+                .andExpect(jsonPath("$.data[0].key").value("app/main"));
+        verify(catalog).registeredEntryIds("domain", Set.of("app/main"));
+        verify(catalog).registeredApplicationIds("domain", Set.of("foreign"));
+
+        for (var kind : List.of("PANEL", "SKILL")) {
+            snapshot.put("grants", List.of(JSONObject.of("policyId", "selected", "kind", kind,
+                    "key", "unapproved", "verb", "VIEW")));
+            http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message", containsString("policy selected, " + kind + ", key unapproved")));
+        }
+        snapshot.put("grants", List.of(grant));
+        for (var scope : List.of(JSONObject.of("kind", "made_up"),
+                JSONObject.of("kind", "all", "field", "assignee"),
+                JSONObject.of("kind", "assigned_to_self", "className", "Order", "field", 5),
+                JSONObject.of("kind", "assigned_to_self", "className", "Order", "field", "unknown"))) {
+            grant.put("scope", scope);
+            http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message", containsString("policy selected, ACTION, key snapshot-approve")));
+        }
+        verifyNoMoreInteractions(catalog);
+        verifyNoInteractions(actions, admin);
+        verify(store, never()).grantObject(any());
     }
 
     @Test

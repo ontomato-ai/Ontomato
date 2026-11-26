@@ -70,9 +70,9 @@ Start with the authorized deployment/context and the business purpose. Read `lis
 | Change the data source | Test and inspect the target first. Prepare a compatible ontomap and resolve each existing relationship and resource binding before switching. Then call `use-datasource` and `set-ontomap`, and read back/test the result. | Definitions match the actual target; cross-object questions and relevant resources work. These are separate writes, not an atomic migration. If one fails, read actual state before retrying or restoring the affected configuration. |
 | Maintain business knowledge | Read current entries, then save the requested additions/edits or delete the identified entry. | Read back IDs, content and review status; metadata changes alone do not prove a business answer is correct. |
 | Load business data | When the tables already exist: `db-import` a CSV per table, then `set-ontomap` if the definition must cover new columns. When they do not: `propose-schema` first, stop, and let a human or CI apply it; only then import. | Row counts and keys in the business database match the files; The retriever finds the imported objects and relationships. |
-| Batch-import text resources | Once objects exist and the `vector` attribute is declared, `upload-vectors` a JSONL file; use `upload-vector` for one resource or an original file and `delete-vector` to remove one. | The failure list is empty or handled; spot checks retrieve and download. |
+| Write text resources | Use the existing business-data ingestion flow or a published Action running with its execution grant. For test fixtures, use `import-test-data`. | Read back the object references and verify retrieval. |
 | Load test data | In a test environment or test domain, `import-test-data` a zip. | Read objects and resources back; it clears the classes it covers and is not for real data. |
-| Deploy a book hand-off package | Review its `ddl.sql` against `ontomap.draft.json` and turn it into a `propose-schema` proposal; a human or CI applies it. Then `db-import`, `set-ontomap` and `upload-vectors`. | The proposal was reviewed and applied outside this skill; re-check model, records and evidence resources as the package's `import-map.md` lists. |
+| Deploy a book hand-off package | Review its `ddl.sql` against `ontomap.draft.json` and turn it into a `propose-schema` proposal; a human or CI applies it. Then run `db-import` and `set-ontomap`. Load evidence resources through business-data ingestion or an existing published Action. | The proposal was reviewed and applied outside this skill; re-check model, records and evidence resources as the package's `import-map.md` lists. |
 
 If a required relationship, resource or permission reference cannot yet be preserved with the available tools, keep the current connection and ontomap active. Prepare the target definition and explain the missing access or capability. Resolve those dependencies before switching; do not switch first and plan repairs later, or turn a requirement such as keeping photos usable into deferred work.
 
@@ -101,9 +101,6 @@ node ontomato.mjs delete-knowledge <id>
 node ontomato.mjs db-sql @ddl.sql
 node ontomato.mjs db-import public.paragraph @paragraph.csv
 node ontomato.mjs import-test-data test-data.zip
-node ontomato.mjs upload-vector @vector.json
-node ontomato.mjs upload-vectors resources.jsonl
-node ontomato.mjs delete-vector <class> <attribute> <objectId> <path>
 # Standalone data delegation is described in Natural-language questions outside the product.
 ```
 
@@ -122,9 +119,6 @@ node ontomato.mjs delete-vector <class> <attribute> <objectId> <path>
 | `propose-schema` | Paths of the written `.json` and `.sql` | Writes a migration proposal as an artifact; it does not connect to the database or change any schema. A human or CI reviews and applies it. |
 | `db-import` | Progress per batch | Reads a CSV (first row: column names) and inserts it in batches (500 rows by default), each in a transaction; stops at a failing batch, earlier batches stay committed, resume with `--from <rows imported>`. |
 | `import-test-data` | `test data imported` | Uploads a test-data zip: clears every class in the file and its vector resources, then writes; test environments or test domains only. |
-| `upload-vector` | The new resource, including `path` | Adds one resource and appends a reference to the object's vector field. Check an uncertain result before appending again. |
-| `upload-vectors` | Progress and failures per batch | Adds text resources from JSONL in batches (100 lines by default), each line on its own; failed lines go to `<file>.failed.jsonl`; a failed request stops with a `--from` hint. |
-| `delete-vector` | `vector deleted` | Deletes one resource and the object's reference to it. |
 | Data questions (see the delegation section) | Session/events and result data | Runs a question against the current context; it is not an ontomap editor or a dataset export. |
 
 The commands below document their current API paths. Legacy API names containing `Schema` do not change the product concept: the complete semantic definition is the ontomap.
@@ -148,29 +142,9 @@ Only PostgreSQL and MySQL are supported. For other databases, prepare the same p
 
 The resource file and embedding belong to Ontomato; the object's vector field stores references shaped as `[{"path":"...","text":"..."}]`. Retrieval is scoped by domain/context, class name and attribute name; each resource also refers to an object key. The object must already exist and the attribute must be declared `vector`; preserve the exact primary-key value.
 
-**Batch import** with `upload-vectors <file>.jsonl`, one resource per line:
+Business-data ingestion or a published Action running with its execution grant owns resource attachment, updates, and deletion. Before deploying a hand-off package, confirm which ingestion job or published Action will load its evidence files. For an Action, check its declared object key, vector field and parameters. Run it through its application form for uploads, or use the analyst skill’s `node ontomato.mjs run <actionId> @parameters.json` when it accepts JSON inputs. Read back the resulting object attachment and check that it downloads. Test-data packages can carry vector resources through the import flow below. If neither ingestion nor a published Action is available, hand the object keys, field, content and files to the resource owner.
 
-```json
-{"className":"paragraph","attrName":"content","objectId":"p1","text":"Chapter 3 Procurement | 3.2 Tendering | …body…"}
-```
-
-`text` is both what is embedded and what a search returns to the user. **Carry context into each chunk**: with the body alone, the title, document number, person or chapter a question names often cannot be found. A common form joins the document title, section or number, date and body, such as `title | section | body`. Split along the content so that one chunk covers one point.
-
-A request carries 100 lines by default; embeddings are requested ten at a time and each line succeeds or fails on its own. Failed lines go to `<file>.failed.jsonl` (line, object, reason) and can be re-imported alone once fixed. When a whole request fails the script stops and prints `--from`; check which lines of that batch were stored before resuming, because a repeated import appends new resources instead of replacing old ones.
-
-**One resource, or one with its original file,** with `upload-vector @vector.json`:
-
-```json
-{"className":"paragraph","attrName":"content","objectId":"p1","text":"The paragraph text…","file":"./p1.pdf"}
-```
-
-With `file`, the original file is stored as the resource and its extension becomes the suffix; `text` is still what is embedded, and the backend extracts nothing from the file. Without `file`, `text` is stored as a `.txt` resource. Delete with `delete-vector <class> <attribute> <objectId> <path>`, taking `path` from the object's vector field.
-
-Changing class names, attribute names or keys requires explicit handling of existing bindings. `set-ontomap` and `use-datasource` do not perform that migration. If only the database connection changes, preserving names/keys and the reference values is a prerequisite, not proof that resources still work: check retrieval and a download before claiming completion.
-
-`upload-vector` and `upload-vectors` call `POST /api/data-query/vectorResource/upload` (a multipart form; a batch sends only the `items` field, an array of `{content, className, attrName, objectId}`); `delete-vector` calls `/vectorResource/delete`. The production side of a two-environment deployment offers no resource upload or delete; prepare resources in the test environment.
-
-Vector attachment needs a data adapter that can read the target object and write its reference field. The included implementations provide that path for PostgreSQL, MySQL, SQL Server, DuckDB, Neo4j, Elasticsearch and OpenSearch; GaussDB reports unsupported writes. Installed types come from `list-datasources`; connection success does not establish write authorization or deployment-version support. Treat an unsupported-operation error as a capability boundary, not a reason to write vector storage directly.
+Resolve any existing references before changing class names, attribute names or keys. Verify retrieval and download after switching a connection.
 
 ## Test data
 
