@@ -599,11 +599,53 @@ it("shows a declared option's display name and keeps the raw value in the record
   const page = await createCustomerOntologyReadAdapter(owner, viewer).query("order", {});
   expect(page.rows[0]).toMatchObject({
     fields: { id: "o-1", status: "APPROVED" },
-    valueLabels: { status: { APPROVED: "Approved" } },
+    valueLabels: { status: "Approved" },
     tones: { status: "success" },
   });
   // A value outside the options stays as it is, with no display text and no tone.
   expect(page.rows[1]).toMatchObject({ fields: { id: "o-2", status: "SHIPPED" } });
   expect(page.rows[1]!.valueLabels).toBeUndefined();
   expect(page.rows[1]!.tones).toBeUndefined();
+});
+
+it("matches a declared option by the attribute's type, not by the value's text form", async () => {
+  const attributes = [
+    { className: "order", name: "id", showName: "ID", type: "varchar", attrDesc: "", enable: true, businessKey: false, primaryKey: true },
+    {
+      className: "order", name: "amount", showName: "Amount", type: "double", attrDesc: "", enable: true,
+      businessKey: false, primaryKey: false,
+      options: [{ value: 1.5, label: "One and a half", tone: "info" }, { value: 2, label: "Two", tone: "success" }],
+    },
+    {
+      className: "order", name: "code", showName: "Code", type: "varchar", attrDesc: "", enable: true,
+      businessKey: false, primaryKey: false,
+      options: [{ value: "007", label: "Agent", tone: "warning" }],
+    },
+  ];
+  stubOwner(request => {
+    if (request.url.pathname === "/ontology/model/attributes") return Response.json(attributes);
+    if (request.url.pathname === "/data/getWholeClassDataByPage")
+      return Response.json({
+        success: true,
+        total_count: 2,
+        readable_fields: ["id", "amount", "code"],
+        // The owner writes the same number differently, and a text value that looks like a number.
+        data: [{ id: "o-1", amount: "1.50", code: "007" }, { id: "o-2", amount: 2, code: 7 }],
+      });
+    return undefined;
+  });
+
+  const page = await createCustomerOntologyReadAdapter(owner, viewer).query("order", {});
+  // 1.50 and 1.5 are the same number, so the option matches; the value itself is left as stored.
+  expect(page.rows[0]).toMatchObject({
+    fields: { amount: "1.50", code: "007" },
+    valueLabels: { amount: "One and a half", code: "Agent" },
+    tones: { amount: "info", code: "warning" },
+  });
+  // Text compares strings: a number the owner returns for a text attribute matches no declared text option.
+  expect(page.rows[1]).toMatchObject({
+    fields: { amount: "2", code: "7" },
+    valueLabels: { amount: "Two" },
+    tones: { amount: "success" },
+  });
 });

@@ -142,11 +142,23 @@ function recordLabel(attributes: readonly ClassAttribute[], primaryKey: string, 
   return values.some(value => value !== "") ? values.join(" / ") : primaryKey;
 }
 
-/** The declared option an attribute value matches, if the attribute declares option values. */
+/**
+ * The declared option an attribute value matches, if the attribute declares option values. The owner decides which
+ * option a value is, by the attribute's own type: text compares strings and a number compares numbers, never their text
+ * forms — `1.50` and `1.5` are the same number but not the same text.
+ */
 function attributeOption(attribute: ClassAttribute | undefined, raw: unknown) {
   if (!attribute?.options || attribute.options.length === 0 || raw == null) return undefined;
-  const text = displayText(raw);
-  return attribute.options.find(option => option.value === raw || String(option.value) === text);
+  const type = normalizedAttributeType(attribute.type);
+  if (INTEGER_TYPES.has(type) || NUMBER_TYPES.has(type)) {
+    const number = typeof raw === "number"
+      ? raw
+      : (typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN);
+    if (!Number.isFinite(number)) return undefined;
+    return attribute.options.find(option => typeof option.value === "number" && option.value === number);
+  }
+  if (typeof raw !== "string") return undefined;
+  return attribute.options.find(option => option.value === raw);
 }
 
 /** Map one owner row to the panel record shape; only the columns the row carries become fields. */
@@ -155,15 +167,15 @@ function panelRecord(className: string, attributes: readonly ClassAttribute[], r
   const fields: Record<string, string> = {};
   const fieldLabels: Record<string, string> = {};
   const tones: Record<string, PanelFieldTone> = {};
-  const valueLabels: Record<string, Record<string, string>> = {};
+  const valueLabels: Record<string, string> = {};
   for (const [name, value] of Object.entries(row)) {
     const attribute = attributes.find(item => item.name === name);
     fields[name] = displayText(value);
     fieldLabels[name] = attribute?.showName ?? name;
     const option = attributeOption(attribute, value);
     if (option?.tone) tones[name] = option.tone;
-    // The value stays as stored; a declared name for it is carried beside it, keyed by that value as text.
-    if (option) valueLabels[name] = { [displayText(value)]: option.label };
+    // The value stays as stored; its declared display name rides beside it.
+    if (option) valueLabels[name] = option.label;
   }
   return {
     className,
