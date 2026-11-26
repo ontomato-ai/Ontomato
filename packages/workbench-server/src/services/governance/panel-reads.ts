@@ -379,9 +379,12 @@ export async function readMemberAccessContext(
   const roleNameById = new Map(roleAccess.map(access => [access.roleId ?? "", access.roleCode ?? ""]));
   // What the access check reports names its sources by id alone; the detail page shows the same words as the rows above
   // it, so the answer carries the domain's role and policy names.
-  const roleLabels: RuntimeJsonObject = Object.fromEntries(
-    roleOptions.options.map(option => [String(option.value), option.label]),
-  );
+  const roleLabels: RuntimeJsonObject = {
+    // The reserved domain-member role keeps out of the role directory, so the code the platform-access read carries is
+    // the only name such a role has — the same word the rows above the check already show.
+    ...Object.fromEntries(roleAccess.flatMap(access => (access.roleId && access.roleCode ? [[access.roleId, access.roleCode]] : []))),
+    ...Object.fromEntries(roleOptions.options.map(option => [String(option.value), option.label])),
+  };
   const policyLabels: RuntimeJsonObject = Object.fromEntries(policies.map(policy => [policy.id, policy.name]));
   const candidates = policies.filter(policy => policy.type === ENTRY_AND_OBJECT_POLICY_TYPE && ownPolicyIds.has(policy.id));
   const fillPolicies: RuntimeJsonObject[] = candidates.map(policy => {
