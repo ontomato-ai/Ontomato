@@ -35,11 +35,15 @@ import io.ontomato.dataengine.service.authorization.AuthorizationAccessInspector
 import io.ontomato.dataengine.service.authorization.AuthorizationAccessInspector.WorkflowStepAction;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
 import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.authorization.PolicyTypes;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Set;
@@ -192,12 +196,18 @@ public class AuthorizationPolicyGovernanceController {
     public record RegistrationTarget(Kind kind, String key) {}
     public record RegistrationRequest(List<RegistrationTarget> targets, JsonNode snapshot) {}
 
-    private record GrantSnapshot(List<JsonNode> grants, List<JsonNode> actions, String ontologyRule) {}
+    private record GrantSnapshot(List<SnapshotPolicy> policies, List<SnapshotPolicyLink> policyLinks,
+                                 List<SnapshotManagementGrant> managementGrants, List<String> businessDataPolicyIds,
+                                 List<JsonNode> grants, List<JsonNode> actions, String ontologyRule) {}
+    private record SnapshotPolicy(String id, Integer type) {}
+    private record SnapshotPolicyLink(String policyId, Integer type) {}
+    private record SnapshotManagementGrant(String policyId, String operationId) {}
     private record SnapshotGrant(String policyId, Kind kind, String key, Verb verb, GrantScope scope) {}
     private record SnapshotAction(String id, String status, String target) {}
 
     private static final JsonMapper SNAPSHOT_JSON = JsonMapper.builder()
             .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+            .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS,
                     DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .withCoercionConfig(LogicalType.Textual, coercions -> coercions
@@ -241,8 +251,10 @@ public class AuthorizationPolicyGovernanceController {
         } catch (JsonProcessingException invalid) {
             throw badRequest("Invalid policy snapshot");
         }
-        if (snapshot.grants() == null || snapshot.actions() == null)
-            throw badRequest("Policy snapshot requires grants and actions");
+        if (snapshot.grants() == null || snapshot.actions() == null || snapshot.policies() == null
+                || snapshot.policyLinks() == null || snapshot.managementGrants() == null || snapshot.businessDataPolicyIds() == null)
+            throw badRequest("Policy snapshot requires policies, role links, management grants, business data policies, grants and actions");
+        var policyTypes = validateSnapshotPolicies(snapshot);
         var actionsById = snapshot.actions().stream().collect(Collectors.groupingBy(action -> action.path("id").asText()));
         Map<String, Object> rule = null;
         for (var input : snapshot.grants()) {
@@ -251,6 +263,7 @@ public class AuthorizationPolicyGovernanceController {
             try {
                 var grant = SNAPSHOT_JSON.treeToValue(input, SnapshotGrant.class);
                 if (grant == null || blank(grant.policyId())) throw badRequest("A policy ID is required");
+                requireSnapshotPolicyType(policyTypes, grant.policyId(), PolicyTypes.OBJECT);
                 SnapshotAction action = null;
                 ActionTarget target = null;
                 if (grant.kind() == Kind.ACTION && grant.verb() == Verb.EXECUTE) {
@@ -274,6 +287,35 @@ public class AuthorizationPolicyGovernanceController {
                 throw badRequest(location + ": " + invalid.getMessage());
             }
         }
+    }
+
+    private Map<String, Integer> validateSnapshotPolicies(GrantSnapshot snapshot) {
+        Map<String, Integer> types = new HashMap<>();
+        var knownTypes = Set.of(PolicyTypes.MANAGEMENT, PolicyTypes.BUSINESS_DATA, PolicyTypes.OBJECT);
+        for (var policy : snapshot.policies()) {
+            if (policy == null || blank(policy.id()) || policy.type() == null || !knownTypes.contains(policy.type()))
+                throw badRequest("Invalid snapshot policy: " + policy);
+            if (types.putIfAbsent(policy.id(), policy.type()) != null)
+                throw badRequest("Duplicate snapshot policy: " + policy.id());
+        }
+        for (var link : snapshot.policyLinks()) {
+            if (link == null || link.type() == null) throw badRequest("A role link requires a policy and its type: " + link);
+            requireSnapshotPolicyType(types, link.policyId(), link.type());
+        }
+        var operationIds = policies.managementCatalog().stream()
+                .map(ManagementOperations.Operation::id).collect(Collectors.toSet());
+        for (var grant : snapshot.managementGrants()) {
+            if (grant == null || !operationIds.contains(grant.operationId()))
+                throw badRequest("Unknown snapshot management operation: " + grant);
+            requireSnapshotPolicyType(types, grant.policyId(), PolicyTypes.MANAGEMENT);
+        }
+        for (var policyId : snapshot.businessDataPolicyIds()) requireSnapshotPolicyType(types, policyId, PolicyTypes.BUSINESS_DATA);
+        return types;
+    }
+
+    private static void requireSnapshotPolicyType(Map<String, Integer> types, String policyId, int expected) {
+        if (!Objects.equals(types.get(policyId), expected))
+            throw badRequest("Snapshot policy " + policyId + " requires policy type " + expected);
     }
 
     private static Map<String, Object> snapshotRule(String content) throws JsonProcessingException {

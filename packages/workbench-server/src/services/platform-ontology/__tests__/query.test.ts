@@ -1856,7 +1856,7 @@ describe("platform-ontology composite query", () => {
     // When /policies is readable, expanding from PermissionPolicy traverses both incoming role and outgoing object type
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
       if (url.endsWith("/platform/governance/policies")) {
-        return okJson({ policies: [{ id: "pol-1", name: "Order Read Policy" }] });
+        return okJson({ policies: [{ id: "pol-1", name: "Order Read Policy", type: 2 }] });
       }
       if (url.endsWith("/platform/governance/role-policies")) {
         return okJson({ rolePolicies: [{ roleId: "r-1", policyId: "pol-1" }] });
@@ -1903,7 +1903,7 @@ describe("platform-ontology composite query", () => {
         });
       }
       if (url.endsWith("/platform/governance/policies")) {
-        return okJson({ policies: [{ id: "pol-1", name: "Order Operations Policy" }] });
+        return okJson({ policies: [{ id: "pol-1", name: "Order Operations Policy", type: 3 }] });
       }
       return baseImpl(endpoint, url, body, opts);
     });

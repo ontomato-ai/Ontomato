@@ -166,7 +166,13 @@ class AuthorizationPolicyGovernanceControllerTest {
                 "verb", "EXECUTE", "scope", JSONObject.of("kind", "assigned_to_self", "className", "Order", "field", "assignee"));
         var action = JSONObject.of("id", "snapshot-approve", "status", Action.STATUS_PUBLISHED,
                 "target", JSONObject.of("className", "Order", "keyParameter", "orderId").toJSONString());
+        var selected = JSONObject.of("id", "selected", "type", PolicyTypes.OBJECT);
+        var management = JSONObject.of("policyId", "management", "operationId", AuthorizationPolicies.READ);
         var snapshot = JSONObject.of("grants", List.of(grant), "actions", List.of(action),
+                "policies", List.of(selected, JSONObject.of("id", "management", "type", PolicyTypes.MANAGEMENT),
+                        JSONObject.of("id", "data", "type", PolicyTypes.BUSINESS_DATA)),
+                "policyLinks", List.of(JSONObject.of("policyId", "selected", "type", PolicyTypes.OBJECT)),
+                "managementGrants", List.of(management), "businessDataPolicyIds", List.of("data"),
                 "ontologyRule", JSONObject.of("classDef", List.of(JSONObject.of("className", "Order",
                         "attrs", List.of(JSONObject.of("name", "assignee", "enable", true))))).toJSONString());
         var input = JSONObject.of("targets", List.of(
@@ -184,6 +190,27 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.data[0].key").value("app/main"));
         verify(catalog).registeredEntryIds("domain", Set.of("app/main"));
         verify(catalog).registeredApplicationIds("domain", Set.of("foreign"));
+
+        snapshot.put("businessDataPolicyIds", List.of("selected"));
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Snapshot policy selected requires policy type " + PolicyTypes.BUSINESS_DATA)));
+        snapshot.put("businessDataPolicyIds", List.of("data"));
+        management.put("policyId", "data");
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Snapshot policy data requires policy type " + PolicyTypes.MANAGEMENT)));
+        management.put("policyId", "management");
+        grant.put("policyId", "data");
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Snapshot policy data requires policy type " + PolicyTypes.OBJECT)));
+        grant.put("policyId", "selected");
+        snapshot.put("policyLinks", List.of(JSONObject.of("policyId", "selected", "type", PolicyTypes.BUSINESS_DATA)));
+        http.perform(post(PREFIX + "registered-targets/check").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Snapshot policy selected requires policy type " + PolicyTypes.BUSINESS_DATA)));
+        snapshot.put("policyLinks", List.of(JSONObject.of("policyId", "selected", "type", PolicyTypes.OBJECT)));
 
         for (var kind : List.of("PANEL", "SKILL")) {
             snapshot.put("grants", List.of(JSONObject.of("policyId", "selected", "kind", kind,
