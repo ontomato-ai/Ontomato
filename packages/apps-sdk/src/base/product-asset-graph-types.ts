@@ -164,33 +164,19 @@ export function productAssetEdgePath(
   return `M ${startX} ${startY} C ${startX + 60 * direction} ${startY + offset}, ${endX - 60 * direction} ${endY + offset}, ${endX} ${endY}`;
 }
 
+const ASSET_TYPES = new Map([
+  ["application", APPLICATION],
+  ["page", PRODUCT_PANEL],
+  ["object-projection", PRODUCT_PROJECTION],
+]);
+
 /** Resolves the real platform object identity for a clickable product asset node (`null` for non-asset nodes). */
 export function resolveProductAssetTarget(
   node: ProductAssetGraphNode,
-  fallbackClassName?: string,
 ): ProductAssetGraphTarget | null {
   if (!node.assetId) return null;
-  let className: string;
-  if (
-    node.kind === "object-projection"
-    || node.kind === "collection-view"
-    || node.kind === "metric-widget"
-    || node.kind === "action-view"
-  ) {
-    className = PRODUCT_PROJECTION;
-  } else if (node.kind === "page" || node.kind === "navigation") {
-    className = PRODUCT_PANEL;
-  } else if (node.kind === "application") {
-    className = APPLICATION;
-  } else if (fallbackClassName) {
-    className = fallbackClassName;
-  } else if (node.category === "element") {
-    className = PRODUCT_PROJECTION;
-  } else if (node.category === "bundle") {
-    className = APPLICATION;
-  } else {
-    className = PRODUCT_PANEL;
-  }
+  const className = ASSET_TYPES.get(node.kind);
+  if (!className) return null;
   const ref: ObjectListRef = { className, primaryKey: node.assetId };
   return {
     assetId: node.assetId,

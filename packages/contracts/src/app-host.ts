@@ -68,8 +68,6 @@ export interface AppFrameInsets {
 export interface AppHost {
   request?(source:object,path:string,init:globalThis.RequestInit,service:string):Promise<Response>;
   invalidateProductData?(source:object,event:{actionId:string;objectTypes:string[]}):void;
-  /** Render a shared product asset using the shell's runtime. Older shells may not implement this port. */
-  mountProductAsset?(source:object,element:object,assetId:string):()=>void;
   snapshot(): AppHostSnapshot;
   /** The calling frame's explicit execution binding; unregistered sources throw. */
   executionContext(source: object): AppExecutionContext;

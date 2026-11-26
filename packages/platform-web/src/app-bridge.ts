@@ -4,8 +4,8 @@ import type {AppHost} from '@ontomato/contracts/app-host';
 
 /** Bind one transferred port to the exact registered frame; messages never select an application identity. */
 /**
- * `open` says whether a frame may ask for anything now: a frame kept for a page the reader left may still cancel or
- * unmount what it started, and gets the answer of a call it made before, but asks for nothing new.
+ * `open` says whether a frame may ask for anything now: a frame kept for a page the reader left may still cancel
+ * a request it started, and gets the answer of a call it made before, but asks for nothing new.
  * `expandComposer` answers a frame's request to expand the page's composer; it checks the request against what the
  * frame's own declaration allows. `confirmOperation` asks the person, in the platform's own dialog, whether an operation
  * the frame's declaration holds may go ahead; the call is answered with that decision.
@@ -21,9 +21,7 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
     connections.get(source)?.dispose();
     const port=event.ports[0],requests=new Map<string,AbortController>();
     let closed=false;
-    const dispose=()=>{if(closed)return;closed=true;for(const request of requests.values())request.abort();requests.clear();port.close();stopPreferences();viewport.disconnect();window.removeEventListener('scroll',hideOutsideViewport,true);connections.delete(source);};
-    const hideOutsideViewport=()=>{if(open(source))port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'viewport'});};
-    const viewport=new ResizeObserver(hideOutsideViewport);viewport.observe(frame);window.addEventListener('scroll',hideOutsideViewport,true);
+    const dispose=()=>{if(closed)return;closed=true;for(const request of requests.values())request.abort();requests.clear();port.close();stopPreferences();connections.delete(source);};
     const sendPreferences=()=>{const {locale,theme}=host.snapshot();port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'preferences',result:{locale,theme}});};
     const stopPreferences=host.subscribePreferences(()=>{if(open(source))sendPreferences();});
     // The requests answered as event streams: they last as long as the stream, not one answer.
@@ -36,7 +34,7 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
       const {id,operation,payload}=parsed.data;
       try{
         current();let result:unknown=null;
-        if(operation!=='cancel'&&operation!=='unmount'&&!open(source))throw new Error('This page is not shown');
+        if(operation!=='cancel'&&!open(source))throw new Error('This page is not shown');
         if(operation==='initialize')result={snapshot:host.snapshot(),execution:host.executionContext(source)};
         else if(operation==='request'){
           const input=appBridgeHttpSchema.parse(payload);
@@ -59,8 +57,6 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
         else if(operation==='invalidate')host.invalidateProductData!(source,appBridgeInvalidationSchema.parse(payload));
         else if(operation==='expand-page-composer')expandComposer(source,appBridgeExpandPageComposerSchema.parse(payload));
         else if(operation==='confirm-panel-operation')result=await confirmOperation(source,appBridgeConfirmPanelOperationSchema.parse(payload));
-        // A retired operation is refused, never answered with nothing.
-        else throw new Error('Unsupported application bridge operation');
         current();port.postMessage({channel:APP_BRIDGE_CHANNEL,id,result});
       }catch(reason){port.postMessage({channel:APP_BRIDGE_CHANNEL,id,error:reason instanceof Error?reason.message:'Platform bridge failed'});}
     };
