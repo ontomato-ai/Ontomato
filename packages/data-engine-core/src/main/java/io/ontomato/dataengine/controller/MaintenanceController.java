@@ -21,7 +21,7 @@ public class MaintenanceController {
     public static final class Operations implements ManagementOperations.Contributor {
         @Override
         public List<Operation> managementOperations() {
-            return List.of(new Operation(READ, "查看服务状态", ManagementOperations.Access.READ));
+            return List.of(new Operation(READ, "Read service status", ManagementOperations.Access.READ));
         }
     }
 

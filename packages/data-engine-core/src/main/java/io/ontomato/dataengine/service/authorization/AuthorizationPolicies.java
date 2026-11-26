@@ -47,8 +47,8 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
     static final class Operations implements ManagementOperations.Contributor {
         @Override
         public List<ManagementOperations.Operation> managementOperations() {
-            return List.of(new ManagementOperations.Operation(READ, "查看授权策略", ManagementOperations.Access.READ),
-                    new ManagementOperations.Operation(CHANGE, "变更授权策略", ManagementOperations.Access.CHANGE));
+            return List.of(new ManagementOperations.Operation(READ, "Read authorization policies", ManagementOperations.Access.READ),
+                    new ManagementOperations.Operation(CHANGE, "Change authorization policies", ManagementOperations.Access.CHANGE));
         }
     }
 

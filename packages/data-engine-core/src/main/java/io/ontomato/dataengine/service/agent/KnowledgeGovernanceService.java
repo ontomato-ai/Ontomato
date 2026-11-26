@@ -44,20 +44,20 @@ public class KnowledgeGovernanceService {
   private final AuthorizationService authorization;
   private final Map<String,JSONSchema> schemas = new HashMap<>();
 
-  private static final Operation OPEN_WINDOW = new Operation("knowledge-governance.window.open", "打开治理窗口", CHANGE);
-  private static final Operation CLOSE_WINDOW = new Operation("knowledge-governance.window.close", "关闭治理窗口", CHANGE);
+  private static final Operation OPEN_WINDOW = new Operation("knowledge-governance.window.open", "Open governance window", CHANGE);
+  private static final Operation CLOSE_WINDOW = new Operation("knowledge-governance.window.close", "Close governance window", CHANGE);
 
   private enum Action {
-    READ_INPUT("input.read", "查看治理输入", READ, false),
-    READ_KNOWLEDGE("knowledge.read", "查看治理知识", READ, true),
-    READ_ONTOLOGY("ontology.read", "查看治理所用本体", READ, true),
-    READ_WORK_RECORD("work-record.read", "查看治理工作记录", READ, false),
-    SEARCH_HISTORY("history.search", "搜索治理历史", READ, false),
-    READ_HISTORY("history.read", "查看治理历史", READ, false),
-    READ_EVIDENCE("evidence.read", "查看治理证据", READ, false),
-    COLLECT_TURN_ARTIFACTS("turn-artifacts.collect", "查看治理轮次产物", READ, false),
-    UPDATE_WORK_RECORD("work-record.update", "更新治理工作记录", CHANGE, false),
-    IMPORT_KNOWLEDGE("knowledge.import", "导入治理知识", CHANGE, true);
+    READ_INPUT("input.read", "Read governance input", READ, false),
+    READ_KNOWLEDGE("knowledge.read", "Read governance knowledge", READ, true),
+    READ_ONTOLOGY("ontology.read", "Read ontology for governance", READ, true),
+    READ_WORK_RECORD("work-record.read", "Read governance work record", READ, false),
+    SEARCH_HISTORY("history.search", "Search governance history", READ, false),
+    READ_HISTORY("history.read", "Read governance history", READ, false),
+    READ_EVIDENCE("evidence.read", "Read governance evidence", READ, false),
+    COLLECT_TURN_ARTIFACTS("turn-artifacts.collect", "Read governance turn artifacts", READ, false),
+    UPDATE_WORK_RECORD("work-record.update", "Update governance work record", CHANGE, false),
+    IMPORT_KNOWLEDGE("knowledge.import", "Import governance knowledge", CHANGE, true);
 
     private final Operation operation;
     private final boolean usesExecutor;

@@ -59,15 +59,15 @@ public class BusinessConfigController {
         @Override
         public List<Operation> managementOperations() {
             return List.of(
-                new Operation(GENERAL_READ, "查看通用设置", ManagementOperations.Access.READ),
-                new Operation(GENERAL_CHANGE, "更改通用设置", ManagementOperations.Access.CHANGE),
-                new Operation(CONNECTIONS_READ, "查看数据连接", ManagementOperations.Access.READ),
-                new Operation(CONNECTIONS_CHANGE, "更改数据连接", ManagementOperations.Access.CHANGE),
-                new Operation(CONNECTIONS_TEST, "测试数据连接", ManagementOperations.Access.CHANGE),
-                new Operation(CONNECTIONS_PROBE, "检测沙箱连接", ManagementOperations.Access.CHANGE),
-                new Operation(VECTORS_READ, "查看向量索引配置", ManagementOperations.Access.READ),
-                new Operation(VECTORS_CHANGE, "更改向量索引配置", ManagementOperations.Access.CHANGE),
-                new Operation(DIAGNOSTIC_READ, "查看监控配置", ManagementOperations.Access.READ));
+                new Operation(GENERAL_READ, "Read general settings", ManagementOperations.Access.READ),
+                new Operation(GENERAL_CHANGE, "Change general settings", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_READ, "Read data connections", ManagementOperations.Access.READ),
+                new Operation(CONNECTIONS_CHANGE, "Change data connections", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_TEST, "Test data connections", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_PROBE, "Probe the sandbox connection", ManagementOperations.Access.CHANGE),
+                new Operation(VECTORS_READ, "Read vector index configuration", ManagementOperations.Access.READ),
+                new Operation(VECTORS_CHANGE, "Change vector index configuration", ManagementOperations.Access.CHANGE),
+                new Operation(DIAGNOSTIC_READ, "Read monitoring configuration", ManagementOperations.Access.READ));
         }
     }
 
