@@ -43,7 +43,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -64,7 +64,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -88,7 +88,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -113,7 +113,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -135,7 +135,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -157,7 +157,7 @@
         "target": "task",
         "data": {
           "record": {
-            "read": "latestRunRecord",
+            "read": "runRecord",
             "params": {
               "runId": {
                 "state": "runId"
@@ -167,17 +167,17 @@
         },
         "config": {
           "showTitle": false,
+          "layout": "article",
+          "bodyField": "result",
           "fields": [
             "duration",
             "timeZone",
             "snapshotSummary",
-            "result",
             "executionDetails"
-          ],
-          "emptyText": "noResult"
+          ]
         },
-        "name": "Run output summary",
-        "description": "Displays the run snapshot summary, cleaned execution output, and execution details.",
+        "name": "Run output",
+        "description": "Draws the cleaned execution output as reading prose, with the duration, time zone, run settings, and execution details listed below it.",
         "id": "builtin-product-7e2b9104-4c53-4a8e-9f11-000000000006"
       }
     }
@@ -191,8 +191,8 @@
         "errorTitle": "Run issue",
         "startedAt": "Started",
         "finishedAt": "Finished",
-        "noResult": "No text result was produced.",
-        "refresh": "Refresh run"
+        "refresh": "Refresh run",
+        "resultTitle": "Execution result"
       },
       "zh-CN": {
         "panel.name": "定时任务运行详情",
@@ -201,8 +201,8 @@
         "errorTitle": "执行异常",
         "startedAt": "开始时间",
         "finishedAt": "完成时间",
-        "noResult": "本次运行未产出文本结果。",
-        "refresh": "刷新状态"
+        "refresh": "刷新状态",
+        "resultTitle": "执行结果"
       },
       "zh-TW": {
         "panel.name": "排程任務執行詳情",
@@ -211,8 +211,8 @@
         "errorTitle": "執行異常",
         "startedAt": "開始時間",
         "finishedAt": "完成時間",
-        "noResult": "本次執行未產出文字結果。",
-        "refresh": "重新整理狀態"
+        "refresh": "重新整理狀態",
+        "resultTitle": "執行結果"
       },
       "ja": {
         "panel.name": "定期タスク実行詳細",
@@ -221,8 +221,8 @@
         "errorTitle": "実行エラー",
         "startedAt": "開始時刻",
         "finishedAt": "完了時刻",
-        "noResult": "テキスト結果は出力されませんでした。",
-        "refresh": "状態を更新"
+        "refresh": "状態を更新",
+        "resultTitle": "実行結果"
       },
       "de": {
         "panel.name": "Ausführungsdetails der geplanten Aufgabe",
@@ -231,8 +231,8 @@
         "errorTitle": "Ausführungsproblem",
         "startedAt": "Gestartet",
         "finishedAt": "Beendet",
-        "noResult": "Es wurde kein Textergebnis erzeugt.",
-        "refresh": "Status aktualisieren"
+        "refresh": "Status aktualisieren",
+        "resultTitle": "Ausführungsergebnis"
       },
       "fr": {
         "panel.name": "Détail d'exécution de tâche planifiée",
@@ -241,8 +241,8 @@
         "errorTitle": "Problème d'exécution",
         "startedAt": "Début",
         "finishedAt": "Fin",
-        "noResult": "Aucun résultat texte n'a été produit.",
-        "refresh": "Actualiser"
+        "refresh": "Actualiser",
+        "resultTitle": "Résultat de l'exécution"
       },
       "it": {
         "panel.name": "Dettaglio esecuzione attività pianificata",
@@ -251,8 +251,8 @@
         "errorTitle": "Problema di esecuzione",
         "startedAt": "Avviata",
         "finishedAt": "Terminata",
-        "noResult": "Nessun risultato testuale prodotto.",
-        "refresh": "Aggiorna stato"
+        "refresh": "Aggiorna stato",
+        "resultTitle": "Risultato dell'esecuzione"
       },
       "ar": {
         "panel.name": "تفاصيل تشغيل المهمة المجدولة",
@@ -261,8 +261,8 @@
         "errorTitle": "مشكلة في التشغيل",
         "startedAt": "وقت البدء",
         "finishedAt": "وقت الانتهاء",
-        "noResult": "لم يتم إنتاج نتيجة نصية.",
-        "refresh": "تحديث الحالة"
+        "refresh": "تحديث الحالة",
+        "resultTitle": "نتيجة التنفيذ"
       }
     }
   }

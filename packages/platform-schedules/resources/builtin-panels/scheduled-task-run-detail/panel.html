@@ -31,6 +31,18 @@
     font-variant-numeric: tabular-nums;
     color: var(--sdk-text-color-primary);
   }
+  .strd-result {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .strd-heading {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
   .strd-actions {
     display: flex;
     align-items: center;
@@ -56,7 +68,10 @@
 
   <projection slot="errorNotice"></projection>
 
-  <projection slot="summary"></projection>
+  <section class="strd-result">
+    <h4 class="strd-heading">{{ t("resultTitle") }}</h4>
+    <projection slot="summary"></projection>
+  </section>
 
   <div class="strd-actions">
     <sdk-button

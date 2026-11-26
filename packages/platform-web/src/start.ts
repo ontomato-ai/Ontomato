@@ -1,6 +1,5 @@
 import { followThemeChanges, initializePlatformTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { createApp, defineAsyncComponent, type App as VueApp } from "vue";
-import { productAgentRuntimeKey } from '@ontomato/contracts/product-assets';
 import { installProductEmbedding } from './app-host';
 import { createPinia, type Pinia } from "pinia";
 import ElementPlus from "element-plus";
@@ -74,7 +73,6 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   router.beforeResolve(addressLandingGuard(router));
 
   const app = createApp(App);
-  app.provide(productAgentRuntimeKey,defineAsyncComponent(()=>import('./pages/ProductAgentRuntime.vue')));
   const followPreferences = (event: StorageEvent) => {
     followThemeChanges(event);
     const locale = options.language.storedChange?.(event);

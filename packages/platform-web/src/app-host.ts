@@ -399,11 +399,10 @@ export function installAppHost(options: {
         const publication=await response.json();if(!response.ok)throw new Error(publication.error?.message??'Application dependencies unavailable');
         const assets=publication.assets.map((asset:unknown)=>productAssetSchema.parse(asset));
         if(service===''){
-          const readOnly=method==='GET',collection=/^\/product-assets\/definitions\/[^/]+\/query$/.test(path),profileSession=/^\/product-assets\/[^/]+\/sessions$/.test(path);
+          const readOnly=method==='GET',collection=/^\/product-assets\/definitions\/[^/]+\/query$/.test(path);
           const conversation=/^\/assistant\/sessions(?:\/[^/?]+(?:\/(?:runs|events|messages|artifacts|tasks)(?:\/[^?]*)?)?)?(?:\?[^#]*)?$/.test(path);
-          if(!readOnly&&!collection&&!profileSession&&!conversation)throw new Error('Published source applications cannot edit product or capability definitions');
+          if(!readOnly&&!collection&&!conversation)throw new Error('Published source applications cannot edit product or capability definitions');
           if(path.startsWith('/assistant/')&&!conversation&&path!=='/assistant/agents')throw new Error('Use the declared conversation interface');
-          if(profileSession&&!assets.some((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.id===decodeURIComponent(path.split('/')[2])&&asset.document.kind==='agent-profile'&&!publication.issues?.some((issue:{assetId:string})=>issue.assetId===asset.id)))throw new Error('AgentProfile is outside published dependencies');
         }
         if(service==='/data-query'){
           const body=init.body instanceof FormData?{id:init.body.get('id')}:typeof init.body==='string'?JSON.parse(init.body):{};

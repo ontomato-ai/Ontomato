@@ -53,10 +53,6 @@ export interface WorkbenchIdentity {
   assertPermission(identity: { token?: string; apiKey?: string }, keys: readonly string[]): Promise<void>;
   /** Authorize mutations of deployment-wide component packages. */
   requireDeploymentMaintenance: RequestHandler;
-  /** Diagnosis routes. Enterprise requires the domain first, then observer; OSS allows all. */
-  observeAccess: RequestHandler;
-  /** Verifies that the caller has access to diagnosis/observe capabilities. Enterprise requires domain and observer permission; OSS allows all. */
-  assertObserveAccess(identity: { domainId?: string; token?: string; apiKey?: string }): Promise<void>;
   /**
    * Enterprise answers 403 when the domain is missing. OSS always returns 1 and never adopts the domain from request input,
    * preventing a self-declared request domain from splitting the single-domain storage.

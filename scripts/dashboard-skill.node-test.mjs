@@ -64,6 +64,32 @@ test("save uses the original APIs and bodies without scenario blocking",async t=
     const actual=api.calls.at(-1);assert.equal(actual.method,"POST");assert.equal(actual.path,"/api/dashboards"+endpoint);assert.deepEqual(actual.body,form);assert.equal(actual.headers.tk,"fixture-reader");
   }
 });
+test("create posts the name on user and callback bases and returns the saved identity", async t => {
+  const dir = await workspace(t);
+  const reply = { success: true, data: { id: "board:2", name: "New Board" } };
+  const api = await server(t, reply);
+  const created = await invoke(dir, api.base, ["create", "--name", "New Board"]);
+  assert.deepEqual(JSON.parse(created.stdout), reply);
+
+  const [userCall] = api.calls;
+  assert.equal(userCall.method, "POST");
+  assert.equal(userCall.path, "/api/dashboards/create");
+  assert.deepEqual(userCall.body, { name: "New Board" });
+  assert.equal(userCall.headers.tk, "fixture-reader");
+
+  const callbackBase = `${api.base}/api/assistant/executions/${runId}/workbench`;
+  await invoke(dir, callbackBase, ["create", "--name", "Scheduled Board"], {
+    ONTOMATO_TK: "",
+    ONTOMATO_EXECUTION_CALLBACK: "cb-token-123",
+  });
+  const [, callbackCall] = api.calls;
+  assert.equal(callbackCall.method, "POST");
+  assert.equal(callbackCall.path, `/api/assistant/executions/${runId}/workbench/api/dashboards/create`);
+  assert.deepEqual(callbackCall.body, { name: "Scheduled Board" });
+  assert.equal(callbackCall.headers["x-ontomato-callback-credential"], "cb-token-123");
+  assert.equal(callbackCall.headers["x-ontomato-run-id"], runId);
+  assert.equal(callbackCall.headers.tk, undefined);
+});
 test("read commands retain current rows and truncation and use the supplied identity",async t=>{
   const dir=await workspace(t),api=await server(t);
   for(const args of [["list"],["read","--dashboard-id","board:1"],["card","--dashboard-id","board:1","--card-id","card"],["parameters","--dashboard-id","board:1","--card-id","card"]]){

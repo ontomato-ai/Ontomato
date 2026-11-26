@@ -404,18 +404,6 @@ describe("ProductAssetGraph (D1, panelUsable: false)", () => {
       className: PRODUCT_PROJECTION,
       primaryKey: "proj-1",
     });
-    expect(
-      resolveProductAssetTarget({
-        id: "asset:agent-1",
-        assetId: "agent-1",
-        name: "Triage Agent",
-        kind: "agent-profile",
-        category: "bundle",
-      })?.ref,
-    ).toEqual({
-      className: AGENT_DEFINITION,
-      primaryKey: "agent-1",
-    });
   });
 
   it("renders columns, highlights incident edges on hover/focus, emits open/navigate on click & Enter, and supports zoom/expand", async () => {

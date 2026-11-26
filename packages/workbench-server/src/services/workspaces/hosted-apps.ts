@@ -130,7 +130,7 @@ export async function publishWorkspace(
   const { assetIds: productIds, triggerIds } = sourceProductManifest(files);
   for(const productId of productIds) {
     const product=await getProduct(owner,productId);
-    if(!["page","widget","widget-group","operation-panel","dashboard","object-view","object-projection","metric-widget","action-view","collection-view","navigation","agent-profile"].includes(product.document.kind))throw new HttpError(400,"Application manifest must reference pages or runnable components","INVALID_PRODUCT_CHILD");
+    if(!["page","widget","widget-group","operation-panel","dashboard","object-view","object-projection","metric-widget","action-view","collection-view","navigation"].includes(product.document.kind))throw new HttpError(400,"Application manifest must reference pages or runnable components","INVALID_PRODUCT_CHILD");
     await validateProduct(owner,product,credentials);
     await validateChildren(owner,product,credentials);
   }
