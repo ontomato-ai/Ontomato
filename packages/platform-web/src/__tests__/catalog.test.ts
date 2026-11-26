@@ -11,7 +11,6 @@ import {
   resetApplicationCatalog,
   useApplicationCatalog,
 } from "../catalog";
-import {catalogPartition} from '../native-layouts';
 
 /*
  * What the rail keeps while the platform reads its applications again (after a publication, a rollback, another
@@ -55,13 +54,6 @@ async function readOnce(data: unknown) {
 }
 
 describe("the application catalog", () => {
-  it('opens a declarative product application at its application address rather than the imported product path',async()=>{
-    const product={...catalogFixture()[0],id:'app-declarative',kind:'product' as const,entry:{path:'/products/app-declarative?applicationId=app-declarative'},releaseId:'release'};
-    const catalog=await readOnce([product]);
-    const [application]=catalogPartition(catalog.applications.value,'en');
-    expect(application.prefix).toBe('/applications/app-declarative');
-    expect(application.home).toBe('/applications/app-declarative');
-  });
   it("keeps the list it shows while it reads the applications again", async () => {
     const shown = catalogFixture();
     const catalog = await readOnce(shown);

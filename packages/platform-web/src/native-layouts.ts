@@ -1,7 +1,7 @@
 import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
-import { applicationRootPath, isPanelApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
+import { applicationRootPath, isPanelApplication, isPlatformCatalogApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { AppPartition } from "./partition";
 
@@ -111,11 +111,11 @@ export const nativeLayouts: Record<string, NativeLayout> = Object.fromEntries(la
 
 export function catalogPartition(applications: import("@ontomato/contracts/platform-identity").CatalogApplication[], locale: string,
   renderers: Record<string, NativeLayout> = {}): AppPartition[] {
-  return applications.filter(app => app.kind === "hosted" || app.kind === "connected" || app.kind === "product"
+  return applications.filter(app => isPlatformCatalogApplication(app) && (app.kind === "connected" || isPanelApplication(app)
     || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])
     || Boolean(app.panelUses?.length)
-    || (app.panelUses === undefined && Boolean(app.framePanelId))).map((app) => {
-    const embedded = app.kind === "hosted" || app.kind === "connected";
+    || (app.panelUses === undefined && Boolean(app.framePanelId)))).map((app) => {
+    const embedded = app.kind === "connected";
     const panels = isPanelApplication(app);
     const applicationRoute = embedded || panels;
     const hasLegacyLayout = Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!]);
@@ -126,7 +126,7 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       ...(use.icon ? { icon: use.icon } : {}),
     }] as const] : []) ?? []) : undefined;
     // Panel applications and catalog-driven built-ins draw navigation through their frame panel, never the shell.
-    const layout: NativeLayout = applicationRoute || app.kind === "product" || !hasLegacyLayout ? { sections: [] } : {
+    const layout: NativeLayout = applicationRoute || !hasLegacyLayout ? { sections: [] } : {
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
@@ -143,8 +143,8 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       allowStandalone: app.allowStandalone,
       framePanelId: app.framePanelId,
       ...(app.singleEntry !== undefined ? { singleEntry: app.singleEntry } : {}),
-      built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
-      prefix: applicationRoute || app.kind === "product" ? applicationRootPath(app.id) : app.entry.path,
-      home: applicationRoute || app.kind === "product" ? applicationRootPath(app.id) : admittedHome ?? firstPanelPath ?? undefined };
+      built: app.kind === "product" && panels,
+      prefix: applicationRoute ? applicationRootPath(app.id) : app.entry.path,
+      home: applicationRoute ? applicationRootPath(app.id) : admittedHome ?? firstPanelPath ?? undefined };
   });
 }

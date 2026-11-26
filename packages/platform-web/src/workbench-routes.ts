@@ -59,15 +59,8 @@ export const schedulePages = (): RouteRecordRaw[] => [
   { path: routes.agentSchedules.path, redirect: { path: routes.schedules.path, query: { app: "agents" } } },
 ];
 
-/** Preview containers also serve legacy source formats. */
+/** Workspace panel preview routes. */
 export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
-  {
-    name: "AppBuilderHostedPreview",
-    path: "/app-builder/:workspaceId/hosted-preview",
-    component: () => import("./pages/HostedPreviewRoute.vue"),
-    props: true,
-    meta: { workbench: true, ...meta, entryPath: "/app-builder" },
-  },
   {
     name: "PanelCandidatePreview",
     path: "/app-builder/:workspaceId/panel-preview/:ref/:pageKey",

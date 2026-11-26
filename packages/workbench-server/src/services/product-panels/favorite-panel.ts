@@ -92,7 +92,7 @@ function favoriteAffected(objectType: string, primaryKey: string) {
 
 function resolveApplicationOpenPath(app: Awaited<ReturnType<ReturnType<typeof applicationCatalogueClient>["navigation"]>>[number]): string {
   if (app.entry.path.startsWith("/__external/") || app.kind === "link") return app.entry.path;
-  if (isPanelApplication(app) || app.kind === "hosted" || app.kind === "connected") return applicationRootPath(app.id);
+  if (isPanelApplication(app) || app.kind === "connected") return applicationRootPath(app.id);
   return app.entry.home ?? app.entry.path;
 }
 

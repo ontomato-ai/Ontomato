@@ -9,15 +9,12 @@ import { listProducts, getProduct, saveProduct, deleteProduct,dependencyProducts
 import { HttpError } from "../../utils/errors";
 import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import {expandedProductDependencies} from '../../services/product-assets/dependencies';
-import {productReleaseIssues,snapshotAsset,publishProductBundle,rollbackProductBundle,listProductBundleReleases,synchronizeBundlePublication} from '../../services/product-assets/releases';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
 import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant} from '../../services/product-governance/grants';
 import {projectionSourceTypes} from '../../services/product-assets/invalidation';
 import {platformObjectTypes} from '../../services/product-assets/platform-objects';
 import {readPlatformProjectionObject} from '../../services/product-assets/object-read';
-import {readActiveProductBundle,captureProductRelease,productReleaseDiff} from '../../services/product-assets/releases';
 import {registeredProductGraph} from '../../services/product-assets/ontology';
-import {publishedApplication,publishedApplicationRelease} from '../../services/product-assets/published';
 import {migratePlatformProjection} from '../../services/product-assets/platform-migration';
 import {migrateDashboardPage} from '../../services/product-assets/dashboard-migration';
 import {synchronizePlatformAssets,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
@@ -47,11 +44,6 @@ router.get('/validation/default-projections',wrap(async(req,res)=>{const c=conte
 router.get('/platform-object-types',wrap(async(_req,res)=>{res.json({objectTypes:platformObjectTypes()});}));
 router.get('/projections',wrap(async(req,res)=>{const input=z.object({kind:z.enum(['ObjectType','Definition','MetricView','Action']),id:z.string().min(1).max(200)}).parse(req.query);res.json(await discoverProjections(context(req).owner,input.kind,input.id));}));
 router.get("/", wrap(async (req,res) => {const c=context(req);res.json({assets:await listProducts(c.owner)}); }));
-router.get('/published/:applicationId',wrap(async(req,res)=>{const c=context(req);const snapshot=await publishedApplication(c.owner,c.credentials,String(req.params.applicationId));res.json({roots:snapshot.roots,assets:snapshot.assets,contracts:snapshot.contracts,triggers:snapshot.triggers??[],issues:await productReleaseIssues(c.owner,snapshot,c.credentials)});}));
-router.get('/published/:applicationId/:id',wrap(async(req,res)=>{
-  const {owner,credentials}=context(req),snapshot=await publishedApplication(owner,credentials,String(req.params.applicationId));
-  res.json({asset:snapshotAsset(snapshot,String(req.params.id)),assets:snapshot.assets,issues:await productReleaseIssues(owner,snapshot,credentials)});
-}));
 router.get("/:id", wrap(async (req,res) => {
   const owner = context(req).owner;
   const asset = await getProduct(owner,String(req.params.id));
@@ -67,19 +59,6 @@ router.post('/:id/object',wrap(async(req,res)=>{const c=context(req);const {prim
 router.get('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));res.json(await readProductGrantRecords(String(req.params.id),c.credentials));}));
 router.post('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const input=changeProductGrantRequestSchema.parse(req.body);await changeProductGrant(String(req.params.id),input,c.credentials);res.json({success:true});}));
 router.post('/:id/domain-grant',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const {shared}=changeProductDomainGrantRequestSchema.parse(req.body);await changeProductDomainGrant(String(req.params.id),shared,c.credentials);res.json({success:true});}));
-router.post('/:id/publish',wrap(async(req,res)=>{const c=context(req);const {revision}=z.object({revision:z.number().int().positive()}).strict().parse(req.body);res.json(await publishProductBundle(c.owner,String(req.params.id),revision,c.credentials));}));
-router.post('/:id/retry-publication',wrap(async(req,res)=>{const c=context(req);const asset=await getProduct(c.owner,String(req.params.id));if(!asset.editable)throw new HttpError(403,'Bundle edit Grant required','PRODUCT_FORBIDDEN');await synchronizeBundlePublication(c.owner,asset.id,c.credentials);res.json({success:true});}));
-router.get('/:id/releases',wrap(async(req,res)=>{res.json(await listProductBundleReleases(context(req).owner,String(req.params.id)));}));
-router.get('/:id/upgrade',wrap(async(req,res)=>{
-  const c=context(req),id=String(req.params.id),bundle=await getProduct(c.owner,id);
-  if(!bundle.editable)throw new HttpError(403,'Bundle edit permission required','PRODUCT_FORBIDDEN');
-   if(bundle.document.kind!=='application')throw new HttpError(400,'Choose an application bundle','INVALID_PRODUCT_TYPE');
-   const source=bundle.document.kind==='application'&&bundle.document.workspaceId;
-   const {snapshot,releaseId}=source?await publishedApplicationRelease(c.owner,c.credentials,id):await readActiveProductBundle(c.owner,id);
-   const next=await captureProductRelease(c.owner,source&&'children' in bundle.document?bundle.document.children.map(child=>child.assetId):[id],c.credentials,snapshot.triggers?.map(trigger=>trigger.id));
-  res.json({releaseId,revision:bundle.revision,...productReleaseDiff(snapshot,next)});
-}));
-router.post('/:id/rollback',wrap(async(req,res)=>{const c=context(req);const {releaseId}=z.object({releaseId:z.string().uuid()}).strict().parse(req.body);res.json(await rollbackProductBundle(c.owner,String(req.params.id),releaseId,c.credentials));}));
 router.put("/:id", wrap(async (req,res) => {
   const {owner,credentials} = context(req);
   const {revision,...input} = productAuthoringSchema.parse(req.body);

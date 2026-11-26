@@ -53,13 +53,14 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
           }
           try{result={status:response.status,statusText:response.statusText,headers:[...response.headers.entries()],body:await response.arrayBuffer()};}finally{requests.delete(id);}
         }else if(operation==='cancel'){const {requestId}=appBridgeCancelSchema.parse(payload);requests.get(requestId)?.abort();}
-        else if(operation==='navigateProduct')await host.navigateProduct!(source,payload as Parameters<NonNullable<AppHost['navigateProduct']>>[1]);
         else if(operation==='navigate')host.navigate(appBridgePathSchema.parse(payload));
         else if(operation==='pageContext')host.setPageContext(source,appBridgePageContextSchema.parse(payload));
         else if(operation==='authFailure')host.onAuthFailure(appBridgeAuthStatusSchema.parse(payload));
         else if(operation==='invalidate')host.invalidateProductData!(source,appBridgeInvalidationSchema.parse(payload));
         else if(operation==='expand-page-composer')expandComposer(source,appBridgeExpandPageComposerSchema.parse(payload));
         else if(operation==='confirm-panel-operation')result=await confirmOperation(source,appBridgeConfirmPanelOperationSchema.parse(payload));
+        // A retired operation is refused, never answered with nothing.
+        else throw new Error('Unsupported application bridge operation');
         current();port.postMessage({channel:APP_BRIDGE_CHANNEL,id,result});
       }catch(reason){port.postMessage({channel:APP_BRIDGE_CHANNEL,id,error:reason instanceof Error?reason.message:'Platform bridge failed'});}
     };

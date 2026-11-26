@@ -17,15 +17,11 @@ import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { authHost } from "@ontomato/workbench-ui/utils/auth";
 import { readRuntimeConfig } from "./config";
 import {fetchWorkbench,nodeApiRequest} from '@ontomato/workbench-ui';
-import {productAssetSchema} from '@ontomato/contracts/product-assets';
-import {productReferences} from '@ontomato/contracts/product-assets';
-import {validateProductNavigation,productNavigationTargetSchema} from '@ontomato/contracts/product-page-state';
 import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
 import type {PanelObjectChange} from './panel-host';
 import type {CandidatePanelSource,ProductPanelReadSource} from '@ontomato/contracts/panel-host';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
-import {applicationRootPath} from '@ontomato/contracts/platform-identity';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
 import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelHumanOperationConfirmation,type PanelUseRef} from '@ontomato/contracts/panel-agent';
@@ -390,37 +386,9 @@ export function installAppHost(options: {
         if(service===''&&!declared)throw new Error('Use a declared SDK product operation');
       }
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');
-      // A hosted build preview reaches Java only. A panel frame's requests are its declaration's, and in a candidate
+      // A panel frame's requests are its declaration's, and in a candidate
       // preview they go to their owners marked with its build-test context: each owner admits or refuses them.
       if(execution.kind==='build-test'&&service!=='/data-query'&&!panel)throw Object.assign(new Error('This operation is not available for test-data preview'),{code:BUILD_TEST_UNSUPPORTED});
-      const applicationId=publishedFrames.get(source);
-      const isolated=typeof document!=='undefined'&&[...document.querySelectorAll('iframe')].some(frame=>frame.contentWindow===source&&frame.sandbox.contains('allow-scripts')&&!frame.sandbox.contains('allow-same-origin'));
-      if(applicationId&&isolated){
-        const response=await nodeApiRequest(`/api/product-assets/published/${encodeURIComponent(applicationId)}`);
-        const publication=await response.json();if(!response.ok)throw new Error(publication.error?.message??'Application dependencies unavailable');
-        const assets=publication.assets.map((asset:unknown)=>productAssetSchema.parse(asset));
-        if(service===''){
-          const readOnly=method==='GET',collection=/^\/product-assets\/definitions\/[^/]+\/query$/.test(path);
-          const conversation=/^\/assistant\/sessions(?:\/[^/?]+(?:\/(?:runs|events|messages|artifacts|tasks)(?:\/[^?]*)?)?)?(?:\?[^#]*)?$/.test(path);
-          if(!readOnly&&!collection&&!conversation)throw new Error('Published source applications cannot edit product or capability definitions');
-          if(path.startsWith('/assistant/')&&!conversation&&path!=='/assistant/agents')throw new Error('Use the declared conversation interface');
-        }
-        if(service==='/data-query'){
-          const body=init.body instanceof FormData?{id:init.body.get('id')}:typeof init.body==='string'?JSON.parse(init.body):{};
-          const targetKind=path.startsWith('/action/')?'action':'metric';
-          const contract=publication.contracts?.some((contract:{kind:string;id:string})=>contract.kind===targetKind&&contract.id===body.id);
-          if(!contract||publication.issues?.some((issue:{assetId:string})=>{const asset=assets.find((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.id===issue.assetId);return asset&&productReferences(asset.document).some(reference=>reference.kind===targetKind&&reference.id===body.id);} ))throw new Error('Capability is outside the published application dependency declaration or its contract changed');
-        }
-        if(service===''&&method==='POST'&&/^\/product-assets\/definitions\/[^/]+\/query$/.test(path)){
-          const body=typeof init.body==='string'?JSON.parse(init.body):{};
-          const definitionId=decodeURIComponent(path.split('/')[3]);
-          const projections=assets.filter((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.document.kind==='collection-view'&&asset.document.renders.id===definitionId&&!publication.issues?.some((issue:{assetId:string})=>issue.assetId===asset.id));
-          if(!projections.length)throw new Error('Collection is outside published dependencies or its contract changed');
-          if(!Array.isArray(body.fields)||!projections.some((asset:ReturnType<typeof productAssetSchema.parse>)=>asset.document.kind==='collection-view'&&body.fields.every((field:unknown)=>typeof field==='string'&&asset.document.kind==='collection-view'&&asset.document.fields.includes(field))))throw new Error('Collection fields are outside the published projection');
-        }
-      }
-      const assetRead=service===''&&method==='GET'?/^\/product-assets\/([^/?]+)$/.exec(path):null;
-      const target=applicationId&&assetRead&&!['counts','types','query','projections','graph'].includes(assetRead[1])?`/product-assets/published/${encodeURIComponent(applicationId)}/${assetRead[1]}`:path;
       const headers=new Headers(init.headers);
       headers.delete(BUILD_TEST_HEADER);headers.delete('tk');headers.delete('authorization');headers.delete('x-api-key');
       // A multipart body's Content-Type carries its boundary: only the browser that writes the body may state it.
@@ -429,7 +397,7 @@ export function installAppHost(options: {
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);
       if(execution.kind==='build-test')headers.set(BUILD_TEST_HEADER,JSON.stringify({kind:'build-test',contextId:execution.contextId}));
-      const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${target}`,{...init,headers,credentials:'omit'});
+      const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${path}`,{...init,headers,credentials:'omit'});
       return panel?relayToPanel(panel,method,path,service,response):response;
     },
     invalidateProductData(source,event){
@@ -447,25 +415,6 @@ export function installAppHost(options: {
     navigate(path) {
       if (!path.startsWith("/") || path.startsWith("//")) throw new Error(`Not a platform route: ${path}`);
       void options.router.push(path);
-    },
-    async navigateProduct(source,target){
-      target=productNavigationTargetSchema.parse(target);
-      if(executionContext(source).kind!=='live')throw new Error('Product navigation requires a published application');
-      const applicationId=publishedFrames.get(source);
-      if(!applicationId)throw new Error('Published application identity is required');
-      const targetId='pageId' in target?target.pageId:target.objectViewId;
-      const response=await nodeApiRequest(`/api/product-assets/published/${encodeURIComponent(applicationId)}/${encodeURIComponent(targetId)}`);
-      const result=await response.json();
-      if(!response.ok)throw new Error(result.error?.message??'Published page unavailable');
-      const asset=productAssetSchema.parse(result.asset);
-      if('pageId' in target){
-        validateProductNavigation(result.assets.map((item:unknown)=>productAssetSchema.parse(item)),target.pageId);
-        if(asset.document.kind!=='page')throw new Error('Typed navigation requires a Page');
-      }else if(asset.document.kind!=='object-projection')throw new Error('Instance navigation requires an ObjectView');
-      // A published page has no address of its own: what it names is checked against the release, and the application it
-      // belongs to opens at its root, where its own panels show it. An external link's tab stays so by itself (see
-      // external-link.ts): the address carries no flag of its own.
-      await options.router.push(applicationRootPath(applicationId));
     },
     onAuthFailure: options.onAuthFailure,
     setPageContext() {},
