@@ -42,21 +42,15 @@
         "operations": {
           "activate": {
             "operation": "workflows.activate",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           },
           "deactivate": {
             "operation": "workflows.deactivate",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           },
           "delete": {
             "operation": "workflows.delete",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           }
         },
         "config": {

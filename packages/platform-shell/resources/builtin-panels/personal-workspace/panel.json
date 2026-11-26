@@ -272,9 +272,7 @@
           "moveUp": {
             "type": "platform:Favorite",
             "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "direction": {
                 "literal": "up"
@@ -284,9 +282,7 @@
           "moveDown": {
             "type": "platform:Favorite",
             "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "direction": {
                 "literal": "down"
@@ -296,9 +292,7 @@
           "unfavorite": {
             "type": "platform:Favorite",
             "operation": "favorites.remove",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           }
         },
         "config": {
@@ -362,9 +356,7 @@
           "moveUp": {
             "type": "platform:Favorite",
             "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "direction": {
                 "literal": "up"
@@ -374,9 +366,7 @@
           "moveDown": {
             "type": "platform:Favorite",
             "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "direction": {
                 "literal": "down"
@@ -386,9 +376,7 @@
           "unfavorite": {
             "type": "platform:Favorite",
             "operation": "favorites.remove",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           }
         },
         "config": {
@@ -554,9 +542,7 @@
           "moveUp": {
             "type": "platform:Favorite",
             "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "direction": {
                 "literal": "up"
@@ -566,9 +552,7 @@
           "moveDown": {
             "type": "platform:Favorite",
             "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "direction": {
                 "literal": "down"
@@ -578,9 +562,7 @@
           "unfavorite": {
             "type": "platform:Favorite",
             "operation": "favorites.remove",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           }
         },
         "config": {
@@ -642,23 +624,17 @@
           "rename": {
             "type": "platform:AgentSession",
             "operation": "agentSessions.rename",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           },
           "favorite": {
             "type": "platform:Favorite",
             "operation": "favorites.add",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           },
           "unfavorite": {
             "type": "platform:Favorite",
             "operation": "favorites.remove",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           }
         },
         "config": {
@@ -723,9 +699,7 @@
           "moveUp": {
             "type": "platform:Favorite",
             "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "direction": {
                 "literal": "up"
@@ -735,9 +709,7 @@
           "moveDown": {
             "type": "platform:Favorite",
             "operation": "favorites.move",
-            "target": {
-              "row": true
-            },
+            "target": "row",
             "params": {
               "direction": {
                 "literal": "down"
@@ -747,9 +719,7 @@
           "unfavorite": {
             "type": "platform:Favorite",
             "operation": "favorites.remove",
-            "target": {
-              "row": true
-            }
+            "target": "row"
           }
         },
         "config": {

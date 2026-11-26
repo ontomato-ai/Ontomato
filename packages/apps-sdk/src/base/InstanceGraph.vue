@@ -190,8 +190,6 @@ const emit = defineEmits<{
   "update:selectedType": [typeId: string | null];
   /** Emitted in overview mode when a reader selects a cluster group heading. */
   "update:selectedGroup": [groupId: string | null];
-  /** Emitted in overview mode when a reader clicks a cluster group heading to filter by that group. */
-  "select-group": [groupId: string];
   /** Emitted when the aggregated-edges display setting changes. */
   "update:aggregateEdges": [value: boolean];
   /** Emitted when the edge-labels display setting changes. */
@@ -1577,7 +1575,6 @@ function selectOverviewGroup(groupId: string) {
   selectedGroupParam.set(next);
   void panel.instance.output(member.key, "selectedGroup", next);
   emit("update:selectedGroup", next);
-  emit("select-group", groupId);
 }
 
 // ---- Data loading & incremental 1-hop expansion ----

@@ -271,8 +271,6 @@ export const components: readonly ComponentMetadata[] = [
     outputs: {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
-      // References of the current batch: current page when paged, or all matching rows when unpaged.
-      listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
       expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
     },

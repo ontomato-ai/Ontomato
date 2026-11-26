@@ -22,8 +22,6 @@ const authoringParameterSchema = z.union([
 ]);
 const authoringOperationTargetSchema = z.union([
   z.literal("row"),
-  stateKey,
-  z.object({ row: z.literal(true) }).strict(),
   z.object({ rowField: readName }).strict(),
   panelStateRefSchema,
   z.object({ literal: panelObjectRefSchema }).strict(),
@@ -82,7 +80,7 @@ export const panelAuthoringInlineMemberSchema = z.object({
   data: z.record(readName, authoringDataSchema).optional().describe("Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, or {fromSlot: true}."),
   operation: panelOperationDeclarationSchema.shape.id.optional().describe("Single operation ID from the owner's entry in the type table."),
   operationParams: z.record(readName, authoringOperationParamSchema).optional().describe("Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' | 'label'}, {rowField: fieldKey}, {formField: '/fieldPath'}, or {formFields: {key: '/fieldPath'}}."),
-  operations: z.record(readName, authoringOperationEntrySchema).optional().describe("Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?, draft?} where target may be 'row', {row: true}, {rowField: key}, a state field name, {state: fieldName}, or {literal: ref}, and draft names a form member in this panel."),
+  operations: z.record(readName, authoringOperationEntrySchema).optional().describe("Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?, draft?} where target may be 'row', {rowField: key} when the target is a field of the clicked row, {state: fieldName}, or {literal: ref}, and draft names a form member in this panel. Omit target on an ObjectList placement to address the clicked row."),
   draft: panelReadOperationInputsSchema.shape.draft.unwrap().shape.slot.optional()
     .describe("Form member key in this panel. Required when the declared read operation takes a draft; optional on a write operation to submit that form member's draft."),
   parameters: panelReadOperationInputsSchema.shape.parameters.optional()
