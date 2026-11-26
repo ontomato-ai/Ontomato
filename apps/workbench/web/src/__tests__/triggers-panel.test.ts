@@ -6,7 +6,7 @@ import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { panelAddress, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { applicationPanelUseSchema, type ProductProjection } from "@ontomato/contracts/product-panels";
 import {
   CREATE_TRIGGER,
   DELETE_TRIGGER,
@@ -48,7 +48,7 @@ const use = {
     ontologyTriggerUse.panelId,
     ontologyTriggerUse.path,
   ),
-  inputs: ontologyTriggerUse.inputs,
+  inputs: applicationPanelUseSchema.shape.inputs.parse(ontologyTriggerUse.inputs),
 };
 
 const objectTypes = Object.fromEntries(
@@ -342,12 +342,11 @@ function mountTriggersRoute(options: {
       entry: { entryKey: "ontology", path: "/ontology", renderer: "ontology" },
       scheduleAdapter: null,
       allowStandalone: false,
-      declaration: {
-        names: { en: "Ontology manager" },
-        descriptions: { en: "Ontology" },
-        icon: "ontology",
-        groups: [],
-      },
+      names: ontologyApp.declaration.names,
+      descriptions: ontologyApp.declaration.descriptions,
+      icon: ontologyApp.declaration.icon,
+      releaseId: null,
+      groups: [],
       panelUses: [use],
     },
   ];
