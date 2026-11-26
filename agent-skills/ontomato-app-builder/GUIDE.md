@@ -27,9 +27,31 @@ Use the [panel authoring recipes](SKILL.md#what-you-want-to-do--where-to-look) (
 Run `node <skill>/scripts/ontomato.mjs <command>`. JSON arguments accept inline JSON or `@file`; use `--lang <tag>` for the response language.
 
 - Inside the platform, the runtime provides `ONTOMATO_WORKBENCH_URL`, `ONTOMATO_ONTOLOGY_URL`, and a session credential. The CLI resolves the session's workspace through Workbench when a command needs it. Edit the mounted `work/` directory directly. Do not import this directory back into itself, execute `git commit`, or write credentials into it. The runtime makes one commit after a changed run, using the first line of the user request; an unchanged run produces no commit.
-- Outside the platform, set `ONTOMATO_URL` to the browser entry, including any deployment prefix. The public edition is anonymous. The enterprise adapter accepts `ONTOMATO_TK` or `ONTOMATO_API_KEY`, or the login configured in `application.yml`. Edit a complete local source tree, create a workspace, then import the tree with an explicit commit message.
+- Outside the platform, set `ONTOMATO_URL` to the deployment base URL, including any deployment prefix. The shipped
+  `application.yml` contains only `envUrl`. The public edition is anonymous. For an authenticated deployment, supply
+  `ONTOMATO_TK` for a browser session or `ONTOMATO_API_KEY` for an issued API key. Follow the
+  [local-source recipe](references/panel-authoring/recipes/register-and-open.md) to preview and publish an application.
 
 A workspace is the application source tree. Business definitions remain in Java; do not copy them into it as a second source of truth. Keep downloaded documentation and scratch files outside the source tree. Errors are returned directly; report the actual cause and fix within the authorized scope.
+
+### Connect the CLI from a signed-in browser
+
+1. In your signed-in Ontomato tab, open browser developer tools. In Chromium, go to **Application → Local Storage**,
+   select the Ontomato origin, and copy the value of `data_agent_token`. You can also find the same value under
+   **Network → Fetch/XHR → Headers → Request Headers → tk** on an authenticated Ontomato API request.
+2. In Bash or Zsh, set the deployment base URL, then paste the value at the silent prompt and press Enter.
+
+   ```sh
+   export ONTOMATO_URL='https://your-host.example/your-deployment-prefix'
+   unset ONTOMATO_API_KEY
+   IFS= read -rs ONTOMATO_TK
+   export ONTOMATO_TK
+   node "$SKILL/scripts/ontomato.mjs" panel type --all > /dev/null
+   ```
+
+   If the deployment has no prefix, use the origin alone. The CLI sends the value in the `tk` header. An API key
+   takes precedence when both variables are set. Keep the token in the shell environment. If it expires, sign in
+   again and repeat the steps.
 
 ## Panels and application uses
 
@@ -145,7 +167,9 @@ with restricted entries. Choose the icon with `sdk icons`.
 Run `panel check <application-root>` to check the source and its bindings. The checker resolves owned
 definitions from the tree and shared references under the author's platform access. With `--sdk-dir` it
 checks offline and reports references it could not resolve in `unchecked`. Use `--type-table` to also check
-operations against the owner's declarations.
+operations against the owner's declarations. The component page's **Configuration** section and the component's
+`config` in `components.json` show the same camelCase keys that `panel check` accepts. If a check reports an
+unpublished key, use the spelling listed under `documented config keys` in the error.
 
 Review the candidate in Application Builder and retain the source commit. Use the page's registered Publish
 operation to apply the commit. If the platform reports drift, use the registered Sync operation and resolve

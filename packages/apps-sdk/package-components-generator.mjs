@@ -19,10 +19,11 @@ export function generatePackageComponents({ root, catalogue, tsconfig, sources }
     if (!found) throw new Error(`${catalogue}:${line}: no --source exports ${metadata.exportName} as module ${metadata.module}`);
     const restMetadata = { ...metadata };
     delete restMetadata.configProps;
-    const resolvedConfig = resolveDeclaredConfig(metadata, found.props, { defaultToAll: true });
+    const { declaredProps, ports: templatePorts } = found;
+    const resolvedConfig = resolveDeclaredConfig(metadata, declaredProps, { defaultToAll: true });
     return {
       ...restMetadata, componentId: `${manifest.name}:${metadata.componentId}`,
-      ...(resolvedConfig?.length ? { config: resolvedConfig } : {}), ports: found,
+      ...(resolvedConfig?.length ? { config: resolvedConfig } : {}), ports: templatePorts,
     };
   }));
   const out = join(root, manifest.ontomato.components);
