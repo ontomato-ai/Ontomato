@@ -197,7 +197,7 @@ function mountDetailRoute(
 function appRecord(
   primaryKey: string,
   label: string,
-  outputs: { canMaintain: boolean; canEditEntries: boolean; canGrant?: boolean },
+  outputs: { canMaintain: boolean; canEditEntries: boolean },
 ) {
   return {
     primaryKey,
@@ -207,8 +207,6 @@ function appRecord(
     outputs: {
       canMaintain: outputs.canMaintain,
       canEditEntries: outputs.canEditEntries,
-      canGrant: outputs.canGrant ?? false,
-      domainShared: false,
       openPath: `/${primaryKey}`,
     },
   };

@@ -24,7 +24,8 @@ import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { z } from "zod";
 import {
-  applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, applicationPanelReferencesRequestSchema,
+  APPLICATION_REGISTRANT_HEADER, applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema,
+  applicationIconValidationRequestSchema, applicationPanelReferencesRequestSchema,
   chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
   PROJECTION_REUSE_PANEL_HEADER,
   productCurrentIdParamsSchema, productPanelGetQuerySchema, productPanelReadQuerySchema,
@@ -41,6 +42,7 @@ import { context, wrap } from "../utils/agent-host";
 import { getLocaleFromRequest } from "../utils/request";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
+import { workbenchIdentity } from "../../identity/installed";
 import {
   readCurrentPanelRecord, readCurrentProjectionRecord, readCurrentProjectionRecords, saveCurrentPanel, saveCurrentProjection,
   validateApplicationPanelReferences,
@@ -290,11 +292,21 @@ productProjectionsRouter.put("/:id", wrap(async (req, res) => {
 }));
 export const productPanelsInternalRouter = Router();
 productPanelsInternalRouter.use(platformService);
-productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) => {
-  const request = parseRegistration(applicationPanelReferencesRequestSchema, req.body, "Application registration");
-  await validateApplicationPanelReferences(request, getLocaleFromRequest(req));
-  res.sendStatus(204);
-}));
+productPanelsInternalRouter.post("/validate-references",
+  (req, res, next) => req.body?.kind === "icon" ? next() : workbenchIdentity().authenticate(req, res, next),
+  wrap(async (req, res) => {
+    if (req.body?.kind === "icon") {
+      parseRegistration(applicationIconValidationRequestSchema, req.body, "Application icon");
+    } else {
+      const request = parseRegistration(applicationPanelReferencesRequestSchema, req.body, "Application registration");
+      const { owner, credentials } = context(req);
+      if (!owner.userId || owner.userId !== req.header(APPLICATION_REGISTRANT_HEADER) || owner.domainId !== request.domainId)
+        throw new HttpError(403, "Registration credentials must match the authenticated registrant and domain", "APPLICATION_REGISTRANT_MISMATCH");
+      await validateApplicationPanelReferences({ ...request, registrant: credentials }, getLocaleFromRequest(req));
+    }
+    res.sendStatus(204);
+  }),
+);
 
 export const panelOperationsRouter = Router();
 panelOperationsRouter.get("/panel-operations/descriptor", wrap(async (req, res) => {

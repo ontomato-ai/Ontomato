@@ -127,10 +127,12 @@ and `coauthor_ids` to the application EDIT decision. Registered applications
 are published definitions. An absent author stays absent. Entry admission
 uses the separate ENTRY decision.
 
-The catalogue's `canMaintain` and `canGrant` fields come from the same EDIT
-decision. The application grant panel still reads and changes legacy application
-USE rows through `/platform/applications/{id}/use-grants` and `/use-sharing`.
-It does not issue EDIT grants. The application owner authorizes these routes.
+The catalogue shows an application to a user who can enter at least one of
+its entries or edit the application. The EDIT decision sets `canMaintain`.
+Entry navigation uses only entry decisions. Workbench checks each panel and
+frame when it reads their definitions. During application registration,
+Workbench also checks that the registrant can use the declared root panels
+and frame.
 Legacy release writers check `/platform/applications/{id}/legacy-maintenance`
 before modifying a registered application. Their own bundle and asset checks
 still apply. The generic legacy grant writers also ask the catalogue about a

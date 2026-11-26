@@ -877,8 +877,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         outputs: {
           canMaintain: { kind: "scalar", type: "boolean" },
           canEditEntries: { kind: "scalar", type: "boolean" },
-          canGrant: { kind: "scalar", type: "boolean" },
-          domainShared: { kind: "scalar", type: "boolean" },
           openPath: { kind: "scalar", type: "string" },
         },
       },
@@ -886,8 +884,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       entryRows: { ...catalogueRecord, result: "panelRecordList" },
       usedPanels: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
       referenceGraph: { ...catalogueRecord, result: "panelRecord" },
-      grants: { ...catalogueRecord, result: "productCatalogueGrants" },
-      grantRows: { ...catalogueRecord, result: "panelRecordList" },
       form: {
         ...modelReads.form,
         params: { ...definitionFormParams, section: "applicationFormSection", entryId: "applicationEntryId" },
@@ -927,7 +923,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           buildTestExpiresAt: { kind: "scalar", type: "string" },
           buildTestCanRestart: { kind: "scalar", type: "boolean" },
           canEditEntries: { kind: "scalar", type: "boolean" },
-          canGrant: { kind: "scalar", type: "boolean" },
           currentReleaseId: { kind: "scalar", type: "string" },
           activeRunId: { kind: "scalar", type: "string" },
           driftItemsJson: { kind: "scalar", type: "string" },
@@ -994,7 +989,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
-      "applications.deleteEntry", "applications.grant", "applications.share",
+      "applications.deleteEntry",
       APPLICATION_CREATE_DRAFT, APPLICATION_UPDATE_BUILDER_META, APPLICATION_DELETE_DRAFT,
       APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_SYNC_BUILDER_SOURCE,
       APPLICATION_PUBLISH_BUILDER_SOURCE, APPLICATION_ROLLBACK_BUILDER_RELEASE,

@@ -712,8 +712,6 @@ test("cross-type collection reads declare rowType so ObjectList state.selected b
   assert.deepEqual(appTable.objectTypes[applicationType].reads?.record?.outputs, {
     canMaintain: { kind: "scalar", type: "boolean" },
     canEditEntries: { kind: "scalar", type: "boolean" },
-    canGrant: { kind: "scalar", type: "boolean" },
-    domainShared: { kind: "scalar", type: "boolean" },
     openPath: { kind: "scalar", type: "string" },
   });
 

@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { writeBundledAppSdkFixture } from "../../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../../content/layout";
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { productPanelInputSchema, registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
 import type { EntryDependency } from "@ontomato/contracts/entry-dependencies";
@@ -56,6 +58,9 @@ async function seedProjection() {
 
 let runtimeRoot: string;
 beforeAll(async () => {
+  configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: {
+    en: { ...enLocaleMeta, messages: en },
+  } });
   runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "current-product-"));
   await writeBundledAppSdkFixture(runtimeRoot);
   installContentLayout({ runtimeRoot, publicSkillsRoot: runtimeRoot, prompts: [], runtimeResources: [] });
@@ -333,11 +338,37 @@ it("rejects missing projection IDs, unknown slot inputs and mismatched ontology 
 
 it("does not accept a legacy asset ID as a current panel reference", async () => {
   const request = (panelId: string) => ({
-    domainId: owner.domainId, uses: [{ id: "use", panelId }], delivery: { panels: [], projections: [] },
+    domainId: owner.domainId, registrant: credentials, uses: [{ id: "use", panelId }], delivery: { panels: [], projections: [] },
   });
   await expect(validateApplicationPanelReferences(request("legacy-page"))).rejects.toMatchObject({ code: "INVALID_PANEL_REFERENCE" });
   await seedProjection(); const { revision, ...input } = panel(); await saveCurrentPanel(owner, credentials, "p", input, revision);
   await expect(validateApplicationPanelReferences(request("p"))).resolves.toBeUndefined();
+});
+
+it("batches USE for the unique declared roots and frame before checking their structural references", async () => {
+  const { revision, ...input } = panel();
+  await saveCurrentPanel(owner, credentials, "frame", { ...input, manifest: { state: {}, members: {} } }, revision);
+  await saveCurrentPanel(owner, credentials, "root", { ...input, manifest: { state: {}, members: {} } }, revision);
+  const request = {
+    domainId: owner.domainId, registrant: credentials, framePanelId: "frame",
+    uses: [{ id: "first", panelId: "root" }, { id: "second", panelId: "root" }],
+    delivery: { panels: [], projections: [] },
+  };
+
+  for (const denied of ["root", "frame"]) {
+    mocks.decide.mockImplementation((item: ObjectDecisionRequest) => "create" in item || item.target.id !== denied);
+    await expect(validateApplicationPanelReferences(request)).rejects.toMatchObject({
+      status: 403, details: { panelId: denied },
+    });
+  }
+  mocks.decide.mockReturnValue(true);
+  mocks.decide.mockClear();
+  await expect(validateApplicationPanelReferences(request)).resolves.toBeUndefined();
+  expect(mocks.decide.mock.calls.map(([request]) => request)).toEqual(["root", "frame"].map(id => ({
+    target: { id, domainId: owner.domainId, kind: "PANEL" },
+    ownerFacts: { ownerId: owner.userId, state: "PUBLISHED" },
+    verb: "USE",
+  })));
 });
 
 it("requires pageComposer: 'none' on any application entry mounting an AgentChat projection (direct or nested)", async () => {
@@ -361,19 +392,19 @@ it("requires pageComposer: 'none' on any application entry mounting an AgentChat
 
   for (const panelId of ["chat-panel", "outer-panel"]) {
     await expect(validateApplicationPanelReferences({
-      domainId: owner.domainId,
+      domainId: owner.domainId, registrant: credentials,
       uses: [{ id: "chat-use", panelId }],
       delivery: { panels: [], projections: [] },
     })).rejects.toMatchObject({ status: 400, code: "INVALID_PANEL_ENTRY_PAGE_COMPOSER" });
 
     await expect(validateApplicationPanelReferences({
-      domainId: owner.domainId,
+      domainId: owner.domainId, registrant: credentials,
       uses: [{ id: "chat-use", panelId, pageComposer: "bottom" }],
       delivery: { panels: [], projections: [] },
     })).rejects.toMatchObject({ status: 400, code: "INVALID_PANEL_ENTRY_PAGE_COMPOSER" });
 
     await expect(validateApplicationPanelReferences({
-      domainId: owner.domainId,
+      domainId: owner.domainId, registrant: credentials,
       uses: [{ id: "chat-use", panelId, pageComposer: "none" }],
       delivery: { panels: [], projections: [] },
     })).resolves.toBeUndefined();
@@ -388,7 +419,7 @@ it("rejects a frame state input without a frame and preserves typed literal wiri
   await saveCurrentPanel(owner, credentials, "content", definition, revision);
   const validates = (ref: { literal: string } | { frameState: string }, framePanelId?: string) =>
     validateApplicationPanelReferences({
-      domainId: owner.domainId, framePanelId,
+      domainId: owner.domainId, registrant: credentials, framePanelId,
       uses: [{ id: "orders", panelId: "content", inputs: { term: ref } }],
       delivery: { panels: [], projections: [] },
     });
@@ -405,7 +436,7 @@ it("rejects a frame state input without a frame and preserves typed literal wiri
 });
 
 it("checks theme values in the application registration preflight with relaxed CSS value rules", async () => {
-  const request = { domainId: owner.domainId, uses: [], delivery: { panels: [], projections: [] } };
+  const request = { domainId: owner.domainId, registrant: credentials, uses: [], delivery: { panels: [], projections: [] } };
   await expect(validateApplicationPanelReferences({
     ...request,
     theme: {
@@ -478,7 +509,11 @@ it("reuses the current panel definition while checking the caller's grants and t
   expect(readOnly.manifest).toBe(first.manifest);
 
   mocks.decide.mockReturnValueOnce(false);
-  await expect(readCurrentPanel(owner, credentials, "p")).rejects.toMatchObject({ status: 403 });
+  await expect(readCurrentPanel(owner, credentials, "p")).rejects.toMatchObject({
+    status: 403,
+    code: "OBJECT_FORBIDDEN",
+    message: "You cannot use this panel.",
+  });
   mocks.edits = ["p"];
   await saveCurrentPanel(owner, credentials, "p", { ...input, name: "Updated tasks" }, first.revision);
   expect(await readCurrentPanel(owner, credentials, "p")).toMatchObject({ name: "Updated tasks", revision: 2 });

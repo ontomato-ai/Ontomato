@@ -71,7 +71,7 @@ const hiddenUse = { ...publicUse, id: "hidden", pageKey: "hidden", path: `${entr
 const draftId = "app-14d40829-d7d4-4b14-94bf-11c4c8b12e1b";
 const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pages", groups: [] };
 const initialCreateValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },
-  initialOpenEntryIds: [], panelUses: [], shared: false, allowStandalone: true };
+  initialOpenEntryIds: [], panelUses: [], allowStandalone: true };
 const entryValues = { entry, panelUses: [publicUse, hiddenUse], framePanelId: "catalogue-panel" };
 const identityValues = { names: { en: "Application", fr: "Application française" }, descriptions: { en: "Kept description" }, icon: "pages" };
 const writes: { path: string; actor?: string; body: unknown }[] = [];
@@ -162,7 +162,7 @@ beforeAll(async () => {
       menu: { singleEntry: true, names: declaration.names, groups: [], panelUses: [] } } });
   });
   const summary = { id: applicationId, names: declaration.names, descriptions: {}, icon: "pages",
-    source: "domain", canMaintain: false, canGrant: false, canEditEntries: false, entryCount: 1 };
+    source: "domain", canMaintain: false, canEditEntries: false, entryCount: 1 };
   app.get("/java/platform/applications/catalogue", (req, res) => {
     expect(req.header("tk")).toBe(viewer.token);
     expect(req.query).toEqual({ search: "App", scope: "visible", size: "4" });

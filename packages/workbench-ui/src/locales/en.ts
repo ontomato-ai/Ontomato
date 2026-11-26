@@ -1530,7 +1530,7 @@ export default {
       },
       "application": {
         "definition": "A published unit that makes content available through application entries.",
-        "rules": "The platform maintains built-in applications, and Java checks domain identity, assigned paths, and permission to use referenced panels during domain registration. Java checks application and entry admission and panel use before opening an entry, requires maintenance authority for edits and deletion, and requires a product edit grant to manage access.",
+        "rules": "The platform maintains built-in applications. The application catalogue is visible to callers who can open an entry or edit the application. Java lists and opens entries based solely on Entry permissions. Workbench checks panel USE when reading a panel and validates USE for referenced panels during registration. Java checks domain identity and assigned paths during registration and requires maintenance authority for edits and deletion.",
         "properties": {
           "id": "The stable identifier of the application.",
           "names": "Display names keyed by language code.",
@@ -1539,7 +1539,6 @@ export default {
           "source": "Whether the application is declared by the platform or registered in a domain.",
           "canMaintain": "Whether the current caller may edit the identity or delete this domain application.",
           "canEditEntries": "Whether the current caller has maintenance authority to edit this domain panel application's entry table.",
-          "canGrant": "Whether the current caller may manage the application's sharing and grants under product edit authority.",
           "allowStandalone": "Whether this application can be opened standalone without the platform sidebar and expose an external link.",
           "externalLink": "The standalone entry link exposed when standalone opening is enabled; omitted when disabled.",
           "entry": "The application's landing path with an optional renderer and home path.",

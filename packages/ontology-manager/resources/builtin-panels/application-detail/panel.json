@@ -37,37 +37,6 @@
         },
         "deepLink": true
       },
-      "grantDialog": {
-        "type": {
-          "kind": "scalar",
-          "type": "boolean"
-        }
-      },
-      "grantPrincipalKind": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "default": "principal"
-      },
-      "grantUser": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:User"
-        }
-      },
-      "grantRole": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Role"
-        }
-      },
-      "grantPrincipalId": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
       "copyDialog": {
         "type": {
           "kind": "scalar",
@@ -411,186 +380,6 @@
         },
         "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0d"
       },
-      "grantsList": {
-        "component": "ObjectList",
-        "target": "selected",
-        "data": {
-          "rows": "grantRows"
-        },
-        "operations": {
-          "revoke": {
-            "operation": "applications.grant",
-            "target": {
-              "state": "selected"
-            },
-            "params": {
-              "principalKind": {
-                "rowField": "principalKind"
-              },
-              "principalId": {
-                "rowField": "principalId"
-              },
-              "verb": {
-                "rowField": "verb"
-              },
-              "remove": {
-                "literal": true
-              }
-            }
-          }
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "fallbackToFirst": false,
-          "emptyText": "grants.none",
-          "columns": [
-            {
-              "key": "principalKindLabel",
-              "labelKey": "grants.kind",
-              "kind": "tag",
-              "width": 130
-            },
-            {
-              "key": "label",
-              "labelKey": "grants.principalCol",
-              "subtitleKey": "subtitle",
-              "minWidth": 220
-            },
-            {
-              "key": "verbLabel",
-              "labelKey": "grants.verb",
-              "kind": "tag",
-              "width": 120
-            }
-          ],
-          "rowActions": {
-            "labelKey": "grants.actions",
-            "width": 100,
-            "align": "right",
-            "maxVisible": 1,
-            "items": [
-              {
-                "kind": "operation",
-                "operation": "revoke",
-                "labelKey": "grants.revoke",
-                "tone": "danger",
-                "when": {
-                  "field": "revocable",
-                  "equals": true
-                }
-              }
-            ]
-          }
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0e"
-      },
-      "userPicker": {
-        "component": "ReferencePicker",
-        "type": "platform:User",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "state": {
-          "selected": "grantUser"
-        },
-        "config": {
-          "size": "default",
-          "placeholderKey": "grants.selectMember"
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0f"
-      },
-      "rolePicker": {
-        "component": "ReferencePicker",
-        "type": "platform:Role",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "state": {
-          "selected": "grantRole"
-        },
-        "config": {
-          "size": "default",
-          "placeholderKey": "grants.selectRole"
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a10"
-      },
-      "grantSubmit": {
-        "component": "OperationButton",
-        "target": "selected",
-        "operation": "applications.grant",
-        "operationParams": {
-          "principalKind": {
-            "state": "grantPrincipalKind"
-          },
-          "principalId": {
-            "state": "grantPrincipalId"
-          },
-          "verb": {
-            "literal": "use"
-          },
-          "remove": {
-            "literal": false
-          }
-        },
-        "config": {
-          "type": "primary",
-          "labelKey": "grants.submit"
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a11"
-      },
-      "shareEnable": {
-        "component": "OperationButton",
-        "target": "selected",
-        "operation": "applications.share",
-        "operationParams": {
-          "shared": {
-            "literal": true
-          }
-        },
-        "config": {
-          "size": "small",
-          "labelKey": "grants.enableShare"
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a12"
-      },
-      "shareDisable": {
-        "component": "OperationButton",
-        "target": "selected",
-        "operation": "applications.share",
-        "operationParams": {
-          "shared": {
-            "literal": false
-          }
-        },
-        "config": {
-          "size": "small",
-          "labelKey": "grants.disableShare"
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a13"
-      },
-      "shareStatusDesc": {
-        "component": "TypedValue",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "field": "domainShared",
-          "kind": "text",
-          "valueMap": {
-            "true": {
-              "labelKey": "grants.sharedDesc"
-            },
-            "false": {
-              "labelKey": "grants.privateDesc"
-            }
-          }
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a14"
-      },
       "deleteApp": {
         "component": "OperationButton",
         "target": "selected",
@@ -610,7 +399,6 @@
       "zh-CN": {
         "panel.name": "应用详情",
         "action.back": "返回应用",
-        "action.cancel": "取消",
         "action.openApp": "打开应用",
         "action.copy": "复制",
         "action.retry": "重试",
@@ -628,7 +416,6 @@
         "tab.identity": "基本信息",
         "tab.entries": "入口",
         "tab.assets": "面板与投影",
-        "tab.grants": "使用授权",
         "entries.count": "{count} 个入口",
         "entries.add": "添加入口",
         "entries.editTitle": "编辑入口",
@@ -657,25 +444,6 @@
         "assets.colTarget": "成员",
         "assets.colKind": "类型",
         "assets.colSlot": "槽位",
-        "grants.none": "暂无单独授权记录。",
-        "grants.kind": "主体类型",
-        "grants.principalCol": "主体",
-        "grants.verb": "权限",
-        "grants.actions": "操作",
-        "grants.principal": "成员",
-        "grants.role": "角色",
-        "grants.use": "使用",
-        "grants.revoke": "撤销",
-        "grants.add": "添加授权",
-        "grants.dialogTitle": "添加授权",
-        "grants.shareTitle": "向本域成员共享",
-        "grants.sharedDesc": "已向本域所有成员开放使用权限。",
-        "grants.privateDesc": "使用授权列在下方。",
-        "grants.enableShare": "开启域内共享",
-        "grants.disableShare": "关闭域内共享",
-        "grants.selectMember": "搜索或选择成员",
-        "grants.selectRole": "搜索或选择角色",
-        "grants.submit": "授予",
         "notify.saved": "更改已保存。",
         "notify.copied": "已复制并创建新应用。",
         "notify.deleted": "应用已删除。"
@@ -683,7 +451,6 @@
       "en": {
         "panel.name": "Application detail",
         "action.back": "Back to applications",
-        "action.cancel": "Cancel",
         "action.openApp": "Open application",
         "action.copy": "Copy",
         "action.retry": "Retry",
@@ -701,7 +468,6 @@
         "tab.identity": "Basics",
         "tab.entries": "Entries",
         "tab.assets": "Panels & projections",
-        "tab.grants": "Use grants",
         "entries.count": "{count} entries",
         "entries.add": "Add entry",
         "entries.editTitle": "Edit entry",
@@ -730,25 +496,6 @@
         "assets.colTarget": "Member",
         "assets.colKind": "Kind",
         "assets.colSlot": "Slot",
-        "grants.none": "No individual grants yet.",
-        "grants.kind": "Subject type",
-        "grants.principalCol": "Subject",
-        "grants.verb": "Permission",
-        "grants.actions": "Actions",
-        "grants.principal": "Member",
-        "grants.role": "Role",
-        "grants.use": "Use",
-        "grants.revoke": "Revoke",
-        "grants.add": "Add grant",
-        "grants.dialogTitle": "Add grant",
-        "grants.shareTitle": "Share with domain members",
-        "grants.sharedDesc": "All members in this domain have the application use grant.",
-        "grants.privateDesc": "Use grants are listed below.",
-        "grants.enableShare": "Enable domain sharing",
-        "grants.disableShare": "Disable domain sharing",
-        "grants.selectMember": "Search or select a member",
-        "grants.selectRole": "Search or select a role",
-        "grants.submit": "Grant",
         "notify.saved": "Changes saved.",
         "notify.copied": "Application copied.",
         "notify.deleted": "Application deleted."
@@ -756,7 +503,6 @@
       "zh-TW": {
         "panel.name": "應用詳情",
         "action.back": "返回應用",
-        "action.cancel": "取消",
         "action.openApp": "開啟應用",
         "action.copy": "複製",
         "action.retry": "重試",
@@ -774,7 +520,6 @@
         "tab.identity": "基本資訊",
         "tab.entries": "入口",
         "tab.assets": "面板與投影",
-        "tab.grants": "使用授權",
         "entries.count": "{count} 個入口",
         "entries.add": "新增入口",
         "entries.editTitle": "編輯入口",
@@ -803,25 +548,6 @@
         "assets.colTarget": "成員",
         "assets.colKind": "類型",
         "assets.colSlot": "槽位",
-        "grants.none": "暫無單獨授權紀錄。",
-        "grants.kind": "主體類型",
-        "grants.principalCol": "主體",
-        "grants.verb": "權限",
-        "grants.actions": "操作",
-        "grants.principal": "成員",
-        "grants.role": "角色",
-        "grants.use": "使用",
-        "grants.revoke": "撤銷",
-        "grants.add": "新增授權",
-        "grants.dialogTitle": "新增授權",
-        "grants.shareTitle": "向本域成員共享",
-        "grants.sharedDesc": "已向本域所有成員開放使用權限。",
-        "grants.privateDesc": "使用授權列在下方。",
-        "grants.enableShare": "開啟域內共享",
-        "grants.disableShare": "關閉域內共享",
-        "grants.selectMember": "搜尋或選擇成員",
-        "grants.selectRole": "搜尋或選擇角色",
-        "grants.submit": "授予",
         "notify.saved": "變更已儲存。",
         "notify.copied": "已複製並建立新應用。",
         "notify.deleted": "應用已刪除。"

@@ -183,7 +183,7 @@ describe("platform count reads", () => {
         data: {
           rows: [{
             id: "app-1", names: { en: "App" }, descriptions: { en: "" }, icon: "app-window",
-            source: "builtin", canMaintain: false, canEditEntries: false, canGrant: false, entryCount: 0,
+            source: "builtin", canMaintain: false, canEditEntries: false, entryCount: 0,
           }],
           total: 1,
         },

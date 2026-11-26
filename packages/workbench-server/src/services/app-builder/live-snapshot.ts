@@ -41,7 +41,6 @@ export interface LiveSnapshotResult {
     source: "builtin" | "domain";
     canMaintain: boolean;
     canEditEntries: boolean;
-    canGrant: boolean;
     entryPath: string;
     entryHome?: string;
     renderer?: string;
@@ -233,7 +232,6 @@ export async function readLiveApplicationSnapshot(
       source: record.source,
       canMaintain: record.canMaintain,
       canEditEntries: record.canEditEntries,
-      canGrant: record.canGrant,
       entryPath: record.entry.path,
       entryHome: record.entry.home,
       renderer: record.entry.renderer,

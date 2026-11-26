@@ -51,7 +51,6 @@ export interface BuilderProjectSummary {
   activeRunId: string | null;
   updatedAt: string;
   canEditEntries: boolean;
-  canGrant: boolean;
 }
 
 export interface BuilderPreviewEntry {
@@ -218,7 +217,6 @@ export async function listBuilderProjects(
       activeRunId: ws?.activeRunId ?? null,
       updatedAt: ws?.updatedAt ?? draft.updatedAt,
       canEditEntries: false,
-      canGrant: false,
     });
   }
 
@@ -237,7 +235,6 @@ export async function listBuilderProjects(
       activeRunId: ws?.activeRunId ?? null,
       updatedAt: ws?.updatedAt ?? row.updatedAt ?? bound?.updatedAt ?? new Date(0).toISOString(),
       canEditEntries: row.canEditEntries,
-      canGrant: row.canGrant,
     });
   }
 
@@ -376,7 +373,6 @@ export async function getBuilderProject(
     activeRunId: workspace?.activeRunId ?? null,
     updatedAt: workspace?.updatedAt ?? project?.updatedAt ?? new Date().toISOString(),
     canEditEntries: live?.applicationMeta.canEditEntries ?? false,
-    canGrant: live?.applicationMeta.canGrant ?? false,
     sourceKind,
     materialized: project !== null,
     headCommit: workspace?.headCommit ?? null,

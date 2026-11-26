@@ -4,12 +4,10 @@ import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.service.BuiltinProductIds;
-import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import io.ontomato.dataengine.service.authorization.PresetAgentPolicies;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
@@ -23,12 +21,9 @@ import org.springframework.http.HttpStatus;
 @DependsOn("jdbcInitDb")
 public final class AnonymousAuthorization implements AuthorizationSubjects, AuthorizationStore, PresetAgentPolicies.RolePolicies, InitializingBean {
     private static final String DOMAIN_POLICY = "domain";
-    private final ProductGrantService products;
-
     private final JdbcTemplate jdbc;
 
-    public AnonymousAuthorization(ProductGrantService products, JdbcTemplate jdbc) {
-        this.products = products;
+    public AnonymousAuthorization(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
@@ -58,9 +53,7 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
             case PANEL, PROJECTION -> verb == Verb.USE &&
                     (BuiltinProductIds.isValid(target.id()) || hasDomainUse(target));
             case COMPONENT -> verb == Verb.USE && hasDomainUse(target);
-            case APPLICATION -> verb == Verb.EDIT
-                    ? !objectGrants(target, verb, Set.of(DOMAIN_POLICY)).isEmpty()
-                    : products.allowedFor(target.domainId(), userId, target.id(), verb.name().toLowerCase(Locale.ROOT));
+            case APPLICATION -> verb == Verb.EDIT && !objectGrants(target, verb, Set.of(DOMAIN_POLICY)).isEmpty();
             // The anonymous workbench could use and configure each registered agent.
             case AGENT -> verb == Verb.USE || verb == Verb.VIEW || verb == Verb.EDIT;
             case METRIC, READ_FUNCTION, WRITE_FUNCTION, TRIGGER, ACTION, WORKFLOW, SKILL -> true;
@@ -138,8 +131,8 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     }
 
     private static void requireDomainPolicy(ObjectGrant grant) {
-        boolean applicationEdit = grant.target().kind() == Kind.APPLICATION && grant.verb() == Verb.EDIT;
-        if (!DOMAIN_POLICY.equals(grant.policyId()) || grant.scope() != null || (grant.verb() != Verb.USE && !applicationEdit))
+        var verb = grant.target().kind() == Kind.APPLICATION ? Verb.EDIT : Verb.USE;
+        if (!DOMAIN_POLICY.equals(grant.policyId()) || grant.scope() != null || grant.verb() != verb)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported permission for the anonymous domain policy.");
     }
     @Override public void grantManagement(String domainId, String policyId, String operationId) { throw noRolePolicies(); }

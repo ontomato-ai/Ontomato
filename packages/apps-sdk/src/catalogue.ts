@@ -1172,7 +1172,7 @@ export const components: readonly ComponentMetadata[] = [
         results: [
           "panelRecordList", "panelRecord", "panelRecordQuery", "panelGroupCounts", "panelApplicationMenu",
           "productProjectionList", "productPanelList", "productProjectionRecord", "productPanelRecord", "productProjectionUsedBy",
-          "productPanelUsedBy", "productPanelMembers", "productCatalogueGrants", "productObjectAccess", "agentObjectAccess", "applicationEntries",
+          "productPanelUsedBy", "productPanelMembers", "productObjectAccess", "agentObjectAccess", "applicationEntries",
           "panelFormDescription", "panelOperationDescriptor", "panelOptionList", "panelGraphConnections",
           "panelGraphCounts", "panelGraphOverview", "panelGraphStart", "panelGraphNeighbors",
           "panelRelationNeighbors", "chartTemplate", "metricOutput",

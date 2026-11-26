@@ -3,7 +3,7 @@ import { objectPublicationAccessSchema } from "@ontomato/contracts/object-public
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
-  applicationCatalogueCreateSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema, applicationUseGrantChangeSchema,
+  applicationCatalogueCreateSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
 } from "@ontomato/contracts/application-catalogue";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -664,11 +664,6 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
       },
     },
   ),
-  applicationAction("grant", applicationUseGrantChangeSchema,
-    async ({ credentials }, id, input) => applicationCatalogueClient(credentials).changeUseGrant(id, input)),
-  applicationAction("share", changeProductDomainGrantRequestSchema, async ({ credentials }, id, { shared }) => {
-    await applicationCatalogueClient(credentials).shareUse(id, shared);
-  }),
   applicationAction("addEntry", z.object({ entry: applicationPanelUseSchema }).strict(),
     async ({ credentials }, id, { entry }) => editEntries(credentials, id, entries => { entries.push(entry); })),
   applicationAction("updateEntry", entryInput.extend({ entry: applicationPanelUseSchema }),

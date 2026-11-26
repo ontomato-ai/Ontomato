@@ -94,23 +94,6 @@ it("forwards application catalogue sorting and its opaque cursor to Java", async
   expect(request.searchParams.get("cursor")).toBe("name-en.app-example.QWxwaGE");
 });
 
-it("gets use grants from the application owner and propagates its edit refusal", async () => {
-  const grants = [
-    { principalKind: "role", principalId: "reader", verb: "use" },
-    { principalKind: "domain", principalId: "*", verb: "use" },
-  ] as const;
-  vi.mocked(backendGet)
-    .mockRejectedValueOnce(Object.assign(new Error("Application access denied"), { status: 403 }))
-    .mockResolvedValueOnce({ text: JSON.stringify({ success: true, data: { grants } }) } as Awaited<ReturnType<typeof backendGet>>);
-
-  const adapter = createApplicationReadAdapter(owner, viewer);
-  await expect(adapter.grants("app-grants")).rejects.toMatchObject({ status: 403 });
-  await expect(adapter.grants("app-grants")).resolves.toEqual({ grants, shared: true });
-  expect(backendGet).toHaveBeenLastCalledWith("application-use-grants",
-    expect.stringMatching(/\/platform\/applications\/app-grants\/use-grants$/), expect.any(Object));
-});
-
-
 const applicationSummary = {
   id: "app-public",
   names: { en: "Public app", fr: "Appli publique" },
@@ -119,7 +102,6 @@ const applicationSummary = {
   source: "builtin" as const,
   canMaintain: false,
   canEditEntries: false,
-  canGrant: false,
   entryCount: 3,
 };
 
@@ -131,14 +113,13 @@ it("maps a Java catalogue row to typed fields with localized display values and 
     fields: {
       names: { kind: "localized", values: applicationSummary.names },
       descriptions: { kind: "localized", values: applicationSummary.descriptions },
-      icon: "layout-grid", entryCount: 3, canMaintain: false, canEditEntries: false, canGrant: false,
+      icon: "layout-grid", entryCount: 3, canMaintain: false, canEditEntries: false,
       sourceKind: "builtin", source: "Intégrée", maintenance: "Lecture seule",
     },
     fieldLabels: { source: "Origine" },
     tones: { source: "info", maintenance: "info" },
   });
   expect(row.fields).not.toHaveProperty("path");
-  expect(row.fieldLabels).not.toHaveProperty("canGrant");
 });
 
 it("omits unprovided detail fields and preserves a frame panel as a typed reference", () => {
@@ -156,7 +137,7 @@ it("omits unprovided detail fields and preserves a frame panel as a typed refere
   expect(row.fields).not.toHaveProperty("framePanel");
 
   const panels = applicationCatalogueRecordSchema.parse({
-    ...legacy, source: "domain", canMaintain: true, canEditEntries: true, canGrant: true,
+    ...legacy, source: "domain", canMaintain: true, canEditEntries: true,
     entry: { ...legacy.entry, renderer: "panels", home: "/applications/app-public/start", entryKey: "start" },
     framePanelId: "frame-panel",
   });
@@ -164,7 +145,7 @@ it("omits unprovided detail fields and preserves a frame panel as a typed refere
     fields: {
       home: "/applications/app-public/start", renderer: "panels",
       framePanel: { kind: "reference", className: "platform:ProductPanel", primaryKey: "frame-panel", label: "frame-panel" },
-      canMaintain: true, canEditEntries: true, canGrant: true,
+      canMaintain: true, canEditEntries: true,
     },
     tones: { maintenance: "success" },
   });
@@ -339,7 +320,6 @@ it("builds local referenceGraph payload for an application with its entry panels
     icon: "layout-grid",
     source: "domain" as const,
     canMaintain: true,
-    canGrant: true,
     canEditEntries: true,
     entryCount: 1,
     entry: { path: "/applications/app-graph-demo" },

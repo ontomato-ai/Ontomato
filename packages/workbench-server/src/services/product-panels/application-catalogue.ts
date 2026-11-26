@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   applicationCatalogueCreateSchema, applicationCatalogueFormRequestSchema, applicationCatalogueQueryResultSchema,
   applicationCatalogueRecordSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
-  applicationUseGrantChangeSchema, applicationUseGrantsSchema, type ApplicationCatalogueFormRequest,
+  type ApplicationCatalogueFormRequest,
 } from "@ontomato/contracts/application-catalogue";
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
@@ -84,7 +84,7 @@ function summarizeThemeOverrides(theme: ApplicationCatalogueDetail["theme"] | un
 export function toApplicationPanelRecord(
   row: ApplicationCatalogueRow | ApplicationCatalogueDetail,
   locale?: string,
-  extra?: { domainShared?: boolean; framePanelLabel?: string },
+  extra?: { framePanelLabel?: string },
 ): PanelRecord {
   const language = resolveLocale(locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.application.${key}`);
@@ -100,14 +100,12 @@ export function toApplicationPanelRecord(
     entryCount: row.entryCount,
     canMaintain: row.canMaintain,
     canEditEntries: row.canEditEntries,
-    canGrant: row.canGrant,
     allowStandalone,
     sourceKind: row.source,
     source: word(row.source),
     maintenance: word(row.canMaintain ? "maintainable" : "readOnly"),
     owner: row.ownerName ?? (row.source === "builtin" ? word("platformOwner") : ""),
     ...(row.updatedAt !== undefined && { updatedAt: row.updatedAt }),
-    ...(extra?.domainShared !== undefined && { domainShared: extra.domainShared }),
   };
   const fieldLabels: NonNullable<PanelRecord["fieldLabels"]> = {
     id: word("id"),
@@ -173,8 +171,6 @@ export function toApplicationPanelRecord(
     ? {
         canMaintain: row.canMaintain,
         canEditEntries: row.canEditEntries,
-        canGrant: row.canGrant,
-        ...(extra?.domainShared !== undefined && { domainShared: extra.domainShared }),
         openPath: row.entry.home ?? row.entry.path,
       }
     : undefined;
@@ -231,19 +227,6 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
     async record(primaryKey: string) {
       const response = await backendGet("application-catalogue-record", url(`${cataloguePath}/${encodeURIComponent(primaryKey)}`), options());
       return ownerData(response.text, applicationCatalogueRecordSchema);
-    },
-    async useGrants(id: string) {
-      const response = await backendGet("application-use-grants", url(`${entryPath(id)}/use-grants`), options());
-      const { grants } = ownerData(response.text, applicationUseGrantsSchema);
-      return { grants, shared: grants.some(grant => grant.principalKind === "domain") };
-    },
-    async changeUseGrant(id: string, change: z.infer<typeof applicationUseGrantChangeSchema>) {
-      const response = await backendPut("application-use-grant", url(`${entryPath(id)}/use-grants`), change, options());
-      ownerSuccessSchema.parse(JSON.parse(response.text));
-    },
-    async shareUse(id: string, shared: boolean) {
-      const response = await backendPut("application-use-sharing", url(`${entryPath(id)}/use-sharing`), { shared }, options());
-      ownerSuccessSchema.parse(JSON.parse(response.text));
     },
     async form(input: ApplicationCatalogueFormRequest) {
       const response = await backendPost("application-catalogue-form", url(`${cataloguePath}/form`),
@@ -461,43 +444,8 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
     },
     async record(primaryKey: string) {
       const detail = await record(primaryKey);
-      const domainShared = detail.canGrant ? (await client.useGrants(primaryKey)).shared : undefined;
       const framePanelLabel = detail.framePanelId ? (await panelNameMap()).get(detail.framePanelId) : undefined;
-      return toApplicationPanelRecord(detail, viewer.locale, { domainShared, framePanelLabel });
-    },
-    grants: client.useGrants,
-    async grantRows(primaryKey: string): Promise<PanelRecord[]> {
-      const { grants } = await client.useGrants(primaryKey);
-      const kindLabel = (kind: string) =>
-        kind === "domain" ? word("grantDomain") : kind === "role" ? word("grantRole") : word("grantPrincipal");
-      return grants.map((grant): PanelRecord => {
-        const isDomain = grant.principalKind === "domain";
-        const displayName = isDomain ? word("grantDomain") : (grant.principalName || grant.principalId);
-        const subtitle = !isDomain && grant.principalName && grant.principalName !== grant.principalId
-          ? grant.principalId
-          : undefined;
-        return {
-          primaryKey: `${grant.principalKind}:${grant.principalId}:${grant.verb}`,
-          className: APPLICATION,
-          label: displayName,
-          ...(subtitle && { subtitle }),
-          fields: {
-            principalKind: grant.principalKind,
-            principalKindLabel: kindLabel(grant.principalKind),
-            principalId: grant.principalId,
-            verb: grant.verb,
-            verbLabel: word("grantUse"),
-            revocable: !isDomain,
-          },
-          fieldLabels: {
-            principalKindLabel: word("grantKind"),
-            verbLabel: word("grantVerb"),
-          },
-          tones: {
-            principalKindLabel: isDomain ? "success" : "info",
-          },
-        };
-      });
+      return toApplicationPanelRecord(detail, viewer.locale, { framePanelLabel });
     },
     async form(primaryKey: string, { section, entryId, values, changedField = null }: EditFormParams) {
       const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;

@@ -693,7 +693,7 @@ it("rejects a forged member path, an undeclared operation and an unauthorized ta
   const refusedReader = await intent("approve.approve", k2Target, { tk: "outsider" });
   expect(refusedReader.status).toBe(403);
   expect(await refusedReader.json()).toMatchObject({
-    error: { code: "OBJECT_FORBIDDEN", message: "Object access denied" },
+    error: { code: "OBJECT_FORBIDDEN", message: "You cannot use this panel." },
   });
   const preparedForbiddenApprove = await intent("approve.approve", forbiddenTarget);
   expect(preparedForbiddenApprove.status).toBe(200);

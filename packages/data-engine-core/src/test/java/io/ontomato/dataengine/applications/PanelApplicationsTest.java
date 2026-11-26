@@ -26,7 +26,7 @@ class PanelApplicationsTest {
     private final TransactionTemplate tx = mock(TransactionTemplate.class);
     private final ApplicationAccess access = mock(ApplicationAccess.class);
     private final PanelResources panels = mock(PanelResources.class);
-    private final ProductGrantService grants = mock(ProductGrantService.class);
+    private final ProductPrincipalLookup grants = mock(ProductPrincipalLookup.class);
     private final User user = mock(User.class);
     private final ApplicationCatalog catalog;
     private final io.ontomato.dataengine.service.authorization.AuthorizationService authorization =
@@ -35,10 +35,8 @@ class PanelApplicationsTest {
     PanelApplicationsTest() {
         when(user.getId()).thenReturn("author"); when(user.getDomainId()).thenReturn("domain");
         when(tx.execute(any())).thenAnswer(call -> ((TransactionCallback<?>)call.getArgument(0)).doInTransaction(null));
-        when(grants.allowed(anyString(), eq("use"))).thenReturn(true);
-        when(grants.allowedBatchFor(eq("domain"), eq("author"), anyList(), eq("use"))).thenAnswer(call ->
-            call.<List<String>>getArgument(2).stream()
-                .collect(java.util.stream.Collectors.toMap(id -> id, id -> true)));
+
+
         catalog = spy(new ApplicationCatalog(db, tx, access, "{}", panels, grants, authorization));
         doReturn(List.of()).when(catalog).all();
     }
@@ -191,7 +189,7 @@ class PanelApplicationsTest {
         assertFalse(projection.getJSONArray("pageSkills").getJSONObject(0).containsKey("skill"));
         assertEquals(2, projection.getJSONArray("admittedEntrances").size());
         assertEquals("schedules-a", projection.getJSONArray("admittedEntrances").getJSONObject(0).getString("pageKey"));
-        verify(panels).requireCurrent(eq("domain"), isNull(),
+        verify(panels).requireUsableRegistration(eq("domain"), isNull(),
             argThat(usesPassed -> usesPassed.stream().map(ApplicationPanelUse::panelId).toList().equals(List.of("panel-p"))),
             isNull(), isNull(), eq("calendar"), any(java.util.Locale.class));
         var write = mockingDetails(db).getInvocations().stream().filter(call -> call.getMethod().getName().equals("update")).findFirst().orElseThrow();
@@ -243,7 +241,7 @@ class PanelApplicationsTest {
     }
 
     @Test void rejectsReferencesThatAreNotInTheCurrentPanelCollectionBeforeSaving() {
-        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent(eq("domain"), isNull(), eq(List.of(use("schedules-a", null))), isNull(), isNull(), eq("calendar"), isNull());
+        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireUsableRegistration(eq("domain"), isNull(), eq(List.of(use("schedules-a", null))), isNull(), isNull(), eq("calendar"), isNull());
         assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), true), user));
         verify(db, never()).update(anyString(), any(Object[].class));
     }
@@ -315,15 +313,14 @@ class PanelApplicationsTest {
         verifyNoInteractions(identity, access, grants);
     }
 
-    @Test void navigationCatalogReturnsSummaryWithoutPanelUsesWhileSingleApplicationViewKeepsFilteredPanelUses() throws Exception {
+    @Test void navigationCatalogReturnsSummaryWithoutPanelUsesWhileSingleApplicationViewKeepsAdmittedPanelUses() throws Exception {
         var named = new ApplicationPanelUse("use-named", "named", "panel-p", "/applications/app-panel-a/named", null, Map.of("en", "Tasks", "zh-CN", "任务"));
         var denied = new ApplicationPanelUse("use-denied", "denied", "panel-q", "/applications/app-panel-a/denied", null, Map.of("en", "Hidden"));
         var detail = use("detail", null);
         var objectRestricted = new ApplicationPanelUse("restricted", "restricted", "panel-restricted",
             "/applications/app-panel-a/restricted", null, null);
         var declared = List.of(named, denied, detail, objectRestricted);
-        when(grants.allowedBatchFor("domain", "author", List.of("panel-p", "panel-restricted"), "use"))
-            .thenReturn(Map.of("panel-p", true, "panel-restricted", false));
+
         var application = app("app-panel-a", "panels", declared);
         application.put("panelSettings", JSONObject.of("framePanelId", "panel-frame"));
         doReturn(List.of(application)).when(catalog).all();
@@ -347,13 +344,13 @@ class PanelApplicationsTest {
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.entryPaths").value(org.hamcrest.Matchers.containsInAnyOrder(
                 named.path(), detail.path(), objectRestricted.path())))
-            .andExpect(jsonPath("$.data.panelUses.length()").value(2))
+            .andExpect(jsonPath("$.data.panelUses.length()").value(3))
             .andExpect(jsonPath("$.data.panelUses[0].names['zh-CN']").value("任务"))
             .andExpect(jsonPath("$.data.panelUses[1].path").value("/applications/app-panel-a/detail"))
             .andExpect(jsonPath("$.data.panelUses[1].names").doesNotExist());
         mvc.perform(get("/platform/applications/app-panel-a/panel-uses"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.panelUses.length()").value(2))
+            .andExpect(jsonPath("$.data.panelUses.length()").value(3))
             .andExpect(jsonPath("$.data.panelUses[0].names.en").value("Tasks"));
         assertDoesNotThrow(() -> ApplicationPanelUse.validate(List.of(
             new ApplicationPanelUse("use-zh", "zh-only", "panel-p", "/applications/app-panel-a/zh-only", null, Map.of("zh-CN", "任务"))
@@ -366,30 +363,26 @@ class PanelApplicationsTest {
         )));
     }
 
-    @Test void readsPanelUsesThroughTheirOwnMenuAndUseAccessWithoutInventingMappings() {
+    @Test void listsOnlyAuthorizedPanelEntries() {
         var allowed = use("member", null); var denied = use("menu", "menu");
         var application = app("app-panel-a", "panels", List.of(allowed, denied));
         doReturn(List.of(application)).when(catalog).all();
         assertEquals(List.of(allowed), catalog.panelUses("app-panel-a", user).getList("panelUses", ApplicationPanelUse.class));
-        when(grants.allowedBatchFor("domain", "author", List.of("panel-p"), "use")).thenReturn(Map.of("panel-p", false));
-        assertTrue(catalog.panelUses("app-panel-a", user).getJSONArray("panelUses").isEmpty());
+
     }
 
-    @Test void panelUsesChecksAllAdmittedPanelIdsInOneBatch() {
+    @Test void entryResolutionDoesNotReadPanelDefinitions() {
         var allowed = use("first", null);
         var denied = new ApplicationPanelUse("use-second", "second", "panel-other", "/applications/app-panel-a/second", null, null);
         var duplicate = use("third", null);
         var uses = List.of(allowed, denied, duplicate);
         var application = app("app-panel-a", "panels", uses);
         doReturn(List.of(application)).when(catalog).all();
-        var ids = List.of("panel-p", "panel-other");
-        when(grants.allowedBatchFor("domain", "author", ids, "use"))
-                .thenReturn(Map.of("panel-p", true, "panel-other", false));
 
-        assertEquals(List.of(allowed, duplicate), catalog.panelUses("app-panel-a", user)
+
+        assertEquals(uses, catalog.panelUses("app-panel-a", user)
                 .getList("panelUses", ApplicationPanelUse.class));
-        verify(grants).allowedBatchFor("domain", "author", ids, "use");
-        verifyNoMoreInteractions(grants);
+        verifyNoInteractions(panels);
     }
 
     @Test void proxyAndServiceRegistrationRetainTheirCredentialBoundaries() throws Exception {
