@@ -180,6 +180,8 @@ export interface DirectPanelRun {
   frameState?: () => Readonly<Record<string, RuntimeJsonValue>> | undefined;
   /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
   registerBackHandler?: (registration: PanelBackHandlerRegistration) => () => void;
+  /** Leaves the current detail page via browser history when an in-platform previous page exists, else falls back to `fallback`. */
+  navigateBack?: (fallback: string, navigate: (address: string) => Promise<void>) => Promise<void>;
   /** Unified host confirmation for leaving unsaved edits (danger confirm button, Cancel focused by default). */
   confirmLeaveUnsaved?: () => Promise<boolean>;
   /** Current signed-in user's public display info; null in editions without sign-in. */
@@ -443,6 +445,8 @@ export interface PanelInstanceOptions {
   frameState?: DirectPanelRun["frameState"];
   /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
   registerBackHandler?: DirectPanelRun["registerBackHandler"];
+  /** Leaves the current detail page via browser history when an in-platform previous page exists, else falls back to `fallback`. */
+  navigateBack?: DirectPanelRun["navigateBack"];
   /** Unified host confirmation for leaving unsaved edits. */
   confirmLeaveUnsaved?: DirectPanelRun["confirmLeaveUnsaved"];
   /** Current signed-in user's public display info. */
@@ -728,6 +732,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
       ...(options.frameState ? { frameState: options.frameState } : {}),
       ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
+      ...(options.navigateBack ? { navigateBack: options.navigateBack } : {}),
       ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
       ...(options.currentUser ? { currentUser: options.currentUser } : {}),
       ...(options.overlayContainer ? { overlayContainer: options.overlayContainer } : {}),

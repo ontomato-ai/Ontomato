@@ -990,6 +990,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         :live-state="page === shownPage ? (liveStatePatch ?? frameLiveStatePatch) : null"
         :frame-state="frameState"
         :history-back="!props.navigate"
+        :beside="Boolean(props.navigate)"
         @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
         @display-loaded="(load: DisplayLoad) => reportLoad(page, load)"
         @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"

@@ -37,7 +37,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  /** Fired when the reader clicks the back button. */
+  /** Fired when the reader clicks the back button; wire to `usePanelContext().navigateBack(catalogPath)` on detail entries or `usePanelBack` for panel-local views. */
   back: [];
   /** Fired when the reader clicks Save on the draft controls. */
   save: [];
