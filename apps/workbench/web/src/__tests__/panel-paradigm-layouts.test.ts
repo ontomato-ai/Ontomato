@@ -358,6 +358,24 @@ describe("ObjectHeader", () => {
     expect(mounted.container.querySelector(".custom-action")?.textContent).toBe("Cancel");
   });
 
+  it("draws the shared status dot with the status text when statusStyle is dot", async () => {
+    const mounted = mountWithI18n(
+      defineComponent({
+        setup: () => () =>
+          h(ObjectHeader, { title: "Nightly report", status: "Completed", statusTone: "success", statusStyle: "dot" }),
+      }),
+    );
+    cleanups.push(() => mounted.unmount());
+    await nextTick();
+
+    const dot = mounted.container.querySelector<HTMLElement>(".sdk-status-dot")!;
+    expect(dot.dataset.tone).toBe("success");
+    const status = mounted.container.querySelector<HTMLElement>(".sdk-object-header-status")!;
+    expect(status.textContent?.trim()).toBe("Completed");
+    expect(status.dataset.tone).toBeUndefined();
+    expect(status.classList.contains("is-dot")).toBe(true);
+  });
+
   it("classifies danger by owner inspectImpact and explicit config (never by name regex), labels More with record title, uses SDK dropdown, and dispatches via shared path", async () => {
     const APPLICATION = "app-header-test";
     const entryType = { kind: "object", objectType: BUSINESS_KNOWLEDGE } as const;

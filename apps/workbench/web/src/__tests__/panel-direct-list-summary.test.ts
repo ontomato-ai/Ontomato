@@ -349,12 +349,14 @@ it("renders ObjectList dot status style and ObjectSummary article layout with ce
         statusField: "status",
         tagsField: "tags",
         bodyField: "body",
+        bodyEmptyText: "panel.bodyEmpty",
         emptyText: "panel.selectHint",
         missingText: "panel.missing",
       },
     },
   };
   let missingRecord = false;
+  let emptyBody = false;
   const { instance, element } = mountDirect(
     (request) => {
       if (request.dataName === "rows") {
@@ -368,6 +370,13 @@ it("renders ObjectList dot status style and ObjectSummary article layout with ce
         }]);
       }
       if (missingRecord) return { status: "error", message: "Not found" };
+      if (emptyBody) return ready({
+        primaryKey: "t-1",
+        label: "Refund policy",
+        fields: { status: "Pending", body: "" },
+        tones: { status: "warning" },
+        tags: { tags: ["Business"] },
+      });
       return ready({
         primaryKey: "t-1",
         label: "Refund policy",
@@ -382,14 +391,15 @@ it("renders ObjectList dot status style and ObjectSummary article layout with ce
         en: {
           "panel.selectHint": "Select an entry on the left",
           "panel.missing": "Entry does not exist",
+          "panel.bodyEmpty": "No text result was produced.",
         },
       },
     },
   );
 
   // Without a selected item, article layout displays its centered emptyText.
-  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-status-dot")).not.toBeNull());
-  expect(element.querySelector(".sdk-object-list-status-dot")?.getAttribute("data-tone")).toBe("warning");
+  await vi.waitFor(() => expect(element.querySelector(".sdk-status-dot")).not.toBeNull());
+  expect(element.querySelector(".sdk-status-dot")?.getAttribute("data-tone")).toBe("warning");
   instance.state.set("selectedTask", null);
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-empty")?.textContent).toContain("Select an entry on the left"));
 
@@ -399,6 +409,14 @@ it("renders ObjectList dot status style and ObjectSummary article layout with ce
   expect(element.querySelector(".sdk-object-summary-status-badge")?.textContent).toBe("Pending");
   expect(element.querySelector(".sdk-object-summary-article-tags")?.textContent).toContain("Business");
   expect(element.querySelector(".sdk-object-summary-article-body")?.textContent).toBe("Returns within 7 days");
+
+  // An empty body draws the configured placeholder instead of an empty paragraph.
+  emptyBody = true;
+  instance.state.set("selectedTask", task("t-empty-body"));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-body-empty")?.textContent?.trim())
+    .toBe("No text result was produced."));
+  expect(element.querySelector(".sdk-object-summary-article-body:not(.sdk-object-summary-body-empty)")).toBeNull();
+  emptyBody = false;
 
   // Missing record shows centered missingText instead of raw error alert.
   missingRecord = true;

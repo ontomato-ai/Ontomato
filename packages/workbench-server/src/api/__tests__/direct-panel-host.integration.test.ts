@@ -522,7 +522,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   if (!scope || !("projectionId" in scope.target)) throw new Error("Expected a data-scope projection");
   const scopeResponse = await request("GET", `product-projections/${scope.target.projectionId}`);
   expect(productProjectionResponseSchema.parse(await scopeResponse.json()).projection).toMatchObject({
-    componentId: "@ontomato/sdk:ObjectGraph",
+    componentId: "@ontomato/sdk:RecordGraph",
     data: {
       nodes: { source: { type: { id: "platform:ObjectType" } }, read: "list" },
       edges: { source: { type: { id: "platform:Relationship" } }, read: "list" },

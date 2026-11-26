@@ -225,14 +225,14 @@ it("ObjectTree respects author-bound size parameter and maps empty panelRecordQu
   expect(element.querySelector("[data-tree-coverage='partial']")).toBeNull();
 });
 
-it("ObjectGraph consumes customer ObjectType.query for nodes & edges, omits dangling edges when nodes truncated, and reports partialNotice on highlights", async () => {
+it("RecordGraph consumes customer ObjectType.query for nodes & edges, omits dangling edges when nodes truncated, and reports partialNotice on highlights", async () => {
   Element.prototype.getBoundingClientRect = () => ({ width: 800, height: 500, top: 0, left: 0, bottom: 500, right: 800, x: 0, y: 0, toJSON: () => ({}) });
 
   const projection: DirectProjection = {
     ...base,
     id: "course-graph",
     name: "Course Graph",
-    componentId: "@ontomato/sdk:ObjectGraph",
+    componentId: "@ontomato/sdk:RecordGraph",
     inputs: {
       pathFrom: { kind: "object", objectType: "Course" },
       pathTo: { kind: "object", objectType: "Course" },
@@ -367,12 +367,12 @@ it("GroupedGrid consumes customer ObjectType.query, preserves rowOperations, sho
   expect(element.querySelector(".sdk-grouped-grid")?.classList.contains("is-locked")).toBe(true);
 });
 
-it("OntologyGraph loads the next customer Relationship.neighbors page using the declared offset and capped limit", async () => {
+it("InstanceGraph loads the next customer Relationship.neighbors page using the declared offset and capped limit", async () => {
   const projection: DirectProjection = {
     ...base,
     id: "prereq-graph",
     name: "Prerequisites",
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     inputs: {
       start: { kind: "object", objectType: "Course" },
       selected: { kind: "object", objectType: "Course" },

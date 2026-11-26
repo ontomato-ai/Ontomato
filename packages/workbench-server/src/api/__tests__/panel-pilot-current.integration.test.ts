@@ -847,9 +847,9 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   });
   const members: Record<string, { target: { projectionId: string } }> = {};
   const projections = {
-    scope: { componentId: "@ontomato/sdk:ObjectGraph",
+    scope: { componentId: "@ontomato/sdk:RecordGraph",
       data: { nodes: type("platform:ObjectType", "list"), edges: type("platform:Relationship", "list") } },
-    ontology: { componentId: "@ontomato/sdk:OntologyGraph", inputs: { node: { kind: "json" } }, data: {
+    ontology: { componentId: "@ontomato/sdk:InstanceGraph", inputs: { node: { kind: "json" } }, data: {
       schema: type("platform:OntologyType", "schema"), counts: type("platform:OntologyType", "counts"),
       start: type("platform:OntologyType", "start"),
       neighbors: type("platform:OntologyType", "neighbors", { node: { input: "node" }, relationKinds: { literal: [] } }),
@@ -867,13 +867,13 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   const runtimeProjectionId = "ontology-pilot-runtime";
   const runtimeProjection = {
     name: "Runtime neighbors", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
-    componentId: "@ontomato/sdk:OntologyGraph",
+    componentId: "@ontomato/sdk:InstanceGraph",
     data: { neighbors: type("platform:OntologyType", "neighbors", { relationKinds: { literal: [] } }) },
   };
   const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(await readFile(cataloguePath, "utf8")));
   const declareGraphParameters = (runtimeParams: string[]) => writeFile(cataloguePath, JSON.stringify({
     ...catalogue,
-    components: catalogue.components.map(component => component.componentId === "OntologyGraph"
+    components: catalogue.components.map(component => component.componentId === "InstanceGraph"
       ? { ...component, data: { ...component.data, neighbors: { ...component.data!.neighbors, runtimeParams } } }
       : component),
   }));
