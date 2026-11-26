@@ -982,7 +982,7 @@ const typeCanvasEdges = computed<GraphCanvasEdge[]>(() => {
     : null;
   const edges: GraphCanvasEdge[] = [];
   for (const relation of schema.relationKinds) {
-    if (!visibleIds.has(relation.from) || !kindShown(relation.id)) continue;
+    if (relation.typeEdges === false || !visibleIds.has(relation.from) || !kindShown(relation.id)) continue;
     const targets = typeof relation.to === "string" ? [relation.to] : relation.to;
     const label = edgeLabelsEnabled.value ? relationDisplayName(relation.id, relation.label, relation.labelKey) : undefined;
     for (const target of targets) {

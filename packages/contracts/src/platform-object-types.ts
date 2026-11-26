@@ -1388,6 +1388,11 @@ export function platformHasChildCollection(parentType: string, collection: strin
 }
 
 const identifier = z.string().min(1);
+
+/** The engineering purpose a relation kind is filtered by; the panel shows one section per group. */
+export const platformRelationGroups = ["structure", "dependency", "assembly", "authorization", "organization"] as const;
+export type PlatformRelationGroup = typeof platformRelationGroups[number];
+
 export const platformRelationKindDeclarationSchema = z.object({
   id: identifier,
   from: identifier,
@@ -1396,59 +1401,56 @@ export const platformRelationKindDeclarationSchema = z.object({
   label: z.string().min(1).optional(),
   derived: z.boolean(),
   owner: identifier,
+  group: z.enum(platformRelationGroups),
+  /** Present as `false` when the type graph draws one sentence (`platformOntology.relationNotes.<id>`) instead of this kind's target edges. */
+  typeEdges: z.literal(false).optional(),
 }).strict();
 export type PlatformRelationKindDeclaration = z.infer<typeof platformRelationKindDeclarationSchema>;
 
 const relation = (
-  id: string, from: string, to: PlatformRelationKindDeclaration["to"], owner: string, derived = false,
-): PlatformRelationKindDeclaration => ({ id, from, to, labelKey: `platformOntology.relations.${id}`, derived, owner });
+  id: string, from: string, to: PlatformRelationKindDeclaration["to"], owner: string,
+  group: PlatformRelationGroup, derived = false, typeEdges?: false,
+): PlatformRelationKindDeclaration => ({
+  id, from, to, labelKey: `platformOntology.relations.${id}`, derived, owner, group, ...(typeEdges === false && { typeEdges }),
+});
 
 const layeredTypes = Object.keys(platformObjectTypes).filter(id => platformObjectTypes[id].layer);
 
 /** The declared topology and the owner each instance lookup must ask. */
 export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] = [
-  relation("object-type.has-attribute", OBJECT_TYPE, ATTRIBUTE, "java-ontology"),
-  relation("relationship.from-object-type", RELATIONSHIP, OBJECT_TYPE, "java-ontology"),
-  relation("relationship.to-object-type", RELATIONSHIP, OBJECT_TYPE, "java-ontology"),
-  relation("metric-view.uses-function", METRIC_VIEW, FUNCTION, "java-metric"),
-  relation("action.uses-function", ACTION, FUNCTION, "java-action"),
-  relation("function.reads-object-type", FUNCTION, OBJECT_TYPE, "java-function"),
-  relation("action.targets-object-type", ACTION, OBJECT_TYPE, "java-action"),
-  relation("definition.based-on-object-type", DEFINITION, OBJECT_TYPE, "node-business-definitions"),
-  relation("workflow.step-references-action", WORKFLOW, ACTION, "java-workflow"),
-  relation("trigger.targets-workflow", TRIGGER, WORKFLOW, "java-trigger"),
-  relation("trigger.targets-action", TRIGGER, ACTION, "java-trigger"),
-  relation("user.holds-role", USER, ROLE, "java-identity"),
-  relation("org-unit.has-child", ORG_UNIT, ORG_UNIT, "java-organization"),
-  relation("org-unit.has-position", ORG_UNIT, ORG_POSITION, "java-organization"),
-  relation("user.member-of-org-unit", USER, ORG_UNIT, "java-organization"),
-  relation("user.holds-org-position", USER, ORG_POSITION, "java-organization"),
-  relation("org-grant.applies-to-org-unit", ORG_GRANT, ORG_UNIT, "java-organization"),
-  relation("org-grant.applies-to-org-position", ORG_GRANT, ORG_POSITION, "java-organization"),
-  relation("org-grant.grants-role", ORG_GRANT, ROLE, "java-organization"),
-  relation("role.uses-permission-policy", ROLE, PERMISSION_POLICY, "java-permission-policy"),
-  relation("permission-policy.governs-object-type", PERMISSION_POLICY, OBJECT_TYPE, "java-permission-policy"),
-  relation("role.can-execute-action", ROLE, ACTION, "java-authorization"),
-  relation("role.can-author-workflow", ROLE, WORKFLOW, "java-authorization", true),
-  relation("role.owns-workflow-step", ROLE, WORKFLOW, "java-workflow", true),
-  relation("role.can-use-product", ROLE, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
-  relation("role.can-view-product", ROLE, AGENT_DEFINITION, "java-product-grants"),
-  relation("role.can-edit-product", ROLE, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
-  relation("user.can-use-product", USER, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
-  relation("user.can-view-product", USER, AGENT_DEFINITION, "java-product-grants"),
-  relation("user.can-edit-product", USER, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
-  relation("user.created-action", USER, ACTION, "java-action"),
-  relation("user.created-workflow", USER, WORKFLOW, "java-workflow"),
-  relation("user.created-metric-view", USER, METRIC_VIEW, "java-metric"),
-  relation("user.published-action", USER, ACTION, "java-action"),
-  relation("user.published-workflow", USER, WORKFLOW, "java-workflow"),
-  relation("user.published-metric-view", USER, METRIC_VIEW, "java-metric"),
-  relation("projection.uses-component", PRODUCT_PROJECTION, SDK_COMPONENT, "node-product-panels"),
-  relation("projection.binds-target", PRODUCT_PROJECTION, layeredTypes, "node-product-panels"),
-  relation("panel.contains-projection", PRODUCT_PANEL, PRODUCT_PROJECTION, "node-product-panels"),
-  relation("panel.contains-panel", PRODUCT_PANEL, PRODUCT_PANEL, "node-product-panels"),
-  relation("panel.provides-skill", PRODUCT_PANEL, SKILL, "node-product-panels", true),
-  relation("application.uses-panel", APPLICATION, PRODUCT_PANEL, "java-application-catalog"),
-  relation("agent.uses-skill", AGENT_DEFINITION, SKILL, "node-assistant"),
-  relation("agent.executes-as-user", AGENT_DEFINITION, USER, "node-assistant"),
+  relation("object-type.has-attribute", OBJECT_TYPE, ATTRIBUTE, "java-ontology", "structure"),
+  relation("relationship.from-object-type", RELATIONSHIP, OBJECT_TYPE, "java-ontology", "structure"),
+  relation("relationship.to-object-type", RELATIONSHIP, OBJECT_TYPE, "java-ontology", "structure"),
+  relation("metric-view.uses-function", METRIC_VIEW, FUNCTION, "java-metric", "dependency"),
+  relation("action.uses-function", ACTION, FUNCTION, "java-action", "dependency"),
+  relation("function.reads-object-type", FUNCTION, OBJECT_TYPE, "java-function", "dependency"),
+  relation("action.targets-object-type", ACTION, OBJECT_TYPE, "java-action", "dependency"),
+  relation("definition.based-on-object-type", DEFINITION, OBJECT_TYPE, "node-business-definitions", "dependency"),
+  relation("workflow.step-references-action", WORKFLOW, ACTION, "java-workflow", "dependency"),
+  relation("trigger.targets-workflow", TRIGGER, WORKFLOW, "java-trigger", "dependency"),
+  relation("trigger.targets-action", TRIGGER, ACTION, "java-trigger", "dependency"),
+  relation("user.holds-role", USER, ROLE, "java-identity", "organization"),
+  relation("org-unit.has-child", ORG_UNIT, ORG_UNIT, "java-organization", "organization"),
+  relation("org-unit.has-position", ORG_UNIT, ORG_POSITION, "java-organization", "organization"),
+  relation("user.member-of-org-unit", USER, ORG_UNIT, "java-organization", "organization"),
+  relation("user.holds-org-position", USER, ORG_POSITION, "java-organization", "organization"),
+  relation("org-grant.applies-to-org-unit", ORG_GRANT, ORG_UNIT, "java-organization", "organization"),
+  relation("org-grant.applies-to-org-position", ORG_GRANT, ORG_POSITION, "java-organization", "organization"),
+  relation("org-grant.grants-role", ORG_GRANT, ROLE, "java-organization", "organization"),
+  relation("role.uses-permission-policy", ROLE, PERMISSION_POLICY, "java-permission-policy", "authorization"),
+  relation("permission-policy.governs-object-type", PERMISSION_POLICY, OBJECT_TYPE, "java-permission-policy", "authorization"),
+  relation("permission-policy.can-enter-application", PERMISSION_POLICY, APPLICATION, "java-authorization", "authorization"),
+  relation("permission-policy.can-execute-action", PERMISSION_POLICY, ACTION, "java-authorization", "authorization"),
+  relation("permission-policy.can-use-object", PERMISSION_POLICY,
+    [PRODUCT_PANEL, PRODUCT_PROJECTION, SDK_COMPONENT, AGENT_DEFINITION, METRIC_VIEW, FUNCTION, WORKFLOW],
+    "java-authorization", "authorization"),
+  relation("role.owns-workflow-step", ROLE, WORKFLOW, "java-workflow", "authorization", true),
+  relation("projection.uses-component", PRODUCT_PROJECTION, SDK_COMPONENT, "node-product-panels", "assembly"),
+  relation("projection.binds-target", PRODUCT_PROJECTION, layeredTypes, "node-product-panels", "assembly", false, false),
+  relation("panel.contains-projection", PRODUCT_PANEL, PRODUCT_PROJECTION, "node-product-panels", "assembly"),
+  relation("panel.contains-panel", PRODUCT_PANEL, PRODUCT_PANEL, "node-product-panels", "assembly"),
+  relation("panel.provides-skill", PRODUCT_PANEL, SKILL, "node-product-panels", "assembly", true),
+  relation("application.uses-panel", APPLICATION, PRODUCT_PANEL, "java-application-catalog", "assembly"),
+  relation("agent.uses-skill", AGENT_DEFINITION, SKILL, "node-assistant", "dependency"),
+  relation("agent.executes-as-user", AGENT_DEFINITION, USER, "node-assistant", "dependency"),
 ];

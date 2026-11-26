@@ -1,6 +1,11 @@
 import type { PanelRecord, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyType, PlatformOntologyTypeCount } from "@ontomato/contracts/platform-ontology";
-import { ONTOLOGY_RELATION_KIND, platformObjectTypes, type PlatformRelationKindDeclaration } from "@ontomato/contracts/platform-object-types";
+import {
+  ONTOLOGY_RELATION_KIND,
+  platformObjectTypes,
+  type PlatformRelationGroup,
+  type PlatformRelationKindDeclaration,
+} from "@ontomato/contracts/platform-object-types";
 import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -152,6 +157,10 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
     };
   }
 
+  const groupLabel = (group: PlatformRelationGroup) => text(`platformOntology.relationGroups.${group}`);
+  const typeGraphNote = (relation: PlatformRelationKindDeclaration) =>
+    text(`platformOntology.relationNotes.${relation.id}`);
+
   function relationEdge(relation: PlatformRelationKindDeclaration, target: string): PanelRecord {
     return {
       className: ONTOLOGY_RELATION_KIND,
@@ -165,8 +174,10 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
         toLabel: typeLabel(target),
         derived: relation.derived,
         owner: relation.owner,
+        group: relation.group,
+        groupLabel: groupLabel(relation.group),
       },
-      fieldLabels: endpointLabels,
+      fieldLabels: { ...endpointLabels, group: word("group") },
       tones: {
         derived: relation.derived ? "info" : "success",
       },
@@ -174,9 +185,9 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
   }
 
   function graphEdges(): PanelRecord[] {
-    return PLATFORM_ONTOLOGY_RELATION_KINDS.flatMap(relation =>
-      relationTargets(relation).map(target => relationEdge(relation, target)),
-    );
+    return PLATFORM_ONTOLOGY_RELATION_KINDS
+      .filter(relation => relation.typeEdges !== false)
+      .flatMap(relation => relationTargets(relation).map(target => relationEdge(relation, target)));
   }
 
   function list(): PanelRecord[] {
@@ -341,6 +352,9 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
             relationKind: relation.id,
             derived: relation.derived,
             owner: relation.owner,
+            group: relation.group,
+            groupLabel: groupLabel(relation.group),
+            ...(relation.typeEdges === false && { typeGraphNote: typeGraphNote(relation) }),
           },
         };
       });
@@ -371,10 +385,14 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
             : { targetObjects: targets.map(typeRef) }),
           derived: relation.derived,
           owner: relation.owner,
+          group: relation.group,
+          groupLabel: groupLabel(relation.group),
+          ...(relation.typeEdges === false && { typeGraphNote: typeGraphNote(relation) }),
         },
         fieldLabels: {
           fromObject: endpointLabels.fromLabel, toObject: endpointLabels.toLabel,
           targetObjects: word("targetObjects"), derived: endpointLabels.derived, owner: endpointLabels.owner,
+          group: word("group"), typeGraphNote: word("typeGraphNote"),
         },
       };
     },
