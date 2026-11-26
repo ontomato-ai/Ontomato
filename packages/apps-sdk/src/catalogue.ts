@@ -726,7 +726,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "form",
     meaning:
-      "Switches one declared scalar panel state between mutually exclusive options supplied by the owner's `counts` datum (`[{key, label, count}]`) or static configuration. When `maxVisible` is set and options exceed it, remaining options collapse into a 'More' dropdown whose trigger displays the selected overflow option's label and count. It binds no ontology element.",
+      "Switches one declared scalar panel state between mutually exclusive options — the owner's own counts, or a fixed set; use for a compact filter or view switch. A set larger than the visible limit collapses the rest into a More dropdown whose trigger shows the selected one, and it binds no ontology element.",
     data: { counts: { results: ["panelGroupCounts"], required: false } },
     outputs: { value: { kind: "scalar", type: "string" } },
     configProps: ["options", "state", "modelValue", "defaultValue", "ariaLabel", "ariaLabelKey", "maxVisible", "disabled"],
@@ -895,7 +895,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "form",
     meaning:
-      "Renders a selected subset of an enclosing `ObjectForm`'s fields (`fields`, `parent`, `section`, `group`, or `rest`) inside panel-authored layouts, including field slots. Absolute field paths and `parent` can select active object sub-fields. Every slice shares form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and live assistant form filling. It reads nothing itself and binds no ontology element.",
+      "Renders a chosen slice of an enclosing `ObjectForm`'s fields inside a layout the panel authors, field slots included; absolute field paths and `parent` reach into an active object's sub-fields. Every slice shares one form state, validation, dirty tracking and assistant filling, and it reads nothing itself.",
     configProps: ["fields", "parent", "section", "group", "rest", "exclude", "inlineAdvanced", "columns"],
   }),
   defineComponentMeta({
@@ -905,7 +905,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "content",
     meaning:
-      "Arranges slash-separated paths into a collapsible folder/file tree; use `<path-tree>` for non-projection lists (`ObjectTree` for projections). Arranges a flat list of slash-separated paths into a folder-first, name-sorted, default-expanded tree; clicking a folder only collapses or expands it, while clicking a file emits its key and highlights the active row. It reads nothing and carries no business rules.",
+      "Arranges a flat list of slash-separated paths into a folder-first, name-sorted, expanded tree; use `<path-tree>` for a list the page already holds, where `ObjectTree` reads a projection's own. Clicking a folder only folds it while clicking a file emits its key and marks the active row; it reads nothing and carries no business rules.",
     configProps: [
       "items", "mode", "selectedKey", "label", "defaultExpandAll", "emptyText", "searchable", "search",
       "searchPlaceholder", "noMatchText", "directoryIndexFile", "selectableFolders",
