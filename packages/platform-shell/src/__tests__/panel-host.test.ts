@@ -80,7 +80,6 @@ function useRelation(id: string, pageKey: string, panelId: string, path: string)
     pageKey,
     panelId,
     path,
-    access: { kind: "domain-member" },
   };
 }
 

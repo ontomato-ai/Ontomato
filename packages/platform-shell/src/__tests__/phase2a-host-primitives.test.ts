@@ -235,7 +235,6 @@ describe("builtin platform-frame showMenu rule", () => {
         pageKey: "ops-feedback",
         panelId: "panel-feedback",
         path: "/ops/feedback",
-        access: { kind: "domain-member" },
         names: { en: "Feedback" },
       }],
     };
@@ -250,7 +249,6 @@ describe("builtin platform-frame showMenu rule", () => {
         pageKey: "dashboards",
         panelId: "panel-dashboards",
         path: "/dashboards",
-        access: { kind: "domain-member" },
         names: { en: "Dashboards" },
       }],
     };
