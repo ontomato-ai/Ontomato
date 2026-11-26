@@ -217,7 +217,7 @@ export default {
     "governance": "Knowledge governance",
     "objectBrowser": "Object browser",
     "ontologyManager": "Ontology manager",
-    "schedules": "Scheduled tasks",
+    "schedules": "Task triggers",
     "settings": "System settings",
     "dataGovernance": "Data governance platform",
     "panelNotInApplication": "{path} is not a panel of this application",
@@ -919,7 +919,7 @@ export default {
     "featureDashboards": "Dashboards",
     "featureAgents": "Agent settings",
     "featureOpsDiagnosis": "Operations diagnosis",
-    "featureSchedule": "Scheduled tasks",
+    "featureSchedule": "Task triggers",
     "featureOntologyService": "Ontology Service",
     "opensInNewTab": "Opens in a new tab",
     "toolRead": "Read",
@@ -1230,7 +1230,7 @@ export default {
     "executionOptionsFailed": "Couldn't read who may execute this agent."
   },
   "scheduledTasks": {
-    "title": "Scheduled tasks",
+    "title": "Task triggers",
     "intro": "Each task gives an agent a prompt on a schedule. Every run starts a new conversation, marked in your conversation list.",
     "newTask": "New task",
     "editTask": "Edit task",
@@ -1297,7 +1297,7 @@ export default {
       "manual": "Run manually"
     },
     "error": {
-      "credential_invalid": "The background credential no longer works. Open Scheduled tasks while signed in to renew it.",
+      "credential_invalid": "The background credential no longer works. Open Task triggers while signed in to renew it.",
       "agent_unavailable": "The agent is disabled or deleted.",
       "dependency_unavailable": "A required service was unavailable.",
       "start_failed": "The conversation could not start.",
@@ -1373,7 +1373,7 @@ export default {
       "auditLog": "Audit log",
       "generalSettings": "General settings",
       "dataAdapterConfig": "Data adapter configuration",
-      "scheduledTask": "Scheduled task",
+      "scheduledTask": "Task trigger",
       "modelOption": "Model",
       "externalMcpService": "External MCP service",
       "objectType": "Object type",
@@ -1385,7 +1385,7 @@ export default {
       "function": "Function",
       "action": "Action",
       "workflow": "Workflow",
-      "trigger": "Trigger",
+      "trigger": "Task trigger",
       "skill": "Skill",
       "businessKnowledge": "Business knowledge",
       "definition": "Definition",

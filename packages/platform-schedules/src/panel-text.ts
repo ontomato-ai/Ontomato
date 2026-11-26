@@ -15,7 +15,22 @@ export function scheduledTaskFieldLabels(translate: (key: string) => string) {
 export interface ScheduledTaskPanelText {
   title: string;
   loadFailed: string;
-  form: Record<"app" | "appUnknown" | "serviceZone" | "taskZone" | "content" | "noFields" | "after" | "notifyPlaceholder" | "formChanged", string>;
+  form: Record<
+    | "app"
+    | "appUnknown"
+    | "targetUnavailable"
+    | "memberUnavailable"
+    | "serviceZone"
+    | "taskZone"
+    | "content"
+    | "noFields"
+    | "after"
+    | "notifyPlaceholder"
+    | "formChanged",
+    string
+  >;
+  targetKind: { application: string; action: string; workflow: string };
+  definitionStatus: { PENDING_REVIEW: string; PUBLISHED: string; UNUSED: string };
   action: { runNow: string };
   card: { viewResult: string; viewEarlierResult: string; noResult: string };
   notice: { applicationsFailed: string; applicationsMissing: string; noApplication: string };
@@ -24,11 +39,12 @@ export interface ScheduledTaskPanelText {
     settings: string; state: string; nextRun: string; lastRun: string; lastRunAt: string; lastRunSummary: string;
     latestResultPath: string; resultStateLabel: string; allApplications: string; pauseReason: string;
     stateOn: string; stateOff: string; statePaused: string;
+    targetName: string; definitionStatus: string; version: string; executorId: string; coauthorIds: string; reviewedBy: string;
   };
   runFields: {
     status: string; trigger: string; startedAt: string; scheduledAt: string; duration: string;
     error: string; resultSummary: string; snapshotSummary: string; result: string; executionDetails: string;
-    resultPath: string; timeZone: string;
+    resultPath: string; timeZone: string; executorId: string; unknownExecutor: string; version: string; workflowRunId: string;
   };
   trigger: { manual: string; schedule: string; unknown: string };
   runError: Record<
@@ -50,13 +66,20 @@ export interface ScheduledTaskPanelText {
   >;
   frequency: { every: Record<"minute" | "hour" | "day", string>; daily: string; weekly: string; monthly: string; cron: string };
   panelErrors: { revisionConflict: string; invalidDraftField: string; invalidDraftParameter: string };
-  panelSettings: { title: string; frequency: string; timeZone: string; notifyEmail: string };
+  panelSettings: {
+    title: string; description: string; targetKind: string; appId: string; targetId: string;
+    frequency: string; timeZone: string; notifyEmail: string;
+    executorId: string; executorHelp: string; coauthorIds: string;
+    enabled: string; createEnabledHelp: string;
+    parameters: string; runStartParameters: string; runStartParametersHelp: string;
+    inputs: string; requester: string; requesterHelp: string; goalText: string;
+  };
   panelManagement: {
-    save: string; create: string; setEnabled: string; enabled: string; disabled: string;
+    save: string; create: string; setEnabled: string; setStatus: string; enabled: string; disabled: string;
     delete: string; deleteImpact: string; deleted: string; renewCredential: string;
   };
   panelRunStarted: string;
-  runStatus: { running: string; completed: string; failed: string; skipped: string };
+  runStatus: { running: string; completed: string; workflowStarted: string; failed: string; skipped: string };
   attention: { issues: string; results: string; running: string };
 }
 
@@ -66,6 +89,8 @@ export function scheduledTaskPanelMessages(text: ScheduledTaskPanelText): Record
     "platformSchedules.title": text.title,
     "platformSchedules.loadFailed": text.loadFailed,
     ...Object.fromEntries(Object.entries(text.form).map(([key, value]) => [`platformSchedules.form.${key}`, value])),
+    ...Object.fromEntries(Object.entries(text.targetKind).map(([key, value]) => [`platformSchedules.targetKind.${key}`, value])),
+    ...Object.fromEntries(Object.entries(text.definitionStatus).map(([key, value]) => [`platformSchedules.definitionStatus.${key}`, value])),
     "platformSchedules.action.runNow": text.action.runNow,
     ...Object.fromEntries(Object.entries(text.card).map(([key, value]) => [`platformSchedules.card.${key}`, value])),
     ...Object.fromEntries(Object.entries(text.notice).map(([key, value]) => [`platformSchedules.notice.${key}`, value])),
@@ -89,11 +114,13 @@ export function scheduledTaskPanelMessages(text: ScheduledTaskPanelText): Record
 }
 
 export const scheduledTaskPanelTextEn = {
-  title: "Scheduled tasks",
+  title: "Task triggers",
   loadFailed: "Couldn't load the scheduled tasks.",
   form: {
     app: "Application",
     appUnknown: "Not installed",
+    targetUnavailable: "Unavailable",
+    memberUnavailable: "Selected member is no longer available",
     serviceZone: "In the service's time zone ({zone}).",
     taskZone: "In this task's time zone ({zone}).",
     content: "What {app} gets",
@@ -101,6 +128,16 @@ export const scheduledTaskPanelTextEn = {
     after: "After it runs",
     notifyPlaceholder: "Optional. One message after each run, success or failure.",
     formChanged: "The application's form changed since you opened it and has been replaced; check the fields and save again.",
+  },
+  targetKind: {
+    application: "Application",
+    action: "Action",
+    workflow: "Workflow",
+  },
+  definitionStatus: {
+    PENDING_REVIEW: "Pending review",
+    PUBLISHED: "Published",
+    UNUSED: "Unused",
   },
   action: { runNow: "Run now" },
   card: {
@@ -112,7 +149,7 @@ export const scheduledTaskPanelTextEn = {
     applicationsFailed: "The applications that can run on a schedule could not be read, so new tasks are unavailable for now.",
     applicationsMissing:
       "This page has no name for the application {ids} the service declares, so new tasks are switched off. Ask an administrator to check the installation.",
-    noApplication: "No application can run on a schedule for you right now.",
+    noApplication: "No target is available to schedule for you right now.",
   },
   duration: {
     took: "Took {time}",
@@ -126,6 +163,8 @@ export const scheduledTaskPanelTextEn = {
     resultStateLabel: "Result",
     allApplications: "All", pauseReason: "Pause reason",
     stateOn: "On", stateOff: "Switched off", statePaused: "Paused",
+    targetName: "Target", definitionStatus: "Definition status", version: "Version",
+    executorId: "Executor", coauthorIds: "Co-authors", reviewedBy: "Last published by",
   },
   runFields: {
     status: "Status",
@@ -140,6 +179,10 @@ export const scheduledTaskPanelTextEn = {
     executionDetails: "Execution details",
     resultPath: "Result link",
     timeZone: "Time zone",
+    executorId: "Executor",
+    unknownExecutor: "Unknown executor",
+    version: "Version",
+    workflowRunId: "Workflow run ID",
   },
   trigger: {
     manual: "Manual",
@@ -178,9 +221,30 @@ export const scheduledTaskPanelTextEn = {
     invalidDraftField: "The draft has an invalid value for {field}. Use the fields and values shown in the task form.",
     invalidDraftParameter: "The draft field {field} must be text. Fill in each application field separately.",
   },
-  panelSettings: { title: "Title", frequency: "Frequency", timeZone: "Time zone", notifyEmail: "Notification email" },
+  panelSettings: {
+    title: "Title",
+    description: "Description",
+    targetKind: "Target type",
+    appId: "Application",
+    targetId: "Target",
+    frequency: "Frequency",
+    timeZone: "Time zone",
+    notifyEmail: "Notification email",
+    executorId: "Executor",
+    executorHelp: "Member whose permissions and background credential the run uses. Leave empty to use the creator.",
+    coauthorIds: "Co-authors",
+    enabled: "Run on schedule",
+    createEnabledHelp: "Publish and enable scheduled runs immediately; turn off to save as pending review.",
+    parameters: "Action parameters (JSON)",
+    runStartParameters: "Run-start time parameters",
+    runStartParametersHelp: "Time parameters filled automatically with the run start timestamp.",
+    inputs: "Workflow inputs (JSON)",
+    requester: "Requester",
+    requesterHelp: "Login code of the workflow requester for scheduled runs. Leave empty to use the executor; manual runs always use the current user.",
+    goalText: "Goal",
+  },
   panelManagement: {
-    save: "Save task", create: "Create task", setEnabled: "Change task status",
+    save: "Save task", create: "Create task", setEnabled: "Change task status", setStatus: "Change status",
     enabled: "The task was switched on.", disabled: "The task was switched off.",
     delete: "Delete task",
     renewCredential: "Renew background credential",
@@ -191,6 +255,7 @@ export const scheduledTaskPanelTextEn = {
   runStatus: {
     running: "Running",
     completed: "Completed",
+    workflowStarted: "Workflow started",
     failed: "Failed",
     skipped: "Skipped",
   },
@@ -202,11 +267,13 @@ export const scheduledTaskPanelTextEn = {
 } satisfies ScheduledTaskPanelText;
 
 export const scheduledTaskPanelTextZhCn = {
-  title: "定时任务",
+  title: "任务触发",
   loadFailed: "定时任务列表加载失败。",
   form: {
     app: "应用",
     appUnknown: "未安装",
+    targetUnavailable: "不可用",
+    memberUnavailable: "已选成员不再可用",
     serviceZone: "按服务时区（{zone}）。",
     taskZone: "按这个任务的时区（{zone}）。",
     content: "交给{app}的内容",
@@ -214,6 +281,16 @@ export const scheduledTaskPanelTextZhCn = {
     after: "跑完以后",
     notifyPlaceholder: "选填。跑完发一封信，成功、失败都发",
     formChanged: "打开期间应用表单已变更，请重新加载表单核对后再保存。",
+  },
+  targetKind: {
+    application: "应用",
+    action: "动作",
+    workflow: "流程",
+  },
+  definitionStatus: {
+    PENDING_REVIEW: "待审核",
+    PUBLISHED: "已发布",
+    UNUSED: "未使用",
   },
   action: { runNow: "立即运行" },
   card: {
@@ -224,7 +301,7 @@ export const scheduledTaskPanelTextZhCn = {
   notice: {
     applicationsFailed: "未能读取可定时的应用列表，暂时无法新建任务。",
     applicationsMissing: "页面缺少服务声明的应用 {ids} 名称，已暂停新建任务，请联系管理员检查安装配置。",
-    noApplication: "当前没有可为您定时运行的应用。",
+    noApplication: "当前没有可为您定时运行的目标。",
   },
   duration: {
     took: "耗时 {time}",
@@ -238,6 +315,8 @@ export const scheduledTaskPanelTextZhCn = {
     resultStateLabel: "执行结果",
     allApplications: "全部", pauseReason: "暂停原因",
     stateOn: "已启用", stateOff: "已停用", statePaused: "已暂停",
+    targetName: "目标", definitionStatus: "定义状态", version: "版本",
+    executorId: "执行主体", coauthorIds: "协作者", reviewedBy: "最近发布人",
   },
   runFields: {
     status: "状态",
@@ -252,6 +331,10 @@ export const scheduledTaskPanelTextZhCn = {
     executionDetails: "执行详情",
     resultPath: "结果链接",
     timeZone: "时区",
+    executorId: "执行主体",
+    unknownExecutor: "未知执行人",
+    version: "版本",
+    workflowRunId: "流程运行 ID",
   },
   trigger: {
     manual: "手动",
@@ -290,9 +373,30 @@ export const scheduledTaskPanelTextZhCn = {
     invalidDraftField: "草稿中的 {field} 无效。请按任务表单显示的字段填写。",
     invalidDraftParameter: "草稿中的 {field} 必须是文本。请分别填写应用表单中的各个字段。",
   },
-  panelSettings: { title: "标题", frequency: "频率", timeZone: "时区", notifyEmail: "通知邮箱" },
+  panelSettings: {
+    title: "标题",
+    description: "描述",
+    targetKind: "目标类型",
+    appId: "应用",
+    targetId: "目标",
+    frequency: "频率",
+    timeZone: "时区",
+    notifyEmail: "通知邮箱",
+    executorId: "执行主体",
+    executorHelp: "运行时使用的权限和后台凭证所属成员。留空则默认使用创建人。",
+    coauthorIds: "协作者",
+    enabled: "启用定时",
+    createEnabledHelp: "开启后立即发布并按计划运行；关闭则保存为待审核状态。",
+    parameters: "动作参数（JSON）",
+    runStartParameters: "运行开始时间参数",
+    runStartParametersHelp: "每次运行开始时自动填入当前运行时间的时间参数。",
+    inputs: "流程输入（JSON）",
+    requester: "发起人",
+    requesterHelp: "定时运行流程时使用的发起人登录名。留空则使用执行主体；手动立即运行时始终使用当前用户。",
+    goalText: "流程目标",
+  },
   panelManagement: {
-    save: "保存任务", create: "新建任务", setEnabled: "更改任务状态",
+    save: "保存任务", create: "新建任务", setEnabled: "更改任务状态", setStatus: "修改状态",
     enabled: "已启用任务。", disabled: "已停用任务。",
     delete: "删除任务",
     renewCredential: "续期后台凭证",
@@ -303,6 +407,7 @@ export const scheduledTaskPanelTextZhCn = {
   runStatus: {
     running: "运行中",
     completed: "完成",
+    workflowStarted: "已启动流程",
     failed: "失败",
     skipped: "已跳过",
   },
