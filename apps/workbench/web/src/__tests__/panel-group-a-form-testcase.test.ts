@@ -233,8 +233,11 @@ function mountObjectForm(options: MountObjectFormOptions) {
   let pendingTargetKey = initialKey;
   const savedCalls: Array<{ primaryKey: string; input: PanelFormSaveInput }> = [];
 
+  const overlayRoot = document.createElement("section");
+  document.body.append(overlayRoot);
   const instance = createPanelInstance(panel, {
     text: (key) => key,
+    overlayRoot,
     operations: {
       ...noOperations.operations,
       async prepare(operationId, invocation) {
@@ -320,6 +323,7 @@ function mountObjectForm(options: MountObjectFormOptions) {
           panel: { content: { html: "", module: "" }, manifest: panel },
           manifest: panel,
           instance,
+          overlayRoot,
           projection: (id: string) => instance.projection(id),
           invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
           projectionsChanged: () => () => {},
@@ -353,9 +357,10 @@ function mountObjectForm(options: MountObjectFormOptions) {
     app.unmount();
     unregister();
     element.remove();
+    overlayRoot.remove();
   };
 
-  return { app, element, instance, savedCalls, cleanup };
+  return { app, element, instance, savedCalls, cleanup, overlayRoot };
 }
 
 interface MountTestcaseWorkbenchOptions {
@@ -733,6 +738,7 @@ describe("ObjectForm persistDraft & unsavedSwitchMode", () => {
     mounted.instance.state.set("selected", { className: SECRET_OBJECT, primaryKey: "conn-2" });
     await flush();
     expect(platformShellMocks.confirmUnsavedSwitch).toHaveBeenCalledTimes(1);
+    expect(platformShellMocks.confirmUnsavedSwitch.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ appendTo: mounted.overlayRoot }));
     expect((mounted.instance.state.values.value.selected as { primaryKey: string }).primaryKey).toBe("conn-1");
     expect(readObjectFormInput(mounted.element, "/displayName").value).toBe("One Edited");
 

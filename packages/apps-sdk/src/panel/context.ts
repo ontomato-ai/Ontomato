@@ -64,6 +64,7 @@ export interface ProjectionSlot {
  */
 export interface PanelContext {
   readonly overlayRoot?: HTMLElement | null;
+  readonly windowOverlayRoot?: HTMLElement | null;
   readonly overlayShown?: ComputedRef<boolean>;
   /**
    * What the panel is made of — its content, declaration and SDK version — as the host handed it over. The record's

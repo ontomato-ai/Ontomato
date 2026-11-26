@@ -87,6 +87,8 @@ export interface PanelInstanceOptions {
   notify?: (message: { kind: "success" | "info" | "warning" | "error"; text: string }) => void;
   /** Host-level unsaved-change leave confirmation used when a human state change would switch a dirty form's target. */
   confirmLeaveUnsaved?: () => Promise<boolean>;
+  /** The panel region root confirmations and messages of this instance belong to. */
+  overlayRoot?: HTMLElement | null;
   /**
    * Where this instance sits in the panel the reader opened (a panel placed from another's state), or nothing for the
    * opened panel itself: every member path, operation ID and page-context selection of this instance starts with it.
@@ -1107,7 +1109,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     }
   }
   const topLevelMemberKeys = Object.keys(manifest.members);
-  const forms = new PanelFormAdapters(topLevelMemberKeys, () => disposed, options.translate);
+  const forms = new PanelFormAdapters(topLevelMemberKeys, () => disposed, options.translate, options.overlayRoot);
   const tr = (key: string, fallback: string): string => {
     if (!options.translate) return fallback;
     const translated = options.translate(key);
@@ -1355,6 +1357,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
             {
               saveButtonText: tr("platform.formSaveAndSwitch", "Save and switch"),
               discardButtonText: tr("platform.formDiscardChanges", "Discard changes"),
+              ...(options.overlayRoot?.isConnected ? { appendTo: options.overlayRoot } : {}),
             },
           );
           if (disposed || decision === "cancel") {
@@ -1387,6 +1390,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
               {
                 confirmButtonText: tr("platform.discard", "Discard"),
                 cancelButtonText: tr("platform.keepEditing", "Keep editing"),
+                ...(options.overlayRoot?.isConnected ? { appendTo: options.overlayRoot } : {}),
               },
             );
         if (disposed || !allowed) {

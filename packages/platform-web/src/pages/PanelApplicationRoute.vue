@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, markRaw, onBeforeUnmount, reactive, ref, shallowRef, toRaw, watch, type Ref } from "vue";
+import { computed, inject, markRaw, onBeforeUnmount, provide, reactive, ref, shallowRef, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElButton, ElSkeleton } from "element-plus";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
-import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { PanelHost, panelOverlayContainerKey, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import {
   applicationPanelAddress,
   panelAddressState,
@@ -500,8 +500,10 @@ const homeUnavailableBanner = computed(() => isHomeMainEntry.value && homePanelS
  * it on the application's area, its menu and its page; beside a conversation it is assigned on this content alone.
  */
 const area = ref<HTMLElement | null>(null);
-if (props.navigate) useAppTheme(area, () => currentResolution.value?.theme, hostThemeMode);
-else useApplicationTheme(() => currentResolution.value?.theme);
+if (props.navigate) {
+  useAppTheme(area, () => currentResolution.value?.theme, hostThemeMode);
+  provide(panelOverlayContainerKey, area);
+} else useApplicationTheme(() => currentResolution.value?.theme);
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
 const missing = computed(() =>
   !verifying.value

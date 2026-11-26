@@ -2,11 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import { ElDialog } from "element-plus/es/components/dialog/index";
 import { ElTooltip } from "element-plus/es/components/tooltip/index";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberData, useMemberOutput, useMemberParam } from "../panel/member";
 import { useDataStateLabels } from "./data-state-labels";
+import { SdkDialog } from "../ui/SdkDialog";
 import {
   computeProductAssetGraphLayout,
   extractProductAssetGraph,
@@ -489,7 +489,7 @@ defineExpose({ fit, zoomIn, zoomOut, actualSize, scale });
           </svg>
         </div>
 
-        <el-dialog
+        <SdkDialog
           v-if="!expanded"
           v-model="fullscreen"
           :title="dialogTitle"
@@ -505,7 +505,7 @@ defineExpose({ fit, zoomIn, zoomOut, actualSize, scale });
             :show-caption="showCaption"
             @open="handleExpandedSelect"
           />
-        </el-dialog>
+        </SdkDialog>
       </div>
     </template>
   </DataState>

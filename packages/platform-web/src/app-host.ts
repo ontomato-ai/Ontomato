@@ -285,14 +285,14 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
  */
 export async function confirmPanelIntent(
   use:PanelUseRef,intentId:string,changed:(change:PanelObjectChange)=>void,admit?:(operationId:string)=>void,
-  options?:{onConfirmed?:()=>void;skipDialog?:boolean},
+  options?:{onConfirmed?:()=>void;skipDialog?:boolean;appendTo?:HTMLElement},
 ):Promise<AppBridgeConfirmPanelOperationResult>{
   const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(use)}`);
   const intent=await read.json();
   if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
   const {operationId,label,confirmation}=panelHumanOperationPreparationSchema.parse(intent);
   admit?.(operationId);
-  if(!options?.skipDialog&&confirmation.kind!=='none'&&!await askPerson(label,confirmation))return {decision:'cancel'};
+  if(!options?.skipDialog&&confirmation.kind!=='none'&&!await askPerson(label,confirmation,options?.appendTo))return {decision:'cancel'};
   options?.onConfirmed?.();
   const sent=await nodeApiRequest(`/api/panel-operations/intents/${encodeURIComponent(intentId)}/dispatch`,{method:'POST',body:'{}'});
   const answer=await sent.json();
@@ -311,7 +311,7 @@ export async function confirmPanelIntent(
 }
 
 /** The platform's dialog naming what an operation acts on and what its owner said goes with it; true when confirmed. */
-function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirmation,{kind:'none'}>){
+function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirmation,{kind:'none'}>,appendTo?:HTMLElement){
   const {t,locale}=workbenchI18n().global;
   // The owner's names are text: each is rendered as a text node, never as markup.
   const names=({objects,total}:Pick<PanelOperationImpact,'objects'|'total'>)=>[
@@ -324,7 +324,11 @@ function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirma
     ?[h('p',t('platform.confirmUploadFile',{name:confirmation.upload.name,size:panelUploadSize(confirmation.upload.size,locale.value)}))]:[];
   const message=h('div',confirmation.kind==='impact'?[...file,...impact(confirmation.impact)]
     :[...names(confirmation.targets),...(confirmation.skippedSummary?[h('p',confirmation.skippedSummary)]:[]),...(confirmation.impact?impact(confirmation.impact):[])]);
-  return confirmDanger(message,label,{confirmButtonText:label,cancelButtonText:t('common.cancel')});
+  return confirmDanger(message,label,{
+    confirmButtonText:label,
+    cancelButtonText:t('common.cancel'),
+    ...(appendTo?.isConnected?{appendTo}:{}),
+  });
 }
 function executionContext(source: object) {
   const context=executionBindings.get(source);

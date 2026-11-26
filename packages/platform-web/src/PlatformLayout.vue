@@ -11,6 +11,7 @@ import { authHost } from "@ontomato/workbench-ui/utils/auth";
 import {
   PlatformPageHeader,
   PlatformShell,
+  panelOverlayContainerKey,
   platformCurrentUserKey,
   useAppTheme,
   type AppMenuGroup,
@@ -86,6 +87,7 @@ provide(platformCurrentUserKey, currentUser);
 /** The application's area: its menu column and its page, beside the platform's rail and account area. */
 const appBody = ref<HTMLElement | null>(null);
 useAppTheme(appBody, () => props.appTheme, () => props.preferences.theme);
+provide(panelOverlayContainerKey, appBody);
 
 const emit = defineEmits<{ selectApp: [id: string]; railVisible: [visible: boolean] }>();
 

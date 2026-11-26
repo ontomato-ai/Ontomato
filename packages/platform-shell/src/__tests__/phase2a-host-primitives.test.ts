@@ -100,6 +100,26 @@ describe("confirmUnsavedSwitch", () => {
       }),
     ).resolves.toBe("cancel");
   });
+
+  it("forwards appendTo to the message box", async () => {
+    const spy = vi.spyOn(ElMessageBox, "confirm");
+    const appendTo = document.createElement("section");
+    document.body.append(appendTo);
+    spy.mockResolvedValueOnce("confirm" as never);
+    await expect(
+      confirmUnsavedSwitch("Save or discard?", "Unsaved changes", {
+        saveButtonText: "Save and switch",
+        discardButtonText: "Discard changes",
+        appendTo,
+      }),
+    ).resolves.toBe("save");
+    expect(spy).toHaveBeenCalledWith(
+      "Save or discard?",
+      "Unsaved changes",
+      expect.objectContaining({ appendTo }),
+    );
+    appendTo.remove();
+  });
 });
 
 describe("usePanelInstance currentUser propagation", () => {

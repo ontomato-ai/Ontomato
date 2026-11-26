@@ -195,6 +195,7 @@ export class PanelFormAdapters {
     private readonly memberOrder: readonly string[] = [],
     private readonly isDisposed: () => boolean = () => false,
     private readonly translate?: (key: string) => string,
+    private readonly overlayRoot?: HTMLElement | null,
   ) {}
 
   #tr(key: string, fallback: string): string {
@@ -568,6 +569,7 @@ export class PanelFormAdapters {
         {
           confirmButtonText: this.#tr("platform.discard", "Discard"),
           cancelButtonText: this.#tr("platform.keepEditing", "Keep editing"),
+          ...(this.overlayRoot?.isConnected ? { appendTo: this.overlayRoot } : {}),
         },
       );
       if (!confirmed) return false;
