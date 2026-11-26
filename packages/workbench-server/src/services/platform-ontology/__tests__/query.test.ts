@@ -8,6 +8,8 @@ import {
 } from "@ontomato/contracts/platform-ontology";
 import {
   ACTION,
+  ADD_ROLE_MEMBERS,
+  ADD_ROLE_POLICIES,
   AGENT_DEFINITION,
   APPLICATION,
   APPROVE_KNOWLEDGE,
@@ -26,6 +28,8 @@ import {
   PERMISSION_POLICY,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
+  REMOVE_ROLE_MEMBERS,
+  REMOVE_ROLE_POLICIES,
   ROLE,
   TRIGGER,
   SDK_COMPONENT,
@@ -440,9 +444,17 @@ describe("platform-ontology composite query", () => {
     const role = byId.get(ROLE);
     expect(Object.keys(role?.reads ?? {}).sort()).toEqual([
       "contributionPolicies", "contributionWorkflowSteps", "count",
-      "createForm", "form", "options", "query", "record", "resolve",
+      "createForm", "form", "memberCandidates", "members", "options",
+      "policies", "policyCandidates", "query", "record", "resolve",
     ]);
-    expect(role?.operations?.map((op) => op.id)).toEqual([`${ROLE}.save`, DELETE_ROLE]);
+    expect(role?.operations?.map((op) => op.id)).toEqual([
+      `${ROLE}.save`,
+      DELETE_ROLE,
+      ADD_ROLE_MEMBERS,
+      REMOVE_ROLE_MEMBERS,
+      ADD_ROLE_POLICIES,
+      REMOVE_ROLE_POLICIES,
+    ]);
 
     const definition = byId.get(DEFINITION);
     expect(definition?.reads).toBeUndefined();

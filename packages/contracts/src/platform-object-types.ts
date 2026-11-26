@@ -198,6 +198,10 @@ export const READ_MEMBER_EFFECTIVE_ACCESS = "users.effectiveAccess";
 export const INSPECT_MEMBER_ACCESS = "users.inspectAccess";
 export const GRANT_MEMBER_ACCESS = "users.grantAccess";
 export const DELETE_ROLE = "roles.delete";
+export const ADD_ROLE_MEMBERS = "roles.addMembers";
+export const REMOVE_ROLE_MEMBERS = "roles.removeMembers";
+export const ADD_ROLE_POLICIES = "roles.addPolicies";
+export const REMOVE_ROLE_POLICIES = "roles.removePolicies";
 export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
 export const PREVIEW_POLICY_ENTRY_GRANT = "permissionPolicies.previewEntryGrant";
 export const GRANT_POLICY_ENTRIES = "permissionPolicies.grantEntries";
@@ -672,11 +676,16 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
       ...modelReads,
+      // The role's current assignments and the candidates not yet assigned to it.
+      members: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: USER },
+      policies: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
+      memberCandidates: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: USER },
+      policyCandidates: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
       // What this role brings to whoever holds it: the permission policies it uses, and the workflow steps it owns.
       contributionPolicies: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
       contributionWorkflowSteps: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: WORKFLOW },
     },
-    operations: [`${ROLE}.save`, DELETE_ROLE],
+    operations: [`${ROLE}.save`, DELETE_ROLE, ADD_ROLE_MEMBERS, REMOVE_ROLE_MEMBERS, ADD_ROLE_POLICIES, REMOVE_ROLE_POLICIES],
   },
   [PERMISSION_POLICY]: {
     ...describeType("permissionPolicy", "governance"),
