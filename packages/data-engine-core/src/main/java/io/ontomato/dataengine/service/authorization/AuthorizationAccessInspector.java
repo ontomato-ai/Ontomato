@@ -30,7 +30,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthorizationAccessInspector {
     public record InspectRequest(String subjectId, String entryId, String targetPolicyId,
                                  List<InspectItem> items, List<ActionTargetInput> optionalActionTargets) {}
-    public record InspectItem(Kind kind, String id, Verb verb, OwnerFacts ownerFacts) {}
+    public record InspectItem(Kind kind, String id, Verb verb, OwnerFacts ownerFacts, boolean fixedProduct) {}
     public record ActionTargetInput(String actionId, String className, String objectId, Map<String, Object> fields) {}
 
     public record InspectResult(String subjectId, String entryId, String targetPolicyId, ItemResult entry, List<ItemResult> items,
@@ -153,12 +153,14 @@ public class AuthorizationAccessInspector {
             if (subjects.entryEntitlement(target)) sources.add(Source.distribution("entry_entitlement"));
             sources.addAll(policySources(subject, target, Verb.ENTER));
         }
-        return itemResult(new InspectItem(Kind.ENTRY, target.id(), Verb.ENTER, null), decision, sources, null, null);
+        return itemResult(new InspectItem(Kind.ENTRY, target.id(), Verb.ENTER, null, false), decision, sources, null, null);
     }
 
     private ItemResult inspectObject(SubjectContext subject, InspectItem item, Decision decision) {
         var sources = new ArrayList<Source>();
-        if (decision.allowed()) {
+        if (item.fixedProduct()) {
+            if (decision.allowed()) sources.add(Source.distribution("object_entitlement"));
+        } else if (decision.allowed()) {
             var target = objectTarget(subject.identity().domainId(), item);
             addOwnership(sources, subject, target, item.verb(), item.ownerFacts());
             if (subjects.objectEntitlement(subject.identity().userId(), target, item.verb()))
@@ -286,6 +288,7 @@ public class AuthorizationAccessInspector {
     }
 
     private static Request objectRequest(String domainId, InspectItem item) {
+        if (item.fixedProduct()) return new FixedProductRead(item.kind(), item.verb());
         return item.verb() == Verb.CREATE ? new Create(item.kind()) :
                 new ObjectAccess(objectTarget(domainId, item), item.verb(), item.ownerFacts());
     }

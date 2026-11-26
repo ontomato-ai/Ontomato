@@ -20,9 +20,11 @@ import org.springframework.stereotype.Service;
 
 @Service
 public final class AuthorizationService {
-    public sealed interface Request permits Entry, ObjectAccess, PublishedObjectRead, Create, Management, Action, Data {}
+    public sealed interface Request permits Entry, ObjectAccess, FixedProductRead, PublishedObjectRead, Create, Management, Action, Data {}
     public record Entry(ObjectTarget target) implements Request {}
     public record ObjectAccess(ObjectTarget target, Verb verb, OwnerFacts ownerFacts) implements Request {}
+    /** Only an owner that has read a builtin record may construct this request. */
+    public record FixedProductRead(Kind kind, Verb verb) implements Request {}
     /** A credential must allow the whole kind/verb; a point-limited credential does not authorize enumeration. */
     public record PublishedObjectRead(Kind kind, Verb verb) implements Request {}
     public record ObjectVisibilityRange(boolean fixed, String authorId, Set<String> objectIds, boolean all) {
@@ -92,6 +94,8 @@ public final class AuthorizationService {
         return switch (request) {
             case Entry(var target) -> decideEntry(ctx, target);
             case ObjectAccess access -> decideObject(ctx, access);
+            case FixedProductRead(var kind, var verb) -> FixedProductAccess.allows(kind, verb) ? Decision.ALLOWED
+                    : Decision.denied("OBJECT_FORBIDDEN", "This verb is not available on platform definitions.");
             case PublishedObjectRead ignored -> Decision.ALLOWED;
             case Create(var kind) -> decideCreate(ctx, kind);
             case Management(var operationId) -> decideManagement(ctx, operationId);
