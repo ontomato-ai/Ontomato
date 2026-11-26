@@ -23,6 +23,8 @@ class RuntimeDeployment(unittest.TestCase):
             written = env.read_text()
             self.assertTrue(written.startswith(original))
             self.assertRegex(written, r"AGENT_RUNTIME_SERVICE_TOKEN=[A-Za-z0-9_-]{43}\n")
+            self.assertRegex(written, r"PRAXIS_ADMIN_TOKEN=[A-Za-z0-9_-]{43}\n")
+            self.assertRegex(written, r"PRAXIS_SECRET_KEY=[A-Za-z0-9_-]{43}\n")
             self.assertEqual(env.stat().st_mode & 0o777, 0o600)
             prepare.prepare(env)
             self.assertEqual(env.read_text(), written)

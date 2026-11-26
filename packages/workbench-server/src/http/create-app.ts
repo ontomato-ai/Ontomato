@@ -3,6 +3,7 @@ import { domainComponentsRouter } from "../api/routes/domain-components";
 import { governanceStatusRouter, governanceWindowsRouter } from "../api/routes/governance";
 import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
+import { createPraxisRouter } from "../api/routes/praxis";
 import { systemConfigRouter } from "../api/routes/system-config";
 import { appBuilderRouter } from "../api/routes/app-builder";
 import { COMPONENT_PACKAGES_PATH } from "@ontomato/contracts/component-packages";
@@ -219,6 +220,7 @@ export function createWorkbenchApp(): Express {
     );
   });
   app.use("/api", buildTestAccess);
+  app.use("/api/praxis", createPraxisRouter());
   app.use(`/api${browserEventsPath}`, browserEventsRouter);
 
   app.use("/api/assistant/sessions", governanceWindowsRouter);
