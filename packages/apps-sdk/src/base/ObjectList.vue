@@ -173,6 +173,7 @@ import {
 } from "./record-field";
 import { textHighlightSegments } from "./text-highlight";
 import { useDataStateLabels } from "./data-state-labels";
+import StatusDot from "./StatusDot.vue";
 
 type ObjectListSelection = ObjectListRef | PanelChildObjectIdentity;
 
@@ -5473,12 +5474,11 @@ defineExpose({
               @blur="commitTabInlineRename(row, rowIndex)"
             />
             <template v-else>
-              <span
+              <StatusDot
                 v-if="statusField && statusStyle === 'dot' && fieldValue(row, statusField) !== ''"
-                class="sdk-object-list-status-dot"
-                :data-tone="statusFieldTone(row, statusField)"
+                :tone="statusFieldTone(row, statusField)"
                 :title="fieldValue(row, statusField)"
-              ></span>
+              />
               <span
                 v-if="hasRowDraft(row)"
                 class="sdk-object-list-draft-dot"
@@ -6256,13 +6256,12 @@ defineExpose({
                 </span>
                 <span class="sdk-object-list-item-content">
                   <span class="sdk-object-list-item-head" :class="{ 'sdk-object-list-item-head-dot': statusStyle === 'dot' }">
-                    <span
+                    <StatusDot
                       v-if="statusField && statusStyle === 'dot' && fieldValue(entry.row, statusField) !== ''"
-                      class="sdk-object-list-status-dot"
-                      :data-tone="statusFieldTone(entry.row, statusField)"
+                      :tone="statusFieldTone(entry.row, statusField)"
                       :title="fieldValue(entry.row, statusField)"
-                      aria-hidden="true"
-                    ></span>
+                      aria-hidden
+                    />
                     <span
                       v-if="hasRowDraft(entry.row)"
                       class="sdk-object-list-draft-dot"
@@ -7341,25 +7340,6 @@ defineExpose({
 .sdk-object-list-item-head-dot {
   gap: var(--spacing-xs);
   justify-content: flex-start;
-}
-.sdk-object-list-status-dot {
-  background: var(--el-text-color-placeholder);
-  border-radius: 50%;
-  flex: 0 0 auto;
-  height: 7px;
-  width: 7px;
-}
-.sdk-object-list-status-dot[data-tone="success"] {
-  background: var(--el-color-success);
-}
-.sdk-object-list-status-dot[data-tone="warning"] {
-  background: var(--el-color-warning);
-}
-.sdk-object-list-status-dot[data-tone="danger"] {
-  background: var(--el-color-danger);
-}
-.sdk-object-list-status-dot[data-tone="info"] {
-  background: var(--el-color-info);
 }
 .sdk-object-list-item-label {
   flex: 1 1 auto;
