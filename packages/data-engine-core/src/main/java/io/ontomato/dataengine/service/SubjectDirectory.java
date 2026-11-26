@@ -24,6 +24,8 @@ public interface SubjectDirectory {
 
     List<Subject> subjectsInDomain(String domainId);
 
+    long countInDomain(String domainId);
+
     /** Current display names for the requested members of this domain, with login code as the name of an unnamed account. */
     Map<String, String> displayNamesInDomain(String domainId, Set<String> subjectIds);
 }

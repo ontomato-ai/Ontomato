@@ -19,4 +19,9 @@ public class AnonymousCapabilityGrantQuery implements CapabilityGrantQuery {
     public List<Grant> grantsInDomain(String domainId) {
         return List.of();
     }
+
+    @Override
+    public RoleCounts countRolesInDomain(String domainId) {
+        return new RoleCounts(0, 0);
+    }
 }

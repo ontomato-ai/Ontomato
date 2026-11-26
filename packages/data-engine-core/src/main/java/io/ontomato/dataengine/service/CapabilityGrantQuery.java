@@ -32,4 +32,9 @@ public interface CapabilityGrantQuery {
 
     /** Every grant in the domain. Read-only and unpaged: a domain's grants are bounded by its roles. */
     List<Grant> grantsInDomain(String domainId);
+
+    /** Distinct grant role IDs, and how many are not present in the current domain's role directory. */
+    record RoleCounts(long total, long outsideDirectory) {}
+
+    RoleCounts countRolesInDomain(String domainId);
 }

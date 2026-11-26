@@ -20,4 +20,9 @@ public class AnonymousPlatformAccessQuery implements PlatformAccessQuery {
     public List<RoleAccess> rolesInDomain(String domainId) {
         return List.of();
     }
+
+    @Override
+    public long countRolesInDomain(String domainId) {
+        return 0;
+    }
 }

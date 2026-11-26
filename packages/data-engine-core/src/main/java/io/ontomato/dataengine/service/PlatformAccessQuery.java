@@ -31,4 +31,6 @@ public interface PlatformAccessQuery {
 
     /** Every role in the domain with its platform operations. Bounded by the domain's roles. */
     List<RoleAccess> rolesInDomain(String domainId);
+
+    long countRolesInDomain(String domainId);
 }

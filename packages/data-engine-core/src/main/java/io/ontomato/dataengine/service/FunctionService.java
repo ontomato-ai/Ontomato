@@ -5,6 +5,7 @@ import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.S
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.core.bean.User;
 
 public interface FunctionService {
 
@@ -26,6 +27,10 @@ public interface FunctionService {
 	public Function queryById(String id);
 	
 	public List<Function> queryList(String operation, String className, String domainId);
+
+	List<Function> listVisible(String operation, String className, User user);
+
+	long countVisible(User user);
 
 	/** The owner's form description for a Function, or a field error for an incoming draft. */
 	public JSONObject form(JSONObject request, String lang, String domainId);

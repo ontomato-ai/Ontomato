@@ -12,6 +12,11 @@ public class AnonymousPermissionPolicyDirectory implements PermissionPolicyDirec
     }
 
     @Override
+    public long countInDomain(String domainId) {
+        return 0;
+    }
+
+    @Override
     public List<RolePolicy> listRolePolicies(String domainId) {
         return List.of();
     }

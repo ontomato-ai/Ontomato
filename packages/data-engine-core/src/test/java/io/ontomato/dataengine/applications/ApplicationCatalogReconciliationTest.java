@@ -651,6 +651,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(get(CATALOGUE).param("countOnly", "true"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(2))
             .andExpect(jsonPath("$.data.rows").doesNotHaveJsonPath());
+        deniedEntries.add("owner:app-hosted/main");
+        http.perform(get("/platform/applications").param("purpose", "navigation"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1));
+        http.perform(get("/platform/applications").param("purpose", "navigation").param("countOnly", "true"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(1));
         http.perform(get(CATALOGUE).param("scope", "maintainable").param("size", "1"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.rows[0].id").value("app-catalogue"))
             .andExpect(jsonPath("$.data.rows[0].source").value("domain"))

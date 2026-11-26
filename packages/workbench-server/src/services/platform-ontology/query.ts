@@ -452,7 +452,6 @@ export function platformOntologyOwnerReadError(status: Exclude<PlatformOntologyS
   return new HttpError(httpStatus, reason ?? status, code);
 }
 
-/** Lists all objects of a single declared type for counts, object picker, and label lookup. */
 /** How many names the user node's provenance summary keeps before it stops listing and shows the rest as `+N`. */
 const PROVENANCE_NAME_LIMIT = 3;
 
@@ -511,6 +510,7 @@ async function readUserProvenance(
   return summaries;
 }
 
+/** Lists objects of a declared type for the object picker and label lookup. */
 async function readObjectsOfType(
   readers: PlatformOntologyOwnerReaders,
   typeId: string,
@@ -868,9 +868,9 @@ export async function readPlatformOntologyCounts(
 
   const counts = await Promise.all(
     types.map(async (spec): Promise<PlatformOntologyTypeCount> => {
-      const res = await readObjectsOfType(readers, spec.id, false);
+      const res = await readers.count(spec.id);
       if (res.ok) {
-        return { type: spec.id, layer: spec.layer, status: "ok", count: res.data.length };
+        return { type: spec.id, layer: spec.layer, status: "ok", count: res.data };
       }
       return { type: spec.id, layer: spec.layer, status: res.status, reason: res.reason };
     }),

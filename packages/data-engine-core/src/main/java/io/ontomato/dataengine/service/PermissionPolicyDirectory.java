@@ -9,6 +9,7 @@ public interface PermissionPolicyDirectory {
     record PolicyDataPermission(String policyId, String className) {}
 
     List<Policy> listPolicies(String domainId);
+    long countInDomain(String domainId);
     List<RolePolicy> listRolePolicies(String domainId);
     List<PolicyDataPermission> listPolicyDataPermissions(String domainId);
 }

@@ -15,6 +15,7 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Component;
 
 import com.alibaba.fastjson2.JSON;
@@ -194,13 +195,31 @@ public class FunctionDao {
 		return functions;
 	}
 
-	private Function mapRow(ResultSet rs) throws SQLException {
+	public List<Function> queryReadCandidates(String domainId) {
+		return jdbcTemplate.query("SELECT id, operation, domain_id, created_by, published FROM " + TABLE_NAME + " WHERE domain_id = ?",
+				(rs, rowNum) -> mapReadFacts(rs), domainId);
+	}
+
+	public long countByIds(String domainId, List<String> ids) {
+		return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + TABLE_NAME + " WHERE domain_id = ? AND id = ANY (?)",
+				Long.class, domainId, new SqlArrayValue("varchar", ids.toArray()));
+	}
+
+	private Function mapReadFacts(ResultSet rs) throws SQLException {
 		Function function = new Function();
 		function.setId(rs.getString("id"));
+		function.setOperation(rs.getString("operation"));
+		function.setDomainId(rs.getString("domain_id"));
+		function.setCreatedBy(rs.getString("created_by"));
+		function.setPublished(rs.getBoolean("published"));
+		return function;
+	}
+
+	private Function mapRow(ResultSet rs) throws SQLException {
+		Function function = mapReadFacts(rs);
 		function.setName(rs.getString("name"));
 		function.setOrigin(rs.getString("origin"));
 		function.setDescription(rs.getString("description"));
-		function.setOperation(rs.getString("operation"));
 		String parameters = rs.getString("parameters");
 		function.setParameters(parameters == null ? null : JSONArray.parseArray(parameters, Parameter.class));
 		String returnDef = rs.getString("return_def");
@@ -211,9 +230,6 @@ public class FunctionDao {
 		function.setLogic(rs.getString("logic"));
 		function.setCreateTimestamp(rs.getObject("create_timestamp") == null ? null : rs.getLong("create_timestamp"));
 		function.setModifyTimestamp(rs.getObject("modify_timestamp") == null ? null : rs.getLong("modify_timestamp"));
-		function.setDomainId(rs.getString("domain_id"));
-		function.setCreatedBy(rs.getString("created_by"));
-		function.setPublished(rs.getBoolean("published"));
 		return function;
 	}
 

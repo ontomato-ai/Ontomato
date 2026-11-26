@@ -220,15 +220,27 @@ public class WorkflowDao {
 
 	public List<Workflow> queryList(String status, String domainId) {
 		String selection = Workflow.STATUS_ACTIVE.equals(status) ? ACTIVE : EDITABLE;
-		StringBuilder sql = new StringBuilder(selection + " WHERE w.domain_id = ?");
 		List<Object> params = new ArrayList<>();
-		params.add(domainId);
-		if (status != null && !status.isBlank()) {
-			sql.append(" AND w.status = ?");
-			params.add(status);
+		String sql = selection + domainStatusFilter(status, domainId, params) + " ORDER BY w.create_timestamp DESC";
+		return jdbcTemplate.query(sql, (rs, rowNum) -> map(rs), params.toArray());
+	}
+
+	public long count(String id, String status, String domainId) {
+		String from = " FROM workflow w " + (Workflow.STATUS_ACTIVE.equals(status) ? REVISION_JOIN : "");
+		List<Object> params = new ArrayList<>();
+		String sql = "SELECT COUNT(*)" + from + domainStatusFilter(status, domainId, params);
+		if (id != null) {
+			sql += " AND w.id = ?";
+			params.add(id);
 		}
-		sql.append(" ORDER BY w.create_timestamp DESC");
-		return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> map(rs), params.toArray());
+		return jdbcTemplate.queryForObject(sql, Long.class, params.toArray());
+	}
+
+	private static String domainStatusFilter(String status, String domainId, List<Object> params) {
+		params.add(domainId);
+		if (status == null || status.isBlank()) return " WHERE w.domain_id = ?";
+		params.add(status);
+		return " WHERE w.domain_id = ? AND w.status = ?";
 	}
 
     public record PendingRevision(io.ontomato.dataengine.bean.workflow.RunContract contract, List<WorkflowStep> steps, boolean sharedClass) {}

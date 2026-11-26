@@ -160,6 +160,11 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         return bussinessKnowledges;
     }
 
+    @Override
+    public int countBusinessKnowledge(String domainId) {
+        return knowledgeDao.countDomainRows(domainId);
+    }
+
   @Override
     public String getBussinessKnowledgeMarkdown(String domainId){
         List<KnowledgeEntity> knowledgeEntityList = knowledgeDao.getAllKnowledge(domainId);

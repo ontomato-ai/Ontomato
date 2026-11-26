@@ -35,6 +35,7 @@ const grantSchema = z.object({
   inForce: z.boolean(),
   activatedByWorkflowVersion: z.string().nullish(),
 });
+const workflowCountSchema = z.object({ total: z.number().int().nonnegative() });
 const querySchema = z.object({
   search: panelReadParameterSchemas.keyword.optional(),
   cursor: panelReadParameterSchemas.cursor.optional(),
@@ -212,7 +213,8 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
       };
     },
     async count() {
-      return { rows: [], total: (await workflows()).length };
+      const { total } = await read("/workflow/query", { countOnly: true }, workflowCountSchema);
+      return { rows: [], total };
     },
     async record(id: string) {
       const [row, context] = await Promise.all([workflow(id), recordContext()]);

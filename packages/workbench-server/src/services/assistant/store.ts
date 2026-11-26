@@ -13,6 +13,7 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { HomeState } from "@ontomato/contracts/platform-home";
+import type { AgentAccessFacts } from "./authorization";
 export interface AssistantOwner {
   domainId: string;
   userId: string;
@@ -64,12 +65,20 @@ const db = () => getPostgresPool();
 const agentDefinitionScope = "domain_id=$1 AND kind NOT IN ('app-builder','ops-diagnosis')";
 
 export const assistantStore = {
-  async countAgentDefinitions(domainId: string): Promise<number> {
-    const { rows } = await db().query<{ total: number }>(
-      `SELECT COUNT(*)::int AS total FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope}`,
+  async countAgentDefinitions(domainId: string, ids?: readonly string[]): Promise<number> {
+    const { rows: [result] } = await db().query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope}
+       AND ($2::uuid[] IS NULL OR id=ANY($2::uuid[]))`,
+      [domainId, ids ?? null],
+    );
+    return result.total;
+  },
+  async agentDefinitionAccessFacts(domainId: string): Promise<AgentAccessFacts[]> {
+    const { rows } = await db().query<AgentAccessFacts>(
+      `SELECT id, domain_id, owner_id FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope}`,
       [domainId],
     );
-    return rows[0].total;
+    return rows;
   },
   async agents(domainId: string): Promise<AgentRow[]> {
     return (
