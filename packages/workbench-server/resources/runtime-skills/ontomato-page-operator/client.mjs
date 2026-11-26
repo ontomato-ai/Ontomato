@@ -39,6 +39,7 @@ async function post(path, body) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(process.env.ONTOMATO_LANGUAGE ? { 'Accept-Language': process.env.ONTOMATO_LANGUAGE } : {}),
       'X-Ontomato-Callback-Credential': credential,
       'X-Ontomato-Run-Id': runId,
     },
