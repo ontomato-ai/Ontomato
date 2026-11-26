@@ -216,16 +216,18 @@ export function panelHasInlineConversationEntry(
   panel: Pick<ProductPanel, "manifest" | "content">,
   projections?: Readonly<Record<string, BundledPanelProjection>> | readonly BundledPanelProjection[],
 ): boolean {
-  const fixedIds = new Set(Object.values(panel.manifest.members).flatMap(({ target }) =>
-    "projectionId" in target ? [target.projectionId] : [],
-  ));
   const projectionList = Array.isArray(projections) ? projections : projections ? Object.values(projections) : [];
-  if (projectionList.some((entry) =>
-    entry.status === "ready" && fixedIds.has(entry.projection.id)
-    && (entry.projection.componentId === "@ontomato/sdk:ConversationEntry" || entry.projection.componentId === "ConversationEntry")
-    && entry.projection.config?.presentation === "inline",
-  )) {
-    return true;
+  if (projectionList.length) {
+    const fixedIds = new Set(Object.values(panel.manifest.members).flatMap(({ target }) =>
+      "projectionId" in target ? [target.projectionId] : [],
+    ));
+    if (projectionList.some((entry) =>
+      entry.status === "ready" && fixedIds.has(entry.projection.id)
+      && (entry.projection.componentId === "@ontomato/sdk:ConversationEntry" || entry.projection.componentId === "ConversationEntry")
+      && entry.projection.config?.presentation === "inline",
+    )) {
+      return true;
+    }
   }
   for (const member of Object.values(panel.manifest.members ?? {})) {
     const raw = member as Record<string, unknown>;
