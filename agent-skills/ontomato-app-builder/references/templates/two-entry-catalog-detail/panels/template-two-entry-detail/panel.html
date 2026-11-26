@@ -10,7 +10,7 @@
   <section class="detail-page">
     <page-header :back-label="t('detail.back')" :draft="formDraft" @back="goBack">
       <template #title>
-        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <projection v-if="selectedKey" slot="header" :values="{ fallbackTitle: selectedKey }"></projection>
         <span v-else>{{ t('detail.choose') }}</span>
       </template>
       <template #actions>

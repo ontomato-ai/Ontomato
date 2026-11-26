@@ -4,7 +4,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
-import { declaredComponentProps, pickProjectionPlacementAttrs } from "./projection-attrs";
+import { placementListeners } from "./projection-attrs";
 import { frameMemberData } from "./frame-member";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
@@ -17,9 +17,12 @@ import { componentFor } from "../catalogue-components";
 /**
  * The SDK's projection component: `<Projection slot="taskForm"/>`. A panel author places it and names the member;
  * everything else is the SDK's. It reads the member's projection by ID through this frame's request path under the
- * reader's own credential, finds the component of the record's `componentId` in this release's own catalogue, draws it
- * with the record's `config` as its only configuration (an attribute written on `<Projection>` configures nothing) and
- * the member's inputs as values, derives its ports from the data it reads
+ * reader's own credential, finds the component of the record's `componentId` in this release's own catalogue and draws it.
+ *
+ * What the component reads has one owner each: its fixed presentation is the projection's `config`, and a value that
+ * follows the page is passed as `:values` where the member is placed (the member's declared inputs are the same values,
+ * wired to the panel's state or outputs). Nothing else written on `<Projection>` configures it: `class` and `style` size
+ * the member's container and `@event` listeners are the panel's. It derives its ports from the data it reads
  * and that catalogue entry, registers them with the instance, and gives the drawn component the member's data, read here
  * through this release's resource modules.
  *
@@ -31,8 +34,10 @@ defineOptions({ inheritAttrs: false });
 const props = defineProps<{
   /** The slot of the panel's declaration this projection fills. */
   slot: string;
-  /** Optional slot-supplied input overrides. */
+  /** Input values a slot supplies to an isolated instance of this member (a row's `{ target: ref }`). */
   inputs?: Readonly<Record<string, unknown>>;
+  /** Values that follow the page, given where the member is placed; a fixed value belongs in the member's `config`. */
+  values?: Readonly<Record<string, unknown>>;
 }>();
 
 const panel = inject(panelContextKey, null);
@@ -175,12 +180,12 @@ provide(projectionKey, {
   },
 } as ProjectionSlot);
 provide(panelMemberKey, () => loaded.value!.member);
-const bound = computed(() => {
-  const { component, projection } = loaded.value!;
-  const declared = declaredComponentProps(component);
-  const { listeners, props: placementProps } = pickProjectionPlacementAttrs(attrs, declared);
-  return { ...projection.config, ...resolvedInputs.value, ...placementProps, ...listeners };
-});
+const bound = computed(() => ({
+  ...loaded.value!.projection.config,
+  ...resolvedInputs.value,
+  ...props.values,
+  ...placementListeners(attrs),
+}));
 const innerRef = ref<{ refresh?: () => void } | null>(null);
 function refresh() {
   if (typeof innerRef.value?.refresh === "function") {

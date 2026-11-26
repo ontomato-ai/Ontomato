@@ -641,7 +641,7 @@
 
       <main class="og-graph">
         <div class="og-canvas">
-          <projection slot="graph" :hint="graphHint"></projection>
+          <projection slot="graph" :values="{ hint: graphHint }"></projection>
         </div>
         <div v-if="graphEmpty" class="og-graph-empty">
           <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M9 3v6M15 3v6M6 9h12v4a6 6 0 0 1-6 6 6 6 0 0 1-6-6z"/></svg>
@@ -680,7 +680,7 @@
               <div class="og-detail-header">
                 <projection
                   slot="objectHeader"
-                  :fallback-title="objectEverReady ? (lastObjectLabel || requestedObjectKey) : undefined"
+                  :values="{ fallbackTitle: objectEverReady ? (lastObjectLabel || requestedObjectKey) : undefined }"
                 >
                   <template #leading>
                     <span class="og-icon og-icon-object" aria-hidden="true">
@@ -776,7 +776,7 @@
               <div class="og-detail-header">
                 <projection
                   slot="relationHeader"
-                  :fallback-title="relationEverReady ? (lastRelationLabel || requestedRelationKey) : undefined"
+                  :values="{ fallbackTitle: relationEverReady ? (lastRelationLabel || requestedRelationKey) : undefined }"
                 >
                   <template #leading>
                     <span class="og-icon og-icon-relation" aria-hidden="true">

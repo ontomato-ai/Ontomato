@@ -280,6 +280,11 @@ export function expandPanelAuthoringMember(
         inputTypes.set(port, parameterPortType(parameterId));
         return [param, { input: port }] as const;
       }
+      // Another member's read-only output reaches this read through this placement's input of the same name.
+      if ("output" in supplied) {
+        const port = inputTypes.has(param) ? `${name}_${param}` : param;
+        return [param, bindMemberInput(port, supplied, paramPath, parameterPortType(parameterId))] as const;
+      }
       if (!panelReadInputMatches(parameterId, stateInputType(supplied, paramPath)))
         fail(paramPath, `State '${supplied.state}' has an incompatible type for '${parameterId}'`);
       const existing = inputBindings.get(param);

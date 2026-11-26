@@ -243,10 +243,10 @@
 
       <div v-if="selectedKey" class="ops-turn-detail-scroll shell-dock-room">
         <div class="ops-turn-detail-stack">
-          <projection slot="detailHeader" :fallback-title="selectedKey">
+          <projection slot="detailHeader" :values="{ fallbackTitle: selectedKey }">
             <template #actions>
               <div class="ops-turn-detail-actions">
-                <projection slot="diagnose" :disabled="hasEvidence !== true"></projection>
+                <projection slot="diagnose" :values="{ disabled: hasEvidence !== true }"></projection>
                 <projection slot="keepTurn"></projection>
                 <projection slot="unkeepTurn"></projection>
                 <projection slot="refreshTurn"></projection>

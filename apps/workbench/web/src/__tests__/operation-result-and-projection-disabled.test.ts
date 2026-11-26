@@ -115,7 +115,7 @@ describe("OperationResult", () => {
   });
 });
 
-describe("<Projection :disabled> passthrough and OperationButton draft read behavior", () => {
+describe("<Projection :inputs> and OperationButton draft read behavior", () => {
   const recordMeta = {
     domainId: "d",
     ownerId: "o",
@@ -187,7 +187,7 @@ describe("<Projection :disabled> passthrough and OperationButton draft read beha
     batch: false as const,
   };
 
-  it("forwards declared :disabled in direct mode without scoping, blocks agent when disabled, emits @read, and resets on draft switch", async () => {
+  it("passes :inputs through in direct mode without scoping, ignores an attribute where it is placed, blocks agent when disabled, emits @read, and resets on draft switch", async () => {
     const disabled = ref(true);
     const readEvents: PanelReadOperationResult[] = [];
     const requests = {
@@ -253,8 +253,9 @@ describe("<Projection :disabled> passthrough and OperationButton draft read beha
           h(DirectProjectionComponent, { slot: "definition" }),
           h(DirectProjectionComponent, {
             slot: "trial",
-            disabled: disabled.value,
+            inputs: { disabled: disabled.value },
             class: "extra-box",
+            disabled: false,
             "data-undeclared": "ignored",
             onRead: (res: PanelReadOperationResult) => readEvents.push(res),
           }),
@@ -271,7 +272,7 @@ describe("<Projection :disabled> passthrough and OperationButton draft read beha
         expect(btn).not.toBeNull();
         expect(btn!.disabled).toBe(true);
       });
-      // Container gets class; undeclared attr must NOT leak to OperationButton root.
+      // The container takes class; an attribute written where the member is placed configures nothing.
       const trialWrapper = host.querySelector<HTMLElement>("[data-member='trial']");
       expect(trialWrapper?.classList.contains("extra-box")).toBe(true);
       expect(trialWrapper?.querySelector(".sdk-operation-button")?.getAttribute("data-undeclared")).toBeNull();
@@ -309,7 +310,7 @@ describe("<Projection :disabled> passthrough and OperationButton draft read beha
     }
   });
 
-  it("forwards declared :disabled in frame mode Projection.vue without leaking undeclared attributes", async () => {
+  it("passes :inputs through in frame mode Projection.vue without leaking undeclared attributes", async () => {
     const disabled = ref(true);
     const frameManifest = definePanel({
       state: {},
@@ -368,8 +369,9 @@ describe("<Projection :disabled> passthrough and OperationButton draft read beha
         });
         return () => h(FrameProjection, {
           slot: "trial",
-          disabled: disabled.value,
+          inputs: { disabled: disabled.value },
           class: "frame-box",
+          disabled: false,
           "data-ignored": "no",
         });
       },

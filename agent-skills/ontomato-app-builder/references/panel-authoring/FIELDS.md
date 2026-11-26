@@ -57,7 +57,7 @@ input sources such as another member's read-only output. The inline shorthand ac
 | `component` | Yes | Component name from the released SDK catalogue. Use its package-qualified ID if the name is ambiguous. |
 | `type` | No | Default owner type ID from the type table for this member's reads and operations. |
 | `target` | No | Panel state field holding the target object (or object list), or {fromSlot: true} when supplied by an enclosing Vue slot via <Projection :inputs="{ target: ref }">. |
-| `data` | No | Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, or {fromSlot: true}. |
+| `data` | No | Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, {output: {member, name, path?}} for another member's read-only output, or {fromSlot: true}. |
 | `operation` | No | Single operation ID from the owner's entry in the type table. |
 | `operationParams` | No | Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' \| 'label'}, {rowField: fieldKey}, {formField: '/fieldPath'}, or {formFields: {key: '/fieldPath'}}. |
 | `operations` | No | Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?, draft?} where target may be 'row', {row: true}, {rowField: key}, a state field name, {state: fieldName}, or {literal: ref}, and draft names a form member in this panel. |

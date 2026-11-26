@@ -44,6 +44,9 @@
         "component": "OperationButton",
         "target": "domain",
         "operation": "modelUsage.rebuildVectors",
+        "config": {
+          "size": "small"
+        },
         "name": "Rebuild vectors",
         "description": "Start or resume rebuilding all domain vectors",
         "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-200000000003"
@@ -52,6 +55,9 @@
         "component": "OperationButton",
         "target": "domain",
         "operation": "modelUsage.pauseVectorRebuild",
+        "config": {
+          "size": "small"
+        },
         "name": "Pause vector rebuild",
         "description": "Pause an active vector rebuild after the current item",
         "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-200000000004"

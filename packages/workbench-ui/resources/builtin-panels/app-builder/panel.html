@@ -764,9 +764,7 @@
           ref="chatRef"
           slot="chat"
           class="ab-chat-slot"
-          :session-context="chatSessionContext"
-          :greeting="chatGreeting"
-          :description="t('chat.description')"
+          :values="{ sessionContext: chatSessionContext, greeting: chatGreeting, description: t('chat.description') }"
           @run-complete="onChatRunComplete"
         >
           <template #composer-context>

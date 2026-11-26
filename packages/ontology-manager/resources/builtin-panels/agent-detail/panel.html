@@ -372,8 +372,7 @@
         <projection
           v-if="selectedKey"
           slot="header"
-          :title="liveTitle"
-          :fallback-title="selectedKey"
+          :values="{ title: liveTitle, fallbackTitle: selectedKey }"
         >
           <template v-if="detailReady" #leading>
             <span class="agent-detail-avatar" :style="avatarStyle(liveIcon)" aria-hidden="true">
@@ -747,7 +746,7 @@
           <sdk-button @click="grantDialogOpen = false">{{ t("action.cancel") }}</sdk-button>
           <projection
             slot="grantSubmit"
-            :disabled="!canSubmitGrant"
+            :values="{ disabled: !canSubmitGrant }"
             @done="onGrantAdded"
           ></projection>
         </div>

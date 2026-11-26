@@ -67,8 +67,7 @@
       <projection
         v-if="canCheckSandbox"
         slot="checkSandboxPermission"
-        :label="t(sandboxStatus === 'failed' ? 'sandbox.recheck' : 'sandbox.check')"
-        :notify-success="false"
+        :values="{ label: t(sandboxStatus === 'failed' ? 'sandbox.recheck' : 'sandbox.check') }"
         @done="onSandboxChecked"
       ></projection>
     </aside>

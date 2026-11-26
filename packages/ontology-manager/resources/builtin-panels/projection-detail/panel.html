@@ -267,7 +267,7 @@
       @back="goBack"
     >
       <template #title>
-        <projection v-if="selectedKey" slot="headerTitle" :fallback-title="selectedKey"></projection>
+        <projection v-if="selectedKey" slot="headerTitle" :values="{ fallbackTitle: selectedKey }"></projection>
         <span v-else>{{ t('panel.name') }}</span>
       </template>
       <template #actions>
@@ -618,7 +618,7 @@
       <template #footer>
         <div class="proj-dialog-footer">
           <sdk-button @click="copyDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection v-if="canOpenCopy && copyDialogOpen" slot="copySubmit" :disabled="!copyReady" @done="onCopyDone"></projection>
+          <projection v-if="canOpenCopy && copyDialogOpen" slot="copySubmit" :values="{ disabled: !copyReady }" @done="onCopyDone"></projection>
         </div>
       </template>
     </sdk-dialog>
@@ -646,7 +646,7 @@
       <template #footer>
         <div class="proj-dialog-footer">
           <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection v-if="canOpenGrant && grantDialogOpen" slot="grantSubmit" :disabled="!grantPolicyId" @done="onGrantAdded"></projection>
+          <projection v-if="canOpenGrant && grantDialogOpen" slot="grantSubmit" :values="{ disabled: !grantPolicyId }" @done="onGrantAdded"></projection>
         </div>
       </template>
     </sdk-dialog>

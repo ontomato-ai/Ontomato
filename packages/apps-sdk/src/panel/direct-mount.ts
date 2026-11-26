@@ -71,8 +71,16 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
  */
 export interface DirectPanelMount extends HostDirectPanelMount {
   readonly instance: DirectPanelInstance;
-  /** The member the panel's template places under this key, with optional slot overrides and slot content. */
-  member(ref: string, slots?: Slots, inputs?: Readonly<Record<string, RuntimeJsonValue>>): VNode;
+  /**
+   * The member the panel's template places under this key, with the inputs a slot supplies to an instance of its own, the
+   * values that follow the page, and its slot content.
+   */
+  member(
+    ref: string,
+    slots?: Slots,
+    inputs?: Readonly<Record<string, RuntimeJsonValue>>,
+    values?: Readonly<Record<string, RuntimeJsonValue>>,
+  ): VNode;
 }
 
 export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelMount {
@@ -152,10 +160,11 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     }
     return {
       instance,
-      member: (ref, slots, inputs) => h(PanelMember, {
+      member: (ref, slots, inputs, values) => h(PanelMember, {
         instance,
         member: ref,
         ...(inputs ? { inputs: inputs as MemberInputs } : {}),
+        ...(values ? { values } : {}),
         key: `${ref}:${instance.projectionVersion(ref)}`,
       }, slots),
       address: (url) => panelRun.address(url),

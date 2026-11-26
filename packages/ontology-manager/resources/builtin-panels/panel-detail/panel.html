@@ -372,7 +372,7 @@
       @back="goBack"
     >
       <template #title>
-        <projection v-if="selectedKey" slot="headerTitle" :fallback-title="selectedKey"></projection>
+        <projection v-if="selectedKey" slot="headerTitle" :values="{ fallbackTitle: selectedKey }"></projection>
         <span v-else>{{ t('panel.detailName') }}</span>
       </template>
       <template #actions>
@@ -676,7 +676,7 @@
               <div class="pd-section-bar">
                 <h2 class="pd-section-title">{{ t('members.projectionRecord') }}</h2>
               </div>
-              <projection slot="memberProjectionHeader" :fallback-title="memberProjectionKey">
+              <projection slot="memberProjectionHeader" :values="{ fallbackTitle: memberProjectionKey }">
                 <template #actions>
                   <div class="pd-detail-actions">
                     <sdk-button size="small" type="primary" plain @click="openMemberProjection">
@@ -767,8 +767,7 @@
           <projection
             v-if="copyDialogOpen && copyEntryAllowed"
             slot="copySubmit"
-            :label-key="copyActionLabelKey"
-            :disabled="!canSubmitCopy"
+            :values="{ labelKey: copyActionLabelKey, disabled: !canSubmitCopy }"
             @done="onCopyDone"
           ></projection>
         </div>
@@ -801,7 +800,7 @@
           <projection
             v-if="grantDialogOpen && grantEntryAllowed"
             slot="grantSubmit"
-            :disabled="!canSubmitGrant"
+            :values="{ disabled: !canSubmitGrant }"
             @done="onGrantAdded"
           ></projection>
         </div>
