@@ -24,7 +24,7 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import { useDashboardStore } from "../../dashboard";
 import { formatRelativeTime } from "../../../utils/relative-time";
-import { CalendarClock, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, X } from "lucide-vue-next";
+import { Calendar, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, X } from "lucide-vue-next";
 import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
 import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
@@ -802,7 +802,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <section class="agent-schedules" :aria-label="t('platform.schedules')">
         <div class="section-title agent-schedules-heading">
           <span class="history-list-marker" aria-hidden="true" />
-          <span>{{ t('platform.schedules') }}</span>
+          <span>{{ t('platform.schedules') }}<template v-if="agentSchedules.length"> ({{ agentSchedules.length }})</template></span>
           <button v-if="nav.agents.value.find(agent => agent.id === agentId)?.enabled"
             type="button" :title="t('platformSchedules.newTask')" :aria-label="t('platformSchedules.newTask')"
             :aria-pressed="creatingSchedule" @click="openSchedule()">
@@ -815,12 +815,15 @@ function appearanceSaved(value: WorkbenchAppearance) {
         <ul v-if="agentSchedules.length" class="session-list agent-schedule-list">
           <li v-for="task in agentSchedules" :key="task.id">
             <div class="session-item" :class="{ active: selectedSchedule === task.id }">
-              <button type="button" class="session-open" :title="task.title"
+              <button type="button" class="session-open agent-schedule-open" :title="task.title"
                 :aria-current="selectedSchedule === task.id ? 'page' : undefined" @click="openSchedule(task)">
-                <CalendarClock :size="14" aria-hidden="true" />
-                <span class="agent-schedule-label">
-                  <strong class="session-title">{{ task.title }}</strong>
-                  <small>{{ scheduledTaskFrequencyText(task.frequency, locale, t) }}</small>
+                <strong class="session-title">{{ task.title }}</strong>
+                <span class="history-list-meta">
+                  <Calendar :size="12" aria-hidden="true" />
+                  {{ scheduledTaskFrequencyText(task.frequency, locale, t) }}
+                  <span v-if="!task.enabled" class="agent-schedule-status">{{ t('platformSchedules.panelFields.stateOff') }}</span>
+                  <span v-else-if="task.pause" class="agent-schedule-status" data-status="paused">{{ t('platformSchedules.panelFields.statePaused') }}</span>
+                  <span v-else class="agent-schedule-status" data-status="scheduled">{{ t('platformSchedules.card.scheduled') }}</span>
                 </span>
               </button>
             </div>
