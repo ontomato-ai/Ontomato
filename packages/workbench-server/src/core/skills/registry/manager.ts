@@ -59,7 +59,11 @@ export class SkillRegistryManager {
     protectedOffering?: ProtectedSkillOffering,
   ): Promise<SkillEntry> {
     let supplied: StandardSkillFrontmatter;
-    try { supplied = await readManifest(); }
+    let displayTitle: string | undefined;
+    try {
+      supplied = await readManifest();
+      displayTitle = await protectedOffering?.readDisplayTitle?.();
+    }
     catch (error) {
       if (protectedOffering) {
         if (error instanceof SkillSourceRecordError) throw error;
@@ -82,7 +86,7 @@ export class SkillRegistryManager {
     const manifest = parsed.data;
     const key = runtimeSkillKey(skill);
     const source: SkillSource = { kind: "provider", providerId: provider.id, providerName: provider.name };
-    return { skill, manifest, source, provide: async (context) => {
+    return { skill, manifest, source, ...(displayTitle === undefined ? {} : { displayTitle }), provide: async (context) => {
       let pkg: SkillPackage;
       try { pkg = await provide(context); }
       catch (error) { throw providerFailure(provider, `supply ${refLabel(skill)}`, error, !protectedOffering); }

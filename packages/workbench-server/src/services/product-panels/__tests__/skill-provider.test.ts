@@ -153,6 +153,7 @@ it("provides a single protected source for all uses of the same panel and lists 
   const manifest = await tasks!.readManifest(taskRef);
   const pkg = await tasks!.provide(taskRef);
   await summary!.readManifest(skill("captured-summary-skill"));
+  expect(await tasks!.readDisplayTitle!()).toBe(trial.panels[0]!.name);
   expect(manifest.name).toBe(taskRef.name);
   expect(pkg.skill).toEqual(taskRef);
   expect(parseSkillMarkdown(pkg.files[0]!.content)?.manifest).toMatchObject({
