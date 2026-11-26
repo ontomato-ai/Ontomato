@@ -2,6 +2,8 @@
 
 挂在应用 `ontology` 的 `/ontology/capability-map`。这一页自己不读任何属主读法，只是把平台四层本体的两半接在一起：类型半用本体图谱（`builtin-product-ontology-graph`），实例半用对象浏览器（`builtin-product-data-browser`），两半都以 `dataSource: "platform"`（四层平台本体）运行。
 
+类型半的画布由 `OntologyTypeGraph` 绘制。实例半的画布由 `InstanceGraph` 绘制，表格由对象浏览器的 `ObjectList` 读取实例行。
+
 ## 看页面上是什么
 
 - `mode`（深链，默认 `"instance"`）：`"instance"` 显示实例半，`"type"` 显示类型半；页头用分段控件切换。

@@ -242,19 +242,9 @@ afterEach(() => {
 });
 
 describe("createPlatformOntologyReadAdapter", () => {
-  it("serves schema, counts, start and neighbors conforming to contract result schemas", async () => {
+  it("serves counts, start and neighbors conforming to contract result schemas", async () => {
     const { seenRequests } = stubOwnerHttp();
     const reads = createPlatformOntologyReadAdapter(owner, viewer, "Alice");
-
-    const schema = panelReadResultSchemas.panelGraphSchema.parse(await reads.schema());
-    expect(schema.layers).toEqual(["fact", "capability", "governance", "product"]);
-    expect(schema.objectTypes.some((item) => item.id === ACTION)).toBe(true);
-    const agent = schema.objectTypes.find((item) => item.id === "platform:AgentDefinition");
-    expect(agent?.definition).toBeTruthy();
-    expect(agent?.properties?.length).toBeGreaterThan(0);
-    expect(agent?.rules).toBeTruthy();
-    expect(agent?.reads?.list?.result).toBe("panelRecordList");
-    expect(agent?.operations?.some((op) => op.id === "platform:AgentDefinition.save")).toBe(true);
 
     const counts = panelReadResultSchemas.panelGraphCounts.parse(await reads.counts());
     expect(counts.counts.find((c) => c.type === OBJECT_TYPE)).toMatchObject({ status: "ok", count: 2 });
@@ -306,65 +296,6 @@ describe("createPlatformOntologyReadAdapter", () => {
     });
   });
 
-  it("serves OntologyType.objects with search, page.{number,size} translation and per-type refusal status", async () => {
-    stubOwnerHttp();
-    const reads = createPlatformOntologyReadAdapter(owner, viewer);
-
-    const typeParam = panelReadParameterSchemas.ontologyType.parse(ACTION);
-    const searchParam = panelReadParameterSchemas.keyword.parse("order");
-    const pageParam = panelReadParameterSchemas.page.parse({ number: 2, size: 1 });
-
-    const paged = panelReadResultSchemas.panelOntologyObjects.parse(
-      await reads.objects({ type: typeParam, search: searchParam, page: pageParam }),
-    );
-    expect(paged).toMatchObject({
-      type: ACTION,
-      layer: "capability",
-      status: "ok",
-      total: 2,
-      page: 2,
-      pageSize: 1,
-    });
-    expect(paged.items).toEqual([
-      {
-        node: { className: ACTION, primaryKey: "act-2" },
-        label: "Cancel Order",
-        detail: "DRAFT",
-      },
-    ]);
-    expect(() => reads.objects({ type: typeParam, keyword: "order" })).toThrow();
-
-    const users = panelReadResultSchemas.panelOntologyObjects.parse(
-      await reads.objects({ type: USER }),
-    );
-    expect(users.status).toBe("ok");
-    expect(users.items.map((item) => item.node)).toEqual([
-      { className: USER, primaryKey: "user-1" },
-      { className: USER, primaryKey: "user-2" },
-    ]);
-
-    const roles = panelReadResultSchemas.panelOntologyObjects.parse(
-      await reads.objects({ type: ROLE }),
-    );
-    expect(roles.status).toBe("ok");
-    expect(roles.items).toEqual([
-      { node: { className: ROLE, primaryKey: "role-1" }, label: "ops" },
-    ]);
-
-    stubOwnerHttp({
-      "/action/queryList": () => new Response(JSON.stringify({ message: "No action permission" }), { status: 403 }),
-    });
-    const refused = panelReadResultSchemas.panelOntologyObjects.parse(
-      await createPlatformOntologyReadAdapter(owner, viewer).objects({ type: ACTION }),
-    );
-    expect(refused).toMatchObject({
-      type: ACTION,
-      status: "refused",
-      items: [],
-      total: 0,
-    });
-  });
-
   it("keeps the graph, relations and object picker projections valid", () => {
     const projectionSchema = directProjectionPortsSchema.superRefine(validateDirectProjection);
     const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
@@ -380,7 +311,6 @@ describe("createPlatformOntologyReadAdapter", () => {
           mode: { kind: "scalar", type: "string" },
           start: anyLayerObject,
           selected: anyLayerObject,
-          selectedType: { kind: "scalar", type: "string" },
           query: { kind: "scalar", type: "string" },
           node: anyLayerObject,
           layers: { kind: "json" },
@@ -388,10 +318,8 @@ describe("createPlatformOntologyReadAdapter", () => {
         },
         outputs: {
           selectedNode: anyLayerObject,
-          selectedType: { kind: "scalar", type: "string" },
         },
         data: {
-          schema: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "schema", params: {} },
           counts: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "counts", params: {} },
           start: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "start", params: {} },
           neighbors: {
@@ -418,10 +346,10 @@ describe("createPlatformOntologyReadAdapter", () => {
         },
         outputs: { selected: anyLayerObject },
         data: {
-          objects: {
+          rows: {
             source: { type: platformType(ONTOLOGY_TYPE) },
-            read: "objects",
-            params: { type: { input: "type" } },
+            read: "instances",
+            params: { className: { input: "type" } },
           },
         },
         config: {},
@@ -435,10 +363,10 @@ describe("createPlatformOntologyReadAdapter", () => {
         },
         outputs: { selected: { kind: "object", objectType: USER } },
         data: {
-          objects: {
+          rows: {
             source: { type: platformType(ONTOLOGY_TYPE) },
-            read: "objects",
-            params: { type: { input: "type" }, search: { input: "search" }, page: { input: "page" } },
+            read: "instances",
+            params: { className: { input: "type" }, search: { input: "search" }, page: { input: "page" } },
           },
         },
         config: {},
@@ -600,7 +528,7 @@ describe("platform ontology catalogue reads", () => {
     });
   });
 
-  it("provides distinguishable owner relation labels and endpoint metadata shared across filter, schema, and neighbors", async () => {
+  it("provides distinguishable owner relation labels and endpoint metadata in the relation catalogue", async () => {
     stubOwnerHttp();
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
 
@@ -621,9 +549,6 @@ describe("platform ontology catalogue reads", () => {
       fields: { fromLabel: "Action", toLabel: "Function", endpoints: "Action → Function" },
     });
 
-    const schema = panelReadResultSchemas.panelGraphSchema.parse(await reads.schema());
-    expect(schema.relationKinds.find((r) => r.id === "metric-view.uses-function")?.label).toBe("Metric view uses function");
-    expect(schema.relationKinds.find((r) => r.id === "action.uses-function")?.label).toBe("Action uses function");
 
     // Locales with colliding base translations are automatically disambiguated by source type label.
     const dupReads = createPlatformOntologyReadAdapter(owner, { token: "viewer-token-1", locale: "zh-CN" });
@@ -636,9 +561,6 @@ describe("platform ontology catalogue reads", () => {
       label: "动作 · 使用函数",
       subtitle: "动作 → 函数",
     });
-    const dupSchema = panelReadResultSchemas.panelGraphSchema.parse(await dupReads.schema());
-    expect(dupSchema.relationKinds.find((r) => r.id === "metric-view.uses-function")?.label).toBe("指标视图 · 使用函数");
-    expect(dupSchema.relationKinds.find((r) => r.id === "action.uses-function")?.label).toBe("动作 · 使用函数");
   });
 
   it("supports cross-type readable search via wildcard type while preserving per-owner access boundaries", async () => {
@@ -648,34 +570,31 @@ describe("platform ontology catalogue reads", () => {
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
 
     // Blank cross-type search short-circuits without hitting owners.
-    const empty = panelReadResultSchemas.panelOntologyObjects.parse(await reads.objects({ type: ONTOLOGY_TYPE, search: "   " }));
-    expect(empty.status).toBe("ok");
-    expect(empty.items).toEqual([]);
+    const empty = panelReadResultSchemas.panelRecordQuery.parse(await reads.instanceSearch({ search: "   " }));
+    expect(empty.rows).toEqual([]);
     expect(empty.total).toBe(0);
     expect(seenRequests).toHaveLength(0);
 
     // Non-empty keyword matches across readable types by name and description, skipping refused owners.
-    const byName = panelReadResultSchemas.panelOntologyObjects.parse(await reads.objects({ type: ONTOLOGY_TYPE, search: "Order" }));
-    expect(byName.status).toBe("ok");
-    expect(byName.items.map((item) => `${item.node.className}:${item.node.primaryKey}`)).toEqual(
+    const byName = panelReadResultSchemas.panelRecordQuery.parse(await reads.instanceSearch({ search: "Order" }));
+    expect(byName.rows.map((item) => `${item.className}:${item.primaryKey}`)).toEqual(
       expect.arrayContaining([
         `${OBJECT_TYPE}:Order`,
         `${ACTION}:act-1`,
         `${ACTION}:act-2`,
       ]),
     );
-    expect(byName.items.find((item) => item.node.className === ACTION && item.node.primaryKey === "act-1")?.detail)
+    expect(byName.rows.find((item) => item.className === ACTION && item.primaryKey === "act-1")?.fields.detail)
       .toContain("Action");
 
     // Description match finds Order via its classDesc ("Customer order record").
-    const byDescription = panelReadResultSchemas.panelOntologyObjects.parse(
-      await reads.objects({ type: ONTOLOGY_TYPE, search: "Customer order record" }),
+    const byDescription = panelReadResultSchemas.panelRecordQuery.parse(
+      await reads.instanceSearch({ search: "Customer order record" }),
     );
-    expect(byDescription.status).toBe("ok");
-    expect(byDescription.items).toEqual(
+    expect(byDescription.rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          node: { className: OBJECT_TYPE, primaryKey: "Order" },
+          className: OBJECT_TYPE, primaryKey: "Order",
           label: "Sales Order",
         }),
       ]),

@@ -2,13 +2,10 @@ import type { PanelObjectRef } from "@ontomato/contracts/panel-manifest";
 import type { GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import type {
   PlatformGraphRelationStatus,
-  PlatformGraphTypeSpec,
 } from "../panel/platform-objects";
 
 type PanelObjectValue = PanelObjectRef;
 
-const COLUMN_GAP = 280;
-const ROW_GAP = 76;
 const RING_BASE_RADIUS = 220;
 const RING_STEP_RADIUS = 150;
 const MAX_PER_RING = 12;
@@ -17,44 +14,6 @@ const MIN_NODE_DISTANCE = 110;
 /** Collision-free canvas node ID encoding a node's full `{ className, primaryKey }` identity. */
 export function encodeGraphNodeId(ref: PanelObjectValue): string {
   return JSON.stringify([ref.className, ref.primaryKey]);
-}
-
-/**
- * Places type-mode nodes in vertical columns ordered by declared layers (e.g. fact -> capability -> governance ->
- * product), centering each column vertically so sparse layers align cleanly beside dense ones.
- */
-export function layoutTypeColumns(
-  types: readonly PlatformGraphTypeSpec[],
-  layers: readonly string[],
-): Map<string, GraphCanvasPoint> {
-  const columns = new Map<string, PlatformGraphTypeSpec[]>();
-  for (const layer of layers) columns.set(layer, []);
-  for (const spec of types) {
-    const key = spec.layer ?? "";
-    let list = columns.get(key);
-    if (!list) {
-      list = [];
-      columns.set(key, list);
-    }
-    list.push(spec);
-  }
-
-  const ordered = [...columns.entries()].filter(([, items]) => items.length > 0);
-  const positions = new Map<string, GraphCanvasPoint>();
-  const xOffset = ((ordered.length - 1) * COLUMN_GAP) / 2;
-
-  ordered.forEach(([, items], columnIndex) => {
-    const x = Math.round(columnIndex * COLUMN_GAP - xOffset);
-    const yOffset = ((items.length - 1) * ROW_GAP) / 2;
-    items.forEach((spec, rowIndex) => {
-      positions.set(spec.id, {
-        x,
-        y: Math.round(rowIndex * ROW_GAP - yOffset),
-      });
-    });
-  });
-
-  return positions;
 }
 
 function isFree(candidate: GraphCanvasPoint, occupied: readonly GraphCanvasPoint[]): boolean {

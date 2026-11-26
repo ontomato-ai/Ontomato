@@ -4,7 +4,7 @@
 
 ## 读哪一套本体
 
-`dataSource` 决定这一页读哪一套投影，默认 `"business"`（客户业务本体）；`"platform"` 读平台四层本体（23 类类型、44 种关系种类，画布按 `layerId` 分色并可点图例按层显隐，推导关系画虚线）。两套投影都登记在这一页的 `projections.json` 里，成员按 `dataSource` 选中的投影读；能力图谱嵌入这一页时只传 `dataSource`，不传任何投影编号。
+`dataSource` 决定这一页读哪一套投影，默认 `"business"`（客户业务本体）；`"platform"` 读平台四层本体。四层画布读取 `platform:OntologyType.graphNodes` 和 `platform:OntologyRelationKind.graphEdges`，按 `layerId` 分色并可点图例按层显隐，推导关系画虚线。两套投影都登记在这一页的 `projections.json` 里，成员按 `dataSource` 选中的投影读；能力图谱嵌入这一页时只传 `dataSource`，不传任何投影编号。
 
 四层本体没有独立的属性实体，也没有详情页配置的读法：在 `"platform"` 下页头不显示属性数，右栏的属性平面换成公开属性、具名读法与可用操作三块；`"business"` 下这三块不挂载、不发请求。
 
