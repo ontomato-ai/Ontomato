@@ -10,6 +10,13 @@ import io.ontomato.dataengine.service.impl.DslServiceImpl;
 import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
+import io.ontomato.dataengine.service.DataPermissionLookup;
+import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.impl.AnonymousAuthorization;
+import io.ontomato.dataengine.service.impl.AnonymousIdentityService;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.config.BusinessConfig;
@@ -376,6 +383,11 @@ class WorkflowDaoDuckDbTest {
         when(lookup.stepAdmissions("user","domain","w1",1)).thenReturn(Map.of(
             1, new CapabilityGrantLookup.Admission(false,List.of(new CapabilityGrantLookup.Match("docs","department",List.of("my-org")))),
             2, new CapabilityGrantLookup.Admission(false,List.of(new CapabilityGrantLookup.Match("docs","holder",List.of("user"))))));
+        var anonymous = new AnonymousAuthorization(mock(ProductGrantService.class), jdbc);
+        var authorization = new AuthorizationService(anonymous, anonymous, new ManagementOperations(List.of()),
+                lookup, mock(DataPermissionLookup.class));
+        ReflectionTestUtils.setField(manager, "definitions",
+                new CapabilityDefinitions(authorization, new AnonymousIdentityService()));
         var pending = new io.ontomato.dataengine.service.WorkflowPendingQuery(dao,lookup,ontology);
         var subjects = new io.ontomato.dataengine.service.SubjectValueResolver(mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class));
         ReflectionTestUtils.setField(manager,"pending",pending); ReflectionTestUtils.setField(manager,"subjectValues",subjects);
