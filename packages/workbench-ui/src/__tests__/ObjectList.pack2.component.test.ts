@@ -150,7 +150,7 @@ describe("ObjectList Pack 2C features", () => {
       status: "ready",
       value: { total: 2, fieldLabels: {}, rows: [
         { className: BUSINESS_KNOWLEDGE, primaryKey: "details", label: "Details", fields: {}, outputs: { detailPath: openPath } },
-        { className: BUSINESS_KNOWLEDGE, primaryKey: "inline", label: "Inline", fields: {} },
+        { className: BUSINESS_KNOWLEDGE, primaryKey: "inline", label: "Inline", fields: {}, outputs: { detailPath: null } },
       ] },
     }), { memberProps: { list: { onChoose: choose } }, navigate });
     const row = (label: string) => [...element.querySelectorAll("tbody tr")].find(tr => tr.textContent?.includes(label));
