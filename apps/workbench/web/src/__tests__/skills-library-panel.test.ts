@@ -469,7 +469,10 @@ describe("skills-library two-entry builtin panels", () => {
 
       const builtinButtons = [...cards[1]!.querySelectorAll<HTMLButtonElement>(".sdk-object-list-card-header-actions button")];
       expect(builtinButtons[1]!.disabled).toBe(true);
-      expect(builtinButtons[1]!.title).toBe("Built-in skills are read-only");
+      expect(builtinButtons[1]!.title).toBe("");
+      const builtinDeleteTrigger = builtinButtons[1]!.closest<HTMLElement>(".sdk-unavailable-trigger");
+      expect(builtinDeleteTrigger?.getAttribute("tabindex")).toBe("0");
+      expect(builtinDeleteTrigger?.getAttribute("aria-label")).toBe("Delete: Built-in skills are read-only");
 
       // Clicking card Export runs list.export without navigating away from catalog.
       domainButtons[0]!.click();
@@ -732,7 +735,10 @@ describe("skills-library two-entry builtin panels", () => {
         expect(element.querySelector(".sdk-object-header-status")?.textContent?.trim()).toBe("Domain");
         expect(element.querySelector(".sdk-page-header-description")?.textContent?.trim()).toBe("Reusable domain skill instructions");
         expect(element.querySelector<HTMLElement>(".skill-detail-body")?.style.display).not.toBe("none");
-        expect(element.querySelector(".sdk-operation-unavailable")?.textContent?.trim()).toBe("Built-in skills are read-only");
+        expect(element.querySelector(".sdk-operation-unavailable")).toBeNull();
+        const headerDeleteTrigger = element.querySelector<HTMLElement>(".sdk-page-header-actions .sdk-unavailable-trigger");
+        expect(headerDeleteTrigger?.getAttribute("tabindex")).toBe("0");
+        expect(headerDeleteTrigger?.getAttribute("aria-label")).toBe("Delete: Built-in skills are read-only");
         expect(reads.some((r) => r.memberPath[0]?.member === "content" && r.inputs.path === "SKILL.md")).toBe(true);
       });
 

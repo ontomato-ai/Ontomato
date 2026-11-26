@@ -31,6 +31,7 @@ import OperationButton from "./OperationButton.vue";
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
+import UnavailableTooltip from "./UnavailableTooltip.vue";
 import { displayFieldText, recordFieldDisplayValue } from "./record-field";
 
 interface HeaderOperationItem {
@@ -59,7 +60,8 @@ export type ObjectHeaderOperationSpec =
  * When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2,
  * configurable without upper cap) operations inline via `OperationButton` in declared order (danger operations render
  * as plain danger buttons inline when within the visible limit) and moves remaining operations into the SDK dropdown
- * "More" menu using the shared operation execution path.
+ * "More" menu using the shared operation execution path. Unavailable operations stay disabled and surface the owner's
+ * reason in a hover/focus tooltip.
  *
  * One display reads once: a `record` handed by a parent is drawn alone and the header reads no `record` datum of its
  * own, so a title, a badge tone and a failure never come from two snapshots; a parent that reads the record itself
@@ -494,14 +496,15 @@ onBeforeUnmount(clearHeaderActionHandlers);
                   :data-operation="item.name"
                   :data-tone="item.tone !== 'default' ? item.tone : undefined"
                   :data-danger="item.danger ? 'true' : undefined"
-                  :title="item.descriptor.unavailable?.reason"
                 >
-                  <span class="sdk-object-header-more-item-body">
+                  <UnavailableTooltip
+                    :reason="item.descriptor.unavailable?.reason"
+                    :label="item.label"
+                    placement="left"
+                    block
+                  >
                     <span class="sdk-object-header-more-label">{{ item.label }}</span>
-                    <span v-if="item.descriptor.unavailable" class="sdk-object-header-more-reason">
-                      {{ item.descriptor.unavailable.reason }}
-                    </span>
-                  </span>
+                  </UnavailableTooltip>
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -668,12 +671,6 @@ onBeforeUnmount(clearHeaderActionHandlers);
 </style>
 
 <style>
-.sdk-object-header-more-menu .sdk-object-header-more-item-body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
 .sdk-object-header-more-menu .el-dropdown-menu__item.sdk-object-header-more-item.is-danger {
   color: var(--el-color-danger-text);
 }
@@ -681,10 +678,5 @@ onBeforeUnmount(clearHeaderActionHandlers);
 .sdk-object-header-more-menu .el-dropdown-menu__item.sdk-object-header-more-item.is-danger:not(.is-disabled):focus {
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger-text);
-}
-.sdk-object-header-more-menu .sdk-object-header-more-reason {
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
 }
 </style>
