@@ -77,6 +77,8 @@ public class Workflow {
      */
     private String createdBy;
 
+    private List<String> coauthorIds;
+
     /**
      * Warnings raised while generating this revision's read capabilities.
      *

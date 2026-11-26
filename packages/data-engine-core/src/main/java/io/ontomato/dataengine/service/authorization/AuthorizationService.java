@@ -108,8 +108,12 @@ public final class AuthorizationService {
         var ownership = access.ownerFacts() == null ? OwnershipAdmission.Result.PASS_TO_POLICY
                 : OwnershipAdmission.decide(ctx.identity().userId(), target.kind(), access.verb(),
                         access.ownerFacts(), false);
-        if (ownership == OwnershipAdmission.Result.PRIVATE_DRAFT)
+        if (ownership == OwnershipAdmission.Result.PRIVATE_DRAFT) {
+            // Anonymous workflows are editable in their single domain, including drafts with a legacy author.
+            if (target.kind() == Kind.WORKFLOW
+                    && subjects.objectEntitlement(ctx.identity().userId(), target, access.verb())) return Decision.ALLOWED;
             return Decision.denied("PRIVATE_DRAFT", "Only the authors may access this draft.");
+        }
         if (ownership == OwnershipAdmission.Result.ALLOWED
                 || subjects.objectEntitlement(ctx.identity().userId(), target, access.verb())
                 || has(ctx, target, access.verb())) return Decision.ALLOWED;

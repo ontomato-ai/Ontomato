@@ -26,6 +26,10 @@ import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.WorkflowGrantSink;
 import io.ontomato.dataengine.service.WorkflowService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
 
 /**
  * Publishes workflows as units of authority.
@@ -44,6 +48,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final AdminService admin;
     private final WorkflowMetricGenerator metricGenerator;
     private final TransactionOperations transactions;
+    private final CapabilityDefinitions definitions;
 
     public WorkflowServiceImpl(
             WorkflowDao workflows,
@@ -51,13 +56,15 @@ public class WorkflowServiceImpl implements WorkflowService {
             WorkflowGrantSink grants,
             AdminService admin,
             WorkflowMetricGenerator metricGenerator,
-            TransactionOperations transactions) {
+            TransactionOperations transactions,
+            CapabilityDefinitions definitions) {
         this.workflows = workflows;
         this.actions = actions;
         this.grants = grants;
         this.admin = admin;
         this.metricGenerator = metricGenerator;
         this.transactions = transactions;
+        this.definitions = definitions;
     }
 
     @Override
@@ -67,8 +74,13 @@ public class WorkflowServiceImpl implements WorkflowService {
         if (Workflow.STATUS_ACTIVE.equals(workflow.getStatus())) {
             throw new IllegalArgumentException("Activating a workflow is its own operation");
         }
+        Workflow previous = workflow.getId() == null ? null
+                : workflows.queryByIdForUpdate(workflow.getId(), workflow.getDomainId());
+        var subject = definitions.current();
+        definitions.require(subject, previous == null ? new Create(Kind.WORKFLOW)
+                : CapabilityDefinitions.access(previous, Verb.EDIT));
         validate(workflow, workflow.getDomainId(), false);
-        return workflows.saveDraft(workflow);
+        return previous == null ? workflows.insertDraft(workflow) : workflows.updateDraft(workflow);
     }
 
     @Override
@@ -152,6 +164,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     @Transactional
     public void delete(String id, String domainId) {
         Workflow workflow = requireForUpdate(id, domainId);
+        definitions.require(definitions.current(), CapabilityDefinitions.access(workflow, Verb.EDIT));
         if (Workflow.STATUS_ACTIVE.equals(workflow.getStatus())) {
             // Deleting an active workflow would remove authority without a record of doing so.
             throw new IllegalArgumentException("Deactivate a workflow before deleting it");

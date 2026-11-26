@@ -37,7 +37,7 @@ public class WorkflowDao {
 	private static final String EVENT_TABLE = "workflow_event";
 
 	private static final String COLUMNS =
-			"id, name, description, domain_id, status, version, steps, run_class_name, run_contract, temporary, case_form_schema, create_timestamp, modify_timestamp, created_by";
+			"id, name, description, domain_id, status, version, steps, run_class_name, run_contract, temporary, case_form_schema, create_timestamp, modify_timestamp, created_by, coauthor_ids";
 
 	private static final String HAS_DRAFT = """
 			(w.status = 'ACTIVE' AND ROW(w.name, w.description, w.steps, w.run_class_name,
@@ -56,7 +56,7 @@ public class WorkflowDao {
 	private static final String ACTIVE = """
 			SELECT w.id, v.name, v.description, w.domain_id, w.status, w.version, v.steps,
 				v.run_class_name, v.run_contract, v.temporary, v.case_form_schema,
-				w.create_timestamp, v.create_timestamp AS modify_timestamp, w.created_by,
+				w.create_timestamp, v.create_timestamp AS modify_timestamp, w.created_by, w.coauthor_ids,
 			""" + HAS_DRAFT + " FROM workflow w " + REVISION_JOIN;
 
 	@Autowired
@@ -78,9 +78,11 @@ public class WorkflowDao {
 				+ "case_form_schema TEXT, "
 				+ "create_timestamp BIGINT, "
 				+ "created_by VARCHAR(64), "
+				+ "coauthor_ids TEXT, "
 				+ "modify_timestamp BIGINT"
 				+ ")");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS coauthor_ids TEXT");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS run_contract TEXT");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS temporary BOOLEAN");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS case_form_schema TEXT");
@@ -132,23 +134,30 @@ public class WorkflowDao {
 		log.info(">>>workflow table initialization complete");
 	}
 
-	public Workflow saveDraft(Workflow workflow) {
+	public Workflow insertDraft(Workflow workflow) {
 		if (workflow.getId() == null) workflow.setId(UUID.randomUUID().toString());
 		long now = System.currentTimeMillis();
 		int saved = jdbcTemplate.update(
-				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-						+ """
-						ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
-							steps = EXCLUDED.steps, run_class_name = EXCLUDED.run_class_name,
-							run_contract = EXCLUDED.run_contract, temporary = EXCLUDED.temporary,
-							case_form_schema = EXCLUDED.case_form_schema, modify_timestamp = EXCLUDED.modify_timestamp
-						WHERE workflow.domain_id = EXCLUDED.domain_id
-						""",
+				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+						+ "ON CONFLICT (id) DO NOTHING",
 				workflow.getId(), workflow.getName(), workflow.getDescription(), workflow.getDomainId(),
 				Workflow.STATUS_DRAFT, 0, stepsJson(workflow), workflow.getRunClassName(),
 				runContractJson(workflow), workflow.getTemporary(), caseFormSchemaJson(workflow),
-				now, now, workflow.getCreatedBy());
+				now, now, workflow.getCreatedBy(), JSON.toJSONString(workflow.getCoauthorIds()));
 		if (saved == 0) throw new IllegalArgumentException("Workflow not found");
+		return queryById(workflow.getId());
+	}
+
+	/** Update the definition of a workflow the service has locked and admitted for editing. */
+	public Workflow updateDraft(Workflow workflow) {
+		jdbcTemplate.update("""
+				UPDATE workflow SET name = ?, description = ?, steps = ?, run_class_name = ?,
+					run_contract = ?, temporary = ?, case_form_schema = ?, modify_timestamp = ?
+				WHERE id = ? AND domain_id = ?
+				""",
+				workflow.getName(), workflow.getDescription(), stepsJson(workflow), workflow.getRunClassName(),
+				runContractJson(workflow), workflow.getTemporary(), caseFormSchemaJson(workflow),
+				System.currentTimeMillis(), workflow.getId(), workflow.getDomainId());
 		return queryById(workflow.getId());
 	}
 
@@ -306,6 +315,7 @@ public class WorkflowDao {
 		workflow.setCreateTimestamp(rs.getLong("create_timestamp"));
 		workflow.setModifyTimestamp(rs.getLong("modify_timestamp"));
 		workflow.setCreatedBy(rs.getString("created_by"));
+		workflow.setCoauthorIds(JSON.parseArray(rs.getString("coauthor_ids"), String.class));
 		return workflow;
 	}
 

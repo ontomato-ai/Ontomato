@@ -3,6 +3,7 @@ package io.ontomato.dataengine.controller;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -21,6 +22,9 @@ import io.ontomato.dataengine.service.CapabilityGrantQuery;
 import io.ontomato.dataengine.service.PlatformAccessQuery;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.WorkflowService;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.authorization.ManagementOperations.Operation;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.util.SystemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +39,21 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class WorkflowController {
+
+    private static final String CHANGE = "workflow.lifecycle.change";
+    private static final String READ = "workflow.grants.read";
+
+    @Component
+    public static final class Operations implements ManagementOperations.Contributor {
+        @Override
+        public List<Operation> managementOperations() {
+            return List.of(new Operation(CHANGE, "Activate or deactivate workflows", ManagementOperations.Access.CHANGE),
+                    new Operation(READ, "Read workflow grants", ManagementOperations.Access.READ));
+        }
+    }
+
+    @Autowired
+    private ManagementRequestAccess management;
 
     @Autowired
     private WorkflowService workflowService;
@@ -118,7 +137,7 @@ public class WorkflowController {
             Workflow saved = workflowService.save(workflow);
             ret.put("success", true);
             ret.put("data", render(saved));
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             log.error(e.getMessage(), e);
             ret.put("success", false);
             ret.put("message", e.getMessage());
@@ -129,9 +148,9 @@ public class WorkflowController {
     @PostMapping("/workflow/activate")
     @ResponseBody
     public JSONObject activate(@RequestBody JSONObject param) {
+        User user = management.require(CHANGE);
         JSONObject ret = new JSONObject();
         try {
-            User user = SystemUtils.getCurUser();
             Workflow workflow =
                     workflowService.activate(param.getString("id"), user.getDomainId(), user.getId());
             ret.put("success", true);
@@ -147,9 +166,9 @@ public class WorkflowController {
     @PostMapping("/workflow/deactivate")
     @ResponseBody
     public JSONObject deactivate(@RequestBody JSONObject param) {
+        User user = management.require(CHANGE);
         JSONObject ret = new JSONObject();
         try {
-            User user = SystemUtils.getCurUser();
             Workflow workflow =
                     workflowService.deactivate(param.getString("id"), user.getDomainId(), user.getId());
             ret.put("success", true);
@@ -169,7 +188,7 @@ public class WorkflowController {
         try {
             workflowService.delete(param.getString("id"), SystemUtils.getCurUser().getDomainId());
             ret.put("success", true);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             log.error(e.getMessage(), e);
             ret.put("success", false);
             ret.put("message", e.getMessage());
@@ -253,9 +272,9 @@ public class WorkflowController {
     @PostMapping("/workflow/grants")
     @ResponseBody
     public JSONObject grants() {
+        User user = management.require(READ);
         JSONObject ret = new JSONObject();
         try {
-            User user = SystemUtils.getCurUser();
             JSONArray data = new JSONArray();
             for (CapabilityGrantQuery.Grant grant : grants.grantsInDomain(user.getDomainId())) {
                 JSONObject item = new JSONObject();
