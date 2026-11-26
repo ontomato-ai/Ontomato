@@ -15,6 +15,18 @@
     border-bottom: 1px solid var(--sdk-border-color-lighter, var(--sdk-border-color));
     min-width: 0;
   }
+  .strd-status-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
+  .strd-trigger {
+    flex: 0 0 auto;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+  }
   .strd-times {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -53,7 +65,10 @@
   <projection slot="pauseNotice"></projection>
 
   <section class="strd-overview">
-    <projection slot="header"></projection>
+    <div class="strd-status-row">
+      <projection slot="header"></projection>
+      <div class="strd-trigger"><projection slot="trigger"></projection></div>
+    </div>
     <dl class="strd-times">
       <div>
         <dt>{{ t("startedAt") }}</dt>
