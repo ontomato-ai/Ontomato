@@ -610,7 +610,6 @@
             <projection
               slot="objectList"
               @choose="onObjectChosen"
-              @update:listed="onObjectsListed"
             >
               <template #item-leading>
                 <span class="og-icon og-icon-object" aria-hidden="true">
@@ -624,7 +623,6 @@
             <projection
               slot="relationList"
               @choose="onRelationChosen"
-              @update:listed="onRelationsListed"
             >
               <template #item-leading>
                 <span class="og-icon og-icon-relation" aria-hidden="true">

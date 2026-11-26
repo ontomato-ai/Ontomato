@@ -217,7 +217,7 @@
         "operations": {
           "restore": {
             "operation": "applications.restoreSourceCommit",
-            "target": "app",
+            "target": { "state": "app" },
             "params": { "commit": { "rowField": "id" } }
           }
         },
@@ -289,7 +289,7 @@
         "operations": {
           "rollback": {
             "operation": "applications.rollbackBuilderRelease",
-            "target": "app",
+            "target": { "state": "app" },
             "params": { "releaseId": { "rowField": "releaseId" } }
           }
         },

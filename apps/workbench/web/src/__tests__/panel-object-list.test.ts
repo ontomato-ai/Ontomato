@@ -1292,7 +1292,6 @@ it("outputs listed references for the current batch (current page when paged, al
       inputs: { search: { kind: "scalar", type: "string" } },
       outputs: {
         selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
-        listed: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
         search: { kind: "scalar", type: "string" },
       },
       config: { pageSize: 2 },
@@ -1303,12 +1302,11 @@ it("outputs listed references for the current batch (current page when paged, al
     state: {
       keyword: { type: { kind: "scalar", type: "string" }, deepLink: true },
       selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
-      listed: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
     },
     members: {
       list: {
         target: { projectionId: "knowledge-query" },
-        outputs: { selected: { state: "selected" }, listed: { state: "listed" }, search: { state: "keyword" } },
+        outputs: { selected: { state: "selected" }, search: { state: "keyword" } },
       },
     },
   });
@@ -1340,7 +1338,7 @@ it("outputs listed references for the current batch (current page when paged, al
   });
 
   // Page 1 publishes only the current page's refs without triggering a second read.
-  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([knowledge("k-1"), knowledge("k-2")]));
+  await vi.waitFor(() => expect(instance.outputs.list?.listed).toEqual([knowledge("k-1"), knowledge("k-2")]));
   expect(reads).toHaveLength(1);
   // Listed refs are collection state, never deep-linked or reported as user selection in pageContext.
   expect(instance.deepLink()).toEqual({});
@@ -1352,28 +1350,29 @@ it("outputs listed references for the current batch (current page when paged, al
   await vi.waitFor(() => expect(deferredPage2).not.toBeNull());
   expect(loadMoreBtn.disabled).toBe(true);
   expect(loadMoreBtn.getAttribute("aria-busy")).toBe("true");
-  expect(instance.state.values.value.listed).toEqual([knowledge("k-1"), knowledge("k-2")]);
+  expect(instance.outputs.list?.listed).toEqual([knowledge("k-1"), knowledge("k-2")]);
 
   // Once page 2 settles, listed appends page 2's refs so it matches the loaded batch.
   deferredPage2!(ready({ rows: [allRows[2]!], total: 3 }));
-  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([knowledge("k-1"), knowledge("k-2"), knowledge("k-3")]));
+  await vi.waitFor(() => expect(instance.outputs.list?.listed).toEqual([knowledge("k-1"), knowledge("k-2"), knowledge("k-3")]));
   expect(reads).toHaveLength(2);
 
   // Narrowing to zero matches clears listed to [].
   const search = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
   search.value = "nomatch";
   search.dispatchEvent(new Event("input", { bubbles: true }));
-  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([]));
+  await vi.waitFor(() => expect(instance.outputs.list?.listed).toEqual([]));
 
-  // Narrowing back to one match publishes that match, and a subsequent forbidden read clears it to [].
+  // Narrowing back to one match publishes that match, and a subsequent forbidden read reports no list at all (null),
+  // which a reader tells apart from a genuinely empty one ([]).
   search.value = "beta";
   search.dispatchEvent(new Event("input", { bubbles: true }));
-  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([knowledge("k-2")]));
+  await vi.waitFor(() => expect(instance.outputs.list?.listed).toEqual([knowledge("k-2")]));
 
   forceForbidden = true;
   search.value = "gamma";
   search.dispatchEvent(new Event("input", { bubbles: true }));
-  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([]));
+  await vi.waitFor(() => expect(instance.outputs.list?.listed).toBeNull());
 });
 
 it("outputs all matching references when the list read does not page", async () => {
@@ -1384,21 +1383,17 @@ it("outputs all matching references when the list read does not page", async () 
       name: "Scheduled tasks",
       componentId: "@ontomato/sdk:ObjectList",
       inputs: {},
-      outputs: {
-        listed: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } },
-      },
+      outputs: {},
       config: {},
       data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
     },
   };
   const manifest = definePanel({
-    state: {
-      listedTasks: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
-    },
+    state: {},
     members: {
       list: {
         target: { projectionId: "task-list" },
-        outputs: { listed: { state: "listedTasks" } },
+        outputs: {},
       },
     },
   });
@@ -1407,7 +1402,7 @@ it("outputs all matching references when the list read does not page", async () 
     { primaryKey: "t-2", label: "Weekly audit", fields: {} },
   ];
   const { instance, reads } = mountDirect(manifest, projections, () => ready(rows));
-  await vi.waitFor(() => expect(instance.state.values.value.listedTasks).toEqual([
+  await vi.waitFor(() => expect(instance.outputs.list?.listed).toEqual([
     { className: SCHEDULED_TASK, primaryKey: "t-1" },
     { className: SCHEDULED_TASK, primaryKey: "t-2" },
   ]));
@@ -2375,7 +2370,6 @@ it("performs zero-request local search across nested/array fields, updates liste
       inputs: {},
       outputs: {
         search: { kind: "scalar", type: "string" },
-        listed: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } },
         selected: { kind: "object", objectType: OBJECT_TYPE },
       },
       config: { searchable: true, subtitleField: "description", tagsField: "badges" },
@@ -2385,7 +2379,6 @@ it("performs zero-request local search across nested/array fields, updates liste
   const manifest = definePanel({
     state: {
       query: { type: { kind: "scalar", type: "string" } },
-      listed: { type: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } } },
       selected: { type: { kind: "object", objectType: OBJECT_TYPE } },
     },
     members: {
@@ -2393,7 +2386,6 @@ it("performs zero-request local search across nested/array fields, updates liste
         target: { projectionId: "local-search-list" },
         outputs: {
           search: { state: "query" },
-          listed: { state: "listed" },
           selected: { state: "selected" },
         },
       },
@@ -2449,7 +2441,7 @@ it("performs zero-request local search across nested/array fields, updates liste
 
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(3));
   expect(reads).toHaveLength(1);
-  expect(instance.state.values.value.listed).toEqual([
+  expect(instance.outputs.list?.listed).toEqual([
     { className: OBJECT_TYPE, primaryKey: "type.order" },
     { className: OBJECT_TYPE, primaryKey: "type.customer" },
     { className: OBJECT_TYPE, primaryKey: "type.shipment" },
@@ -2461,7 +2453,7 @@ it("performs zero-request local search across nested/array fields, updates liste
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
   expect(element.querySelector(".sdk-object-list-item-label")?.textContent?.trim()).toBe("Customer");
-  expect(instance.state.values.value.listed).toEqual([{ className: OBJECT_TYPE, primaryKey: "type.customer" }]);
+  expect(instance.outputs.list?.listed).toEqual([{ className: OBJECT_TYPE, primaryKey: "type.customer" }]);
   expect(reads).toHaveLength(1);
 
   // Search matching label produces local <mark> highlights with zero extra reads.
@@ -2475,14 +2467,14 @@ it("performs zero-request local search across nested/array fields, updates liste
   searchInput.value = "does-not-exist";
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
   await vi.waitFor(() => expect(element.querySelector(".fui-data-state-empty")).not.toBeNull());
-  expect(instance.state.values.value.listed).toEqual([]);
+  expect(instance.outputs.list?.listed).toEqual([]);
   const clearBtn = element.querySelector<HTMLButtonElement>(".fui-data-state-clear")!;
   expect(clearBtn).not.toBeNull();
   clearBtn.click();
 
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(3));
   expect(instance.state.values.value.query).toBeNull();
-  expect(instance.state.values.value.listed).toHaveLength(3);
+  expect(instance.outputs.list?.listed).toHaveLength(3);
   expect(reads).toHaveLength(1);
 });
 

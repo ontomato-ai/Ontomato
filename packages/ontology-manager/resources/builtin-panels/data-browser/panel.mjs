@@ -55,13 +55,10 @@ await mountPanel({
     const selectedClass = computed(() => state.value.selectedClass ?? null);
     const selectedClassKey = computed(() => selectedClass.value?.primaryKey ?? "");
 
-    // Reactive bump whenever platform:ObjectType display names finish loading in graph mode.
-    const classNamesVersion = ref(0);
-    function onClassNamesListed() {
-      classNamesVersion.value += 1;
-    }
+    // The probe's read-only listing of platform:ObjectType records: reading it re-renders the labels below as names load.
+    const classNamesListed = usePanelOutput("classNamesProbe", "listed");
     function resolveClassDisplayName(className) {
-      void classNamesVersion.value;
+      void classNamesListed.value;
       if (!className) return "";
       return instance.objectName(OBJECT_TYPE, className) || className;
     }
@@ -339,7 +336,7 @@ await mountPanel({
     );
 
     const attributeOptions = shallowRef([]);
-    function onAttributesListed(refs) {
+    watch(usePanelOutput("classAttributesProbe", "listed"), (refs) => {
       if (!Array.isArray(refs)) {
         attributeOptions.value = [];
         return;
@@ -354,7 +351,7 @@ await mountPanel({
         next.push({ name, label });
       }
       attributeOptions.value = next;
-    }
+    });
 
     const filterOperators = computed(() => [
       { value: "eq", label: t("db.opEq") },
@@ -527,7 +524,6 @@ await mountPanel({
       nodeHeaderStatus,
       selectedNodeFallbackTitle,
       selectedNodeClassLabel,
-      onClassNamesListed,
       isGraphInstanceMode,
       graphStatsLabel,
       graphDrawingLabel,
@@ -559,7 +555,6 @@ await mountPanel({
       clearTableSearch,
       exportFileName,
       attributeOptions,
-      onAttributesListed,
       filterOperators,
       filterDrawerOpen,
       draftFilters,

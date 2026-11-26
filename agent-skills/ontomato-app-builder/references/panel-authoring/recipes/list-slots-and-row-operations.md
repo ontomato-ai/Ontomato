@@ -58,7 +58,7 @@ the list without replacing the whole table.
           }
         },
         "operations": {
-          "disable": { "operation": "applications.disable", "target": { "row": true } }
+          "disable": { "operation": "applications.disable", "target": "row" }
         }
       },
       "rowDetail": {

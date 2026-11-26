@@ -373,7 +373,7 @@ await mountPanel({
     }
 
     let initialProjectsReconciled = false;
-    function onProjectsListed(refs) {
+    watch(() => projectsOutputs.value.listed, (refs) => {
       if (initialProjectsReconciled || !Array.isArray(refs)) return;
       if (projectsOutputs.value.status === "error") return;
       initialProjectsReconciled = true;
@@ -401,7 +401,7 @@ await mountPanel({
           });
         }
       }
-    }
+    });
 
     function onProjectRowAction({ id, ref: appRef }) {
       if (!appRef || !appRef.primaryKey) return;
@@ -566,7 +566,6 @@ await mountPanel({
       onChooseSession,
       openCreateDialog,
       onDraftCreated,
-      onProjectsListed,
       onProjectRowAction,
       onMetaSaved,
       openPublishDrawer,
