@@ -16,12 +16,10 @@ import ReferenceChoice from "./ReferenceChoice.vue";
  */
 const props = withDefaults(
   defineProps<{
-    /** Fallback placeholder text shown in standalone inline mode when neither `placeholderKey` nor `placeholders` resolves one. */
+    /** Fallback placeholder text shown in standalone inline mode when `placeholderKey` resolves no text. */
     placeholder?: string;
     /** Panel message key (resolved via `panel.t`) or platform i18n key for the placeholder in standalone inline mode. */
     placeholderKey?: string;
-    /** Locale-keyed placeholder strings (e.g. `{ en: "Select start", de: "Start wählen" }`) in standalone inline mode. */
-    placeholders?: Readonly<Record<string, string>>;
     /** Whether the reader can clear the selection in standalone inline mode; defaults to `true`. */
     clearable?: boolean;
     /** Disables the standalone inline selector. */
@@ -42,7 +40,6 @@ const props = withDefaults(
   {
     placeholder: undefined,
     placeholderKey: undefined,
-    placeholders: undefined,
     clearable: true,
     disabled: false,
     size: "small",
@@ -85,7 +82,6 @@ defineSlots<{
     v-else
     :placeholder="props.placeholder"
     :placeholder-key="props.placeholderKey"
-    :placeholders="props.placeholders"
     :clearable="props.clearable"
     :disabled="props.disabled"
     :size="props.size"

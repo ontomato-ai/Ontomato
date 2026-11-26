@@ -99,7 +99,7 @@ it("draws an owner's sections in order with their hints, and a list of them that
 // Markdown the owner keeps (an agent's prompt) says how long it is as the reader writes it; the page keeps the count
 // and drops the old preview (面板化线主控 2026-11-22).
 it("counts a Markdown field's characters as the reader writes", async () => {
-  const prompt = { path: "/name", label: "Prompt", required: false, readOnly: false, valueSchema: {}, control: { kind: "markdown" } };
+  const prompt = { path: "/name", label: "Prompt", required: false, readOnly: false, valueSchema: {}, control: { kind: "text", presentation: "markdown" } };
   const { mount, app, element } = open([], { fields: [prompt] });
   const count = () => element.querySelector('[data-field="/name"] .sdk-form-field-count')?.textContent?.trim();
   await vi.waitFor(() => expect(count()).toBe("6 characters · Markdown"));

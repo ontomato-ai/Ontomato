@@ -17,7 +17,7 @@ import { useMember, useMemberData, useMemberParam, useMemberRead } from "../pane
 import type { PlatformObjectOption, PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { stateObject, type PanelFieldValue, type PanelObjectRef } from "../panel/state";
-import { readConfigString, readConfigStringMap, resolveLocalizedText } from "./localized-text";
+import { readConfigString, resolveLocalizedText } from "./localized-text";
 import { resolveGroupForRecord } from "./object-list-local";
 import { rawRecordField } from "./record-field";
 
@@ -37,7 +37,6 @@ const props = withDefaults(
   defineProps<{
     placeholder?: string;
     placeholderKey?: string;
-    placeholders?: Readonly<Record<string, string>>;
     clearable?: boolean;
     disabled?: boolean;
     size?: "small" | "default" | "large";
@@ -49,7 +48,6 @@ const props = withDefaults(
   {
     placeholder: undefined,
     placeholderKey: undefined,
-    placeholders: undefined,
     clearable: true,
     disabled: false,
     size: "small",
@@ -89,7 +87,6 @@ const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => 
 const placeholderText = computed(() =>
   resolveLocalizedText({
     key: props.placeholderKey ?? readConfigString(rawConfig.value, "placeholderKey", "placeholder-key"),
-    map: props.placeholders ?? readConfigStringMap(rawConfig.value, "placeholders"),
     fallback: props.placeholder ?? readConfigString(rawConfig.value, "placeholder"),
     locale: locale.value,
     panelText: panel.t,

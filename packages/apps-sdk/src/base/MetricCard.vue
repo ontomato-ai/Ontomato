@@ -18,7 +18,7 @@ import {
   type DisplayDataStateKind,
   type TypedNumberFormat,
 } from "./display-value";
-import { readConfigString, readConfigStringMap, resolveLocalizedText } from "./localized-text";
+import { readConfigString, resolveLocalizedText } from "./localized-text";
 import type { MetricCardItem } from "./metric-card-types";
 import { displayFieldText, rawRecordField } from "./record-field";
 
@@ -35,8 +35,6 @@ const props = withDefaults(
     label?: string;
     /** Panel message key (resolved via `panel.t`) or platform i18n key for the title in single-card mode. */
     labelKey?: string;
-    /** Locale-keyed titles (for example `{ en: "Object types", "zh-CN": "对象类型" }`) in single-card mode. */
-    labels?: Readonly<Record<string, string>>;
     /** Direct metric value in standalone mode (used when no datum is bound or when explicitly provided). */
     value?: string | number | null;
     /** Column key on a bound metric `result` (defaults to the first column) or field key on a bound `record`. */
@@ -47,14 +45,10 @@ const props = withDefaults(
     unit?: string;
     /** Panel or platform i18n key for the unit suffix. */
     unitKey?: string;
-    /** Locale-keyed unit suffixes. */
-    units?: Readonly<Record<string, string>>;
     /** Optional fallback supporting description shown below the value. */
     description?: string;
     /** Panel or platform i18n key for the supporting description. */
     descriptionKey?: string;
-    /** Locale-keyed supporting descriptions. */
-    descriptions?: Readonly<Record<string, string>>;
     /** Semantic tone for the card value/accent (`"default" | "info" | "success" | "warning" | "danger"`). */
     tone?: PanelFieldTone;
     /** Optional `Intl.NumberFormat` options for numeric values. */
@@ -81,16 +75,13 @@ const props = withDefaults(
   {
     label: undefined,
     labelKey: undefined,
-    labels: undefined,
     value: undefined,
     field: undefined,
     rowIndex: 0,
     unit: undefined,
     unitKey: undefined,
-    units: undefined,
     description: undefined,
     descriptionKey: undefined,
-    descriptions: undefined,
     tone: undefined,
     numberFormat: undefined,
     formats: undefined,
@@ -140,16 +131,13 @@ function normalizeItem(raw: unknown): MetricCardItem | null {
   return {
     label: readConfigString(rec, "label"),
     labelKey: readConfigString(rec, "labelKey", "label-key"),
-    labels: readConfigStringMap(rec, "labels"),
     value: typeof rec.value === "string" || typeof rec.value === "number" || rec.value === null ? rec.value : undefined,
     field: readConfigString(rec, "field"),
     rowIndex: typeof rec.rowIndex === "number" ? rec.rowIndex : undefined,
     unit: readConfigString(rec, "unit"),
     unitKey: readConfigString(rec, "unitKey", "unit-key"),
-    units: readConfigStringMap(rec, "units"),
     description: readConfigString(rec, "description"),
     descriptionKey: readConfigString(rec, "descriptionKey", "description-key"),
-    descriptions: readConfigStringMap(rec, "descriptions"),
     tone: asTone(rec.tone),
     numberFormat: rec.numberFormat && typeof rec.numberFormat === "object" && !Array.isArray(rec.numberFormat)
       ? (rec.numberFormat as TypedNumberFormat)
@@ -167,16 +155,13 @@ const configuredItems = computed<readonly MetricCardItem[]>(() => {
     {
       label: props.label ?? readConfigString(rawConfig.value, "label"),
       labelKey: props.labelKey ?? readConfigString(rawConfig.value, "labelKey", "label-key"),
-      labels: props.labels ?? readConfigStringMap(rawConfig.value, "labels"),
       value: props.value,
       field: props.field ?? readConfigString(rawConfig.value, "field"),
       rowIndex: props.rowIndex,
       unit: props.unit ?? readConfigString(rawConfig.value, "unit"),
       unitKey: props.unitKey ?? readConfigString(rawConfig.value, "unitKey", "unit-key"),
-      units: props.units ?? readConfigStringMap(rawConfig.value, "units"),
       description: props.description ?? readConfigString(rawConfig.value, "description"),
       descriptionKey: props.descriptionKey ?? readConfigString(rawConfig.value, "descriptionKey", "description-key"),
-      descriptions: props.descriptions ?? readConfigStringMap(rawConfig.value, "descriptions"),
       tone: props.tone ?? asTone(rawConfig.value?.tone),
       numberFormat: props.numberFormat,
     },
@@ -321,7 +306,6 @@ const renderedItems = computed<readonly RenderedMetricItem[]>(() => {
   return configuredItems.value.map((item) => {
     const explicitLabel = resolveLocalizedText({
       key: item.labelKey,
-      map: item.labels,
       fallback: item.label,
       locale: locale.value,
       panelText: panel?.t,
@@ -330,7 +314,6 @@ const renderedItems = computed<readonly RenderedMetricItem[]>(() => {
     });
     const unit = resolveLocalizedText({
       key: item.unitKey,
-      map: item.units,
       fallback: item.unit,
       locale: locale.value,
       panelText: panel?.t,
@@ -339,7 +322,6 @@ const renderedItems = computed<readonly RenderedMetricItem[]>(() => {
     });
     const description = resolveLocalizedText({
       key: item.descriptionKey,
-      map: item.descriptions,
       fallback: item.description,
       locale: locale.value,
       panelText: panel?.t,
